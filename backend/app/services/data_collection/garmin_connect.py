@@ -279,7 +279,9 @@ class GarminConnectService:
         rem_sleep_seconds = 0
         light_sleep_seconds = 0
         awake_seconds = 0
+        nap_seconds = 0
         avg_heart_rate_during_sleep = None
+        hrv = None  # HRV数据，优先从睡眠数据获取
         
         if isinstance(sleep_data, dict) and sleep_data:
             # Garmin睡眠数据结构:
@@ -330,13 +332,21 @@ class GarminConnectService:
             light_sleep_seconds = daily_sleep_dto.get('lightSleepSeconds', 0) or 0
             awake_seconds = daily_sleep_dto.get('awakeSleepSeconds', 0) or 0
             
+            # 小睡时长（秒）- 从 dailySleepDTO 获取
+            nap_seconds = daily_sleep_dto.get('napTimeSeconds', 0) or 0
+            
             # 睡眠期间平均心率
             avg_heart_rate_during_sleep = (
                 daily_sleep_dto.get('avgHeartRate') or
                 sleep_data.get('restingHeartRate')
             )
             
-            logger.debug(f"睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}")
+            # HRV数据 - 从睡眠数据中获取
+            # avgOvernightHrv 是夜间平均HRV值
+            if hrv is None:
+                hrv = sleep_data.get('avgOvernightHrv')
+            
+            logger.debug(f"睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}, HRV={hrv}")
         
         # 如果从sleep_data没有获取到，尝试从summary获取
         if isinstance(summary, dict):
@@ -433,10 +443,11 @@ class GarminConnectService:
             if min_hr is None:
                 min_hr = summary.get('minHeartRate') or summary.get('min')
         
-        # HRV数据
-        hrv = None
-        if isinstance(summary, dict):
-            hrv = summary.get('hrv') or safe_get_nested(summary, 'hrvStatus', 'hrv')
+        # HRV数据 - 如果从睡眠数据没有获取到，尝试从summary获取
+        if hrv is None and isinstance(summary, dict):
+            hrv = summary.get('hrv') or safe_get_nested(summary, 'hrvStatus', 'hrv') or summary.get('avgOvernightHrv')
+        
+        logger.debug(f"最终HRV值: {hrv}")
         
         # 身体电量数据（可能来自get_body_battery或summary）
         battery_data_raw = None
@@ -478,11 +489,25 @@ class GarminConnectService:
             stress_values = [s.get('stressLevelValue', s.get('value', 0)) for s in stress_data_raw if isinstance(s, dict)]
             stress_level = sum(stress_values) / len(stress_values) if stress_values else None
         elif isinstance(stress_data_raw, dict) and stress_data_raw:
-            stress_level = stress_data_raw.get('stressLevel', stress_data_raw.get('value', stress_data_raw.get('stressLevelValue')))
+            # get_all_day_stress返回字典，包含avgStressLevel和maxStressLevel
+            stress_level = (
+                stress_data_raw.get('avgStressLevel') or
+                stress_data_raw.get('averageStressLevel') or
+                stress_data_raw.get('stressLevel') or
+                stress_data_raw.get('value') or
+                stress_data_raw.get('stressLevelValue')
+            )
         
         # 如果从stress数据中没有获取到，尝试从summary获取
         if stress_level is None and isinstance(summary, dict):
-            stress_level = summary.get('stressLevel', summary.get('stress', summary.get('averageStressLevel')))
+            stress_level = (
+                summary.get('averageStressLevel') or
+                summary.get('avgStressLevel') or
+                summary.get('stressLevel') or
+                summary.get('stress')
+            )
+        
+        logger.debug(f"提取的压力水平: {stress_level} (来源: {'stress数据' if stress_data_raw else 'summary' if isinstance(summary, dict) else '无'})")
         
         # 活动数据（从summary获取）
         steps = None
@@ -576,6 +601,7 @@ class GarminConnectService:
             rem_sleep_duration=seconds_to_minutes(rem_sleep_seconds),
             light_sleep_duration=seconds_to_minutes(light_sleep_seconds),
             awake_duration=seconds_to_minutes(awake_seconds),
+            nap_duration=seconds_to_minutes(nap_seconds),
             body_battery_charged=safe_int(charged),
             body_battery_drained=safe_int(drained),
             body_battery_most_charged=safe_int(most_charged),

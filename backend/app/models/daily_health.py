@@ -31,6 +31,7 @@ class GarminData(Base):
     rem_sleep_duration = Column(Integer)  # 快速眼动睡眠时长 (分钟)
     light_sleep_duration = Column(Integer)  # 浅睡眠时长 (分钟)
     awake_duration = Column(Integer)  # 清醒时长 (分钟)
+    nap_duration = Column(Integer)  # 小睡时长 (分钟)
     sleep_start_time = Column(Time)  # 睡眠开始时间
     sleep_end_time = Column(Time)  # 睡眠结束时间
     

@@ -1,5 +1,6 @@
 """用户模型"""
 from sqlalchemy import Column, Integer, String, DateTime, Date
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -14,4 +15,8 @@ class User(Base):
     gender = Column(String, nullable=False)  # 男/女
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # 关系
+    daily_recommendations = relationship("DailyRecommendation", back_populates="user")
+    health_analysis_cache = relationship("HealthAnalysisCache", back_populates="user")
 

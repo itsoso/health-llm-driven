@@ -9,6 +9,10 @@ from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.disease import DiseaseRecord
 from app.models.daily_health import GarminData
 from app.models.user import User
+from app.models.health_analysis_cache import HealthAnalysisCache
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class HealthAnalysisService:
@@ -123,24 +127,52 @@ class HealthAnalysisService:
     def analyze_health_issues(
         self,
         db: Session,
-        user_id: int
+        user_id: int,
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
-        分析健康问题
+        分析健康问题（带缓存）
+        
+        Args:
+            user_id: 用户ID
+            force_refresh: 是否强制刷新缓存
         
         返回：
         {
             "issues": [...],  # 识别的健康问题列表
             "recommendations": [...],  # 建议列表
             "summary": "..."  # 总结
+            "cached": bool,  # 是否来自缓存
+            "analysis_date": str  # 分析日期
         }
         """
+        today = date.today()
+        
+        # 检查缓存（除非强制刷新）
+        if not force_refresh:
+            cached = db.query(HealthAnalysisCache).filter(
+                HealthAnalysisCache.user_id == user_id,
+                HealthAnalysisCache.analysis_date == today
+            ).first()
+            
+            if cached and cached.analysis_result:
+                logger.info(f"使用缓存的健康分析（用户 {user_id}，日期 {today}）")
+                result = cached.analysis_result.copy()
+                result["cached"] = True
+                result["analysis_date"] = today.isoformat()
+                return result
+        
+        # 生成新分析
+        logger.info(f"生成新的健康分析（用户 {user_id}，日期 {today}）")
+        
         if not self.client:
             return {
                 "error": "OpenAI API未配置",
                 "issues": [],
                 "recommendations": [],
-                "summary": "请配置OPENAI_API_KEY以使用健康分析功能"
+                "summary": "请配置OPENAI_API_KEY以使用健康分析功能",
+                "cached": False,
+                "analysis_date": today.isoformat()
             }
         
         # 收集数据
@@ -151,7 +183,7 @@ class HealthAnalysisService:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -167,19 +199,45 @@ class HealthAnalysisService:
             
             analysis_text = response.choices[0].message.content
             
-            # 解析LLM返回的结果（这里简化处理，实际可以要求LLM返回JSON格式）
-            return {
+            # 解析LLM返回的结果
+            result = {
                 "issues": self._extract_issues(analysis_text),
                 "recommendations": self._extract_recommendations(analysis_text),
                 "summary": analysis_text,
-                "raw_analysis": analysis_text
+                "raw_analysis": analysis_text,
+                "cached": False,
+                "analysis_date": today.isoformat()
             }
+            
+            # 保存到缓存
+            cached = db.query(HealthAnalysisCache).filter(
+                HealthAnalysisCache.user_id == user_id,
+                HealthAnalysisCache.analysis_date == today
+            ).first()
+            
+            if cached:
+                cached.analysis_result = result
+                cached.updated_at = datetime.utcnow()
+            else:
+                cached = HealthAnalysisCache(
+                    user_id=user_id,
+                    analysis_date=today,
+                    analysis_result=result
+                )
+                db.add(cached)
+            
+            db.commit()
+            
+            return result
         except Exception as e:
+            logger.error(f"健康分析失败: {e}", exc_info=True)
             return {
                 "error": str(e),
                 "issues": [],
                 "recommendations": [],
-                "summary": f"分析过程中出现错误: {str(e)}"
+                "summary": f"分析过程中出现错误: {str(e)}",
+                "cached": False,
+                "analysis_date": today.isoformat()
             }
     
     def _build_analysis_prompt(self, health_data: Dict[str, Any]) -> str:

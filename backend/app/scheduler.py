@@ -22,15 +22,20 @@ async def sync_garmin_task():
         user_id = 1 # 默认用户 ID，生产环境可从数据库获取所有用户
         service = GarminConnectService(settings.garmin_email, settings.garmin_password)
         
-        # 登录并同步
-        if service.login():
-            success_count, fail_count = service.sync_date_range(db, user_id, days=3)
-            logger.info(f"后台同步完成: 成功 {success_count} 天, 失败 {fail_count} 天")
-        else:
-            logger.error("后台同步失败: Garmin 登录失败")
+        # 计算日期范围（最近3天）
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=2)  # 包括今天，共3天
+        
+        # sync_date_range 会自动处理认证（通过 _ensure_authenticated）
+        result = service.sync_date_range(db, user_id, start_date, end_date)
+        
+        success_count = result.get("success_count", 0)
+        fail_count = result.get("error_count", 0)
+        
+        logger.info(f"后台同步完成: 成功 {success_count} 天, 失败 {fail_count} 天")
             
     except Exception as e:
-        logger.error(f"后台同步过程中出现错误: {str(e)}")
+        logger.error(f"后台同步过程中出现错误: {str(e)}", exc_info=True)
     finally:
         db.close()
 

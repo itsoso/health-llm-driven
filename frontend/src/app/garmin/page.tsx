@@ -76,15 +76,26 @@ export default function GarminPage() {
     enabled: activeTab === 'comprehensive',
   });
 
-  // 准备图表数据
-  const chartData = garminData?.data?.map((item: any) => ({
-    date: format(new Date(item.record_date), 'MM-dd'),
-    sleepScore: item.sleep_score,
-    avgHeartRate: item.avg_heart_rate,
-    steps: item.steps,
-    bodyBattery: item.body_battery_charged,
-    stressLevel: item.stress_level,
-  })) || [];
+  // 准备图表数据 - 按日期从旧到新排序
+  const chartData = garminData?.data
+    ?.slice() // 创建副本，避免修改原数组
+    .sort((a: any, b: any) => {
+      // 按日期升序排序（从旧到新）
+      return new Date(a.record_date).getTime() - new Date(b.record_date).getTime();
+    })
+    .map((item: any) => ({
+      date: format(new Date(item.record_date), 'MM-dd'),
+      sleepScore: item.sleep_score,
+      deepSleep: item.deep_sleep_duration ? Math.floor(item.deep_sleep_duration / 60) : null,
+      remSleep: item.rem_sleep_duration ? Math.floor(item.rem_sleep_duration / 60) : null,
+      awake: item.awake_duration ? Math.floor(item.awake_duration / 60) : null,
+      nap: item.nap_duration ? Math.floor(item.nap_duration / 60) : null,
+      avgHeartRate: item.avg_heart_rate,
+      hrv: item.hrv,
+      steps: item.steps,
+      bodyBattery: item.body_battery_charged,
+      stressLevel: item.stress_level,
+    })) || [];
 
   if (loadingData) {
     return (
@@ -100,8 +111,6 @@ export default function GarminPage() {
     <main className="min-h-screen p-8 bg-gradient-to-br from-gray-50 via-white to-blue-50">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-4 text-gray-900">📊 Garmin数据展示</h1>
-          
           {/* 数据范围选择 */}
           <div className="flex items-center gap-4 mb-4">
             <label className="text-sm font-semibold text-gray-700">查看范围:</label>
@@ -226,6 +235,16 @@ export default function GarminPage() {
                     name="平均心率"
                   />
                   <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="hrv"
+                    stroke="#ec4899"
+                    strokeWidth={3}
+                    strokeDasharray="5 5"
+                    dot={{ fill: '#ec4899', r: 4 }}
+                    name="HRV (ms)"
+                  />
+                  <Line
                     yAxisId="right"
                     type="monotone"
                     dataKey="steps"
@@ -269,6 +288,200 @@ export default function GarminPage() {
               </ResponsiveContainer>
             </div>
 
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">睡眠阶段分解</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                    label={{ value: '时长 (小时)', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fontWeight: 600 } }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500
+                    }}
+                    formatter={(value: any) => value ? `${value}小时` : '-'}
+                  />
+                  <Legend 
+                    wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                  />
+                  <Bar dataKey="deepSleep" stackId="sleep" fill="#8b5cf6" name="深睡" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="remSleep" stackId="sleep" fill="#6366f1" name="快速眼动" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="awake" stackId="sleep" fill="#f59e0b" name="清醒" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="mt-4 text-sm text-gray-600">
+                <p className="font-semibold mb-2">睡眠阶段说明：</p>
+                <ul className="space-y-1">
+                  <li>• <span className="text-purple-700 font-medium">深睡</span>：深度恢复阶段，占总睡眠15-20%为佳</li>
+                  <li>• <span className="text-indigo-700 font-medium">快速眼动</span>：记忆巩固阶段，占总睡眠20-25%为佳</li>
+                  <li>• <span className="text-orange-700 font-medium">清醒</span>：夜间醒来时间，越少越好</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">心率变异性 (HRV) 趋势</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                    label={{ value: 'HRV (ms)', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fontWeight: 600 } }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500
+                    }}
+                    formatter={(value: any) => value ? `${value.toFixed(1)} ms` : '-'}
+                  />
+                  <Legend 
+                    wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="hrv" 
+                    stroke="#ec4899" 
+                    strokeWidth={3}
+                    dot={{ fill: '#ec4899', r: 5 }}
+                    name="HRV (ms)"
+                  />
+                  {/* 参考线：HRV 正常范围 */}
+                  <Line 
+                    type="monotone" 
+                    dataKey={() => 30} 
+                    stroke="#94a3b8" 
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="正常下限 (30ms)"
+                    legendType="none"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey={() => 50} 
+                    stroke="#10b981" 
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="良好阈值 (50ms)"
+                    legendType="none"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="mt-4 text-sm text-gray-600">
+                <p className="font-semibold mb-2">HRV 参考值：</p>
+                <ul className="space-y-1">
+                  <li>• <span className="text-green-700 font-medium">≥50ms</span>：优秀，恢复状态良好</li>
+                  <li>• <span className="text-blue-700 font-medium">30-50ms</span>：正常范围</li>
+                  <li>• <span className="text-orange-700 font-medium">&lt;30ms</span>：偏低，建议关注恢复</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* 压力趋势图 */}
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">压力水平趋势</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                    label={{ value: '压力水平', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fontWeight: 600 } }}
+                    domain={[0, 100]}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500
+                    }}
+                    formatter={(value: any) => value ? `${value}` : '-'}
+                  />
+                  <Legend 
+                    wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="stressLevel" 
+                    stroke="#ef4444" 
+                    strokeWidth={3}
+                    dot={{ fill: '#ef4444', r: 5 }}
+                    name="压力水平"
+                  />
+                  {/* 参考线：压力水平阈值 */}
+                  <Line 
+                    type="monotone" 
+                    dataKey={() => 30} 
+                    stroke="#10b981" 
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="低压力 (30)"
+                    legendType="none"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey={() => 50} 
+                    stroke="#f59e0b" 
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="中等压力 (50)"
+                    legendType="none"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey={() => 70} 
+                    stroke="#ef4444" 
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="高压力 (70)"
+                    legendType="none"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="mt-4 text-sm text-gray-600">
+                <p className="font-semibold mb-2">压力水平参考值：</p>
+                <ul className="space-y-1">
+                  <li>• <span className="text-green-700 font-medium">0-30</span>：低压力，放松状态</li>
+                  <li>• <span className="text-yellow-700 font-medium">30-50</span>：中等压力，正常范围</li>
+                  <li>• <span className="text-orange-700 font-medium">50-70</span>：较高压力，建议关注</li>
+                  <li>• <span className="text-red-700 font-medium">70-100</span>：高压力，需要休息和放松</li>
+                </ul>
+              </div>
+            </div>
+
             {/* 数据表格 - 分页 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <div className="flex justify-between items-center mb-6">
@@ -286,9 +499,14 @@ export default function GarminPage() {
                     <tr>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">日期</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">睡眠分数</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">深睡</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">快速眼动</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">清醒</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">睡眠时长</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">小睡</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">平均心率</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">静息心率</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">HRV</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">步数</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">活动分钟</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">身体电量</th>
@@ -313,8 +531,44 @@ export default function GarminPage() {
                             {item.sleep_score || '-'}
                           </span>
                         </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className="font-semibold text-purple-700">
+                            {item.deep_sleep_duration !== null && item.deep_sleep_duration !== undefined ? 
+                              (item.deep_sleep_duration >= 60 ? 
+                                `${Math.floor(item.deep_sleep_duration / 60)}h${item.deep_sleep_duration % 60}m` : 
+                                `${item.deep_sleep_duration}m`) : 
+                              '-'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className="font-semibold text-indigo-700">
+                            {item.rem_sleep_duration !== null && item.rem_sleep_duration !== undefined ? 
+                              (item.rem_sleep_duration >= 60 ? 
+                                `${Math.floor(item.rem_sleep_duration / 60)}h${item.rem_sleep_duration % 60}m` : 
+                                `${item.rem_sleep_duration}m`) : 
+                              '-'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className="font-semibold text-orange-700">
+                            {item.awake_duration !== null && item.awake_duration !== undefined ? 
+                              (item.awake_duration >= 60 ? 
+                                `${Math.floor(item.awake_duration / 60)}h${item.awake_duration % 60}m` : 
+                                `${item.awake_duration}m`) : 
+                              '-'}
+                          </span>
+                        </td>
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
                           {item.total_sleep_duration ? `${Math.floor(item.total_sleep_duration / 60)}h${item.total_sleep_duration % 60}m` : '-'}
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className="font-semibold text-teal-700">
+                            {item.nap_duration !== null && item.nap_duration !== undefined ? 
+                              (item.nap_duration >= 60 ? 
+                                `${Math.floor(item.nap_duration / 60)}h${item.nap_duration % 60}m` : 
+                                `${item.nap_duration}m`) : 
+                              '-'}
+                          </span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
                           {item.avg_heart_rate || '-'}
@@ -325,6 +579,15 @@ export default function GarminPage() {
                             item.resting_heart_rate && item.resting_heart_rate > 80 ? 'text-red-700' : 'text-gray-900'
                           }`}>
                             {item.resting_heart_rate || '-'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className={`font-semibold ${
+                            item.hrv && item.hrv >= 50 ? 'text-green-700' :
+                            item.hrv && item.hrv >= 30 ? 'text-blue-700' :
+                            item.hrv && item.hrv < 30 ? 'text-orange-700' : 'text-gray-900'
+                          }`}>
+                            {item.hrv ? `${item.hrv.toFixed(1)} ms` : '-'}
                           </span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
@@ -342,11 +605,15 @@ export default function GarminPage() {
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
                           {item.body_battery_charged || '-'}
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-sm">
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
                           <span className={`font-semibold ${
-                            item.stress_level && item.stress_level > 50 ? 'text-orange-700' : 'text-gray-900'
+                            item.stress_level === null || item.stress_level === undefined ? 'text-gray-500' :
+                            item.stress_level >= 70 ? 'text-red-700' :
+                            item.stress_level >= 50 ? 'text-orange-700' :
+                            item.stress_level >= 30 ? 'text-yellow-700' :
+                            'text-green-700'
                           }`}>
-                            {item.stress_level || '-'}
+                            {item.stress_level !== null && item.stress_level !== undefined ? item.stress_level : '-'}
                           </span>
                         </td>
                       </tr>
@@ -479,7 +746,7 @@ export default function GarminPage() {
               <h2 className="text-2xl font-bold mb-6 text-gray-900">睡眠质量分析</h2>
               {sleepAnalysis.data.status === 'success' ? (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
                       <p className="text-sm font-semibold text-gray-700 mb-2">平均睡眠分数</p>
                       <p className="text-3xl font-bold text-blue-700">{sleepAnalysis.data.average_sleep_score}</p>
@@ -496,8 +763,142 @@ export default function GarminPage() {
                       <p className="text-sm font-semibold text-gray-700 mb-2">REM睡眠</p>
                       <p className="text-3xl font-bold text-yellow-700">{sleepAnalysis.data.average_rem_sleep_minutes?.toFixed(0)}m</p>
                     </div>
+                    <div className="p-5 bg-orange-50 rounded-xl border-2 border-orange-200">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">清醒时间</p>
+                      <p className="text-3xl font-bold text-orange-700">{sleepAnalysis.data.average_awake_minutes?.toFixed(0)}m</p>
+                    </div>
                   </div>
                   
+                  {/* 深度睡眠趋势图 */}
+                  {sleepAnalysis.data.daily_data && sleepAnalysis.data.daily_data.length > 0 && (
+                    <div className="mt-6 bg-white p-6 rounded-xl border-2 border-gray-200">
+                      <h3 className="text-xl font-bold mb-4 text-gray-900">深度睡眠趋势</h3>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart 
+                          data={sleepAnalysis.data.daily_data
+                            .slice()
+                            .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                            .map((item: any) => ({
+                              date: format(new Date(item.date), 'MM-dd'),
+                              deepSleep: item.deep_sleep_duration ? Math.floor(item.deep_sleep_duration / 60) : null,
+                              remSleep: item.rem_sleep_duration ? Math.floor(item.rem_sleep_duration / 60) : null,
+                              awake: item.awake_duration ? Math.floor(item.awake_duration / 60) : null,
+                            }))}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#6b7280"
+                            style={{ fontSize: '12px', fontWeight: 500 }}
+                          />
+                          <YAxis 
+                            stroke="#6b7280"
+                            style={{ fontSize: '12px', fontWeight: 500 }}
+                            label={{ value: '时长 (小时)', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fontWeight: 600 } }}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'white', 
+                              border: '2px solid #e5e7eb',
+                              borderRadius: '8px',
+                              fontSize: '14px',
+                              fontWeight: 500
+                            }}
+                            formatter={(value: any) => value ? `${value}小时` : '-'}
+                          />
+                          <Legend 
+                            wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="deepSleep"
+                            stroke="#8b5cf6"
+                            strokeWidth={3}
+                            dot={{ fill: '#8b5cf6', r: 5 }}
+                            name="深度睡眠"
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="remSleep"
+                            stroke="#6366f1"
+                            strokeWidth={3}
+                            dot={{ fill: '#6366f1', r: 5 }}
+                            name="快速眼动"
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="awake"
+                            stroke="#f59e0b"
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            dot={{ fill: '#f59e0b', r: 4 }}
+                            name="清醒时间"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      
+                      {/* 深度睡眠解读 */}
+                      <div className="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <h4 className="text-lg font-bold mb-3 text-purple-900">深度睡眠解读</h4>
+                        <div className="space-y-2 text-gray-800">
+                          <p className="font-medium">
+                            <span className="text-purple-700 font-bold">平均深度睡眠：{sleepAnalysis.data.average_deep_sleep_minutes?.toFixed(0)}分钟</span>
+                          </p>
+                          {sleepAnalysis.data.average_deep_sleep_minutes && (
+                            <div className="text-sm leading-6">
+                              {sleepAnalysis.data.average_deep_sleep_minutes >= 90 ? (
+                                <p className="text-green-700 font-semibold">✅ 优秀：深度睡眠充足，有助于身体恢复和免疫系统功能。</p>
+                              ) : sleepAnalysis.data.average_deep_sleep_minutes >= 60 ? (
+                                <p className="text-blue-700 font-semibold">👍 良好：深度睡眠在正常范围内，继续保持。</p>
+                              ) : (
+                                <p className="text-orange-700 font-semibold">⚠️ 不足：深度睡眠偏少，建议改善睡眠环境，避免睡前使用电子设备。</p>
+                              )}
+                              <p className="mt-2 text-gray-700">
+                                深度睡眠是睡眠周期中最关键的阶段，占总睡眠的15-20%为佳。它有助于：
+                              </p>
+                              <ul className="list-disc list-inside ml-2 mt-1 text-gray-600">
+                                <li>身体修复和肌肉恢复</li>
+                                <li>增强免疫系统</li>
+                                <li>促进生长激素分泌</li>
+                                <li>巩固记忆和学习能力</li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 清醒时间解读 */}
+                      {sleepAnalysis.data.average_awake_minutes && (
+                        <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
+                          <h4 className="text-lg font-bold mb-3 text-orange-900">清醒时间解读</h4>
+                          <div className="space-y-2 text-gray-800">
+                            <p className="font-medium">
+                              <span className="text-orange-700 font-bold">平均清醒时间：{sleepAnalysis.data.average_awake_minutes?.toFixed(0)}分钟</span>
+                            </p>
+                            <div className="text-sm leading-6">
+                              {sleepAnalysis.data.average_awake_minutes <= 30 ? (
+                                <p className="text-green-700 font-semibold">✅ 优秀：夜间清醒时间很少，睡眠连续性良好。</p>
+                              ) : sleepAnalysis.data.average_awake_minutes <= 60 ? (
+                                <p className="text-blue-700 font-semibold">👍 正常：清醒时间在可接受范围内。</p>
+                              ) : (
+                                <p className="text-red-700 font-semibold">⚠️ 偏多：夜间清醒时间较长，可能影响睡眠质量。建议检查睡眠环境、避免睡前摄入咖啡因或酒精。</p>
+                              )}
+                              <p className="mt-2 text-gray-700">
+                                夜间清醒时间越少越好，理想情况下应少于30分钟。过多的清醒时间可能由以下因素引起：
+                              </p>
+                              <ul className="list-disc list-inside ml-2 mt-1 text-gray-600">
+                                <li>睡眠环境不适（温度、光线、噪音）</li>
+                                <li>睡前摄入咖啡因或酒精</li>
+                                <li>压力或焦虑</li>
+                                <li>不规律的作息时间</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                     <h3 className="text-lg font-bold mb-3 text-gray-900">质量评估</h3>
                     <p className="text-lg font-semibold text-gray-900">

@@ -46,6 +46,9 @@ class GarminAnalysisService:
         rem_sleep_durations = [d.rem_sleep_duration for d in sleep_data if d.rem_sleep_duration]
         avg_rem_sleep = sum(rem_sleep_durations) / len(rem_sleep_durations) if rem_sleep_durations else 0
         
+        awake_durations = [d.awake_duration for d in sleep_data if d.awake_duration]
+        avg_awake = sum(awake_durations) / len(awake_durations) if awake_durations else 0
+        
         # 评估睡眠质量
         quality_assessment = self._assess_sleep_quality(avg_sleep_score, avg_sleep_duration, avg_deep_sleep)
         
@@ -57,8 +60,9 @@ class GarminAnalysisService:
             "average_sleep_duration_hours": round(avg_sleep_duration / 60, 1),
             "average_deep_sleep_minutes": round(avg_deep_sleep, 1),
             "average_rem_sleep_minutes": round(avg_rem_sleep, 1),
+            "average_awake_minutes": round(avg_awake, 1),
             "quality_assessment": quality_assessment,
-            "recommendations": self._get_sleep_recommendations(avg_sleep_score, avg_sleep_duration, avg_deep_sleep),
+            "recommendations": self._get_sleep_recommendations(avg_sleep_score, avg_sleep_duration, avg_deep_sleep, avg_awake),
             "daily_data": [
                 {
                     "date": d.record_date.isoformat(),
@@ -66,6 +70,7 @@ class GarminAnalysisService:
                     "total_sleep_duration": d.total_sleep_duration,
                     "deep_sleep_duration": d.deep_sleep_duration,
                     "rem_sleep_duration": d.rem_sleep_duration,
+                    "awake_duration": d.awake_duration,
                 }
                 for d in sleep_data
             ]
@@ -332,7 +337,8 @@ class GarminAnalysisService:
         self,
         sleep_score: float,
         sleep_duration: float,
-        deep_sleep: float
+        deep_sleep: float,
+        awake: float = 0
     ) -> List[str]:
         """获取睡眠建议"""
         recommendations = []
@@ -345,6 +351,9 @@ class GarminAnalysisService:
         
         if deep_sleep < 60:
             recommendations.append("深度睡眠不足，建议睡前避免使用电子设备，保持卧室环境舒适")
+        
+        if awake > 60:  # 清醒时间超过60分钟
+            recommendations.append(f"夜间清醒时间较长（{round(awake, 0)}分钟），建议检查睡眠环境，避免睡前摄入咖啡因或酒精")
         
         if not recommendations:
             recommendations.append("睡眠质量良好，继续保持")
