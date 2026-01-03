@@ -1,0 +1,20 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+sqlalchemy>=2.0.23
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+openai>=1.3.0
+httpx>=0.25.2
+python-dateutil>=2.8.2
+pandas>=2.1.3
+numpy>=1.26.2
+alembic>=1.12.1
+python-multipart>=0.0.6
+# Garmin Connect集成（可选，社区库）
+# garminconnect>=0.2.0  # 取消注释以启用Garmin Connect集成
+# 测试依赖
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
+

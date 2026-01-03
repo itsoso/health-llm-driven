@@ -1,0 +1,57 @@
+"""基础健康数据API"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from datetime import date
+from app.database import get_db
+from app.schemas.basic_health import BasicHealthDataCreate, BasicHealthDataResponse
+from app.models.basic_health import BasicHealthData
+
+router = APIRouter()
+
+
+@router.post("/", response_model=BasicHealthDataResponse)
+def create_basic_health_data(
+    data: BasicHealthDataCreate,
+    db: Session = Depends(get_db)
+):
+    """创建基础健康数据"""
+    # 如果未提供BMI，自动计算
+    if data.weight and data.height and not data.bmi:
+        data.bmi = data.weight / ((data.height / 100) ** 2)
+    
+    db_data = BasicHealthData(**data.model_dump())
+    db.add(db_data)
+    db.commit()
+    db.refresh(db_data)
+    return db_data
+
+
+@router.get("/user/{user_id}", response_model=List[BasicHealthDataResponse])
+def get_user_basic_health_data(
+    user_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """获取用户的基础健康数据"""
+    data_list = db.query(BasicHealthData).filter(
+        BasicHealthData.user_id == user_id
+    ).order_by(BasicHealthData.record_date.desc()).offset(skip).limit(limit).all()
+    return data_list
+
+
+@router.get("/user/{user_id}/latest", response_model=BasicHealthDataResponse)
+def get_latest_basic_health_data(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取用户最新的基础健康数据"""
+    data = db.query(BasicHealthData).filter(
+        BasicHealthData.user_id == user_id
+    ).order_by(BasicHealthData.record_date.desc()).first()
+    
+    if not data:
+        raise HTTPException(status_code=404, detail="未找到基础健康数据")
+    return data
+
