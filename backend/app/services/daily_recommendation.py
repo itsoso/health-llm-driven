@@ -1,12 +1,14 @@
 """每日健康分析与建议服务"""
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
 from app.models.user import User
 from app.models.basic_health import BasicHealthData
+from app.models.daily_recommendation import DailyRecommendation
 from app.services.llm_health_analyzer import llm_analyzer
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +590,7 @@ class DailyRecommendationService:
     
     def _generate_daily_goals(
         self,
-        yesterday: GarminData,
+        yesterday: Optional[GarminData],
         sleep: Dict,
         activity: Dict,
         stress: Dict
@@ -597,7 +599,7 @@ class DailyRecommendationService:
         goals = []
         
         # 步数目标
-        yesterday_steps = yesterday.steps or 0
+        yesterday_steps = yesterday.steps if yesterday else 0
         if yesterday_steps < 10000:
             target_steps = min(yesterday_steps + 2000, 10000)
             goals.append({
@@ -663,4 +665,238 @@ class DailyRecommendationService:
         })
         
         return goals
+    
+    def get_or_generate_recommendations(
+        self,
+        db: Session,
+        user_id: int,
+        use_llm: bool = True
+    ) -> Dict[str, Any]:
+        """
+        获取或生成每日建议（带缓存）
+        
+        检查数据库中是否有今天的建议，如果没有则生成并保存
+        返回1天和7天的建议
+        """
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        
+        # 检查缓存
+        cached = db.query(DailyRecommendation).filter(
+            DailyRecommendation.user_id == user_id,
+            DailyRecommendation.recommendation_date == today
+        ).first()
+        
+        if cached and cached.one_day_recommendation and cached.seven_day_recommendation:
+            logger.info(f"使用缓存的建议数据（用户 {user_id}，日期 {today}）")
+            return {
+                "status": "success",
+                "date": today.isoformat(),
+                "analysis_date": cached.analysis_date.isoformat(),
+                "one_day": cached.one_day_recommendation,
+                "seven_day": cached.seven_day_recommendation,
+                "cached": True
+            }
+        
+        # 生成新建议
+        logger.info(f"生成新的建议数据（用户 {user_id}，日期 {today}）")
+        
+        # 生成1天建议（基于昨天的数据）
+        one_day_rec = self.generate_one_day_recommendation(db, user_id, use_llm)
+        
+        # 生成7天建议（基于最近7天的数据）
+        seven_day_rec = self.generate_seven_day_recommendation(db, user_id, use_llm)
+        
+        # 保存到数据库
+        if cached:
+            # 更新现有记录
+            cached.one_day_recommendation = one_day_rec
+            cached.seven_day_recommendation = seven_day_rec
+            cached.analysis_date = yesterday
+            cached.updated_at = datetime.utcnow()
+        else:
+            # 创建新记录
+            cached = DailyRecommendation(
+                user_id=user_id,
+                recommendation_date=today,
+                analysis_date=yesterday,
+                one_day_recommendation=one_day_rec,
+                seven_day_recommendation=seven_day_rec
+            )
+            db.add(cached)
+        
+        db.commit()
+        db.refresh(cached)
+        
+        return {
+            "status": "success",
+            "date": today.isoformat(),
+            "analysis_date": yesterday.isoformat(),
+            "one_day": one_day_rec,
+            "seven_day": seven_day_rec,
+            "cached": False
+        }
+    
+    def generate_one_day_recommendation(
+        self,
+        db: Session,
+        user_id: int,
+        use_llm: bool = True
+    ) -> Dict[str, Any]:
+        """生成1天建议（基于昨天的数据）"""
+        if use_llm:
+            return self.generate_daily_summary_with_llm(db, user_id)
+        else:
+            result = self.generate_daily_summary(db, user_id)
+            # 清理内部字段
+            result.pop("_rule_analysis", None)
+            result.pop("_yesterday_data", None)
+            result.pop("_recent_data", None)
+            return result
+    
+    def generate_seven_day_recommendation(
+        self,
+        db: Session,
+        user_id: int,
+        use_llm: bool = True
+    ) -> Dict[str, Any]:
+        """生成7天建议（基于最近7天的数据）"""
+        today = date.today()
+        end_date = today - timedelta(days=1)  # 昨天
+        start_date = end_date - timedelta(days=6)  # 最近7天
+        
+        # 获取最近7天的数据
+        recent_data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= start_date,
+            GarminData.record_date <= end_date
+        ).order_by(GarminData.record_date.desc()).all()
+        
+        if not recent_data:
+            return {
+                "status": "no_data",
+                "message": "暂无最近7天的数据",
+                "date": today.isoformat(),
+                "analysis_period": f"{start_date.isoformat()} 至 {end_date.isoformat()}"
+            }
+        
+        # 获取用户信息
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        # 计算7天平均值
+        sleep_scores = [d.sleep_score for d in recent_data if d.sleep_score]
+        avg_sleep_score = sum(sleep_scores) / len(sleep_scores) if sleep_scores else None
+        
+        total_sleep_durations = [d.total_sleep_duration for d in recent_data if d.total_sleep_duration]
+        avg_sleep_duration = sum(total_sleep_durations) / len(total_sleep_durations) if total_sleep_durations else None
+        
+        steps_list = [d.steps for d in recent_data if d.steps]
+        avg_steps = sum(steps_list) / len(steps_list) if steps_list else None
+        
+        resting_hrs = [d.resting_heart_rate for d in recent_data if d.resting_heart_rate]
+        avg_resting_hr = sum(resting_hrs) / len(resting_hrs) if resting_hrs else None
+        
+        hrvs = [d.hrv for d in recent_data if d.hrv]
+        avg_hrv = sum(hrvs) / len(hrvs) if hrvs else None
+        
+        stress_levels = [d.stress_level for d in recent_data if d.stress_level]
+        avg_stress = sum(stress_levels) / len(stress_levels) if stress_levels else None
+        
+        body_batteries = [d.body_battery_charged for d in recent_data if d.body_battery_charged]
+        avg_body_battery = sum(body_batteries) / len(body_batteries) if body_batteries else None
+        
+        # 使用最后一天的数据作为主要分析对象，但结合7天趋势
+        yesterday_data = recent_data[0] if recent_data else None
+        
+        # 生成分析
+        sleep_analysis = self.analyze_sleep(yesterday_data, recent_data)
+        activity_analysis = self.analyze_activity(yesterday_data, recent_data)
+        heart_rate_analysis = self.analyze_heart_rate(yesterday_data, recent_data)
+        stress_analysis = self.analyze_stress_and_energy(yesterday_data)
+        
+        # 综合评估
+        overall_status = self._calculate_overall_status(
+            sleep_analysis, activity_analysis, heart_rate_analysis, stress_analysis
+        )
+        
+        # 生成优先建议
+        priority_recommendations = self._generate_priority_recommendations(
+            sleep_analysis, activity_analysis, heart_rate_analysis, stress_analysis
+        )
+        
+        # 生成每日目标
+        daily_goals = self._generate_daily_goals(
+            yesterday_data, sleep_analysis, activity_analysis, stress_analysis
+        )
+        
+        result = {
+            "status": "success",
+            "date": today.isoformat(),
+            "analysis_date": end_date.isoformat(),
+            "analysis_period": f"{start_date.isoformat()} 至 {end_date.isoformat()}",
+            "user": user.name if user else None,
+            "sleep_analysis": sleep_analysis,
+            "activity_analysis": activity_analysis,
+            "heart_rate_analysis": heart_rate_analysis,
+            "stress_analysis": stress_analysis,
+            "overall_status": overall_status,
+            "priority_recommendations": priority_recommendations,
+            "daily_goals": daily_goals,
+            "averages": {
+                "sleep_score": round(avg_sleep_score, 1) if avg_sleep_score else None,
+                "sleep_duration_minutes": round(avg_sleep_duration, 1) if avg_sleep_duration else None,
+                "steps": round(avg_steps, 0) if avg_steps else None,
+                "resting_heart_rate": round(avg_resting_hr, 1) if avg_resting_hr else None,
+                "hrv": round(avg_hrv, 1) if avg_hrv else None,
+                "stress_level": round(avg_stress, 1) if avg_stress else None,
+                "body_battery": round(avg_body_battery, 1) if avg_body_battery else None,
+            },
+            "raw_data": {
+                "sleep_score": yesterday_data.sleep_score if yesterday_data else None,
+                "sleep_duration_minutes": yesterday_data.total_sleep_duration if yesterday_data else None,
+                "steps": yesterday_data.steps if yesterday_data else None,
+                "resting_heart_rate": yesterday_data.resting_heart_rate if yesterday_data else None,
+                "stress_level": yesterday_data.stress_level if yesterday_data else None,
+                "body_battery_highest": yesterday_data.body_battery_most_charged if yesterday_data else None,
+            }
+        }
+        
+        # 如果启用LLM，添加LLM分析
+        if use_llm and yesterday_data:
+            try:
+                llm_result = llm_analyzer.analyze_daily_health(
+                    db=db,
+                    user_id=user_id,
+                    yesterday_data=yesterday_data,
+                    recent_data=recent_data,
+                    rule_analysis={
+                        "sleep": sleep_analysis,
+                        "activity": activity_analysis,
+                        "heart_rate": heart_rate_analysis,
+                        "stress": stress_analysis
+                    }
+                )
+                result["llm_analysis"] = llm_result
+                
+                if llm_result.get("available") and "today_actions" in llm_result:
+                    llm_actions = llm_result.get("today_actions", [])
+                    existing_recs = set(priority_recommendations)
+                    combined_recs = list(priority_recommendations)
+                    for action in llm_actions:
+                        if action not in existing_recs:
+                            combined_recs.append(action)
+                    result["enhanced_recommendations"] = combined_recs[:7]
+                    
+                    result["ai_insights"] = {
+                        "health_summary": llm_result.get("summary", ""),
+                        "key_insights": llm_result.get("insights", []),
+                        "today_focus": llm_result.get("focus", ""),
+                        "encouragement": llm_result.get("encouragement", ""),
+                        "warnings": llm_result.get("warnings", [])
+                    }
+            except Exception as e:
+                logger.error(f"LLM分析失败: {e}")
+                result["llm_analysis"] = {"available": False, "error": str(e)}
+        
+        return result
 

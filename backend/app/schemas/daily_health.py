@@ -19,6 +19,7 @@ class GarminDataCreate(BaseModel):
     rem_sleep_duration: Optional[int] = None
     light_sleep_duration: Optional[int] = None
     awake_duration: Optional[int] = None
+    nap_duration: Optional[int] = None
     sleep_start_time: Optional[time] = None
     sleep_end_time: Optional[time] = None
     body_battery_charged: Optional[int] = None
@@ -47,6 +48,7 @@ class GarminDataResponse(BaseModel):
     rem_sleep_duration: Optional[int]
     light_sleep_duration: Optional[int]
     awake_duration: Optional[int]
+    nap_duration: Optional[int]
     sleep_start_time: Optional[time]
     sleep_end_time: Optional[time]
     body_battery_charged: Optional[int]

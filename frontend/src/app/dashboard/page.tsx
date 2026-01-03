@@ -54,13 +54,6 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50">
       <div className="max-w-7xl mx-auto">
-        <Link href="/" className="text-blue-700 hover:text-blue-800 hover:underline mb-4 inline-block font-medium">← 返回首页</Link>
-        
-        <div className="mb-6">
-          <h1 className="text-4xl font-bold mb-2 text-gray-900">📊 健康仪表盘</h1>
-          <p className="text-gray-600 font-medium">全面了解您的健康状况</p>
-        </div>
-
         {/* 关键指标卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-blue-200 hover:shadow-xl transition-shadow">

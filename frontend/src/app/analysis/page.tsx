@@ -3,18 +3,23 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { healthAnalysisApi } from '@/services/api';
-import Link from 'next/link';
 
 export default function AnalysisPage() {
   const [userId] = useState(1); // 临时使用固定用户ID
+  const [forceRefresh, setForceRefresh] = useState(false);
 
   const { data: response, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['health-analysis', userId],
-    queryFn: () => healthAnalysisApi.analyzeIssues(userId),
+    queryKey: ['health-analysis', userId, forceRefresh],
+    queryFn: () => healthAnalysisApi.analyzeIssues(userId, forceRefresh),
   });
 
   // 实际数据在 response.data 中
   const analysis = response?.data;
+  
+  const handleRefresh = () => {
+    setForceRefresh(true);
+    refetch().then(() => setForceRefresh(false));
+  };
 
   if (isLoading) {
     return (
@@ -33,12 +38,16 @@ export default function AnalysisPage() {
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <div className="max-w-4xl mx-auto">
-        <Link href="/" className="text-blue-700 hover:text-blue-800 hover:underline mb-4 inline-block font-medium">← 返回首页</Link>
-        
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">🏥 健康问题分析</h1>
+          <div>
+            {analysis?.cached && (
+              <span className="text-xs px-3 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                ✓ 缓存数据 ({analysis.analysis_date})
+              </span>
+            )}
+          </div>
           <button
-            onClick={() => refetch()}
+            onClick={handleRefresh}
             disabled={isFetching}
             className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
           >

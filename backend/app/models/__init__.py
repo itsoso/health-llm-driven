@@ -13,6 +13,8 @@ from app.models.daily_health import (
 )
 from app.models.health_checkin import HealthCheckin
 from app.models.goal import Goal, GoalProgress
+from app.models.daily_recommendation import DailyRecommendation
+from app.models.health_analysis_cache import HealthAnalysisCache
 
 __all__ = [
     "User",
@@ -29,5 +31,7 @@ __all__ = [
     "HealthCheckin",
     "Goal",
     "GoalProgress",
+    "DailyRecommendation",
+    "HealthAnalysisCache",
 ]
 

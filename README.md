@@ -133,6 +133,7 @@ DATABASE_URL=sqlite:///./health.db # 默认使用 SQLite 文件存储
 - [核心架构说明](./ARCHITECTURE.md) - **推荐阅读：了解系统设计与模块划分**
 - [运行指南](./RUN.md) - 详细的运行说明和故障排除
 - [Garmin 同步指南](./backend/GARMIN_SYNC_GUIDE.md) - 如何获取和同步 Garmin 数据
+- [目标管理指南](./backend/GOAL_MANAGEMENT_GUIDE.md) - 如何设置和追踪健康目标
 - [快速开始](./QUICKSTART.md) - 基本使用流程
 - [测试说明](./backend/tests/README.md) - 测试相关文档
 

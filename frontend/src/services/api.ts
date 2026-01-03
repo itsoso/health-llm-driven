@@ -93,7 +93,8 @@ export const dataCollectionApi = {
 
 // 健康分析
 export const healthAnalysisApi = {
-  analyzeIssues: (userId: number) => api.get(`/analysis/user/${userId}/issues`),
+  analyzeIssues: (userId: number, forceRefresh: boolean = false) => 
+    api.get(`/analysis/user/${userId}/issues`, { params: { force_refresh: forceRefresh } }),
   getAdvice: (userId: number, checkinDate: string) =>
     api.get(`/analysis/user/${userId}/advice`, { params: { checkin_date: checkinDate } }),
 };
@@ -116,5 +117,13 @@ export const garminAnalysisApi = {
 export const dataCollectionStatusApi = {
   getSyncStatus: (userId: number, days: number = 30) =>
     api.get(`/data-collection/garmin/sync-status/${userId}`, { params: { days } }),
+};
+
+// 每日建议
+export const dailyRecommendationApi = {
+  getRecommendations: (userId: number, useLlm: boolean = true) =>
+    api.get(`/daily-recommendation/user/${userId}/recommendations`, { params: { use_llm: useLlm } }),
+  getToday: (userId: number, useLlm: boolean = true) =>
+    api.get(`/daily-recommendation/user/${userId}/today`, { params: { use_llm: useLlm } }),
 };
 
