@@ -97,21 +97,21 @@ export default function GarminPage() {
   }
 
   return (
-    <main className="min-h-screen p-8 bg-gray-50">
+    <main className="min-h-screen p-8 bg-gradient-to-br from-gray-50 via-white to-blue-50">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-4">Garmin数据展示</h1>
+          <h1 className="text-3xl font-bold mb-4 text-gray-900">📊 Garmin数据展示</h1>
           
           {/* 数据范围选择 */}
           <div className="flex items-center gap-4 mb-4">
-            <label className="text-sm font-medium">查看范围:</label>
+            <label className="text-sm font-semibold text-gray-700">查看范围:</label>
             <select
               value={days}
               onChange={(e) => {
                 setDays(Number(e.target.value));
                 setCurrentPage(1); // 切换范围时重置页码
               }}
-              className="px-3 py-2 border rounded-md"
+              className="px-4 py-2 border-2 border-gray-300 rounded-lg bg-white text-gray-900 font-medium focus:border-blue-500 focus:outline-none shadow-sm"
             >
               <option value={7}>最近7天</option>
               <option value={30}>最近30天</option>
@@ -124,18 +124,18 @@ export default function GarminPage() {
 
           {/* 同步状态 */}
           {syncStatus?.data && (
-            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <div className="mb-4 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 shadow-md">
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-sm text-gray-600">数据覆盖情况</p>
-                  <p className="text-lg font-semibold">
+                  <p className="text-sm font-medium text-gray-700 mb-1">数据覆盖情况</p>
+                  <p className="text-2xl font-bold text-gray-900">
                     {syncStatus.data.days_with_data} / {syncStatus.data.total_days} 天
-                    ({syncStatus.data.coverage_percentage}%)
+                    <span className="text-lg text-blue-700 ml-2">({syncStatus.data.coverage_percentage}%)</span>
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-gray-600">日期范围</p>
-                  <p className="text-sm">
+                  <p className="text-sm font-medium text-gray-700 mb-1">日期范围</p>
+                  <p className="text-base font-semibold text-gray-900">
                     {syncStatus.data.date_range.start} 至 {syncStatus.data.date_range.end}
                   </p>
                 </div>
@@ -145,25 +145,26 @@ export default function GarminPage() {
         </div>
 
         {/* 标签页 */}
-        <div className="mb-6 border-b">
-          <div className="flex space-x-4">
+        <div className="mb-6 border-b-2 border-gray-200">
+          <div className="flex space-x-2">
             {[
-              { id: 'data', label: '原始数据' },
-              { id: 'sleep', label: '睡眠分析' },
-              { id: 'heart', label: '心率分析' },
-              { id: 'battery', label: '身体电量' },
-              { id: 'activity', label: '活动分析' },
-              { id: 'comprehensive', label: '综合分析' },
+              { id: 'data', label: '原始数据', icon: '📈' },
+              { id: 'sleep', label: '睡眠分析', icon: '😴' },
+              { id: 'heart', label: '心率分析', icon: '❤️' },
+              { id: 'battery', label: '身体电量', icon: '🔋' },
+              { id: 'activity', label: '活动分析', icon: '🏃' },
+              { id: 'comprehensive', label: '综合分析', icon: '📊' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2 border-b-2 transition-colors ${
+                className={`px-5 py-3 border-b-3 transition-all font-semibold ${
                   activeTab === tab.id
-                    ? 'border-primary-600 text-primary-600 font-semibold'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-blue-600 text-blue-700 bg-blue-50'
+                    : 'border-transparent text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
+                <span className="mr-2">{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
@@ -173,125 +174,177 @@ export default function GarminPage() {
         {/* 原始数据视图 */}
         {activeTab === 'data' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">数据趋势图</h2>
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">数据趋势图</h2>
               <ResponsiveContainer width="100%" height={400}>
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <Tooltip />
-                  <Legend />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    yAxisId="left" 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    yAxisId="right" 
+                    orientation="right"
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500
+                    }}
+                  />
+                  <Legend 
+                    wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                  />
                   <Line
                     yAxisId="left"
                     type="monotone"
                     dataKey="sleepScore"
-                    stroke="#8884d8"
+                    stroke="#6366f1"
+                    strokeWidth={3}
+                    dot={{ fill: '#6366f1', r: 4 }}
                     name="睡眠分数"
                   />
                   <Line
                     yAxisId="left"
                     type="monotone"
                     dataKey="avgHeartRate"
-                    stroke="#82ca9d"
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    dot={{ fill: '#10b981', r: 4 }}
                     name="平均心率"
                   />
                   <Line
                     yAxisId="right"
                     type="monotone"
                     dataKey="steps"
-                    stroke="#ffc658"
+                    stroke="#f59e0b"
+                    strokeWidth={3}
+                    dot={{ fill: '#f59e0b', r: 4 }}
                     name="步数"
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">步数统计</h2>
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">步数统计</h2>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="steps" fill="#8884d8" name="步数" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis 
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500
+                    }}
+                  />
+                  <Legend 
+                    wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                  />
+                  <Bar dataKey="steps" fill="#6366f1" name="步数" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
             {/* 数据表格 - 分页 */}
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">详细数据列表</h2>
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">详细数据列表</h2>
                 {garminData?.data && garminData.data.length > 0 && (
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm font-semibold text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg">
                     共 {garminData.data.length} 条记录
                   </div>
                 )}
               </div>
               
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gradient-to-r from-gray-100 to-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">日期</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">睡眠分数</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">睡眠时长</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">平均心率</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">静息心率</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">步数</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">活动分钟</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">身体电量</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">压力</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">日期</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">睡眠分数</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">睡眠时长</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">平均心率</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">静息心率</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">步数</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">活动分钟</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">身体电量</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">压力</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {garminData?.data
                       ?.slice((currentPage - 1) * pageSize, currentPage * pageSize)
                       .map((item: any) => (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                      <tr key={item.id} className="hover:bg-blue-50 transition-colors">
+                        <td className="px-5 py-4 whitespace-nowrap text-sm font-semibold text-gray-900 border-r border-gray-100">
                           {format(new Date(item.record_date), 'yyyy-MM-dd')}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <span className={`px-2 py-1 rounded ${
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className={`px-3 py-1.5 rounded-lg font-semibold ${
                             item.sleep_score >= 85 ? 'bg-green-100 text-green-800' :
                             item.sleep_score >= 70 ? 'bg-blue-100 text-blue-800' :
                             item.sleep_score >= 50 ? 'bg-yellow-100 text-yellow-800' :
-                            item.sleep_score ? 'bg-red-100 text-red-800' : ''
+                            item.sleep_score ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600'
                           }`}>
                             {item.sleep_score || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
                           {item.total_sleep_duration ? `${Math.floor(item.total_sleep_duration / 60)}h${item.total_sleep_duration % 60}m` : '-'}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">{item.avg_heart_rate || '-'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <span className={`${
-                            item.resting_heart_rate && item.resting_heart_rate < 60 ? 'text-green-600 font-medium' :
-                            item.resting_heart_rate && item.resting_heart_rate > 80 ? 'text-red-600' : ''
+                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
+                          {item.avg_heart_rate || '-'}
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className={`font-semibold ${
+                            item.resting_heart_rate && item.resting_heart_rate < 60 ? 'text-green-700' :
+                            item.resting_heart_rate && item.resting_heart_rate > 80 ? 'text-red-700' : 'text-gray-900'
                           }`}>
                             {item.resting_heart_rate || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <span className={`${
-                            item.steps >= 10000 ? 'text-green-600 font-medium' :
-                            item.steps >= 7000 ? 'text-blue-600' :
-                            item.steps < 5000 && item.steps ? 'text-orange-600' : ''
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className={`font-semibold ${
+                            item.steps >= 10000 ? 'text-green-700' :
+                            item.steps >= 7000 ? 'text-blue-700' :
+                            item.steps < 5000 && item.steps ? 'text-orange-700' : 'text-gray-900'
                           }`}>
                             {item.steps?.toLocaleString() || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">{item.active_minutes || '-'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">{item.body_battery_charged || '-'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          <span className={`${
-                            item.stress_level && item.stress_level > 50 ? 'text-orange-600' : ''
+                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
+                          {item.active_minutes || '-'}
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
+                          {item.body_battery_charged || '-'}
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm">
+                          <span className={`font-semibold ${
+                            item.stress_level && item.stress_level > 50 ? 'text-orange-700' : 'text-gray-900'
                           }`}>
                             {item.stress_level || '-'}
                           </span>
@@ -304,10 +357,10 @@ export default function GarminPage() {
               
               {/* 分页控件 */}
               {garminData?.data && garminData.data.length > pageSize && (
-                <div className="mt-4 flex items-center justify-between border-t pt-4">
-                  <div className="text-sm text-gray-500">
-                    显示第 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, garminData.data.length)} 条，
-                    共 {garminData.data.length} 条
+                <div className="mt-6 flex items-center justify-between border-t-2 border-gray-200 pt-5">
+                  <div className="text-sm font-semibold text-gray-700">
+                    显示第 <span className="text-blue-700">{(currentPage - 1) * pageSize + 1}</span> - <span className="text-blue-700">{Math.min(currentPage * pageSize, garminData.data.length)}</span> 条，
+                    共 <span className="text-gray-900">{garminData.data.length}</span> 条
                   </div>
                   
                   <div className="flex items-center gap-2">
@@ -315,7 +368,7 @@ export default function GarminPage() {
                     <button
                       onClick={() => setCurrentPage(1)}
                       disabled={currentPage === 1}
-                      className="px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
                     >
                       首页
                     </button>
@@ -324,7 +377,7 @@ export default function GarminPage() {
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
-                      className="px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
                     >
                       上一页
                     </button>
@@ -355,16 +408,16 @@ export default function GarminPage() {
                             <button
                               key={idx}
                               onClick={() => setCurrentPage(page)}
-                              className={`px-3 py-1 text-sm border rounded ${
+                              className={`px-4 py-2 text-sm font-bold border-2 rounded-lg transition-colors ${
                                 currentPage === page
-                                  ? 'bg-blue-600 text-white border-blue-600'
-                                  : 'hover:bg-gray-100'
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                  : 'border-gray-300 text-gray-700 hover:bg-gray-100 hover:border-gray-400'
                               }`}
                             >
                               {page}
                             </button>
                           ) : (
-                            <span key={idx} className="px-2 text-gray-400">...</span>
+                            <span key={idx} className="px-2 text-gray-500 font-semibold">...</span>
                           )
                         ));
                       })()}
@@ -374,7 +427,7 @@ export default function GarminPage() {
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(Math.ceil(garminData.data.length / pageSize), prev + 1))}
                       disabled={currentPage >= Math.ceil(garminData.data.length / pageSize)}
-                      className="px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
                     >
                       下一页
                     </button>
@@ -383,14 +436,14 @@ export default function GarminPage() {
                     <button
                       onClick={() => setCurrentPage(Math.ceil(garminData.data.length / pageSize))}
                       disabled={currentPage >= Math.ceil(garminData.data.length / pageSize)}
-                      className="px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
                     >
                       末页
                     </button>
                     
                     {/* 跳转 */}
-                    <div className="flex items-center gap-1 ml-4">
-                      <span className="text-sm text-gray-500">跳至</span>
+                    <div className="flex items-center gap-2 ml-4 pl-4 border-l-2 border-gray-200">
+                      <span className="text-sm font-semibold text-gray-700">跳至</span>
                       <input
                         type="number"
                         min={1}
@@ -402,9 +455,9 @@ export default function GarminPage() {
                             setCurrentPage(page);
                           }
                         }}
-                        className="w-16 px-2 py-1 text-sm border rounded text-center"
+                        className="w-16 px-2 py-1.5 text-sm font-semibold border-2 border-gray-300 rounded-lg text-center text-gray-900 focus:border-blue-500 focus:outline-none"
                       />
-                      <span className="text-sm text-gray-500">页</span>
+                      <span className="text-sm font-semibold text-gray-700">页</span>
                     </div>
                   </div>
                 </div>
@@ -422,32 +475,32 @@ export default function GarminPage() {
         {/* 睡眠分析 */}
         {activeTab === 'sleep' && sleepAnalysis?.data && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">睡眠质量分析</h2>
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">睡眠质量分析</h2>
               {sleepAnalysis.data.status === 'success' ? (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-gray-600">平均睡眠分数</p>
-                      <p className="text-2xl font-bold">{sleepAnalysis.data.average_sleep_score}</p>
+                    <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">平均睡眠分数</p>
+                      <p className="text-3xl font-bold text-blue-700">{sleepAnalysis.data.average_sleep_score}</p>
                     </div>
-                    <div className="p-4 bg-green-50 rounded-lg">
-                      <p className="text-sm text-gray-600">平均睡眠时长</p>
-                      <p className="text-2xl font-bold">{sleepAnalysis.data.average_sleep_duration_hours?.toFixed(1)}h</p>
+                    <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">平均睡眠时长</p>
+                      <p className="text-3xl font-bold text-green-700">{sleepAnalysis.data.average_sleep_duration_hours?.toFixed(1)}h</p>
                     </div>
-                    <div className="p-4 bg-purple-50 rounded-lg">
-                      <p className="text-sm text-gray-600">深度睡眠</p>
-                      <p className="text-2xl font-bold">{sleepAnalysis.data.average_deep_sleep_minutes?.toFixed(0)}m</p>
+                    <div className="p-5 bg-purple-50 rounded-xl border-2 border-purple-200">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">深度睡眠</p>
+                      <p className="text-3xl font-bold text-purple-700">{sleepAnalysis.data.average_deep_sleep_minutes?.toFixed(0)}m</p>
                     </div>
-                    <div className="p-4 bg-yellow-50 rounded-lg">
-                      <p className="text-sm text-gray-600">REM睡眠</p>
-                      <p className="text-2xl font-bold">{sleepAnalysis.data.average_rem_sleep_minutes?.toFixed(0)}m</p>
+                    <div className="p-5 bg-yellow-50 rounded-xl border-2 border-yellow-200">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">REM睡眠</p>
+                      <p className="text-3xl font-bold text-yellow-700">{sleepAnalysis.data.average_rem_sleep_minutes?.toFixed(0)}m</p>
                     </div>
                   </div>
                   
-                  <div className="mt-4">
-                    <h3 className="font-semibold mb-2">质量评估</h3>
-                    <p className="text-gray-700">
+                  <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">质量评估</h3>
+                    <p className="text-lg font-semibold text-gray-900">
                       {sleepAnalysis.data.quality_assessment?.overall === 'excellent' && '✅ 优秀'}
                       {sleepAnalysis.data.quality_assessment?.overall === 'good' && '👍 良好'}
                       {sleepAnalysis.data.quality_assessment?.overall === 'fair' && '⚠️ 一般'}
@@ -456,18 +509,18 @@ export default function GarminPage() {
                   </div>
 
                   {sleepAnalysis.data.recommendations && (
-                    <div className="mt-4">
-                      <h3 className="font-semibold mb-2">建议</h3>
-                      <ul className="list-disc list-inside space-y-1">
+                    <div className="mt-6 p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                      <h3 className="text-lg font-bold mb-3 text-blue-900">建议</h3>
+                      <ul className="list-disc list-inside space-y-2">
                         {sleepAnalysis.data.recommendations.map((rec: string, idx: number) => (
-                          <li key={idx} className="text-gray-700">{rec}</li>
+                          <li key={idx} className="text-gray-900 font-medium leading-7">{rec}</li>
                         ))}
                       </ul>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-gray-500">{sleepAnalysis.data.message}</p>
+                <p className="text-gray-700 font-medium">{sleepAnalysis.data.message}</p>
               )}
             </div>
           </div>
@@ -475,99 +528,99 @@ export default function GarminPage() {
 
         {/* 心率分析 */}
         {activeTab === 'heart' && heartAnalysis?.data && (
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">心率分析</h2>
+          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">心率分析</h2>
             {heartAnalysis.data.status === 'success' ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 bg-red-50 rounded-lg">
-                    <p className="text-sm text-gray-600">平均心率</p>
-                    <p className="text-2xl font-bold">{heartAnalysis.data.average_heart_rate?.toFixed(0)} bpm</p>
+                  <div className="p-5 bg-red-50 rounded-xl border-2 border-red-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">平均心率</p>
+                    <p className="text-3xl font-bold text-red-700">{heartAnalysis.data.average_heart_rate?.toFixed(0)} bpm</p>
                   </div>
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-600">静息心率</p>
-                    <p className="text-2xl font-bold">{heartAnalysis.data.average_resting_heart_rate?.toFixed(0)} bpm</p>
+                  <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">静息心率</p>
+                    <p className="text-3xl font-bold text-blue-700">{heartAnalysis.data.average_resting_heart_rate?.toFixed(0)} bpm</p>
                   </div>
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <p className="text-sm text-gray-600">HRV</p>
-                    <p className="text-2xl font-bold">{heartAnalysis.data.average_hrv?.toFixed(1)} ms</p>
+                  <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">HRV</p>
+                    <p className="text-3xl font-bold text-green-700">{heartAnalysis.data.average_hrv?.toFixed(1)} ms</p>
                   </div>
                 </div>
                 {heartAnalysis.data.recommendations && (
-                  <div className="mt-4">
-                    <h3 className="font-semibold mb-2">建议</h3>
-                    <ul className="list-disc list-inside space-y-1">
+                  <div className="mt-6 p-5 bg-red-50 rounded-xl border-2 border-red-200">
+                    <h3 className="text-lg font-bold mb-3 text-red-900">建议</h3>
+                    <ul className="list-disc list-inside space-y-2">
                       {heartAnalysis.data.recommendations.map((rec: string, idx: number) => (
-                        <li key={idx} className="text-gray-700">{rec}</li>
+                        <li key={idx} className="text-gray-900 font-medium leading-7">{rec}</li>
                       ))}
                     </ul>
                   </div>
                 )}
               </div>
             ) : (
-              <p className="text-gray-500">{heartAnalysis.data.message}</p>
+              <p className="text-gray-700 font-medium">{heartAnalysis.data.message}</p>
             )}
           </div>
         )}
 
         {/* 身体电量分析 */}
         {activeTab === 'battery' && batteryAnalysis?.data && (
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">身体电量分析</h2>
+          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">身体电量分析</h2>
             {batteryAnalysis.data.status === 'success' ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-yellow-50 rounded-lg">
-                  <p className="text-sm text-gray-600">平均充电值</p>
-                  <p className="text-2xl font-bold">{batteryAnalysis.data.average_charged?.toFixed(0)}</p>
+                <div className="p-5 bg-yellow-50 rounded-xl border-2 border-yellow-200">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">平均充电值</p>
+                  <p className="text-3xl font-bold text-yellow-700">{batteryAnalysis.data.average_charged?.toFixed(0)}</p>
                 </div>
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <p className="text-sm text-gray-600">平均消耗值</p>
-                  <p className="text-2xl font-bold">{batteryAnalysis.data.average_drained?.toFixed(0)}</p>
+                <div className="p-5 bg-orange-50 rounded-xl border-2 border-orange-200">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">平均消耗值</p>
+                  <p className="text-3xl font-bold text-orange-700">{batteryAnalysis.data.average_drained?.toFixed(0)}</p>
                 </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-gray-600">最高值</p>
-                  <p className="text-2xl font-bold">{batteryAnalysis.data.average_most_charged?.toFixed(0)}</p>
+                <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">最高值</p>
+                  <p className="text-3xl font-bold text-green-700">{batteryAnalysis.data.average_most_charged?.toFixed(0)}</p>
                 </div>
-                <div className="p-4 bg-red-50 rounded-lg">
-                  <p className="text-sm text-gray-600">最低值</p>
-                  <p className="text-2xl font-bold">{batteryAnalysis.data.average_lowest?.toFixed(0)}</p>
+                <div className="p-5 bg-red-50 rounded-xl border-2 border-red-200">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">最低值</p>
+                  <p className="text-3xl font-bold text-red-700">{batteryAnalysis.data.average_lowest?.toFixed(0)}</p>
                 </div>
               </div>
             ) : (
-              <p className="text-gray-500">{batteryAnalysis.data.message}</p>
+              <p className="text-gray-700 font-medium">{batteryAnalysis.data.message}</p>
             )}
           </div>
         )}
 
         {/* 活动分析 */}
         {activeTab === 'activity' && activityAnalysis?.data && (
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">活动分析</h2>
+          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">活动分析</h2>
             {activityAnalysis.data.status === 'success' ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-600">平均步数/天</p>
-                    <p className="text-2xl font-bold">{activityAnalysis.data.average_steps_per_day?.toLocaleString()}</p>
+                  <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">平均步数/天</p>
+                    <p className="text-3xl font-bold text-blue-700">{activityAnalysis.data.average_steps_per_day?.toLocaleString()}</p>
                   </div>
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <p className="text-sm text-gray-600">总步数</p>
-                    <p className="text-2xl font-bold">{activityAnalysis.data.total_steps?.toLocaleString()}</p>
+                  <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">总步数</p>
+                    <p className="text-3xl font-bold text-green-700">{activityAnalysis.data.total_steps?.toLocaleString()}</p>
                   </div>
-                  <div className="p-4 bg-purple-50 rounded-lg">
-                    <p className="text-sm text-gray-600">平均活动分钟</p>
-                    <p className="text-2xl font-bold">{activityAnalysis.data.average_active_minutes_per_day?.toFixed(0)}</p>
+                  <div className="p-5 bg-purple-50 rounded-xl border-2 border-purple-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">平均活动分钟</p>
+                    <p className="text-3xl font-bold text-purple-700">{activityAnalysis.data.average_active_minutes_per_day?.toFixed(0)}</p>
                   </div>
-                  <div className="p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-gray-600">符合WHO建议</p>
-                    <p className="text-2xl font-bold">
+                  <div className="p-5 bg-yellow-50 rounded-xl border-2 border-yellow-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">符合WHO建议</p>
+                    <p className="text-3xl font-bold text-yellow-700">
                       {activityAnalysis.data.assessment?.meets_who_recommendations ? '✅' : '❌'}
                     </p>
                   </div>
                 </div>
               </div>
             ) : (
-              <p className="text-gray-500">{activityAnalysis.data.message}</p>
+              <p className="text-gray-700 font-medium">{activityAnalysis.data.message}</p>
             )}
           </div>
         )}
@@ -575,17 +628,17 @@ export default function GarminPage() {
         {/* 综合分析 */}
         {activeTab === 'comprehensive' && comprehensiveAnalysis?.data && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">综合分析报告</h2>
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">综合分析报告</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 睡眠 */}
                 {comprehensiveAnalysis.data.sleep?.status === 'success' && (
-                  <div className="p-4 border rounded-lg">
-                    <h3 className="font-semibold mb-2">睡眠质量</h3>
-                    <p className="text-2xl font-bold text-blue-600">
+                  <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">睡眠质量</h3>
+                    <p className="text-3xl font-bold text-blue-700">
                       {comprehensiveAnalysis.data.sleep.average_sleep_score?.toFixed(0)}/100
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm font-semibold text-gray-700 mt-2">
                       {comprehensiveAnalysis.data.sleep.average_sleep_duration_hours?.toFixed(1)} 小时/天
                     </p>
                   </div>
@@ -593,34 +646,34 @@ export default function GarminPage() {
 
                 {/* 心率 */}
                 {comprehensiveAnalysis.data.heart_rate?.status === 'success' && (
-                  <div className="p-4 border rounded-lg">
-                    <h3 className="font-semibold mb-2">心率健康</h3>
-                    <p className="text-2xl font-bold text-red-600">
+                  <div className="p-5 bg-red-50 rounded-xl border-2 border-red-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">心率健康</h3>
+                    <p className="text-3xl font-bold text-red-700">
                       {comprehensiveAnalysis.data.heart_rate.average_resting_heart_rate?.toFixed(0)} bpm
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">静息心率</p>
+                    <p className="text-sm font-semibold text-gray-700 mt-2">静息心率</p>
                   </div>
                 )}
 
                 {/* 活动 */}
                 {comprehensiveAnalysis.data.activity?.status === 'success' && (
-                  <div className="p-4 border rounded-lg">
-                    <h3 className="font-semibold mb-2">活动水平</h3>
-                    <p className="text-2xl font-bold text-green-600">
+                  <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">活动水平</h3>
+                    <p className="text-3xl font-bold text-green-700">
                       {comprehensiveAnalysis.data.activity.average_steps_per_day?.toLocaleString()}
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">平均步数/天</p>
+                    <p className="text-sm font-semibold text-gray-700 mt-2">平均步数/天</p>
                   </div>
                 )}
 
                 {/* 身体电量 */}
                 {comprehensiveAnalysis.data.body_battery?.status === 'success' && (
-                  <div className="p-4 border rounded-lg">
-                    <h3 className="font-semibold mb-2">身体电量</h3>
-                    <p className="text-2xl font-bold text-yellow-600">
+                  <div className="p-5 bg-yellow-50 rounded-xl border-2 border-yellow-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">身体电量</h3>
+                    <p className="text-3xl font-bold text-yellow-700">
                       {comprehensiveAnalysis.data.body_battery.average_charged?.toFixed(0)}/100
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">平均充电值</p>
+                    <p className="text-sm font-semibold text-gray-700 mt-2">平均充电值</p>
                   </div>
                 )}
               </div>

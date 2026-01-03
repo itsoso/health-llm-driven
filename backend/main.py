@@ -3,6 +3,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.api.main import api_router
+from app.scheduler import start_scheduler
+import logging
+
+# 设置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
@@ -12,6 +23,12 @@ app = FastAPI(
     description="基于LLM的个性化健康管理系统",
     version="1.0.0"
 )
+
+# 启动后台同步调度器
+@app.on_event("startup")
+async def startup_event():
+    start_scheduler(app)
+
 
 # 配置CORS
 app.add_middleware(

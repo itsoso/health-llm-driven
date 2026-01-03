@@ -9,7 +9,11 @@ class Settings(BaseSettings):
     # OpenAI配置
     openai_api_key: Optional[str] = None
     
-    # Garmin API配置
+    # Garmin 凭据 (用于后台自动同步)
+    garmin_email: Optional[str] = None
+    garmin_password: Optional[str] = None
+    
+    # Garmin API配置 (OAuth遗留)
     garmin_api_key: Optional[str] = None
     garmin_api_secret: Optional[str] = None
     
