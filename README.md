@@ -64,41 +64,35 @@
 
 ```
 health-llm-driven/
-├── backend/              # 后端服务
+├── backend/              # 后端服务 (FastAPI)
 │   ├── app/
-│   │   ├── models/      # 数据模型
-│   │   ├── api/         # API路由
-│   │   ├── services/    # 业务逻辑
-│   │   │   ├── data_collection/  # 数据收集服务
-│   │   │   ├── health_analysis/  # 健康分析服务
-│   │   │   └── goal_management/  # 目标管理服务
-│   │   └── utils/       # 工具函数
-│   ├── requirements.txt
-│   └── main.py
-├── frontend/            # 前端应用
-│   ├── src/
-│   │   ├── components/  # React组件
-│   │   ├── pages/       # 页面
-│   │   ├── services/    # API服务
-│   │   └── types/       # TypeScript类型
-│   └── package.json
-├── data/               # 数据文件
-└── README.md
+│   │   ├── api/         # API 接口层
+│   │   ├── models/      # 数据库模型
+│   │   ├── schemas/     # 数据校验层
+│   │   └── services/    # 业务逻辑层 (含 AI 分析)
+│   ├── scripts/          # 数据同步脚本
+│   └── tests/            # 单元测试与集成测试
+├── frontend/             # 前端应用 (Next.js)
+│   └── src/
+│       ├── app/         # 页面与路由
+│       └── services/    # 后端接口调用
+└── ARCHITECTURE.md       # 详细架构说明文档
 ```
 
 ## 快速开始
 
-### 后端设置
+详细运行说明请查看 [RUN.md](./RUN.md)
+
+### 1. 后端设置
 
 ```bash
 cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+# 建议使用 Python 3.12
+./install-deps.sh
+./start-server.sh
 ```
 
-详细运行说明请查看 [RUN.md](./RUN.md)
-
-### 前端设置
+### 2. 前端设置
 
 ```bash
 cd frontend
@@ -112,14 +106,11 @@ npm run dev
 
 ```bash
 cd backend
-# 安装测试依赖（已包含在requirements.txt中）
-pip install -r requirements.txt
+# 安装测试依赖
+./install-deps.sh
 
 # 运行所有测试
 pytest
-
-# 运行测试并查看覆盖率
-pytest --cov=app --cov-report=html
 
 # 或使用测试脚本
 ./run_tests.sh
@@ -130,17 +121,18 @@ pytest --cov=app --cov-report=html
 
 ## 环境变量
 
-创建 `.env` 文件：
+在 `backend/.env` 中配置：
 
 ```
-OPENAI_API_KEY=your_api_key
-GARMIN_API_KEY=your_garmin_key
-DATABASE_URL=sqlite:///./health.db
+OPENAI_API_KEY=your_api_key        # 启用 AI 健康建议必填
+DATABASE_URL=sqlite:///./health.db # 默认使用 SQLite 文件存储
 ```
 
 ## 文档
 
+- [核心架构说明](./ARCHITECTURE.md) - **推荐阅读：了解系统设计与模块划分**
 - [运行指南](./RUN.md) - 详细的运行说明和故障排除
+- [Garmin 同步指南](./backend/GARMIN_SYNC_GUIDE.md) - 如何获取和同步 Garmin 数据
 - [快速开始](./QUICKSTART.md) - 基本使用流程
 - [测试说明](./backend/tests/README.md) - 测试相关文档
 
