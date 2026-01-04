@@ -20,8 +20,8 @@ const CATEGORY_OPTIONS = [
 const ICON_OPTIONS = ['💪', '🏃', '🧘', '😴', '💧', '🌞', '📚', '🧠', '❤️', '🌿', '🔥', '⭐'];
 
 function HabitsContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'checkin' | 'stats'>('checkin');
@@ -30,19 +30,22 @@ function HabitsContent() {
   // 获取习惯列表和打卡状态
   const { data: habitsData, isLoading } = useQuery({
     queryKey: ['habits-with-records', userId, selectedDate],
-    queryFn: () => habitApi.getUserRecordsWithStatus(userId, selectedDate),
+    queryFn: () => habitApi.getUserRecordsWithStatus(userId!, selectedDate),
+    enabled: !!userId,
   });
 
   // 获取统计数据
   const { data: statsData } = useQuery({
     queryKey: ['habits-stats', userId],
-    queryFn: () => habitApi.getStats(userId, 30),
+    queryFn: () => habitApi.getStats(userId!, 30),
+    enabled: !!userId,
   });
 
   // 获取今日汇总
   const { data: todaySummary } = useQuery({
     queryKey: ['habits-today-summary', userId],
-    queryFn: () => habitApi.getTodaySummary(userId),
+    queryFn: () => habitApi.getTodaySummary(userId!),
+    enabled: !!userId,
   });
 
   // 创建习惯

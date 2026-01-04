@@ -509,8 +509,8 @@ interface MedicalExam {
 }
 
 function MedicalExamsContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const [showForm, setShowForm] = useState(false);
   const [showPdfUpload, setShowPdfUpload] = useState(false);
   const [expandedExam, setExpandedExam] = useState<number | null>(null);
@@ -558,6 +558,7 @@ function MedicalExamsContent() {
       const res = await fetch(`${API_BASE}/medical-exams/user/${userId}`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   const exams: MedicalExam[] = Array.isArray(examsResponse) ? examsResponse : [];

@@ -8,8 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 function GoalsContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const queryClient = useQueryClient();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
@@ -20,7 +20,8 @@ function GoalsContent() {
   // 获取用户目标
   const { data: goalsData, isLoading } = useQuery({
     queryKey: ['goals', userId],
-    queryFn: () => goalApi.getUserGoals(userId),
+    queryFn: () => goalApi.getUserGoals(userId!),
+    enabled: !!userId,
   });
 
   const goals = goalsData?.data || [];

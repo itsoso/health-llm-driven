@@ -8,15 +8,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 function CheckinContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const today = format(new Date(), 'yyyy-MM-dd');
   const queryClient = useQueryClient();
 
   const { data: todayCheckinResponse, isLoading } = useQuery({
     queryKey: ['checkin', userId, today],
-    queryFn: () => checkinApi.getToday(userId),
+    queryFn: () => checkinApi.getToday(userId!),
     retry: false,
+    enabled: !!userId,
   });
   
   // axios返回的是response对象，需要取.data
@@ -24,8 +25,8 @@ function CheckinContent() {
 
   const { data: adviceResponse } = useQuery({
     queryKey: ['advice', userId, today],
-    queryFn: () => healthAnalysisApi.getAdvice(userId, today),
-    enabled: !!todayCheckin,
+    queryFn: () => healthAnalysisApi.getAdvice(userId!, today),
+    enabled: !!userId && !!todayCheckin,
   });
   
   const advice = adviceResponse?.data;

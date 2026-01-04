@@ -17,8 +17,8 @@ const MEAL_TYPES = [
 ];
 
 function DietContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -39,6 +39,7 @@ function DietContent() {
       const res = await fetch(`${API_BASE}/diet/records/user/${userId}/date/${selectedDate}`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 获取统计
@@ -48,6 +49,7 @@ function DietContent() {
       const res = await fetch(`${API_BASE}/diet/records/user/${userId}/stats?days=7`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 创建记录
