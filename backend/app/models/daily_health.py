@@ -115,11 +115,13 @@ class WaterIntake(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
     record_date = Column(Date, nullable=False, index=True)
-    intake_time = Column(Time)  # 饮水时间
+    intake_time = Column(DateTime(timezone=True))  # 饮水时间
     amount = Column(Float, nullable=False)  # 饮水量 (ml)
+    drink_type = Column(String)  # 饮品类型（水、茶、咖啡等）
     notes = Column(Text)  # 备注
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", backref="water_intakes")
 

@@ -24,6 +24,12 @@ class HealthCheckin(Base):
     # 其他专项锻炼（JSON格式存储）
     other_exercises = Column(JSON)  # {"exercise_name": {"duration": 30, "count": 10}}
     
+    # 鼻炎管理
+    sneeze_count = Column(Integer)  # 打喷嚏次数
+    sneeze_times = Column(JSON)  # 打喷嚏时间记录 [{"time": "09:00", "count": 3}, ...]
+    nasal_wash_count = Column(Integer)  # 洗鼻次数
+    nasal_wash_times = Column(JSON)  # 洗鼻时间记录 [{"time": "08:00", "type": "wash"}, {"time": "20:00", "type": "soak"}]
+    
     # 综合评分
     daily_score = Column(Integer)  # 每日健康评分 (0-100)
     

@@ -401,17 +401,40 @@ export default function DailyInsightsPage() {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">📋 今日目标</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(currentData?.daily_goals || []).map((goal, index) => (
-              <div key={index} className="flex items-center p-4 bg-gray-50 rounded-xl">
-                <span className="text-3xl mr-4">{goal.icon}</span>
-                <div>
-                  <div className="font-semibold text-gray-800">{goal.goal}</div>
-                  <div className="text-sm text-gray-500">
-                    目标: {goal.target_value.toLocaleString()} {goal.unit}
+            {(currentData?.daily_goals || []).map((goal, index) => {
+              // 根据目标类别确定跳转链接
+              const getGoalLink = (category: string) => {
+                switch (category) {
+                  case 'activity':
+                    return '/checkin';
+                  case 'sleep':
+                    return '/garmin';
+                  case 'exercise':
+                    return '/checkin';
+                  case 'hydration':
+                    return '/water';
+                  default:
+                    return '/checkin';
+                }
+              };
+              
+              return (
+                <Link
+                  key={index}
+                  href={getGoalLink(goal.category)}
+                  className="flex items-center p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 hover:shadow-md transition-all duration-200 cursor-pointer group"
+                >
+                  <span className="text-3xl mr-4 group-hover:scale-110 transition-transform">{goal.icon}</span>
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800 group-hover:text-indigo-700">{goal.goal}</div>
+                    <div className="text-sm text-gray-500">
+                      目标: {goal.target_value.toLocaleString()} {goal.unit}
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                  <span className="text-gray-400 group-hover:text-indigo-500 transition-colors">→</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
 

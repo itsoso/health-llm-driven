@@ -24,6 +24,22 @@ export default function Home() {
           </Link>
 
           <Link
+            href="/habits"
+            className="p-6 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2">✅ 习惯追踪</h2>
+            <p className="text-purple-100 text-sm">每日习惯打卡，培养好习惯</p>
+          </Link>
+
+          <Link
+            href="/supplements"
+            className="p-6 bg-gradient-to-r from-green-500 to-teal-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2">💊 补剂管理</h2>
+            <p className="text-green-100 text-sm">管理和追踪每日补剂摄入</p>
+          </Link>
+
+          <Link
             href="/dashboard"
             className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
           >
@@ -35,8 +51,8 @@ export default function Home() {
             href="/checkin"
             className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
           >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">✅ 每日打卡</h2>
-            <p className="text-gray-600 text-sm">记录今日的健康活动</p>
+            <h2 className="text-xl font-bold mb-2 text-gray-800">🏃 运动打卡</h2>
+            <p className="text-gray-600 text-sm">记录今日的运动活动</p>
           </Link>
 
           <Link
@@ -48,11 +64,11 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/medical-exams"
+            href="/garmin"
             className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
           >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">🏥 体检记录</h2>
-            <p className="text-gray-600 text-sm">管理体检数据</p>
+            <h2 className="text-xl font-bold mb-2 text-gray-800">⌚ Garmin数据</h2>
+            <p className="text-gray-600 text-sm">查看和分析Garmin健康数据</p>
           </Link>
 
           <Link
@@ -61,22 +77,6 @@ export default function Home() {
           >
             <h2 className="text-xl font-bold mb-2 text-gray-800">🔍 健康分析</h2>
             <p className="text-gray-600 text-sm">AI驱动的健康问题分析</p>
-          </Link>
-
-          <Link
-            href="/data-collection"
-            className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
-          >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">📥 数据收集</h2>
-            <p className="text-gray-600 text-sm">同步Garmin等设备数据</p>
-          </Link>
-
-          <Link
-            href="/garmin"
-            className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
-          >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">⌚ Garmin数据</h2>
-            <p className="text-gray-600 text-sm">查看和分析Garmin健康数据</p>
           </Link>
         </div>
 
