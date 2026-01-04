@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// 使用相对路径，通过Next.js的rewrites代理到后端
+// 这样无论用什么IP/域名访问前端，都能正确转发API请求
+const API_BASE_URL = '/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

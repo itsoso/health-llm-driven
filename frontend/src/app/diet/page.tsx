@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// 使用相对路径，通过Next.js代理到后端
+const API_BASE = '/api';
 
 const MEAL_TYPES = [
   { value: 'breakfast', label: '早餐', icon: '🌅', color: 'bg-yellow-100 text-yellow-800' },

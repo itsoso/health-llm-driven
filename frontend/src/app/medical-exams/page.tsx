@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// 使用相对路径，通过Next.js代理到后端
+const API_BASE = '/api';
 
 // ========== 体检套餐/组合检查 ==========
 const examPackages: Record<string, { name: string; description: string; items: string[] }> = {
