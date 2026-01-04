@@ -61,7 +61,7 @@ class MedicalReportPDFParser:
 
 请严格按照以下JSON格式返回结果（不要包含任何其他文字，只返回JSON）：
 
-{
+{{
     "exam_date": "YYYY-MM-DD格式的体检日期",
     "exam_type": "体检类型，可选值: blood_routine(血常规), lipid_profile(血脂), urine_routine(尿常规), immune(免疫), liver_function(肝功能), kidney_function(肾功能), thyroid(甲状腺), other(其他)",
     "body_system": "身体系统，可选值: nervous(神经), circulatory(循环), respiratory(呼吸), digestive(消化), urinary(泌尿), endocrine(内分泌), immune(免疫), skeletal(骨骼), muscular(肌肉), other(其他)",
@@ -69,15 +69,15 @@ class MedicalReportPDFParser:
     "doctor_name": "医生姓名（如果有）",
     "overall_assessment": "总体评价或结论",
     "items": [
-        {
+        {{
             "item_name": "检查项目名称",
-            "value": 数值（纯数字，不含单位）,
+            "value": "数值（纯数字，不含单位）",
             "unit": "单位",
             "reference_range": "参考范围",
             "is_abnormal": "normal/high/low/abnormal"
-        }
+        }}
     ]
-}
+}}
 
 注意：
 1. 日期格式必须是 YYYY-MM-DD
@@ -107,43 +107,82 @@ class MedicalReportPDFParser:
                 max_tokens=4000
             )
             
-            result_text = response.choices[0].message.content.strip()
-            logger.info(f"LLM原始返回: {result_text[:500]}...")
+            result_text = response.choices[0].message.content
+            if not result_text:
+                raise ValueError("LLM返回内容为空")
+            
+            result_text = result_text.strip()
+            logger.info(f"LLM原始返回长度: {len(result_text)}, 前500字符: {result_text[:500]}...")
             
             # 尝试提取JSON部分
             json_text = result_text
             
             # 处理markdown代码块
             if "```json" in json_text:
-                json_text = json_text.split("```json")[1].split("```")[0].strip()
+                json_text = json_text.split("```json")[1].split("```")[0]
             elif "```" in json_text:
                 parts = json_text.split("```")
                 if len(parts) >= 2:
-                    json_text = parts[1].strip()
+                    json_text = parts[1]
                     # 移除可能的语言标识符
-                    if json_text.startswith("json"):
-                        json_text = json_text[4:].strip()
+                    lines = json_text.split('\n')
+                    if lines and lines[0].strip().lower() in ['json', 'javascript', 'js']:
+                        json_text = '\n'.join(lines[1:])
             
-            # 查找JSON对象的开始和结束
+            # 去除首尾空白
+            json_text = json_text.strip()
+            
+            # 查找JSON对象的开始和结束（处理嵌套括号）
             start_idx = json_text.find('{')
-            end_idx = json_text.rfind('}')
+            if start_idx == -1:
+                raise ValueError("未找到JSON对象开始标记 '{'")
             
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            # 计算匹配的结束括号
+            brace_count = 0
+            end_idx = -1
+            for i, char in enumerate(json_text[start_idx:], start_idx):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_idx = i
+                        break
+            
+            if end_idx == -1:
+                # 退而求其次，使用最后一个 }
+                end_idx = json_text.rfind('}')
+            
+            if end_idx != -1 and end_idx >= start_idx:
                 json_text = json_text[start_idx:end_idx + 1]
+            else:
+                raise ValueError("无法提取有效的JSON对象")
             
-            logger.info(f"清理后的JSON: {json_text[:300]}...")
+            logger.info(f"清理后的JSON长度: {len(json_text)}, 前300字符: {json_text[:300]}...")
             
-            parsed_data = json.loads(json_text)
+            # 尝试解析JSON
+            try:
+                parsed_data = json.loads(json_text)
+            except json.JSONDecodeError as je:
+                # 尝试修复常见问题
+                # 1. 移除控制字符
+                import re
+                cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_text)
+                # 2. 修复可能的尾部逗号
+                cleaned = re.sub(r',\s*}', '}', cleaned)
+                cleaned = re.sub(r',\s*]', ']', cleaned)
+                parsed_data = json.loads(cleaned)
+            
             return parsed_data
             
         except json.JSONDecodeError as e:
             logger.error(f"LLM返回的JSON解析失败: {e}")
             logger.error(f"原始返回内容: {result_text[:1000] if 'result_text' in locals() else 'N/A'}")
             logger.error(f"清理后内容: {json_text[:1000] if 'json_text' in locals() else 'N/A'}")
-            raise ValueError(f"解析结果格式错误，请重试")
+            raise ValueError(f"解析结果格式错误，请重试。详情: {str(e)[:100]}")
         except Exception as e:
             logger.error(f"LLM解析失败: {e}", exc_info=True)
-            raise ValueError(f"LLM解析失败: {str(e)}")
+            raise ValueError(f"LLM解析失败，请重试")
     
     def parse_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """完整解析PDF体检报告"""
