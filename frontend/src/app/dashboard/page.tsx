@@ -47,14 +47,14 @@ function DashboardContent() {
   // 获取基础健康数据
   const { data: basicHealth } = useQuery({
     queryKey: ['basic-health', userId],
-    queryFn: () => basicHealthApi.getLatest(userId!),
+    queryFn: () => basicHealthApi.getMyLatest(),
     enabled: !!userId,
   });
 
   // 获取综合分析
   const { data: comprehensive } = useQuery({
     queryKey: ['garmin-comprehensive', userId, 7],
-    queryFn: () => garminAnalysisApi.getComprehensive(userId!, 7),
+    queryFn: () => garminAnalysisApi.getMyComprehensive(7),
     enabled: !!userId,
   });
 

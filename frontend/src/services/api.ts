@@ -58,6 +58,9 @@ export const basicHealthApi = {
   create: (data: any) => api.post('/basic-health', data),
   getUserData: (userId: number) => api.get(`/basic-health/user/${userId}`),
   getLatest: (userId: number) => api.get(`/basic-health/user/${userId}/latest`),
+  // 使用 /me 端点，自动使用当前登录用户
+  getMyLatest: () => api.get('/basic-health/me/latest'),
+  getMyData: () => api.get('/basic-health/me'),
 };
 
 // 体检数据
@@ -154,12 +157,26 @@ export const garminAnalysisApi = {
     api.get(`/garmin-analysis/user/${userId}/activity`, { params: { days } }),
   getComprehensive: (userId: number, days: number = 7) =>
     api.get(`/garmin-analysis/user/${userId}/comprehensive`, { params: { days } }),
+  // 使用 /me 端点，自动使用当前登录用户
+  getMyComprehensive: (days: number = 7) =>
+    api.get('/garmin-analysis/me/comprehensive', { params: { days } }),
+  analyzeMySleep: (days: number = 7) =>
+    api.get('/garmin-analysis/me/sleep', { params: { days } }),
+  analyzeMyHeartRate: (days: number = 7) =>
+    api.get('/garmin-analysis/me/heart-rate', { params: { days } }),
+  analyzeMyBodyBattery: (days: number = 7) =>
+    api.get('/garmin-analysis/me/body-battery', { params: { days } }),
+  analyzeMyActivity: (days: number = 7) =>
+    api.get('/garmin-analysis/me/activity', { params: { days } }),
 };
 
 // 数据收集状态
 export const dataCollectionStatusApi = {
   getSyncStatus: (userId: number, days: number = 30) =>
     api.get(`/data-collection/garmin/sync-status/${userId}`, { params: { days } }),
+  // 使用 /me 端点，自动使用当前登录用户
+  getMySyncStatus: (days: number = 30) =>
+    api.get('/data-collection/garmin/me/sync-status', { params: { days } }),
 };
 
 // 每日建议

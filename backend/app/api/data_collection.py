@@ -6,6 +6,8 @@ from datetime import date, timedelta
 from app.database import get_db
 from app.services.data_collection import DataCollectionService
 from app.models.daily_health import GarminData
+from app.models.user import User
+from app.api.deps import get_current_user_required
 
 router = APIRouter()
 
@@ -93,6 +95,50 @@ def get_sync_status(
     db: Session = Depends(get_db)
 ):
     """获取Garmin数据同步状态（检查哪些日期有数据）"""
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+    
+    # 获取已有数据的日期
+    existing_dates = db.query(GarminData.record_date).filter(
+        GarminData.user_id == user_id,
+        GarminData.record_date >= start_date,
+        GarminData.record_date <= end_date
+    ).distinct().all()
+    
+    existing_dates_set = {d[0] for d in existing_dates}
+    
+    # 生成所有日期列表
+    all_dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        all_dates.append({
+            "date": current_date.isoformat(),
+            "has_data": current_date in existing_dates_set
+        })
+        current_date += timedelta(days=1)
+    
+    return {
+        "user_id": user_id,
+        "date_range": {
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat()
+        },
+        "total_days": len(all_dates),
+        "days_with_data": len(existing_dates_set),
+        "days_without_data": len(all_dates) - len(existing_dates_set),
+        "coverage_percentage": round(len(existing_dates_set) / len(all_dates) * 100, 1) if all_dates else 0,
+        "dates": all_dates
+    }
+
+
+@router.get("/garmin/me/sync-status")
+def get_my_sync_status(
+    days: int = 30,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的Garmin数据同步状态（需要登录）"""
+    user_id = current_user.id
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
     

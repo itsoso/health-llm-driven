@@ -6,6 +6,8 @@ from datetime import date
 from app.database import get_db
 from app.schemas.basic_health import BasicHealthDataCreate, BasicHealthDataResponse
 from app.models.basic_health import BasicHealthData
+from app.models.user import User
+from app.api.deps import get_current_user_required
 
 router = APIRouter()
 
@@ -54,4 +56,33 @@ def get_latest_basic_health_data(
     if not data:
         raise HTTPException(status_code=404, detail="未找到基础健康数据")
     return data
+
+
+@router.get("/me/latest", response_model=BasicHealthDataResponse)
+def get_my_latest_basic_health_data(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户最新的基础健康数据（需要登录）"""
+    data = db.query(BasicHealthData).filter(
+        BasicHealthData.user_id == current_user.id
+    ).order_by(BasicHealthData.record_date.desc()).first()
+    
+    if not data:
+        raise HTTPException(status_code=404, detail="未找到基础健康数据")
+    return data
+
+
+@router.get("/me", response_model=List[BasicHealthDataResponse])
+def get_my_basic_health_data(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的基础健康数据（需要登录）"""
+    data_list = db.query(BasicHealthData).filter(
+        BasicHealthData.user_id == current_user.id
+    ).order_by(BasicHealthData.record_date.desc()).offset(skip).limit(limit).all()
+    return data_list
 
