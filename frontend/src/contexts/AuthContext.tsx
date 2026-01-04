@@ -62,8 +62,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       if (res.ok) {
-        const userData = await res.json();
-        setUser(userData);
+        // 检查响应内容类型
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const userData = await res.json();
+          setUser(userData);
+        } else {
+          console.error('获取用户信息：服务器返回非JSON响应');
+          localStorage.removeItem('auth_token');
+          setToken(null);
+          setUser(null);
+        }
       } else {
         // Token无效，清除
         localStorage.removeItem('auth_token');
@@ -91,6 +100,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ username, password }),
       });
 
+      // 检查响应内容类型
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        return { success: false, error: '服务器错误，请稍后重试' };
+      }
+
       const data = await res.json();
 
       if (res.ok) {
@@ -117,6 +134,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         body: JSON.stringify(data),
       });
+
+      // 检查响应内容类型
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        return { success: false, error: '服务器错误，请稍后重试' };
+      }
 
       const result = await res.json();
 
