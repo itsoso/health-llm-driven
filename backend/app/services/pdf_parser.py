@@ -81,7 +81,7 @@ class MedicalReportPDFParser:
     ],
     "items": [
         {{
-            "category": "检查类别(blood_routine/liver_function/kidney_function/lipid/immune/thyroid/ultrasound/ct/ecg/eye/ent/body_composition/other)",
+            "category": "检查类别(blood_routine/lipid_profile/blood_glucose/urine_routine/liver_function/kidney_function/immune/tumor_marker/thyroid/ultrasound/brain_ct/chest_ct/abdominal_ct/ct/mri/ecg/echocardiography/eye/ent/body_composition/physical/internal_medicine/surgery/other)",
             "item_name": "检查项目名称",
             "value": 数值或null,
             "value_text": "文本值（如影像结论）",
@@ -93,20 +93,54 @@ class MedicalReportPDFParser:
     ]
 }}
 
-检查类别说明：
-- blood_routine: 血常规（白细胞、红细胞、血红蛋白、血小板等）
-- liver_function: 肝功能（谷丙转氨酶、谷草转氨酶、谷氨酰转肽酶等）
-- kidney_function: 肾功能
-- lipid: 血脂
-- immune: 免疫功能（CD3、CD4、CD8等）
-- thyroid: 甲状腺功能
-- ultrasound: 超声检查（肝胆脾胰、甲状腺、泌尿系统等）
-- ct: CT检查（肺部CT等）
+检查类别说明（请使用以下标准类别名称）：
+【血液检查】
+- blood_routine: 血常规（白细胞、红细胞、血红蛋白、血小板、中性粒细胞、淋巴细胞等）
+- lipid_profile: 血脂（总胆固醇、甘油三酯、高密度脂蛋白、低密度脂蛋白等）
+- blood_glucose: 血糖（空腹血糖、糖化血红蛋白等）
+- urine_routine: 尿常规
+- stool_routine: 大便常规
+
+【生化检查】
+- liver_function: 肝功能（谷丙转氨酶ALT、谷草转氨酶AST、谷氨酰转肽酶GGT、总胆红素、白蛋白等）
+- kidney_function: 肾功能（肌酐、尿素氮、尿酸等）
+- electrolyte: 电解质（钾、钠、氯、钙等）
+
+【免疫检查】
+- immune: 免疫功能（CD3、CD4、CD8、免疫球蛋白等）
+- tumor_marker: 肿瘤标志物（AFP、CEA、CA199、PSA等）
+- autoimmune: 自身免疫抗体
+
+【内分泌检查】
+- thyroid: 甲状腺功能（TSH、FT3、FT4、甲状腺抗体等）
+- hormone: 激素检查（性激素、皮质醇等）
+
+【影像学检查】
+- ultrasound: 超声检查（肝胆脾胰超声、甲状腺超声、泌尿系超声、心脏彩超等）
+- brain_ct: 脑部CT
+- chest_ct: 胸部CT/肺部CT
+- abdominal_ct: 腹部CT
+- ct: 其他CT检查
+- mri: MRI/磁共振检查
+- xray: X光/胸片
+
+【心电检查】
 - ecg: 心电图
-- eye: 眼科检查
-- ent: 耳鼻喉科
-- body_composition: 人体成分（体重、BMI、体脂率、腹围等）
-- other: 其他
+- echocardiography: 心脏彩超/超声心动图
+
+【专科检查】
+- eye: 眼科检查（视力、眼底、眼压等）
+- ent: 耳鼻喉科（听力、鼻咽、喉部等）
+- dental: 口腔科
+- gynecology: 妇科检查
+
+【体格检查】
+- body_composition: 人体成分/体成分（身高、体重、BMI、体脂率、腹围等）
+- physical: 一般检查（血压、脉搏等）
+- internal_medicine: 内科检查
+- surgery: 外科检查
+
+- other: 其他无法分类的项目
 
 注意：
 1. 日期格式必须是 YYYY-MM-DD
