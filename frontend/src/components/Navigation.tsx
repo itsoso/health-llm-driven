@@ -215,6 +215,16 @@ export default function Navigation() {
                           <span>⚙️</span>
                           <span>个人设置</span>
                         </Link>
+                        {user?.is_admin && (
+                          <Link
+                            href="/admin"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition-all"
+                          >
+                            <span>🛡️</span>
+                            <span>管理后台</span>
+                          </Link>
+                        )}
                         <button
                           onClick={() => { logout(); setShowUserMenu(false); }}
                           className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-all w-full text-left"
@@ -365,6 +375,16 @@ export default function Navigation() {
                       <span className="mr-3 text-xl">⚙️</span>
                       个人设置
                     </Link>
+                    {user?.is_admin && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-purple-700 hover:bg-purple-50"
+                      >
+                        <span className="mr-3 text-xl">🛡️</span>
+                        管理后台
+                      </Link>
+                    )}
                     <button
                       onClick={() => { logout(); setIsMobileMenuOpen(false); }}
                       className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-red-600 hover:bg-red-50 w-full text-left"

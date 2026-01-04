@@ -13,6 +13,7 @@ interface User {
   birth_date: string | null;
   gender: string | null;
   is_active: boolean;
+  is_admin: boolean;
   has_garmin_credentials: boolean;
 }
 
