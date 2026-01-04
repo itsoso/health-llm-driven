@@ -6,15 +6,48 @@ import { format } from 'date-fns';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
-// 体检类型映射
+// 体检类型/检查类别映射
 const examTypeLabels: Record<string, string> = {
+  // 基础检查
   blood_routine: '血常规',
   lipid_profile: '血脂',
   urine_routine: '尿常规',
-  immune: '免疫',
+  stool_routine: '大便常规',
+  // 生化检查
   liver_function: '肝功能',
   kidney_function: '肾功能',
+  blood_glucose: '血糖',
+  electrolyte: '电解质',
+  // 免疫检查
+  immune: '免疫',
+  tumor_marker: '肿瘤标志物',
+  autoimmune: '自身免疫',
+  // 内分泌
   thyroid: '甲状腺',
+  hormone: '激素',
+  // 影像检查
+  ultrasound: '超声',
+  ct: 'CT',
+  mri: 'MRI',
+  xray: 'X光',
+  brain_ct: '脑部CT',
+  chest_ct: '胸部CT',
+  abdominal_ct: '腹部CT',
+  // 心电检查
+  ecg: '心电图',
+  echocardiography: '心脏彩超',
+  // 专科检查
+  eye: '眼科',
+  ent: '耳鼻喉',
+  dental: '口腔',
+  gynecology: '妇科',
+  // 体格检查
+  body_composition: '体成分',
+  physical: '一般检查',
+  internal_medicine: '内科',
+  surgery: '外科',
+  // 其他
+  comprehensive: '综合体检',
   other: '其他',
 };
 
@@ -49,9 +82,11 @@ const abnormalLabels: Record<string, string> = {
 
 interface MedicalExamItem {
   id: number;
+  category?: string;
   item_name: string;
   item_code?: string;
   value?: number;
+  value_text?: string;
   unit?: string;
   reference_range?: string;
   result?: string;
@@ -59,16 +94,31 @@ interface MedicalExamItem {
   notes?: string;
 }
 
+interface Conclusion {
+  type?: string;
+  category?: string;
+  title?: string;
+  description?: string;
+  recommendation?: string;
+  recommendations?: string;
+}
+
 interface MedicalExam {
   id: number;
   user_id: number;
+  patient_name?: string;
+  patient_gender?: string;
+  patient_age?: number;
+  exam_number?: string;
   exam_date: string;
   exam_type: string;
   body_system?: string;
   hospital_name?: string;
   doctor_name?: string;
   overall_assessment?: string;
+  conclusions?: Conclusion[];
   notes?: string;
+  created_at?: string;
   items: MedicalExamItem[];
 }
 
@@ -719,14 +769,19 @@ export default function MedicalExamsPage() {
                         <span className="text-2xl">🩺</span>
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-gray-900">{exam.exam_date}</span>
+                          {exam.patient_name && (
+                            <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-sm font-medium">
+                              👤 {exam.patient_name}
+                            </span>
+                          )}
                           <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-sm font-medium">
-                            {examTypeLabels[exam.exam_type] || exam.exam_type}
+                            {examTypeLabels[exam.exam_type?.toLowerCase()] || exam.exam_type}
                           </span>
                           {exam.body_system && (
                             <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-sm">
-                              {bodySystemLabels[exam.body_system] || exam.body_system}
+                              {bodySystemLabels[exam.body_system?.toLowerCase()] || exam.body_system}
                             </span>
                           )}
                         </div>
@@ -751,10 +806,73 @@ export default function MedicalExamsPage() {
                 {/* 展开的详情 */}
                 {expandedExam === exam.id && (
                   <div className="border-t border-gray-100 p-4 bg-gray-50">
+                    {/* 患者信息 */}
+                    {(exam.patient_name || exam.patient_gender || exam.patient_age || exam.exam_number) && (
+                      <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                        <div className="text-sm font-semibold text-purple-800 mb-2">👤 患者信息</div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                          {exam.patient_name && (
+                            <div><span className="text-gray-500">姓名:</span> <span className="text-gray-900 font-medium">{exam.patient_name}</span></div>
+                          )}
+                          {exam.patient_gender && (
+                            <div><span className="text-gray-500">性别:</span> <span className="text-gray-900">{exam.patient_gender}</span></div>
+                          )}
+                          {exam.patient_age && (
+                            <div><span className="text-gray-500">年龄:</span> <span className="text-gray-900">{exam.patient_age}岁</span></div>
+                          )}
+                          {exam.exam_number && (
+                            <div><span className="text-gray-500">体检号:</span> <span className="text-gray-900">{exam.exam_number}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {exam.overall_assessment && (
                       <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
                         <div className="text-sm font-semibold text-blue-800 mb-1">📋 总体评价</div>
                         <div className="text-gray-800">{exam.overall_assessment}</div>
+                      </div>
+                    )}
+
+                    {/* 结论建议 */}
+                    {exam.conclusions && exam.conclusions.length > 0 && (
+                      <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <div className="text-sm font-semibold text-amber-800 mb-2">⚠️ 检查结论与建议</div>
+                        <div className="space-y-2">
+                          {exam.conclusions.map((conclusion, idx) => {
+                            const category = conclusion.category || conclusion.type || '';
+                            const title = conclusion.title || '';
+                            const rec = conclusion.recommendations || conclusion.recommendation || '';
+                            return (
+                              <div key={idx} className="p-3 bg-white rounded border border-amber-100">
+                                <div className="flex items-start gap-2 mb-1">
+                                  {category && (
+                                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium shrink-0 ${
+                                      category.includes('attention') || category.includes('关注') ? 'bg-red-100 text-red-700' :
+                                      category.includes('followup') || category.includes('随诊') ? 'bg-yellow-100 text-yellow-700' :
+                                      'bg-blue-100 text-blue-700'
+                                    }`}>
+                                      {category.includes('attention') ? '需要关注' :
+                                       category.includes('followup') ? '定期随诊' :
+                                       category}
+                                    </span>
+                                  )}
+                                  {title && (
+                                    <span className="font-semibold text-gray-800">{title}</span>
+                                  )}
+                                </div>
+                                {conclusion.description && (
+                                  <div className="text-gray-700 text-sm mb-1">{conclusion.description}</div>
+                                )}
+                                {rec && (
+                                  <div className="text-teal-700 text-sm bg-teal-50 p-2 rounded mt-2">
+                                    💡 <span className="font-medium">建议:</span> {rec}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
 
@@ -765,20 +883,25 @@ export default function MedicalExamsPage() {
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-gray-100">
+                                <th className="text-left p-2 font-semibold text-gray-700">类别</th>
                                 <th className="text-left p-2 font-semibold text-gray-700">项目名称</th>
                                 <th className="text-right p-2 font-semibold text-gray-700">检测值</th>
                                 <th className="text-left p-2 font-semibold text-gray-700">单位</th>
                                 <th className="text-left p-2 font-semibold text-gray-700">参考范围</th>
                                 <th className="text-center p-2 font-semibold text-gray-700">状态</th>
-                                <th className="text-left p-2 font-semibold text-gray-700">备注</th>
                               </tr>
                             </thead>
                             <tbody>
                               {exam.items.map((item) => (
                                 <tr key={item.id} className="border-b border-gray-100 hover:bg-white">
+                                  <td className="p-2 text-gray-500 text-xs">
+                                    {examTypeLabels[item.category?.toLowerCase() || ''] || item.category || '-'}
+                                  </td>
                                   <td className="p-2 font-medium text-gray-900">{item.item_name}</td>
                                   <td className="p-2 text-right font-mono text-gray-900">
-                                    {item.value !== null && item.value !== undefined ? item.value : '-'}
+                                    {item.value !== null && item.value !== undefined 
+                                      ? item.value 
+                                      : item.value_text || '-'}
                                   </td>
                                   <td className="p-2 text-gray-600">{item.unit || '-'}</td>
                                   <td className="p-2 text-gray-600">{item.reference_range || '-'}</td>
@@ -787,7 +910,6 @@ export default function MedicalExamsPage() {
                                       {abnormalLabels[item.is_abnormal || 'normal']}
                                     </span>
                                   </td>
-                                  <td className="p-2 text-gray-600 text-xs">{item.notes || '-'}</td>
                                 </tr>
                               ))}
                             </tbody>
