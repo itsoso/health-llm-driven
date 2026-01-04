@@ -42,42 +42,42 @@ function GarminContent() {
   // 获取同步状态
   const { data: syncStatus } = useQuery({
     queryKey: ['garmin-sync-status', userId, days],
-    queryFn: () => dataCollectionStatusApi.getSyncStatus(userId!, days),
+    queryFn: () => dataCollectionStatusApi.getMySyncStatus(days),
     enabled: !!userId,
   });
 
   // 获取睡眠分析
   const { data: sleepAnalysis } = useQuery({
     queryKey: ['garmin-sleep', userId, days],
-    queryFn: () => garminAnalysisApi.analyzeSleep(userId!, days),
+    queryFn: () => garminAnalysisApi.analyzeMySleep(days),
     enabled: !!userId && (activeTab === 'sleep' || activeTab === 'comprehensive'),
   });
 
   // 获取心率分析
   const { data: heartAnalysis } = useQuery({
     queryKey: ['garmin-heart', userId, days],
-    queryFn: () => garminAnalysisApi.analyzeHeartRate(userId!, days),
+    queryFn: () => garminAnalysisApi.analyzeMyHeartRate(days),
     enabled: !!userId && (activeTab === 'heart' || activeTab === 'comprehensive'),
   });
 
   // 获取身体电量分析
   const { data: batteryAnalysis } = useQuery({
     queryKey: ['garmin-battery', userId, days],
-    queryFn: () => garminAnalysisApi.analyzeBodyBattery(userId!, days),
+    queryFn: () => garminAnalysisApi.analyzeMyBodyBattery(days),
     enabled: !!userId && (activeTab === 'battery' || activeTab === 'comprehensive'),
   });
 
   // 获取活动分析
   const { data: activityAnalysis } = useQuery({
     queryKey: ['garmin-activity', userId, days],
-    queryFn: () => garminAnalysisApi.analyzeActivity(userId!, days),
+    queryFn: () => garminAnalysisApi.analyzeMyActivity(days),
     enabled: !!userId && (activeTab === 'activity' || activeTab === 'comprehensive'),
   });
 
   // 获取综合分析
   const { data: comprehensiveAnalysis } = useQuery({
     queryKey: ['garmin-comprehensive', userId, days],
-    queryFn: () => garminAnalysisApi.getComprehensive(userId!, days),
+    queryFn: () => garminAnalysisApi.getMyComprehensive(days),
     enabled: !!userId && activeTab === 'comprehensive',
   });
 
