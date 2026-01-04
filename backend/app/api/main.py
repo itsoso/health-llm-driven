@@ -1,6 +1,7 @@
 """主API路由"""
 from fastapi import APIRouter
 from app.api import (
+    auth,
     users,
     basic_health,
     medical_exams,
@@ -22,6 +23,9 @@ from app.api import (
 )
 
 api_router = APIRouter()
+
+# 认证路由（放在最前面）
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])
