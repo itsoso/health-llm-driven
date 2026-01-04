@@ -16,9 +16,12 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
-export default function GarminPage() {
-  const [userId] = useState(1); // 临时使用固定用户ID
+function GarminContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [days, setDays] = useState(30);
   const [activeTab, setActiveTab] = useState<'data' | 'sleep' | 'heart' | 'battery' | 'activity' | 'comprehensive'>('data');
   
@@ -1083,6 +1086,15 @@ export default function GarminPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function GarminPage() {
+  return (
+    <ProtectedRoute>
+      <GarminContent />
+    </ProtectedRoute>
   );
 }
 

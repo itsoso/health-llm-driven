@@ -4,9 +4,12 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkinApi, healthAnalysisApi } from '@/services/api';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
-export default function CheckinPage() {
-  const [userId] = useState(1); // 临时使用固定用户ID
+function CheckinContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const today = format(new Date(), 'yyyy-MM-dd');
   const queryClient = useQueryClient();
 
@@ -399,6 +402,15 @@ export default function CheckinPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function CheckinPage() {
+  return (
+    <ProtectedRoute>
+      <CheckinContent />
+    </ProtectedRoute>
   );
 }
 

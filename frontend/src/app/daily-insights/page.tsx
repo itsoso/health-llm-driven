@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { dailyRecommendationApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 interface DailyRecommendation {
   status: string;
@@ -110,8 +112,9 @@ const trendIcons: Record<string, string> = {
   concerning: '⚠️',
 };
 
-export default function DailyInsightsPage() {
-  const userId = 1; // TODO: 从用户会话获取
+function DailyInsightsContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [activeTab, setActiveTab] = useState<'one-day' | 'seven-day'>('one-day');
 
   // 获取建议数据（1天和7天）
@@ -601,6 +604,15 @@ export default function DailyInsightsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 导出受保护的页面
+export default function DailyInsightsPage() {
+  return (
+    <ProtectedRoute>
+      <DailyInsightsContent />
+    </ProtectedRoute>
   );
 }
 

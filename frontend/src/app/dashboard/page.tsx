@@ -16,9 +16,12 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
-export default function DashboardPage() {
-  const [userId] = useState(1);
+function DashboardContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [days] = useState(30);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
@@ -317,6 +320,15 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function DashboardPage() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
   );
 }
 
