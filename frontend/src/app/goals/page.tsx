@@ -53,7 +53,7 @@ function GoalsContent() {
 
   // 从分析生成目标
   const generateMutation = useMutation({
-    mutationFn: () => goalApi.generateFromAnalysis(userId),
+    mutationFn: () => goalApi.generateFromAnalysis(userId!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goals', userId] });
     },
