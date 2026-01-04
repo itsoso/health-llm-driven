@@ -78,6 +78,12 @@ export const diseaseApi = {
 // 日常健康记录
 export const dailyHealthApi = {
   createGarminData: (data: any) => api.post('/daily-health/garmin', data),
+  // 使用 /me 端点，自动使用当前登录用户
+  getMyGarminData: (startDate?: string, endDate?: string) =>
+    api.get('/daily-health/garmin/me', {
+      params: { start_date: startDate, end_date: endDate },
+    }),
+  // 保留旧方法以兼容
   getUserGarminData: (userId: number, startDate?: string, endDate?: string) =>
     api.get(`/daily-health/garmin/user/${userId}`, {
       params: { start_date: startDate, end_date: endDate },

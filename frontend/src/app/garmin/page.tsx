@@ -35,7 +35,7 @@ function GarminContent() {
 
   const { data: garminData, isLoading: loadingData } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
-    queryFn: () => dailyHealthApi.getUserGarminData(userId!, startDate, endDate),
+    queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate),
     enabled: !!userId,
   });
 

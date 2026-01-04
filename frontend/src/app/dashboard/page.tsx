@@ -32,7 +32,7 @@ function DashboardContent() {
   // 获取今天的实时数据
   const { data: todayData, refetch: refetchToday } = useQuery({
     queryKey: ['garmin-today', userId, today],
-    queryFn: () => dailyHealthApi.getUserGarminData(userId!, today, today),
+    queryFn: () => dailyHealthApi.getMyGarminData(today, today),
     refetchInterval: 5 * 60 * 1000, // 每5分钟自动刷新
     enabled: !!userId,
   });
@@ -40,7 +40,7 @@ function DashboardContent() {
   // 获取Garmin数据
   const { data: garminData } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
-    queryFn: () => dailyHealthApi.getUserGarminData(userId!, startDate, endDate),
+    queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate),
     enabled: !!userId,
   });
 
