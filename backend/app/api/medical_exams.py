@@ -129,12 +129,17 @@ async def import_medical_exam_from_pdf(
         # 创建体检记录
         db_exam = MedicalExam(
             user_id=user_id,
+            patient_name=parsed_data.get("patient_name"),
+            patient_gender=parsed_data.get("patient_gender"),
+            patient_age=parsed_data.get("patient_age"),
+            exam_number=parsed_data.get("exam_number"),
             exam_date=parse_date(parsed_data.get("exam_date")),
-            exam_type=parsed_data.get("exam_type", "other"),
+            exam_type=parsed_data.get("exam_type", "comprehensive"),
             body_system=parsed_data.get("body_system"),
             hospital_name=parsed_data.get("hospital_name"),
             doctor_name=parsed_data.get("doctor_name"),
             overall_assessment=parsed_data.get("overall_assessment"),
+            conclusions=parsed_data.get("conclusions"),
             notes=f"从PDF导入: {file.filename}"
         )
         db.add(db_exam)
@@ -142,10 +147,20 @@ async def import_medical_exam_from_pdf(
         
         # 创建检查项目
         for item in parsed_data.get("items", []):
+            # 处理value：可能是数字或None
+            value = item.get("value")
+            if isinstance(value, str):
+                try:
+                    value = float(value)
+                except (ValueError, TypeError):
+                    value = None
+            
             db_item = MedicalExamItem(
                 exam_id=db_exam.id,
+                category=item.get("category"),
                 item_name=item.get("item_name"),
-                value=item.get("value"),
+                value=value,
+                value_text=item.get("value_text"),
                 unit=item.get("unit"),
                 reference_range=item.get("reference_range"),
                 is_abnormal=item.get("is_abnormal", "normal"),
@@ -156,13 +171,22 @@ async def import_medical_exam_from_pdf(
         db.commit()
         db.refresh(db_exam)
         
+        # 统计各类别项目数量
+        category_counts = {}
+        for item in parsed_data.get("items", []):
+            cat = item.get("category", "other")
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+        
         return {
             "message": "PDF解析并导入成功",
             "exam_id": db_exam.id,
+            "patient_name": db_exam.patient_name,
             "exam_date": str(db_exam.exam_date),
             "exam_type": db_exam.exam_type,
             "hospital_name": db_exam.hospital_name,
             "items_count": len(parsed_data.get("items", [])),
+            "conclusions_count": len(parsed_data.get("conclusions", [])),
+            "category_summary": category_counts,
             "parsed_data": parsed_data
         }
         
