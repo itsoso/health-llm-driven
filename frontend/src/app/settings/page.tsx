@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -15,7 +16,7 @@ interface GarminCredential {
   sync_enabled: boolean;
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter();
   const { user, token, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth();
   const queryClient = useQueryClient();
@@ -395,6 +396,15 @@ export default function SettingsPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function SettingsPage() {
+  return (
+    <ProtectedRoute>
+      <SettingsContent />
+    </ProtectedRoute>
   );
 }
 

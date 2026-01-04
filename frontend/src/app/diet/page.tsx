@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -14,8 +16,9 @@ const MEAL_TYPES = [
   { value: 'snack', label: '加餐', icon: '🍎', color: 'bg-green-100 text-green-800' },
 ];
 
-export default function DietPage() {
-  const [userId] = useState(1);
+function DietContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -314,6 +317,15 @@ export default function DietPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function DietPage() {
+  return (
+    <ProtectedRoute>
+      <DietContent />
+    </ProtectedRoute>
   );
 }
 

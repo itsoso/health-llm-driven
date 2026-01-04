@@ -13,6 +13,8 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -26,8 +28,9 @@ const QUICK_AMOUNTS = [
 
 const DRINK_TYPES = ['水', '茶', '咖啡', '果汁', '牛奶', '其他'];
 
-export default function WaterPage() {
-  const [userId] = useState(1);
+function WaterContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -384,6 +387,15 @@ export default function WaterPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function WaterPage() {
+  return (
+    <ProtectedRoute>
+      <WaterContent />
+    </ProtectedRoute>
   );
 }
 

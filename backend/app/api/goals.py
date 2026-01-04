@@ -6,7 +6,9 @@ from datetime import date
 from app.database import get_db
 from app.schemas.goal import GoalCreate, GoalResponse, GoalProgressCreate
 from app.models.goal import Goal, GoalProgress, GoalStatus, GoalType, GoalPeriod
+from app.models.user import User
 from app.services.goal_management import GoalManagementService
+from app.api.deps import get_current_user_required
 
 router = APIRouter()
 
@@ -14,9 +16,15 @@ router = APIRouter()
 @router.post("/", response_model=GoalResponse)
 def create_goal(
     goal: GoalCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """创建目标"""
+    """创建目标（需要登录）"""
+    # 强制使用当前用户ID
+    goal_data = goal.model_dump()
+    goal_data["user_id"] = current_user.id
+    from app.schemas.goal import GoalCreate as GC
+    goal = GC(**goal_data)
     service = GoalManagementService()
     return service.create_goal(db, goal)
 
@@ -27,11 +35,27 @@ def get_user_goals(
     status: Optional[GoalStatus] = None,
     goal_type: Optional[GoalType] = None,
     goal_period: Optional[GoalPeriod] = None,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户目标"""
+    """获取用户目标（需要登录，只能查看自己的）"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
     service = GoalManagementService()
-    return service.get_user_goals(db, user_id, status, goal_type, goal_period)
+    return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
+
+
+@router.get("/me", response_model=List[GoalResponse])
+def get_my_goals(
+    status: Optional[GoalStatus] = None,
+    goal_type: Optional[GoalType] = None,
+    goal_period: Optional[GoalPeriod] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户目标（需要登录）"""
+    service = GoalManagementService()
+    return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
 
 
 @router.post("/{goal_id}/progress", response_model=dict)

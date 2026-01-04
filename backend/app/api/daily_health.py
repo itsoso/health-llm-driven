@@ -1,7 +1,7 @@
 """日常健康记录API"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import date
 from app.database import get_db
 from app.schemas.daily_health import (
@@ -21,6 +21,8 @@ from app.models.daily_health import (
     SupplementIntake,
     OutdoorActivity
 )
+from app.models.user import User
+from app.api.deps import get_current_user_required
 
 router = APIRouter()
 
@@ -29,12 +31,16 @@ router = APIRouter()
 @router.post("/garmin", response_model=GarminDataResponse)
 def create_garmin_data(
     data: GarminDataCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """创建Garmin数据"""
+    """创建Garmin数据（需要登录）"""
+    # 强制使用当前用户ID
+    user_id = current_user.id
+    
     # 检查是否已存在
     existing = db.query(GarminData).filter(
-        GarminData.user_id == data.user_id,
+        GarminData.user_id == user_id,
         GarminData.record_date == data.record_date
     ).first()
     
@@ -46,7 +52,10 @@ def create_garmin_data(
         db.refresh(existing)
         return existing
     
-    db_data = GarminData(**data.model_dump())
+    # 创建新记录，使用当前用户ID
+    data_dict = data.model_dump()
+    data_dict["user_id"] = user_id
+    db_data = GarminData(**data_dict)
     db.add(db_data)
     db.commit()
     db.refresh(db_data)
@@ -60,10 +69,36 @@ def get_user_garmin_data(
     end_date: date = None,
     skip: int = 0,
     limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户的Garmin数据"""
-    query = db.query(GarminData).filter(GarminData.user_id == user_id)
+    """获取用户的Garmin数据（需要登录，只能查看自己的数据）"""
+    # 只能查看自己的数据
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+    
+    query = db.query(GarminData).filter(GarminData.user_id == current_user.id)
+    
+    if start_date:
+        query = query.filter(GarminData.record_date >= start_date)
+    if end_date:
+        query = query.filter(GarminData.record_date <= end_date)
+    
+    data_list = query.order_by(GarminData.record_date.desc()).offset(skip).limit(limit).all()
+    return data_list
+
+
+@router.get("/garmin/me", response_model=List[GarminDataResponse])
+def get_my_garmin_data(
+    start_date: date = None,
+    end_date: date = None,
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的Garmin数据（需要登录）"""
+    query = db.query(GarminData).filter(GarminData.user_id == current_user.id)
     
     if start_date:
         query = query.filter(GarminData.record_date >= start_date)

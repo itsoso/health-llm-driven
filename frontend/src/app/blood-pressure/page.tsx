@@ -14,12 +14,15 @@ import {
   ReferenceLine,
   Legend,
 } from 'recharts';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
 
-export default function BloodPressurePage() {
-  const [userId] = useState(1);
+function BloodPressureContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -338,6 +341,15 @@ export default function BloodPressurePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function BloodPressurePage() {
+  return (
+    <ProtectedRoute>
+      <BloodPressureContent />
+    </ProtectedRoute>
   );
 }
 

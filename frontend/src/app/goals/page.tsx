@@ -4,9 +4,12 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { goalApi } from '@/services/api';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
-export default function GoalsPage() {
-  const [userId] = useState(1);
+function GoalsContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const queryClient = useQueryClient();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
@@ -670,5 +673,14 @@ export default function GoalsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function GoalsPage() {
+  return (
+    <ProtectedRoute>
+      <GoalsContent />
+    </ProtectedRoute>
   );
 }

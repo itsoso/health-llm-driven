@@ -7,6 +7,7 @@ from datetime import date, timedelta, datetime, time
 
 from app.database import get_db
 from app.models.daily_health import WaterIntake as WaterIntakeModel
+from app.models.user import User
 from app.schemas.water import (
     WaterRecordCreate,
     WaterRecordUpdate,
@@ -14,6 +15,7 @@ from app.schemas.water import (
     DailyWaterSummary,
     WaterStats,
 )
+from app.api.deps import get_current_user_required
 
 router = APIRouter()
 
@@ -44,14 +46,18 @@ def _convert_to_response(record) -> WaterRecordResponse:
 
 
 @router.post("/records", response_model=WaterRecordResponse)
-def create_water_record(record: WaterRecordCreate, db: Session = Depends(get_db)):
-    """创建饮水记录"""
+def create_water_record(
+    record: WaterRecordCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """创建饮水记录（需要登录）"""
     intake_time = None
     if record.drink_time:
         intake_time = datetime.combine(record.record_date, record.drink_time)
     
     db_record = WaterIntakeModel(
-        user_id=record.user_id,
+        user_id=current_user.id,
         record_date=record.record_date,
         amount=record.amount,
         intake_time=intake_time,
@@ -71,10 +77,14 @@ def get_user_water_records(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(default=50, le=500),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户饮水记录"""
-    query = db.query(WaterIntakeModel).filter(WaterIntakeModel.user_id == user_id)
+    """获取用户饮水记录（需要登录，只能查看自己的）"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+    
+    query = db.query(WaterIntakeModel).filter(WaterIntakeModel.user_id == current_user.id)
     
     if start_date:
         query = query.filter(WaterIntakeModel.record_date >= start_date)
@@ -89,11 +99,15 @@ def get_user_water_records(
 def get_daily_water_summary(
     user_id: int,
     record_date: date,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取某日饮水汇总"""
+    """获取某日饮水汇总（需要登录，只能查看自己的）"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+    
     records = db.query(WaterIntakeModel).filter(
-        WaterIntakeModel.user_id == user_id,
+        WaterIntakeModel.user_id == current_user.id,
         WaterIntakeModel.record_date == record_date
     ).order_by(WaterIntakeModel.created_at).all()
     
@@ -112,14 +126,14 @@ def get_daily_water_summary(
 
 @router.post("/records/quick", response_model=WaterRecordResponse)
 def quick_add_water(
-    user_id: int,
     amount: int = Query(default=250, description="饮水量(ml)"),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """快速添加饮水（默认250ml）"""
+    """快速添加饮水（默认250ml，需要登录）"""
     now = datetime.now()
     db_record = WaterIntakeModel(
-        user_id=user_id,
+        user_id=current_user.id,
         record_date=now.date(),
         amount=amount,
         intake_time=now,
@@ -136,13 +150,17 @@ def quick_add_water(
 def get_water_stats(
     user_id: int,
     days: int = Query(default=7, le=90),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取饮水统计"""
+    """获取饮水统计（需要登录，只能查看自己的）"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+    
     start_date = date.today() - timedelta(days=days)
     
     records = db.query(WaterIntakeModel).filter(
-        WaterIntakeModel.user_id == user_id,
+        WaterIntakeModel.user_id == current_user.id,
         WaterIntakeModel.record_date >= start_date
     ).all()
     
@@ -176,12 +194,16 @@ def get_water_stats(
 def update_water_record(
     record_id: int,
     update_data: WaterRecordUpdate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """更新饮水记录"""
+    """更新饮水记录（需要登录，只能更新自己的）"""
     record = db.query(WaterIntakeModel).filter(WaterIntakeModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
+    
+    if record.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权修改其他用户的数据")
     
     update_dict = update_data.model_dump(exclude_unset=True)
     if 'drink_time' in update_dict and update_dict['drink_time']:
@@ -197,11 +219,18 @@ def update_water_record(
 
 
 @router.delete("/records/{record_id}")
-def delete_water_record(record_id: int, db: Session = Depends(get_db)):
-    """删除饮水记录"""
+def delete_water_record(
+    record_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """删除饮水记录（需要登录，只能删除自己的）"""
     record = db.query(WaterIntakeModel).filter(WaterIntakeModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
+    
+    if record.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除其他用户的数据")
     
     db.delete(record)
     db.commit()

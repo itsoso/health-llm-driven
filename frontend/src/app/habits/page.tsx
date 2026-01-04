@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { habitApi } from '@/services/api';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 const CATEGORY_OPTIONS = [
   { value: 'health', label: '健康', icon: '💪' },
@@ -17,8 +19,9 @@ const CATEGORY_OPTIONS = [
 
 const ICON_OPTIONS = ['💪', '🏃', '🧘', '😴', '💧', '🌞', '📚', '🧠', '❤️', '🌿', '🔥', '⭐'];
 
-export default function HabitsPage() {
-  const [userId] = useState(1);
+function HabitsContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'checkin' | 'stats'>('checkin');
@@ -346,6 +349,15 @@ export default function HabitsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function HabitsPage() {
+  return (
+    <ProtectedRoute>
+      <HabitsContent />
+    </ProtectedRoute>
   );
 }
 

@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -506,8 +508,9 @@ interface MedicalExam {
   items: MedicalExamItem[];
 }
 
-export default function MedicalExamsPage() {
-  const [userId] = useState(1);
+function MedicalExamsContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [showForm, setShowForm] = useState(false);
   const [showPdfUpload, setShowPdfUpload] = useState(false);
   const [expandedExam, setExpandedExam] = useState<number | null>(null);
@@ -1355,6 +1358,15 @@ export default function MedicalExamsPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function MedicalExamsPage() {
+  return (
+    <ProtectedRoute>
+      <MedicalExamsContent />
+    </ProtectedRoute>
   );
 }
 

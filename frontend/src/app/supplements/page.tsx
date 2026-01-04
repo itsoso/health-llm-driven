@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supplementApi } from '@/services/api';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 const TIMING_OPTIONS = [
   { value: 'morning', label: '🌅 早晨', color: 'bg-orange-100 border-orange-300' },
@@ -21,8 +23,9 @@ const CATEGORY_OPTIONS = [
   { value: 'other', label: '其他' },
 ];
 
-export default function SupplementsPage() {
-  const [userId] = useState(1);
+function SupplementsContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [showAddForm, setShowAddForm] = useState(false);
   const queryClient = useQueryClient();
@@ -292,6 +295,15 @@ export default function SupplementsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function SupplementsPage() {
+  return (
+    <ProtectedRoute>
+      <SupplementsContent />
+    </ProtectedRoute>
   );
 }
 

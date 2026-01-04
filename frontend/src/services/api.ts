@@ -11,6 +11,42 @@ export const api = axios.create({
   },
 });
 
+// 请求拦截器：自动附加认证token
+api.interceptors.request.use(
+  (config) => {
+    // 从localStorage获取token
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// 响应拦截器：处理401错误（未授权）
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // token过期或无效，清除本地存储并跳转登录
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        // 如果不在登录页，跳转到登录页
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // 用户相关
 export const userApi = {
   getUsers: () => api.get('/users'),

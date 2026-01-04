@@ -6,7 +6,9 @@ from datetime import date
 from app.database import get_db
 from app.schemas.health_checkin import HealthCheckinCreate, HealthCheckinResponse
 from app.models.health_checkin import HealthCheckin
+from app.models.user import User
 from app.services.health_analysis import HealthAnalysisService
+from app.api.deps import get_current_user_required
 
 router = APIRouter()
 
@@ -14,12 +16,16 @@ router = APIRouter()
 @router.post("/", response_model=HealthCheckinResponse)
 def create_health_checkin(
     checkin: HealthCheckinCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """创建健康打卡"""
+    """创建健康打卡（需要登录）"""
+    # 强制使用当前用户ID
+    user_id = current_user.id
+    
     # 检查是否已存在该日期的打卡
     existing = db.query(HealthCheckin).filter(
-        HealthCheckin.user_id == checkin.user_id,
+        HealthCheckin.user_id == user_id,
         HealthCheckin.checkin_date == checkin.checkin_date
     ).first()
     
@@ -36,11 +42,15 @@ def create_health_checkin(
     if not checkin.personalized_advice:
         analysis_service = HealthAnalysisService()
         advice = analysis_service.generate_personalized_advice(
-            db, checkin.user_id, checkin.checkin_date
+            db, user_id, checkin.checkin_date
         )
-        checkin.personalized_advice = advice
+        checkin_data = checkin.model_dump()
+        checkin_data["personalized_advice"] = advice
+    else:
+        checkin_data = checkin.model_dump()
     
-    db_checkin = HealthCheckin(**checkin.model_dump())
+    checkin_data["user_id"] = user_id
+    db_checkin = HealthCheckin(**checkin_data)
     db.add(db_checkin)
     db.commit()
     db.refresh(db_checkin)
@@ -54,10 +64,14 @@ def get_user_checkins(
     end_date: Optional[date] = None,
     skip: int = 0,
     limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户的健康打卡记录"""
-    query = db.query(HealthCheckin).filter(HealthCheckin.user_id == user_id)
+    """获取用户的健康打卡记录（需要登录，只能查看自己的）"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+    
+    query = db.query(HealthCheckin).filter(HealthCheckin.user_id == current_user.id)
     
     if start_date:
         query = query.filter(HealthCheckin.checkin_date >= start_date)
@@ -68,15 +82,35 @@ def get_user_checkins(
     return checkins
 
 
+@router.get("/me/today", response_model=HealthCheckinResponse)
+def get_my_today_checkin(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户今日健康打卡（需要登录）"""
+    today = date.today()
+    checkin = db.query(HealthCheckin).filter(
+        HealthCheckin.user_id == current_user.id,
+        HealthCheckin.checkin_date == today
+    ).first()
+    if not checkin:
+        raise HTTPException(status_code=404, detail="今日尚未打卡")
+    return checkin
+
+
 @router.get("/user/{user_id}/today", response_model=HealthCheckinResponse)
 def get_today_checkin(
     user_id: int,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取今日健康打卡"""
+    """获取今日健康打卡（需要登录，只能查看自己的）"""
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
+    
     today = date.today()
     checkin = db.query(HealthCheckin).filter(
-        HealthCheckin.user_id == user_id,
+        HealthCheckin.user_id == current_user.id,
         HealthCheckin.checkin_date == today
     ).first()
     

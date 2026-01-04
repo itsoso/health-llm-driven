@@ -3,9 +3,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { healthAnalysisApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
-export default function AnalysisPage() {
-  const [userId] = useState(1); // 临时使用固定用户ID
+function AnalysisContent() {
+  const { user } = useAuth();
+  const userId = user?.id || 1;
   const [forceRefresh, setForceRefresh] = useState(false);
 
   const { data: response, isLoading, refetch, isFetching } = useQuery({
@@ -108,6 +111,15 @@ export default function AnalysisPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 导出受保护的页面
+export default function AnalysisPage() {
+  return (
+    <ProtectedRoute>
+      <AnalysisContent />
+    </ProtectedRoute>
   );
 }
 
