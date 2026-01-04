@@ -14,9 +14,9 @@ export const api = axios.create({
 // 请求拦截器：自动附加认证token
 api.interceptors.request.use(
   (config) => {
-    // 从localStorage获取token
+    // 从localStorage获取token（使用与AuthContext相同的键名）
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -35,8 +35,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // token过期或无效，清除本地存储并跳转登录
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        localStorage.removeItem('auth_token');
         // 如果不在登录页，跳转到登录页
         if (!window.location.pathname.includes('/login')) {
           window.location.href = '/login';
