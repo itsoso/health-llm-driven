@@ -170,9 +170,9 @@ async def get_users(
         ).scalar() or 0
         
         # 最后活动时间（取最近的健康记录日期）
-        last_health = db.query(GarminData.date).filter(
+        last_health = db.query(GarminData.record_date).filter(
             GarminData.user_id == user.id
-        ).order_by(desc(GarminData.date)).first()
+        ).order_by(desc(GarminData.record_date)).first()
         last_activity = datetime.combine(last_health[0], datetime.min.time()) if last_health else None
         
         user_responses.append(AdminUserResponse(
@@ -225,9 +225,9 @@ async def get_user_detail(
         MedicalExam.user_id == user.id
     ).scalar() or 0
     
-    last_health = db.query(GarminData.date).filter(
+    last_health = db.query(GarminData.record_date).filter(
         GarminData.user_id == user.id
-    ).order_by(desc(GarminData.date)).first()
+    ).order_by(desc(GarminData.record_date)).first()
     last_activity = datetime.combine(last_health[0], datetime.min.time()) if last_health else None
     
     return AdminUserResponse(
