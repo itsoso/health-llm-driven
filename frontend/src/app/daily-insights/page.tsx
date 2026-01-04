@@ -317,7 +317,7 @@ function DailyInsightsContent() {
               <div className="mb-4">
                 <div className="text-sm font-semibold mb-2 text-emerald-100">💡 关键洞察</div>
                 <ul className="space-y-2">
-                  {currentData.ai_insights.key_insights.map((insight, index) => (
+                  {currentData.ai_insights.key_insights.map((insight: string, index: number) => (
                     <li key={index} className="flex items-start">
                       <span className="mr-2">•</span>
                       <span>{insight}</span>
@@ -339,7 +339,7 @@ function DailyInsightsContent() {
             {currentData.ai_insights.warnings && currentData.ai_insights.warnings.length > 0 && (
               <div className="bg-orange-500/30 rounded-xl p-3 mb-4">
                 <div className="text-sm font-semibold mb-1">⚠️ 注意事项</div>
-                {currentData.ai_insights.warnings.map((warning, index) => (
+                {currentData.ai_insights.warnings.map((warning: string, index: number) => (
                   <div key={index} className="text-sm">{warning}</div>
                 ))}
               </div>
@@ -391,7 +391,7 @@ function DailyInsightsContent() {
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
           <h2 className="text-xl font-bold mb-4">📋 智能建议</h2>
           <ul className="space-y-3">
-            {(currentData?.enhanced_recommendations || currentData?.priority_recommendations || []).map((rec, index) => (
+            {(currentData?.enhanced_recommendations || currentData?.priority_recommendations || []).map((rec: string, index: number) => (
               <li key={index} className="flex items-start">
                 <span className="mr-3 text-xl">{index === 0 ? '⭐' : '•'}</span>
                 <span className={index === 0 ? 'font-semibold text-lg' : ''}>{rec}</span>
@@ -404,7 +404,7 @@ function DailyInsightsContent() {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">📋 今日目标</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(currentData?.daily_goals || []).map((goal, index) => {
+            {(currentData?.daily_goals || []).map((goal: { category: string; goal: string; icon: string; target_value: number; unit: string }, index: number) => {
               // 根据目标类别确定跳转链接
               const getGoalLink = (category: string) => {
                 switch (category) {
@@ -462,7 +462,7 @@ function DailyInsightsContent() {
               <div className="mb-4">
                 <div className="text-sm font-semibold text-red-600 mb-1">问题:</div>
                 <ul className="text-sm text-gray-600">
-                  {currentData.sleep_analysis.issues.map((issue, i) => (
+                  {currentData.sleep_analysis.issues.map((issue: string, i: number) => (
                     <li key={i}>• {issue}</li>
                   ))}
                 </ul>
@@ -473,7 +473,7 @@ function DailyInsightsContent() {
               <div>
                 <div className="text-sm font-semibold text-green-600 mb-1">建议:</div>
                 <ul className="text-sm text-gray-600">
-                  {currentData.sleep_analysis.recommendations.slice(0, 2).map((rec, i) => (
+                  {currentData.sleep_analysis.recommendations.slice(0, 2).map((rec: string, i: number) => (
                     <li key={i}>• {rec}</li>
                   ))}
                 </ul>
@@ -507,7 +507,7 @@ function DailyInsightsContent() {
               <div>
                 <div className="text-sm font-semibold text-green-600 mb-1">建议:</div>
                 <ul className="text-sm text-gray-600">
-                  {currentData.activity_analysis.recommendations.slice(0, 2).map((rec, i) => (
+                  {currentData.activity_analysis.recommendations.slice(0, 2).map((rec: string, i: number) => (
                     <li key={i}>• {rec}</li>
                   ))}
                 </ul>
@@ -545,7 +545,7 @@ function DailyInsightsContent() {
               <div>
                 <div className="text-sm font-semibold text-green-600 mb-1">建议:</div>
                 <ul className="text-sm text-gray-600">
-                  {currentData.heart_rate_analysis.recommendations.slice(0, 2).map((rec, i) => (
+                  {currentData.heart_rate_analysis.recommendations.slice(0, 2).map((rec: string, i: number) => (
                     <li key={i}>• {rec}</li>
                   ))}
                 </ul>
@@ -585,7 +585,7 @@ function DailyInsightsContent() {
               <div>
                 <div className="text-sm font-semibold text-green-600 mb-1">建议:</div>
                 <ul className="text-sm text-gray-600">
-                  {currentData.stress_analysis.recommendations.slice(0, 2).map((rec, i) => (
+                  {currentData.stress_analysis.recommendations.slice(0, 2).map((rec: string, i: number) => (
                     <li key={i}>• {rec}</li>
                   ))}
                 </ul>
