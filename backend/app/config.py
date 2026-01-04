@@ -24,9 +24,16 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     
+    # JWT密钥（用于用户认证token签名）
+    secret_key: str = "your-super-secret-key-change-in-production"
+    
+    # Garmin凭证加密密钥（用于加密存储的Garmin密码）
+    garmin_encryption_key: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # 忽略额外的环境变量
 
 
 settings = Settings()
