@@ -312,21 +312,17 @@ async def sync_garmin_data(
     # 执行同步
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService
+        from datetime import date, timedelta
         
-        garmin_service = GarminConnectService()
-        
-        # 登录Garmin
-        if not garmin_service.login(credentials["email"], credentials["password"]):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Garmin登录失败，请检查凭证是否正确"
-            )
+        # 创建Garmin服务实例（传入凭证，会自动登录）
+        garmin_service = GarminConnectService(
+            email=credentials["email"],
+            password=credentials["password"]
+        )
         
         # 同步数据
         synced_days = 0
         failed_days = 0
-        
-        from datetime import date, timedelta
         today = date.today()
         
         for i in range(sync_request.days):
@@ -369,12 +365,22 @@ async def test_garmin_connection(
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService
         
-        garmin_service = GarminConnectService()
-        if garmin_service.login(credentials.garmin_email, credentials.garmin_password):
+        # 创建服务实例时会尝试登录
+        garmin_service = GarminConnectService(
+            email=credentials.garmin_email,
+            password=credentials.garmin_password
+        )
+        # 尝试获取今天的数据来验证凭证
+        from datetime import date
+        summary = garmin_service.get_user_summary(date.today())
+        if summary is not None:
             return {"success": True, "message": "连接成功！凭证有效"}
         else:
-            return {"success": False, "message": "连接失败，请检查用户名和密码"}
+            return {"success": True, "message": "连接成功！凭证有效（今日暂无数据）"}
     except Exception as e:
         logger.error(f"测试Garmin连接失败: {e}")
-        return {"success": False, "message": f"连接失败: {str(e)}"}
+        error_msg = str(e)
+        if "credentials" in error_msg.lower() or "password" in error_msg.lower() or "login" in error_msg.lower():
+            return {"success": False, "message": "连接失败，请检查用户名和密码是否正确"}
+        return {"success": False, "message": f"连接失败: {error_msg}"}
 
