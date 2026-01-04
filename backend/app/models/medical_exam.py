@@ -1,5 +1,5 @@
 """体检数据模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Enum, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -29,6 +29,7 @@ class ExamType(str, enum.Enum):
     LIVER_FUNCTION = "liver_function"  # 肝功能
     KIDNEY_FUNCTION = "kidney_function"  # 肾功能
     THYROID = "thyroid"  # 甲状腺功能
+    COMPREHENSIVE = "comprehensive"  # 综合体检
     OTHER = "other"  # 其他
 
 
@@ -39,14 +40,21 @@ class MedicalExam(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
+    # 患者信息
+    patient_name = Column(String)  # 患者姓名
+    patient_gender = Column(String)  # 性别
+    patient_age = Column(Integer)  # 年龄
+    exam_number = Column(String)  # 体检号
+    
     exam_date = Column(Date, nullable=False)  # 体检日期
-    exam_type = Column(Enum(ExamType), nullable=False)  # 体检类型
-    body_system = Column(Enum(BodySystem))  # 所属身体系统
+    exam_type = Column(String, default="other")  # 体检类型（改为String以支持更多类型）
+    body_system = Column(String)  # 所属身体系统
     hospital_name = Column(String)  # 医院名称
     doctor_name = Column(String)  # 医生姓名
     
     # 总体评价
-    overall_assessment = Column(Text)  # 总体评价
+    overall_assessment = Column(Text)  # 总体评价摘要
+    conclusions = Column(JSON)  # 详细结论列表 [{category, title, description, recommendations}]
     
     notes = Column(Text)  # 备注
     
@@ -64,9 +72,13 @@ class MedicalExamItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     exam_id = Column(Integer, ForeignKey("medical_exams.id"), nullable=False)
     
+    # 检查类别
+    category = Column(String)  # blood_routine/liver_function/kidney_function/lipid/immune/thyroid/ultrasound/ct/ecg/eye/ent/body_composition/other
+    
     item_name = Column(String, nullable=False)  # 项目名称
     item_code = Column(String)  # 项目代码
-    value = Column(Float)  # 检测值
+    value = Column(Float)  # 检测值（数值型）
+    value_text = Column(Text)  # 检测值（文本型，用于影像结论等）
     unit = Column(String)  # 单位
     reference_range = Column(String)  # 参考范围
     result = Column(String)  # 结果（正常/异常/偏高/偏低）

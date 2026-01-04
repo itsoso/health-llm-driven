@@ -62,29 +62,58 @@ class MedicalReportPDFParser:
 请严格按照以下JSON格式返回结果（不要包含任何其他文字，只返回JSON）：
 
 {{
+    "patient_name": "患者姓名",
+    "patient_gender": "性别(male/female)",
+    "patient_age": 年龄数字,
     "exam_date": "YYYY-MM-DD格式的体检日期",
-    "exam_type": "体检类型，可选值: blood_routine(血常规), lipid_profile(血脂), urine_routine(尿常规), immune(免疫), liver_function(肝功能), kidney_function(肾功能), thyroid(甲状腺), other(其他)",
-    "body_system": "身体系统，可选值: nervous(神经), circulatory(循环), respiratory(呼吸), digestive(消化), urinary(泌尿), endocrine(内分泌), immune(免疫), skeletal(骨骼), muscular(肌肉), other(其他)",
+    "exam_number": "体检号",
+    "exam_type": "comprehensive",
     "hospital_name": "医院名称",
     "doctor_name": "医生姓名（如果有）",
-    "overall_assessment": "总体评价或结论",
+    "overall_assessment": "总体评价摘要",
+    "conclusions": [
+        {{
+            "category": "分类(urgent_attention/needs_attention/regular_followup/normal)",
+            "title": "结论标题",
+            "description": "详细描述",
+            "recommendations": "建议措施"
+        }}
+    ],
     "items": [
         {{
+            "category": "检查类别(blood_routine/liver_function/kidney_function/lipid/immune/thyroid/ultrasound/ct/ecg/eye/ent/body_composition/other)",
             "item_name": "检查项目名称",
-            "value": "数值（纯数字，不含单位）",
+            "value": 数值或null,
+            "value_text": "文本值（如影像结论）",
             "unit": "单位",
             "reference_range": "参考范围",
-            "is_abnormal": "normal/high/low/abnormal"
+            "is_abnormal": "normal/high/low/abnormal",
+            "notes": "备注说明"
         }}
     ]
 }}
 
+检查类别说明：
+- blood_routine: 血常规（白细胞、红细胞、血红蛋白、血小板等）
+- liver_function: 肝功能（谷丙转氨酶、谷草转氨酶、谷氨酰转肽酶等）
+- kidney_function: 肾功能
+- lipid: 血脂
+- immune: 免疫功能（CD3、CD4、CD8等）
+- thyroid: 甲状腺功能
+- ultrasound: 超声检查（肝胆脾胰、甲状腺、泌尿系统等）
+- ct: CT检查（肺部CT等）
+- ecg: 心电图
+- eye: 眼科检查
+- ent: 耳鼻喉科
+- body_composition: 人体成分（体重、BMI、体脂率、腹围等）
+- other: 其他
+
 注意：
 1. 日期格式必须是 YYYY-MM-DD
-2. value 必须是数字或 null
-3. is_abnormal 根据检测值和参考范围判断：正常为normal，偏高为high，偏低为low，其他异常为abnormal
-4. 如果某个字段无法从报告中提取，设置为 null
-5. 尽可能提取所有检查项目
+2. value 为数字时不含单位，非数值项目使用 value_text
+3. is_abnormal 根据检测值和参考范围判断
+4. 尽可能提取所有检查项目，包括血常规、肝功能、免疫功能、影像学检查等
+5. conclusions 提取总检结论中的各个分类（需要关注、定期随诊等）
 
 体检报告内容：
 {text}
