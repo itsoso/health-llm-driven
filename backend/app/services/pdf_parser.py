@@ -8,6 +8,7 @@ from datetime import date
 import pdfplumber
 from openai import OpenAI
 from app.config import settings
+from app.services.exam_packages import normalize_item_name, identify_package, ITEM_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -96,24 +97,26 @@ class MedicalReportPDFParser:
 检查类别说明（请使用以下标准类别名称）：
 【血液检查】
 - blood_routine: 血常规（白细胞、红细胞、血红蛋白、血小板、中性粒细胞、淋巴细胞等）
-- lipid_profile: 血脂（总胆固醇、甘油三酯、高密度脂蛋白、低密度脂蛋白等）
-- blood_glucose: 血糖（空腹血糖、糖化血红蛋白等）
+- lipid_profile: 血脂（总胆固醇、甘油三酯、高密度脂蛋白、低密度脂蛋白、载脂蛋白A1、载脂蛋白B等）
+- blood_glucose: 血糖（空腹血糖、糖化血红蛋白HbA1c、糖化白蛋白等）
 - urine_routine: 尿常规
-- stool_routine: 大便常规
+- stool_routine: 大便常规（含隐血OB）
 
 【生化检查】
 - liver_function: 肝功能（谷丙转氨酶ALT、谷草转氨酶AST、谷氨酰转肽酶GGT、总胆红素、白蛋白等）
-- kidney_function: 肾功能（肌酐、尿素氮、尿酸等）
-- electrolyte: 电解质（钾、钠、氯、钙等）
+- kidney_function: 肾功能（肌酐、尿素氮、尿酸、胱抑素C等）
+- electrolyte: 电解质（钾、钠、氯、钙、镁、磷等）
+- cardiac_enzyme: 心肌酶谱（CK、CK-MB、LDH、肌红蛋白、肌钙蛋白I/T、BNP等）
 
 【免疫检查】
-- immune: 免疫功能（CD3、CD4、CD8、免疫球蛋白等）
-- tumor_marker: 肿瘤标志物（AFP、CEA、CA199、PSA等）
+- immune: 免疫功能（CD3、CD4、CD8、CD16、CD19、CD45、CD56、NK细胞、B淋巴细胞、T细胞亚群10CD分析等）
+- tumor_marker: 肿瘤标志物（AFP、CEA、CA199、CA125、CA153、PSA、FPSA、SCC、CYFRA21-1、NSE、HE4等）
 - autoimmune: 自身免疫抗体
 
 【内分泌检查】
-- thyroid: 甲状腺功能（TSH、FT3、FT4、甲状腺抗体等）
-- hormone: 激素检查（性激素、皮质醇等）
+- thyroid: 甲状腺功能（TSH、FT3、FT4、TT3、TT4、TPOAb、TgAb等甲功全套）
+- hormone: 激素检查（性激素、皮质醇、空腹胰岛素、C肽等）
+- bone_metabolism: 骨代谢（25羟维生素D、PTH、骨钙素等）
 
 【影像学检查】
 - ultrasound: 超声检查（肝胆脾胰超声、甲状腺超声、泌尿系超声、心脏彩超等）
@@ -270,21 +273,41 @@ class MedicalReportPDFParser:
         if not data.get("exam_type"):
             data["exam_type"] = "other"
         
-        # 清理items
+        # 清理items，并标准化项目名称
         cleaned_items = []
+        item_codes = []  # 收集所有项目代码用于套餐识别
+        
         for item in data.get("items", []):
             if item.get("item_name"):
+                original_name = str(item["item_name"]).strip()
+                
+                # 尝试标准化项目名称
+                item_code, standard_name = normalize_item_name(original_name)
+                
                 cleaned_item = {
-                    "item_name": str(item["item_name"]).strip(),
+                    "category": item.get("category") or None,
+                    "item_name": standard_name,  # 使用标准化名称
+                    "item_code": item_code or item.get("item_code") or None,  # 添加项目代码
                     "value": self._safe_float(item.get("value")),
+                    "value_text": item.get("value_text") or None,
                     "unit": item.get("unit") or None,
                     "reference_range": item.get("reference_range") or None,
                     "is_abnormal": item.get("is_abnormal", "normal"),
                     "notes": item.get("notes") or None
                 }
                 cleaned_items.append(cleaned_item)
+                
+                if item_code:
+                    item_codes.append(item_code)
         
         data["items"] = cleaned_items
+        
+        # 尝试识别包含的体检套餐
+        if item_codes:
+            matched_packages = identify_package(item_codes)
+            if matched_packages:
+                data["identified_packages"] = matched_packages
+                logger.info(f"识别到体检套餐: {matched_packages}")
         
         return data
     

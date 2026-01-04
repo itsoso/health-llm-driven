@@ -229,7 +229,7 @@ export default function DailyInsightsPage() {
                   : `基于 ${sevenDayData?.analysis_period || '最近7天'} 的数据分析`}
               </p>
               <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">规则分析</span>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">智能分析</span>
                 {currentData?.ai_insights ? (
                   <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded">✓ AI增强</span>
                 ) : currentData?.llm_analysis?.available === false ? (
@@ -384,9 +384,9 @@ export default function DailyInsightsPage() {
           </div>
         )}
 
-        {/* 规则分析建议 */}
+        {/* 智能建议 */}
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
-          <h2 className="text-xl font-bold mb-4">📋 规则分析建议</h2>
+          <h2 className="text-xl font-bold mb-4">📋 智能建议</h2>
           <ul className="space-y-3">
             {(currentData?.enhanced_recommendations || currentData?.priority_recommendations || []).map((rec, index) => (
               <li key={index} className="flex items-start">
