@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.user import User, GarminCredential
-from app.models.daily_health import DailyHealth
+from app.models.daily_health import GarminData
 from app.models.medical_exam import MedicalExam
 from app.api.auth import get_current_user_required
 
@@ -103,7 +103,7 @@ async def get_admin_stats(
     users_with_garmin = db.query(func.count(GarminCredential.id)).scalar() or 0
     
     # 统计记录数据
-    total_health_records = db.query(func.count(DailyHealth.id)).scalar() or 0
+    total_health_records = db.query(func.count(GarminData.id)).scalar() or 0
     total_medical_exams = db.query(func.count(MedicalExam.id)).scalar() or 0
     
     # 新增用户
@@ -161,8 +161,8 @@ async def get_users(
             GarminCredential.user_id == user.id
         ).first() is not None
         
-        health_records_count = db.query(func.count(DailyHealth.id)).filter(
-            DailyHealth.user_id == user.id
+        health_records_count = db.query(func.count(GarminData.id)).filter(
+            GarminData.user_id == user.id
         ).scalar() or 0
         
         medical_exams_count = db.query(func.count(MedicalExam.id)).filter(
@@ -170,9 +170,9 @@ async def get_users(
         ).scalar() or 0
         
         # 最后活动时间（取最近的健康记录日期）
-        last_health = db.query(DailyHealth.date).filter(
-            DailyHealth.user_id == user.id
-        ).order_by(desc(DailyHealth.date)).first()
+        last_health = db.query(GarminData.date).filter(
+            GarminData.user_id == user.id
+        ).order_by(desc(GarminData.date)).first()
         last_activity = datetime.combine(last_health[0], datetime.min.time()) if last_health else None
         
         user_responses.append(AdminUserResponse(
@@ -217,17 +217,17 @@ async def get_user_detail(
         GarminCredential.user_id == user.id
     ).first() is not None
     
-    health_records_count = db.query(func.count(DailyHealth.id)).filter(
-        DailyHealth.user_id == user.id
+    health_records_count = db.query(func.count(GarminData.id)).filter(
+        GarminData.user_id == user.id
     ).scalar() or 0
     
     medical_exams_count = db.query(func.count(MedicalExam.id)).filter(
         MedicalExam.user_id == user.id
     ).scalar() or 0
     
-    last_health = db.query(DailyHealth.date).filter(
-        DailyHealth.user_id == user.id
-    ).order_by(desc(DailyHealth.date)).first()
+    last_health = db.query(GarminData.date).filter(
+        GarminData.user_id == user.id
+    ).order_by(desc(GarminData.date)).first()
     last_activity = datetime.combine(last_health[0], datetime.min.time()) if last_health else None
     
     return AdminUserResponse(
@@ -325,7 +325,7 @@ async def delete_user(
     
     # 删除关联数据
     db.query(GarminCredential).filter(GarminCredential.user_id == user_id).delete()
-    db.query(DailyHealth).filter(DailyHealth.user_id == user_id).delete()
+    db.query(GarminData).filter(GarminData.user_id == user_id).delete()
     db.query(MedicalExam).filter(MedicalExam.user_id == user_id).delete()
     
     # 删除用户
