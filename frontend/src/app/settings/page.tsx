@@ -54,11 +54,20 @@ export default function SettingsPage() {
         },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.detail || '保存失败');
+      
+      // 检查响应内容类型
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        throw new Error('服务器错误，请稍后重试');
       }
-      return res.json();
+      
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.detail || '保存失败');
+      }
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
@@ -79,8 +88,20 @@ export default function SettingsPage() {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('删除失败');
-      return res.json();
+      
+      // 检查响应内容类型
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        throw new Error('服务器错误，请稍后重试');
+      }
+      
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.detail || '删除失败');
+      }
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
@@ -103,6 +124,15 @@ export default function SettingsPage() {
         },
         body: JSON.stringify(data),
       });
+      
+      // 检查响应内容类型
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        return { success: false, message: '服务器错误，请稍后重试' };
+      }
+      
       return res.json();
     },
     onSuccess: (data) => {
@@ -128,11 +158,20 @@ export default function SettingsPage() {
         },
         body: JSON.stringify({ days }),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.detail || '同步失败');
+      
+      // 检查响应内容类型
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        throw new Error('服务器错误，请稍后重试');
       }
-      return res.json();
+      
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || '同步失败');
+      }
+      return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
