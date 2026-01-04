@@ -21,8 +21,8 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 const API_BASE = '/api';
 
 function BloodPressureContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -44,6 +44,7 @@ function BloodPressureContent() {
       const res = await fetch(`${API_BASE}/blood-pressure/records/user/${userId}?limit=60`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 获取统计
@@ -53,6 +54,7 @@ function BloodPressureContent() {
       const res = await fetch(`${API_BASE}/blood-pressure/records/user/${userId}/stats?days=30`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 创建记录

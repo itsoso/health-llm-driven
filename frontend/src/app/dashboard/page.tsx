@@ -20,8 +20,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 function DashboardContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const [days] = useState(30);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
@@ -32,26 +32,30 @@ function DashboardContent() {
   // 获取今天的实时数据
   const { data: todayData, refetch: refetchToday } = useQuery({
     queryKey: ['garmin-today', userId, today],
-    queryFn: () => dailyHealthApi.getUserGarminData(userId, today, today),
+    queryFn: () => dailyHealthApi.getUserGarminData(userId!, today, today),
     refetchInterval: 5 * 60 * 1000, // 每5分钟自动刷新
+    enabled: !!userId,
   });
 
   // 获取Garmin数据
   const { data: garminData } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
-    queryFn: () => dailyHealthApi.getUserGarminData(userId, startDate, endDate),
+    queryFn: () => dailyHealthApi.getUserGarminData(userId!, startDate, endDate),
+    enabled: !!userId,
   });
 
   // 获取基础健康数据
   const { data: basicHealth } = useQuery({
     queryKey: ['basic-health', userId],
-    queryFn: () => basicHealthApi.getLatest(userId),
+    queryFn: () => basicHealthApi.getLatest(userId!),
+    enabled: !!userId,
   });
 
   // 获取综合分析
   const { data: comprehensive } = useQuery({
     queryKey: ['garmin-comprehensive', userId, 7],
-    queryFn: () => garminAnalysisApi.getComprehensive(userId, 7),
+    queryFn: () => garminAnalysisApi.getComprehensive(userId!, 7),
+    enabled: !!userId,
   });
 
   // 监听数据更新

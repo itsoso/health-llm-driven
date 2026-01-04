@@ -113,14 +113,15 @@ const trendIcons: Record<string, string> = {
 };
 
 function DailyInsightsContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const [activeTab, setActiveTab] = useState<'one-day' | 'seven-day'>('one-day');
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
     queryKey: ['daily-recommendations', userId],
-    queryFn: () => dailyRecommendationApi.getRecommendations(userId, true),
+    queryFn: () => dailyRecommendationApi.getRecommendations(userId!, true),
+    enabled: !!userId,
   });
 
   const oneDayData = recommendationsData?.data?.one_day;

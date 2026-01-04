@@ -29,8 +29,8 @@ const QUICK_AMOUNTS = [
 const DRINK_TYPES = ['水', '茶', '咖啡', '果汁', '牛奶', '其他'];
 
 function WaterContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -49,6 +49,7 @@ function WaterContent() {
       const res = await fetch(`${API_BASE}/water/records/user/${userId}/date/${selectedDate}`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 获取统计
@@ -58,6 +59,7 @@ function WaterContent() {
       const res = await fetch(`${API_BASE}/water/records/user/${userId}/stats?days=7`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 获取最近7天记录用于图表
@@ -67,6 +69,7 @@ function WaterContent() {
       const res = await fetch(`${API_BASE}/water/records/user/${userId}?limit=100`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 快速添加

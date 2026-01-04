@@ -24,8 +24,8 @@ const CATEGORY_OPTIONS = [
 ];
 
 function SupplementsContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [showAddForm, setShowAddForm] = useState(false);
   const queryClient = useQueryClient();
@@ -33,13 +33,15 @@ function SupplementsContent() {
   // 获取补剂列表和打卡状态
   const { data: supplementsData, isLoading } = useQuery({
     queryKey: ['supplements-with-records', userId, selectedDate],
-    queryFn: () => supplementApi.getUserRecordsWithStatus(userId, selectedDate),
+    queryFn: () => supplementApi.getUserRecordsWithStatus(userId!, selectedDate),
+    enabled: !!userId,
   });
 
   // 获取统计数据
   const { data: statsData } = useQuery({
     queryKey: ['supplements-stats', userId],
-    queryFn: () => supplementApi.getStats(userId, 7),
+    queryFn: () => supplementApi.getStats(userId!, 7),
+    enabled: !!userId,
   });
 
   // 创建补剂

@@ -20,8 +20,8 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 const API_BASE = '/api';
 
 function WeightContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -40,6 +40,7 @@ function WeightContent() {
       const res = await fetch(`${API_BASE}/weight/records/user/${userId}?limit=90`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 获取统计
@@ -49,6 +50,7 @@ function WeightContent() {
       const res = await fetch(`${API_BASE}/weight/records/user/${userId}/stats?days=30`);
       return res.json();
     },
+    enabled: !!userId,
   });
 
   // 创建记录

@@ -7,13 +7,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 function AnalysisContent() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
   const [forceRefresh, setForceRefresh] = useState(false);
 
   const { data: response, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['health-analysis', userId, forceRefresh],
-    queryFn: () => healthAnalysisApi.analyzeIssues(userId, forceRefresh),
+    queryFn: () => healthAnalysisApi.analyzeIssues(userId!, forceRefresh),
+    enabled: !!userId,
   });
 
   // 实际数据在 response.data 中
