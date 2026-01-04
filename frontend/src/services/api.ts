@@ -127,3 +127,43 @@ export const dailyRecommendationApi = {
     api.get(`/daily-recommendation/user/${userId}/today`, { params: { use_llm: useLlm } }),
 };
 
+// 补剂管理
+export const supplementApi = {
+  // 补剂定义
+  createDefinition: (data: any) => api.post('/supplements/definitions', data),
+  getUserDefinitions: (userId: number, activeOnly: boolean = true) =>
+    api.get(`/supplements/definitions/user/${userId}`, { params: { active_only: activeOnly } }),
+  updateDefinition: (supplementId: number, data: any) =>
+    api.put(`/supplements/definitions/${supplementId}`, data),
+  deleteDefinition: (supplementId: number) =>
+    api.delete(`/supplements/definitions/${supplementId}`),
+  // 补剂打卡
+  createRecord: (data: any) => api.post('/supplements/records', data),
+  batchCheckin: (data: any) => api.post('/supplements/records/batch', data),
+  getUserRecordsWithStatus: (userId: number, recordDate: string) =>
+    api.get(`/supplements/records/user/${userId}/date/${recordDate}`),
+  getStats: (userId: number, days: number = 7) =>
+    api.get(`/supplements/records/user/${userId}/stats`, { params: { days } }),
+};
+
+// 习惯追踪
+export const habitApi = {
+  // 习惯定义
+  createDefinition: (data: any) => api.post('/habits/definitions', data),
+  getUserDefinitions: (userId: number, activeOnly: boolean = true, category?: string) =>
+    api.get(`/habits/definitions/user/${userId}`, { params: { active_only: activeOnly, category } }),
+  updateDefinition: (habitId: number, data: any) =>
+    api.put(`/habits/definitions/${habitId}`, data),
+  deleteDefinition: (habitId: number) =>
+    api.delete(`/habits/definitions/${habitId}`),
+  // 习惯打卡
+  createRecord: (data: any) => api.post('/habits/records', data),
+  batchCheckin: (data: any) => api.post('/habits/records/batch', data),
+  getUserRecordsWithStatus: (userId: number, recordDate: string) =>
+    api.get(`/habits/records/user/${userId}/date/${recordDate}`),
+  getStats: (userId: number, days: number = 30) =>
+    api.get(`/habits/records/user/${userId}/stats`, { params: { days } }),
+  getTodaySummary: (userId: number) =>
+    api.get(`/habits/records/user/${userId}/today-summary`),
+};
+

@@ -12,7 +12,13 @@ from app.api import (
     health_analysis,
     garmin_analysis,
     garmin_connect,
-    daily_recommendation
+    daily_recommendation,
+    supplements,
+    habits,
+    weight,
+    blood_pressure,
+    diet,
+    water,
 )
 
 api_router = APIRouter()
@@ -29,4 +35,10 @@ api_router.include_router(health_analysis.router, prefix="/analysis", tags=["ana
 api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tags=["garmin-analysis"])
 api_router.include_router(garmin_connect.router, prefix="/garmin-connect", tags=["garmin-connect"])
 api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
+api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
+api_router.include_router(habits.router, prefix="/habits", tags=["habits"])
+api_router.include_router(weight.router, prefix="/weight", tags=["weight"])
+api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=["blood-pressure"])
+api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
+api_router.include_router(water.router, prefix="/water", tags=["water"])
 

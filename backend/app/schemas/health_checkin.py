@@ -1,7 +1,7 @@
 """健康打卡Schema"""
 from pydantic import BaseModel
 from datetime import date
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 class HealthCheckinCreate(BaseModel):
@@ -14,6 +14,11 @@ class HealthCheckinCreate(BaseModel):
     tai_chi_duration: Optional[int] = None
     ba_duan_jin_duration: Optional[int] = None
     other_exercises: Optional[Dict[str, Any]] = None
+    # 鼻炎管理
+    sneeze_count: Optional[int] = None  # 打喷嚏次数
+    sneeze_times: Optional[List[Dict[str, Any]]] = None  # 打喷嚏时间记录
+    nasal_wash_count: Optional[int] = None  # 洗鼻次数
+    nasal_wash_times: Optional[List[Dict[str, Any]]] = None  # 洗鼻时间记录
     daily_score: Optional[int] = None
     goals_completed: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None
@@ -31,6 +36,11 @@ class HealthCheckinResponse(BaseModel):
     tai_chi_duration: Optional[int]
     ba_duan_jin_duration: Optional[int]
     other_exercises: Optional[Dict[str, Any]]
+    # 鼻炎管理
+    sneeze_count: Optional[int] = None
+    sneeze_times: Optional[List[Dict[str, Any]]] = None
+    nasal_wash_count: Optional[int] = None
+    nasal_wash_times: Optional[List[Dict[str, Any]]] = None
     daily_score: Optional[int]
     goals_completed: Optional[Dict[str, Any]]
     notes: Optional[str]

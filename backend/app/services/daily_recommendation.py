@@ -21,13 +21,35 @@ class DailyRecommendationService:
     生成今天的个性化健康建议
     """
     
+    def get_latest_data(
+        self,
+        db: Session,
+        user_id: int
+    ) -> Optional[GarminData]:
+        """获取最新的Garmin数据（优先今天，否则昨天）"""
+        # 首先尝试获取今天的数据
+        today_data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date == date.today()
+        ).first()
+        
+        if today_data:
+            return today_data
+        
+        # 如果没有今天的数据，获取昨天的
+        yesterday = date.today() - timedelta(days=1)
+        return db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date == yesterday
+        ).first()
+    
     def get_yesterday_data(
         self,
         db: Session,
         user_id: int,
         reference_date: Optional[date] = None
     ) -> Optional[GarminData]:
-        """获取昨天的Garmin数据"""
+        """获取昨天的Garmin数据（兼容旧方法）"""
         if reference_date is None:
             reference_date = date.today()
         
@@ -42,10 +64,11 @@ class DailyRecommendationService:
         self,
         db: Session,
         user_id: int,
-        days: int = 7
+        days: int = 7,
+        include_today: bool = True
     ) -> List[GarminData]:
         """获取最近N天的数据用于趋势分析"""
-        end_date = date.today() - timedelta(days=1)
+        end_date = date.today() if include_today else date.today() - timedelta(days=1)
         start_date = end_date - timedelta(days=days - 1)
         
         return db.query(GarminData).filter(
@@ -358,17 +381,18 @@ class DailyRecommendationService:
         if reference_date is None:
             reference_date = date.today()
         
-        yesterday = self.get_yesterday_data(db, user_id, reference_date)
-        recent_data = self.get_recent_data(db, user_id, 7)
+        # 获取最新可用数据（优先今天，否则昨天）
+        latest_data = self.get_latest_data(db, user_id)
+        recent_data = self.get_recent_data(db, user_id, 7, include_today=True)
         
         # 获取用户信息
         user = db.query(User).filter(User.id == user_id).first()
         
-        if not yesterday:
+        if not latest_data:
             return {
                 "status": "no_data",
-                "message": "暂无昨日数据",
-                "date": (reference_date - timedelta(days=1)).isoformat(),
+                "message": "暂无数据",
+                "date": reference_date.isoformat(),
                 "user": user.name if user else None,
                 "sleep_analysis": None,
                 "activity_analysis": None,
@@ -378,6 +402,9 @@ class DailyRecommendationService:
                 "priority_recommendations": ["请先同步Garmin数据"],
                 "daily_goals": []
             }
+        
+        # 使用最新数据进行分析（兼容旧变量名）
+        yesterday = latest_data
         
         # 各项分析
         sleep_analysis = self.analyze_sleep(yesterday, recent_data)
@@ -679,7 +706,10 @@ class DailyRecommendationService:
         返回1天和7天的建议
         """
         today = date.today()
-        yesterday = today - timedelta(days=1)
+        
+        # 获取最新数据的日期
+        latest_data = self.get_latest_data(db, user_id)
+        analysis_date = latest_data.record_date if latest_data else today
         
         # 检查缓存
         cached = db.query(DailyRecommendation).filter(
@@ -692,16 +722,16 @@ class DailyRecommendationService:
             return {
                 "status": "success",
                 "date": today.isoformat(),
-                "analysis_date": cached.analysis_date.isoformat(),
+                "analysis_date": cached.analysis_date.isoformat() if cached.analysis_date else analysis_date.isoformat(),
                 "one_day": cached.one_day_recommendation,
                 "seven_day": cached.seven_day_recommendation,
                 "cached": True
             }
         
         # 生成新建议
-        logger.info(f"生成新的建议数据（用户 {user_id}，日期 {today}）")
+        logger.info(f"生成新的建议数据（用户 {user_id}，日期 {today}，分析数据日期 {analysis_date}）")
         
-        # 生成1天建议（基于昨天的数据）
+        # 生成1天建议（基于最新的数据）
         one_day_rec = self.generate_one_day_recommendation(db, user_id, use_llm)
         
         # 生成7天建议（基于最近7天的数据）
@@ -712,14 +742,14 @@ class DailyRecommendationService:
             # 更新现有记录
             cached.one_day_recommendation = one_day_rec
             cached.seven_day_recommendation = seven_day_rec
-            cached.analysis_date = yesterday
+            cached.analysis_date = analysis_date
             cached.updated_at = datetime.utcnow()
         else:
             # 创建新记录
             cached = DailyRecommendation(
                 user_id=user_id,
                 recommendation_date=today,
-                analysis_date=yesterday,
+                analysis_date=analysis_date,
                 one_day_recommendation=one_day_rec,
                 seven_day_recommendation=seven_day_rec
             )
@@ -731,7 +761,7 @@ class DailyRecommendationService:
         return {
             "status": "success",
             "date": today.isoformat(),
-            "analysis_date": yesterday.isoformat(),
+            "analysis_date": analysis_date.isoformat(),
             "one_day": one_day_rec,
             "seven_day": seven_day_rec,
             "cached": False
@@ -760,12 +790,12 @@ class DailyRecommendationService:
         user_id: int,
         use_llm: bool = True
     ) -> Dict[str, Any]:
-        """生成7天建议（基于最近7天的数据）"""
+        """生成7天建议（基于最近7天的数据，包括今天）"""
         today = date.today()
-        end_date = today - timedelta(days=1)  # 昨天
+        end_date = today  # 包括今天
         start_date = end_date - timedelta(days=6)  # 最近7天
         
-        # 获取最近7天的数据
+        # 获取最近7天的数据（包括今天）
         recent_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date >= start_date,

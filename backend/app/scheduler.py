@@ -39,9 +39,9 @@ async def sync_garmin_task():
     finally:
         db.close()
 
-async def scheduler_loop(interval_hours: int = 2):
+async def scheduler_loop(interval_minutes: int = 10):
     """无限循环的任务调度器"""
-    logger.info(f"Garmin 后台同步调度器已启动，间隔: {interval_hours} 小时")
+    logger.info(f"Garmin 后台同步调度器已启动，间隔: {interval_minutes} 分钟")
     
     # 第一次运行前先等待一分钟，确保系统完全启动
     await asyncio.sleep(60)
@@ -52,8 +52,8 @@ async def scheduler_loop(interval_hours: int = 2):
         except Exception as e:
             logger.error(f"调度器循环出错: {e}")
         
-        logger.info(f"下一次同步将在 {interval_hours} 小时后执行")
-        await asyncio.sleep(interval_hours * 3600)
+        logger.info(f"下一次同步将在 {interval_minutes} 分钟后执行")
+        await asyncio.sleep(interval_minutes * 60)
 
 def start_scheduler(app):
     """在后台线程中启动异步调度器"""

@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi } from '@/services/api';
 import { format, subDays } from 'date-fns';
 import {
@@ -21,9 +20,18 @@ import {
 export default function DashboardPage() {
   const [userId] = useState(1);
   const [days] = useState(30);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
   const endDate = format(new Date(), 'yyyy-MM-dd');
   const startDate = format(subDays(new Date(), days), 'yyyy-MM-dd');
+  const today = format(new Date(), 'yyyy-MM-dd');
+
+  // 获取今天的实时数据
+  const { data: todayData, refetch: refetchToday } = useQuery({
+    queryKey: ['garmin-today', userId, today],
+    queryFn: () => dailyHealthApi.getUserGarminData(userId, today, today),
+    refetchInterval: 5 * 60 * 1000, // 每5分钟自动刷新
+  });
 
   // 获取Garmin数据
   const { data: garminData } = useQuery({
@@ -43,6 +51,16 @@ export default function DashboardPage() {
     queryFn: () => garminAnalysisApi.getComprehensive(userId, 7),
   });
 
+  // 监听数据更新
+  useEffect(() => {
+    if (todayData) {
+      setLastUpdate(new Date());
+    }
+  }, [todayData]);
+
+  // 今天的数据
+  const todayRecord = todayData?.data?.[0];
+
   // 准备图表数据
   const chartData = garminData?.data?.slice(-14).map((item: any) => ({
     date: format(new Date(item.record_date), 'MM-dd'),
@@ -52,8 +70,100 @@ export default function DashboardPage() {
   })) || [];
 
   return (
-    <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+    <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24">
       <div className="max-w-7xl mx-auto">
+        {/* 今日实时数据 */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h2 className="text-3xl font-bold mb-1">📊 今日实时数据</h2>
+              <p className="text-indigo-100 text-sm">
+                最后更新: {format(lastUpdate, 'HH:mm:ss')} | 自动刷新中...
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                refetchToday();
+                setLastUpdate(new Date());
+              }}
+              className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition-all backdrop-blur-sm border border-white/30"
+            >
+              🔄 手动刷新
+            </button>
+          </div>
+
+          {todayRecord ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">😴</span>
+                  <p className="text-sm font-medium text-indigo-100">睡眠分数</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {todayRecord.sleep_score || '-'}
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🚶</span>
+                  <p className="text-sm font-medium text-indigo-100">步数</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {todayRecord.steps?.toLocaleString() || '-'}
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">❤️</span>
+                  <p className="text-sm font-medium text-indigo-100">静息心率</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {todayRecord.resting_heart_rate || '-'}
+                  {todayRecord.resting_heart_rate && <span className="text-lg ml-1">bpm</span>}
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🔋</span>
+                  <p className="text-sm font-medium text-indigo-100">身体电量</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {todayRecord.body_battery_charged || '-'}
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">💪</span>
+                  <p className="text-sm font-medium text-indigo-100">HRV</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {todayRecord.hrv || '-'}
+                  {todayRecord.hrv && <span className="text-lg ml-1">ms</span>}
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">😌</span>
+                  <p className="text-sm font-medium text-indigo-100">压力水平</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {todayRecord.stress_level || '-'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+              <p className="text-indigo-100">正在加载今日数据...</p>
+            </div>
+          )}
+        </div>
+
         {/* 关键指标卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-blue-200 hover:shadow-xl transition-shadow">
@@ -204,42 +314,6 @@ export default function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        {/* 快速链接 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link
-            href="/garmin"
-            className="group p-6 bg-white rounded-xl shadow-lg border-2 border-blue-200 hover:shadow-xl hover:border-blue-400 transition-all"
-          >
-            <div className="flex items-center mb-3">
-              <span className="text-3xl mr-3">📊</span>
-              <h3 className="text-lg font-bold text-gray-900 group-hover:text-blue-700 transition-colors">查看详细Garmin数据</h3>
-            </div>
-            <p className="text-sm font-medium text-gray-700">查看完整的Garmin数据和分析</p>
-          </Link>
-
-          <Link
-            href="/analysis"
-            className="group p-6 bg-white rounded-xl shadow-lg border-2 border-green-200 hover:shadow-xl hover:border-green-400 transition-all"
-          >
-            <div className="flex items-center mb-3">
-              <span className="text-3xl mr-3">🏥</span>
-              <h3 className="text-lg font-bold text-gray-900 group-hover:text-green-700 transition-colors">健康问题分析</h3>
-            </div>
-            <p className="text-sm font-medium text-gray-700">AI驱动的健康分析</p>
-          </Link>
-
-          <Link
-            href="/checkin"
-            className="group p-6 bg-white rounded-xl shadow-lg border-2 border-purple-200 hover:shadow-xl hover:border-purple-400 transition-all"
-          >
-            <div className="flex items-center mb-3">
-              <span className="text-3xl mr-3">✅</span>
-              <h3 className="text-lg font-bold text-gray-900 group-hover:text-purple-700 transition-colors">每日打卡</h3>
-            </div>
-            <p className="text-sm font-medium text-gray-700">记录今日健康活动</p>
-          </Link>
         </div>
       </div>
     </main>
