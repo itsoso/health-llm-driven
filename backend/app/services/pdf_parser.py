@@ -82,7 +82,7 @@ class MedicalReportPDFParser:
     ],
     "items": [
         {{
-            "category": "检查类别(blood_routine/lipid_profile/blood_glucose/urine_routine/liver_function/kidney_function/immune/tumor_marker/thyroid/ultrasound/brain_ct/chest_ct/abdominal_ct/ct/mri/ecg/echocardiography/eye/ent/body_composition/physical/internal_medicine/surgery/other)",
+            "category": "检查类别代码（参考下方类别说明，使用细分类别如blood_routine_wbc/liver_alt/immune_cd4/tumor_afp/thyroid_tsh/us_liver/brain_ct/ecg等）",
             "item_name": "检查项目名称",
             "value": 数值或null,
             "value_text": "文本值（如影像结论）",
@@ -94,55 +94,441 @@ class MedicalReportPDFParser:
     ]
 }}
 
-检查类别说明（请使用以下标准类别名称）：
-【血液检查】
-- blood_routine: 血常规（白细胞、红细胞、血红蛋白、血小板、中性粒细胞、淋巴细胞等）
-- lipid_profile: 血脂（总胆固醇、甘油三酯、高密度脂蛋白、低密度脂蛋白、载脂蛋白A1、载脂蛋白B等）
-- blood_glucose: 血糖（空腹血糖、糖化血红蛋白HbA1c、糖化白蛋白等）
+检查类别说明（请使用以下标准类别名称，尽量使用细分类别）：
+
+═══════════════════════════════════════════════════════════════
+【血常规检查】 blood_routine 系列
+═══════════════════════════════════════════════════════════════
+- blood_routine: 血常规（总项）
+- blood_routine_wbc: 白细胞计数
+- blood_routine_rbc: 红细胞计数
+- blood_routine_hgb: 血红蛋白
+- blood_routine_plt: 血小板计数
+- blood_routine_neut: 中性粒细胞（绝对值/百分比）
+- blood_routine_lymph: 淋巴细胞（绝对值/百分比）
+- blood_routine_mono: 单核细胞
+- blood_routine_eos: 嗜酸性粒细胞
+- blood_routine_baso: 嗜碱性粒细胞
+- blood_routine_hct: 红细胞压积
+- blood_routine_mcv: 平均红细胞体积
+- blood_routine_mch: 平均红细胞血红蛋白含量
+- blood_routine_mchc: 平均红细胞血红蛋白浓度
+- blood_routine_rdw: 红细胞分布宽度
+- blood_routine_mpv: 平均血小板体积
+
+═══════════════════════════════════════════════════════════════
+【血脂检查】 lipid 系列
+═══════════════════════════════════════════════════════════════
+- lipid_profile: 血脂全套
+- lipid_tc: 总胆固醇(TC)
+- lipid_tg: 甘油三酯(TG)
+- lipid_hdl: 高密度脂蛋白胆固醇(HDL-C)
+- lipid_ldl: 低密度脂蛋白胆固醇(LDL-C)
+- lipid_vldl: 极低密度脂蛋白(VLDL)
+- lipid_apoa1: 载脂蛋白A1(ApoA1)
+- lipid_apob: 载脂蛋白B(ApoB)
+- lipid_lpa: 脂蛋白a[Lp(a)]
+- lipid_sdldl: 小而密低密度脂蛋白(sdLDL)
+
+═══════════════════════════════════════════════════════════════
+【血糖检查】 glucose 系列
+═══════════════════════════════════════════════════════════════
+- blood_glucose: 血糖检查（总项）
+- glucose_fasting: 空腹血糖(FPG)
+- glucose_postprandial: 餐后血糖(PPG)
+- glucose_hba1c: 糖化血红蛋白(HbA1c)
+- glucose_ga: 糖化白蛋白(GA)
+- glucose_ogtt: 糖耐量试验(OGTT)
+
+═══════════════════════════════════════════════════════════════
+【尿液检查】 urine 系列
+═══════════════════════════════════════════════════════════════
 - urine_routine: 尿常规
-- stool_routine: 大便常规（含隐血OB）
+- urine_protein: 尿蛋白
+- urine_glucose: 尿糖
+- urine_blood: 尿隐血
+- urine_wbc: 尿白细胞
+- urine_microalbumin: 尿微量白蛋白
+- urine_creatinine: 尿肌酐
+- urine_acr: 尿白蛋白/肌酐比值
 
-【生化检查】
-- liver_function: 肝功能（谷丙转氨酶ALT、谷草转氨酶AST、谷氨酰转肽酶GGT、总胆红素、白蛋白等）
-- kidney_function: 肾功能（肌酐、尿素氮、尿酸、胱抑素C等）
-- electrolyte: 电解质（钾、钠、氯、钙、镁、磷等）
-- cardiac_enzyme: 心肌酶谱（CK、CK-MB、LDH、肌红蛋白、肌钙蛋白I/T、BNP等）
+═══════════════════════════════════════════════════════════════
+【粪便检查】 stool 系列
+═══════════════════════════════════════════════════════════════
+- stool_routine: 粪便常规
+- stool_occult: 粪便隐血(OB)
+- stool_full: 粪便检查（常规+OB）
 
-【免疫检查】
-- immune: 免疫功能（CD3、CD4、CD8、CD16、CD19、CD45、CD56、NK细胞、B淋巴细胞、T细胞亚群10CD分析等）
-- tumor_marker: 肿瘤标志物（AFP、CEA、CA199、CA125、CA153、PSA、FPSA、SCC、CYFRA21-1、NSE、HE4等）
-- autoimmune: 自身免疫抗体
+═══════════════════════════════════════════════════════════════
+【肝功能】 liver 系列
+═══════════════════════════════════════════════════════════════
+- liver_function: 肝功能（总项）
+- liver_alt: 谷丙转氨酶(ALT/GPT)
+- liver_ast: 谷草转氨酶(AST/GOT)
+- liver_ggt: 谷氨酰转肽酶(GGT/γ-GT)
+- liver_alp: 碱性磷酸酶(ALP)
+- liver_tbil: 总胆红素(TBIL)
+- liver_dbil: 直接胆红素(DBIL)
+- liver_ibil: 间接胆红素(IBIL)
+- liver_tp: 总蛋白(TP)
+- liver_alb: 白蛋白(ALB)
+- liver_glob: 球蛋白(GLB)
+- liver_ag_ratio: 白球比(A/G)
+- liver_che: 胆碱酯酶
+- liver_tba: 总胆汁酸
+- liver_pa: 前白蛋白
 
-【内分泌检查】
-- thyroid: 甲状腺功能（TSH、FT3、FT4、TT3、TT4、TPOAb、TgAb等甲功全套）
-- hormone: 激素检查（性激素、皮质醇、空腹胰岛素、C肽等）
-- bone_metabolism: 骨代谢（25羟维生素D、PTH、骨钙素等）
+═══════════════════════════════════════════════════════════════
+【肾功能】 kidney 系列
+═══════════════════════════════════════════════════════════════
+- kidney_function: 肾功能（总项）
+- kidney_crea: 肌酐(Cr)
+- kidney_bun: 尿素氮(BUN)
+- kidney_ua: 尿酸(UA)
+- kidney_cystc: 胱抑素C(CysC)
+- kidney_egfr: 肾小球滤过率(eGFR)
+- kidney_b2m: β2微球蛋白
 
-【影像学检查】
-- ultrasound: 超声检查（肝胆脾胰超声、甲状腺超声、泌尿系超声、心脏彩超等）
-- brain_ct: 脑部CT
-- chest_ct: 胸部CT/肺部CT
+═══════════════════════════════════════════════════════════════
+【电解质】 electrolyte 系列
+═══════════════════════════════════════════════════════════════
+- electrolyte: 电解质（总项）
+- electrolyte_k: 钾(K)
+- electrolyte_na: 钠(Na)
+- electrolyte_cl: 氯(Cl)
+- electrolyte_ca: 钙(Ca)
+- electrolyte_mg: 镁(Mg)
+- electrolyte_p: 磷(P)
+- electrolyte_co2: 二氧化碳结合力(CO2CP)
+
+═══════════════════════════════════════════════════════════════
+【心肌酶谱/心脏标志物】 cardiac 系列
+═══════════════════════════════════════════════════════════════
+- cardiac_enzyme: 心肌酶谱（总项）
+- cardiac_ck: 肌酸激酶(CK)
+- cardiac_ckmb: 肌酸激酶同工酶(CK-MB)
+- cardiac_ldh: 乳酸脱氢酶(LDH)
+- cardiac_tnl: 肌钙蛋白I(cTnI)
+- cardiac_tnt: 肌钙蛋白T(cTnT)
+- cardiac_bnp: B型钠尿肽(BNP)
+- cardiac_ntprobnp: NT-proBNP
+- cardiac_myo: 肌红蛋白(Myo)
+- cardiac_hfabp: 心型脂肪酸结合蛋白
+
+═══════════════════════════════════════════════════════════════
+【凝血功能】 coagulation 系列
+═══════════════════════════════════════════════════════════════
+- coagulation: 凝血功能（总项）
+- coag_pt: 凝血酶原时间(PT)
+- coag_inr: 国际标准化比值(INR)
+- coag_aptt: 活化部分凝血活酶时间(APTT)
+- coag_tt: 凝血酶时间(TT)
+- coag_fib: 纤维蛋白原(Fib)
+- coag_ddimer: D-二聚体(D-Dimer)
+- coag_fdp: 纤维蛋白降解产物(FDP)
+- coag_at3: 抗凝血酶III(AT-III)
+
+═══════════════════════════════════════════════════════════════
+【免疫功能/淋巴细胞亚群】 immune 系列
+═══════════════════════════════════════════════════════════════
+- immune: 免疫功能（总项）
+- immune_cd3: CD3+T细胞（总T细胞）
+- immune_cd4: CD4+T细胞（辅助T细胞）
+- immune_cd8: CD8+T细胞（细胞毒性T细胞）
+- immune_cd4cd8: CD4/CD8比值
+- immune_cd16: CD16+细胞
+- immune_cd19: CD19+B细胞
+- immune_cd45: CD45+细胞
+- immune_cd56: CD56+NK细胞
+- immune_nk: NK细胞(CD16+CD56+)
+- immune_bcell: B淋巴细胞
+- immune_tcell_10cd: 免疫功能T细胞亚型分析（10CD）
+- immune_lymph_subset: 淋巴细胞亚群分析(CD3/4/8/16/19/45/56)
+- immune_iga: 免疫球蛋白A(IgA)
+- immune_igg: 免疫球蛋白G(IgG)
+- immune_igm: 免疫球蛋白M(IgM)
+- immune_ige: 免疫球蛋白E(IgE)
+- immune_c3: 补体C3
+- immune_c4: 补体C4
+- immune_ch50: 总补体(CH50)
+
+═══════════════════════════════════════════════════════════════
+【肿瘤标志物】 tumor 系列
+═══════════════════════════════════════════════════════════════
+- tumor_marker: 肿瘤标志物（总项）
+- tumor_afp: 甲胎蛋白(AFP)
+- tumor_cea: 癌胚抗原(CEA)
+- tumor_ca199: 糖类抗原CA19-9
+- tumor_ca125: 糖类抗原CA125
+- tumor_ca153: 糖类抗原CA15-3
+- tumor_ca724: 糖类抗原CA72-4
+- tumor_ca50: 糖类抗原CA50
+- tumor_ca242: 糖类抗原CA242
+- tumor_psa: 前列腺特异抗原(tPSA)
+- tumor_fpsa: 游离前列腺特异抗原(fPSA)
+- tumor_psa_ratio: PSA比值(fPSA/tPSA)
+- tumor_scc: 鳞状细胞癌抗原(SCC)
+- tumor_cyfra211: 细胞角蛋白19片段(CYFRA21-1)
+- tumor_nse: 神经元特异性烯醇化酶(NSE)
+- tumor_progrp: 胃泌素释放肽前体(ProGRP)
+- tumor_ferritin: 铁蛋白
+- tumor_he4: 人附睾蛋白4(HE4)
+- tumor_roma: ROMA指数
+- tumor_afp_l3: 甲胎蛋白异质体(AFP-L3)
+- tumor_pivka: 异常凝血酶原(PIVKA-II)
+
+═══════════════════════════════════════════════════════════════
+【自身免疫抗体】 autoimmune 系列
+═══════════════════════════════════════════════════════════════
+- autoimmune: 自身免疫抗体（总项）
+- auto_ana: 抗核抗体(ANA)
+- auto_dsdna: 抗双链DNA抗体
+- auto_ena: 抗可提取核抗原抗体(ENA)
+- auto_rf: 类风湿因子(RF)
+- auto_ccp: 抗环瓜氨酸肽抗体(Anti-CCP)
+- auto_anca: 抗中性粒细胞胞浆抗体(ANCA)
+- auto_gpc: 抗胃壁细胞抗体
+- auto_tpo: 抗甲状腺过氧化物酶抗体(TPOAb)
+- auto_tg: 抗甲状腺球蛋白抗体(TgAb)
+- auto_sm: 抗Sm抗体
+- auto_ssa: 抗SSA抗体
+- auto_ssb: 抗SSB抗体
+- auto_jo1: 抗Jo-1抗体
+
+═══════════════════════════════════════════════════════════════
+【甲状腺功能】 thyroid 系列
+═══════════════════════════════════════════════════════════════
+- thyroid: 甲状腺功能（总项）
+- thyroid_full: 甲功全套(TT3/TT4/TSH/FT3/FT4/TPOAb/TgAb)
+- thyroid_tsh: 促甲状腺激素(TSH)
+- thyroid_ft3: 游离三碘甲状腺原氨酸(FT3)
+- thyroid_ft4: 游离甲状腺素(FT4)
+- thyroid_t3: 总三碘甲状腺原氨酸(TT3)
+- thyroid_t4: 总甲状腺素(TT4)
+- thyroid_tgab: 甲状腺球蛋白抗体(TgAb)
+- thyroid_tpoab: 甲状腺过氧化物酶抗体(TPOAb)
+- thyroid_trab: 促甲状腺素受体抗体(TRAb)
+- thyroid_tg: 甲状腺球蛋白(Tg)
+- thyroid_ct: 降钙素(CT)
+
+═══════════════════════════════════════════════════════════════
+【激素检查】 hormone 系列
+═══════════════════════════════════════════════════════════════
+- hormone: 激素检查（总项）
+- hormone_fsh: 卵泡刺激素(FSH)
+- hormone_lh: 黄体生成素(LH)
+- hormone_e2: 雌二醇(E2)
+- hormone_prog: 孕酮(P)
+- hormone_test: 睾酮(T)
+- hormone_prl: 泌乳素(PRL)
+- hormone_dheas: 硫酸脱氢表雄酮(DHEA-S)
+- hormone_cortisol: 皮质醇
+- hormone_acth: 促肾上腺皮质激素(ACTH)
+- hormone_gh: 生长激素(GH)
+- hormone_igf1: 胰岛素样生长因子-1(IGF-1)
+- hormone_insulin_fasting: 空腹胰岛素(FINS)
+- hormone_insulin_postprandial: 餐后胰岛素
+- hormone_cpeptide: C肽(C-P)
+- hormone_homa_ir: 胰岛素抵抗指数(HOMA-IR)
+
+═══════════════════════════════════════════════════════════════
+【感染标志物】 infection 系列
+═══════════════════════════════════════════════════════════════
+- infection: 感染标志物（总项）
+- infection_crp: C反应蛋白(CRP)
+- infection_hscrp: 超敏C反应蛋白(hs-CRP)
+- infection_pct: 降钙素原(PCT)
+- infection_esr: 血沉(ESR)
+- infection_il6: 白介素-6(IL-6)
+- infection_saa: 血清淀粉样蛋白A(SAA)
+
+═══════════════════════════════════════════════════════════════
+【肝炎标志物】 hepatitis 系列
+═══════════════════════════════════════════════════════════════
+- hepatitis: 肝炎标志物（总项）
+- hep_hbsag: 乙肝表面抗原(HBsAg)
+- hep_hbsab: 乙肝表面抗体(HBsAb/Anti-HBs)
+- hep_hbeag: 乙肝e抗原(HBeAg)
+- hep_hbeab: 乙肝e抗体(HBeAb/Anti-HBe)
+- hep_hbcab: 乙肝核心抗体(HBcAb/Anti-HBc)
+- hep_hbvdna: 乙肝病毒DNA(HBV-DNA)
+- hep_hcvab: 丙肝抗体(Anti-HCV)
+- hep_hcvrna: 丙肝病毒RNA(HCV-RNA)
+- hep_havab: 甲肝抗体(Anti-HAV)
+- hep_hevab: 戊肝抗体(Anti-HEV)
+
+═══════════════════════════════════════════════════════════════
+【贫血相关】 anemia 系列
+═══════════════════════════════════════════════════════════════
+- anemia: 贫血检查（总项）
+- anemia_iron: 血清铁(Fe)
+- anemia_ferritin: 铁蛋白(SF)
+- anemia_tibc: 总铁结合力(TIBC)
+- anemia_transferrin: 转铁蛋白(TRF)
+- anemia_folate: 叶酸
+- anemia_b12: 维生素B12
+- anemia_retic: 网织红细胞
+- anemia_epo: 促红细胞生成素(EPO)
+
+═══════════════════════════════════════════════════════════════
+【骨代谢】 bone 系列
+═══════════════════════════════════════════════════════════════
+- bone: 骨代谢（总项）
+- bone_osteocalcin: 骨钙素(OC)
+- bone_pinp: I型前胶原氨基端前肽(P1NP)
+- bone_ctx: I型胶原C端肽(β-CTX)
+- bone_vitd: 25羟维生素D[25(OH)D]
+- bone_pth: 甲状旁腺激素(PTH)
+- bone_density: 骨密度(BMD)
+
+═══════════════════════════════════════════════════════════════
+【超声检查】 ultrasound/us 系列
+═══════════════════════════════════════════════════════════════
+- ultrasound: 超声检查（总项）
+- us_liver: 肝脏超声
+- us_gallbladder: 胆囊超声
+- us_spleen: 脾脏超声
+- us_pancreas: 胰腺超声
+- us_liver_gallbladder_spleen_pancreas: 肝胆脾胰超声
+- us_kidney: 肾脏超声
+- us_bladder: 膀胱超声
+- us_prostate: 前列腺超声
+- us_urinary: 泌尿系超声
+- us_uterus: 子宫超声
+- us_ovary: 卵巢超声
+- us_breast: 乳腺超声
+- us_thyroid: 甲状腺超声
+- us_carotid: 颈动脉超声
+- us_cardiac: 心脏超声/心脏彩超
+
+═══════════════════════════════════════════════════════════════
+【CT检查】 ct 系列
+═══════════════════════════════════════════════════════════════
+- ct: CT检查（总项）
+- brain_ct: 脑部CT/头颅CT
+- head_ct: 头颅CT
+- chest_ct: 胸部CT
+- lung_ct: 肺部CT（低剂量CT筛查）
 - abdominal_ct: 腹部CT
-- ct: 其他CT检查
-- mri: MRI/磁共振检查
-- xray: X光/胸片
+- pelvic_ct: 盆腔CT
+- spine_ct: 脊柱CT
+- cardiac_ct: 心脏CT
+- coronary_cta: 冠状动脉CTA
 
-【心电检查】
-- ecg: 心电图
+═══════════════════════════════════════════════════════════════
+【MRI检查】 mri 系列
+═══════════════════════════════════════════════════════════════
+- mri: MRI检查（总项）
+- brain_mri: 脑部MRI/头颅MRI
+- spine_mri: 脊柱MRI
+- joint_mri: 关节MRI
+- abdominal_mri: 腹部MRI
+- pelvic_mri: 盆腔MRI
+- cardiac_mri: 心脏MRI
+- breast_mri: 乳腺MRI
+
+═══════════════════════════════════════════════════════════════
+【X光检查】 xray 系列
+═══════════════════════════════════════════════════════════════
+- xray: X光检查（总项）
+- chest_xray: 胸部X光/胸片
+- spine_xray: 脊柱X光
+- joint_xray: 关节X光
+- bone_xray: 骨骼X光
+
+═══════════════════════════════════════════════════════════════
+【心电/肺功能检查】 ecg/pulmonary 系列
+═══════════════════════════════════════════════════════════════
+- ecg: 心电图（总项）
+- ecg_resting: 静息心电图
+- ecg_holter: 24小时动态心电图(Holter)
+- ecg_stress: 运动心电图/平板运动试验
 - echocardiography: 心脏彩超/超声心动图
+- pulmonary: 肺功能检查（总项）
+- pulm_fvc: 用力肺活量(FVC)
+- pulm_fev1: 第一秒用力呼气量(FEV1)
+- pulm_fev1fvc: FEV1/FVC比值
+- pulm_pef: 呼气峰流速(PEF)
+- pulm_dlco: 弥散功能(DLCO)
 
-【专科检查】
-- eye: 眼科检查（视力、眼底、眼压等）
-- ent: 耳鼻喉科（听力、鼻咽、喉部等）
-- dental: 口腔科
-- gynecology: 妇科检查
+═══════════════════════════════════════════════════════════════
+【内镜检查】 endoscopy 系列
+═══════════════════════════════════════════════════════════════
+- endoscopy: 内镜检查（总项）
+- gastroscopy: 胃镜
+- colonoscopy: 肠镜
+- enteroscopy: 小肠镜
+- bronchoscopy: 支气管镜
 
-【体格检查】
-- body_composition: 人体成分/体成分（身高、体重、BMI、体脂率、腹围等）
-- physical: 一般检查（血压、脉搏等）
+═══════════════════════════════════════════════════════════════
+【眼科检查】 eye 系列
+═══════════════════════════════════════════════════════════════
+- eye: 眼科检查（总项）
+- eye_vision: 视力检查
+- eye_iop: 眼压(IOP)
+- eye_fundus: 眼底检查
+- eye_oct: 眼底OCT
+- eye_refraction: 屈光检查
+- eye_slit: 裂隙灯检查
+- eye_color: 色觉检查
+
+═══════════════════════════════════════════════════════════════
+【耳鼻喉科】 ent 系列
+═══════════════════════════════════════════════════════════════
+- ent: 耳鼻喉科检查（总项）
+- ent_hearing: 听力检查/纯音测听
+- ent_tympanometry: 鼓室图/声导抗
+- ent_nasal: 鼻腔检查
+- ent_pharynx: 咽喉检查
+- ent_laryngoscopy: 喉镜检查
+
+═══════════════════════════════════════════════════════════════
+【口腔科】 dental 系列
+═══════════════════════════════════════════════════════════════
+- dental: 口腔科检查（总项）
+- dental_teeth: 牙齿检查
+- dental_gum: 牙龈检查
+- dental_panoramic: 口腔全景片
+
+═══════════════════════════════════════════════════════════════
+【妇科检查】 gynecology 系列
+═══════════════════════════════════════════════════════════════
+- gynecology: 妇科检查（总项）
+- gyn_pap: 宫颈液基细胞学(TCT)
+- gyn_hpv: HPV检测
+- gyn_colposcopy: 阴道镜
+- gyn_mammography: 乳腺钼靶X线
+
+═══════════════════════════════════════════════════════════════
+【体格检查】 physical 系列
+═══════════════════════════════════════════════════════════════
+- physical: 一般检查（总项）
+- physical_height: 身高
+- physical_weight: 体重
+- physical_bmi: 体质指数(BMI)
+- physical_waist: 腰围
+- physical_hip: 臀围
+- physical_whr: 腰臀比
+- physical_bp: 血压
+- physical_pulse: 脉搏
+- body_composition: 体成分分析
+- physical_bodyfat: 体脂率
+- physical_muscle: 肌肉量
+- physical_water: 体水分
+
+═══════════════════════════════════════════════════════════════
+【临床科室检查】
+═══════════════════════════════════════════════════════════════
 - internal_medicine: 内科检查
 - surgery: 外科检查
+- neurology: 神经内科
+- dermatology: 皮肤科
 
+═══════════════════════════════════════════════════════════════
+【综合/其他】
+═══════════════════════════════════════════════════════════════
+- biochemistry_full: 肝肾脂糖电解质测定（生化全套）
+- comprehensive: 综合体检
 - other: 其他无法分类的项目
 
 注意：

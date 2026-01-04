@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface NavItem {
   href: string;
@@ -18,9 +19,12 @@ interface NavGroup {
 
 export default function Navigation() {
   const pathname = usePathname();
+  const { user, isAuthenticated, logout, isLoading: authLoading } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   // 主要导航项（直接显示）
   const mainNavItems: NavItem[] = [
@@ -65,6 +69,7 @@ export default function Navigation() {
         { href: '/goals', label: '目标管理', icon: '🎯' },
         { href: '/medical-exams', label: '体检记录', icon: '🏥' },
         { href: '/data-collection', label: '数据收集', icon: '📥' },
+        { href: '/settings', label: '个人设置', icon: '⚙️' },
       ],
     },
   ];
@@ -80,6 +85,9 @@ export default function Navigation() {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setOpenDropdown(null);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -175,6 +183,66 @@ export default function Navigation() {
                 )}
               </div>
             ))}
+
+            {/* 用户菜单 */}
+            <div className="relative ml-2 pl-2 border-l border-gray-200" ref={userMenuRef}>
+              {!authLoading && (
+                isAuthenticated ? (
+                  <>
+                    <button
+                      onClick={() => setShowUserMenu(!showUserMenu)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-all"
+                    >
+                      <span className="w-8 h-8 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                        {user?.name?.charAt(0) || '?'}
+                      </span>
+                      <span className="hidden xl:inline">{user?.name}</span>
+                      <svg className={`w-4 h-4 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showUserMenu && (
+                      <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50">
+                        <div className="px-4 py-2 border-b border-gray-100">
+                          <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
+                          <p className="text-xs text-gray-500">{user?.email}</p>
+                        </div>
+                        <Link
+                          href="/settings"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-all"
+                        >
+                          <span>⚙️</span>
+                          <span>个人设置</span>
+                        </Link>
+                        <button
+                          onClick={() => { logout(); setShowUserMenu(false); }}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-all w-full text-left"
+                        >
+                          <span>🚪</span>
+                          <span>退出登录</span>
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href="/login"
+                      className="px-3 py-2 rounded-lg text-sm font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-all"
+                    >
+                      登录
+                    </Link>
+                    <Link
+                      href="/register"
+                      className="px-3 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-md"
+                    >
+                      注册
+                    </Link>
+                  </div>
+                )
+              )}
+            </div>
           </div>
 
           {/* 平板导航菜单 */}
@@ -274,6 +342,57 @@ export default function Navigation() {
                 ))}
               </div>
             ))}
+
+            {/* 移动端用户菜单 */}
+            <div className="pt-4 mt-4 border-t border-gray-200">
+              {!authLoading && (
+                isAuthenticated ? (
+                  <>
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <span className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold">
+                        {user?.name?.charAt(0) || '?'}
+                      </span>
+                      <div>
+                        <p className="font-semibold text-gray-900">{user?.name}</p>
+                        <p className="text-sm text-gray-500">{user?.email}</p>
+                      </div>
+                    </div>
+                    <Link
+                      href="/settings"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-gray-700 hover:bg-indigo-50"
+                    >
+                      <span className="mr-3 text-xl">⚙️</span>
+                      个人设置
+                    </Link>
+                    <button
+                      onClick={() => { logout(); setIsMobileMenuOpen(false); }}
+                      className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-red-600 hover:bg-red-50 w-full text-left"
+                    >
+                      <span className="mr-3 text-xl">🚪</span>
+                      退出登录
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex gap-3 px-4">
+                    <Link
+                      href="/login"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex-1 py-3 text-center rounded-lg text-base font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200"
+                    >
+                      登录
+                    </Link>
+                    <Link
+                      href="/register"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex-1 py-3 text-center rounded-lg text-base font-semibold text-white bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600"
+                    >
+                      注册
+                    </Link>
+                  </div>
+                )
+              )}
+            </div>
           </div>
         </div>
       )}
