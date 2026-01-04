@@ -2,6 +2,7 @@
 import tempfile
 import os
 import logging
+from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from typing import List
@@ -13,6 +14,18 @@ from app.services.pdf_parser import pdf_parser
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def parse_date(date_str) -> date:
+    """将日期字符串转换为date对象"""
+    if isinstance(date_str, date):
+        return date_str
+    if not date_str:
+        return date.today()
+    try:
+        return datetime.strptime(str(date_str), "%Y-%m-%d").date()
+    except ValueError:
+        return date.today()
 
 
 @router.post("/", response_model=MedicalExamResponse)
@@ -116,7 +129,7 @@ async def import_medical_exam_from_pdf(
         # 创建体检记录
         db_exam = MedicalExam(
             user_id=user_id,
-            exam_date=parsed_data.get("exam_date"),
+            exam_date=parse_date(parsed_data.get("exam_date")),
             exam_type=parsed_data.get("exam_type", "other"),
             body_system=parsed_data.get("body_system"),
             hospital_name=parsed_data.get("hospital_name"),
