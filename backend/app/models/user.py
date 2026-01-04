@@ -16,6 +16,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=True)  # 用户名
     hashed_password = Column(String, nullable=True)  # 加密后的密码
     is_active = Column(Boolean, default=True)  # 账户是否激活
+    is_admin = Column(Boolean, default=False)  # 是否管理员
     
     # 基础信息
     name = Column(String, nullable=False)

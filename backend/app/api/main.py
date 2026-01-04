@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 from app.api import (
     auth,
+    admin,
     users,
     basic_health,
     medical_exams,
@@ -26,6 +27,9 @@ api_router = APIRouter()
 
 # 认证路由（放在最前面）
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+
+# 管理员路由
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])
