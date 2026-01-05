@@ -29,6 +29,21 @@ def create_goal(
     return service.create_goal(db, goal)
 
 
+# ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
+
+@router.get("/me", response_model=List[GoalResponse])
+def get_my_goals(
+    status: Optional[GoalStatus] = None,
+    goal_type: Optional[GoalType] = None,
+    goal_period: Optional[GoalPeriod] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户目标（需要登录）"""
+    service = GoalManagementService()
+    return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
+
+
 @router.get("/user/{user_id}", response_model=List[GoalResponse])
 def get_user_goals(
     user_id: int,
@@ -41,19 +56,6 @@ def get_user_goals(
     """获取用户目标（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    service = GoalManagementService()
-    return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
-
-
-@router.get("/me", response_model=List[GoalResponse])
-def get_my_goals(
-    status: Optional[GoalStatus] = None,
-    goal_type: Optional[GoalType] = None,
-    goal_period: Optional[GoalPeriod] = None,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
-):
-    """获取当前用户目标（需要登录）"""
     service = GoalManagementService()
     return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
 

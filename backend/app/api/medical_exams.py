@@ -53,19 +53,7 @@ def create_medical_exam(
     return db_exam
 
 
-@router.get("/user/{user_id}", response_model=List[MedicalExamResponse])
-def get_user_medical_exams(
-    user_id: int,
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-):
-    """获取用户的体检记录"""
-    exams = db.query(MedicalExam).filter(
-        MedicalExam.user_id == user_id
-    ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
-    return exams
-
+# ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
 
 @router.get("/me", response_model=List[MedicalExamResponse])
 def get_my_medical_exams(
@@ -77,6 +65,20 @@ def get_my_medical_exams(
     """获取当前用户的体检记录（需要登录）"""
     exams = db.query(MedicalExam).filter(
         MedicalExam.user_id == current_user.id
+    ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
+    return exams
+
+
+@router.get("/user/{user_id}", response_model=List[MedicalExamResponse])
+def get_user_medical_exams(
+    user_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """获取用户的体检记录"""
+    exams = db.query(MedicalExam).filter(
+        MedicalExam.user_id == user_id
     ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
     return exams
 

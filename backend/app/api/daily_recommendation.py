@@ -15,46 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/user/{user_id}/recommendations")
-def get_recommendations(
-    user_id: int,
-    use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
-    db: Session = Depends(get_db)
-):
-    """
-    获取今日健康建议（1天和7天，带缓存）
-    
-    返回基于昨天数据的1天建议和基于最近7天数据的7天建议
-    结果会缓存到数据库，避免重复计算
-    
-    Args:
-        user_id: 用户ID
-        use_llm: 是否使用大模型增强分析（默认True）
-    
-    Returns:
-        - one_day: 基于昨天数据的建议
-        - seven_day: 基于最近7天数据的建议
-        - cached: 是否使用了缓存
-    """
-    service = DailyRecommendationService()
-    
-    try:
-        result = service.get_or_generate_recommendations(db, user_id, use_llm)
-        
-        if result.get("status") == "no_data":
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "message": "暂无数据，请先同步Garmin数据",
-                    "suggestion": "运行: python scripts/sync_garmin.py <email> <password> <user_id>"
-                }
-            )
-        
-        return result
-    except Exception as e:
-        logger.error(f"获取建议失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取建议失败: {str(e)}")
-
+# ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
 
 @router.get("/me")
 def get_my_recommendations(
@@ -87,6 +48,47 @@ def get_my_recommendations(
                 detail={
                     "message": "暂无数据，请先同步Garmin数据",
                     "suggestion": "请在设置页面配置并同步Garmin数据"
+                }
+            )
+        
+        return result
+    except Exception as e:
+        logger.error(f"获取建议失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取建议失败: {str(e)}")
+
+
+@router.get("/user/{user_id}/recommendations")
+def get_recommendations(
+    user_id: int,
+    use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
+    db: Session = Depends(get_db)
+):
+    """
+    获取今日健康建议（1天和7天，带缓存）
+    
+    返回基于昨天数据的1天建议和基于最近7天数据的7天建议
+    结果会缓存到数据库，避免重复计算
+    
+    Args:
+        user_id: 用户ID
+        use_llm: 是否使用大模型增强分析（默认True）
+    
+    Returns:
+        - one_day: 基于昨天数据的建议
+        - seven_day: 基于最近7天数据的建议
+        - cached: 是否使用了缓存
+    """
+    service = DailyRecommendationService()
+    
+    try:
+        result = service.get_or_generate_recommendations(db, user_id, use_llm)
+        
+        if result.get("status") == "no_data":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "message": "暂无数据，请先同步Garmin数据",
+                    "suggestion": "运行: python scripts/sync_garmin.py <email> <password> <user_id>"
                 }
             )
         

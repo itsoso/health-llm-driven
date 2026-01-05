@@ -57,6 +57,24 @@ def create_health_checkin(
     return db_checkin
 
 
+# ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
+
+@router.get("/me/today", response_model=HealthCheckinResponse)
+def get_my_today_checkin(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户今日健康打卡（需要登录）"""
+    today = date.today()
+    checkin = db.query(HealthCheckin).filter(
+        HealthCheckin.user_id == current_user.id,
+        HealthCheckin.checkin_date == today
+    ).first()
+    if not checkin:
+        raise HTTPException(status_code=404, detail="今日尚未打卡")
+    return checkin
+
+
 @router.get("/user/{user_id}", response_model=List[HealthCheckinResponse])
 def get_user_checkins(
     user_id: int,
@@ -80,22 +98,6 @@ def get_user_checkins(
     
     checkins = query.order_by(HealthCheckin.checkin_date.desc()).offset(skip).limit(limit).all()
     return checkins
-
-
-@router.get("/me/today", response_model=HealthCheckinResponse)
-def get_my_today_checkin(
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
-):
-    """获取当前用户今日健康打卡（需要登录）"""
-    today = date.today()
-    checkin = db.query(HealthCheckin).filter(
-        HealthCheckin.user_id == current_user.id,
-        HealthCheckin.checkin_date == today
-    ).first()
-    if not checkin:
-        raise HTTPException(status_code=404, detail="今日尚未打卡")
-    return checkin
 
 
 @router.get("/user/{user_id}/today", response_model=HealthCheckinResponse)
