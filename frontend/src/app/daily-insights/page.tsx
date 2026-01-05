@@ -119,9 +119,9 @@ function DailyInsightsContent() {
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
-    queryKey: ['daily-recommendations', userId],
-    queryFn: () => dailyRecommendationApi.getRecommendations(userId!, true),
-    enabled: !!userId,
+    queryKey: ['daily-recommendations'],
+    queryFn: () => dailyRecommendationApi.getMyRecommendations(true),
+    enabled: isAuthenticated,
   });
 
   const oneDayData = recommendationsData?.data?.one_day;

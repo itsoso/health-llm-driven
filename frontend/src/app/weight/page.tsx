@@ -33,24 +33,30 @@ function WeightContent() {
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
   // 获取体重记录
   const { data: records, isLoading } = useQuery({
-    queryKey: ['weight-records', userId],
+    queryKey: ['weight-records'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/weight/records/user/${userId}?limit=90`);
+      const res = await fetch(`${API_BASE}/weight/records/me?limit=90`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 获取统计
   const { data: stats } = useQuery({
-    queryKey: ['weight-stats', userId],
+    queryKey: ['weight-stats'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/weight/records/user/${userId}/stats?days=30`);
+      const res = await fetch(`${API_BASE}/weight/records/me/stats?days=30`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 创建记录
@@ -58,7 +64,10 @@ function WeightContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/weight/records`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       });
       if (!res.ok) {

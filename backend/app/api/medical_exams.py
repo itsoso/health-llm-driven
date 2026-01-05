@@ -9,6 +9,8 @@ from typing import List
 from app.database import get_db
 from app.schemas.medical_exam import MedicalExamCreate, MedicalExamResponse
 from app.models.medical_exam import MedicalExam, MedicalExamItem
+from app.models.user import User
+from app.api.deps import get_current_user_required
 from app.services.data_collection.medical_exam_import import MedicalExamImportService
 from app.services.pdf_parser import pdf_parser
 
@@ -61,6 +63,20 @@ def get_user_medical_exams(
     """获取用户的体检记录"""
     exams = db.query(MedicalExam).filter(
         MedicalExam.user_id == user_id
+    ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
+    return exams
+
+
+@router.get("/me", response_model=List[MedicalExamResponse])
+def get_my_medical_exams(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的体检记录（需要登录）"""
+    exams = db.query(MedicalExam).filter(
+        MedicalExam.user_id == current_user.id
     ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
     return exams
 

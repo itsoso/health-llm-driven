@@ -36,25 +36,30 @@ function BloodPressureContent() {
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const now = format(new Date(), 'HH:mm');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
   // 获取血压记录
   const { data: records, isLoading } = useQuery({
-    queryKey: ['blood-pressure-records', userId],
+    queryKey: ['blood-pressure-records'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/blood-pressure/records/user/${userId}?limit=60`);
+      const res = await fetch(`${API_BASE}/blood-pressure/records/me?limit=60`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 获取统计
   const { data: stats } = useQuery({
-    queryKey: ['blood-pressure-stats', userId],
+    queryKey: ['blood-pressure-stats'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/blood-pressure/records/user/${userId}/stats?days=30`);
+      const res = await fetch(`${API_BASE}/blood-pressure/records/me/stats?days=30`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 创建记录
@@ -62,7 +67,10 @@ function BloodPressureContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/blood-pressure/records`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       });
       if (!res.ok) {

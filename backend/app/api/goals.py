@@ -103,6 +103,17 @@ def generate_goals_from_analysis(
     return goals
 
 
+@router.post("/me/generate-from-analysis", response_model=List[GoalResponse])
+def generate_my_goals_from_analysis(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """基于当前用户的健康分析结果自动生成目标（需要登录）"""
+    service = GoalManagementService()
+    goals = service.generate_goals_from_analysis(db, current_user.id)
+    return goals
+
+
 @router.get("/{goal_id}/completion", response_model=dict)
 def check_goal_completion(
     goal_id: int,

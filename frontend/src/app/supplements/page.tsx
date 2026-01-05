@@ -32,16 +32,16 @@ function SupplementsContent() {
 
   // 获取补剂列表和打卡状态
   const { data: supplementsData, isLoading } = useQuery({
-    queryKey: ['supplements-with-records', userId, selectedDate],
-    queryFn: () => supplementApi.getUserRecordsWithStatus(userId!, selectedDate),
-    enabled: !!userId,
+    queryKey: ['supplements-with-records', selectedDate],
+    queryFn: () => supplementApi.getMyRecordsWithStatus(selectedDate),
+    enabled: isAuthenticated,
   });
 
   // 获取统计数据
   const { data: statsData } = useQuery({
-    queryKey: ['supplements-stats', userId],
-    queryFn: () => supplementApi.getStats(userId!, 7),
-    enabled: !!userId,
+    queryKey: ['supplements-stats'],
+    queryFn: () => supplementApi.getMyStats(7),
+    enabled: isAuthenticated,
   });
 
   // 创建补剂

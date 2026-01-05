@@ -153,6 +153,42 @@ def get_weight_stats(
     )
 
 
+@router.get("/records/me/stats", response_model=WeightStats)
+def get_my_weight_stats(
+    days: int = Query(default=30, le=365),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户体重统计（需要登录）"""
+    start_date = date.today() - timedelta(days=days)
+    
+    records = db.query(WeightRecord).filter(
+        WeightRecord.user_id == current_user.id,
+        WeightRecord.record_date >= start_date
+    ).order_by(desc(WeightRecord.record_date)).all()
+    
+    if not records:
+        return WeightStats(total_records=0)
+    
+    weights = [r.weight for r in records if r.weight]
+    
+    # 计算30天变化
+    weight_change = None
+    if len(records) >= 2:
+        latest = records[0].weight
+        oldest = records[-1].weight
+        weight_change = round(latest - oldest, 2)
+    
+    return WeightStats(
+        current_weight=records[0].weight if records else None,
+        highest_weight=max(weights) if weights else None,
+        lowest_weight=min(weights) if weights else None,
+        average_weight=round(sum(weights) / len(weights), 2) if weights else None,
+        weight_change_30d=weight_change,
+        total_records=len(records)
+    )
+
+
 @router.put("/records/{record_id}", response_model=WeightRecordResponse)
 def update_weight_record(
     record_id: int,

@@ -29,23 +29,23 @@ function HabitsContent() {
 
   // 获取习惯列表和打卡状态
   const { data: habitsData, isLoading } = useQuery({
-    queryKey: ['habits-with-records', userId, selectedDate],
-    queryFn: () => habitApi.getUserRecordsWithStatus(userId!, selectedDate),
-    enabled: !!userId,
+    queryKey: ['habits-with-records', selectedDate],
+    queryFn: () => habitApi.getMyRecordsWithStatus(selectedDate),
+    enabled: isAuthenticated,
   });
 
   // 获取统计数据
   const { data: statsData } = useQuery({
-    queryKey: ['habits-stats', userId],
-    queryFn: () => habitApi.getStats(userId!, 30),
-    enabled: !!userId,
+    queryKey: ['habits-stats'],
+    queryFn: () => habitApi.getMyStats(30),
+    enabled: isAuthenticated,
   });
 
   // 获取今日汇总
   const { data: todaySummary } = useQuery({
-    queryKey: ['habits-today-summary', userId],
-    queryFn: () => habitApi.getTodaySummary(userId!),
-    enabled: !!userId,
+    queryKey: ['habits-today-summary'],
+    queryFn: () => habitApi.getMyTodaySummary(),
+    enabled: isAuthenticated,
   });
 
   // 创建习惯
