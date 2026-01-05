@@ -18,6 +18,7 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // 如果已登录，重定向到首页
   if (isAuthenticated) {
@@ -50,12 +51,21 @@ export default function RegisterPage() {
     });
     
     if (result.success) {
-      router.push('/');
+      // 显示成功弹窗，引导用户配置 Garmin
+      setShowSuccessModal(true);
     } else {
       setError(result.error || '注册失败');
     }
     
     setIsLoading(false);
+  };
+
+  const handleGoToSettings = () => {
+    router.push('/settings#garmin');
+  };
+
+  const handleGoToDashboard = () => {
+    router.push('/');
   };
 
   return (
@@ -180,6 +190,56 @@ export default function RegisterPage() {
           </Link>
         </div>
       </div>
+
+      {/* 注册成功弹窗 */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 transform animate-in fade-in zoom-in duration-300">
+            {/* 成功图标 */}
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                <span className="text-4xl">🎉</span>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">注册成功！</h2>
+              <p className="text-gray-600 mt-2">欢迎加入健康自律靠AI</p>
+            </div>
+
+            {/* Garmin 提示 */}
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-5 mb-6 border border-indigo-100">
+              <div className="flex items-start gap-3">
+                <span className="text-3xl">⌚</span>
+                <div>
+                  <h3 className="font-semibold text-gray-900">配置 Garmin Connect</h3>
+                  <p className="text-gray-600 text-sm mt-1">
+                    绑定您的 Garmin 账号，自动同步心率、睡眠、运动等健康数据，获取个性化健康建议。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 按钮 */}
+            <div className="space-y-3">
+              <button
+                onClick={handleGoToSettings}
+                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <span>⚙️</span>
+                立即配置 Garmin
+              </button>
+              <button
+                onClick={handleGoToDashboard}
+                className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                稍后再说，先看看
+              </button>
+            </div>
+
+            <p className="text-center text-gray-400 text-xs mt-4">
+              您也可以稍后在「设置」中配置 Garmin 账号
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

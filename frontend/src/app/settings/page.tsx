@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +20,7 @@ function SettingsContent() {
   const router = useRouter();
   const { user, token, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth();
   const queryClient = useQueryClient();
+  const garminSectionRef = useRef<HTMLDivElement>(null);
 
   const [garminForm, setGarminForm] = useState({
     garmin_email: '',
@@ -28,6 +29,7 @@ function SettingsContent() {
   const [showGarminForm, setShowGarminForm] = useState(false);
   const [syncDays, setSyncDays] = useState(7);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [highlightGarmin, setHighlightGarmin] = useState(false);
   
   // 同步进度状态
   const [syncProgress, setSyncProgress] = useState<{
@@ -290,6 +292,21 @@ function SettingsContent() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  // 处理 URL hash 滚动到 Garmin 设置
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#garmin') {
+      // 等待页面渲染完成后滚动
+      const timer = setTimeout(() => {
+        garminSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 高亮显示 Garmin 区块
+        setHighlightGarmin(true);
+        // 3秒后取消高亮
+        setTimeout(() => setHighlightGarmin(false), 3000);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   if (authLoading || !isAuthenticated) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24 pb-8 px-4">
@@ -357,9 +374,22 @@ function SettingsContent() {
         </div>
 
         {/* Garmin设置卡片 */}
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+        <div 
+          ref={garminSectionRef}
+          id="garmin"
+          className={`bg-white rounded-xl shadow-lg p-6 border transition-all duration-500 ${
+            highlightGarmin 
+              ? 'border-indigo-400 ring-4 ring-indigo-100 shadow-xl' 
+              : 'border-gray-100'
+          }`}
+        >
           <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
             ⌚ Garmin Connect 设置
+            {highlightGarmin && (
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 text-xs rounded-full animate-pulse">
+                请在此配置
+              </span>
+            )}
           </h2>
           
           <p className="text-gray-600 text-sm mb-4">
