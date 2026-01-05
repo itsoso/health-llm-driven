@@ -1,8 +1,10 @@
 """用户认证API"""
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, date
+from typing import Optional, AsyncGenerator
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User, GarminCredential
@@ -13,6 +15,7 @@ from app.schemas.auth import (
 )
 from app.services.auth import auth_service, garmin_credential_service, AuthService
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +356,102 @@ async def sync_garmin_data(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"同步失败: {str(e)}"
         )
+
+
+@router.get("/garmin/sync-stream", summary="流式同步Garmin数据（带进度）")
+async def sync_garmin_data_stream(
+    days: int = 7,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    使用 Server-Sent Events 流式同步Garmin数据，实时返回进度
+    """
+    # 获取解密后的凭证
+    credentials = garmin_credential_service.get_decrypted_credentials(db, current_user.id)
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未配置Garmin凭证，请先在设置中配置"
+        )
+    
+    async def generate_progress() -> AsyncGenerator[str, None]:
+        from app.services.data_collection.garmin_connect import GarminConnectService
+        
+        synced_days = 0
+        failed_days = 0
+        today = date.today()
+        
+        # 发送开始消息
+        yield f"data: {json.dumps({'type': 'start', 'total': days, 'message': '开始同步...'})}\n\n"
+        
+        try:
+            # 创建Garmin服务实例
+            garmin_service = GarminConnectService(
+                email=credentials["email"],
+                password=credentials["password"]
+            )
+            
+            yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
+            
+            for i in range(days):
+                target_date = today - timedelta(days=i)
+                date_str = target_date.strftime("%Y-%m-%d")
+                
+                try:
+                    garmin_service.sync_daily_data(db, current_user.id, target_date)
+                    synced_days += 1
+                    status_msg = "success"
+                except Exception as e:
+                    logger.warning(f"同步 {target_date} 失败: {e}")
+                    failed_days += 1
+                    status_msg = "failed"
+                
+                # 发送进度更新
+                progress_data = {
+                    'type': 'progress',
+                    'current': i + 1,
+                    'total': days,
+                    'date': date_str,
+                    'status': status_msg,
+                    'synced': synced_days,
+                    'failed': failed_days,
+                    'message': f'正在同步 {date_str}...'
+                }
+                yield f"data: {json.dumps(progress_data)}\n\n"
+                
+                # 小延迟，让前端有时间处理
+                await asyncio.sleep(0.1)
+            
+            # 更新同步状态
+            garmin_credential_service.update_sync_status(db, current_user.id)
+            
+            # 发送完成消息
+            complete_data = {
+                'type': 'complete',
+                'synced': synced_days,
+                'failed': failed_days,
+                'message': f'同步完成：成功 {synced_days} 天，失败 {failed_days} 天'
+            }
+            yield f"data: {json.dumps(complete_data)}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Garmin同步失败: {e}", exc_info=True)
+            error_data = {
+                'type': 'error',
+                'message': f'同步失败: {str(e)}'
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+    
+    return StreamingResponse(
+        generate_progress(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲
+        }
+    )
 
 
 @router.post("/garmin/test-connection", summary="测试Garmin连接")
