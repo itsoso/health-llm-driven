@@ -334,3 +334,134 @@ async def delete_user(
     
     return {"message": f"已删除用户{user.name}及其所有数据"}
 
+
+# ========== Garmin同步管理 ==========
+
+class SyncAllUsersResponse(BaseModel):
+    """全部用户同步响应"""
+    total_users: int
+    success_users: int
+    failed_users: int
+    details: list
+
+
+class SyncUserResponse(BaseModel):
+    """单用户同步响应"""
+    user_id: int
+    success: bool
+    success_count: int
+    error_count: int
+    message: str
+
+
+@router.post("/garmin/sync-all", response_model=SyncAllUsersResponse, summary="同步所有用户的Garmin数据")
+async def sync_all_users_garmin(
+    days: int = Query(default=3, ge=1, le=30, description="同步最近N天的数据"),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    触发所有启用同步的用户的Garmin数据同步
+    
+    - **days**: 同步最近N天的数据（默认3天，最多30天）
+    - 仅管理员可访问
+    """
+    from app.scheduler import sync_all_users_garmin_task
+    
+    logger.info(f"管理员 {admin_user.name} 触发全部用户Garmin同步，天数: {days}")
+    
+    # 执行同步任务
+    result = await sync_all_users_garmin_task(days=days)
+    
+    return SyncAllUsersResponse(**result)
+
+
+@router.post("/garmin/sync-user/{user_id}", response_model=SyncUserResponse, summary="同步指定用户的Garmin数据")
+async def sync_user_garmin(
+    user_id: int,
+    days: int = Query(default=7, ge=1, le=365, description="同步最近N天的数据"),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    触发指定用户的Garmin数据同步
+    
+    - **user_id**: 用户ID
+    - **days**: 同步最近N天的数据（默认7天）
+    - 仅管理员可访问
+    """
+    from app.scheduler import sync_user_garmin_data
+    from app.services.auth import garmin_credential_service
+    
+    # 检查用户是否存在
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+    
+    # 获取用户的Garmin凭证
+    credentials = garmin_credential_service.get_decrypted_credentials(db, user_id)
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="该用户未配置Garmin凭证"
+        )
+    
+    logger.info(f"管理员 {admin_user.name} 触发用户 {user_id} 的Garmin同步，天数: {days}")
+    
+    # 执行同步
+    result = await sync_user_garmin_data(
+        db,
+        user_id,
+        credentials["email"],
+        credentials["password"],
+        days
+    )
+    
+    return SyncUserResponse(**result)
+
+
+@router.get("/garmin/sync-status", summary="获取所有用户的Garmin同步状态")
+async def get_all_users_sync_status(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有配置了Garmin的用户的同步状态
+    
+    - 仅管理员可访问
+    """
+    credentials = db.query(GarminCredential).all()
+    
+    result = []
+    for cred in credentials:
+        user = db.query(User).filter(User.id == cred.user_id).first()
+        
+        # 获取最新的Garmin数据日期
+        latest_data = db.query(GarminData).filter(
+            GarminData.user_id == cred.user_id
+        ).order_by(desc(GarminData.record_date)).first()
+        
+        # 统计该用户的数据量
+        data_count = db.query(func.count(GarminData.id)).filter(
+            GarminData.user_id == cred.user_id
+        ).scalar()
+        
+        result.append({
+            "user_id": cred.user_id,
+            "username": user.username if user else None,
+            "name": user.name if user else None,
+            "garmin_email": cred.garmin_email,
+            "sync_enabled": cred.sync_enabled,
+            "last_sync_at": cred.last_sync_at.isoformat() if cred.last_sync_at else None,
+            "latest_data_date": latest_data.record_date.isoformat() if latest_data else None,
+            "total_records": data_count
+        })
+    
+    return {
+        "total_configured_users": len(credentials),
+        "users": result
+    }
+
