@@ -28,6 +28,25 @@ function SettingsContent() {
   const [showGarminForm, setShowGarminForm] = useState(false);
   const [syncDays, setSyncDays] = useState(7);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // 同步进度状态
+  const [syncProgress, setSyncProgress] = useState<{
+    isSyncing: boolean;
+    current: number;
+    total: number;
+    currentDate: string;
+    synced: number;
+    failed: number;
+    message: string;
+  }>({
+    isSyncing: false,
+    current: 0,
+    total: 0,
+    currentDate: '',
+    synced: 0,
+    failed: 0,
+    message: '',
+  });
 
   // 获取Garmin凭证
   const { data: garminCredential, isLoading: garminLoading } = useQuery({
@@ -148,7 +167,88 @@ function SettingsContent() {
     },
   });
 
-  // 同步Garmin数据
+  // 流式同步Garmin数据（带进度）
+  const startSyncWithProgress = async (days: number) => {
+    if (!token) return;
+    
+    setSyncProgress({
+      isSyncing: true,
+      current: 0,
+      total: days,
+      currentDate: '',
+      synced: 0,
+      failed: 0,
+      message: '正在连接Garmin...',
+    });
+    setMessage(null);
+    
+    try {
+      const response = await fetch(`${API_BASE}/auth/garmin/sync-stream?days=${days}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('同步请求失败');
+      }
+      
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('无法读取响应');
+      }
+      
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const text = decoder.decode(value);
+        const lines = text.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'progress') {
+                setSyncProgress(prev => ({
+                  ...prev,
+                  current: data.current,
+                  total: data.total,
+                  currentDate: data.date || '',
+                  synced: data.synced || prev.synced,
+                  failed: data.failed || prev.failed,
+                  message: data.message,
+                }));
+              } else if (data.type === 'complete') {
+                setSyncProgress(prev => ({
+                  ...prev,
+                  isSyncing: false,
+                  synced: data.synced,
+                  failed: data.failed,
+                  message: data.message,
+                }));
+                queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
+                setMessage({ type: 'success', text: data.message });
+              } else if (data.type === 'error') {
+                setSyncProgress(prev => ({ ...prev, isSyncing: false }));
+                setMessage({ type: 'error', text: data.message });
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      setSyncProgress(prev => ({ ...prev, isSyncing: false }));
+      setMessage({ type: 'error', text: error.message || '同步失败' });
+    }
+  };
+
+  // 保留原来的同步方法作为备用
   const syncGarminMutation = useMutation({
     mutationFn: async (days: number) => {
       const res = await fetch(`${API_BASE}/auth/garmin/sync`, {
@@ -306,12 +406,13 @@ function SettingsContent() {
 
               {/* 同步控制 */}
               <div className="mt-4 pt-4 border-t border-green-200">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-wrap">
                   <label className="text-green-800 text-sm">同步天数:</label>
                   <select
                     value={syncDays}
                     onChange={(e) => setSyncDays(Number(e.target.value))}
-                    className="p-2 border border-green-300 rounded-lg text-gray-900"
+                    disabled={syncProgress.isSyncing}
+                    className="p-2 border border-green-300 rounded-lg text-gray-900 disabled:opacity-50"
                   >
                     <option value={7}>最近7天</option>
                     <option value={30}>最近30天</option>
@@ -321,13 +422,48 @@ function SettingsContent() {
                     <option value={730}>最近2年</option>
                   </select>
                   <button
-                    onClick={() => syncGarminMutation.mutate(syncDays)}
-                    disabled={syncGarminMutation.isPending}
-                    className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50"
+                    onClick={() => startSyncWithProgress(syncDays)}
+                    disabled={syncProgress.isSyncing}
+                    className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 flex items-center gap-2"
                   >
-                    {syncGarminMutation.isPending ? '同步中...' : '🔄 立即同步'}
+                    {syncProgress.isSyncing ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>同步中...</span>
+                      </>
+                    ) : (
+                      <>🔄 立即同步</>
+                    )}
                   </button>
                 </div>
+                
+                {/* 同步进度条 */}
+                {syncProgress.isSyncing && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex justify-between text-sm text-green-700">
+                      <span>{syncProgress.message}</span>
+                      <span>{syncProgress.current} / {syncProgress.total}</span>
+                    </div>
+                    <div className="w-full bg-green-200 rounded-full h-3 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-indigo-500 to-purple-600 h-3 rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <div className="flex gap-4 text-xs text-gray-600">
+                      <span className="text-green-600">✓ 成功: {syncProgress.synced}</span>
+                      {syncProgress.failed > 0 && (
+                        <span className="text-red-500">✗ 失败: {syncProgress.failed}</span>
+                      )}
+                      {syncProgress.currentDate && (
+                        <span className="text-gray-500">当前: {syncProgress.currentDate}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
