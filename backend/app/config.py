@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     
     # OpenAI配置
     openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None  # 代理地址，如: https://api.openai-proxy.com/v1
+    openai_model: str = "gpt-4o-mini"  # 默认模型
     
     # Garmin 凭据 (用于后台自动同步)
     garmin_email: Optional[str] = None

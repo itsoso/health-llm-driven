@@ -29,8 +29,13 @@ class LLMHealthAnalyzer:
     
     def __init__(self):
         self.client = None
+        self.model = settings.openai_model or "gpt-4o-mini"
         if OPENAI_AVAILABLE and settings.openai_api_key:
-            self.client = OpenAI(api_key=settings.openai_api_key)
+            # 支持代理配置
+            client_kwargs = {"api_key": settings.openai_api_key}
+            if settings.openai_base_url:
+                client_kwargs["base_url"] = settings.openai_base_url
+            self.client = OpenAI(**client_kwargs)
         else:
             logger.warning("OpenAI API未配置，将使用纯规则分析")
     
@@ -221,13 +226,14 @@ class LLMHealthAnalyzer:
 请分析这些数据并给出具体、可执行的建议。"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",  # 使用性价比更高的模型
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1500
+                max_tokens=1500,
+                timeout=60
             )
             
             content = response.choices[0].message.content.strip()
@@ -305,13 +311,14 @@ class LLMHealthAnalyzer:
 请分析并生成周报。"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=1000,
+                timeout=60
             )
             
             content = response.choices[0].message.content.strip()

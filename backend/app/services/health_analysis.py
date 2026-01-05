@@ -19,7 +19,15 @@ class HealthAnalysisService:
     """健康分析服务"""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        if settings.openai_api_key:
+            # 支持代理配置
+            client_kwargs = {"api_key": settings.openai_api_key}
+            if settings.openai_base_url:
+                client_kwargs["base_url"] = settings.openai_base_url
+            self.client = OpenAI(**client_kwargs)
+        else:
+            self.client = None
+        self.model = settings.openai_model or "gpt-4o-mini"
     
     def collect_user_health_data(
         self,
@@ -183,7 +191,7 @@ class HealthAnalysisService:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -195,6 +203,7 @@ class HealthAnalysisService:
                     }
                 ],
                 temperature=0.7,
+                timeout=60,  # 60秒超时
             )
             
             analysis_text = response.choices[0].message.content
@@ -410,7 +419,7 @@ class HealthAnalysisService:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -423,6 +432,7 @@ class HealthAnalysisService:
                 ],
                 temperature=0.7,
                 max_tokens=500,
+                timeout=60,  # 60秒超时
             )
             
             return response.choices[0].message.content
