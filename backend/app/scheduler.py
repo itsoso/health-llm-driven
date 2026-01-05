@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-from app.services.data_collection.garmin_connect import GarminConnectService
+from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
 from app.services.auth import garmin_credential_service
 from app.models.user import GarminCredential
 from app.database import SessionLocal
@@ -74,6 +74,16 @@ async def sync_user_garmin_data(
         
         logger.info(f"用户 {user_id} Garmin数据同步成功: {result['message']}")
         
+    except GarminAuthenticationError as e:
+        # 明确的认证错误
+        error_message = str(e)
+        result["message"] = error_message
+        result["is_auth_error"] = True
+        
+        # 更新错误状态，标记凭证无效
+        garmin_credential_service.update_sync_error(db, user_id, error_message, is_auth_error=True)
+        logger.warning(f"用户 {user_id} Garmin认证失败，已标记凭证无效: {error_message}")
+        
     except Exception as e:
         error_str = str(e).lower()
         error_message = str(e)
@@ -81,7 +91,7 @@ async def sync_user_garmin_data(
         # 检测是否为认证错误
         is_auth_error = any(keyword in error_str for keyword in [
             '401', 'unauthorized', 'authentication', 'login failed', 
-            'invalid credentials', 'password', '认证失败', '登录失败'
+            'invalid credentials', 'password', '认证失败', '登录失败', 'oauth'
         ])
         
         result["message"] = error_message

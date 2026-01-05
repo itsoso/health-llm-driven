@@ -47,12 +47,25 @@ class GarminConnectService:
         self._authenticated = False
     
     def _ensure_authenticated(self):
-        """确保已认证"""
+        """确保已认证，认证失败时抛出异常"""
         if not self._authenticated or self.client is None:
-            self.client = Garmin(self.email, self.password)
-            self.client.login()
-            self._authenticated = True
-            logger.info("Garmin Connect登录成功")
+            try:
+                self.client = Garmin(self.email, self.password)
+                self.client.login()
+                self._authenticated = True
+                logger.info("Garmin Connect登录成功")
+            except Exception as e:
+                self._authenticated = False
+                error_msg = str(e).lower()
+                # 将登录失败转换为明确的认证错误
+                if any(kw in error_msg for kw in ['login', 'auth', '401', 'unauthorized', 'credential', 'password', 'oauth']):
+                    raise GarminAuthenticationError(f"Garmin登录失败: {e}") from e
+                raise
+
+
+class GarminAuthenticationError(Exception):
+    """Garmin认证错误，用于标识凭证问题"""
+    pass
     
     def get_user_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
@@ -700,6 +713,9 @@ class GarminConnectService:
                         "date": current_date.isoformat(),
                         "status": "no_data"
                     })
+            except GarminAuthenticationError:
+                # 认证错误需要向上传递，让调用者处理
+                raise
             except Exception as e:
                 errors.append({
                     "date": current_date.isoformat(),
