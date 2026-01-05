@@ -202,10 +202,47 @@ class GarminCredentialService:
     
     @staticmethod
     def update_sync_status(db: Session, user_id: int, last_sync_at: datetime = None) -> bool:
-        """更新同步状态"""
+        """更新同步状态（同步成功时调用）"""
         credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
         if credential:
             credential.last_sync_at = last_sync_at or datetime.utcnow()
+            credential.credentials_valid = True  # 同步成功表示凭证有效
+            credential.error_count = 0  # 重置错误计数
+            credential.last_error = None
+            db.commit()
+            return True
+        return False
+    
+    @staticmethod
+    def update_sync_error(db: Session, user_id: int, error_message: str, is_auth_error: bool = False) -> bool:
+        """更新同步错误状态"""
+        credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if credential:
+            credential.last_error = error_message
+            credential.error_count = (credential.error_count or 0) + 1
+            
+            # 如果是认证错误（401），标记凭证为无效
+            if is_auth_error:
+                credential.credentials_valid = False
+                logger.warning(f"用户 {user_id} 的Garmin凭证已失效: {error_message}")
+            
+            # 如果连续失败3次以上，也标记为无效
+            if credential.error_count >= 3:
+                credential.credentials_valid = False
+                logger.warning(f"用户 {user_id} 连续同步失败 {credential.error_count} 次，已标记凭证无效")
+            
+            db.commit()
+            return True
+        return False
+    
+    @staticmethod
+    def reset_credential_status(db: Session, user_id: int) -> bool:
+        """重置凭证状态（用户重新保存凭证时调用）"""
+        credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if credential:
+            credential.credentials_valid = True
+            credential.error_count = 0
+            credential.last_error = None
             db.commit()
             return True
         return False

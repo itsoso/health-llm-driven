@@ -13,9 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
-    """获取所有启用同步的用户及其解密后的凭证"""
+    """获取所有启用同步且凭证有效的用户及其解密后的凭证"""
+    # 只获取启用同步且凭证有效的用户
     credentials = db.query(GarminCredential).filter(
-        GarminCredential.sync_enabled == True
+        GarminCredential.sync_enabled == True,
+        GarminCredential.credentials_valid == True  # 只同步凭证有效的用户
     ).all()
     
     users_with_credentials = []
@@ -48,7 +50,8 @@ async def sync_user_garmin_data(
         "success": False,
         "success_count": 0,
         "error_count": 0,
-        "message": ""
+        "message": "",
+        "is_auth_error": False
     }
     
     try:
@@ -66,14 +69,31 @@ async def sync_user_garmin_data(
         result["error_count"] = sync_result.get("error_count", 0)
         result["message"] = f"同步完成: 成功 {result['success_count']} 天, 失败 {result['error_count']} 天"
         
-        # 更新最后同步时间
+        # 更新最后同步时间（会重置错误状态）
         garmin_credential_service.update_sync_status(db, user_id)
         
         logger.info(f"用户 {user_id} Garmin数据同步成功: {result['message']}")
         
     except Exception as e:
-        result["message"] = str(e)
-        logger.error(f"用户 {user_id} Garmin数据同步失败: {e}")
+        error_str = str(e).lower()
+        error_message = str(e)
+        
+        # 检测是否为认证错误
+        is_auth_error = any(keyword in error_str for keyword in [
+            '401', 'unauthorized', 'authentication', 'login failed', 
+            'invalid credentials', 'password', '认证失败', '登录失败'
+        ])
+        
+        result["message"] = error_message
+        result["is_auth_error"] = is_auth_error
+        
+        # 更新错误状态
+        garmin_credential_service.update_sync_error(db, user_id, error_message, is_auth_error)
+        
+        if is_auth_error:
+            logger.warning(f"用户 {user_id} Garmin认证失败，已标记凭证无效: {error_message}")
+        else:
+            logger.error(f"用户 {user_id} Garmin数据同步失败: {e}")
     
     return result
 
