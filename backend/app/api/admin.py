@@ -436,6 +436,9 @@ async def get_all_users_sync_status(
     credentials = db.query(GarminCredential).all()
     
     result = []
+    valid_count = 0
+    invalid_count = 0
+    
     for cred in credentials:
         user = db.query(User).filter(User.id == cred.user_id).first()
         
@@ -449,12 +452,23 @@ async def get_all_users_sync_status(
             GarminData.user_id == cred.user_id
         ).scalar()
         
+        # 检查凭证是否有效（兼容旧数据，None视为有效）
+        credentials_valid = cred.credentials_valid if hasattr(cred, 'credentials_valid') and cred.credentials_valid is not None else True
+        
+        if credentials_valid:
+            valid_count += 1
+        else:
+            invalid_count += 1
+        
         result.append({
             "user_id": cred.user_id,
             "username": user.username if user else None,
             "name": user.name if user else None,
             "garmin_email": cred.garmin_email,
             "sync_enabled": cred.sync_enabled,
+            "credentials_valid": credentials_valid,
+            "last_error": getattr(cred, 'last_error', None),
+            "error_count": getattr(cred, 'error_count', 0) or 0,
             "last_sync_at": cred.last_sync_at.isoformat() if cred.last_sync_at else None,
             "latest_data_date": latest_data.record_date.isoformat() if latest_data else None,
             "total_records": data_count
@@ -462,6 +476,31 @@ async def get_all_users_sync_status(
     
     return {
         "total_configured_users": len(credentials),
+        "valid_credentials": valid_count,
+        "invalid_credentials": invalid_count,
         "users": result
     }
+
+
+@router.post("/garmin/reset-credentials/{user_id}", summary="重置用户凭证状态")
+async def reset_user_credentials(
+    user_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    重置用户的Garmin凭证状态（标记为有效，清除错误）
+    
+    - 仅管理员可访问
+    """
+    from app.services.auth import garmin_credential_service
+    
+    success = garmin_credential_service.reset_credential_status(db, user_id)
+    if success:
+        return {"message": f"已重置用户 {user_id} 的凭证状态"}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户未配置Garmin凭证"
+        )
 

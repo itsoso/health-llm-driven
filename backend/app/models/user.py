@@ -46,6 +46,9 @@ class GarminCredential(Base):
     # 同步状态
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
     sync_enabled = Column(Boolean, default=True)
+    credentials_valid = Column(Boolean, default=True)  # 凭证是否有效（登录失败时设为False）
+    last_error = Column(Text, nullable=True)  # 最后一次错误信息
+    error_count = Column(Integer, default=0)  # 连续错误次数
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
