@@ -29,34 +29,7 @@ def create_basic_health_data(
     return db_data
 
 
-@router.get("/user/{user_id}", response_model=List[BasicHealthDataResponse])
-def get_user_basic_health_data(
-    user_id: int,
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-):
-    """获取用户的基础健康数据"""
-    data_list = db.query(BasicHealthData).filter(
-        BasicHealthData.user_id == user_id
-    ).order_by(BasicHealthData.record_date.desc()).offset(skip).limit(limit).all()
-    return data_list
-
-
-@router.get("/user/{user_id}/latest", response_model=BasicHealthDataResponse)
-def get_latest_basic_health_data(
-    user_id: int,
-    db: Session = Depends(get_db)
-):
-    """获取用户最新的基础健康数据"""
-    data = db.query(BasicHealthData).filter(
-        BasicHealthData.user_id == user_id
-    ).order_by(BasicHealthData.record_date.desc()).first()
-    
-    if not data:
-        raise HTTPException(status_code=404, detail="未找到基础健康数据")
-    return data
-
+# ========== /me 端点必须在 /user/{user_id} 之前定义，否则会被错误匹配 ==========
 
 @router.get("/me/latest", response_model=BasicHealthDataResponse)
 def get_my_latest_basic_health_data(
@@ -86,3 +59,33 @@ def get_my_basic_health_data(
     ).order_by(BasicHealthData.record_date.desc()).offset(skip).limit(limit).all()
     return data_list
 
+
+# ========== /user/{user_id} 端点 ==========
+
+@router.get("/user/{user_id}", response_model=List[BasicHealthDataResponse])
+def get_user_basic_health_data(
+    user_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """获取用户的基础健康数据"""
+    data_list = db.query(BasicHealthData).filter(
+        BasicHealthData.user_id == user_id
+    ).order_by(BasicHealthData.record_date.desc()).offset(skip).limit(limit).all()
+    return data_list
+
+
+@router.get("/user/{user_id}/latest", response_model=BasicHealthDataResponse)
+def get_latest_basic_health_data(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取用户最新的基础健康数据"""
+    data = db.query(BasicHealthData).filter(
+        BasicHealthData.user_id == user_id
+    ).order_by(BasicHealthData.record_date.desc()).first()
+    
+    if not data:
+        raise HTTPException(status_code=404, detail="未找到基础健康数据")
+    return data
