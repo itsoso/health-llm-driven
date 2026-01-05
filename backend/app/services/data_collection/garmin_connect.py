@@ -17,6 +17,11 @@ except ImportError:
     logger.warning("garminconnect库未安装，请运行: pip install garminconnect")
 
 
+class GarminAuthenticationError(Exception):
+    """Garmin认证错误，用于标识凭证问题"""
+    pass
+
+
 class GarminConnectService:
     """
     Garmin Connect数据收集服务
@@ -61,11 +66,6 @@ class GarminConnectService:
                 if any(kw in error_msg for kw in ['login', 'auth', '401', 'unauthorized', 'credential', 'password', 'oauth']):
                     raise GarminAuthenticationError(f"Garmin登录失败: {e}") from e
                 raise
-
-
-class GarminAuthenticationError(Exception):
-    """Garmin认证错误，用于标识凭证问题"""
-    pass
     
     def get_user_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
