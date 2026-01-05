@@ -32,24 +32,30 @@ function DietContent() {
     notes: '',
   });
 
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
   // 获取某日饮食记录
   const { data: dailySummary, isLoading } = useQuery({
-    queryKey: ['diet-summary', userId, selectedDate],
+    queryKey: ['diet-summary', selectedDate],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/diet/records/user/${userId}/date/${selectedDate}`);
+      const res = await fetch(`${API_BASE}/diet/records/me/date/${selectedDate}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 获取统计
   const { data: stats } = useQuery({
-    queryKey: ['diet-stats', userId],
+    queryKey: ['diet-stats'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/diet/records/user/${userId}/stats?days=7`);
+      const res = await fetch(`${API_BASE}/diet/records/me/stats?days=7`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 创建记录
@@ -57,7 +63,10 @@ function DietContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/diet/records`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       });
       return res.json();
@@ -73,7 +82,10 @@ function DietContent() {
   // 删除记录
   const deleteMutation = useMutation({
     mutationFn: async (recordId: number) => {
-      const res = await fetch(`${API_BASE}/diet/records/${recordId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/diet/records/${recordId}`, { 
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
     onSuccess: () => {

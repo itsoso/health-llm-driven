@@ -14,19 +14,19 @@ function CheckinContent() {
   const queryClient = useQueryClient();
 
   const { data: todayCheckinResponse, isLoading } = useQuery({
-    queryKey: ['checkin', userId, today],
-    queryFn: () => checkinApi.getToday(userId!),
+    queryKey: ['checkin', 'today'],
+    queryFn: () => checkinApi.getMyToday(),
     retry: false,
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
   
   // axios返回的是response对象，需要取.data
   const todayCheckin = todayCheckinResponse?.data;
 
   const { data: adviceResponse } = useQuery({
-    queryKey: ['advice', userId, today],
-    queryFn: () => healthAnalysisApi.getAdvice(userId!, today),
-    enabled: !!userId && !!todayCheckin,
+    queryKey: ['advice', today],
+    queryFn: () => healthAnalysisApi.getMyAdvice(today),
+    enabled: isAuthenticated && !!todayCheckin,
   });
   
   const advice = adviceResponse?.data;
@@ -34,7 +34,7 @@ function CheckinContent() {
   const mutation = useMutation({
     mutationFn: (data: any) => checkinApi.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['checkin', userId] });
+      queryClient.invalidateQueries({ queryKey: ['checkin'] });
     },
   });
 

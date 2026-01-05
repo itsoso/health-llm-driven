@@ -550,15 +550,18 @@ function MedicalExamsContent() {
   });
 
   const [selectedPackage, setSelectedPackage] = useState<string>('');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
   // 获取体检记录
   const { data: examsResponse, isLoading } = useQuery({
-    queryKey: ['medical-exams', userId],
+    queryKey: ['medical-exams'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/medical-exams/user/${userId}`);
+      const res = await fetch(`${API_BASE}/medical-exams/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   const exams: MedicalExam[] = Array.isArray(examsResponse) ? examsResponse : [];
@@ -568,7 +571,10 @@ function MedicalExamsContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/medical-exams/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error('创建失败');

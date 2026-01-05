@@ -41,42 +41,50 @@ function WaterContent() {
   });
 
   const today = format(new Date(), 'yyyy-MM-dd');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
   // 获取某日饮水记录
   const { data: dailySummary, isLoading } = useQuery({
-    queryKey: ['water-summary', userId, selectedDate],
+    queryKey: ['water-summary', selectedDate],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/water/records/user/${userId}/date/${selectedDate}`);
+      const res = await fetch(`${API_BASE}/water/records/me/date/${selectedDate}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 获取统计
   const { data: stats } = useQuery({
-    queryKey: ['water-stats', userId],
+    queryKey: ['water-stats'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/water/records/user/${userId}/stats?days=7`);
+      const res = await fetch(`${API_BASE}/water/records/me/stats?days=7`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 获取最近7天记录用于图表
   const { data: recentRecords } = useQuery({
-    queryKey: ['water-recent', userId],
+    queryKey: ['water-recent'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/water/records/user/${userId}?limit=100`);
+      const res = await fetch(`${API_BASE}/water/records/me?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
-    enabled: !!userId,
+    enabled: isAuthenticated,
   });
 
   // 快速添加
   const quickAddMutation = useMutation({
     mutationFn: async (amount: number) => {
-      const res = await fetch(`${API_BASE}/water/records/quick?user_id=${userId}&amount=${amount}`, {
+      const res = await fetch(`${API_BASE}/water/records/quick?amount=${amount}`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
       });
       return res.json();
     },
@@ -92,7 +100,10 @@ function WaterContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/water/records`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       });
       return res.json();

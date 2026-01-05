@@ -106,6 +106,8 @@ export const checkinApi = {
       params: { start_date: startDate, end_date: endDate },
     }),
   getToday: (userId: number) => api.get(`/checkin/user/${userId}/today`),
+  // 使用 /me 端点
+  getMyToday: () => api.get('/checkin/me/today'),
 };
 
 // 目标管理
@@ -127,6 +129,11 @@ export const goalApi = {
     api.post(`/goals/generate-from-analysis/${userId}`),
   checkCompletion: (goalId: number, checkDate?: string) =>
     api.get(`/goals/${goalId}/completion`, { params: { check_date: checkDate } }),
+  // 使用 /me 端点
+  getMyGoals: (status?: string, goalType?: string, goalPeriod?: string) =>
+    api.get('/goals/me', { params: { status, goal_type: goalType, goal_period: goalPeriod } }),
+  generateMyGoalsFromAnalysis: () =>
+    api.post('/goals/me/generate-from-analysis'),
 };
 
 // 数据收集
@@ -143,6 +150,11 @@ export const healthAnalysisApi = {
     api.get(`/analysis/user/${userId}/issues`, { params: { force_refresh: forceRefresh } }),
   getAdvice: (userId: number, checkinDate: string) =>
     api.get(`/analysis/user/${userId}/advice`, { params: { checkin_date: checkinDate } }),
+  // 使用 /me 端点
+  analyzeMyIssues: (forceRefresh: boolean = false) =>
+    api.get('/analysis/me/issues', { params: { force_refresh: forceRefresh } }),
+  getMyAdvice: (checkinDate: string) =>
+    api.get('/analysis/me/advice', { params: { checkin_date: checkinDate } }),
 };
 
 // Garmin数据分析
@@ -185,6 +197,9 @@ export const dailyRecommendationApi = {
     api.get(`/daily-recommendation/user/${userId}/recommendations`, { params: { use_llm: useLlm } }),
   getToday: (userId: number, useLlm: boolean = true) =>
     api.get(`/daily-recommendation/user/${userId}/today`, { params: { use_llm: useLlm } }),
+  // 使用 /me 端点
+  getMyRecommendations: (useLlm: boolean = true) =>
+    api.get('/daily-recommendation/me', { params: { use_llm: useLlm } }),
 };
 
 // 补剂管理
@@ -204,6 +219,11 @@ export const supplementApi = {
     api.get(`/supplements/records/user/${userId}/date/${recordDate}`),
   getStats: (userId: number, days: number = 7) =>
     api.get(`/supplements/records/user/${userId}/stats`, { params: { days } }),
+  // 使用 /me 端点
+  getMyRecordsWithStatus: (recordDate: string) =>
+    api.get(`/supplements/me/date/${recordDate}`),
+  getMyStats: (days: number = 7) =>
+    api.get('/supplements/me/stats', { params: { days } }),
 };
 
 // 习惯追踪
@@ -225,5 +245,12 @@ export const habitApi = {
     api.get(`/habits/records/user/${userId}/stats`, { params: { days } }),
   getTodaySummary: (userId: number) =>
     api.get(`/habits/records/user/${userId}/today-summary`),
+  // 使用 /me 端点
+  getMyRecordsWithStatus: (recordDate: string) =>
+    api.get(`/habits/me/date/${recordDate}`),
+  getMyStats: (days: number = 30) =>
+    api.get('/habits/me/stats', { params: { days } }),
+  getMyTodaySummary: () =>
+    api.get('/habits/me/today-summary'),
 };
 

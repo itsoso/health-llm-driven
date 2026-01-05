@@ -6,6 +6,8 @@ from typing import List, Optional
 from datetime import date, timedelta
 from app.database import get_db
 from app.models.habit import HabitDefinition, HabitRecord
+from app.models.user import User
+from app.api.deps import get_current_user_required
 from app.schemas.habit import (
     HabitDefinitionCreate,
     HabitDefinitionUpdate,
@@ -258,6 +260,112 @@ def get_today_summary(
     
     habits = db.query(HabitDefinition).filter(
         HabitDefinition.user_id == user_id,
+        HabitDefinition.is_active == True
+    ).all()
+    
+    total = len(habits)
+    completed = 0
+    
+    for habit in habits:
+        record = db.query(HabitRecord).filter(
+            HabitRecord.habit_id == habit.id,
+            HabitRecord.record_date == today,
+            HabitRecord.completed == True
+        ).first()
+        if record:
+            completed += 1
+    
+    return {
+        "date": today.isoformat(),
+        "total_habits": total,
+        "completed": completed,
+        "pending": total - completed,
+        "completion_rate": round(completed / total * 100, 1) if total > 0 else 0
+    }
+
+
+# ========== /me 端点 ==========
+
+@router.get("/me/date/{record_date}", response_model=List[HabitWithRecord])
+def get_my_habits_with_records(
+    record_date: date,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户某天的习惯列表及打卡状态（需要登录）"""
+    habits = db.query(HabitDefinition).filter(
+        HabitDefinition.user_id == current_user.id,
+        HabitDefinition.is_active == True
+    ).order_by(HabitDefinition.category, HabitDefinition.sort_order).all()
+    
+    result = []
+    for habit in habits:
+        record = db.query(HabitRecord).filter(
+            HabitRecord.habit_id == habit.id,
+            HabitRecord.record_date == record_date
+        ).first()
+        
+        streak = calculate_streak(db, habit.id, record_date) if record and record.completed else 0
+        
+        result.append(HabitWithRecord(
+            habit=HabitDefinitionResponse.model_validate(habit),
+            record=HabitRecordResponse.model_validate(record) if record else None,
+            current_streak=streak
+        ))
+    
+    return result
+
+
+@router.get("/me/stats", response_model=List[HabitStats])
+def get_my_habit_stats(
+    days: int = 30,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户习惯统计（需要登录）"""
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days-1)
+    
+    habits = db.query(HabitDefinition).filter(
+        HabitDefinition.user_id == current_user.id,
+        HabitDefinition.is_active == True
+    ).all()
+    
+    stats = []
+    for habit in habits:
+        records = db.query(HabitRecord).filter(
+            HabitRecord.habit_id == habit.id,
+            HabitRecord.record_date >= start_date,
+            HabitRecord.record_date <= end_date
+        ).all()
+        
+        completed_count = sum(1 for r in records if r.completed)
+        current_streak = calculate_streak(db, habit.id, end_date)
+        
+        stats.append(HabitStats(
+            habit_id=habit.id,
+            habit_name=habit.name,
+            category=habit.category,
+            total_days=days,
+            completed_days=completed_count,
+            completion_rate=round(completed_count / days * 100, 1),
+            current_streak=current_streak,
+            best_streak=0  # TODO: 计算最佳连续天数
+        ))
+    
+    return stats
+
+
+@router.get("/me/today-summary")
+def get_my_today_summary(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户今日习惯打卡汇总（需要登录）"""
+    today = date.today()
+    
+    habits = db.query(HabitDefinition).filter(
+        HabitDefinition.user_id == current_user.id,
         HabitDefinition.is_active == True
     ).all()
     

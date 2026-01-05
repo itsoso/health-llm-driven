@@ -190,6 +190,93 @@ def get_water_stats(
     )
 
 
+# ========== /me 端点 ==========
+
+@router.get("/records/me", response_model=List[WaterRecordResponse])
+def get_my_water_records(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    limit: int = Query(default=50, le=500),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户饮水记录（需要登录）"""
+    query = db.query(WaterIntakeModel).filter(WaterIntakeModel.user_id == current_user.id)
+    
+    if start_date:
+        query = query.filter(WaterIntakeModel.record_date >= start_date)
+    if end_date:
+        query = query.filter(WaterIntakeModel.record_date <= end_date)
+    
+    records = query.order_by(desc(WaterIntakeModel.record_date), desc(WaterIntakeModel.created_at)).limit(limit).all()
+    return [_convert_to_response(r) for r in records]
+
+
+@router.get("/records/me/date/{record_date}", response_model=DailyWaterSummary)
+def get_my_daily_water_summary(
+    record_date: date,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户某日饮水汇总（需要登录）"""
+    records = db.query(WaterIntakeModel).filter(
+        WaterIntakeModel.user_id == current_user.id,
+        WaterIntakeModel.record_date == record_date
+    ).order_by(WaterIntakeModel.created_at).all()
+    
+    total_amount = sum(r.amount or 0 for r in records)
+    progress = round((total_amount / DAILY_WATER_TARGET) * 100, 1) if DAILY_WATER_TARGET > 0 else 0
+    
+    return DailyWaterSummary(
+        record_date=record_date,
+        total_amount=total_amount,
+        target_amount=DAILY_WATER_TARGET,
+        progress_percentage=min(progress, 100),
+        records_count=len(records),
+        records=[_convert_to_response(r) for r in records]
+    )
+
+
+@router.get("/records/me/stats", response_model=WaterStats)
+def get_my_water_stats(
+    days: int = Query(default=7, le=90),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户饮水统计（需要登录）"""
+    start_date = date.today() - timedelta(days=days)
+    
+    records = db.query(WaterIntakeModel).filter(
+        WaterIntakeModel.user_id == current_user.id,
+        WaterIntakeModel.record_date >= start_date
+    ).all()
+    
+    if not records:
+        return WaterStats(total_records=0, days_recorded=0)
+    
+    # 按日期分组统计
+    daily_amounts = {}
+    for r in records:
+        d = str(r.record_date)
+        if d not in daily_amounts:
+            daily_amounts[d] = 0
+        daily_amounts[d] += r.amount or 0
+    
+    days_count = len(daily_amounts)
+    amounts = list(daily_amounts.values())
+    days_reached = sum(1 for a in amounts if a >= DAILY_WATER_TARGET)
+    
+    return WaterStats(
+        average_daily_amount=round(sum(amounts) / days_count, 0) if days_count else None,
+        highest_daily_amount=max(amounts) if amounts else None,
+        lowest_daily_amount=min(amounts) if amounts else None,
+        total_records=len(records),
+        days_recorded=days_count,
+        days_reached_target=days_reached,
+        target_percentage=round((days_reached / days_count) * 100, 1) if days_count else 0
+    )
+
+
 @router.put("/records/{record_id}", response_model=WaterRecordResponse)
 def update_water_record(
     record_id: int,

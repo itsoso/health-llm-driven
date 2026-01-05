@@ -3,9 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from typing import List, Optional
-from datetime import date
+from datetime import date, timedelta
 from app.database import get_db
 from app.models.supplement import SupplementDefinition, SupplementRecord
+from app.models.user import User
+from app.api.deps import get_current_user_required
 from app.schemas.supplement import (
     SupplementDefinitionCreate,
     SupplementDefinitionUpdate,
@@ -178,12 +180,77 @@ def get_supplement_stats(
     db: Session = Depends(get_db)
 ):
     """获取补剂统计"""
-    from datetime import timedelta
     end_date = date.today()
     start_date = end_date - timedelta(days=days-1)
     
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == user_id,
+        SupplementDefinition.is_active == True
+    ).all()
+    
+    stats = []
+    for supp in supplements:
+        records = db.query(SupplementRecord).filter(
+            SupplementRecord.supplement_id == supp.id,
+            SupplementRecord.record_date >= start_date,
+            SupplementRecord.record_date <= end_date
+        ).all()
+        
+        taken_count = sum(1 for r in records if r.taken)
+        
+        stats.append({
+            "supplement_id": supp.id,
+            "supplement_name": supp.name,
+            "category": supp.category,
+            "total_days": days,
+            "taken_days": taken_count,
+            "completion_rate": round(taken_count / days * 100, 1)
+        })
+    
+    return stats
+
+
+# ========== /me 端点 ==========
+
+@router.get("/me/date/{record_date}", response_model=List[SupplementWithRecord])
+def get_my_supplements_with_records(
+    record_date: date,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户某天的补剂列表及打卡状态（需要登录）"""
+    supplements = db.query(SupplementDefinition).filter(
+        SupplementDefinition.user_id == current_user.id,
+        SupplementDefinition.is_active == True
+    ).order_by(SupplementDefinition.timing, SupplementDefinition.sort_order).all()
+    
+    result = []
+    for supp in supplements:
+        record = db.query(SupplementRecord).filter(
+            SupplementRecord.supplement_id == supp.id,
+            SupplementRecord.record_date == record_date
+        ).first()
+        
+        result.append(SupplementWithRecord(
+            supplement=SupplementDefinitionResponse.model_validate(supp),
+            record=SupplementRecordResponse.model_validate(record) if record else None
+        ))
+    
+    return result
+
+
+@router.get("/me/stats")
+def get_my_supplement_stats(
+    days: int = 7,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户补剂统计（需要登录）"""
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days-1)
+    
+    supplements = db.query(SupplementDefinition).filter(
+        SupplementDefinition.user_id == current_user.id,
         SupplementDefinition.is_active == True
     ).all()
     

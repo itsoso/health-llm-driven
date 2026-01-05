@@ -19,9 +19,9 @@ function GoalsContent() {
 
   // 获取用户目标
   const { data: goalsData, isLoading } = useQuery({
-    queryKey: ['goals', userId],
-    queryFn: () => goalApi.getUserGoals(userId!),
-    enabled: !!userId,
+    queryKey: ['goals'],
+    queryFn: () => goalApi.getMyGoals(),
+    enabled: isAuthenticated,
   });
 
   const goals = goalsData?.data || [];
@@ -30,7 +30,7 @@ function GoalsContent() {
   const createMutation = useMutation({
     mutationFn: (data: any) => goalApi.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['goals', userId] });
+      queryClient.invalidateQueries({ queryKey: ['goals'] });
       setShowCreateForm(false);
     },
   });
@@ -40,7 +40,7 @@ function GoalsContent() {
     mutationFn: ({ goalId, progressDate, progressValue }: { goalId: number; progressDate: string; progressValue: number }) =>
       goalApi.updateProgress(goalId, progressDate, progressValue),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['goals', userId] });
+      queryClient.invalidateQueries({ queryKey: ['goals'] });
       setShowProgressForm(false);
       setProgressGoal(null);
       setProgressValue('');
@@ -53,9 +53,9 @@ function GoalsContent() {
 
   // 从分析生成目标
   const generateMutation = useMutation({
-    mutationFn: () => goalApi.generateFromAnalysis(userId!),
+    mutationFn: () => goalApi.generateMyGoalsFromAnalysis(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['goals', userId] });
+      queryClient.invalidateQueries({ queryKey: ['goals'] });
     },
   });
 

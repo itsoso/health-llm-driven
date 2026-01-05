@@ -12,9 +12,9 @@ function AnalysisContent() {
   const [forceRefresh, setForceRefresh] = useState(false);
 
   const { data: response, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['health-analysis', userId, forceRefresh],
-    queryFn: () => healthAnalysisApi.analyzeIssues(userId!, forceRefresh),
-    enabled: !!userId,
+    queryKey: ['health-analysis', forceRefresh],
+    queryFn: () => healthAnalysisApi.analyzeMyIssues(forceRefresh),
+    enabled: isAuthenticated,
   });
 
   // 实际数据在 response.data 中
