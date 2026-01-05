@@ -19,7 +19,12 @@ class MedicalReportPDFParser:
     def __init__(self):
         self.client = None
         if settings.openai_api_key:
-            self.client = OpenAI(api_key=settings.openai_api_key)
+            # 支持代理配置
+            client_kwargs = {"api_key": settings.openai_api_key}
+            if settings.openai_base_url:
+                client_kwargs["base_url"] = settings.openai_base_url
+            self.client = OpenAI(**client_kwargs)
+        self.model = settings.openai_model or "gpt-4o-mini"
     
     def extract_text_from_pdf(self, pdf_path: str) -> str:
         """从PDF中提取文本"""
@@ -544,7 +549,7 @@ class MedicalReportPDFParser:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -556,7 +561,8 @@ class MedicalReportPDFParser:
                     }
                 ],
                 temperature=0.1,
-                max_tokens=4000
+                max_tokens=4000,
+                timeout=120  # PDF解析可能需要更长时间
             )
             
             result_text = response.choices[0].message.content
