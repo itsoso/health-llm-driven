@@ -39,15 +39,47 @@ interface UserListResponse {
   page_size: number;
 }
 
+interface GarminSyncUser {
+  user_id: number;
+  username: string | null;
+  name: string | null;
+  garmin_email: string;
+  sync_enabled: boolean;
+  last_sync_at: string | null;
+  latest_data_date: string | null;
+  total_records: number;
+}
+
+interface GarminSyncStatus {
+  total_configured_users: number;
+  users: GarminSyncUser[];
+}
+
+interface SyncResult {
+  total_users: number;
+  success_users: number;
+  failed_users: number;
+  details: Array<{
+    user_id: number;
+    success: boolean;
+    success_count: number;
+    error_count: number;
+    message: string;
+  }>;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   
+  const [activeTab, setActiveTab] = useState<'users' | 'garmin'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [syncDays, setSyncDays] = useState(3);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const pageSize = 15;
 
   // 权限检查
@@ -124,6 +156,39 @@ export default function AdminPage() {
     },
   });
 
+  // 获取 Garmin 同步状态
+  const { data: garminSyncStatus, isLoading: garminStatusLoading, refetch: refetchGarminStatus } = useQuery<GarminSyncStatus>({
+    queryKey: ['admin-garmin-sync-status'],
+    queryFn: async () => {
+      const res = await api.get('/admin/garmin/sync-status');
+      return res.data;
+    },
+    enabled: isAuthenticated && user?.is_admin && activeTab === 'garmin',
+  });
+
+  // 同步所有用户
+  const syncAllMutation = useMutation({
+    mutationFn: async (days: number) => {
+      const res = await api.post(`/admin/garmin/sync-all?days=${days}`);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setSyncResult(data);
+      queryClient.invalidateQueries({ queryKey: ['admin-garmin-sync-status'] });
+    },
+  });
+
+  // 同步单个用户
+  const syncUserMutation = useMutation({
+    mutationFn: async ({ userId, days }: { userId: number; days: number }) => {
+      const res = await api.post(`/admin/garmin/sync-user/${userId}?days=${days}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-garmin-sync-status'] });
+    },
+  });
+
   // 加载状态
   if (authLoading || !isAuthenticated || !user?.is_admin) {
     return (
@@ -164,47 +229,74 @@ export default function AdminPage() {
           <p className="text-purple-200">管理用户和查看系统统计</p>
         </div>
 
-        {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
-            <div className="text-3xl font-bold text-white">{stats?.total_users || 0}</div>
-            <div className="text-purple-200 text-sm">总用户数</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
-            <div className="text-3xl font-bold text-green-400">{stats?.active_users || 0}</div>
-            <div className="text-purple-200 text-sm">活跃用户</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
-            <div className="text-3xl font-bold text-blue-400">{stats?.users_with_garmin || 0}</div>
-            <div className="text-purple-200 text-sm">绑定Garmin</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
-            <div className="text-3xl font-bold text-yellow-400">{stats?.new_users_week || 0}</div>
-            <div className="text-purple-200 text-sm">本周新增</div>
-          </div>
+        {/* Tab 切换 */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'users'
+                ? 'bg-purple-600 text-white'
+                : 'bg-white/10 text-purple-200 hover:bg-white/20'
+            }`}
+          >
+            👥 用户管理
+          </button>
+          <button
+            onClick={() => setActiveTab('garmin')}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'garmin'
+                ? 'bg-purple-600 text-white'
+                : 'bg-white/10 text-purple-200 hover:bg-white/20'
+            }`}
+          >
+            ⌚ Garmin同步
+          </button>
         </div>
 
-        {/* 更多统计 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
-            <div className="text-xl font-semibold text-white">{stats?.admin_users || 0}</div>
-            <div className="text-purple-300 text-xs">管理员</div>
-          </div>
-          <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
-            <div className="text-xl font-semibold text-white">{stats?.total_health_records || 0}</div>
-            <div className="text-purple-300 text-xs">健康记录</div>
-          </div>
-          <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
-            <div className="text-xl font-semibold text-white">{stats?.total_medical_exams || 0}</div>
-            <div className="text-purple-300 text-xs">体检报告</div>
-          </div>
-          <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
-            <div className="text-xl font-semibold text-white">{stats?.new_users_today || 0}</div>
-            <div className="text-purple-300 text-xs">今日新增</div>
-          </div>
-        </div>
+        {/* 用户管理 Tab */}
+        {activeTab === 'users' && (
+          <>
+            {/* 统计卡片 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                <div className="text-3xl font-bold text-white">{stats?.total_users || 0}</div>
+                <div className="text-purple-200 text-sm">总用户数</div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                <div className="text-3xl font-bold text-green-400">{stats?.active_users || 0}</div>
+                <div className="text-purple-200 text-sm">活跃用户</div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                <div className="text-3xl font-bold text-blue-400">{stats?.users_with_garmin || 0}</div>
+                <div className="text-purple-200 text-sm">绑定Garmin</div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                <div className="text-3xl font-bold text-yellow-400">{stats?.new_users_week || 0}</div>
+                <div className="text-purple-200 text-sm">本周新增</div>
+              </div>
+            </div>
 
-        {/* 搜索和用户列表 */}
+            {/* 更多统计 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
+                <div className="text-xl font-semibold text-white">{stats?.admin_users || 0}</div>
+                <div className="text-purple-300 text-xs">管理员</div>
+              </div>
+              <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
+                <div className="text-xl font-semibold text-white">{stats?.total_health_records || 0}</div>
+                <div className="text-purple-300 text-xs">健康记录</div>
+              </div>
+              <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
+                <div className="text-xl font-semibold text-white">{stats?.total_medical_exams || 0}</div>
+                <div className="text-purple-300 text-xs">体检报告</div>
+              </div>
+              <div className="bg-white/5 backdrop-blur rounded-lg p-3 border border-white/10">
+                <div className="text-xl font-semibold text-white">{stats?.new_users_today || 0}</div>
+                <div className="text-purple-300 text-xs">今日新增</div>
+              </div>
+            </div>
+
+            {/* 搜索和用户列表 */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
           {/* 搜索栏 */}
           <div className="p-4 border-b border-white/10">
@@ -376,6 +468,164 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+          </>
+        )}
+
+        {/* Garmin 同步管理 Tab */}
+        {activeTab === 'garmin' && (
+          <div className="space-y-6">
+            {/* 同步控制面板 */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+              <h2 className="text-xl font-bold text-white mb-4">🔄 批量同步控制</h2>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-purple-200">同步天数:</label>
+                  <select
+                    value={syncDays}
+                    onChange={(e) => setSyncDays(Number(e.target.value))}
+                    className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value={1}>1天</option>
+                    <option value={3}>3天</option>
+                    <option value={7}>7天</option>
+                    <option value={14}>14天</option>
+                    <option value={30}>30天</option>
+                  </select>
+                </div>
+                <button
+                  onClick={() => syncAllMutation.mutate(syncDays)}
+                  disabled={syncAllMutation.isPending}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {syncAllMutation.isPending ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      同步中...
+                    </>
+                  ) : (
+                    '🚀 同步所有用户'
+                  )}
+                </button>
+                <button
+                  onClick={() => refetchGarminStatus()}
+                  className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+                >
+                  🔄 刷新状态
+                </button>
+              </div>
+
+              {/* 同步结果 */}
+              {syncResult && (
+                <div className="mt-4 p-4 bg-white/5 rounded-lg border border-white/10">
+                  <h3 className="text-lg font-semibold text-white mb-2">同步结果</h3>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-white">{syncResult.total_users}</div>
+                      <div className="text-purple-300 text-sm">总用户</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-400">{syncResult.success_users}</div>
+                      <div className="text-purple-300 text-sm">成功</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-400">{syncResult.failed_users}</div>
+                      <div className="text-purple-300 text-sm">失败</div>
+                    </div>
+                  </div>
+                  {syncResult.details.length > 0 && (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {syncResult.details.map((detail, idx) => (
+                        <div key={idx} className={`text-sm px-3 py-1 rounded ${detail.success ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                          用户 {detail.user_id}: {detail.message}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 用户同步状态列表 */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-4 border-b border-white/10">
+                <h2 className="text-lg font-semibold text-white">
+                  📊 用户同步状态 ({garminSyncStatus?.total_configured_users || 0} 人已配置)
+                </h2>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">用户</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">Garmin邮箱</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-purple-200 uppercase">状态</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">最后同步</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">最新数据</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-purple-200 uppercase">记录数</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-purple-200 uppercase">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {garminStatusLoading ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-purple-200">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
+                        </td>
+                      </tr>
+                    ) : garminSyncStatus?.users.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-purple-200">
+                          暂无配置Garmin的用户
+                        </td>
+                      </tr>
+                    ) : (
+                      garminSyncStatus?.users.map((gu) => (
+                        <tr key={gu.user_id} className="hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center text-white font-semibold text-sm mr-3">
+                                {gu.name?.[0] || '?'}
+                              </div>
+                              <div>
+                                <div className="text-white font-medium">{gu.name || '-'}</div>
+                                <div className="text-purple-300 text-sm">@{gu.username || '-'}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-purple-200 text-sm">{gu.garmin_email}</td>
+                          <td className="px-4 py-3 text-center">
+                            {gu.sync_enabled ? (
+                              <span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs rounded-full">已启用</span>
+                            ) : (
+                              <span className="px-2 py-1 bg-gray-500/20 text-gray-300 text-xs rounded-full">已禁用</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-purple-200 text-sm">
+                            {gu.last_sync_at ? formatDate(gu.last_sync_at) : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-purple-200 text-sm">
+                            {gu.latest_data_date || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-center text-purple-200 text-sm">{gu.total_records}</td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() => syncUserMutation.mutate({ userId: gu.user_id, days: syncDays })}
+                              disabled={syncUserMutation.isPending}
+                              className="px-3 py-1 bg-blue-600/80 text-white text-sm rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
+                            >
+                              {syncUserMutation.isPending ? '...' : '同步'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 删除确认弹窗 */}
