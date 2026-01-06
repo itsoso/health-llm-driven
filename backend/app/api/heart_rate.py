@@ -1,0 +1,297 @@
+"""心率数据API"""
+from datetime import date, datetime, timedelta
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+
+from app.database import get_db
+from app.models.daily_health import GarminData
+from app.models.user import User, GarminCredential
+from app.api.deps import get_current_user_required
+from app.schemas.heart_rate import (
+    DailyHeartRateResponse,
+    HeartRateTrendResponse,
+    HeartRateSummary,
+    HeartRatePoint,
+)
+from app.services.auth import garmin_credential_service
+from app.services.data_collection.garmin_connect import GarminConnectService
+import logging
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+def _parse_garmin_heart_rate_data(raw_hr_data: dict) -> List[HeartRatePoint]:
+    """
+    解析Garmin返回的心率时间序列数据
+    
+    Garmin心率数据格式:
+    {
+        "heartRateValues": [[timestamp_ms, heart_rate], ...],
+        "startTimestampGMT": ...,
+        "endTimestampGMT": ...,
+        ...
+    }
+    """
+    heart_rate_points = []
+    
+    if not raw_hr_data or not isinstance(raw_hr_data, dict):
+        return heart_rate_points
+    
+    hr_values = raw_hr_data.get("heartRateValues") or raw_hr_data.get("heartRateValueDescriptors")
+    
+    if not hr_values or not isinstance(hr_values, list):
+        return heart_rate_points
+    
+    for item in hr_values:
+        try:
+            # 格式1: [timestamp_ms, heart_rate]
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                timestamp_ms = item[0]
+                hr_value = item[1]
+                
+                if hr_value is None or hr_value <= 0:
+                    continue
+                
+                # 转换时间戳为时间字符串
+                dt = datetime.fromtimestamp(timestamp_ms / 1000)
+                time_str = dt.strftime("%H:%M")
+                
+                heart_rate_points.append(HeartRatePoint(
+                    timestamp=timestamp_ms,
+                    time=time_str,
+                    value=int(hr_value)
+                ))
+            # 格式2: {"timestamp": ..., "value": ...}
+            elif isinstance(item, dict):
+                timestamp_ms = item.get("timestamp") or item.get("timestampGMT") or item.get("startTimestampGMT")
+                hr_value = item.get("value") or item.get("heartRate") or item.get("heartRateValue")
+                
+                if timestamp_ms and hr_value and hr_value > 0:
+                    dt = datetime.fromtimestamp(timestamp_ms / 1000)
+                    time_str = dt.strftime("%H:%M")
+                    
+                    heart_rate_points.append(HeartRatePoint(
+                        timestamp=timestamp_ms,
+                        time=time_str,
+                        value=int(hr_value)
+                    ))
+        except (ValueError, TypeError, IndexError) as e:
+            logger.debug(f"解析心率数据点失败: {e}")
+            continue
+    
+    # 按时间排序并去重（每15分钟取一个点，减少数据量）
+    if len(heart_rate_points) > 200:
+        # 按时间采样，保留合理数量的点
+        sampled = []
+        last_time = None
+        for point in sorted(heart_rate_points, key=lambda x: x.timestamp):
+            current_time = point.time[:5]  # HH:MM
+            if last_time is None or current_time != last_time:
+                # 每分钟最多保留一个点
+                sampled.append(point)
+                last_time = current_time
+        heart_rate_points = sampled
+    
+    return sorted(heart_rate_points, key=lambda x: x.timestamp)
+
+
+@router.get("/me/daily/{record_date}", response_model=DailyHeartRateResponse)
+async def get_my_daily_heart_rate(
+    record_date: date,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取当前用户指定日期的详细心率数据
+    
+    - 包含心率时间序列（用于绘制曲线图）
+    - 包含HRV数据
+    - 包含心率汇总统计
+    """
+    # 1. 先从数据库获取汇总数据
+    garmin_data = db.query(GarminData).filter(
+        GarminData.user_id == current_user.id,
+        GarminData.record_date == record_date
+    ).first()
+    
+    summary = HeartRateSummary(
+        record_date=record_date,
+        avg_heart_rate=garmin_data.avg_heart_rate if garmin_data else None,
+        max_heart_rate=garmin_data.max_heart_rate if garmin_data else None,
+        min_heart_rate=garmin_data.min_heart_rate if garmin_data else None,
+        resting_heart_rate=garmin_data.resting_heart_rate if garmin_data else None
+    )
+    
+    hrv = garmin_data.hrv if garmin_data else None
+    heart_rate_timeline = []
+    
+    # 2. 尝试从Garmin获取详细的心率时间序列数据
+    credentials = garmin_credential_service.get_decrypted_credentials(db, current_user.id)
+    
+    if credentials and credentials.get("sync_enabled", True):
+        try:
+            service = GarminConnectService(credentials["email"], credentials["password"])
+            raw_hr_data = service.get_heart_rates(record_date)
+            
+            if raw_hr_data:
+                heart_rate_timeline = _parse_garmin_heart_rate_data(raw_hr_data)
+                
+                # 从原始数据补充汇总信息
+                if raw_hr_data.get("restingHeartRate") and not summary.resting_heart_rate:
+                    summary.resting_heart_rate = raw_hr_data["restingHeartRate"]
+                if raw_hr_data.get("maxHeartRate") and not summary.max_heart_rate:
+                    summary.max_heart_rate = raw_hr_data["maxHeartRate"]
+                if raw_hr_data.get("minHeartRate") and not summary.min_heart_rate:
+                    summary.min_heart_rate = raw_hr_data["minHeartRate"]
+                    
+                logger.info(f"获取到用户 {current_user.id} 在 {record_date} 的 {len(heart_rate_timeline)} 个心率数据点")
+                
+        except Exception as e:
+            logger.warning(f"获取Garmin详细心率数据失败: {e}")
+    
+    return DailyHeartRateResponse(
+        record_date=record_date,
+        summary=summary,
+        heart_rate_timeline=heart_rate_timeline,
+        hrv=hrv
+    )
+
+
+@router.get("/me/trend", response_model=HeartRateTrendResponse)
+async def get_my_heart_rate_trend(
+    days: int = Query(default=7, ge=1, le=90, description="查询天数"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取当前用户的心率趋势数据（多天）
+    
+    - 用于绘制趋势曲线图
+    - 包含每日心率汇总和HRV数据
+    """
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days - 1)
+    
+    # 从数据库获取历史数据
+    garmin_records = db.query(GarminData).filter(
+        GarminData.user_id == current_user.id,
+        GarminData.record_date >= start_date,
+        GarminData.record_date <= end_date
+    ).order_by(GarminData.record_date.asc()).all()
+    
+    daily_data = []
+    hrv_data = []
+    
+    # 收集统计数据
+    all_avg_hr = []
+    all_resting_hr = []
+    all_hrv = []
+    all_max_hr = []
+    all_min_hr = []
+    
+    for record in garmin_records:
+        daily_data.append(HeartRateSummary(
+            record_date=record.record_date,
+            avg_heart_rate=record.avg_heart_rate,
+            max_heart_rate=record.max_heart_rate,
+            min_heart_rate=record.min_heart_rate,
+            resting_heart_rate=record.resting_heart_rate
+        ))
+        
+        if record.hrv:
+            hrv_data.append({
+                "date": record.record_date.isoformat(),
+                "hrv": record.hrv
+            })
+            all_hrv.append(record.hrv)
+        
+        if record.avg_heart_rate:
+            all_avg_hr.append(record.avg_heart_rate)
+        if record.resting_heart_rate:
+            all_resting_hr.append(record.resting_heart_rate)
+        if record.max_heart_rate:
+            all_max_hr.append(record.max_heart_rate)
+        if record.min_heart_rate:
+            all_min_hr.append(record.min_heart_rate)
+    
+    return HeartRateTrendResponse(
+        days=days,
+        daily_data=daily_data,
+        hrv_data=hrv_data,
+        avg_heart_rate=round(sum(all_avg_hr) / len(all_avg_hr), 1) if all_avg_hr else None,
+        avg_resting_heart_rate=round(sum(all_resting_hr) / len(all_resting_hr), 1) if all_resting_hr else None,
+        avg_hrv=round(sum(all_hrv) / len(all_hrv), 1) if all_hrv else None,
+        max_heart_rate=max(all_max_hr) if all_max_hr else None,
+        min_heart_rate=min(all_min_hr) if all_min_hr else None
+    )
+
+
+@router.get("/me/realtime/{record_date}")
+async def get_realtime_heart_rate(
+    record_date: date,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    实时从Garmin获取心率数据（不使用缓存）
+    
+    用于获取最新的心率时间序列数据
+    """
+    credentials = garmin_credential_service.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="未配置Garmin账号，请先在设置中绑定Garmin Connect"
+        )
+    
+    if not credentials.get("sync_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Garmin同步已禁用"
+        )
+    
+    try:
+        service = GarminConnectService(credentials["email"], credentials["password"])
+        raw_hr_data = service.get_heart_rates(record_date)
+        
+        if not raw_hr_data:
+            return {
+                "record_date": record_date.isoformat(),
+                "message": "未获取到心率数据",
+                "heart_rate_timeline": [],
+                "summary": None
+            }
+        
+        heart_rate_timeline = _parse_garmin_heart_rate_data(raw_hr_data)
+        
+        # 从原始数据提取汇总
+        summary = {
+            "resting_heart_rate": raw_hr_data.get("restingHeartRate"),
+            "max_heart_rate": raw_hr_data.get("maxHeartRate"),
+            "min_heart_rate": raw_hr_data.get("minHeartRate"),
+        }
+        
+        # 计算平均心率
+        if heart_rate_timeline:
+            avg_hr = sum(p.value for p in heart_rate_timeline) / len(heart_rate_timeline)
+            summary["avg_heart_rate"] = round(avg_hr)
+        
+        return {
+            "record_date": record_date.isoformat(),
+            "heart_rate_timeline": [p.model_dump() for p in heart_rate_timeline],
+            "summary": summary,
+            "data_points": len(heart_rate_timeline)
+        }
+        
+    except Exception as e:
+        logger.error(f"获取实时心率数据失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取心率数据失败: {str(e)}"
+        )
+
