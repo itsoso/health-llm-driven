@@ -16,7 +16,7 @@ from app.schemas.heart_rate import (
     HeartRatePoint,
 )
 from app.services.auth import garmin_credential_service
-from app.services.data_collection.garmin_connect import GarminConnectService
+from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,7 @@ async def get_my_daily_heart_rate(
     # 2. 尝试从Garmin获取详细的心率时间序列数据
     credentials = garmin_credential_service.get_decrypted_credentials(db, current_user.id)
     
-    if credentials and credentials.get("sync_enabled", True):
+    if credentials and credentials.get("sync_enabled", True) and credentials.get("credentials_valid", True):
         try:
             service = GarminConnectService(credentials["email"], credentials["password"])
             raw_hr_data = service.get_heart_rates(record_date)
@@ -149,7 +149,16 @@ async def get_my_daily_heart_rate(
                     summary.min_heart_rate = raw_hr_data["minHeartRate"]
                     
                 logger.info(f"获取到用户 {current_user.id} 在 {record_date} 的 {len(heart_rate_timeline)} 个心率数据点")
-                
+        
+        except GarminAuthenticationError as e:
+            # 认证失败，标记凭证无效
+            logger.warning(f"用户 {current_user.id} Garmin认证失败: {e}")
+            garmin_credential_service.update_sync_status(
+                db, current_user.id,
+                credentials_valid=False,
+                last_error=str(e),
+                increment_error_count=True
+            )
         except Exception as e:
             logger.warning(f"获取Garmin详细心率数据失败: {e}")
     
@@ -255,6 +264,12 @@ async def get_realtime_heart_rate(
             detail="Garmin同步已禁用"
         )
     
+    if not credentials.get("credentials_valid", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Garmin凭证无效，请在设置中重新配置"
+        )
+    
     try:
         service = GarminConnectService(credentials["email"], credentials["password"])
         raw_hr_data = service.get_heart_rates(record_date)
@@ -287,7 +302,20 @@ async def get_realtime_heart_rate(
             "summary": summary,
             "data_points": len(heart_rate_timeline)
         }
-        
+    
+    except GarminAuthenticationError as e:
+        # 认证失败，标记凭证无效
+        logger.warning(f"用户 {current_user.id} Garmin认证失败: {e}")
+        garmin_credential_service.update_sync_status(
+            db, current_user.id,
+            credentials_valid=False,
+            last_error=str(e),
+            increment_error_count=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Garmin登录失败，请检查账号密码是否正确"
+        )
     except Exception as e:
         logger.error(f"获取实时心率数据失败: {e}")
         raise HTTPException(
