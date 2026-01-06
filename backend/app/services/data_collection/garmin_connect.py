@@ -30,15 +30,20 @@ class GarminConnectService:
     这个库通过模拟浏览器登录Garmin Connect来获取数据，不需要官方API密钥
     
     安装: pip install garminconnect
+    
+    支持:
+    - 国际版: connect.garmin.com (is_cn=False)
+    - 中国版: connect.garmin.cn (is_cn=True)
     """
     
-    def __init__(self, email: str, password: str):
+    def __init__(self, email: str, password: str, is_cn: bool = False):
         """
         初始化Garmin Connect服务
         
         Args:
             email: Garmin Connect账号邮箱
             password: Garmin Connect账号密码
+            is_cn: 是否使用中国服务器 (garmin.cn)，默认False使用国际版
         """
         if not GARMINCONNECT_AVAILABLE:
             raise ImportError(
@@ -48,6 +53,7 @@ class GarminConnectService:
         
         self.email = email
         self.password = password
+        self.is_cn = is_cn
         self.client: Optional[Garmin] = None
         self._authenticated = False
     
@@ -55,10 +61,11 @@ class GarminConnectService:
         """确保已认证，认证失败时抛出异常"""
         if not self._authenticated or self.client is None:
             try:
-                self.client = Garmin(self.email, self.password)
+                self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
                 self.client.login()
                 self._authenticated = True
-                logger.info("Garmin Connect登录成功")
+                server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+                logger.info(f"Garmin Connect登录成功 - {server_type}")
             except Exception as e:
                 self._authenticated = False
                 error_msg = str(e).lower()

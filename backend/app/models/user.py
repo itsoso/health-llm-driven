@@ -42,6 +42,7 @@ class GarminCredential(Base):
     # Garmin登录凭证（加密存储）
     garmin_email = Column(String, nullable=False)  # Garmin邮箱
     encrypted_password = Column(Text, nullable=False)  # 加密后的Garmin密码
+    is_cn = Column(Boolean, default=False)  # 是否使用中国服务器 (garmin.cn)
     
     # 同步状态
     last_sync_at = Column(DateTime(timezone=True), nullable=True)

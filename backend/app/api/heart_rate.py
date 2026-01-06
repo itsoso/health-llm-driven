@@ -134,7 +134,7 @@ async def get_my_daily_heart_rate(
     
     if credentials and credentials.get("sync_enabled", True) and credentials.get("credentials_valid", True):
         try:
-            service = GarminConnectService(credentials["email"], credentials["password"])
+            service = GarminConnectService(credentials["email"], credentials["password"], is_cn=credentials.get("is_cn", False))
             raw_hr_data = service.get_heart_rates(record_date)
             
             if raw_hr_data:

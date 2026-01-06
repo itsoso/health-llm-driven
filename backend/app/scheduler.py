@@ -29,6 +29,7 @@ def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
                     "user_id": cred.user_id,
                     "email": decrypted["email"],
                     "password": decrypted["password"],
+                    "is_cn": decrypted.get("is_cn", False),
                     "last_sync_at": cred.last_sync_at
                 })
         except Exception as e:
@@ -42,7 +43,8 @@ async def sync_user_garmin_data(
     user_id: int, 
     email: str, 
     password: str, 
-    days: int = 3
+    days: int = 3,
+    is_cn: bool = False
 ) -> Dict[str, Any]:
     """同步单个用户的Garmin数据"""
     result = {
@@ -55,7 +57,9 @@ async def sync_user_garmin_data(
     }
     
     try:
-        service = GarminConnectService(email, password)
+        server_type = "中国版" if is_cn else "国际版"
+        logger.info(f"用户 {user_id} 使用 {server_type} Garmin服务器")
+        service = GarminConnectService(email, password, is_cn=is_cn)
         
         # 计算日期范围
         end_date = datetime.now().date()
@@ -138,7 +142,8 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
                 user_info["user_id"],
                 user_info["email"],
                 user_info["password"],
-                days
+                days,
+                is_cn=user_info.get("is_cn", False)
             )
             
             results["details"].append(user_result)

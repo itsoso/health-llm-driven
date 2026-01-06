@@ -417,7 +417,8 @@ async def sync_user_garmin(
         user_id,
         credentials["email"],
         credentials["password"],
-        days
+        days,
+        is_cn=credentials.get("is_cn", False)
     )
     
     return SyncUserResponse(**result)

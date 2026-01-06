@@ -12,6 +12,7 @@ const API_BASE = '/api';
 interface GarminCredential {
   id: number;
   garmin_email: string;
+  is_cn: boolean;
   last_sync_at: string | null;
   sync_enabled: boolean;
 }
@@ -25,6 +26,7 @@ function SettingsContent() {
   const [garminForm, setGarminForm] = useState({
     garmin_email: '',
     garmin_password: '',
+    is_cn: false,
   });
   const [showGarminForm, setShowGarminForm] = useState(false);
   const [syncDays, setSyncDays] = useState(7);
@@ -67,7 +69,7 @@ function SettingsContent() {
 
   // 保存Garmin凭证
   const saveGarminMutation = useMutation({
-    mutationFn: async (data: { garmin_email: string; garmin_password: string }) => {
+    mutationFn: async (data: { garmin_email: string; garmin_password: string; is_cn: boolean }) => {
       const res = await fetch(`${API_BASE}/auth/garmin/credentials`, {
         method: 'POST',
         headers: {
@@ -95,7 +97,7 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
       refreshUser();
       setShowGarminForm(false);
-      setGarminForm({ garmin_email: '', garmin_password: '' });
+      setGarminForm({ garmin_email: '', garmin_password: '', is_cn: false });
       setMessage({ type: 'success', text: 'Garmin凭证保存成功！' });
     },
     onError: (error: Error) => {
@@ -167,7 +169,7 @@ function SettingsContent() {
 
   // 测试Garmin连接
   const testConnectionMutation = useMutation({
-    mutationFn: async (data: { garmin_email: string; garmin_password: string }) => {
+    mutationFn: async (data: { garmin_email: string; garmin_password: string; is_cn: boolean }) => {
       const res = await fetch(`${API_BASE}/auth/garmin/test-connection`, {
         method: 'POST',
         headers: {
@@ -439,9 +441,17 @@ function SettingsContent() {
                 <div>
                   <p className={`font-medium ${garminCredential.sync_enabled ? 'text-green-800' : 'text-gray-600'}`}>
                     {garminCredential.sync_enabled ? '✅ 已配置Garmin账号' : '⏸️ 同步已暂停'}
+                    {garminCredential.is_cn && (
+                      <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">
+                        🇨🇳 中国版
+                      </span>
+                    )}
                   </p>
                   <p className={`text-sm mt-1 ${garminCredential.sync_enabled ? 'text-green-700' : 'text-gray-500'}`}>
                     账号: {garminCredential.garmin_email}
+                    <span className="text-xs text-gray-400 ml-2">
+                      ({garminCredential.is_cn ? 'garmin.cn' : 'garmin.com'})
+                    </span>
                   </p>
                   {garminCredential.last_sync_at && (
                     <p className={`text-xs mt-1 ${garminCredential.sync_enabled ? 'text-green-600' : 'text-gray-400'}`}>
@@ -583,6 +593,21 @@ function SettingsContent() {
                     placeholder="请输入Garmin Connect密码"
                   />
                 </div>
+                <div className="flex items-center gap-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="is_cn"
+                    checked={garminForm.is_cn}
+                    onChange={(e) => setGarminForm({ ...garminForm, is_cn: e.target.checked })}
+                    className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                  />
+                  <label htmlFor="is_cn" className="text-gray-700">
+                    <span className="font-medium">🇨🇳 中国用户</span>
+                    <span className="text-sm text-gray-500 ml-2">
+                      (使用 garmin.cn 账号)
+                    </span>
+                  </label>
+                </div>
                 <div className="flex gap-3">
                   <button
                     onClick={() => testConnectionMutation.mutate(garminForm)}
@@ -602,7 +627,7 @@ function SettingsContent() {
                     <button
                       onClick={() => {
                         setShowGarminForm(false);
-                        setGarminForm({ garmin_email: '', garmin_password: '' });
+                        setGarminForm({ garmin_email: '', garmin_password: '', is_cn: false });
                       }}
                       className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
                     >
