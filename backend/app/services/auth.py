@@ -184,7 +184,10 @@ class GarminCredentialService:
                 "email": credential.garmin_email,
                 "password": decrypted_password,
                 "last_sync_at": credential.last_sync_at,
-                "sync_enabled": credential.sync_enabled
+                "sync_enabled": credential.sync_enabled,
+                "credentials_valid": getattr(credential, 'credentials_valid', True),
+                "last_error": getattr(credential, 'last_error', None),
+                "error_count": getattr(credential, 'error_count', 0),
             }
         except Exception as e:
             logger.error(f"解密Garmin密码失败: {e}")
