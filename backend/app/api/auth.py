@@ -353,7 +353,9 @@ async def sync_garmin_data(
         # 创建Garmin服务实例（传入凭证，会自动登录）
         garmin_service = GarminConnectService(
             email=credentials["email"],
-            password=credentials["password"]
+            password=credentials["password"],
+            is_cn=credentials.get("is_cn", False),
+            user_id=current_user.id
         )
         
         # 同步数据
@@ -421,7 +423,9 @@ async def sync_garmin_data_stream(
             # 创建Garmin服务实例
             garmin_service = GarminConnectService(
                 email=credentials["email"],
-                password=credentials["password"]
+                password=credentials["password"],
+                is_cn=credentials.get("is_cn", False),
+                user_id=user_id
             )
             
             yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
@@ -510,7 +514,8 @@ async def test_garmin_connection(
         garmin_service = GarminConnectService(
             email=credentials.garmin_email,
             password=credentials.garmin_password,
-            is_cn=credentials.is_cn
+            is_cn=credentials.is_cn,
+            user_id=current_user.id
         )
         # 尝试获取今天的数据来验证凭证
         from datetime import date
