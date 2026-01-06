@@ -65,12 +65,14 @@ class GarminCredentialCreate(BaseModel):
     """创建/更新Garmin凭证"""
     garmin_email: str = Field(..., description="Garmin账号邮箱")
     garmin_password: str = Field(..., description="Garmin账号密码")
+    is_cn: bool = Field(default=False, description="是否使用中国服务器(garmin.cn)")
 
 
 class GarminCredentialResponse(BaseModel):
     """Garmin凭证响应（不包含密码）"""
     id: int
     garmin_email: str
+    is_cn: bool = False
     last_sync_at: Optional[datetime] = None
     sync_enabled: bool = True
     created_at: Optional[datetime] = None

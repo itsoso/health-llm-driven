@@ -255,12 +255,15 @@ async def save_garmin_credentials(
     保存Garmin登录凭证
     
     凭证会被加密存储，用于后续自动同步Garmin数据
+    
+    - **is_cn**: 如果是中国用户(garmin.cn账号)，设置为 true
     """
     credential = garmin_credential_service.save_credentials(
         db=db,
         user_id=current_user.id,
         garmin_email=credentials.garmin_email,
-        garmin_password=credentials.garmin_password
+        garmin_password=credentials.garmin_password,
+        is_cn=credentials.is_cn
     )
     return credential
 
@@ -494,14 +497,20 @@ async def test_garmin_connection(
     返回明确的提示信息：
     - 成功：✅ 密码正确，连接成功
     - 失败：❌ 密码错误或账号无效
+    
+    注意：中国用户(garmin.cn)需要设置 is_cn=true
     """
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
         
+        server_type = "中国版(garmin.cn)" if credentials.is_cn else "国际版(garmin.com)"
+        logger.info(f"测试Garmin连接 - 服务器: {server_type}, 邮箱: {credentials.garmin_email}")
+        
         # 创建服务实例时会尝试登录
         garmin_service = GarminConnectService(
             email=credentials.garmin_email,
-            password=credentials.garmin_password
+            password=credentials.garmin_password,
+            is_cn=credentials.is_cn
         )
         # 尝试获取今天的数据来验证凭证
         from datetime import date
