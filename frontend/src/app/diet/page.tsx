@@ -69,6 +69,10 @@ function DietContent() {
         },
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `保存失败: ${res.status}`);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -76,6 +80,9 @@ function DietContent() {
       queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
       setShowForm(false);
       setFormData({ meal_type: 'breakfast', food_items: '', calories: '', protein: '', carbs: '', fat: '', notes: '' });
+    },
+    onError: (error: Error) => {
+      alert(`保存失败: ${error.message}`);
     },
   });
 
@@ -96,8 +103,11 @@ function DietContent() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.food_items.trim()) {
+      alert('请输入食物内容');
+      return;
+    }
     createMutation.mutate({
-      user_id: userId,
       record_date: selectedDate,
       meal_type: formData.meal_type,
       food_items: formData.food_items,
