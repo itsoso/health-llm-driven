@@ -164,3 +164,28 @@ class OutdoorActivity(Base):
     
     user = relationship("User", backref="outdoor_activities")
 
+
+class HeartRateSample(Base):
+    """心率采样数据（每15分钟一个点，每天约96个点）"""
+    __tablename__ = "heart_rate_samples"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    record_date = Column(Date, nullable=False, index=True)  # 记录日期
+    sample_time = Column(Time, nullable=False)  # 采样时间 (HH:MM)
+    heart_rate = Column(Integer, nullable=False)  # 心率值 (bpm)
+    
+    # 可选：标记数据来源或类型
+    source = Column(String, default="garmin")  # 数据来源
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    user = relationship("User", backref="heart_rate_samples")
+    
+    # 复合索引：按用户和日期快速查询
+    __table_args__ = (
+        # 确保同一用户同一天同一时间只有一条记录
+        # Index('ix_hr_user_date', 'user_id', 'record_date'),
+    )
+

@@ -692,37 +692,135 @@ class GarminConnectService:
         Returns:
             保存的GarminData对象，如果失败返回None
         """
+        prefix = self._log_prefix()
         try:
             # 获取所有数据
-            logger.info(f"开始获取 {target_date} 的数据...")
+            logger.info(f"{prefix} 开始获取 {target_date} 的数据...")
             raw_data = self.get_all_daily_data(target_date)
             
             if not raw_data:
-                logger.warning(f"未获取到 {target_date} 的数据（raw_data为空）")
+                logger.warning(f"{prefix} 未获取到 {target_date} 的数据（raw_data为空）")
                 return None
             
-            logger.info(f"获取到 {target_date} 的原始数据，键数量: {len(raw_data) if isinstance(raw_data, dict) else 'N/A'}")
+            logger.info(f"{prefix} 获取到 {target_date} 的原始数据，键数量: {len(raw_data) if isinstance(raw_data, dict) else 'N/A'}")
             
             # 解析数据
-            logger.info(f"开始解析 {target_date} 的数据...")
+            logger.info(f"{prefix} 开始解析 {target_date} 的数据...")
             garmin_data = self.parse_to_garmin_data_create(raw_data, user_id, target_date)
             
-            logger.info(f"解析完成，步数: {garmin_data.steps}, 心率: {garmin_data.resting_heart_rate}")
+            logger.info(f"{prefix} 解析完成，步数: {garmin_data.steps}, 心率: {garmin_data.resting_heart_rate}")
             
             # 保存到数据库
-            logger.info(f"开始保存 {target_date} 的数据到数据库...")
+            logger.info(f"{prefix} 开始保存 {target_date} 的数据到数据库...")
             from app.services.data_collection.garmin_service import GarminService
             garmin_service = GarminService()
             result = garmin_service.save_garmin_data(db, garmin_data)
             
-            logger.info(f"成功保存 {target_date} 的数据，ID: {result.id}")
+            logger.info(f"{prefix} 成功保存 {target_date} 的数据，ID: {result.id}")
+            
+            # 同步心率采样数据
+            self._sync_heart_rate_samples(db, user_id, target_date)
+            
             return result
             
         except Exception as e:
             import traceback
-            logger.error(f"同步Garmin数据失败: {str(e)}")
-            logger.error(f"详细错误: {traceback.format_exc()}")
+            logger.error(f"{prefix} 同步Garmin数据失败: {str(e)}")
+            logger.error(f"{prefix} 详细错误: {traceback.format_exc()}")
             return None
+    
+    def _sync_heart_rate_samples(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: date
+    ) -> int:
+        """
+        同步心率采样数据（每15分钟一个点）
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            target_date: 目标日期
+            
+        Returns:
+            保存的采样点数量
+        """
+        prefix = self._log_prefix()
+        try:
+            # 获取心率时间序列数据
+            hr_data = self.get_heart_rates(target_date)
+            
+            if not hr_data:
+                logger.debug(f"{prefix} 未获取到 {target_date} 的心率时间序列数据")
+                return 0
+            
+            # 解析心率数据
+            hr_values = hr_data.get("heartRateValues") or []
+            if not hr_values:
+                logger.debug(f"{prefix} {target_date} 的心率时间序列数据为空")
+                return 0
+            
+            from app.models.daily_health import HeartRateSample
+            from datetime import time as dt_time
+            
+            # 按15分钟间隔采样
+            samples_by_slot = {}  # key: "HH:MM" (每15分钟一个slot)
+            
+            for item in hr_values:
+                try:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        timestamp_ms = item[0]
+                        hr_value = item[1]
+                        
+                        if hr_value is None or hr_value <= 0:
+                            continue
+                        
+                        # 转换时间戳
+                        dt = datetime.fromtimestamp(timestamp_ms / 1000)
+                        
+                        # 计算15分钟时间槽
+                        slot_minute = (dt.minute // 15) * 15
+                        slot_key = f"{dt.hour:02d}:{slot_minute:02d}"
+                        
+                        # 每个时间槽只保留第一个值
+                        if slot_key not in samples_by_slot:
+                            samples_by_slot[slot_key] = {
+                                "time": dt_time(dt.hour, slot_minute),
+                                "value": int(hr_value)
+                            }
+                except (ValueError, TypeError, IndexError):
+                    continue
+            
+            if not samples_by_slot:
+                return 0
+            
+            # 删除该日期已有的采样数据
+            db.query(HeartRateSample).filter(
+                HeartRateSample.user_id == user_id,
+                HeartRateSample.record_date == target_date
+            ).delete()
+            
+            # 批量插入新数据
+            samples_to_insert = []
+            for slot_key, data in sorted(samples_by_slot.items()):
+                samples_to_insert.append(HeartRateSample(
+                    user_id=user_id,
+                    record_date=target_date,
+                    sample_time=data["time"],
+                    heart_rate=data["value"],
+                    source="garmin"
+                ))
+            
+            db.bulk_save_objects(samples_to_insert)
+            db.commit()
+            
+            logger.info(f"{prefix} 保存了 {target_date} 的 {len(samples_to_insert)} 个心率采样点")
+            return len(samples_to_insert)
+            
+        except Exception as e:
+            logger.warning(f"{prefix} 同步心率采样数据失败: {e}")
+            return 0
     
     def sync_date_range(
         self,
