@@ -45,29 +45,39 @@ function HeartRateContent() {
   const days = getDaysFromRange(timeRange);
 
   // 获取每日详细心率数据
-  const { data: dailyData, isLoading: loadingDaily } = useQuery({
+  const { data: dailyData, isLoading: loadingDaily, error: dailyError } = useQuery({
     queryKey: ['heart-rate-daily', format(selectedDate, 'yyyy-MM-dd')],
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/heart-rate/me/daily/${format(selectedDate, 'yyyy-MM-dd')}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('获取心率数据失败');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || '获取心率数据失败');
+      }
       return res.json();
     },
     enabled: !!token && timeRange === '1day',
+    retry: 1,
+    staleTime: 1000 * 60 * 5, // 5分钟缓存
   });
 
   // 获取心率趋势数据（7天/4周/1年）
-  const { data: trendData, isLoading: loadingTrend } = useQuery({
+  const { data: trendData, isLoading: loadingTrend, error: trendError } = useQuery({
     queryKey: ['heart-rate-trend', days],
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/heart-rate/me/trend?days=${days}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('获取心率趋势失败');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || '获取心率趋势失败');
+      }
       return res.json();
     },
     enabled: !!token && timeRange !== '1day',
+    retry: 1,
+    staleTime: 1000 * 60 * 5, // 5分钟缓存
   });
 
   // 日期导航
@@ -157,6 +167,7 @@ function HeartRateContent() {
   }, [timeRange, dailyData, trendData]);
 
   const isLoading = timeRange === '1day' ? loadingDaily : loadingTrend;
+  const error = timeRange === '1day' ? dailyError : trendError;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -231,6 +242,13 @@ function HeartRateContent() {
           {isLoading ? (
             <div className="h-64 flex items-center justify-center text-gray-400">
               <div className="animate-pulse">加载中...</div>
+            </div>
+          ) : error ? (
+            <div className="h-64 flex flex-col items-center justify-center text-red-400">
+              <div className="text-5xl mb-3">⚠️</div>
+              <p className="text-red-500 font-medium">加载失败</p>
+              <p className="text-sm text-red-400 mt-1">{(error as Error).message}</p>
+              <p className="text-xs text-gray-400 mt-2">请检查 Garmin 凭证设置</p>
             </div>
           ) : timeRange === '1day' ? (
             // 24小时心率图

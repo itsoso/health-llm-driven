@@ -104,6 +104,8 @@ class GarminConnectService:
                 logger.warning(f"未找到 {target_date} 的数据")
                 return None
                 
+        except GarminAuthenticationError:
+            raise
         except Exception as e:
             logger.error(f"获取Garmin数据失败: {str(e)}")
             return None
@@ -122,6 +124,8 @@ class GarminConnectService:
             self._ensure_authenticated()
             sleep_data = self.client.get_sleep_data(target_date.isoformat())
             return sleep_data
+        except GarminAuthenticationError:
+            raise
         except Exception as e:
             logger.error(f"获取睡眠数据失败: {str(e)}")
             return None
@@ -140,6 +144,9 @@ class GarminConnectService:
             self._ensure_authenticated()
             hr_data = self.client.get_heart_rates(target_date.isoformat())
             return hr_data
+        except GarminAuthenticationError:
+            # 认证错误需要传递出去
+            raise
         except Exception as e:
             logger.error(f"获取心率数据失败: {str(e)}")
             return None
@@ -158,6 +165,8 @@ class GarminConnectService:
             self._ensure_authenticated()
             battery_data = self.client.get_body_battery(target_date.isoformat())
             return battery_data
+        except GarminAuthenticationError:
+            raise
         except Exception as e:
             logger.error(f"获取身体电量数据失败: {str(e)}")
             return None
@@ -177,6 +186,8 @@ class GarminConnectService:
             # 使用get_all_day_stress获取压力数据（garminconnect库的实际方法名）
             stress_data = self.client.get_all_day_stress(target_date.isoformat())
             return stress_data
+        except GarminAuthenticationError:
+            raise
         except Exception as e:
             logger.error(f"获取压力数据失败: {str(e)}")
             return None
