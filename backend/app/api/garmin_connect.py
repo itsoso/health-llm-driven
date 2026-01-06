@@ -35,7 +35,7 @@ def login_garmin_connect(
     实际使用时，建议在前端处理登录，然后传递session token
     """
     try:
-        service = GarminConnectService(credentials.email, credentials.password)
+        service = GarminConnectService(credentials.email, credentials.password, user_id=0)
         service._ensure_authenticated()
         return {
             "status": "success",
@@ -67,7 +67,7 @@ def sync_garmin_connect_data(
     注意：建议使用环境变量或安全的凭据管理，不要在前端直接传递密码
     """
     try:
-        service = GarminConnectService(credentials.email, credentials.password)
+        service = GarminConnectService(credentials.email, credentials.password, user_id=request.user_id)
         
         if request.target_date:
             # 同步单日数据
@@ -121,7 +121,7 @@ def sync_today_garmin_data(
     """同步今日Garmin数据"""
     today = date.today()
     try:
-        service = GarminConnectService(credentials.email, credentials.password)
+        service = GarminConnectService(credentials.email, credentials.password, user_id=user_id)
         result = service.sync_daily_data(db, user_id, today)
         if result:
             return {

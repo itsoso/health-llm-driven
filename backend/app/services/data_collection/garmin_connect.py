@@ -36,7 +36,7 @@ class GarminConnectService:
     - 中国版: connect.garmin.cn (is_cn=True)
     """
     
-    def __init__(self, email: str, password: str, is_cn: bool = False):
+    def __init__(self, email: str, password: str, is_cn: bool = False, user_id: int = None):
         """
         初始化Garmin Connect服务
         
@@ -44,6 +44,7 @@ class GarminConnectService:
             email: Garmin Connect账号邮箱
             password: Garmin Connect账号密码
             is_cn: 是否使用中国服务器 (garmin.cn)，默认False使用国际版
+            user_id: 用户ID，用于日志记录
         """
         if not GARMINCONNECT_AVAILABLE:
             raise ImportError(
@@ -54,31 +55,48 @@ class GarminConnectService:
         self.email = email
         self.password = password
         self.is_cn = is_cn
+        self.user_id = user_id
         self.client: Optional[Garmin] = None
         self._authenticated = False
     
+    def _log_prefix(self) -> str:
+        """生成日志前缀，包含用户信息"""
+        if self.user_id:
+            return f"[用户 {self.user_id}]"
+        # 隐藏邮箱中间部分
+        email_parts = self.email.split('@')
+        if len(email_parts) == 2 and len(email_parts[0]) > 3:
+            masked_email = email_parts[0][:2] + '***' + '@' + email_parts[1]
+        else:
+            masked_email = '***'
+        return f"[{masked_email}]"
+    
     def _ensure_authenticated(self):
         """确保已认证，认证失败时抛出异常"""
+        prefix = self._log_prefix()
         if not self._authenticated or self.client is None:
             try:
                 self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
                 self.client.login()
                 self._authenticated = True
                 server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-                logger.info(f"Garmin Connect登录成功 - {server_type}")
+                logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
             except Exception as e:
                 self._authenticated = False
                 error_msg = str(e).lower()
                 
                 # 检查是否需要设置密码
                 if 'set password' in error_msg or 'unexpected title' in error_msg:
+                    logger.warning(f"{prefix} Garmin账号需要设置密码")
                     raise GarminAuthenticationError(
                         "Garmin账号需要设置密码！请先访问 https://connect.garmin.com 登录并按提示完成密码设置，然后再尝试同步。"
                     ) from e
                 
                 # 将登录失败转换为明确的认证错误
                 if any(kw in error_msg for kw in ['login', 'auth', '401', 'unauthorized', 'credential', 'password', 'oauth']):
+                    logger.error(f"{prefix} Garmin登录失败: {e}")
                     raise GarminAuthenticationError(f"Garmin登录失败: {e}") from e
+                logger.error(f"{prefix} Garmin认证异常: {e}")
                 raise
     
     def get_user_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
@@ -91,6 +109,7 @@ class GarminConnectService:
         Returns:
             包含所有健康数据的字典，如果失败返回None
         """
+        prefix = self._log_prefix()
         try:
             self._ensure_authenticated()
             
@@ -98,16 +117,16 @@ class GarminConnectService:
             summary = self.client.get_user_summary(target_date.isoformat())
             
             if summary:
-                logger.info(f"成功获取 {target_date} 的Garmin数据")
+                logger.info(f"{prefix} 成功获取 {target_date} 的Garmin数据")
                 return summary
             else:
-                logger.warning(f"未找到 {target_date} 的数据")
+                logger.warning(f"{prefix} 未找到 {target_date} 的数据")
                 return None
                 
         except GarminAuthenticationError:
             raise
         except Exception as e:
-            logger.error(f"获取Garmin数据失败: {str(e)}")
+            logger.error(f"{prefix} 获取Garmin数据失败: {str(e)}")
             return None
     
     def get_sleep_data(self, target_date: date) -> Optional[Dict[str, Any]]:
@@ -120,6 +139,7 @@ class GarminConnectService:
         Returns:
             睡眠数据字典
         """
+        prefix = self._log_prefix()
         try:
             self._ensure_authenticated()
             sleep_data = self.client.get_sleep_data(target_date.isoformat())
@@ -127,7 +147,7 @@ class GarminConnectService:
         except GarminAuthenticationError:
             raise
         except Exception as e:
-            logger.error(f"获取睡眠数据失败: {str(e)}")
+            logger.error(f"{prefix} 获取睡眠数据失败: {str(e)}")
             return None
     
     def get_heart_rates(self, target_date: date) -> Optional[Dict[str, Any]]:
@@ -140,6 +160,7 @@ class GarminConnectService:
         Returns:
             心率数据字典
         """
+        prefix = self._log_prefix()
         try:
             self._ensure_authenticated()
             hr_data = self.client.get_heart_rates(target_date.isoformat())
@@ -148,7 +169,7 @@ class GarminConnectService:
             # 认证错误需要传递出去
             raise
         except Exception as e:
-            logger.error(f"获取心率数据失败: {str(e)}")
+            logger.error(f"{prefix} 获取心率数据失败: {str(e)}")
             return None
     
     def get_body_battery(self, target_date: date) -> Optional[Dict[str, Any]]:
@@ -161,6 +182,7 @@ class GarminConnectService:
         Returns:
             身体电量数据字典
         """
+        prefix = self._log_prefix()
         try:
             self._ensure_authenticated()
             battery_data = self.client.get_body_battery(target_date.isoformat())
@@ -168,7 +190,7 @@ class GarminConnectService:
         except GarminAuthenticationError:
             raise
         except Exception as e:
-            logger.error(f"获取身体电量数据失败: {str(e)}")
+            logger.error(f"{prefix} 获取身体电量数据失败: {str(e)}")
             return None
     
     def get_stress_data(self, target_date: date) -> Optional[Dict[str, Any]]:
@@ -181,6 +203,7 @@ class GarminConnectService:
         Returns:
             压力数据字典
         """
+        prefix = self._log_prefix()
         try:
             self._ensure_authenticated()
             # 使用get_all_day_stress获取压力数据（garminconnect库的实际方法名）
@@ -189,7 +212,7 @@ class GarminConnectService:
         except GarminAuthenticationError:
             raise
         except Exception as e:
-            logger.error(f"获取压力数据失败: {str(e)}")
+            logger.error(f"{prefix} 获取压力数据失败: {str(e)}")
             return None
     
     def get_all_daily_data(self, target_date: date) -> Dict[str, Any]:

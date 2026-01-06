@@ -59,7 +59,7 @@ async def sync_user_garmin_data(
     try:
         server_type = "中国版" if is_cn else "国际版"
         logger.info(f"用户 {user_id} 使用 {server_type} Garmin服务器")
-        service = GarminConnectService(email, password, is_cn=is_cn)
+        service = GarminConnectService(email, password, is_cn=is_cn, user_id=user_id)
         
         # 计算日期范围
         end_date = datetime.now().date()
