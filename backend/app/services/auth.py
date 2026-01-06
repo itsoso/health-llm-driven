@@ -249,6 +249,17 @@ class GarminCredentialService:
             db.commit()
             return True
         return False
+    
+    @staticmethod
+    def toggle_sync_enabled(db: Session, user_id: int, enabled: bool) -> bool:
+        """切换同步开关状态"""
+        credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if credential:
+            credential.sync_enabled = enabled
+            db.commit()
+            logger.info(f"用户 {user_id} Garmin同步状态已{'启用' if enabled else '禁用'}")
+            return True
+        return False
 
 
 # 创建服务实例
