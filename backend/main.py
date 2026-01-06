@@ -24,10 +24,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 启动后台同步调度器
+# 启动后台同步调度器（每2小时同步一次）
 @app.on_event("startup")
 async def startup_event():
-    start_scheduler(app)
+    start_scheduler(app, interval_minutes=120)
 
 
 # 配置CORS
