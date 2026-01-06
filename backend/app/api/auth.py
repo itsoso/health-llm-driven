@@ -490,9 +490,13 @@ async def test_garmin_connection(
 ):
     """
     测试Garmin凭证是否有效（不保存）
+    
+    返回明确的提示信息：
+    - 成功：✅ 密码正确，连接成功
+    - 失败：❌ 密码错误或账号无效
     """
     try:
-        from app.services.data_collection.garmin_connect import GarminConnectService
+        from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
         
         # 创建服务实例时会尝试登录
         garmin_service = GarminConnectService(
@@ -503,13 +507,31 @@ async def test_garmin_connection(
         from datetime import date
         summary = garmin_service.get_user_summary(date.today())
         if summary is not None:
-            return {"success": True, "message": "连接成功！凭证有效"}
+            return {
+                "success": True, 
+                "message": "✅ 密码正确！Garmin账号连接成功，可以保存凭证了。"
+            }
         else:
-            return {"success": True, "message": "连接成功！凭证有效（今日暂无数据）"}
+            return {
+                "success": True, 
+                "message": "✅ 密码正确！连接成功（今日暂无同步数据）"
+            }
+    except GarminAuthenticationError as e:
+        logger.warning(f"测试Garmin连接失败 - 认证错误: {e}")
+        return {
+            "success": False, 
+            "message": "❌ 密码错误或账号无效！请检查您的Garmin Connect邮箱和密码是否正确。"
+        }
     except Exception as e:
         logger.error(f"测试Garmin连接失败: {e}")
-        error_msg = str(e)
-        if "credentials" in error_msg.lower() or "password" in error_msg.lower() or "login" in error_msg.lower():
-            return {"success": False, "message": "连接失败，请检查用户名和密码是否正确"}
-        return {"success": False, "message": f"连接失败: {error_msg}"}
+        error_msg = str(e).lower()
+        if any(kw in error_msg for kw in ['401', 'unauthorized', 'credential', 'password', 'login', 'auth', 'oauth']):
+            return {
+                "success": False, 
+                "message": "❌ 密码错误或账号无效！请检查您的Garmin Connect邮箱和密码是否正确。"
+            }
+        return {
+            "success": False, 
+            "message": f"❌ 连接失败: {str(e)}"
+        }
 
