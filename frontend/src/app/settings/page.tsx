@@ -135,6 +135,36 @@ function SettingsContent() {
     },
   });
 
+  // 切换同步状态
+  const toggleSyncMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch(`${API_BASE}/auth/garmin/toggle-sync?enabled=${enabled}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('服务器返回非JSON响应:', text);
+        throw new Error('服务器错误，请稍后重试');
+      }
+      
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.detail || '操作失败');
+      }
+      return result;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
+      setMessage({ type: 'success', text: data.message });
+    },
+    onError: (error: Error) => {
+      setMessage({ type: 'error', text: error.message });
+    },
+  });
+
   // 测试Garmin连接
   const testConnectionMutation = useMutation({
     mutationFn: async (data: { garmin_email: string; garmin_password: string }) => {
@@ -400,20 +430,44 @@ function SettingsContent() {
 
           {/* 已配置状态 */}
           {garminCredential && !showGarminForm && (
-            <div className="bg-green-50 rounded-lg p-4 border border-green-200 mb-4">
+            <div className={`rounded-lg p-4 border mb-4 ${
+              garminCredential.sync_enabled 
+                ? 'bg-green-50 border-green-200' 
+                : 'bg-gray-50 border-gray-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-green-800 font-medium">✅ 已配置Garmin账号</p>
-                  <p className="text-green-700 text-sm mt-1">
+                  <p className={`font-medium ${garminCredential.sync_enabled ? 'text-green-800' : 'text-gray-600'}`}>
+                    {garminCredential.sync_enabled ? '✅ 已配置Garmin账号' : '⏸️ 同步已暂停'}
+                  </p>
+                  <p className={`text-sm mt-1 ${garminCredential.sync_enabled ? 'text-green-700' : 'text-gray-500'}`}>
                     账号: {garminCredential.garmin_email}
                   </p>
                   {garminCredential.last_sync_at && (
-                    <p className="text-green-600 text-xs mt-1">
+                    <p className={`text-xs mt-1 ${garminCredential.sync_enabled ? 'text-green-600' : 'text-gray-400'}`}>
                       最后同步: {new Date(garminCredential.last_sync_at).toLocaleString('zh-CN')}
                     </p>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                  {/* 同步开关 */}
+                  <button
+                    onClick={() => toggleSyncMutation.mutate(!garminCredential.sync_enabled)}
+                    disabled={toggleSyncMutation.isPending}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      garminCredential.sync_enabled ? 'bg-green-500' : 'bg-gray-300'
+                    } ${toggleSyncMutation.isPending ? 'opacity-50' : ''}`}
+                    title={garminCredential.sync_enabled ? '点击暂停同步' : '点击启用同步'}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        garminCredential.sync_enabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-xs ${garminCredential.sync_enabled ? 'text-green-600' : 'text-gray-400'}`}>
+                    {garminCredential.sync_enabled ? '同步中' : '已暂停'}
+                  </span>
                   <button
                     onClick={() => setShowGarminForm(true)}
                     className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"

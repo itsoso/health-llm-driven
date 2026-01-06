@@ -294,6 +294,35 @@ async def delete_garmin_credentials(
     )
 
 
+@router.post("/garmin/toggle-sync", summary="切换Garmin同步状态")
+async def toggle_garmin_sync(
+    enabled: bool,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    启用或禁用Garmin自动同步
+    
+    - **enabled**: True 启用同步，False 停止同步
+    """
+    credential = garmin_credential_service.get_credentials(db, current_user.id)
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未配置Garmin凭证"
+        )
+    
+    if garmin_credential_service.toggle_sync_enabled(db, current_user.id, enabled):
+        return {
+            "message": f"Garmin同步已{'启用' if enabled else '停止'}",
+            "sync_enabled": enabled
+        }
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="更新同步状态失败"
+    )
+
+
 @router.post("/garmin/sync", response_model=GarminSyncResponse, summary="同步Garmin数据")
 async def sync_garmin_data(
     sync_request: GarminSyncRequest,
