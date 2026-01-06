@@ -518,6 +518,13 @@ async def test_garmin_connection(
             }
     except GarminAuthenticationError as e:
         logger.warning(f"测试Garmin连接失败 - 认证错误: {e}")
+        error_str = str(e)
+        # 检查是否需要设置密码
+        if '设置密码' in error_str or 'set password' in error_str.lower():
+            return {
+                "success": False, 
+                "message": "⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并按提示完成密码设置，然后再尝试连接。"
+            }
         return {
             "success": False, 
             "message": "❌ 密码错误或账号无效！请检查您的Garmin Connect邮箱和密码是否正确。"
@@ -525,6 +532,12 @@ async def test_garmin_connection(
     except Exception as e:
         logger.error(f"测试Garmin连接失败: {e}")
         error_msg = str(e).lower()
+        # 检查是否需要设置密码
+        if 'set password' in error_msg or 'unexpected title' in error_msg:
+            return {
+                "success": False, 
+                "message": "⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并按提示完成密码设置。"
+            }
         if any(kw in error_msg for kw in ['401', 'unauthorized', 'credential', 'password', 'login', 'auth', 'oauth']):
             return {
                 "success": False, 
