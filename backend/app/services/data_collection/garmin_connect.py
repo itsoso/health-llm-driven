@@ -62,6 +62,13 @@ class GarminConnectService:
             except Exception as e:
                 self._authenticated = False
                 error_msg = str(e).lower()
+                
+                # 检查是否需要设置密码
+                if 'set password' in error_msg or 'unexpected title' in error_msg:
+                    raise GarminAuthenticationError(
+                        "Garmin账号需要设置密码！请先访问 https://connect.garmin.com 登录并按提示完成密码设置，然后再尝试同步。"
+                    ) from e
+                
                 # 将登录失败转换为明确的认证错误
                 if any(kw in error_msg for kw in ['login', 'auth', '401', 'unauthorized', 'credential', 'password', 'oauth']):
                     raise GarminAuthenticationError(f"Garmin登录失败: {e}") from e
