@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.database import get_db
-from app.models.daily_health import GarminData
+from app.models.daily_health import GarminData, HeartRateSample
 from app.models.user import User, GarminCredential
 from app.api.deps import get_current_user_required
 from app.schemas.heart_rate import (
@@ -108,11 +108,11 @@ async def get_my_daily_heart_rate(
     """
     获取当前用户指定日期的详细心率数据
     
-    - 包含心率时间序列（用于绘制曲线图）
+    - 从数据库读取心率采样数据（每15分钟一个点）
     - 包含HRV数据
     - 包含心率汇总统计
     """
-    # 1. 先从数据库获取汇总数据
+    # 1. 从数据库获取汇总数据
     garmin_data = db.query(GarminData).filter(
         GarminData.user_id == current_user.id,
         GarminData.record_date == record_date
@@ -127,40 +127,27 @@ async def get_my_daily_heart_rate(
     )
     
     hrv = garmin_data.hrv if garmin_data else None
+    
+    # 2. 从数据库获取心率采样数据
+    heart_rate_samples = db.query(HeartRateSample).filter(
+        HeartRateSample.user_id == current_user.id,
+        HeartRateSample.record_date == record_date
+    ).order_by(HeartRateSample.sample_time.asc()).all()
+    
+    # 转换为 HeartRatePoint 格式
     heart_rate_timeline = []
-    
-    # 2. 尝试从Garmin获取详细的心率时间序列数据
-    credentials = garmin_credential_service.get_decrypted_credentials(db, current_user.id)
-    
-    if credentials and credentials.get("sync_enabled", True) and credentials.get("credentials_valid", True):
-        try:
-            service = GarminConnectService(credentials["email"], credentials["password"], is_cn=credentials.get("is_cn", False), user_id=current_user.id)
-            raw_hr_data = service.get_heart_rates(record_date)
-            
-            if raw_hr_data:
-                heart_rate_timeline = _parse_garmin_heart_rate_data(raw_hr_data)
-                
-                # 从原始数据补充汇总信息
-                if raw_hr_data.get("restingHeartRate") and not summary.resting_heart_rate:
-                    summary.resting_heart_rate = raw_hr_data["restingHeartRate"]
-                if raw_hr_data.get("maxHeartRate") and not summary.max_heart_rate:
-                    summary.max_heart_rate = raw_hr_data["maxHeartRate"]
-                if raw_hr_data.get("minHeartRate") and not summary.min_heart_rate:
-                    summary.min_heart_rate = raw_hr_data["minHeartRate"]
-                    
-                logger.info(f"获取到用户 {current_user.id} 在 {record_date} 的 {len(heart_rate_timeline)} 个心率数据点")
+    for sample in heart_rate_samples:
+        # 构造时间戳（用于排序和显示）
+        sample_datetime = datetime.combine(record_date, sample.sample_time)
+        timestamp_ms = int(sample_datetime.timestamp() * 1000)
         
-        except GarminAuthenticationError as e:
-            # 认证失败，标记凭证无效
-            logger.warning(f"用户 {current_user.id} Garmin认证失败: {e}")
-            garmin_credential_service.update_sync_status(
-                db, current_user.id,
-                credentials_valid=False,
-                last_error=str(e),
-                increment_error_count=True
-            )
-        except Exception as e:
-            logger.warning(f"获取Garmin详细心率数据失败: {e}")
+        heart_rate_timeline.append(HeartRatePoint(
+            timestamp=timestamp_ms,
+            time=sample.sample_time.strftime("%H:%M"),
+            value=sample.heart_rate
+        ))
+    
+    logger.info(f"用户 {current_user.id} 获取 {record_date} 的 {len(heart_rate_timeline)} 个心率采样点")
     
     return DailyHeartRateResponse(
         record_date=record_date,
