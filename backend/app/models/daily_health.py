@@ -89,7 +89,8 @@ class DietRecord(Base):
     meal_time = Column(Time)  # 用餐时间
     
     # 食物信息
-    food_name = Column(String, nullable=False)  # 食物名称
+    food_name = Column(String, nullable=True)  # 食物名称（旧字段，保留兼容）
+    food_items = Column(String, nullable=True)  # 食物列表，逗号分隔
     quantity = Column(Float)  # 数量
     unit = Column(String)  # 单位（g/ml/份）
     
