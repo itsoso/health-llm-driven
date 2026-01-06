@@ -29,7 +29,7 @@ class DietRecordBase(BaseModel):
 
 class DietRecordCreate(DietRecordBase):
     """创建饮食记录"""
-    user_id: int
+    user_id: Optional[int] = None  # 可选，后端会使用当前登录用户ID
 
 
 class DietRecordUpdate(BaseModel):
