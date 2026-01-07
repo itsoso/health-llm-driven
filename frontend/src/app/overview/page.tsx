@@ -55,7 +55,7 @@ interface GarminData {
 }
 
 // 格式化时长
-function formatDuration(minutes: number | null): string {
+function formatDuration(minutes: number | null | undefined): string {
   if (!minutes) return '--';
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
