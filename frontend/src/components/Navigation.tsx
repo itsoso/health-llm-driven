@@ -29,6 +29,7 @@ export default function Navigation() {
   // 主要导航项（直接显示）
   const mainNavItems: NavItem[] = [
     { href: '/', label: '首页', icon: '🏠' },
+    { href: '/overview', label: '健康概览', icon: '📋' },
     { href: '/daily-insights', label: '今日建议', icon: '💪' },
     { href: '/dashboard', label: '仪表盘', icon: '📊' },
   ];

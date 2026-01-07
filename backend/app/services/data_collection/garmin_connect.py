@@ -676,6 +676,76 @@ class GarminConnectService:
                 return int(value // 60)
             return None
         
+        # 解析新增字段
+        # HRV状态
+        hrv_status = None
+        hrv_7day_avg = None
+        if isinstance(sleep_data, dict):
+            hrv_status = sleep_data.get('hrvStatus')
+            if isinstance(hrv_status, dict):
+                hrv_status = hrv_status.get('status') or hrv_status.get('hrvStatus')
+            # 7天平均HRV - 从weeklyAverages或直接值
+            hrv_7day_avg = safe_get_nested(sleep_data, 'hrvData', 'weeklyAvg') or sleep_data.get('hrvWeeklyAverage')
+        
+        # 强度活动时间
+        moderate_intensity_mins = 0
+        vigorous_intensity_mins = 0
+        intensity_goal = None
+        if isinstance(summary, dict):
+            moderate_intensity_mins = summary.get('moderateIntensityMinutes', 0) or 0
+            vigorous_intensity_mins = summary.get('vigorousIntensityMinutes', 0) or 0
+            intensity_goal = summary.get('intensityMinutesGoal') or summary.get('weeklyIntensityMinutesGoal')
+        
+        # 卡路里详细分类
+        active_cals = None
+        bmr_cals = None
+        if isinstance(summary, dict):
+            active_cals = summary.get('activeKilocalories') or summary.get('activeCalories')
+            bmr_cals = summary.get('bmrKilocalories') or summary.get('restingCalories') or summary.get('bmrCalories')
+        
+        # 呼吸数据
+        avg_resp_awake = None
+        avg_resp_sleep = None
+        lowest_resp = None
+        highest_resp = None
+        if isinstance(sleep_data, dict):
+            daily_dto = sleep_data.get('dailySleepDTO', {})
+            if isinstance(daily_dto, dict):
+                avg_resp_sleep = daily_dto.get('avgRespirationValue') or daily_dto.get('averageRespirationValue')
+                lowest_resp = daily_dto.get('lowestRespirationValue')
+                highest_resp = daily_dto.get('highestRespirationValue')
+        if isinstance(summary, dict):
+            avg_resp_awake = summary.get('avgWakingRespirationValue') or summary.get('averageRespirationValue')
+            if lowest_resp is None:
+                lowest_resp = summary.get('lowestRespirationValue')
+            if highest_resp is None:
+                highest_resp = summary.get('highestRespirationValue')
+        
+        # 血氧数据
+        spo2_avg = None
+        spo2_min = None
+        spo2_max = None
+        if isinstance(summary, dict):
+            spo2_avg = summary.get('averageSpO2') or summary.get('avgSpO2')
+            spo2_min = summary.get('lowestSpO2') or summary.get('minSpO2')
+            spo2_max = summary.get('highestSpO2') or summary.get('maxSpO2')
+        
+        # VO2 Max
+        vo2max_run = None
+        vo2max_cycle = None
+        if isinstance(summary, dict):
+            vo2max_run = summary.get('vo2MaxRunning') or summary.get('vo2Max')
+            vo2max_cycle = summary.get('vo2MaxCycling')
+        
+        # 楼层和距离
+        floors = None
+        floors_goal_val = None
+        distance = None
+        if isinstance(summary, dict):
+            floors = summary.get('floorsAscended') or summary.get('floorsClimbed')
+            floors_goal_val = summary.get('floorsAscendedGoal') or summary.get('floorsGoal')
+            distance = summary.get('totalDistanceMeters') or summary.get('distanceInMeters')
+        
         # 记录解析结果用于调试
         logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}")
         
@@ -687,6 +757,8 @@ class GarminConnectService:
             min_heart_rate=safe_int(min_hr),
             resting_heart_rate=safe_int(resting_hr),
             hrv=safe_float(hrv),
+            hrv_status=hrv_status,
+            hrv_7day_avg=safe_float(hrv_7day_avg),
             sleep_score=safe_int(sleep_score),
             total_sleep_duration=seconds_to_minutes(sleep_duration_seconds),
             deep_sleep_duration=seconds_to_minutes(deep_sleep_seconds),
@@ -701,7 +773,24 @@ class GarminConnectService:
             stress_level=safe_int(stress_level),
             steps=safe_int(steps),
             calories_burned=safe_int(calories),
+            active_calories=safe_int(active_cals),
+            bmr_calories=safe_int(bmr_cals),
             active_minutes=safe_int(active_minutes),
+            intensity_minutes_goal=safe_int(intensity_goal),
+            moderate_intensity_minutes=safe_int(moderate_intensity_mins),
+            vigorous_intensity_minutes=safe_int(vigorous_intensity_mins),
+            avg_respiration_awake=safe_float(avg_resp_awake),
+            avg_respiration_sleep=safe_float(avg_resp_sleep),
+            lowest_respiration=safe_float(lowest_resp),
+            highest_respiration=safe_float(highest_resp),
+            spo2_avg=safe_float(spo2_avg),
+            spo2_min=safe_float(spo2_min),
+            spo2_max=safe_float(spo2_max),
+            vo2max_running=safe_float(vo2max_run),
+            vo2max_cycling=safe_float(vo2max_cycle),
+            floors_climbed=safe_int(floors),
+            floors_goal=safe_int(floors_goal_val),
+            distance_meters=safe_float(distance),
         )
         
         return result

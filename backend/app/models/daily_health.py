@@ -23,6 +23,8 @@ class GarminData(Base):
     
     # 心率变异性
     hrv = Column(Float)  # 心率变异性 (ms)
+    hrv_status = Column(String)  # HRV状态 (balanced, unbalanced, low)
+    hrv_7day_avg = Column(Float)  # 7天平均HRV
     
     # 睡眠数据
     sleep_score = Column(Integer)  # 睡眠分数 (0-100)
@@ -48,8 +50,37 @@ class GarminData(Base):
     steps = Column(Integer)  # 步数
     
     # 活动数据
-    calories_burned = Column(Integer)  # 消耗卡路里
+    calories_burned = Column(Integer)  # 消耗卡路里（总消耗）
+    active_calories = Column(Integer)  # 活动卡路里（运动消耗）
+    bmr_calories = Column(Integer)  # 基础代谢卡路里（静息消耗）
     active_minutes = Column(Integer)  # 活动分钟数
+    
+    # 强度活动时间（周目标）
+    intensity_minutes_goal = Column(Integer)  # 强度活动时间周目标（分钟）
+    moderate_intensity_minutes = Column(Integer)  # 中等强度活动时间
+    vigorous_intensity_minutes = Column(Integer)  # 高强度活动时间
+    
+    # 呼吸数据
+    avg_respiration_awake = Column(Float)  # 清醒平均呼吸频率 (brpm)
+    avg_respiration_sleep = Column(Float)  # 睡眠平均呼吸频率 (brpm)
+    lowest_respiration = Column(Float)  # 最低呼吸频率
+    highest_respiration = Column(Float)  # 最高呼吸频率
+    
+    # 血氧饱和度
+    spo2_avg = Column(Float)  # 平均血氧饱和度 (%)
+    spo2_min = Column(Float)  # 最低血氧饱和度
+    spo2_max = Column(Float)  # 最高血氧饱和度
+    
+    # VO2 Max（最大摄氧量）
+    vo2max_running = Column(Float)  # 跑步最大摄氧量
+    vo2max_cycling = Column(Float)  # 骑行最大摄氧量
+    
+    # 楼层
+    floors_climbed = Column(Integer)  # 爬楼层数
+    floors_goal = Column(Integer)  # 楼层目标
+    
+    # 距离
+    distance_meters = Column(Float)  # 总距离（米）
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
