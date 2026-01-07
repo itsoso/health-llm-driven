@@ -626,7 +626,7 @@ class DailyRecommendationService:
         goals = []
         
         # 步数目标
-        yesterday_steps = yesterday.steps if yesterday else 0
+        yesterday_steps = (yesterday.steps or 0) if yesterday else 0
         if yesterday_steps < 10000:
             target_steps = min(yesterday_steps + 2000, 10000)
             goals.append({
