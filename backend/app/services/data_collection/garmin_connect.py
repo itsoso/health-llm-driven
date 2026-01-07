@@ -520,6 +520,12 @@ class GarminConnectService:
             if min_hr is None:
                 min_hr = summary.get('minHeartRate') or summary.get('min')
         
+        # 如果还没有获取到静息心率，尝试从睡眠数据获取
+        if resting_hr is None and isinstance(sleep_data, dict):
+            resting_hr = sleep_data.get('restingHeartRate')
+            if resting_hr:
+                logger.info(f"从睡眠数据获取静息心率: {resting_hr}")
+        
         # HRV数据 - 如果从睡眠数据没有获取到，尝试从summary获取
         if hrv is None and isinstance(summary, dict):
             hrv = summary.get('hrv') or safe_get_nested(summary, 'hrvStatus', 'hrv') or summary.get('avgOvernightHrv')
@@ -663,7 +669,7 @@ class GarminConnectService:
             return None
         
         # 记录解析结果用于调试
-        logger.info(f"解析结果 - 睡眠分数: {sleep_score} (类型: {type(sleep_score).__name__}), 睡眠时长(秒): {sleep_duration_seconds}, 平均心率: {avg_hr} (类型: {type(avg_hr).__name__})")
+        logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}")
         
         result = GarminDataCreate(
             user_id=user_id,
