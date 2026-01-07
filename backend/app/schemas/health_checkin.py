@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 
 class HealthCheckinCreate(BaseModel):
     """创建健康打卡"""
-    user_id: int
+    user_id: Optional[int] = None  # 后端使用当前登录用户ID
     checkin_date: date
     running_distance: Optional[float] = None
     running_duration: Optional[int] = None
