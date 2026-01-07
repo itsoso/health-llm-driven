@@ -49,6 +49,8 @@ interface GarminData {
   lowest_respiration: number | null;
   highest_respiration: number | null;
   spo2_avg: number | null;
+  spo2_min: number | null;
+  spo2_max: number | null;
   vo2max_running: number | null;
   floors_climbed: number | null;
   distance_meters: number | null;
