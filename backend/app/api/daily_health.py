@@ -1,9 +1,12 @@
 """日常健康记录API"""
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 from app.schemas.daily_health import (
     GarminDataCreate,
     GarminDataResponse,
@@ -98,6 +101,8 @@ def get_my_garmin_data(
     db: Session = Depends(get_db)
 ):
     """获取当前用户的Garmin数据（需要登录）"""
+    logger.info(f"[Overview API] 用户 {current_user.id} 请求 Garmin 数据, start_date={start_date}, end_date={end_date}")
+    
     query = db.query(GarminData).filter(GarminData.user_id == current_user.id)
     
     if start_date:
@@ -106,6 +111,12 @@ def get_my_garmin_data(
         query = query.filter(GarminData.record_date <= end_date)
     
     data_list = query.order_by(GarminData.record_date.desc()).offset(skip).limit(limit).all()
+    
+    logger.info(f"[Overview API] 用户 {current_user.id} 查询到 {len(data_list)} 条记录")
+    if data_list:
+        first = data_list[0]
+        logger.info(f"[Overview API] 最新记录: date={first.record_date}, sleep_score={first.sleep_score}, steps={first.steps}, resting_hr={first.resting_heart_rate}")
+    
     return data_list
 
 
