@@ -113,12 +113,13 @@ function OverviewContent() {
   const { token } = useAuth();
   const today = format(new Date(), 'yyyy-MM-dd');
   const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+  const monthAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
 
-  // 获取今天的数据
-  const { data: todayData, isLoading } = useQuery<{ data: GarminData[] }>({
-    queryKey: ['garmin-today', today],
+  // 获取最近30天数据（取最新一天显示）
+  const { data: recentData, isLoading } = useQuery<{ data: GarminData[] }>({
+    queryKey: ['garmin-recent', monthAgo, today],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/daily-health/garmin/me?start_date=${today}&end_date=${today}`, {
+      const res = await fetch(`${API_BASE}/daily-health/garmin/me?start_date=${monthAgo}&end_date=${today}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('获取数据失败');
@@ -127,21 +128,21 @@ function OverviewContent() {
     enabled: !!token,
   });
 
-  // 获取最近7天数据（用于图表）
-  const { data: weekData } = useQuery<{ data: GarminData[] }>({
-    queryKey: ['garmin-week', weekAgo, today],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/daily-health/garmin/me?start_date=${weekAgo}&end_date=${today}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('获取数据失败');
-      return res.json();
-    },
-    enabled: !!token,
-  });
-
-  const record = todayData?.data?.[0];
-  const weekRecords = weekData?.data || [];
+  // 从返回的数据中取最新一天（有实际数据的）
+  const allRecords = recentData?.data || [];
+  
+  // 按日期降序排序，找到第一条有实际数据的记录
+  const sortedRecords = [...allRecords].sort((a, b) => 
+    new Date(b.record_date).getTime() - new Date(a.record_date).getTime()
+  );
+  
+  // 找到有实际数据的记录（睡眠分数或步数不为空）
+  const record = sortedRecords.find(r => 
+    r.sleep_score !== null || r.steps !== null || r.resting_heart_rate !== null
+  ) || sortedRecords[0];
+  
+  // 最近7天数据用于图表
+  const weekRecords = sortedRecords.slice(0, 7).reverse();
 
   // 准备睡眠柱状图数据
   const sleepChartData = weekRecords.slice(-7).map((r) => ({
@@ -185,12 +186,40 @@ function OverviewContent() {
     );
   }
 
+  if (!record) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-20">
+        <div className="text-center">
+          <div className="text-6xl mb-4">📊</div>
+          <h2 className="text-xl font-bold text-gray-700 mb-2">暂无健康数据</h2>
+          <p className="text-gray-500 mb-4">请先同步 Garmin 数据</p>
+          <a 
+            href="/settings#garmin" 
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            前往设置同步
+          </a>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6 bg-gray-100 pt-20 md:pt-24">
       <div className="max-w-7xl mx-auto">
         {/* 页面标题 */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">概览</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">概览</h1>
+            {record && (
+              <p className="text-sm text-gray-500 mt-1">
+                数据日期: {format(new Date(record.record_date), 'yyyy年MM月dd日', { locale: zhCN })}
+                {record.record_date !== today && (
+                  <span className="ml-2 text-orange-500">(非今日数据)</span>
+                )}
+              </p>
+            )}
+          </div>
           <span className="text-blue-500 text-sm cursor-pointer hover:underline">查看全部</span>
         </div>
 
