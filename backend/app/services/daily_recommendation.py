@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.basic_health import BasicHealthData
 from app.models.daily_recommendation import DailyRecommendation
 from app.services.llm_health_analyzer import llm_analyzer
+from app.utils.timezone import get_china_today, get_china_now
 import logging
 import json
 
@@ -30,7 +31,7 @@ class DailyRecommendationService:
         # 首先尝试获取今天的数据
         today_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
-            GarminData.record_date == date.today()
+            GarminData.record_date == get_china_today()
         ).first()
         
         # 检查今天的数据是否有实际值（至少有睡眠分数、步数或心率之一）
@@ -38,7 +39,7 @@ class DailyRecommendationService:
             return today_data
         
         # 如果今天没有有效数据，获取昨天的
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = get_china_today() - timedelta(days=1)
         yesterday_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == yesterday
@@ -48,11 +49,11 @@ class DailyRecommendationService:
             return yesterday_data
         
         # 如果昨天也没有，尝试获取最近7天内有数据的记录
-        week_ago = date.today() - timedelta(days=7)
+        week_ago = get_china_today() - timedelta(days=7)
         return db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date >= week_ago,
-            GarminData.record_date <= date.today()
+            GarminData.record_date <= get_china_today()
         ).order_by(GarminData.record_date.desc()).first()
     
     def _has_meaningful_data(self, data: GarminData) -> bool:
@@ -73,7 +74,7 @@ class DailyRecommendationService:
     ) -> Optional[GarminData]:
         """获取昨天的Garmin数据（兼容旧方法）"""
         if reference_date is None:
-            reference_date = date.today()
+            reference_date = get_china_today()
         
         yesterday = reference_date - timedelta(days=1)
         
@@ -90,7 +91,7 @@ class DailyRecommendationService:
         include_today: bool = True
     ) -> List[GarminData]:
         """获取最近N天的数据用于趋势分析"""
-        end_date = date.today() if include_today else date.today() - timedelta(days=1)
+        end_date = get_china_today() if include_today else get_china_today() - timedelta(days=1)
         start_date = end_date - timedelta(days=days - 1)
         
         return db.query(GarminData).filter(
@@ -401,7 +402,7 @@ class DailyRecommendationService:
             包含睡眠、活动、心率、压力分析和综合建议的完整报告
         """
         if reference_date is None:
-            reference_date = date.today()
+            reference_date = get_china_today()
         
         # 获取最新可用数据（优先今天，否则昨天）
         latest_data = self.get_latest_data(db, user_id)
@@ -727,7 +728,7 @@ class DailyRecommendationService:
         检查数据库中是否有今天的建议，如果没有则生成并保存
         返回1天和7天的建议
         """
-        today = date.today()
+        today = get_china_today()
         
         # 获取最新数据的日期
         latest_data = self.get_latest_data(db, user_id)
@@ -822,7 +823,7 @@ class DailyRecommendationService:
         use_llm: bool = True
     ) -> Dict[str, Any]:
         """生成7天建议（基于最近7天的数据，包括今天）"""
-        today = date.today()
+        today = get_china_today()
         end_date = today  # 包括今天
         start_date = end_date - timedelta(days=6)  # 最近7天
         

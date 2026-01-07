@@ -7,6 +7,7 @@ from app.services.data_collection.garmin_connect import GarminConnectService, Ga
 from app.services.auth import garmin_credential_service
 from app.models.user import GarminCredential
 from app.database import SessionLocal
+from app.utils.timezone import get_china_today, get_china_now
 import threading
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ async def sync_user_garmin_data(
         service = GarminConnectService(email, password, is_cn=is_cn, user_id=user_id)
         
         # 计算日期范围
-        end_date = datetime.now().date()
+        end_date = get_china_today()
         start_date = end_date - timedelta(days=days - 1)
         
         # 执行同步
@@ -114,7 +115,7 @@ async def sync_user_garmin_data(
 
 async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
     """同步所有启用同步的用户的Garmin数据"""
-    logger.info(f"开始执行全部用户 Garmin 数据同步: {datetime.now()}")
+    logger.info(f"开始执行全部用户 Garmin 数据同步: {get_china_now()}")
     
     db = SessionLocal()
     results = {
