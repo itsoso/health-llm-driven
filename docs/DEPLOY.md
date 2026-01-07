@@ -159,12 +159,32 @@ chmod 600 .env
 
 ### 3.5 初始化数据库
 
+有两种方式初始化数据库：
+
+#### 方式一：使用 Python ORM（推荐用于开发）
+
 ```bash
 source venv/bin/activate
 python -c "from app.database import Base, engine; Base.metadata.create_all(bind=engine)"
 ```
 
-### 3.6 测试后端
+#### 方式二：使用 SQL 脚本（推荐用于生产）
+
+```bash
+# 创建完整的数据库结构
+sqlite3 /opt/health-app/backend/health.db < /opt/health-app/scripts/init_database.sql
+```
+
+### 3.6 创建管理员用户
+
+```bash
+source venv/bin/activate
+python scripts/create_user.py --email admin@example.com --password yourpassword --admin
+```
+
+> **提示**：`--admin` 参数会创建管理员账户，可以访问后台管理功能。
+
+### 3.7 测试后端
 
 ```bash
 source venv/bin/activate
@@ -418,6 +438,44 @@ npm run build
 
 # 重启服务
 systemctl restart health-backend health-frontend
+```
+
+### 数据库迁移
+
+当更新代码涉及数据库结构变更时，需要执行迁移脚本：
+
+```bash
+# 备份数据库
+cp /opt/health-app/backend/health.db /opt/health-app/backend/health.db.bak.$(date +%Y%m%d)
+
+# 查看可用的迁移脚本
+ls -la /opt/health-app/scripts/migrations/
+
+# 执行指定迁移（根据需要选择）
+sqlite3 /opt/health-app/backend/health.db < /opt/health-app/scripts/migrations/20260107_01_add_garmin_extended_fields.sql
+
+# 执行所有2026年1月的迁移
+for f in /opt/health-app/scripts/migrations/202601*.sql; do
+    echo "执行: $f"
+    sqlite3 /opt/health-app/backend/health.db < "$f" 2>&1 || echo "  (部分列可能已存在，继续...)"
+done
+
+# 重启后端
+systemctl restart health-backend
+```
+
+> **注意**：SQLite 在列已存在时会报错，这是正常的，可以忽略继续执行。
+
+### 快速部署脚本
+
+项目根目录提供了一键部署脚本：
+
+```bash
+cd /opt/health-app
+./deploy.sh              # 完整部署（前端+后端）
+./deploy.sh --backend-only  # 仅部署后端
+./deploy.sh --frontend-only # 仅部署前端
+./deploy.sh --no-logs       # 部署后不显示日志
 ```
 
 ### 查看日志

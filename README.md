@@ -168,20 +168,52 @@ health-llm-driven/
 - Node.js 18+
 - SQLite（开发）/ PostgreSQL（生产）
 
-### 后端启动
+### 一键部署（生产环境）
+
+详细部署指南请参考 [部署文档](./docs/DEPLOY.md)。
 
 ```bash
+# 克隆代码
+git clone https://github.com/itsoso/health-llm-driven.git
+cd health-llm-driven
+
+# 后端设置
 cd backend
-./install-deps.sh    # 安装依赖
-./start-server.sh    # 启动服务 (默认 http://localhost:8000)
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 初始化数据库
+sqlite3 health.db < ../scripts/init_database.sql
+
+# 创建管理员用户
+python scripts/create_user.py --email admin@example.com --password yourpassword --admin
+
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入 OPENAI_API_KEY 等配置
+
+# 启动后端
+./start-server.sh
+
+# 前端设置（新终端）
+cd ../frontend
+npm install
+npm run build
+npm start
 ```
 
-### 前端启动
+### 本地开发
 
 ```bash
+# 后端（热重载）
+cd backend
+source venv/bin/activate
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# 前端（热重载）
 cd frontend
-npm install
-npm run dev          # 启动开发服务器 (默认 http://localhost:3000)
+npm run dev
 ```
 
 ### 配置 LLM
@@ -189,12 +221,36 @@ npm run dev          # 启动开发服务器 (默认 http://localhost:3000)
 在 `backend/.env` 中配置：
 
 ```bash
-# OpenAI API（推荐，用于健康分析）
+# 数据库
+DATABASE_URL=sqlite:///./health.db
+
+# JWT 密钥（生产环境请更换）
+SECRET_KEY=your-super-secret-key-change-in-production
+
+# OpenAI API（用于 AI 健康分析）
 OPENAI_API_KEY=sk-xxxxx
+
+# 可选：OpenAI 代理（中国大陆用户可能需要）
+# OPENAI_BASE_URL=https://api.openai-proxy.com/v1
+
+# 可选：Garmin 凭证加密密钥
+# GARMIN_ENCRYPTION_KEY=your-fernet-key
 
 # 可选：配置多个 LLM 提供商
 # ANTHROPIC_API_KEY=sk-ant-xxxxx
 # GOOGLE_API_KEY=xxxxx
+```
+
+### 数据库迁移
+
+如果从旧版本升级，需要执行数据库迁移：
+
+```bash
+# 查看可用迁移
+ls scripts/migrations/
+
+# 执行迁移（以添加运动训练表为例）
+sqlite3 backend/health.db < scripts/migrations/20260107_02_create_workout_records.sql
 ```
 
 ---
