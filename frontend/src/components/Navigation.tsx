@@ -42,6 +42,7 @@ export default function Navigation() {
         { href: '/habits', label: '习惯追踪', icon: '✅' },
         { href: '/supplements', label: '补剂管理', icon: '💊' },
         { href: '/checkin', label: '运动打卡', icon: '🏃' },
+        { href: '/rhinitis', label: '鼻炎追踪', icon: '🤧' },
         { href: '/diet', label: '饮食记录', icon: '🍽️' },
         { href: '/water', label: '饮水追踪', icon: '💧' },
       ],
