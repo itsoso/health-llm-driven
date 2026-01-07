@@ -717,8 +717,17 @@ class DailyRecommendationService:
             DailyRecommendation.recommendation_date == today
         ).first()
         
-        if cached and cached.one_day_recommendation and cached.seven_day_recommendation:
-            logger.info(f"使用缓存的建议数据（用户 {user_id}，日期 {today}）")
+        # 只有当缓存存在且分析数据日期与最新数据日期一致时才使用缓存
+        # 这样当今天的数据同步后，会重新生成基于今天数据的建议
+        cache_valid = (
+            cached 
+            and cached.one_day_recommendation 
+            and cached.seven_day_recommendation
+            and cached.analysis_date == analysis_date  # 确保分析的是最新数据
+        )
+        
+        if cache_valid:
+            logger.info(f"使用缓存的建议数据（用户 {user_id}，日期 {today}，分析数据日期 {analysis_date}）")
             return {
                 "status": "success",
                 "date": today.isoformat(),
