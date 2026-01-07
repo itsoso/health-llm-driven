@@ -425,7 +425,7 @@ async def sync_garmin_data_stream(
                 email=credentials["email"],
                 password=credentials["password"],
                 is_cn=credentials.get("is_cn", False),
-                user_id=user_id
+                user_id=current_user.id
             )
             
             yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
