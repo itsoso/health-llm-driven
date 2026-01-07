@@ -116,7 +116,7 @@ function OverviewContent() {
   const monthAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
 
   // 获取最近30天数据（取最新一天显示）
-  const { data: recentData, isLoading, error } = useQuery<{ data: GarminData[] }>({
+  const { data: recentData, isLoading, error } = useQuery<GarminData[]>({
     queryKey: ['garmin-recent', monthAgo, today],
     queryFn: async () => {
       console.log('[Overview] 请求 API:', `${API_BASE}/daily-health/garmin/me?start_date=${monthAgo}&end_date=${today}`);
@@ -131,8 +131,8 @@ function OverviewContent() {
       }
       const data = await res.json();
       console.log('[Overview] API 返回数据:', data);
-      console.log('[Overview] 数据条数:', data?.data?.length || 0);
-      return data;
+      console.log('[Overview] 数据条数:', Array.isArray(data) ? data.length : 0);
+      return data; // 后端直接返回数组
     },
     enabled: !!token,
   });
@@ -143,8 +143,8 @@ function OverviewContent() {
   console.log('[Overview] error:', error);
   console.log('[Overview] recentData:', recentData);
 
-  // 从返回的数据中取最新一天（有实际数据的）
-  const allRecords = recentData?.data || [];
+  // 后端直接返回数组，不是 { data: [...] }
+  const allRecords = recentData || [];
   
   // 按日期降序排序，找到第一条有实际数据的记录
   const sortedRecords = [...allRecords].sort((a, b) => 
