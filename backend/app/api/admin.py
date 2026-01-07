@@ -505,3 +505,46 @@ async def reset_user_credentials(
             detail="用户未配置Garmin凭证"
         )
 
+
+class SetSyncEnabledRequest(BaseModel):
+    """设置同步状态请求"""
+    sync_enabled: bool
+
+
+@router.put("/garmin/sync-enabled/{user_id}", summary="启用或禁用用户Garmin同步")
+async def set_user_sync_enabled(
+    user_id: int,
+    request: SetSyncEnabledRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    启用或禁用用户的Garmin后台自动同步
+    
+    - **user_id**: 用户ID
+    - **sync_enabled**: 是否启用同步
+    - 禁用后，后台定时任务将不再同步该用户的Garmin数据
+    - 仅管理员可访问
+    """
+    credential = db.query(GarminCredential).filter(
+        GarminCredential.user_id == user_id
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="该用户未配置Garmin凭证"
+        )
+    
+    credential.sync_enabled = request.sync_enabled
+    db.commit()
+    
+    action = "启用" if request.sync_enabled else "禁用"
+    logger.info(f"管理员 {admin_user.name} {action}了用户 {user_id} 的Garmin同步")
+    
+    return {
+        "message": f"已{action}用户 {user_id} 的Garmin同步",
+        "user_id": user_id,
+        "sync_enabled": request.sync_enabled
+    }
+

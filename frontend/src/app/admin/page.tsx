@@ -205,6 +205,17 @@ export default function AdminPage() {
     },
   });
 
+  // 启用/禁用用户Garmin同步
+  const toggleSyncMutation = useMutation({
+    mutationFn: async ({ userId, syncEnabled }: { userId: number; syncEnabled: boolean }) => {
+      const res = await api.put(`/admin/garmin/sync-enabled/${userId}`, { sync_enabled: syncEnabled });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-garmin-sync-status'] });
+    },
+  });
+
   // 加载状态
   if (authLoading || !isAuthenticated || !user?.is_admin) {
     return (
@@ -641,15 +652,34 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3 text-center text-purple-200 text-sm">{gu.total_records}</td>
                           <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* 启用/禁用同步开关 */}
+                              <button
+                                onClick={() => toggleSyncMutation.mutate({ userId: gu.user_id, syncEnabled: !gu.sync_enabled })}
+                                disabled={toggleSyncMutation.isPending}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                  gu.sync_enabled ? 'bg-green-500' : 'bg-gray-500'
+                                } disabled:opacity-50`}
+                                title={gu.sync_enabled ? '点击禁用同步' : '点击启用同步'}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    gu.sync_enabled ? 'translate-x-4' : 'translate-x-0.5'
+                                  }`}
+                                />
+                              </button>
+                              
+                              {/* 立即同步按钮 */}
                               <button
                                 onClick={() => syncUserMutation.mutate({ userId: gu.user_id, days: syncDays })}
-                                disabled={syncUserMutation.isPending}
-                                className="px-2 py-1 bg-blue-600/80 text-white text-xs rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
-                                title="同步数据"
+                                disabled={syncUserMutation.isPending || !gu.credentials_valid}
+                                className="px-2 py-1 bg-blue-600/80 text-white text-xs rounded hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={gu.credentials_valid ? "立即同步数据" : "凭证失效，无法同步"}
                               >
                                 {syncUserMutation.isPending ? '...' : '同步'}
                               </button>
+                              
+                              {/* 重置凭证按钮 */}
                               {!gu.credentials_valid && (
                                 <button
                                   onClick={() => resetCredentialsMutation.mutate(gu.user_id)}
