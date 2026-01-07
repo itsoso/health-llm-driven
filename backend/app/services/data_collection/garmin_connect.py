@@ -143,6 +143,10 @@ class GarminConnectService:
         try:
             self._ensure_authenticated()
             sleep_data = self.client.get_sleep_data(target_date.isoformat())
+            if sleep_data:
+                logger.info(f"{prefix} 获取 {target_date} 的睡眠数据成功，类型: {type(sleep_data).__name__}")
+            else:
+                logger.warning(f"{prefix} 获取 {target_date} 的睡眠数据为空")
             return sleep_data
         except GarminAuthenticationError:
             raise
@@ -357,12 +361,22 @@ class GarminConnectService:
             #   ...
             # }
             
+            # 打印睡眠数据的顶层键
+            logger.info(f"睡眠数据顶层键: {list(sleep_data.keys())}")
+            
             # 获取 dailySleepDTO
             daily_sleep_dto = sleep_data.get('dailySleepDTO', {})
             if not isinstance(daily_sleep_dto, dict):
                 daily_sleep_dto = {}
             
-            logger.debug(f"dailySleepDTO 键: {list(daily_sleep_dto.keys()) if daily_sleep_dto else '无'}")
+            # 打印 dailySleepDTO 的键和睡眠分数相关字段
+            if daily_sleep_dto:
+                logger.info(f"dailySleepDTO 键: {list(daily_sleep_dto.keys())}")
+                sleep_scores = daily_sleep_dto.get('sleepScores')
+                if sleep_scores:
+                    logger.info(f"sleepScores 内容: {sleep_scores}")
+            else:
+                logger.info("dailySleepDTO 为空")
             
             # 获取睡眠分数 - 正确的路径是 dailySleepDTO.sleepScores.overall.value
             sleep_score = (
@@ -407,7 +421,9 @@ class GarminConnectService:
             if hrv is None:
                 hrv = sleep_data.get('avgOvernightHrv')
             
-            logger.debug(f"睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}, HRV={hrv}")
+            logger.info(f"解析睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}, HRV={hrv}")
+        else:
+            logger.warning(f"睡眠数据为空或格式不正确: type={type(sleep_data)}, 值={sleep_data}")
         
         # 如果从sleep_data没有获取到，尝试从summary获取
         if isinstance(summary, dict):
