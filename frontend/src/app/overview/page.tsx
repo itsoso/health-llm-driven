@@ -63,7 +63,7 @@ function formatDuration(minutes: number | null | undefined): string {
 }
 
 // HRV状态翻译
-function getHrvStatusText(status: string | null): { text: string; color: string } {
+function getHrvStatusText(status: string | null | undefined): { text: string; color: string } {
   const statusMap: Record<string, { text: string; color: string }> = {
     'BALANCED': { text: '平衡', color: 'text-green-500' },
     'balanced': { text: '平衡', color: 'text-green-500' },
