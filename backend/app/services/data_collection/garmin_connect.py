@@ -526,6 +526,14 @@ class GarminConnectService:
             if resting_hr:
                 logger.info(f"从睡眠数据获取静息心率: {resting_hr}")
         
+        # 如果还没有获取到平均心率，尝试从睡眠数据获取
+        if avg_hr is None and isinstance(sleep_data, dict):
+            daily_sleep_dto = sleep_data.get('dailySleepDTO', {})
+            if isinstance(daily_sleep_dto, dict):
+                avg_hr = daily_sleep_dto.get('avgHeartRate')
+                if avg_hr:
+                    logger.info(f"从睡眠数据获取平均心率: {avg_hr}")
+        
         # HRV数据 - 如果从睡眠数据没有获取到，尝试从summary获取
         if hrv is None and isinstance(summary, dict):
             hrv = summary.get('hrv') or safe_get_nested(summary, 'hrvStatus', 'hrv') or summary.get('avgOvernightHrv')
