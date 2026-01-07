@@ -68,13 +68,25 @@ function DashboardContent() {
   // 今天的数据
   const todayRecord = todayData?.data?.[0];
 
-  // 准备图表数据
-  const chartData = garminData?.data?.slice(-14).map((item: any) => ({
-    date: format(new Date(item.record_date), 'MM-dd'),
-    sleep: item.sleep_score,
-    steps: item.steps,
-    heartRate: item.avg_heart_rate,
-  })) || [];
+  // 准备图表数据 - 按日期排序后取最近14天
+  const chartData = (() => {
+    if (!garminData?.data || garminData.data.length === 0) return [];
+    
+    // 按日期排序（升序）
+    const sorted = [...garminData.data].sort((a: any, b: any) => 
+      new Date(a.record_date).getTime() - new Date(b.record_date).getTime()
+    );
+    
+    // 取最近14天的数据
+    const recent14 = sorted.slice(-14);
+    
+    return recent14.map((item: any) => ({
+      date: format(new Date(item.record_date), 'MM-dd'),
+      sleep: item.sleep_score,
+      steps: item.steps,
+      heartRate: item.avg_heart_rate,
+    }));
+  })();
 
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24">
