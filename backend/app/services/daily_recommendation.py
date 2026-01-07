@@ -26,22 +26,44 @@ class DailyRecommendationService:
         db: Session,
         user_id: int
     ) -> Optional[GarminData]:
-        """获取最新的Garmin数据（优先今天，否则昨天）"""
+        """获取最新的有效Garmin数据（有实际值的数据）"""
         # 首先尝试获取今天的数据
         today_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == date.today()
         ).first()
         
-        if today_data:
+        # 检查今天的数据是否有实际值（至少有睡眠分数、步数或心率之一）
+        if today_data and self._has_meaningful_data(today_data):
             return today_data
         
-        # 如果没有今天的数据，获取昨天的
+        # 如果今天没有有效数据，获取昨天的
         yesterday = date.today() - timedelta(days=1)
-        return db.query(GarminData).filter(
+        yesterday_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == yesterday
         ).first()
+        
+        if yesterday_data and self._has_meaningful_data(yesterday_data):
+            return yesterday_data
+        
+        # 如果昨天也没有，尝试获取最近7天内有数据的记录
+        week_ago = date.today() - timedelta(days=7)
+        return db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= week_ago,
+            GarminData.record_date <= date.today()
+        ).order_by(GarminData.record_date.desc()).first()
+    
+    def _has_meaningful_data(self, data: GarminData) -> bool:
+        """检查数据是否有实际值"""
+        return bool(
+            data.sleep_score or 
+            data.total_sleep_duration or 
+            data.steps or 
+            data.resting_heart_rate or
+            data.avg_heart_rate
+        )
     
     def get_yesterday_data(
         self,
