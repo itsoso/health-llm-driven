@@ -591,9 +591,10 @@ class GarminConnectService:
                 summary.get('totalCalories') or
                 safe_get_nested(summary, 'netCalorieGoal', 'calories')
             )
-            moderate_mins = summary.get('moderateIntensityMinutes', 0) or summary.get('moderateActivityMinutes', 0) or 0
-            vigorous_mins = summary.get('vigorousIntensityMinutes', 0) or summary.get('vigorousActivityMinutes', 0) or 0
-            active_minutes = summary.get('activeMinutes') or summary.get('highlyActiveSeconds', 0) // 60 or (moderate_mins + vigorous_mins) or 0
+            moderate_mins = summary.get('moderateIntensityMinutes') or summary.get('moderateActivityMinutes') or 0
+            vigorous_mins = summary.get('vigorousIntensityMinutes') or summary.get('vigorousActivityMinutes') or 0
+            highly_active_seconds = summary.get('highlyActiveSeconds') or 0
+            active_minutes = summary.get('activeMinutes') or (highly_active_seconds // 60 if highly_active_seconds else 0) or (moderate_mins + vigorous_mins) or 0
         
         # 安全的数值转换函数
         def safe_int(value):
