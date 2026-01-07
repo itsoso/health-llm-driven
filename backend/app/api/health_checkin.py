@@ -20,8 +20,12 @@ def create_health_checkin(
     db: Session = Depends(get_db)
 ):
     """创建健康打卡（需要登录）"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # 强制使用当前用户ID
     user_id = current_user.id
+    logger.info(f"用户 {user_id} 保存打卡记录: {checkin.checkin_date}, notes={checkin.notes}")
     
     # 检查是否已存在该日期的打卡
     existing = db.query(HealthCheckin).filter(
@@ -31,6 +35,7 @@ def create_health_checkin(
     
     if existing:
         # 更新现有记录
+        logger.info(f"更新现有记录 ID={existing.id}")
         for key, value in checkin.model_dump(exclude={"user_id", "checkin_date"}).items():
             if value is not None:
                 setattr(existing, key, value)
@@ -38,18 +43,23 @@ def create_health_checkin(
         db.refresh(existing)
         return existing
     
-    # 如果没有提供个性化建议，自动生成
-    if not checkin.personalized_advice:
-        analysis_service = HealthAnalysisService()
-        advice = analysis_service.generate_personalized_advice(
-            db, user_id, checkin.checkin_date
-        )
-        checkin_data = checkin.model_dump()
-        checkin_data["personalized_advice"] = advice
-    else:
-        checkin_data = checkin.model_dump()
-    
+    # 创建新记录
+    checkin_data = checkin.model_dump()
     checkin_data["user_id"] = user_id
+    
+    # 如果没有提供个性化建议，尝试自动生成（失败不影响保存）
+    if not checkin.personalized_advice:
+        try:
+            analysis_service = HealthAnalysisService()
+            advice = analysis_service.generate_personalized_advice(
+                db, user_id, checkin.checkin_date
+            )
+            checkin_data["personalized_advice"] = advice
+        except Exception as e:
+            logger.warning(f"生成个性化建议失败: {e}")
+            checkin_data["personalized_advice"] = None
+    
+    logger.info(f"创建新记录: {checkin_data}")
     db_checkin = HealthCheckin(**checkin_data)
     db.add(db_checkin)
     db.commit()
