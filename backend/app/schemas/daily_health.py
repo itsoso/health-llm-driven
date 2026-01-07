@@ -13,6 +13,8 @@ class GarminDataCreate(BaseModel):
     min_heart_rate: Optional[int] = None
     resting_heart_rate: Optional[int] = None
     hrv: Optional[float] = None
+    hrv_status: Optional[str] = None
+    hrv_7day_avg: Optional[float] = None
     sleep_score: Optional[int] = None
     total_sleep_duration: Optional[int] = None
     deep_sleep_duration: Optional[int] = None
@@ -29,7 +31,24 @@ class GarminDataCreate(BaseModel):
     stress_level: Optional[int] = None
     steps: Optional[int] = None
     calories_burned: Optional[int] = None
+    active_calories: Optional[int] = None
+    bmr_calories: Optional[int] = None
     active_minutes: Optional[int] = None
+    intensity_minutes_goal: Optional[int] = None
+    moderate_intensity_minutes: Optional[int] = None
+    vigorous_intensity_minutes: Optional[int] = None
+    avg_respiration_awake: Optional[float] = None
+    avg_respiration_sleep: Optional[float] = None
+    lowest_respiration: Optional[float] = None
+    highest_respiration: Optional[float] = None
+    spo2_avg: Optional[float] = None
+    spo2_min: Optional[float] = None
+    spo2_max: Optional[float] = None
+    vo2max_running: Optional[float] = None
+    vo2max_cycling: Optional[float] = None
+    floors_climbed: Optional[int] = None
+    floors_goal: Optional[int] = None
+    distance_meters: Optional[float] = None
 
 
 class GarminDataResponse(BaseModel):
@@ -37,28 +56,47 @@ class GarminDataResponse(BaseModel):
     id: int
     user_id: int
     record_date: date
-    avg_heart_rate: Optional[int]
-    max_heart_rate: Optional[int]
-    min_heart_rate: Optional[int]
-    resting_heart_rate: Optional[int]
-    hrv: Optional[float]
-    sleep_score: Optional[int]
-    total_sleep_duration: Optional[int]
-    deep_sleep_duration: Optional[int]
-    rem_sleep_duration: Optional[int]
-    light_sleep_duration: Optional[int]
-    awake_duration: Optional[int]
-    nap_duration: Optional[int]
-    sleep_start_time: Optional[time]
-    sleep_end_time: Optional[time]
-    body_battery_charged: Optional[int]
-    body_battery_drained: Optional[int]
-    body_battery_most_charged: Optional[int]
-    body_battery_lowest: Optional[int]
-    stress_level: Optional[int]
-    steps: Optional[int]
-    calories_burned: Optional[int]
-    active_minutes: Optional[int]
+    avg_heart_rate: Optional[int] = None
+    max_heart_rate: Optional[int] = None
+    min_heart_rate: Optional[int] = None
+    resting_heart_rate: Optional[int] = None
+    hrv: Optional[float] = None
+    hrv_status: Optional[str] = None
+    hrv_7day_avg: Optional[float] = None
+    sleep_score: Optional[int] = None
+    total_sleep_duration: Optional[int] = None
+    deep_sleep_duration: Optional[int] = None
+    rem_sleep_duration: Optional[int] = None
+    light_sleep_duration: Optional[int] = None
+    awake_duration: Optional[int] = None
+    nap_duration: Optional[int] = None
+    sleep_start_time: Optional[time] = None
+    sleep_end_time: Optional[time] = None
+    body_battery_charged: Optional[int] = None
+    body_battery_drained: Optional[int] = None
+    body_battery_most_charged: Optional[int] = None
+    body_battery_lowest: Optional[int] = None
+    stress_level: Optional[int] = None
+    steps: Optional[int] = None
+    calories_burned: Optional[int] = None
+    active_calories: Optional[int] = None
+    bmr_calories: Optional[int] = None
+    active_minutes: Optional[int] = None
+    intensity_minutes_goal: Optional[int] = None
+    moderate_intensity_minutes: Optional[int] = None
+    vigorous_intensity_minutes: Optional[int] = None
+    avg_respiration_awake: Optional[float] = None
+    avg_respiration_sleep: Optional[float] = None
+    lowest_respiration: Optional[float] = None
+    highest_respiration: Optional[float] = None
+    spo2_avg: Optional[float] = None
+    spo2_min: Optional[float] = None
+    spo2_max: Optional[float] = None
+    vo2max_running: Optional[float] = None
+    vo2max_cycling: Optional[float] = None
+    floors_climbed: Optional[int] = None
+    floors_goal: Optional[int] = None
+    distance_meters: Optional[float] = None
     
     class Config:
         from_attributes = True
