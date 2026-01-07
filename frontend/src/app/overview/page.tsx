@@ -76,7 +76,7 @@ function getHrvStatusText(status: string | null): { text: string; color: string 
 }
 
 // 睡眠分数颜色
-function getSleepScoreColor(score: number | null): string {
+function getSleepScoreColor(score: number | null | undefined): string {
   if (!score) return 'text-gray-400';
   if (score >= 80) return 'text-blue-400';
   if (score >= 60) return 'text-green-400';
