@@ -12,7 +12,7 @@ class HealthCheckin(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    checkin_date = Column(Date, nullable=False, index=True, unique=True)  # 打卡日期（每天一条）
+    checkin_date = Column(Date, nullable=False, index=True)  # 打卡日期（每个用户每天一条）
     
     # 专项锻炼记录
     running_distance = Column(Float)  # 跑步距离 (km)
