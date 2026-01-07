@@ -508,6 +508,8 @@ function SettingsContent() {
                     disabled={syncProgress.isSyncing}
                     className="p-2 border border-green-300 rounded-lg text-gray-900 disabled:opacity-50"
                   >
+                    <option value={1}>最近1天</option>
+                    <option value={3}>最近3天</option>
                     <option value={7}>最近7天</option>
                     <option value={30}>最近30天</option>
                     <option value={90}>最近90天</option>
