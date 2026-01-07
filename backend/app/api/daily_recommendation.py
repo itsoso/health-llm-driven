@@ -7,7 +7,9 @@ from app.database import get_db
 from app.services.daily_recommendation import DailyRecommendationService
 from app.services.llm_health_analyzer import llm_analyzer
 from app.models.user import User
+from app.models.daily_recommendation import DailyRecommendation
 from app.api.deps import get_current_user_required
+from app.utils.timezone import get_china_today
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,79 @@ router = APIRouter()
 
 
 # ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
+
+@router.delete("/me/cache")
+def clear_my_recommendations_cache(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    清除当前用户的建议缓存（需要登录）
+    
+    清除后下次获取建议时会重新生成
+    """
+    today = get_china_today()
+    
+    # 删除今天的缓存
+    deleted = db.query(DailyRecommendation).filter(
+        DailyRecommendation.user_id == current_user.id,
+        DailyRecommendation.recommendation_date == today
+    ).delete()
+    
+    db.commit()
+    
+    logger.info(f"用户 {current_user.id} 清除了建议缓存，删除 {deleted} 条记录")
+    
+    return {
+        "status": "success",
+        "message": "缓存已清除，下次访问时将重新生成建议",
+        "deleted_count": deleted
+    }
+
+
+@router.post("/me/refresh")
+def refresh_my_recommendations(
+    use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    清除缓存并重新生成建议（需要登录）
+    
+    会先清除今天的缓存，然后立即重新生成建议
+    """
+    today = get_china_today()
+    
+    # 删除今天的缓存
+    db.query(DailyRecommendation).filter(
+        DailyRecommendation.user_id == current_user.id,
+        DailyRecommendation.recommendation_date == today
+    ).delete()
+    db.commit()
+    
+    logger.info(f"用户 {current_user.id} 请求刷新建议")
+    
+    # 重新生成建议
+    service = DailyRecommendationService()
+    
+    try:
+        result = service.get_or_generate_recommendations(db, current_user.id, use_llm)
+        
+        if result.get("status") == "no_data":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "message": "暂无数据，请先同步Garmin数据",
+                    "suggestion": "请在设置页面配置并同步Garmin数据"
+                }
+            )
+        
+        result["refreshed"] = True
+        return result
+    except Exception as e:
+        logger.error(f"刷新建议失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新建议失败: {str(e)}")
+
 
 @router.get("/me")
 def get_my_recommendations(

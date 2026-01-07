@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dailyRecommendationApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 interface DailyRecommendation {
   status: string;
@@ -113,15 +115,43 @@ const trendIcons: Record<string, string> = {
 };
 
 function DailyInsightsContent() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, token } = useAuth();
   const userId = user?.id;
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'one-day' | 'seven-day'>('one-day');
+  const [refreshMessage, setRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
     queryKey: ['daily-recommendations'],
     queryFn: () => dailyRecommendationApi.getMyRecommendations(true),
     enabled: isAuthenticated,
+  });
+
+  // 刷新建议（清除缓存并重新生成）
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/daily-recommendation/me/refresh?use_llm=true`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail?.message || errorData.detail || '刷新失败');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['daily-recommendations'] });
+      setRefreshMessage({ type: 'success', text: '✓ 建议已刷新' });
+      setTimeout(() => setRefreshMessage(null), 3000);
+    },
+    onError: (error: Error) => {
+      setRefreshMessage({ type: 'error', text: `✗ ${error.message}` });
+      setTimeout(() => setRefreshMessage(null), 5000);
+    },
   });
 
   const oneDayData = recommendationsData?.data?.one_day;
@@ -217,12 +247,42 @@ function DailyInsightsContent() {
                 最近7天建议
               </button>
             </div>
-            {isCached && (
-              <span className="text-xs px-3 py-1 bg-green-100 text-green-700 rounded-full font-medium">
-                ✓ 缓存数据
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {isCached && (
+                <span className="text-xs px-3 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                  ✓ 缓存数据
+                </span>
+              )}
+              <button
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending}
+                className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 disabled:opacity-50 transition-colors text-sm font-medium flex items-center gap-1"
+                title="清除缓存并重新生成建议"
+              >
+                {refreshMutation.isPending ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    刷新中...
+                  </>
+                ) : (
+                  <>
+                    🔄 刷新建议
+                  </>
+                )}
+              </button>
+            </div>
           </div>
+          
+          {/* 刷新消息 */}
+          {refreshMessage && (
+            <div className={`mb-4 p-3 rounded-lg text-sm font-medium ${
+              refreshMessage.type === 'success' 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-red-100 text-red-800'
+            }`}>
+              {refreshMessage.text}
+            </div>
+          )}
           
           {/* 头部信息 */}
           <div className="flex justify-between items-start">
