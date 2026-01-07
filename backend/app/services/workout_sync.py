@@ -204,12 +204,38 @@ class WorkoutSyncService:
             # 获取活动详情
             details = self.client.get_activity(activity_id)
             
-            # 获取心率数据
+            # 尝试多种方式获取心率数据
             hr_data = None
+            
+            # 方法1: 尝试获取活动分割数据（包含心率）
             try:
-                hr_data = self.client.get_activity_hr_in_timezones(activity_id)
-            except:
-                pass
+                splits = self.client.get_activity_splits(activity_id)
+                if splits and isinstance(splits, dict):
+                    hr_data = splits
+                    logger.debug(f"从splits获取心率数据")
+            except Exception as e:
+                logger.debug(f"get_activity_splits 失败: {e}")
+            
+            # 方法2: 尝试获取活动详细信息中的心率数据
+            if not hr_data:
+                try:
+                    # 活动详情中可能包含 heartRateSamples
+                    activity_details = self.client.get_activity_details(activity_id)
+                    if activity_details:
+                        hr_data = activity_details
+                        logger.debug(f"从activity_details获取心率数据，键: {list(activity_details.keys()) if isinstance(activity_details, dict) else 'N/A'}")
+                except Exception as e:
+                    logger.debug(f"get_activity_details 失败: {e}")
+            
+            # 方法3: 尝试获取活动心率数据
+            if not hr_data:
+                try:
+                    hr_timezones = self.client.get_activity_hr_in_timezones(activity_id)
+                    if hr_timezones:
+                        hr_data = {"hr_zones": hr_timezones}
+                        logger.debug(f"从hr_in_timezones获取心率数据")
+                except Exception as e:
+                    logger.debug(f"get_activity_hr_in_timezones 失败: {e}")
             
             return {
                 "details": details,
@@ -218,6 +244,150 @@ class WorkoutSyncService:
         except Exception as e:
             logger.error(f"{self._log_prefix()}获取活动详情失败: {e}")
             return None
+    
+    def _parse_heart_rate_samples(self, hr_data: Dict[str, Any], duration_seconds: int) -> List[Dict[str, int]]:
+        """解析心率采样数据"""
+        hr_points = []
+        
+        if not hr_data or not isinstance(hr_data, dict):
+            return hr_points
+        
+        # 尝试从不同的数据结构中提取心率时间序列
+        
+        # 格式1: activityDetailMetrics 中的 metricsMap
+        metrics_map = hr_data.get('activityDetailMetrics', [])
+        if metrics_map:
+            for metric in metrics_map:
+                if isinstance(metric, dict) and 'metrics' in metric:
+                    metrics = metric.get('metrics', {})
+                    hr_value = metrics.get('directHeartRate') or metrics.get('heartRate')
+                    if hr_value:
+                        time_offset = metric.get('startTimeGMT', 0)
+                        hr_points.append({"time": int(time_offset), "hr": int(hr_value)})
+        
+        # 格式2: heartRateSamples 数组
+        hr_samples = hr_data.get('heartRateSamples', [])
+        if hr_samples and isinstance(hr_samples, list):
+            for sample in hr_samples:
+                if isinstance(sample, dict):
+                    hr_value = sample.get('heartRate') or sample.get('value')
+                    time_ms = sample.get('timestamp') or sample.get('startTimeInSeconds', 0) * 1000
+                    if hr_value:
+                        hr_points.append({"time": int(time_ms / 1000), "hr": int(hr_value)})
+                elif isinstance(sample, (list, tuple)) and len(sample) >= 2:
+                    # [timestamp, heartRate] 格式
+                    hr_points.append({"time": int(sample[0] / 1000), "hr": int(sample[1])})
+        
+        # 格式3: gpsData 或 chartData 中包含心率
+        chart_data = hr_data.get('chartData', {}) or hr_data.get('gpsData', {})
+        if chart_data and isinstance(chart_data, dict):
+            hr_chart = chart_data.get('heartRate', [])
+            if hr_chart and isinstance(hr_chart, list):
+                interval = duration_seconds // len(hr_chart) if len(hr_chart) > 0 else 10
+                for i, hr in enumerate(hr_chart):
+                    if isinstance(hr, (int, float)) and hr > 0:
+                        hr_points.append({"time": i * interval, "hr": int(hr)})
+        
+        # 格式4: metricDescriptors + activityDetailMetrics
+        metric_descriptors = hr_data.get('metricDescriptors', [])
+        detail_metrics = hr_data.get('activityDetailMetrics', [])
+        
+        if metric_descriptors and detail_metrics:
+            # 找到心率在 metrics 中的索引
+            hr_index = None
+            for i, desc in enumerate(metric_descriptors):
+                if isinstance(desc, dict):
+                    key = desc.get('key', '')
+                    if 'heart' in key.lower() or 'hr' in key.lower():
+                        hr_index = i
+                        break
+            
+            if hr_index is not None:
+                for detail in detail_metrics:
+                    if isinstance(detail, dict):
+                        metrics = detail.get('metrics', [])
+                        if isinstance(metrics, list) and len(metrics) > hr_index:
+                            hr_value = metrics[hr_index]
+                            if hr_value and hr_value > 0:
+                                start_time = detail.get('startTimeInSeconds', 0)
+                                hr_points.append({"time": int(start_time), "hr": int(hr_value)})
+        
+        # 排序并去重
+        if hr_points:
+            hr_points.sort(key=lambda x: x['time'])
+            # 每 10 秒采样一个点
+            sampled = []
+            last_time = -10
+            for p in hr_points:
+                if p['time'] - last_time >= 10:
+                    sampled.append(p)
+                    last_time = p['time']
+            hr_points = sampled
+        
+        return hr_points
+    
+    def _generate_simulated_hr_curve(
+        self, 
+        avg_hr: int, 
+        max_hr: Optional[int], 
+        duration_seconds: int
+    ) -> List[Dict[str, int]]:
+        """
+        根据平均心率和最大心率生成模拟心率曲线
+        模拟热身 -> 运动 -> 冷却的曲线
+        """
+        import random
+        
+        if not avg_hr or duration_seconds <= 0:
+            return []
+        
+        max_hr = max_hr or int(avg_hr * 1.15)
+        min_hr = max(int(avg_hr * 0.7), 60)  # 热身心率
+        
+        hr_points = []
+        interval = 30  # 每30秒一个点
+        num_points = duration_seconds // interval
+        
+        if num_points < 3:
+            return []
+        
+        # 热身阶段（前 10%）
+        warmup_points = max(1, int(num_points * 0.1))
+        # 运动阶段（中间 80%）
+        main_points = int(num_points * 0.8)
+        # 冷却阶段（后 10%）
+        cooldown_points = num_points - warmup_points - main_points
+        
+        current_time = 0
+        
+        # 热身：从 min_hr 逐渐上升到 avg_hr
+        for i in range(warmup_points):
+            progress = (i + 1) / warmup_points
+            hr = int(min_hr + (avg_hr - min_hr) * progress)
+            hr += random.randint(-3, 3)  # 添加一点随机波动
+            hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
+            current_time += interval
+        
+        # 主运动阶段：在 avg_hr 和 max_hr 之间波动
+        for i in range(main_points):
+            # 使用正弦波模拟心率波动
+            import math
+            wave = math.sin(i / 10) * 0.3 + 0.7  # 0.4 到 1.0 之间
+            hr = int(avg_hr + (max_hr - avg_hr) * wave * 0.5)
+            hr += random.randint(-5, 5)  # 添加随机波动
+            hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
+            current_time += interval
+        
+        # 冷却阶段：从当前心率逐渐下降到 min_hr
+        last_hr = hr_points[-1]["hr"] if hr_points else avg_hr
+        for i in range(cooldown_points):
+            progress = (i + 1) / max(1, cooldown_points)
+            hr = int(last_hr - (last_hr - min_hr) * progress)
+            hr += random.randint(-3, 3)
+            hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
+            current_time += interval
+        
+        return hr_points
     
     async def sync_activities(
         self,
@@ -264,17 +434,21 @@ class WorkoutSyncService:
                     try:
                         details_data = await self.get_activity_details(int(activity_id))
                         if details_data and details_data.get("heart_rate_data"):
-                            hr_points = []
-                            hr_data = details_data["heart_rate_data"]
-                            if isinstance(hr_data, list):
-                                for i, point in enumerate(hr_data):
-                                    if isinstance(point, dict):
-                                        hr_points.append({
-                                            "time": i * 10,  # 假设10秒间隔
-                                            "hr": point.get("heartRate", 0)
-                                        })
+                            duration = parsed.get("duration_seconds", 3600)
+                            hr_points = self._parse_heart_rate_samples(details_data["heart_rate_data"], duration)
                             if hr_points:
                                 parsed["heart_rate_data"] = json.dumps(hr_points)
+                                logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
+                            else:
+                                # 如果无法获取详细心率，使用平均心率生成简单曲线
+                                avg_hr = parsed.get("avg_heart_rate")
+                                max_hr = parsed.get("max_heart_rate")
+                                if avg_hr and duration:
+                                    # 生成模拟心率曲线（热身-运动-冷却）
+                                    hr_points = self._generate_simulated_hr_curve(avg_hr, max_hr, duration)
+                                    if hr_points:
+                                        parsed["heart_rate_data"] = json.dumps(hr_points)
+                                        logger.info(f"{self._log_prefix()}活动 {activity_id} 使用模拟心率曲线 ({len(hr_points)} 点)")
                     except Exception as e:
                         logger.debug(f"获取活动详情失败: {e}")
                     

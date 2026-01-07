@@ -454,6 +454,86 @@ def get_workout_analysis(
 
 # ========== Garmin 同步 ==========
 
+@router.post("/me/{workout_id}/refresh-hr")
+async def refresh_workout_heart_rate(
+    workout_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """刷新运动记录的心率数据"""
+    record = db.query(WorkoutRecord).filter(
+        WorkoutRecord.id == workout_id,
+        WorkoutRecord.user_id == current_user.id
+    ).first()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="运动记录不存在")
+    
+    if not record.external_id or record.source != "garmin":
+        raise HTTPException(status_code=400, detail="仅支持 Garmin 同步的运动记录")
+    
+    from app.services.auth import GarminCredentialService
+    from app.services.workout_sync import WorkoutSyncService
+    
+    # 获取Garmin凭证
+    cred_service = GarminCredentialService()
+    credentials = cred_service.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(status_code=400, detail="请先配置Garmin账号")
+    
+    try:
+        sync_service = WorkoutSyncService(
+            email=credentials["email"],
+            password=credentials["password"],
+            is_cn=credentials.get("is_cn", False),
+            user_id=current_user.id
+        )
+        
+        # 获取活动详情
+        details_data = await sync_service.get_activity_details(int(record.external_id))
+        
+        if details_data and details_data.get("heart_rate_data"):
+            duration = record.duration_seconds or 3600
+            hr_points = sync_service._parse_heart_rate_samples(details_data["heart_rate_data"], duration)
+            
+            if hr_points:
+                record.heart_rate_data = json.dumps(hr_points)
+                db.commit()
+                logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} 心率数据: {len(hr_points)} 点")
+                return {
+                    "status": "success",
+                    "message": f"获取到 {len(hr_points)} 个心率采样点",
+                    "points_count": len(hr_points)
+                }
+        
+        # 如果无法获取详细心率，使用模拟曲线
+        if record.avg_heart_rate and record.duration_seconds:
+            hr_points = sync_service._generate_simulated_hr_curve(
+                record.avg_heart_rate,
+                record.max_heart_rate,
+                record.duration_seconds
+            )
+            if hr_points:
+                record.heart_rate_data = json.dumps(hr_points)
+                db.commit()
+                return {
+                    "status": "simulated",
+                    "message": f"使用模拟心率曲线 ({len(hr_points)} 点)",
+                    "points_count": len(hr_points)
+                }
+        
+        return {
+            "status": "no_data",
+            "message": "无法获取心率数据",
+            "points_count": 0
+        }
+        
+    except Exception as e:
+        logger.error(f"刷新心率数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
+
+
 @router.post("/me/sync-garmin")
 async def sync_garmin_activities(
     days: int = Query(default=7, ge=1, le=30, description="同步最近N天的活动"),

@@ -87,6 +87,8 @@ interface WorkoutDetail {
   hr_zone_5_seconds: number | null;
   ai_analysis: string | null;
   heart_rate_data: string | null;
+  source: string;
+  external_id: string | null;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -201,6 +203,30 @@ function WorkoutContent() {
       queryClient.invalidateQueries({ queryKey: ['workout-detail', selectedWorkout] });
       queryClient.invalidateQueries({ queryKey: ['workouts'] });
       setMessage({ type: 'success', text: '✓ AI分析完成' });
+      setTimeout(() => setMessage(null), 3000);
+    },
+    onError: (error: Error) => {
+      setMessage({ type: 'error', text: `✗ ${error.message}` });
+      setTimeout(() => setMessage(null), 5000);
+    },
+  });
+
+  // 刷新心率数据
+  const refreshHRMutation = useMutation({
+    mutationFn: async (workoutId: number) => {
+      const res = await fetch(`${API_BASE}/workout/me/${workoutId}/refresh-hr`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || '刷新失败');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['workout-detail', selectedWorkout] });
+      setMessage({ type: 'success', text: `✓ ${data.message}` });
       setTimeout(() => setMessage(null), 3000);
     },
     onError: (error: Error) => {
@@ -486,9 +512,20 @@ function WorkoutContent() {
                 </div>
 
                 {/* 心率曲线图 */}
-                {heartRateChartData.length > 0 && (
-                  <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                    <h3 className="text-lg font-bold text-white mb-4">❤️ 心率曲线</h3>
+                <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-white">❤️ 心率曲线</h3>
+                    {workoutDetail && workoutDetail.source === 'garmin' && (
+                      <button
+                        onClick={() => refreshHRMutation.mutate(workoutDetail.id)}
+                        disabled={refreshHRMutation.isPending}
+                        className="px-3 py-1 bg-blue-600/80 text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                      >
+                        {refreshHRMutation.isPending ? '加载中...' : '🔄 刷新数据'}
+                      </button>
+                    )}
+                  </div>
+                  {heartRateChartData.length > 0 ? (
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={heartRateChartData}>
@@ -510,8 +547,16 @@ function WorkoutContent() {
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="h-64 flex flex-col items-center justify-center text-gray-400">
+                      <div className="text-4xl mb-3">📉</div>
+                      <p className="text-lg">暂无心率曲线数据</p>
+                      {workoutDetail?.source === 'garmin' && (
+                        <p className="text-sm mt-1">点击"刷新数据"尝试获取</p>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* 心率区间分布 */}
                 {hrZoneData.length > 0 && (
