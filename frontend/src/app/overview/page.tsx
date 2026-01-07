@@ -116,17 +116,32 @@ function OverviewContent() {
   const monthAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
 
   // 获取最近30天数据（取最新一天显示）
-  const { data: recentData, isLoading } = useQuery<{ data: GarminData[] }>({
+  const { data: recentData, isLoading, error } = useQuery<{ data: GarminData[] }>({
     queryKey: ['garmin-recent', monthAgo, today],
     queryFn: async () => {
+      console.log('[Overview] 请求 API:', `${API_BASE}/daily-health/garmin/me?start_date=${monthAgo}&end_date=${today}`);
       const res = await fetch(`${API_BASE}/daily-health/garmin/me?start_date=${monthAgo}&end_date=${today}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('获取数据失败');
-      return res.json();
+      console.log('[Overview] API 响应状态:', res.status);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('[Overview] API 错误:', errorText);
+        throw new Error('获取数据失败');
+      }
+      const data = await res.json();
+      console.log('[Overview] API 返回数据:', data);
+      console.log('[Overview] 数据条数:', data?.data?.length || 0);
+      return data;
     },
     enabled: !!token,
   });
+  
+  // 调试日志
+  console.log('[Overview] token:', !!token);
+  console.log('[Overview] isLoading:', isLoading);
+  console.log('[Overview] error:', error);
+  console.log('[Overview] recentData:', recentData);
 
   // 从返回的数据中取最新一天（有实际数据的）
   const allRecords = recentData?.data || [];
@@ -186,6 +201,21 @@ function OverviewContent() {
     );
   }
 
+  if (error) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-20">
+        <div className="text-center">
+          <div className="text-6xl mb-4">❌</div>
+          <h2 className="text-xl font-bold text-red-700 mb-2">获取数据失败</h2>
+          <p className="text-gray-500 mb-4">{String(error)}</p>
+          <pre className="text-xs text-left bg-gray-200 p-2 rounded max-w-md overflow-auto">
+            API: {API_BASE}/daily-health/garmin/me
+          </pre>
+        </div>
+      </main>
+    );
+  }
+
   if (!record) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-20">
@@ -193,6 +223,9 @@ function OverviewContent() {
           <div className="text-6xl mb-4">📊</div>
           <h2 className="text-xl font-bold text-gray-700 mb-2">暂无健康数据</h2>
           <p className="text-gray-500 mb-4">请先同步 Garmin 数据</p>
+          <p className="text-xs text-gray-400 mb-2">
+            API返回: {JSON.stringify(recentData)}
+          </p>
           <a 
             href="/settings#garmin" 
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
