@@ -185,9 +185,10 @@ function RhinitisContent() {
                   <input
                     type="number"
                     min="1"
-                    value={sneezeCount}
+                    value={sneezeCount || ''}
+                    placeholder="输入次数"
                     onChange={(e) => setSneezeCount(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-gray-900"
                   />
                 </div>
                 <div>
