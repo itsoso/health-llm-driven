@@ -545,29 +545,72 @@ class GarminConnectService:
         if isinstance(raw_data, dict):
             battery_data_raw = raw_data.get('body_battery') or raw_data.get('bodyBattery')
         
-        # 如果battery_data是列表，取第一个元素；如果是字典，直接使用；否则为空字典
-        if isinstance(battery_data_raw, list) and battery_data_raw:
-            battery_data = battery_data_raw[0] if isinstance(battery_data_raw[0], dict) else {}
-        elif isinstance(battery_data_raw, dict):
-            battery_data = battery_data_raw
-        else:
-            battery_data = {}
+        logger.info(f"身体电量原始数据类型: {type(battery_data_raw)}")
+        if battery_data_raw:
+            if isinstance(battery_data_raw, list):
+                logger.info(f"身体电量原始数据(列表)长度: {len(battery_data_raw)}")
+                if battery_data_raw:
+                    sample = battery_data_raw[0] if len(battery_data_raw) > 0 else None
+                    logger.info(f"身体电量第一个元素: {sample}")
+            elif isinstance(battery_data_raw, dict):
+                logger.info(f"身体电量原始数据(字典)键: {list(battery_data_raw.keys())}")
         
+        # 如果battery_data是列表，可能需要从中提取统计值
+        battery_data = {}
         charged = None
         drained = None
         most_charged = None
         lowest = None
         
-        if isinstance(battery_data, dict) and battery_data:
+        if isinstance(battery_data_raw, list) and battery_data_raw:
+            # Garmin返回的是一个时间序列列表，每个元素包含 bodyBatteryLevel 等
+            # 需要遍历找到 charged/drained 或计算 most_charged/lowest
+            battery_levels = []
+            for item in battery_data_raw:
+                if isinstance(item, dict):
+                    level = item.get('bodyBatteryLevel') or item.get('level') or item.get('value')
+                    if level is not None:
+                        battery_levels.append(level)
+                    # 有些格式直接包含统计数据
+                    if item.get('charged') is not None:
+                        charged = item.get('charged')
+                    if item.get('drained') is not None:
+                        drained = item.get('drained')
+            
+            if battery_levels:
+                most_charged = max(battery_levels)
+                lowest = min(battery_levels)
+                # 估算充电和消耗（简化计算）
+                if charged is None and len(battery_levels) >= 2:
+                    # 计算总充电量（上升的部分之和）
+                    total_charged = 0
+                    total_drained = 0
+                    for i in range(1, len(battery_levels)):
+                        diff = battery_levels[i] - battery_levels[i-1]
+                        if diff > 0:
+                            total_charged += diff
+                        else:
+                            total_drained += abs(diff)
+                    charged = total_charged if total_charged > 0 else None
+                    drained = total_drained if total_drained > 0 else None
+            
+            logger.info(f"从列表计算: most_charged={most_charged}, lowest={lowest}, charged={charged}, drained={drained}")
+            
+        elif isinstance(battery_data_raw, dict):
+            battery_data = battery_data_raw
             charged = battery_data.get('charged') or battery_data.get('bodyBatteryCharged') or battery_data.get('chargedValue')
             drained = battery_data.get('drained') or battery_data.get('bodyBatteryDrained') or battery_data.get('drainedValue')
             most_charged = battery_data.get('mostCharged') or battery_data.get('bodyBatteryMostCharged') or battery_data.get('mostChargedValue')
             lowest = battery_data.get('lowest') or battery_data.get('bodyBatteryLowest') or battery_data.get('lowestValue')
-        elif isinstance(summary, dict):
-            charged = summary.get('bodyBatteryCharged') or summary.get('bodyBatteryChargedValue') or summary.get('charged')
-            drained = summary.get('bodyBatteryDrained') or summary.get('bodyBatteryDrainedValue') or summary.get('drained')
-            most_charged = summary.get('bodyBatteryMostCharged') or summary.get('bodyBatteryMostChargedValue') or summary.get('mostCharged')
-            lowest = summary.get('bodyBatteryLowest') or summary.get('bodyBatteryLowestValue') or summary.get('lowest')
+        
+        # 如果还没有获取到，尝试从 summary 获取
+        if most_charged is None and isinstance(summary, dict):
+            charged = charged or summary.get('bodyBatteryChargedValue') or summary.get('bodyBatteryCharged')
+            drained = drained or summary.get('bodyBatteryDrainedValue') or summary.get('bodyBatteryDrained')
+            most_charged = summary.get('bodyBatteryMostRecentValue') or summary.get('bodyBatteryHighestValue') or summary.get('bodyBatteryMostCharged')
+            lowest = summary.get('bodyBatteryLowestValue') or summary.get('bodyBatteryLowest')
+        
+        logger.info(f"最终身体电量: charged={charged}, drained={drained}, most_charged={most_charged}, lowest={lowest}")
         
         # 压力数据（可能来自get_all_day_stress或summary）
         stress_data_raw = None
