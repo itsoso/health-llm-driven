@@ -22,6 +22,7 @@ from app.api import (
     diet,
     water,
     heart_rate,
+    workout,
 )
 
 api_router = APIRouter()
@@ -51,4 +52,5 @@ api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=
 api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
 api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
+api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
 
