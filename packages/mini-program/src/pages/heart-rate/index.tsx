@@ -7,6 +7,21 @@ import Taro from '@tarojs/taro';
 import { get } from '../../services/request';
 import './index.scss';
 
+/**
+ * 获取北京时间的日期字符串 (YYYY-MM-DD)
+ */
+function getBeijingDateString(date: Date = new Date()): string {
+  // 北京时间 = UTC+8
+  const beijingOffset = 8 * 60; // 8小时，转换为分钟
+  const localOffset = date.getTimezoneOffset(); // 本地时区偏移（分钟，UTC为0，北京为-480）
+  const beijingTime = new Date(date.getTime() + (beijingOffset + localOffset) * 60 * 1000);
+  
+  const year = beijingTime.getFullYear();
+  const month = String(beijingTime.getMonth() + 1).padStart(2, '0');
+  const day = String(beijingTime.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 interface HeartRatePoint {
   timestamp: number;
   time: string;
@@ -43,7 +58,8 @@ export default function HeartRate() {
   const [loading, setLoading] = useState(true);
   const [dailyData, setDailyData] = useState<DailyHeartRate | null>(null);
   const [trendData, setTrendData] = useState<HeartRateTrend | null>(null);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  // 使用北京时间获取当前日期
+  const [selectedDate, setSelectedDate] = useState(getBeijingDateString());
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
 
   useEffect(() => {
@@ -74,24 +90,29 @@ export default function HeartRate() {
     });
   };
 
-  // 切换日期
+  // 切换日期（基于北京时间）
   const changeDate = (offset: number) => {
-    const current = new Date(selectedDate);
+    const current = new Date(selectedDate + 'T00:00:00+08:00'); // 解析为北京时间
     current.setDate(current.getDate() + offset);
-    const today = new Date();
-    if (current <= today) {
-      setSelectedDate(current.toISOString().split('T')[0]);
+    const todayStr = getBeijingDateString();
+    const newDateStr = getBeijingDateString(current);
+    
+    // 不能超过今天
+    if (newDateStr <= todayStr) {
+      setSelectedDate(newDateStr);
     }
   };
 
-  // 格式化日期显示
+  // 格式化日期显示（基于北京时间）
   const formatDateDisplay = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const date = new Date(dateStr + 'T00:00:00+08:00');
+    const todayStr = getBeijingDateString();
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayStr = getBeijingDateString(yesterdayDate);
     
-    if (dateStr === today) return '今天';
-    if (dateStr === yesterday) return '昨天';
+    if (dateStr === todayStr) return '今天';
+    if (dateStr === yesterdayStr) return '昨天';
     return `${date.getMonth() + 1}月${date.getDate()}日`;
   };
 
@@ -238,7 +259,7 @@ export default function HeartRate() {
           </View>
           <Text className="current-date">{formatDateDisplay(selectedDate)}</Text>
           <View 
-            className={`nav-btn ${selectedDate === new Date().toISOString().split('T')[0] ? 'disabled' : ''}`}
+            className={`nav-btn ${selectedDate === getBeijingDateString() ? 'disabled' : ''}`}
             onClick={() => changeDate(1)}
           >
             <Text>›</Text>
