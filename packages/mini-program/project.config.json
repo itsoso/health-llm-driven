@@ -43,7 +43,7 @@
     "ignoreUploadUnusedFiles": true,
     "compileWorklet": false,
     "localPlugins": false,
-    "condition": false,
+    "condition": true,
     "swc": false,
     "disableSWC": true
   },
@@ -54,5 +54,6 @@
     "ignore": [],
     "include": []
   },
-  "editorSetting": {}
+  "editorSetting": {},
+  "projectArchitecture": "multiPlatform"
 }
