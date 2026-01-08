@@ -2,17 +2,24 @@
  * 设置/我的页面
  */
 import { useState, useEffect } from 'react';
-import { View, Text, Button } from '@tarojs/components';
+import { View, Text, Button, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { clearToken, getToken } from '../../services/request';
 import './index.scss';
 
 export default function Settings() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userName, setUserName] = useState('自律靠AI用户');
 
   useEffect(() => {
     const token = getToken();
     setIsLoggedIn(!!token);
+    
+    // 从本地存储获取用户名
+    const storedName = Taro.getStorageSync('user_name');
+    if (storedName) {
+      setUserName(storedName);
+    }
   }, []);
 
   const handleLogout = () => {
@@ -22,6 +29,7 @@ export default function Settings() {
       success: (res) => {
         if (res.confirm) {
           clearToken();
+          Taro.removeStorageSync('user_name');
           Taro.redirectTo({ url: '/pages/index/index' });
         }
       },
@@ -31,7 +39,15 @@ export default function Settings() {
   const handleBindGarmin = () => {
     Taro.showModal({
       title: '绑定 Garmin',
-      content: '请在 PC 端网页版中绑定您的 Garmin 账号，绑定后数据将自动同步到小程序。',
+      content: '请在 PC 端网页版中绑定您的 Garmin 账号，绑定后数据将自动同步到小程序。\n\n网址：health.westwetlandtech.com',
+      showCancel: false,
+    });
+  };
+
+  const handleAbout = () => {
+    Taro.showModal({
+      title: '关于自律靠AI',
+      content: 'AI驱动的个人健康管理助手\n\n功能特点：\n• Garmin 数据同步\n• AI 健康建议\n• 心率监测分析\n• 鼻炎症状追踪\n\n版本：v1.0.0',
       showCancel: false,
     });
   };
@@ -40,12 +56,14 @@ export default function Settings() {
     <View className="settings-page">
       {/* 用户信息 */}
       <View className="user-card">
-        <View className="avatar">
-          <Text className="avatar-text">🧬</Text>
-        </View>
+        <Image 
+          className="avatar-image" 
+          src={require('../../assets/logo.png')} 
+          mode="aspectFit"
+        />
         <View className="user-info">
-          <Text className="user-name">健康管理用户</Text>
-          <Text className="user-status">已登录</Text>
+          <Text className="user-name">{userName}</Text>
+          <Text className="user-status">{isLoggedIn ? '已登录' : '未登录'}</Text>
         </View>
       </View>
 
@@ -83,7 +101,7 @@ export default function Settings() {
           <Text className="menu-arrow">›</Text>
         </View>
 
-        <View className="menu-item">
+        <View className="menu-item" onClick={handleAbout}>
           <Text className="menu-icon">ℹ️</Text>
           <Text className="menu-text">关于我们</Text>
           <Text className="menu-arrow">›</Text>
@@ -101,9 +119,8 @@ export default function Settings() {
 
       {/* 版本信息 */}
       <View className="version-info">
-        <Text>健康管理 v1.0.0</Text>
+        <Text>自律靠AI v1.0.0</Text>
       </View>
     </View>
   );
 }
-
