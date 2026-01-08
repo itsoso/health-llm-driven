@@ -70,20 +70,20 @@ export default function Index() {
       {/* 功能介绍 */}
       <View className="features-section">
         <View className="feature-item">
-          <Text className="feature-icon">📊</Text>
-          <Text className="feature-text">Garmin 数据同步</Text>
+          <Text className="feature-icon">💡</Text>
+          <Text className="feature-text">AI 健康建议</Text>
         </View>
         <View className="feature-item">
           <Text className="feature-icon">🤧</Text>
           <Text className="feature-text">鼻炎症状追踪</Text>
         </View>
         <View className="feature-item">
-          <Text className="feature-icon">💡</Text>
-          <Text className="feature-text">AI 健康建议</Text>
-        </View>
-        <View className="feature-item">
           <Text className="feature-icon">❤️</Text>
           <Text className="feature-text">心率监测分析</Text>
+        </View>
+        <View className="feature-item">
+          <Text className="feature-icon">📊</Text>
+          <Text className="feature-text">Garmin 数据同步</Text>
         </View>
       </View>
 
