@@ -173,6 +173,13 @@
 .card-main {
   display: flex;
   align-items: center;
+  flex: 1;
+}
+
+.card-arrow {
+  font-size: 40px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-left: 8px;
 }
 
 .workout-icon {

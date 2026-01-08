@@ -1,0 +1,344 @@
+.workout-detail-page {
+  min-height: 100vh;
+  background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+
+  &.loading,
+  &.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 28px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-icon {
+  font-size: 80px;
+  margin-bottom: 24px;
+}
+
+.error-text {
+  font-size: 32px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+// 头部
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px;
+  border-radius: 0 0 32px 32px;
+}
+
+.header-icon {
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 50px;
+  margin-bottom: 16px;
+}
+
+.header-name {
+  font-size: 40px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.header-date {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 4px;
+}
+
+.header-time {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+// 核心数据
+.core-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: rgba(255, 255, 255, 0.1);
+  margin: -24px 24px 24px;
+  padding: 32px 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.core-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.core-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.core-label {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.core-divider {
+  width: 1px;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+// 区块
+.section {
+  margin: 0 24px 24px;
+}
+
+.section-title {
+  font-size: 30px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 16px;
+  display: block;
+}
+
+// 数据网格
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-value {
+  font-size: 40px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 8px;
+
+  &.max {
+    color: #EF4444;
+  }
+
+  &.up {
+    color: #10B981;
+  }
+
+  &.down {
+    color: #3B82F6;
+  }
+
+  &.effect {
+    color: #F59E0B;
+  }
+}
+
+.stat-label {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 4px;
+}
+
+.stat-unit {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+// 心率曲线
+.hr-chart {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.chart-title {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-min,
+.legend-max {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.legend-sep {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.legend-unit {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  height: 120px;
+  gap: 4px;
+}
+
+.bar-wrapper {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  min-height: 4px;
+}
+
+// 心率区间
+.hr-zones {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.zone-item {
+  margin-bottom: 12px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.zone-bar-container {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.zone-bar {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.zone-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zone-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.zone-name {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.8);
+  flex: 1;
+}
+
+.zone-percent {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  width: 60px;
+  text-align: right;
+}
+
+.zone-time {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+  width: 100px;
+  text-align: right;
+}
+
+// AI分析
+.ai-card {
+  background: rgba(102, 126, 234, 0.15);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.ai-content {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+}
+
+// 备注
+.notes-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.notes-content {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+}
+
+// 来源
+.source-info {
+  text-align: center;
+  padding: 24px;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.bottom-space {
+  height: 60px;
+}
