@@ -304,7 +304,7 @@ export default function Index() {
         {/* Garmin 数据 */}
         <View 
           className={`feature-card ${isLoggedIn ? 'active' : ''}`}
-          onClick={() => handleQuickNav('dashboard')}
+          onClick={() => handleNavToPage('garmin-data')}
         >
           <View className="card-header">
             <Text className="card-icon">📊</Text>
@@ -322,7 +322,7 @@ export default function Index() {
                   <Text className="card-desc">{garminStatus.text}</Text>
                 </>
               ) : (
-                <Text className="card-desc">去设置同步</Text>
+                <Text className="card-desc">查看历史数据</Text>
               )
             ) : (
               <Text className="card-desc">登录后查看</Text>

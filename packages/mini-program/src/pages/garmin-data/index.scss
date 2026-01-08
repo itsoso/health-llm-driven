@@ -1,0 +1,201 @@
+.garmin-data-page {
+  min-height: 100vh;
+  background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding-bottom: 40px;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 28px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 页面头部
+.page-header {
+  padding: 48px 24px 24px;
+  text-align: center;
+}
+
+.page-title {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.page-subtitle {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// 空状态
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 24px;
+}
+
+.empty-icon {
+  font-size: 80px;
+  margin-bottom: 24px;
+}
+
+.empty-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 12px;
+}
+
+.empty-desc {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+// 数据列表
+.data-list {
+  padding: 0 24px;
+}
+
+// 日期卡片
+.day-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+
+  &.today {
+    border-color: rgba(102, 126, 234, 0.5);
+    background: rgba(102, 126, 234, 0.15);
+  }
+
+  &.expanded {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  padding: 20px;
+}
+
+.date-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 80px;
+}
+
+.date-day {
+  font-size: 30px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.date-weekday {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.quick-stats {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+.quick-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-icon {
+  font-size: 24px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.expand-icon {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 8px;
+}
+
+// 详情区域
+.card-detail {
+  padding: 0 20px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-section {
+  margin-top: 20px;
+}
+
+.section-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 16px;
+  display: block;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.detail-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 16px 12px;
+  text-align: center;
+}
+
+.item-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.item-label {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.5);
+  display: block;
+}
+
+.bottom-space {
+  height: 60px;
+}
