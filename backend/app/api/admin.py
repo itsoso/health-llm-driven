@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.user import User, GarminCredential
-from app.models.daily_health import GarminData
+from app.models.daily_health import GarminData, DailyRecommendation
 from app.models.medical_exam import MedicalExam
 from app.api.auth import get_current_user_required
 
@@ -509,6 +509,95 @@ async def reset_user_credentials(
 class SetSyncEnabledRequest(BaseModel):
     """设置同步状态请求"""
     sync_enabled: bool
+
+
+class ClearCacheResponse(BaseModel):
+    """清理缓存响应"""
+    message: str
+    deleted_count: int
+
+
+@router.delete("/users/{user_id}/cache", response_model=ClearCacheResponse, summary="清理用户缓存")
+async def clear_user_cache(
+    user_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    清理指定用户的缓存数据（每日建议缓存）
+    
+    - **user_id**: 用户ID
+    - 仅管理员可访问
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+    
+    # 删除用户的每日建议缓存
+    deleted_count = db.query(DailyRecommendation).filter(
+        DailyRecommendation.user_id == user_id
+    ).delete()
+    
+    db.commit()
+    
+    logger.info(f"管理员 {admin_user.name} 清理了用户 {user_id} 的缓存，删除 {deleted_count} 条记录")
+    
+    return ClearCacheResponse(
+        message=f"已清理用户 {user.name} 的缓存",
+        deleted_count=deleted_count
+    )
+
+
+@router.delete("/cache/all", response_model=ClearCacheResponse, summary="清理所有用户缓存")
+async def clear_all_cache(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    清理所有用户的缓存数据（每日建议缓存）
+    
+    - 仅管理员可访问
+    """
+    # 删除所有每日建议缓存
+    deleted_count = db.query(DailyRecommendation).delete()
+    db.commit()
+    
+    logger.info(f"管理员 {admin_user.name} 清理了所有用户缓存，删除 {deleted_count} 条记录")
+    
+    return ClearCacheResponse(
+        message="已清理所有用户的缓存",
+        deleted_count=deleted_count
+    )
+
+
+@router.delete("/cache/no-data", response_model=ClearCacheResponse, summary="清理无数据缓存")
+async def clear_no_data_cache(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    清理所有状态为 no_data 的缓存记录
+    
+    - 仅管理员可访问
+    """
+    from sqlalchemy import text
+    
+    # 删除状态为 no_data 的记录
+    result = db.execute(text(
+        "DELETE FROM daily_recommendations WHERE one_day_recommendation LIKE '%\"status\": \"no_data\"%'"
+    ))
+    deleted_count = result.rowcount
+    db.commit()
+    
+    logger.info(f"管理员 {admin_user.name} 清理了 no_data 缓存，删除 {deleted_count} 条记录")
+    
+    return ClearCacheResponse(
+        message="已清理所有无数据缓存",
+        deleted_count=deleted_count
+    )
 
 
 @router.put("/garmin/sync-enabled/{user_id}", summary="启用或禁用用户Garmin同步")

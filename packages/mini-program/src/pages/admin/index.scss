@@ -109,12 +109,12 @@
 
 // 操作网格
 .action-grid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
 
 .action-card {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -130,6 +130,24 @@
   
   &:active {
     background: rgba(255, 255, 255, 0.12);
+  }
+  
+  &.warning {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.3);
+    
+    .action-text {
+      color: #fbbf24;
+    }
+  }
+  
+  &.danger {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    
+    .action-text {
+      color: #fca5a5;
+    }
   }
 }
 
@@ -243,6 +261,11 @@
   &.active {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
+  }
+  
+  &.warning {
+    background: rgba(251, 146, 60, 0.2);
+    color: #fdba74;
   }
   
   &.danger {
