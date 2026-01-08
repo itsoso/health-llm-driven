@@ -83,7 +83,7 @@ export default function Checkin() {
     setSaving(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      await post('/checkin/me', {
+      await post('/checkin/', {
         checkin_date: today,
         running_distance: exerciseForm.running_distance ? parseFloat(exerciseForm.running_distance) : null,
         running_duration: exerciseForm.running_duration ? parseInt(exerciseForm.running_duration) : null,
@@ -115,7 +115,7 @@ export default function Checkin() {
       const newTimes = [...currentTimes, { time: sneezeTime, count: sneezeCount }];
       const totalCount = newTimes.reduce((sum, t) => sum + t.count, 0);
 
-      await post('/checkin/me', {
+      await post('/checkin/', {
         checkin_date: today,
         sneeze_count: totalCount,
         sneeze_times: newTimes,
@@ -141,7 +141,7 @@ export default function Checkin() {
       const currentTimes = record?.nasal_wash_times || [];
       const newTimes = [...currentTimes, { time, type }];
 
-      await post('/checkin/me', {
+      await post('/checkin/', {
         checkin_date: today,
         nasal_wash_count: newTimes.length,
         nasal_wash_times: newTimes,
