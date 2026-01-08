@@ -6,6 +6,7 @@ import { View, Text, Button, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { wechatLogin } from '../../services/api';
 import { getToken } from '../../services/request';
+import logoImage from '../../assets/logo.png';
 import './index.scss';
 
 export default function Index() {
@@ -60,7 +61,7 @@ export default function Index() {
       <View className="logo-section">
         <Image 
           className="logo-image" 
-          src={require('../../assets/logo.png')} 
+          src={logoImage} 
           mode="aspectFit"
         />
         <Text className="app-title">自律靠AI</Text>
