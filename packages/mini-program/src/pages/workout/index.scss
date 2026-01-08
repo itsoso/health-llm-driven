@@ -1,0 +1,286 @@
+.workout-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  padding: 24px 20px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 16px;
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-size: 40px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.subtitle {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+}
+
+.refresh-btn {
+  width: 72px;
+  height: 72px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:active {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.refresh-icon {
+  font-size: 32px;
+}
+
+// 统计概览
+.stats-section {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 20px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+// 无数据状态
+.no-data {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 40px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-data-icon-wrap {
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.no-data-icon {
+  font-size: 48px;
+}
+
+.no-data-text {
+  font-size: 30px;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.no-data-tip {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+// 运动记录列表
+.workout-list {
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 16px;
+  padding-left: 4px;
+}
+
+.workout-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: all 0.2s ease;
+  
+  &:active {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.card-main {
+  display: flex;
+  align-items: center;
+}
+
+.workout-icon {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 14px;
+  font-size: 28px;
+}
+
+.workout-info {
+  flex: 1;
+}
+
+.workout-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.workout-name {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.workout-date {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.workout-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.metric {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+// 展开详情
+.card-detail {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.detail-item {
+  flex: 1;
+  
+  &.full {
+    flex: none;
+    width: 100%;
+  }
+}
+
+.detail-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 4px;
+  display: block;
+}
+
+.detail-value {
+  font-size: 26px;
+  color: #ffffff;
+  font-weight: 500;
+  
+  &.effect {
+    color: #10b981;
+    font-size: 32px;
+    font-weight: 700;
+  }
+}
+
+.detail-source {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 8px;
+}
+
+// 提示
+.tip-section {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.tip-text {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+}
+
+.bottom-space {
+  height: 40px;
+}
