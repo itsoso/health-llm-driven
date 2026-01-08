@@ -13,16 +13,32 @@
 -- 用户表
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email VARCHAR UNIQUE NOT NULL,
-    hashed_password VARCHAR NOT NULL,
-    full_name VARCHAR,
+    email VARCHAR UNIQUE,
+    username VARCHAR UNIQUE,
+    hashed_password VARCHAR,
     is_active BOOLEAN DEFAULT TRUE,
     is_admin BOOLEAN DEFAULT FALSE,
+    
+    -- 微信小程序认证
+    wechat_openid VARCHAR UNIQUE,
+    wechat_unionid VARCHAR,
+    wechat_session_key VARCHAR,
+    
+    -- 基础信息
+    name VARCHAR NOT NULL,
+    avatar_url VARCHAR,
+    birth_date DATE,
+    gender VARCHAR,
+    phone VARCHAR,
+    
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS ix_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS ix_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS ix_users_wechat_openid ON users(wechat_openid);
+CREATE INDEX IF NOT EXISTS ix_users_wechat_unionid ON users(wechat_unionid);
 
 -- Garmin 凭证表
 CREATE TABLE IF NOT EXISTS garmin_credentials (

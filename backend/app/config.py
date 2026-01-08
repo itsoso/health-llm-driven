@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     garmin_api_key: Optional[str] = None
     garmin_api_secret: Optional[str] = None
     
+    # 微信小程序配置
+    wechat_appid: Optional[str] = None  # 小程序 AppID
+    wechat_secret: Optional[str] = None  # 小程序 AppSecret
+    
     # 数据库配置
     database_url: str = "sqlite:///./health.db"
     
