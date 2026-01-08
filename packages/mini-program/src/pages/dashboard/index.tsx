@@ -5,8 +5,8 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { getTodayGarminData, getDailyRecommendation } from '../../services/api';
-import { formatSleepDuration, getSleepScoreLevel, getStressLevel } from '@health-app/shared';
-import type { GarminData, DailyRecommendation } from '@health-app/shared';
+import { formatSleepDuration, getSleepScoreLevel, getStressLevel } from '../../types';
+import type { GarminData, DailyRecommendation } from '../../types';
 import './index.scss';
 
 export default function Dashboard() {
@@ -49,8 +49,8 @@ export default function Dashboard() {
     );
   }
 
-  const sleepLevel = getSleepScoreLevel(garminData?.sleep_score);
-  const stressLevel = getStressLevel(garminData?.stress_level);
+  const sleepLevel = getSleepScoreLevel(garminData?.sleep_score ?? null);
+  const stressLevel = getStressLevel(garminData?.stress_avg ?? null);
 
   return (
     <ScrollView className="dashboard-page" scrollY>
@@ -79,7 +79,7 @@ export default function Dashboard() {
                   {garminData.sleep_score || '--'}
                 </Text>
                 <Text className="stat-badge" style={{ backgroundColor: sleepLevel.color }}>
-                  {sleepLevel.label}
+                  {sleepLevel.level}
                 </Text>
               </View>
               <Text className="stat-sub">
@@ -110,10 +110,10 @@ export default function Dashboard() {
               <Text className="stat-icon">🧠</Text>
               <Text className="stat-label">压力水平</Text>
               <Text className="stat-value" style={{ color: stressLevel.color }}>
-                {garminData.stress_level || '--'}
+                {garminData.stress_avg || '--'}
               </Text>
               <Text className="stat-badge" style={{ backgroundColor: stressLevel.color }}>
-                {stressLevel.label}
+                {stressLevel.level}
               </Text>
             </View>
 
@@ -137,17 +137,14 @@ export default function Dashboard() {
           </View>
 
           {/* AI 建议 */}
-          {recommendation && (
+          {recommendation && recommendation.recommendations && (
             <View className="recommendation-section">
               <Text className="section-title">💡 今日建议</Text>
               <View className="recommendation-card">
-                <Text className="recommendation-summary">
-                  {recommendation.overall_summary || '暂无建议'}
-                </Text>
-                {recommendation.priority_recommendations?.slice(0, 3).map((rec, i) => (
+                {recommendation.recommendations.slice(0, 3).map((rec, i) => (
                   <View key={i} className="recommendation-item">
                     <Text className="recommendation-bullet">•</Text>
-                    <Text className="recommendation-text">{rec}</Text>
+                    <Text className="recommendation-text">{rec.content}</Text>
                   </View>
                 ))}
               </View>
@@ -158,4 +155,3 @@ export default function Dashboard() {
     </ScrollView>
   );
 }
-
