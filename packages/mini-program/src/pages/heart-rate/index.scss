@@ -1,0 +1,403 @@
+.heart-rate-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  padding: 24px 20px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #EF4444;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 16px;
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// 头部
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.date-nav {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 8px 16px;
+}
+
+.nav-btn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  color: #ffffff;
+  
+  &:active {
+    opacity: 0.7;
+  }
+  
+  &.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+  }
+}
+
+.current-date {
+  font-size: 32px;
+  font-weight: 600;
+  color: #ffffff;
+  min-width: 120px;
+  text-align: center;
+}
+
+.refresh-btn {
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  
+  &:active {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+// 核心指标卡片
+.main-card {
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  border-radius: 24px;
+  padding: 32px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3);
+}
+
+.main-icon {
+  font-size: 64px;
+  margin-right: 24px;
+}
+
+.main-content {
+  flex: 1;
+}
+
+.main-label {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 8px;
+}
+
+.main-value-row {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.main-value {
+  font-size: 72px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.main-unit {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-left: 8px;
+}
+
+.status-badge {
+  display: inline-flex;
+  padding: 6px 16px;
+  border-radius: 16px;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+// 统计网格
+.stats-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  width: 48%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+
+.stat-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.stat-value-row {
+  display: flex;
+  align-items: baseline;
+}
+
+.stat-value {
+  font-size: 40px;
+  font-weight: 700;
+  color: #ffffff;
+  
+  &.max {
+    color: #EF4444;
+  }
+  
+  &.min {
+    color: #3B82F6;
+  }
+}
+
+.stat-unit {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 4px;
+}
+
+.stat-status {
+  font-size: 20px;
+  margin-top: 4px;
+}
+
+// 区块
+.section {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 16px;
+  padding-left: 4px;
+}
+
+// 图表卡片
+.chart-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.chart-empty {
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 26px;
+}
+
+.chart-container {
+  display: flex;
+  height: 200px;
+}
+
+.chart-y-axis {
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: 8px;
+}
+
+.y-label {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: right;
+}
+
+.chart-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-bars {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding-bottom: 8px;
+}
+
+.bar-wrapper {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  min-height: 4px;
+  transition: height 0.3s ease;
+}
+
+.chart-x-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.x-label {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+// 趋势卡片
+.trend-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.trend-summary {
+  display: flex;
+  justify-content: space-around;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.trend-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.trend-stat-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.trend-stat-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+}
+
+.trend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trend-item {
+  display: flex;
+  align-items: center;
+}
+
+.trend-date {
+  width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.trend-day {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.trend-date-num {
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.trend-bar-container {
+  flex: 1;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin: 0 12px;
+  overflow: hidden;
+}
+
+.trend-bar {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
+}
+
+.trend-value {
+  width: 50px;
+  font-size: 26px;
+  font-weight: 600;
+  text-align: right;
+}
+
+// 健康提示
+.tip-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.tip-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.tip-content {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.6;
+}
+
+.bottom-space {
+  height: 40px;
+}
