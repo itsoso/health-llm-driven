@@ -58,9 +58,13 @@ export default function Index() {
     <View className="index-page">
       {/* Logo 区域 */}
       <View className="logo-section">
-        <View className="logo-icon">🧬</View>
-        <Text className="app-title">健康管理</Text>
-        <Text className="app-subtitle">AI 驱动的个人健康助手</Text>
+        <Image 
+          className="logo-image" 
+          src={require('../../assets/logo.png')} 
+          mode="aspectFit"
+        />
+        <Text className="app-title">自律靠AI</Text>
+        <Text className="app-subtitle">AI 驱动的个人健康管理助手</Text>
       </View>
 
       {/* 功能介绍 */}
