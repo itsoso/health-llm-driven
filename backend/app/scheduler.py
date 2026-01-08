@@ -47,12 +47,13 @@ async def sync_user_garmin_data(
     days: int = 3,
     is_cn: bool = False
 ) -> Dict[str, Any]:
-    """同步单个用户的Garmin数据"""
+    """同步单个用户的Garmin数据（包括健康数据和运动活动）"""
     result = {
         "user_id": user_id,
         "success": False,
         "success_count": 0,
         "error_count": 0,
+        "activities_count": 0,
         "message": "",
         "is_auth_error": False
     }
@@ -66,13 +67,33 @@ async def sync_user_garmin_data(
         end_date = get_china_today()
         start_date = end_date - timedelta(days=days - 1)
         
-        # 执行同步
+        # 执行健康数据同步
         sync_result = service.sync_date_range(db, user_id, start_date, end_date)
         
         result["success"] = True
         result["success_count"] = sync_result.get("success_count", 0)
         result["error_count"] = sync_result.get("error_count", 0)
-        result["message"] = f"同步完成: 成功 {result['success_count']} 天, 失败 {result['error_count']} 天"
+        
+        # 同步运动活动数据
+        try:
+            from app.services.workout_sync import WorkoutSyncService
+            workout_sync_service = WorkoutSyncService(
+                email=email,
+                password=password,
+                is_cn=is_cn,
+                user_id=user_id
+            )
+            workout_result = await workout_sync_service.sync_activities(db, user_id, days)
+            result["activities_count"] = workout_result.get("synced_count", 0)
+            logger.info(f"用户 {user_id} 运动活动同步完成: {result['activities_count']} 条")
+        except Exception as e:
+            logger.warning(f"用户 {user_id} 运动活动同步失败: {e}")
+        
+        result["message"] = f"同步完成: 健康数据 {result['success_count']} 天"
+        if result["activities_count"] > 0:
+            result["message"] += f", 运动活动 {result['activities_count']} 条"
+        if result["error_count"] > 0:
+            result["message"] += f", 失败 {result['error_count']} 天"
         
         # 更新最后同步时间（会重置错误状态）
         garmin_credential_service.update_sync_status(db, user_id)
