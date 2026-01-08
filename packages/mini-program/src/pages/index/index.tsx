@@ -109,6 +109,18 @@ export default function Index() {
     Taro.switchTab({ url: `/pages/${page}/index` });
   };
 
+  // 导航到普通页面（非TabBar）
+  const handleNavToPage = (page: string) => {
+    if (!isLoggedIn) {
+      Taro.showToast({
+        title: '请先登录',
+        icon: 'none',
+      });
+      return;
+    }
+    Taro.navigateTo({ url: `/pages/${page}/index` });
+  };
+
   // 获取心率状态
   const getHeartRateStatus = () => {
     const hr = homeData.garmin?.resting_heart_rate;
@@ -265,6 +277,24 @@ export default function Index() {
                   <Text className="card-desc">{rhinitisStatus.text}</Text>
                 </>
               )
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
+        {/* 运动训练 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('workout')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">🏃</Text>
+            <Text className="card-title">运动训练</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              <Text className="card-desc">查看运动记录</Text>
             ) : (
               <Text className="card-desc">登录后查看</Text>
             )}

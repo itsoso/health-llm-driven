@@ -4,6 +4,7 @@ export default defineAppConfig({
     'pages/dashboard/index',  // 数据面板
     'pages/rhinitis/index',   // 鼻炎追踪
     'pages/settings/index',   // 我的
+    'pages/workout/index',    // 运动训练
   ],
   window: {
     backgroundTextStyle: 'light',
