@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "health-mini-program",
   "description": "健康管理系统 - 微信小程序",
-  "appid": "请替换为您的小程序AppID",
+  "appid": "wx169f93db056a7dd5",
   "setting": {
     "urlCheck": true,
     "es6": false,
