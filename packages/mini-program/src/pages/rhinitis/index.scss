@@ -1,0 +1,153 @@
+.rhinitis-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  padding: 24px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.stat-box {
+  width: 48%;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.stat-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 56px;
+  font-weight: 700;
+  color: #d97706;
+}
+
+.stat-label {
+  font-size: 24px;
+  color: #6b7280;
+  margin-top: 8px;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.card-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 20px;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.input {
+  flex: 1;
+  height: 80px;
+  background: #f3f4f6;
+  border-radius: 12px;
+  padding: 0 20px;
+  font-size: 28px;
+  color: #1f2937;
+}
+
+.button-row {
+  display: flex;
+  gap: 16px;
+}
+
+.btn {
+  flex: 1;
+  height: 80px;
+  border-radius: 12px;
+  font-size: 28px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+
+  &::after {
+    border: none;
+  }
+}
+
+.btn-primary {
+  background: #f59e0b;
+  color: #ffffff;
+}
+
+.btn-blue {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.btn-purple {
+  background: #8b5cf6;
+  color: #ffffff;
+}
+
+.records-list {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.list-title {
+  font-size: 24px;
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tag {
+  font-size: 24px;
+  padding: 8px 16px;
+  border-radius: 20px;
+}
+
+.tag-amber {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.tag-blue {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.tag-purple {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
