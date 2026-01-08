@@ -1,14 +1,14 @@
 export default defineAppConfig({
   pages: [
-    'pages/index/index',
-    'pages/dashboard/index',
-    'pages/rhinitis/index',
-    'pages/settings/index',
+    'pages/index/index',      // 登录页（非 TabBar）
+    'pages/dashboard/index',  // 数据面板
+    'pages/rhinitis/index',   // 鼻炎追踪
+    'pages/settings/index',   // 我的
   ],
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#4f46e5',
-    navigationBarTitleText: '健康管理',
+    navigationBarTitleText: '自律靠AI',
     navigationBarTextStyle: 'white',
   },
   tabBar: {
@@ -17,12 +17,6 @@ export default defineAppConfig({
     backgroundColor: '#ffffff',
     borderStyle: 'black',
     list: [
-      {
-        pagePath: 'pages/index/index',
-        text: '首页',
-        iconPath: 'assets/icons/home.png',
-        selectedIconPath: 'assets/icons/home-active.png',
-      },
       {
         pagePath: 'pages/dashboard/index',
         text: '数据',
@@ -44,4 +38,3 @@ export default defineAppConfig({
     ],
   },
 });
-
