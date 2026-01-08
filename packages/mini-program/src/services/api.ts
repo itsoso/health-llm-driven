@@ -2,14 +2,14 @@
  * API 服务
  */
 import Taro from '@tarojs/taro';
-import { get, post, put, setToken } from './request';
-import { API_ENDPOINTS } from '@health-app/shared';
-import type { 
+import { get, post, setToken } from './request';
+import { 
+  API_ENDPOINTS,
   WechatLoginResponse, 
   GarminData, 
   RhinitisRecord,
   DailyRecommendation 
-} from '@health-app/shared';
+} from '../types';
 
 /**
  * 微信登录
@@ -108,6 +108,5 @@ export async function checkGarminBinding(userId: number): Promise<{
   sync_enabled: boolean;
   credentials_valid: boolean;
 }> {
-  return get(`/wechat/check-bindding/${userId}`);
+  return get(`/wechat/check-binding/${userId}`);
 }
-

@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { getTodayRhinitis, saveRhinitisRecord } from '../../services/api';
-import type { RhinitisRecord } from '@health-app/shared';
+import type { RhinitisRecord } from '../../types';
 import './index.scss';
 
 export default function Rhinitis() {
