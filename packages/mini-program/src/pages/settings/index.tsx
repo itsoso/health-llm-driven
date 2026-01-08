@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Button, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { clearToken, getToken } from '../../services/request';
+import logoImage from '../../assets/logo.png';
 import './index.scss';
 
 export default function Settings() {
@@ -58,7 +59,7 @@ export default function Settings() {
       <View className="user-card">
         <Image 
           className="avatar-image" 
-          src={require('../../assets/logo.png')} 
+          src={logoImage} 
           mode="aspectFit"
         />
         <View className="user-info">
