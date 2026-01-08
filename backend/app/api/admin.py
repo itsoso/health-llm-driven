@@ -8,7 +8,8 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.user import User, GarminCredential
-from app.models.daily_health import GarminData, DailyRecommendation
+from app.models.daily_health import GarminData
+from app.models.daily_recommendation import DailyRecommendation
 from app.models.medical_exam import MedicalExam
 from app.api.auth import get_current_user_required
 
