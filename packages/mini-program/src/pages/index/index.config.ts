@@ -1,5 +1,6 @@
 export default definePageConfig({
-  navigationBarTitleText: '健康管理',
-  navigationStyle: 'custom', // 自定义导航栏
+  navigationBarTitleText: '自律靠AI',
+  navigationBarBackgroundColor: '#1a1a2e',
+  navigationBarTextStyle: 'white',
 });
 

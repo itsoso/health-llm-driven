@@ -58,15 +58,37 @@ export interface RhinitisRecord {
   notes: string | null;
 }
 
-// 每日建议
-export interface DailyRecommendation {
-  date: string;
+// 每日建议（1天建议）
+export interface OneDayRecommendation {
   status: string;
-  recommendations: {
-    category: string;
-    content: string;
-    priority: string;
-  }[];
+  date: string;
+  analysis_date?: string;
+  user?: string;
+  sleep_analysis?: string | null;
+  activity_analysis?: string | null;
+  heart_rate_analysis?: string | null;
+  stress_analysis?: string | null;
+  overall_status?: string;
+  priority_recommendations?: string[];
+  daily_goals?: string[];
+  raw_data?: {
+    sleep_score?: number | null;
+    sleep_duration_minutes?: number | null;
+    steps?: number | null;
+    resting_heart_rate?: number | null;
+    stress_avg?: number | null;
+    body_battery_most_charged?: number | null;
+  };
+}
+
+// 每日建议响应
+export interface DailyRecommendation {
+  status: string;
+  date: string;
+  analysis_date?: string;
+  one_day?: OneDayRecommendation;
+  seven_day?: any;
+  cached?: boolean;
 }
 
 // API 端点
