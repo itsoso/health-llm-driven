@@ -47,7 +47,6 @@ export default function Workout() {
   const [loading, setLoading] = useState(true);
   const [workouts, setWorkouts] = useState<WorkoutRecord[]>([]);
   const [stats, setStats] = useState<WorkoutStats | null>(null);
-  const [selectedWorkout, setSelectedWorkout] = useState<WorkoutRecord | null>(null);
 
   useEffect(() => {
     loadData();
@@ -186,7 +185,7 @@ export default function Workout() {
               <View 
                 key={workout.id} 
                 className="workout-card"
-                onClick={() => setSelectedWorkout(selectedWorkout?.id === workout.id ? null : workout)}
+                onClick={() => Taro.navigateTo({ url: `/pages/workout-detail/index?id=${workout.id}` })}
               >
                 <View className="card-main">
                   <View className="workout-icon">
@@ -212,37 +211,10 @@ export default function Workout() {
                     </View>
                   </View>
                 </View>
-                
-                {/* 展开详情 */}
-                {selectedWorkout?.id === workout.id && (
-                  <View className="card-detail">
-                    <View className="detail-row">
-                      <View className="detail-item">
-                        <Text className="detail-label">平均心率</Text>
-                        <Text className="detail-value">
-                          {workout.avg_heart_rate ? `${workout.avg_heart_rate} bpm` : '--'}
-                        </Text>
-                      </View>
-                      <View className="detail-item">
-                        <Text className="detail-label">最大心率</Text>
-                        <Text className="detail-value">
-                          {workout.max_heart_rate ? `${workout.max_heart_rate} bpm` : '--'}
-                        </Text>
-                      </View>
-                    </View>
-                    {workout.training_effect_aerobic && (
-                      <View className="detail-row">
-                        <View className="detail-item full">
-                          <Text className="detail-label">有氧训练效果</Text>
-                          <Text className="detail-value effect">{workout.training_effect_aerobic.toFixed(1)}</Text>
-                        </View>
-                      </View>
-                    )}
-                    <View className="detail-source">
-                      来源: {workout.source === 'garmin' ? 'Garmin' : '手动记录'}
-                    </View>
-                  </View>
-                )}
+                {/* 右箭头 */}
+                <View className="card-arrow">
+                  <Text>›</Text>
+                </View>
               </View>
             );
           })}
