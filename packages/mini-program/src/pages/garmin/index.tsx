@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Input, Button, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { get, post, del } from '../../services/request';
+import { get, getSilent, post, del } from '../../services/request';
 import './index.scss';
 
 interface GarminCredential {
@@ -35,13 +35,15 @@ export default function Garmin() {
   const loadCredential = async () => {
     setLoading(true);
     try {
-      const data = await get<GarminCredential>('/auth/garmin/credentials').catch(() => null);
+      // 使用静默请求，避免404时显示错误toast
+      const data = await getSilent<GarminCredential>('/auth/garmin/credentials');
       setCredential(data);
       if (data) {
         setIsCN(data.is_cn);
       }
     } catch (error) {
-      console.error('加载凭证失败:', error);
+      // 404 表示未配置凭证，这是正常情况
+      setCredential(null);
     } finally {
       setLoading(false);
     }
