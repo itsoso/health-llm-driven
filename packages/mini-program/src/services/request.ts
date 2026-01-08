@@ -128,6 +128,13 @@ export function post<T = any>(url: string, data?: any): Promise<T> {
 }
 
 /**
+ * POST 请求（无需认证，用于登录等）
+ */
+export function postNoAuth<T = any>(url: string, data?: any): Promise<T> {
+  return request<T>({ url, method: 'POST', data, needAuth: false });
+}
+
+/**
  * PUT 请求
  */
 export function put<T = any>(url: string, data?: any): Promise<T> {

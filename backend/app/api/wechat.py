@@ -45,15 +45,9 @@ class WechatUserInfo(BaseModel):
 
 
 def create_access_token(user_id: int) -> str:
-    """创建 JWT access token"""
-    expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
-    to_encode = {
-        "sub": str(user_id),
-        "exp": expire,
-        "type": "wechat"
-    }
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
-    return encoded_jwt
+    """创建 JWT access token - 使用与 auth.py 相同的密钥"""
+    from app.services.auth import auth_service
+    return auth_service.create_access_token({"sub": str(user_id)})
 
 
 async def get_wechat_session(code: str) -> dict:
