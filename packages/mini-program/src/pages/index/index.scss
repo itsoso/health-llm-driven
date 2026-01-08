@@ -1,0 +1,99 @@
+.index-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  flex-direction: column;
+  padding: 80px 40px 60px;
+  box-sizing: border-box;
+
+  &.loading {
+    justify-content: center;
+    align-items: center;
+    color: #ffffff;
+  }
+}
+
+.logo-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 80px;
+}
+
+.logo-icon {
+  font-size: 120px;
+  margin-bottom: 24px;
+}
+
+.app-title {
+  font-size: 48px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.app-subtitle {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.features-section {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-bottom: auto;
+}
+
+.feature-item {
+  width: 48%;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 32px 24px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.feature-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.feature-text {
+  font-size: 26px;
+  color: #ffffff;
+  text-align: center;
+}
+
+.login-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.login-btn {
+  width: 100%;
+  height: 96px;
+  background: #ffffff;
+  color: #667eea;
+  font-size: 32px;
+  font-weight: 600;
+  border-radius: 48px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &::after {
+    border: none;
+  }
+}
+
+.login-tip {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 24px;
+  text-align: center;
+}
+

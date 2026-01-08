@@ -1,0 +1,158 @@
+.dashboard-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  padding: 24px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.title {
+  font-size: 36px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.refresh {
+  font-size: 26px;
+  color: #4f46e5;
+}
+
+.no-data {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 40px;
+  background: #ffffff;
+  border-radius: 16px;
+}
+
+.no-data-icon {
+  font-size: 80px;
+  margin-bottom: 24px;
+}
+
+.no-data-text {
+  font-size: 32px;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.no-data-tip {
+  font-size: 26px;
+  color: #9ca3af;
+}
+
+.stats-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.stat-card {
+  width: 48%;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.stat-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 24px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.stat-value-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stat-value {
+  font-size: 48px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.stat-unit {
+  font-size: 24px;
+  color: #6b7280;
+  margin-left: 4px;
+}
+
+.stat-badge {
+  font-size: 20px;
+  color: #ffffff;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.stat-sub {
+  font-size: 22px;
+  color: #9ca3af;
+  margin-top: 8px;
+}
+
+.recommendation-section {
+  margin-top: 24px;
+}
+
+.section-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 16px;
+}
+
+.recommendation-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.recommendation-summary {
+  font-size: 28px;
+  color: #374151;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.recommendation-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.recommendation-bullet {
+  font-size: 28px;
+  color: #4f46e5;
+  margin-right: 12px;
+}
+
+.recommendation-text {
+  font-size: 26px;
+  color: #4b5563;
+  line-height: 1.5;
+  flex: 1;
+}
+
