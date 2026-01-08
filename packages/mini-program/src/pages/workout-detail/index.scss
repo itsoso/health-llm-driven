@@ -122,12 +122,41 @@
   margin: 0 24px 24px;
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
 .section-title {
   font-size: 30px;
   font-weight: 600;
   color: #ffffff;
-  margin-bottom: 16px;
   display: block;
+}
+
+// AI分析按钮
+.analyze-btn {
+  padding: 8px 20px;
+  font-size: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 30px;
+  font-weight: 500;
+  
+  &::after {
+    border: none;
+  }
+  
+  &.loading {
+    opacity: 0.7;
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
 }
 
 // 数据网格
@@ -310,6 +339,26 @@
   border: 1px solid rgba(102, 126, 234, 0.3);
   border-radius: 16px;
   padding: 20px;
+  
+  &.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+  }
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-text {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
 }
 
 .ai-content {

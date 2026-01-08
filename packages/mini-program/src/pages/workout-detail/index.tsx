@@ -2,9 +2,9 @@
  * 运动详情页面
  */
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { View, Text, ScrollView, Button } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
-import { get, getSilent } from '../../services/request';
+import { get, post } from '../../services/request';
 import './index.scss';
 
 interface WorkoutDetail {
@@ -64,6 +64,7 @@ export default function WorkoutDetail() {
   
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<WorkoutDetail | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     if (workoutId) {
@@ -81,6 +82,31 @@ export default function WorkoutDetail() {
       Taro.showToast({ title: '加载失败', icon: 'none' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 触发AI分析
+  const handleAnalyze = async () => {
+    if (!workoutId || analyzing) return;
+    
+    setAnalyzing(true);
+    Taro.showLoading({ title: '正在分析...' });
+    
+    try {
+      await post(`/workout/me/${workoutId}/analyze`);
+      Taro.hideLoading();
+      Taro.showToast({ title: 'AI分析完成', icon: 'success' });
+      // 重新加载详情以获取分析结果
+      await loadDetail();
+    } catch (error: any) {
+      Taro.hideLoading();
+      Taro.showToast({ 
+        title: error.message || 'AI分析失败', 
+        icon: 'none',
+        duration: 3000
+      });
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -460,14 +486,28 @@ export default function WorkoutDetail() {
       )}
 
       {/* AI分析 */}
-      {detail.ai_analysis && (
-        <View className="section">
+      <View className="section">
+        <View className="section-header">
           <Text className="section-title">🤖 AI 分析</Text>
+          <Button 
+            className={`analyze-btn ${analyzing ? 'loading' : ''}`}
+            onClick={handleAnalyze}
+            disabled={analyzing}
+          >
+            {analyzing ? '分析中...' : (detail.ai_analysis ? '重新分析' : '开始分析')}
+          </Button>
+        </View>
+        {detail.ai_analysis ? (
           <View className="ai-card">
             {renderAiAnalysis(detail.ai_analysis)}
           </View>
-        </View>
-      )}
+        ) : (
+          <View className="ai-card empty">
+            <Text className="empty-icon">💡</Text>
+            <Text className="empty-text">点击"开始分析"获取AI专业建议</Text>
+          </View>
+        )}
+      </View>
 
       {/* 备注 */}
       {detail.notes && (
