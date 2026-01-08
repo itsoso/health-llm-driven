@@ -11,6 +11,7 @@ class HealthCheckinCreate(BaseModel):
     running_distance: Optional[float] = None
     running_duration: Optional[int] = None
     squats_count: Optional[int] = None
+    leg_raises_count: Optional[int] = None  # 踢腿次数
     tai_chi_duration: Optional[int] = None
     ba_duan_jin_duration: Optional[int] = None
     other_exercises: Optional[Dict[str, Any]] = None
@@ -33,6 +34,7 @@ class HealthCheckinResponse(BaseModel):
     running_distance: Optional[float]
     running_duration: Optional[int]
     squats_count: Optional[int]
+    leg_raises_count: Optional[int] = None  # 踢腿次数
     tai_chi_duration: Optional[int]
     ba_duan_jin_duration: Optional[int]
     other_exercises: Optional[Dict[str, Any]]

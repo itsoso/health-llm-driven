@@ -18,6 +18,7 @@ class HealthCheckin(Base):
     running_distance = Column(Float)  # 跑步距离 (km)
     running_duration = Column(Integer)  # 跑步时长 (分钟)
     squats_count = Column(Integer)  # 深蹲次数
+    leg_raises_count = Column(Integer)  # 踢腿次数
     tai_chi_duration = Column(Integer)  # 太极拳时长 (分钟)
     ba_duan_jin_duration = Column(Integer)  # 八段锦时长 (分钟)
     
