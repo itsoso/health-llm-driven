@@ -120,6 +120,34 @@
   text-align: center;
 }
 
+// 已登录状态
+.logged-in-section {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.action-btn {
+  width: 100%;
+  height: 100px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-size: 34px;
+  font-weight: 600;
+  border-radius: 50px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 40px rgba(16, 185, 129, 0.4);
+  letter-spacing: 2px;
+
+  &::after {
+    border: none;
+  }
+}
+
 // 底部装饰
 .bottom-decoration {
   position: fixed;
