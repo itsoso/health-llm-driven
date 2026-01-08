@@ -18,10 +18,17 @@ class User(Base):
     is_active = Column(Boolean, default=True)  # 账户是否激活
     is_admin = Column(Boolean, default=False)  # 是否管理员
     
+    # 微信小程序认证
+    wechat_openid = Column(String, unique=True, index=True, nullable=True)  # 微信 OpenID
+    wechat_unionid = Column(String, index=True, nullable=True)  # 微信 UnionID（多平台统一）
+    wechat_session_key = Column(String, nullable=True)  # 微信会话密钥（加密数据解密用）
+    
     # 基础信息
     name = Column(String, nullable=False)
+    avatar_url = Column(String, nullable=True)  # 头像URL
     birth_date = Column(Date, nullable=True)  # 用于计算年龄
     gender = Column(String, nullable=True)  # 男/女
+    phone = Column(String, nullable=True)  # 手机号
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
