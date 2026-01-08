@@ -180,6 +180,77 @@ export default function WorkoutDetail() {
     );
   };
 
+  // 渲染AI分析（美化JSON）
+  const renderAiAnalysis = (analysisStr: string) => {
+    try {
+      const analysis = JSON.parse(analysisStr);
+      
+      // 如果是对象，格式化显示
+      if (typeof analysis === 'object' && analysis !== null) {
+        const sections: { title: string; content: string; icon: string }[] = [];
+        
+        // 常见字段映射
+        const fieldMap: Record<string, { title: string; icon: string }> = {
+          summary: { title: '总结', icon: '📋' },
+          overall_summary: { title: '总结', icon: '📋' },
+          intensity: { title: '运动强度', icon: '💪' },
+          intensity_analysis: { title: '强度分析', icon: '💪' },
+          heart_rate_analysis: { title: '心率分析', icon: '❤️' },
+          performance: { title: '表现评价', icon: '🏆' },
+          suggestion: { title: '建议', icon: '💡' },
+          suggestions: { title: '建议', icon: '💡' },
+          improvement: { title: '改进建议', icon: '📈' },
+          recovery: { title: '恢复建议', icon: '🛌' },
+          next_workout: { title: '下次训练建议', icon: '🎯' },
+          calories_analysis: { title: '热量消耗', icon: '🔥' },
+          pace_analysis: { title: '配速分析', icon: '⚡' },
+          training_effect: { title: '训练效果', icon: '📊' },
+        };
+
+        for (const [key, value] of Object.entries(analysis)) {
+          if (value && typeof value === 'string' && value.trim()) {
+            const fieldInfo = fieldMap[key] || { title: key.replace(/_/g, ' '), icon: '•' };
+            sections.push({
+              title: fieldInfo.title,
+              content: value as string,
+              icon: fieldInfo.icon,
+            });
+          } else if (Array.isArray(value) && value.length > 0) {
+            const fieldInfo = fieldMap[key] || { title: key.replace(/_/g, ' '), icon: '•' };
+            sections.push({
+              title: fieldInfo.title,
+              content: value.join('\n• '),
+              icon: fieldInfo.icon,
+            });
+          }
+        }
+
+        if (sections.length > 0) {
+          return (
+            <>
+              {sections.map((section, index) => (
+                <View key={index} className="ai-section">
+                  <Text className="ai-section-title">{section.icon} {section.title}</Text>
+                  <Text className="ai-section-content">{section.content}</Text>
+                </View>
+              ))}
+            </>
+          );
+        }
+      }
+      
+      // 如果是字符串，直接显示
+      if (typeof analysis === 'string') {
+        return <Text className="ai-content">{analysis}</Text>;
+      }
+    } catch (e) {
+      // 解析失败，直接显示原文
+    }
+    
+    // 默认直接显示
+    return <Text className="ai-content">{analysisStr}</Text>;
+  };
+
   // 渲染心率曲线
   const renderHeartRateChart = () => {
     if (!detail?.heart_rate_data) return null;
@@ -393,7 +464,7 @@ export default function WorkoutDetail() {
         <View className="section">
           <Text className="section-title">🤖 AI 分析</Text>
           <View className="ai-card">
-            <Text className="ai-content">{detail.ai_analysis}</Text>
+            {renderAiAnalysis(detail.ai_analysis)}
           </View>
         </View>
       )}
