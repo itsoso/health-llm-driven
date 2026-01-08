@@ -1,6 +1,6 @@
 export default defineAppConfig({
   pages: [
-    'pages/index/index',      // 登录页（非 TabBar）
+    'pages/index/index',      // 首页
     'pages/dashboard/index',  // 数据面板
     'pages/rhinitis/index',   // 鼻炎追踪
     'pages/settings/index',   // 我的
@@ -17,6 +17,12 @@ export default defineAppConfig({
     backgroundColor: '#ffffff',
     borderStyle: 'black',
     list: [
+      {
+        pagePath: 'pages/index/index',
+        text: '首页',
+        iconPath: 'assets/icons/home.png',
+        selectedIconPath: 'assets/icons/home-active.png',
+      },
       {
         pagePath: 'pages/dashboard/index',
         text: '数据',
