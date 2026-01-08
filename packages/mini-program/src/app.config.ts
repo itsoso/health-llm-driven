@@ -2,10 +2,12 @@ export default defineAppConfig({
   pages: [
     'pages/index/index',      // 首页
     'pages/dashboard/index',  // 数据面板
-    'pages/rhinitis/index',   // 鼻炎追踪
+    'pages/rhinitis/index',   // 打卡
     'pages/settings/index',   // 我的
     'pages/workout/index',    // 运动训练
     'pages/heart-rate/index', // 心率追踪
+    'pages/garmin/index',     // Garmin绑定
+    'pages/admin/index',      // 管理后台
   ],
   window: {
     backgroundTextStyle: 'light',

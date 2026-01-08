@@ -7,24 +7,9 @@
 .user-card {
   display: flex;
   align-items: center;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   padding: 48px 32px;
   margin-bottom: 24px;
-}
-
-.avatar {
-  width: 120px;
-  height: 120px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 24px;
-}
-
-.avatar-text {
-  font-size: 60px;
 }
 
 .avatar-image {
@@ -38,13 +23,29 @@
 .user-info {
   display: flex;
   flex-direction: column;
+  flex: 1;
+}
+
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .user-name {
   font-size: 36px;
   font-weight: 600;
   color: #ffffff;
-  margin-bottom: 8px;
+}
+
+.admin-badge {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  font-size: 22px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: 500;
 }
 
 .user-status {
@@ -57,6 +58,19 @@
   margin: 0 24px 24px;
   border-radius: 16px;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  
+  &.admin-section {
+    border: 2px solid #f59e0b;
+  }
+}
+
+.section-label {
+  display: block;
+  padding: 16px 24px 0;
+  font-size: 24px;
+  color: #f59e0b;
+  font-weight: 600;
 }
 
 .menu-item {
@@ -64,6 +78,11 @@
   align-items: center;
   padding: 32px 24px;
   border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.2s ease;
+
+  &:active {
+    background-color: #f9fafb;
+  }
 
   &:last-child {
     border-bottom: none;
@@ -79,6 +98,28 @@
   flex: 1;
   font-size: 30px;
   color: #1f2937;
+}
+
+.menu-status {
+  font-size: 24px;
+  padding: 6px 16px;
+  border-radius: 16px;
+  margin-right: 12px;
+  
+  &.status-success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+  }
+  
+  &.status-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #d97706;
+  }
+  
+  &.status-none {
+    background: rgba(156, 163, 175, 0.15);
+    color: #6b7280;
+  }
 }
 
 .menu-desc {
@@ -107,9 +148,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 
   &::after {
     border: none;
+  }
+  
+  &:active {
+    background-color: #fef2f2;
   }
 }
 
@@ -119,4 +165,3 @@
   font-size: 24px;
   color: #9ca3af;
 }
-
