@@ -342,12 +342,12 @@ export default function WorkoutDetail() {
           <Text className="section-title">⛰️ 海拔</Text>
           <View className="stats-grid">
             <View className="stat-card">
-              <Text className="stat-value up">+{detail.elevation_gain_meters || 0}</Text>
+              <Text className="stat-value up">+{Math.round(detail.elevation_gain_meters || 0)}</Text>
               <Text className="stat-label">累计爬升</Text>
               <Text className="stat-unit">米</Text>
             </View>
             <View className="stat-card">
-              <Text className="stat-value down">-{detail.elevation_loss_meters || 0}</Text>
+              <Text className="stat-value down">-{Math.round(detail.elevation_loss_meters || 0)}</Text>
               <Text className="stat-label">累计下降</Text>
               <Text className="stat-unit">米</Text>
             </View>
