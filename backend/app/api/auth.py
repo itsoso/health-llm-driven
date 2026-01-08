@@ -333,7 +333,7 @@ async def sync_garmin_data(
     db: Session = Depends(get_db)
 ):
     """
-    手动触发Garmin数据同步
+    手动触发Garmin数据同步（同时同步健康数据和运动活动）
     
     - **days**: 同步最近N天的数据（默认7天，最多730天）
     """
@@ -348,6 +348,7 @@ async def sync_garmin_data(
     # 执行同步
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService
+        from app.services.workout_sync import WorkoutSyncService
         from datetime import date, timedelta
         
         # 创建Garmin服务实例（传入凭证，会自动登录）
@@ -358,7 +359,7 @@ async def sync_garmin_data(
             user_id=current_user.id
         )
         
-        # 同步数据
+        # 同步每日健康数据
         synced_days = 0
         failed_days = 0
         today = date.today()
@@ -372,12 +373,33 @@ async def sync_garmin_data(
                 logger.warning(f"同步 {target_date} 失败: {e}")
                 failed_days += 1
         
+        # 同步运动活动数据
+        synced_activities = 0
+        try:
+            workout_sync_service = WorkoutSyncService(
+                email=credentials["email"],
+                password=credentials["password"],
+                is_cn=credentials.get("is_cn", False),
+                user_id=current_user.id
+            )
+            result = await workout_sync_service.sync_activities(db, current_user.id, sync_request.days)
+            synced_activities = result.get("synced_count", 0)
+            logger.info(f"[用户 {current_user.id}] 运动活动同步完成，共 {synced_activities} 条")
+        except Exception as e:
+            logger.warning(f"[用户 {current_user.id}] 运动活动同步失败: {e}")
+        
         # 更新同步状态
         garmin_credential_service.update_sync_status(db, current_user.id)
         
+        message = f"同步完成：健康数据 {synced_days} 天"
+        if synced_activities > 0:
+            message += f"，运动活动 {synced_activities} 条"
+        if failed_days > 0:
+            message += f"，失败 {failed_days} 天"
+        
         return GarminSyncResponse(
             success=True,
-            message=f"同步完成：成功 {synced_days} 天，失败 {failed_days} 天",
+            message=message,
             synced_days=synced_days,
             failed_days=failed_days
         )
