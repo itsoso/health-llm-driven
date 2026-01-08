@@ -5,6 +5,7 @@ export default defineAppConfig({
     'pages/rhinitis/index',   // 鼻炎追踪
     'pages/settings/index',   // 我的
     'pages/workout/index',    // 运动训练
+    'pages/heart-rate/index', // 心率追踪
   ],
   window: {
     backgroundTextStyle: 'light',

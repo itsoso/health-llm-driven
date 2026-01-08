@@ -231,11 +231,11 @@ export default function Index() {
         {/* 心率监测 */}
         <View 
           className={`feature-card ${isLoggedIn ? 'active' : ''}`}
-          onClick={() => handleQuickNav('dashboard')}
+          onClick={() => handleNavToPage('heart-rate')}
         >
           <View className="card-header">
             <Text className="card-icon">❤️</Text>
-            <Text className="card-title">心率监测</Text>
+            <Text className="card-title">心率追踪</Text>
           </View>
           <View className="card-content">
             {isLoggedIn ? (
@@ -248,7 +248,7 @@ export default function Index() {
                   <Text className="card-status" style={{ color: hrStatus.color }}>{hrStatus.text}</Text>
                 </>
               ) : (
-                <Text className="card-desc">暂无心率数据</Text>
+                <Text className="card-desc">查看心率曲线</Text>
               )
             ) : (
               <Text className="card-desc">登录后查看</Text>
