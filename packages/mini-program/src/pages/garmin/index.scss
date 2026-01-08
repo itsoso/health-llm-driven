@@ -1,0 +1,330 @@
+.garmin-page {
+  min-height: 100vh;
+  background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding: 24px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 28px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 状态卡片
+.status-card {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 32px;
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.status-icon {
+  font-size: 56px;
+  margin-right: 24px;
+}
+
+.status-info {
+  flex: 1;
+}
+
+.status-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.status-desc {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// 已绑定区域
+.bound-section {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-label {
+  font-size: 30px;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.setting-desc {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.region-badge {
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 24px;
+  
+  &.cn {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+  }
+  
+  &.global {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+}
+
+// 同步区域
+.sync-section {
+  padding: 24px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section-title {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 20px;
+  display: block;
+}
+
+.sync-days-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.day-btn {
+  flex: 1;
+  text-align: center;
+  padding: 16px 0;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 26px;
+  transition: all 0.2s ease;
+  
+  &.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    font-weight: 600;
+  }
+}
+
+.sync-btn {
+  width: 100%;
+  height: 88px;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #ffffff;
+  font-size: 30px;
+  font-weight: 600;
+  border-radius: 16px;
+  border: none;
+  
+  &::after {
+    border: none;
+  }
+  
+  &:active {
+    opacity: 0.9;
+  }
+}
+
+// 操作按钮
+.action-row {
+  display: flex;
+  gap: 16px;
+  padding-top: 24px;
+}
+
+.action-btn {
+  flex: 1;
+  height: 80px;
+  font-size: 28px;
+  font-weight: 500;
+  border-radius: 12px;
+  border: none;
+  
+  &.edit {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+  
+  &.delete {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  
+  &::after {
+    border: none;
+  }
+}
+
+// 表单区域
+.form-section {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.form-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 28px;
+  display: block;
+}
+
+.form-item {
+  margin-bottom: 24px;
+  
+  &.switch-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.switch-info {
+  flex: 1;
+}
+
+.form-label {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 12px;
+  display: block;
+}
+
+.form-hint {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  height: 88px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 30px;
+  padding: 0 24px;
+  box-sizing: border-box;
+  
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+  }
+}
+
+// 提示框
+.tip-box {
+  display: flex;
+  align-items: flex-start;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.tip-icon {
+  font-size: 32px;
+  margin-right: 16px;
+}
+
+.tip-text {
+  flex: 1;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+}
+
+// 表单按钮
+.form-actions {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-btn {
+  flex: 1;
+  height: 88px;
+  font-size: 30px;
+  font-weight: 600;
+  border-radius: 16px;
+  border: none;
+  
+  &.test {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+  }
+  
+  &.save {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+  }
+  
+  &::after {
+    border: none;
+  }
+  
+  &:active {
+    opacity: 0.9;
+  }
+}
+
+.cancel-btn {
+  width: 100%;
+  height: 80px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  
+  &::after {
+    border: none;
+  }
+}
