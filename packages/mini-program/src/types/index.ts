@@ -6,6 +6,9 @@
 export interface WechatLoginResponse {
   access_token: string;
   token_type: string;
+  user_id?: number;
+  is_new_user?: boolean;
+  nickname?: string;
 }
 
 // Garmin 数据

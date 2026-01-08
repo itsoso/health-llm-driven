@@ -40,8 +40,11 @@ export async function wechatLogin(): Promise<WechatLoginResponse> {
     avatar_url: avatarUrl,
   });
 
-  // 4. 保存 token
+  // 4. 保存 token 和用户名
   setToken(response.access_token);
+  if (response.nickname) {
+    Taro.setStorageSync('user_name', response.nickname);
+  }
 
   return response;
 }
