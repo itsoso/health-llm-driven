@@ -1,0 +1,22 @@
+{
+  "name": "@health-app/shared",
+  "version": "1.0.0",
+  "description": "健康管理系统共享代码包",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src --ext .ts"
+  },
+  "keywords": [
+    "health",
+    "shared",
+    "types"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+
