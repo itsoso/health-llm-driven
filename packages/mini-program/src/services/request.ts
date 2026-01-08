@@ -39,6 +39,7 @@ interface RequestConfig {
   data?: any;
   header?: Record<string, string>;
   needAuth?: boolean;
+  silent?: boolean; // 静默模式，不显示错误toast
 }
 
 /**
@@ -54,7 +55,7 @@ interface ResponseData<T = any> {
  * 封装请求
  */
 export async function request<T = any>(config: RequestConfig): Promise<T> {
-  const { url, method = 'GET', data, header = {}, needAuth = true } = config;
+  const { url, method = 'GET', data, header = {}, needAuth = true, silent = false } = config;
 
   // 添加认证头
   if (needAuth) {
@@ -96,11 +97,13 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
     return responseData;
   } catch (error: any) {
     console.error('请求失败:', error);
-    Taro.showToast({
-      title: error.message || '网络请求失败',
-      icon: 'none',
-      duration: 2000,
-    });
+    if (!silent) {
+      Taro.showToast({
+        title: error.message || '网络请求失败',
+        icon: 'none',
+        duration: 2000,
+      });
+    }
     throw error;
   }
 }
@@ -118,6 +121,20 @@ export function get<T = any>(url: string, params?: Record<string, any>): Promise
     url = queryString ? `${url}?${queryString}` : url;
   }
   return request<T>({ url, method: 'GET' });
+}
+
+/**
+ * GET 请求（静默模式，不显示错误toast）
+ */
+export function getSilent<T = any>(url: string, params?: Record<string, any>): Promise<T> {
+  if (params) {
+    const queryString = Object.entries(params)
+      .filter(([_, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    url = queryString ? `${url}?${queryString}` : url;
+  }
+  return request<T>({ url, method: 'GET', silent: true });
 }
 
 /**
