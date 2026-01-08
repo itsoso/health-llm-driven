@@ -1,9 +1,9 @@
 .index-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   display: flex;
   flex-direction: column;
-  padding: 80px 40px 60px;
+  padding: 60px 32px 40px;
   box-sizing: border-box;
 
   &.loading {
@@ -13,70 +13,76 @@
   }
 }
 
+// Logo 区域
 .logo-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 80px;
-}
-
-.logo-icon {
-  font-size: 120px;
-  margin-bottom: 24px;
+  margin-bottom: 48px;
 }
 
 .logo-image {
-  width: 240px;
-  height: 240px;
-  margin-bottom: 32px;
-  border-radius: 24px;
-  background: #ffffff;
-  padding: 16px;
-  box-sizing: border-box;
+  width: 180px;
+  height: 180px;
+  margin-bottom: 24px;
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3),
+              0 0 40px rgba(79, 70, 229, 0.2);
 }
 
 .app-title {
-  font-size: 48px;
-  font-weight: 700;
+  font-size: 52px;
+  font-weight: 800;
   color: #ffffff;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  letter-spacing: 4px;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .app-subtitle {
-  font-size: 28px;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 2px;
 }
 
+// 功能介绍区域 - 2x2 网格
 .features-section {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   justify-content: space-between;
-  margin-bottom: auto;
+  margin-bottom: 48px;
 }
 
 .feature-item {
   width: 48%;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  padding: 32px 24px;
-  margin-bottom: 24px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  padding: 32px 16px;
+  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
 }
 
 .feature-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  font-size: 44px;
+  margin-bottom: 12px;
 }
 
 .feature-text {
-  font-size: 26px;
-  color: #ffffff;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.9);
   text-align: center;
+  font-weight: 500;
 }
 
+// 登录区域
 .login-section {
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -84,26 +90,43 @@
 
 .login-btn {
   width: 100%;
-  height: 96px;
-  background: #ffffff;
-  color: #667eea;
-  font-size: 32px;
+  height: 100px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  font-size: 34px;
   font-weight: 600;
-  border-radius: 48px;
+  border-radius: 50px;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
+  letter-spacing: 2px;
 
   &::after {
     border: none;
+  }
+
+  &:active {
+    transform: scale(0.98);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
   }
 }
 
 .login-tip {
   font-size: 22px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 20px;
   text-align: center;
 }
 
+// 底部装饰
+.bottom-decoration {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: linear-gradient(to top, rgba(102, 126, 234, 0.1) 0%, transparent 100%);
+  pointer-events: none;
+}
