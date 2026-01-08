@@ -2,7 +2,7 @@
  * API 服务
  */
 import Taro from '@tarojs/taro';
-import { get, post, setToken } from './request';
+import { get, post, postNoAuth, setToken } from './request';
 import { 
   API_ENDPOINTS,
   WechatLoginResponse, 
@@ -33,8 +33,8 @@ export async function wechatLogin(): Promise<WechatLoginResponse> {
     console.log('获取用户信息失败，使用默认值');
   }
 
-  // 3. 发送 code 到后端换取 token
-  const response = await post<WechatLoginResponse>(API_ENDPOINTS.AUTH.WECHAT_LOGIN, {
+  // 3. 发送 code 到后端换取 token（登录不需要认证）
+  const response = await postNoAuth<WechatLoginResponse>(API_ENDPOINTS.AUTH.WECHAT_LOGIN, {
     code: loginResult.code,
     nickname,
     avatar_url: avatarUrl,
