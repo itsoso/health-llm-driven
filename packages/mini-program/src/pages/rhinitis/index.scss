@@ -1,153 +1,357 @@
-.rhinitis-page {
+.checkin-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-  padding: 24px;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  padding: 0 20px 20px;
   box-sizing: border-box;
 
   &.loading {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
   }
 }
 
-.stats-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 24px;
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-.stat-box {
-  width: 48%;
-  background: #ffffff;
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 16px;
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// Tab 栏
+.tab-bar {
+  display: flex;
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  padding: 24px;
+  padding: 6px;
+  margin-bottom: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tab-item {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.stat-icon {
-  font-size: 48px;
-  margin-bottom: 8px;
-}
-
-.stat-value {
-  font-size: 56px;
-  font-weight: 700;
-  color: #d97706;
-}
-
-.stat-label {
-  font-size: 24px;
-  color: #6b7280;
-  margin-top: 8px;
-}
-
-.card {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.card-title {
-  font-size: 32px;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 20px;
-}
-
-.input-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.input {
-  flex: 1;
-  height: 80px;
-  background: #f3f4f6;
+  padding: 16px 0;
   border-radius: 12px;
-  padding: 0 20px;
-  font-size: 28px;
-  color: #1f2937;
-}
-
-.button-row {
-  display: flex;
-  gap: 16px;
-}
-
-.btn {
-  flex: 1;
-  height: 80px;
-  border-radius: 12px;
-  font-size: 28px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-
-  &::after {
-    border: none;
+  transition: all 0.2s ease;
+  
+  &.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
   }
 }
 
-.btn-primary {
-  background: #f59e0b;
-  color: #ffffff;
+.tab-icon {
+  font-size: 28px;
+  margin-bottom: 4px;
 }
 
-.btn-blue {
-  background: #3b82f6;
-  color: #ffffff;
-}
-
-.btn-purple {
-  background: #8b5cf6;
-  color: #ffffff;
-}
-
-.records-list {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
-}
-
-.list-title {
+.tab-text {
   font-size: 24px;
-  color: #6b7280;
-  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  
+  .active & {
+    color: #ffffff;
+    font-weight: 600;
+  }
 }
 
-.tags {
+// Tab 内容
+.tab-content {
+  padding-bottom: 20px;
+}
+
+// 已完成卡片
+.done-card {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
+}
+
+.done-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.done-items {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.tag {
+.done-item {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 10px 16px;
   font-size: 24px;
-  padding: 8px 16px;
+  color: #ffffff;
+}
+
+// 表单卡片
+.form-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
 }
 
-.tag-amber {
-  background: #fef3c7;
-  color: #d97706;
+.card-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 16px;
+  display: block;
 }
 
-.tag-blue {
-  background: #dbeafe;
-  color: #2563eb;
+.form-row {
+  display: flex;
+  gap: 16px;
+  
+  &.single {
+    .form-item {
+      flex: 0.5;
+    }
+  }
 }
 
-.tag-purple {
-  background: #ede9fe;
-  color: #7c3aed;
+.form-item {
+  flex: 1;
 }
 
+.form-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 32px;
+  color: #ffffff;
+  box-sizing: border-box;
+  
+  &.small {
+    flex: 1;
+    height: 72px;
+    font-size: 28px;
+  }
+  
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+.form-textarea {
+  width: 100%;
+  height: 160px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 26px;
+  color: #ffffff;
+  box-sizing: border-box;
+}
+
+.quick-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quick-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.7);
+  
+  &:active {
+    background: rgba(102, 126, 234, 0.3);
+    color: #ffffff;
+  }
+}
+
+// 提交按钮
+.submit-btn {
+  width: 100%;
+  height: 96px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 600;
+  border-radius: 48px;
+  border: none;
+  margin-top: 24px;
+  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
+  
+  &::after {
+    border: none;
+  }
+  
+  &:active {
+    opacity: 0.9;
+  }
+}
+
+// 统计行 (鼻炎)
+.stats-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-box {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 48px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.stat-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 4px;
+}
+
+// 输入行
+.input-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.add-btn {
+  height: 72px;
+  padding: 0 24px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: none;
+  flex-shrink: 0;
+  
+  &::after {
+    border: none;
+  }
+}
+
+// 按钮行
+.button-row {
+  display: flex;
+  gap: 16px;
+}
+
+.action-btn {
+  flex: 1;
+  height: 88px;
+  font-size: 28px;
+  font-weight: 600;
+  border-radius: 16px;
+  border: none;
+  color: #ffffff;
+  
+  &::after {
+    border: none;
+  }
+  
+  &.blue {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  }
+  
+  &.purple {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  }
+}
+
+// 记录列表
+.records-list {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.list-title {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+  display: block;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag {
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 22px;
+  
+  &.tag-amber {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  
+  &.tag-blue {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+  
+  &.tag-purple {
+    background: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+  }
+}
+
+.bottom-space {
+  height: 40px;
+}

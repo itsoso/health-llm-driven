@@ -33,7 +33,7 @@ export default defineAppConfig({
       },
       {
         pagePath: 'pages/rhinitis/index',
-        text: '鼻炎',
+        text: '打卡',
         iconPath: 'assets/icons/nose.png',
         selectedIconPath: 'assets/icons/nose-active.png',
       },

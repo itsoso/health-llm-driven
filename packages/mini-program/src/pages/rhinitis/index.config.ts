@@ -1,5 +1,6 @@
 export default definePageConfig({
-  navigationBarTitleText: '鼻炎追踪',
-  navigationBarBackgroundColor: '#fef3c7',
+  navigationBarTitleText: '每日打卡',
+  navigationBarBackgroundColor: '#1a1a2e',
+  navigationBarTextStyle: 'white',
 });
 

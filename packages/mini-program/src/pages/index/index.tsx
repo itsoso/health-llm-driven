@@ -256,14 +256,14 @@ export default function Index() {
           </View>
         </View>
 
-        {/* 鼻炎追踪 */}
+        {/* 每日打卡 */}
         <View 
           className={`feature-card ${isLoggedIn ? 'active' : ''}`}
           onClick={() => handleQuickNav('rhinitis')}
         >
           <View className="card-header">
-            <Text className="card-icon">🤧</Text>
-            <Text className="card-title">鼻炎追踪</Text>
+            <Text className="card-icon">✅</Text>
+            <Text className="card-title">每日打卡</Text>
           </View>
           <View className="card-content">
             {isLoggedIn ? (
@@ -274,7 +274,7 @@ export default function Index() {
                   <View className={`status-badge ${rhinitisStatus.done ? 'done' : 'pending'}`}>
                     <Text>{rhinitisStatus.done ? '✓' : '○'}</Text>
                   </View>
-                  <Text className="card-desc">{rhinitisStatus.text}</Text>
+                  <Text className="card-desc">{rhinitisStatus.done ? '今日已打卡' : '去打卡'}</Text>
                 </>
               )
             ) : (
