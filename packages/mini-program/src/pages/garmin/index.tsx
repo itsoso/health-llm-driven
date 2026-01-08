@@ -126,7 +126,8 @@ export default function Garmin() {
     setSyncing(true);
     try {
       Taro.showLoading({ title: `同步最近${syncDays}天...` });
-      await post(`/garmin-connect/sync?days=${syncDays}`);
+      // 使用 /auth/garmin/sync 接口，传入 { days: N }
+      await post('/auth/garmin/sync', { days: syncDays });
       Taro.hideLoading();
       Taro.showToast({ title: '同步完成 ✓', icon: 'success' });
       loadCredential();
