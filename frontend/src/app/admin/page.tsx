@@ -73,6 +73,11 @@ interface SyncResult {
   }>;
 }
 
+interface ClearCacheResult {
+  message: string;
+  deleted_count: number;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -216,6 +221,39 @@ export default function AdminPage() {
     },
   });
 
+  // 清理用户缓存
+  const clearUserCacheMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const res = await api.delete(`/admin/users/${userId}/cache`);
+      return res.data as ClearCacheResult;
+    },
+    onSuccess: (data) => {
+      alert(`${data.message}（删除 ${data.deleted_count} 条记录）`);
+    },
+  });
+
+  // 清理所有无数据缓存
+  const clearNoDataCacheMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.delete('/admin/cache/no-data');
+      return res.data as ClearCacheResult;
+    },
+    onSuccess: (data) => {
+      alert(`${data.message}（删除 ${data.deleted_count} 条记录）`);
+    },
+  });
+
+  // 清理所有缓存
+  const clearAllCacheMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.delete('/admin/cache/all');
+      return res.data as ClearCacheResult;
+    },
+    onSuccess: (data) => {
+      alert(`${data.message}（删除 ${data.deleted_count} 条记录）`);
+    },
+  });
+
   // 加载状态
   if (authLoading || !isAuthenticated || !user?.is_admin) {
     return (
@@ -283,6 +321,36 @@ export default function AdminPage() {
         {/* 用户管理 Tab */}
         {activeTab === 'users' && (
           <>
+            {/* 缓存管理 */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 mb-6 border border-white/20">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">🗑️ 缓存管理</h3>
+                  <p className="text-purple-200 text-sm">清理每日AI建议缓存，强制重新生成</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => clearNoDataCacheMutation.mutate()}
+                    disabled={clearNoDataCacheMutation.isPending}
+                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 text-sm"
+                  >
+                    {clearNoDataCacheMutation.isPending ? '清理中...' : '清理无数据缓存'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('确定要清理所有用户的缓存吗？这将强制所有用户重新生成AI建议。')) {
+                        clearAllCacheMutation.mutate();
+                      }
+                    }}
+                    disabled={clearAllCacheMutation.isPending}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 text-sm"
+                  >
+                    {clearAllCacheMutation.isPending ? '清理中...' : '清理全部缓存'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* 统计卡片 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
@@ -443,6 +511,20 @@ export default function AdminPage() {
                             title={u.is_active ? '禁用用户' : '启用用户'}
                           >
                             {u.is_active ? '🔓' : '🔒'}
+                          </button>
+                          
+                          {/* 清理缓存 */}
+                          <button
+                            onClick={() => {
+                              if (confirm(`确定清理用户 ${u.name} 的缓存吗？`)) {
+                                clearUserCacheMutation.mutate(u.id);
+                              }
+                            }}
+                            disabled={clearUserCacheMutation.isPending}
+                            className="p-1.5 rounded transition-colors text-orange-400 hover:bg-orange-500/20"
+                            title="清理缓存"
+                          >
+                            🧹
                           </button>
                           
                           {/* 删除 */}

@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { get, post, put } from '../../services/request';
+import { get, post, put, del } from '../../services/request';
 import './index.scss';
 
 interface SystemStats {
@@ -36,6 +36,7 @@ export default function Admin() {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
 
   useEffect(() => {
     checkAdmin();
@@ -130,6 +131,84 @@ export default function Admin() {
     });
   };
 
+  // 清理无数据缓存
+  const handleClearNoDataCache = async () => {
+    Taro.showModal({
+      title: '清理缓存',
+      content: '确定清理所有"无数据"状态的缓存？这将使受影响的用户重新生成AI建议。',
+      success: async (res) => {
+        if (res.confirm) {
+          setClearingCache(true);
+          try {
+            Taro.showLoading({ title: '清理中...' });
+            const result = await del<{ message: string; deleted_count: number }>('/admin/cache/no-data');
+            Taro.hideLoading();
+            Taro.showToast({ 
+              title: `已清理 ${result.deleted_count} 条`, 
+              icon: 'success' 
+            });
+          } catch (error) {
+            Taro.hideLoading();
+            Taro.showToast({ title: '清理失败', icon: 'none' });
+          } finally {
+            setClearingCache(false);
+          }
+        }
+      },
+    });
+  };
+
+  // 清理所有缓存
+  const handleClearAllCache = async () => {
+    Taro.showModal({
+      title: '清理全部缓存',
+      content: '⚠️ 确定清理所有用户的缓存？这将强制所有用户重新生成AI建议。',
+      success: async (res) => {
+        if (res.confirm) {
+          setClearingCache(true);
+          try {
+            Taro.showLoading({ title: '清理中...' });
+            const result = await del<{ message: string; deleted_count: number }>('/admin/cache/all');
+            Taro.hideLoading();
+            Taro.showToast({ 
+              title: `已清理 ${result.deleted_count} 条`, 
+              icon: 'success' 
+            });
+          } catch (error) {
+            Taro.hideLoading();
+            Taro.showToast({ title: '清理失败', icon: 'none' });
+          } finally {
+            setClearingCache(false);
+          }
+        }
+      },
+    });
+  };
+
+  // 清理单个用户缓存
+  const handleClearUserCache = async (userId: number, userName: string) => {
+    Taro.showModal({
+      title: '清理用户缓存',
+      content: `确定清理用户 ${userName} 的缓存？`,
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            Taro.showLoading({ title: '清理中...' });
+            const result = await del<{ message: string; deleted_count: number }>(`/admin/users/${userId}/cache`);
+            Taro.hideLoading();
+            Taro.showToast({ 
+              title: `已清理 ${result.deleted_count} 条`, 
+              icon: 'success' 
+            });
+          } catch (error) {
+            Taro.hideLoading();
+            Taro.showToast({ title: '清理失败', icon: 'none' });
+          }
+        }
+      },
+    });
+  };
+
   if (loading) {
     return (
       <View className="admin-page loading">
@@ -210,6 +289,22 @@ export default function Admin() {
             <Text className="action-icon">📊</Text>
             <Text className="action-text">刷新统计</Text>
           </Button>
+          <Button 
+            className="action-card warning"
+            onClick={handleClearNoDataCache}
+            loading={clearingCache}
+          >
+            <Text className="action-icon">🧹</Text>
+            <Text className="action-text">清理无效缓存</Text>
+          </Button>
+          <Button 
+            className="action-card danger"
+            onClick={handleClearAllCache}
+            loading={clearingCache}
+          >
+            <Text className="action-icon">🗑️</Text>
+            <Text className="action-text">清理全部缓存</Text>
+          </Button>
         </View>
       </View>
 
@@ -252,6 +347,12 @@ export default function Admin() {
                   onClick={() => toggleActive(user.id, user.is_active)}
                 >
                   {user.is_active ? '禁用' : '启用'}
+                </Button>
+                <Button 
+                  className="user-action-btn warning"
+                  onClick={() => handleClearUserCache(user.id, user.name || user.username)}
+                >
+                  清理缓存
                 </Button>
               </View>
             </View>
