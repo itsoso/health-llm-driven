@@ -74,12 +74,12 @@ export default function Index() {
           <Text className="feature-text">AI 健康建议</Text>
         </View>
         <View className="feature-item">
-          <Text className="feature-icon">🤧</Text>
-          <Text className="feature-text">鼻炎症状追踪</Text>
-        </View>
-        <View className="feature-item">
           <Text className="feature-icon">❤️</Text>
           <Text className="feature-text">心率监测分析</Text>
+        </View>
+        <View className="feature-item">
+          <Text className="feature-icon">🤧</Text>
+          <Text className="feature-text">鼻炎症状追踪</Text>
         </View>
         <View className="feature-item">
           <Text className="feature-icon">📊</Text>
