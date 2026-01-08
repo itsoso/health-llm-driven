@@ -1,5 +1,5 @@
 /**
- * 每日打卡页 - 集成运动锻炼 + 鼻炎追踪
+ * 每日打卡页 - 运动锻炼 + 鼻炎追踪
  */
 import { useState, useEffect } from 'react';
 import { View, Text, Input, Button, Textarea } from '@tarojs/components';
@@ -14,8 +14,7 @@ interface CheckinRecord {
   running_distance?: number | null;
   running_duration?: number | null;
   squats_count?: number | null;
-  tai_chi_duration?: number | null;
-  ba_duan_jin_duration?: number | null;
+  leg_raises_count?: number | null;  // 踢腿次数
   // 鼻炎追踪
   sneeze_count?: number | null;
   sneeze_times?: { time: string; count: number }[];
@@ -35,14 +34,9 @@ export default function Checkin() {
   const [activeTab, setActiveTab] = useState<TabType>('exercise');
   
   // 运动表单
-  const [exerciseForm, setExerciseForm] = useState({
-    running_distance: '',
-    running_duration: '',
-    squats_count: '',
-    tai_chi_duration: '',
-    ba_duan_jin_duration: '',
-    notes: '',
-  });
+  const [runningDistance, setRunningDistance] = useState('');
+  const [runningDuration, setRunningDuration] = useState('');
+  const [squatsCount, setSquatsCount] = useState('');
 
   // 鼻炎表单
   const [sneezeCount, setSneezeCount] = useState(0);
@@ -60,16 +54,11 @@ export default function Checkin() {
     try {
       const data = await get<CheckinRecord>('/checkin/me/today').catch(() => null);
       setRecord(data);
-      // 如果有已保存的数据，填充表单
+      // 填充表单
       if (data) {
-        setExerciseForm({
-          running_distance: data.running_distance?.toString() || '',
-          running_duration: data.running_duration?.toString() || '',
-          squats_count: data.squats_count?.toString() || '',
-          tai_chi_duration: data.tai_chi_duration?.toString() || '',
-          ba_duan_jin_duration: data.ba_duan_jin_duration?.toString() || '',
-          notes: data.notes || '',
-        });
+        setRunningDistance(data.running_distance?.toString() || '');
+        setRunningDuration(data.running_duration?.toString() || '');
+        setSquatsCount(data.squats_count?.toString() || '');
       }
     } catch (error) {
       console.error('加载数据失败:', error);
@@ -78,21 +67,62 @@ export default function Checkin() {
     }
   };
 
-  // 保存运动打卡
-  const handleSaveExercise = async () => {
+  const today = new Date().toISOString().split('T')[0];
+
+  // 保存跑步
+  const handleSaveRunning = async () => {
+    if (!runningDistance && !runningDuration) {
+      Taro.showToast({ title: '请输入跑步数据', icon: 'none' });
+      return;
+    }
     setSaving(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
       await post('/checkin/', {
         checkin_date: today,
-        running_distance: exerciseForm.running_distance ? parseFloat(exerciseForm.running_distance) : null,
-        running_duration: exerciseForm.running_duration ? parseInt(exerciseForm.running_duration) : null,
-        squats_count: exerciseForm.squats_count ? parseInt(exerciseForm.squats_count) : null,
-        tai_chi_duration: exerciseForm.tai_chi_duration ? parseInt(exerciseForm.tai_chi_duration) : null,
-        ba_duan_jin_duration: exerciseForm.ba_duan_jin_duration ? parseInt(exerciseForm.ba_duan_jin_duration) : null,
-        notes: exerciseForm.notes || null,
+        running_distance: runningDistance ? parseFloat(runningDistance) : null,
+        running_duration: runningDuration ? parseInt(runningDuration) : null,
       });
-      Taro.showToast({ title: '保存成功', icon: 'success' });
+      Taro.showToast({ title: '跑步打卡成功 ✓', icon: 'success' });
+      loadData();
+    } catch (error) {
+      Taro.showToast({ title: '保存失败', icon: 'none' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 保存深蹲
+  const handleSaveSquats = async () => {
+    if (!squatsCount) {
+      Taro.showToast({ title: '请输入深蹲次数', icon: 'none' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await post('/checkin/', {
+        checkin_date: today,
+        squats_count: parseInt(squatsCount),
+      });
+      Taro.showToast({ title: '深蹲打卡成功 ✓', icon: 'success' });
+      loadData();
+    } catch (error) {
+      Taro.showToast({ title: '保存失败', icon: 'none' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 保存踢腿
+  const handleSaveLegRaises = async (count: number) => {
+    setSaving(true);
+    try {
+      // 累加踢腿次数
+      const currentCount = record?.leg_raises_count || 0;
+      await post('/checkin/', {
+        checkin_date: today,
+        leg_raises_count: currentCount + count,
+      });
+      Taro.showToast({ title: `踢腿+${count}次 ✓`, icon: 'success' });
       loadData();
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
@@ -110,7 +140,6 @@ export default function Checkin() {
 
     setSaving(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
       const currentTimes = record?.sneeze_times || [];
       const newTimes = [...currentTimes, { time: sneezeTime, count: sneezeCount }];
       const totalCount = newTimes.reduce((sum, t) => sum + t.count, 0);
@@ -135,7 +164,6 @@ export default function Checkin() {
   const handleAddNasalWash = async (type: 'wash' | 'soak') => {
     setSaving(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
       const now = new Date();
       const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       const currentTimes = record?.nasal_wash_times || [];
@@ -156,11 +184,6 @@ export default function Checkin() {
     }
   };
 
-  // 快捷输入
-  const quickInput = (field: keyof typeof exerciseForm, value: string) => {
-    setExerciseForm(prev => ({ ...prev, [field]: value }));
-  };
-
   if (loading) {
     return (
       <View className="checkin-page loading">
@@ -172,9 +195,6 @@ export default function Checkin() {
 
   const sneezeTimes = record?.sneeze_times || [];
   const nasalWashTimes = record?.nasal_wash_times || [];
-  const hasExerciseRecord = record?.running_distance || record?.running_duration || 
-                           record?.squats_count || record?.tai_chi_duration || 
-                           record?.ba_duan_jin_duration;
 
   return (
     <View className="checkin-page">
@@ -200,153 +220,138 @@ export default function Checkin() {
       {activeTab === 'exercise' && (
         <View className="tab-content">
           {/* 今日完成统计 */}
-          {hasExerciseRecord && (
-            <View className="done-card">
-              <Text className="done-title">✅ 今日已打卡</Text>
-              <View className="done-items">
-                {record?.running_distance && (
-                  <View className="done-item">
-                    <Text>🏃 跑步 {record.running_distance}km</Text>
-                  </View>
-                )}
-                {record?.running_duration && (
-                  <View className="done-item">
-                    <Text>⏱️ {record.running_duration}分钟</Text>
-                  </View>
-                )}
-                {record?.squats_count && (
-                  <View className="done-item">
-                    <Text>🏋️ 深蹲 {record.squats_count}次</Text>
-                  </View>
-                )}
-                {record?.tai_chi_duration && (
-                  <View className="done-item">
-                    <Text>🥋 太极拳 {record.tai_chi_duration}分钟</Text>
-                  </View>
-                )}
-                {record?.ba_duan_jin_duration && (
-                  <View className="done-item">
-                    <Text>🧘 八段锦 {record.ba_duan_jin_duration}分钟</Text>
-                  </View>
-                )}
+          <View className="today-summary">
+            <Text className="summary-title">📊 今日完成</Text>
+            <View className="summary-items">
+              <View className={`summary-item ${record?.running_distance ? 'done' : ''}`}>
+                <Text className="item-icon">🏃</Text>
+                <Text className="item-value">
+                  {record?.running_distance ? `${record.running_distance}km` : '--'}
+                </Text>
+              </View>
+              <View className={`summary-item ${record?.squats_count ? 'done' : ''}`}>
+                <Text className="item-icon">🏋️</Text>
+                <Text className="item-value">
+                  {record?.squats_count ? `${record.squats_count}次` : '--'}
+                </Text>
+              </View>
+              <View className={`summary-item ${record?.leg_raises_count ? 'done' : ''}`}>
+                <Text className="item-icon">🦵</Text>
+                <Text className="item-value">
+                  {record?.leg_raises_count ? `${record.leg_raises_count}次` : '--'}
+                </Text>
               </View>
             </View>
-          )}
+          </View>
 
           {/* 跑步 */}
-          <View className="form-card">
-            <Text className="card-title">🏃 跑步</Text>
+          <View className="exercise-card">
+            <View className="card-header">
+              <Text className="card-icon">🏃</Text>
+              <Text className="card-title">跑步</Text>
+              {record?.running_distance && <Text className="done-badge">✓</Text>}
+            </View>
             <View className="form-row">
               <View className="form-item">
                 <Text className="form-label">距离 (km)</Text>
                 <Input
                   type="digit"
-                  value={exerciseForm.running_distance}
-                  onInput={(e) => setExerciseForm({...exerciseForm, running_distance: e.detail.value})}
+                  value={runningDistance}
+                  onInput={(e) => setRunningDistance(e.detail.value)}
                   placeholder="0.0"
                   className="form-input"
                 />
                 <View className="quick-btns">
-                  <Text className="quick-btn" onClick={() => quickInput('running_distance', '3')}>3km</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('running_distance', '5')}>5km</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('running_distance', '10')}>10km</Text>
+                  <Text className="quick-btn" onClick={() => setRunningDistance('3')}>3</Text>
+                  <Text className="quick-btn" onClick={() => setRunningDistance('5')}>5</Text>
+                  <Text className="quick-btn" onClick={() => setRunningDistance('10')}>10</Text>
                 </View>
               </View>
               <View className="form-item">
                 <Text className="form-label">时长 (分钟)</Text>
                 <Input
                   type="number"
-                  value={exerciseForm.running_duration}
-                  onInput={(e) => setExerciseForm({...exerciseForm, running_duration: e.detail.value})}
+                  value={runningDuration}
+                  onInput={(e) => setRunningDuration(e.detail.value)}
                   placeholder="0"
                   className="form-input"
                 />
                 <View className="quick-btns">
-                  <Text className="quick-btn" onClick={() => quickInput('running_duration', '20')}>20</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('running_duration', '30')}>30</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('running_duration', '45')}>45</Text>
+                  <Text className="quick-btn" onClick={() => setRunningDuration('20')}>20</Text>
+                  <Text className="quick-btn" onClick={() => setRunningDuration('30')}>30</Text>
+                  <Text className="quick-btn" onClick={() => setRunningDuration('45')}>45</Text>
                 </View>
               </View>
             </View>
+            <Button 
+              className="save-btn green"
+              onClick={handleSaveRunning}
+              loading={saving}
+            >
+              保存跑步
+            </Button>
           </View>
 
-          {/* 力量训练 */}
-          <View className="form-card">
-            <Text className="card-title">🏋️ 深蹲</Text>
+          {/* 深蹲 */}
+          <View className="exercise-card">
+            <View className="card-header">
+              <Text className="card-icon">🏋️</Text>
+              <Text className="card-title">深蹲</Text>
+              {record?.squats_count && <Text className="done-badge">✓</Text>}
+            </View>
             <View className="form-row single">
               <View className="form-item">
                 <Text className="form-label">次数</Text>
                 <Input
                   type="number"
-                  value={exerciseForm.squats_count}
-                  onInput={(e) => setExerciseForm({...exerciseForm, squats_count: e.detail.value})}
+                  value={squatsCount}
+                  onInput={(e) => setSquatsCount(e.detail.value)}
                   placeholder="0"
                   className="form-input"
                 />
                 <View className="quick-btns">
-                  <Text className="quick-btn" onClick={() => quickInput('squats_count', '30')}>30</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('squats_count', '50')}>50</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('squats_count', '100')}>100</Text>
+                  <Text className="quick-btn" onClick={() => setSquatsCount('30')}>30</Text>
+                  <Text className="quick-btn" onClick={() => setSquatsCount('50')}>50</Text>
+                  <Text className="quick-btn" onClick={() => setSquatsCount('100')}>100</Text>
                 </View>
               </View>
             </View>
+            <Button 
+              className="save-btn blue"
+              onClick={handleSaveSquats}
+              loading={saving}
+            >
+              保存深蹲
+            </Button>
           </View>
 
-          {/* 传统养生 */}
-          <View className="form-card">
-            <Text className="card-title">🥋 传统养生</Text>
-            <View className="form-row">
-              <View className="form-item">
-                <Text className="form-label">太极拳 (分钟)</Text>
-                <Input
-                  type="number"
-                  value={exerciseForm.tai_chi_duration}
-                  onInput={(e) => setExerciseForm({...exerciseForm, tai_chi_duration: e.detail.value})}
-                  placeholder="0"
-                  className="form-input"
-                />
-                <View className="quick-btns">
-                  <Text className="quick-btn" onClick={() => quickInput('tai_chi_duration', '15')}>15</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('tai_chi_duration', '30')}>30</Text>
-                </View>
-              </View>
-              <View className="form-item">
-                <Text className="form-label">八段锦 (分钟)</Text>
-                <Input
-                  type="number"
-                  value={exerciseForm.ba_duan_jin_duration}
-                  onInput={(e) => setExerciseForm({...exerciseForm, ba_duan_jin_duration: e.detail.value})}
-                  placeholder="0"
-                  className="form-input"
-                />
-                <View className="quick-btns">
-                  <Text className="quick-btn" onClick={() => quickInput('ba_duan_jin_duration', '10')}>10</Text>
-                  <Text className="quick-btn" onClick={() => quickInput('ba_duan_jin_duration', '20')}>20</Text>
-                </View>
-              </View>
+          {/* 踢腿 */}
+          <View className="exercise-card">
+            <View className="card-header">
+              <Text className="card-icon">🦵</Text>
+              <Text className="card-title">踢腿</Text>
+              {record?.leg_raises_count && (
+                <Text className="count-badge">{record.leg_raises_count}次</Text>
+              )}
+            </View>
+            <Text className="card-desc">点击快速记录踢腿次数（累加）</Text>
+            <View className="quick-action-row">
+              <Button 
+                className="quick-action-btn orange"
+                onClick={() => handleSaveLegRaises(40)}
+                loading={saving}
+              >
+                +40 次
+              </Button>
+              <Button 
+                className="quick-action-btn purple"
+                onClick={() => handleSaveLegRaises(80)}
+                loading={saving}
+              >
+                +80 次
+              </Button>
             </View>
           </View>
-
-          {/* 备注 */}
-          <View className="form-card">
-            <Text className="card-title">📝 备注</Text>
-            <Textarea
-              value={exerciseForm.notes}
-              onInput={(e) => setExerciseForm({...exerciseForm, notes: e.detail.value})}
-              placeholder="今天的感受..."
-              className="form-textarea"
-              maxlength={200}
-            />
-          </View>
-
-          {/* 提交按钮 */}
-          <Button 
-            className="submit-btn"
-            onClick={handleSaveExercise}
-            loading={saving}
-          >
-            {saving ? '保存中...' : '✓ 保存打卡'}
-          </Button>
         </View>
       )}
 
