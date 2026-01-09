@@ -131,38 +131,68 @@ class GarminConnectService:
             
             result = self.client.login()
             
+            logger.debug(f"{prefix} Garmin login() 返回结果: type={type(result)}, value={result}")
+            
             # 检查是否需要 MFA
-            # 如果返回的是 tuple 且第一个元素是 dict 包含 client_state，说明需要 MFA
+            # garth 库在需要 MFA 时返回 ("needs_mfa", {client_state})
             if result and isinstance(result, tuple) and len(result) >= 2:
-                token1, token2 = result
-                # 如果没有获取到完整的 token，可能需要 MFA
-                if not self.client.garth.oauth2_token:
-                    # 尝试获取 client_state
-                    client_state = getattr(self.client.garth, '_client_state', None)
-                    if client_state:
-                        self._mfa_client_state = client_state
-                        server_type = "中国版" if self.is_cn else "国际版"
-                        logger.info(f"{prefix} Garmin {server_type} 需要两步验证")
-                        return {
-                            "success": False,
-                            "mfa_required": True,
-                            "client_state": client_state,
-                            "message": "🔐 需要两步验证！请输入您 Garmin 账号绑定的验证器应用中的验证码。"
-                        }
+                first_element = result[0]
+                second_element = result[1]
+                
+                # 检查是否是 MFA 需要的返回格式
+                if first_element == "needs_mfa" and isinstance(second_element, dict):
+                    client_state = second_element
+                    self._mfa_client_state = client_state
+                    server_type = "中国版" if self.is_cn else "国际版"
+                    logger.info(f"{prefix} Garmin {server_type} 需要两步验证")
+                    return {
+                        "success": False,
+                        "mfa_required": True,
+                        "client_state": client_state,
+                        "message": "🔐 需要两步验证！请输入您 Garmin 账号绑定的验证器应用中的验证码。"
+                    }
+                
+                # 正常登录成功返回 (oauth1_token, oauth2_token)
+                if self.client.garth.oauth2_token:
+                    self._authenticated = True
+                    server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+                    logger.info(f"{prefix} Garmin Connect {server_type} 登录成功")
+                    return {
+                        "success": True,
+                        "mfa_required": False,
+                        "message": "✅ 密码正确！Garmin账号连接成功，可以保存凭证了。"
+                    }
+                else:
+                    # 没有 oauth2_token，可能是其他情况
+                    logger.warning(f"{prefix} 登录返回了 tuple 但没有 oauth2_token")
+                    return {
+                        "success": False,
+                        "mfa_required": False,
+                        "message": "❌ 登录异常，请重试"
+                    }
             
-            # 登录成功
-            self._authenticated = True
-            server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-            logger.info(f"{prefix} Garmin Connect {server_type} 登录成功")
+            # 其他情况：登录成功（某些情况下可能不返回 tuple）
+            if self.client.garth.oauth2_token:
+                self._authenticated = True
+                server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+                logger.info(f"{prefix} Garmin Connect {server_type} 登录成功")
+                return {
+                    "success": True,
+                    "mfa_required": False,
+                    "message": "✅ 密码正确！Garmin账号连接成功，可以保存凭证了。"
+                }
             
+            # 无法确定状态
+            logger.warning(f"{prefix} 登录结果不明确: {result}")
             return {
-                "success": True,
+                "success": False,
                 "mfa_required": False,
-                "message": "✅ 密码正确！Garmin账号连接成功，可以保存凭证了。"
+                "message": "❌ 登录状态不明确，请重试"
             }
             
         except Exception as e:
             error_msg = str(e).lower()
+            logger.debug(f"{prefix} 登录异常: {e}")
             
             # 检查是否需要 MFA（某些版本的库可能通过异常表示需要 MFA）
             if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
