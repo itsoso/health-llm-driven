@@ -9,6 +9,7 @@ export default defineAppConfig({
     'pages/heart-rate/index',    // 心率追踪
     'pages/garmin/index',        // Garmin绑定
     'pages/garmin-data/index',   // Garmin数据列表
+    'pages/huawei/index',        // 华为手表绑定
     'pages/admin/index',         // 管理后台
   ],
   window: {
