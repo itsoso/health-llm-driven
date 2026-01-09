@@ -71,7 +71,14 @@ class AuthService:
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return payload
-        except JWTError:
+        except jwt.ExpiredSignatureError:
+            logger.warning("[Auth] Token已过期")
+            return None
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"[Auth] Token无效: {e}")
+            return None
+        except JWTError as e:
+            logger.warning(f"[Auth] JWT错误: {e}")
             return None
     
     @staticmethod
