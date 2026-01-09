@@ -24,12 +24,21 @@ interface GarminCredential {
   credentials_valid: boolean;
 }
 
+interface DeviceCredential {
+  id: number;
+  device_type: string;
+  is_valid: boolean;
+  sync_enabled: boolean;
+  last_sync_at: string | null;
+}
+
 export default function Settings() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('自律靠AI用户');
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasGarmin, setHasGarmin] = useState(false);
   const [garminStatus, setGarminStatus] = useState<'none' | 'valid' | 'invalid'>('none');
+  const [huaweiStatus, setHuaweiStatus] = useState<'none' | 'valid' | 'invalid'>('none');
 
   useEffect(() => {
     const token = getToken();
@@ -38,6 +47,7 @@ export default function Settings() {
     if (token) {
       loadUserInfo();
       loadGarminStatus();
+      loadHuaweiStatus();
     }
     
     // 从本地存储获取用户名（备用）
@@ -66,6 +76,35 @@ export default function Settings() {
     } catch (error) {
       setHasGarmin(false);
       setGarminStatus('none');
+    }
+  };
+
+  const loadHuaweiStatus = async () => {
+    try {
+      const credential = await get<DeviceCredential>('/devices/me/huawei');
+      setHuaweiStatus(credential.is_valid ? 'valid' : 'invalid');
+    } catch (error) {
+      setHuaweiStatus('none');
+    }
+  };
+
+  const handleGoToHuawei = () => {
+    Taro.navigateTo({ url: '/pages/huawei/index' });
+  };
+
+  const getHuaweiStatusText = () => {
+    switch (huaweiStatus) {
+      case 'valid': return '已绑定 ✓';
+      case 'invalid': return '授权失效';
+      case 'none': return '未绑定';
+    }
+  };
+
+  const getHuaweiStatusClass = () => {
+    switch (huaweiStatus) {
+      case 'valid': return 'status-success';
+      case 'invalid': return 'status-warning';
+      case 'none': return 'status-none';
     }
   };
 
@@ -140,6 +179,15 @@ export default function Settings() {
           <Text className="menu-text">Garmin 绑定</Text>
           <Text className={`menu-status ${getGarminStatusClass()}`}>
             {getGarminStatusText()}
+          </Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
+
+        <View className="menu-item" onClick={handleGoToHuawei}>
+          <Text className="menu-icon">📱</Text>
+          <Text className="menu-text">华为手表</Text>
+          <Text className={`menu-status ${getHuaweiStatusClass()}`}>
+            {getHuaweiStatusText()}
           </Text>
           <Text className="menu-arrow">›</Text>
         </View>

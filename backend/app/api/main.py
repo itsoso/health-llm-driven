@@ -24,6 +24,7 @@ from app.api import (
     heart_rate,
     workout,
     wechat,
+    devices,  # 多设备管理
 )
 
 api_router = APIRouter()
@@ -55,4 +56,5 @@ api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
 api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
+api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  # 多设备管理
 

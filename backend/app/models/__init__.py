@@ -19,6 +19,7 @@ from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
+from app.models.device_credential import DeviceCredential
 
 __all__ = [
     "User",
@@ -43,5 +44,6 @@ __all__ = [
     "HabitRecord",
     "WeightRecord",
     "BloodPressureRecord",
+    "DeviceCredential",
 ]
 
