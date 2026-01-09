@@ -96,6 +96,29 @@ class GarminSyncResponse(BaseModel):
     failed_days: int = 0
 
 
+class GarminTestConnectionResponse(BaseModel):
+    """Garmin测试连接响应"""
+    success: bool
+    mfa_required: bool = False
+    message: str
+    client_state: Optional[dict] = None  # MFA 时返回的客户端状态
+
+
+class GarminMFAVerifyRequest(BaseModel):
+    """Garmin MFA验证请求"""
+    garmin_email: str = Field(..., description="Garmin账号邮箱")
+    garmin_password: str = Field(..., description="Garmin账号密码")
+    is_cn: bool = Field(default=False, description="是否使用中国服务器")
+    mfa_code: str = Field(..., min_length=6, max_length=6, description="6位MFA验证码")
+    client_state: dict = Field(..., description="测试连接时返回的客户端状态")
+
+
+class GarminMFAVerifyResponse(BaseModel):
+    """Garmin MFA验证响应"""
+    success: bool
+    message: str
+
+
 # 更新Token模型以避免循环引用
 Token.model_rebuild()
 

@@ -22,6 +22,13 @@ class GarminAuthenticationError(Exception):
     pass
 
 
+class GarminMFARequiredError(Exception):
+    """Garmin需要两步验证"""
+    def __init__(self, message: str, client_state: dict):
+        super().__init__(message)
+        self.client_state = client_state
+
+
 class GarminConnectService:
     """
     Garmin Connect数据收集服务
@@ -58,6 +65,7 @@ class GarminConnectService:
         self.user_id = user_id
         self.client: Optional[Garmin] = None
         self._authenticated = False
+        self._mfa_client_state = None  # 用于存储 MFA 状态
     
     def _log_prefix(self) -> str:
         """生成日志前缀，包含用户信息"""
@@ -98,6 +106,149 @@ class GarminConnectService:
                     raise GarminAuthenticationError(f"Garmin登录失败: {e}") from e
                 logger.error(f"{prefix} Garmin认证异常: {e}")
                 raise
+    
+    def test_connection_with_mfa(self) -> Dict[str, Any]:
+        """
+        测试连接，支持两步验证（MFA）
+        
+        Returns:
+            dict: {
+                "success": bool,
+                "mfa_required": bool,  # 是否需要 MFA
+                "client_state": dict,  # 如果需要 MFA，返回客户端状态用于恢复登录
+                "message": str
+            }
+        """
+        prefix = self._log_prefix()
+        try:
+            # 创建支持 MFA 提前返回的客户端
+            self.client = Garmin(
+                self.email, 
+                self.password, 
+                is_cn=self.is_cn,
+                return_on_mfa=True  # 需要 MFA 时提前返回
+            )
+            
+            result = self.client.login()
+            
+            # 检查是否需要 MFA
+            # 如果返回的是 tuple 且第一个元素是 dict 包含 client_state，说明需要 MFA
+            if result and isinstance(result, tuple) and len(result) >= 2:
+                token1, token2 = result
+                # 如果没有获取到完整的 token，可能需要 MFA
+                if not self.client.garth.oauth2_token:
+                    # 尝试获取 client_state
+                    client_state = getattr(self.client.garth, '_client_state', None)
+                    if client_state:
+                        self._mfa_client_state = client_state
+                        server_type = "中国版" if self.is_cn else "国际版"
+                        logger.info(f"{prefix} Garmin {server_type} 需要两步验证")
+                        return {
+                            "success": False,
+                            "mfa_required": True,
+                            "client_state": client_state,
+                            "message": "🔐 需要两步验证！请输入您 Garmin 账号绑定的验证器应用中的验证码。"
+                        }
+            
+            # 登录成功
+            self._authenticated = True
+            server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+            logger.info(f"{prefix} Garmin Connect {server_type} 登录成功")
+            
+            return {
+                "success": True,
+                "mfa_required": False,
+                "message": "✅ 密码正确！Garmin账号连接成功，可以保存凭证了。"
+            }
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # 检查是否需要 MFA（某些版本的库可能通过异常表示需要 MFA）
+            if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
+                # 获取 client_state
+                client_state = None
+                if self.client and hasattr(self.client, 'garth'):
+                    client_state = getattr(self.client.garth, '_client_state', None)
+                
+                if client_state:
+                    self._mfa_client_state = client_state
+                    return {
+                        "success": False,
+                        "mfa_required": True,
+                        "client_state": client_state,
+                        "message": "🔐 需要两步验证！请输入验证码。"
+                    }
+            
+            # 检查是否需要设置密码
+            if 'set password' in error_msg or 'unexpected title' in error_msg:
+                return {
+                    "success": False,
+                    "mfa_required": False,
+                    "message": "⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并完成密码设置。"
+                }
+            
+            # 认证错误
+            if any(kw in error_msg for kw in ['401', 'unauthorized', 'credential', 'password', 'login', 'auth']):
+                return {
+                    "success": False,
+                    "mfa_required": False,
+                    "message": "❌ 密码错误或账号无效！请检查邮箱和密码是否正确。"
+                }
+            
+            logger.error(f"{prefix} 测试连接失败: {e}")
+            return {
+                "success": False,
+                "mfa_required": False,
+                "message": f"❌ 连接失败: {str(e)}"
+            }
+    
+    def resume_login_with_mfa(self, client_state: Dict[str, Any], mfa_code: str) -> Dict[str, Any]:
+        """
+        使用 MFA 验证码恢复登录
+        
+        Args:
+            client_state: test_connection_with_mfa 返回的客户端状态
+            mfa_code: 用户输入的 MFA 验证码
+            
+        Returns:
+            dict: {
+                "success": bool,
+                "message": str
+            }
+        """
+        prefix = self._log_prefix()
+        try:
+            if self.client is None:
+                # 如果客户端不存在，需要重新创建
+                self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+            
+            # 使用验证码恢复登录
+            self.client.resume_login(client_state, mfa_code)
+            self._authenticated = True
+            
+            server_type = "中国版" if self.is_cn else "国际版"
+            logger.info(f"{prefix} Garmin {server_type} MFA 验证成功")
+            
+            return {
+                "success": True,
+                "message": "✅ 验证成功！Garmin账号连接成功，可以保存凭证了。"
+            }
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if 'invalid' in error_msg or 'incorrect' in error_msg or 'wrong' in error_msg:
+                return {
+                    "success": False,
+                    "message": "❌ 验证码错误！请检查并重新输入。"
+                }
+            
+            logger.error(f"{prefix} MFA 验证失败: {e}")
+            return {
+                "success": False,
+                "message": f"❌ 验证失败: {str(e)}"
+            }
     
     def get_user_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
