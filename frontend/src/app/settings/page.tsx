@@ -33,6 +33,11 @@ function SettingsContent() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [highlightGarmin, setHighlightGarmin] = useState(false);
   
+  // MFA 两步验证状态
+  const [showMFA, setShowMFA] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaClientState, setMfaClientState] = useState<Record<string, any> | null>(null);
+  
   // 同步进度状态
   const [syncProgress, setSyncProgress] = useState<{
     isSyncing: boolean;
@@ -184,7 +189,7 @@ function SettingsContent() {
       if (!contentType || !contentType.includes('application/json')) {
         const text = await res.text();
         console.error('服务器返回非JSON响应:', text);
-        return { success: false, message: '服务器错误，请稍后重试' };
+        return { success: false, mfa_required: false, message: '服务器错误，请稍后重试' };
       }
       
       return res.json();
@@ -192,6 +197,56 @@ function SettingsContent() {
     onSuccess: (data) => {
       if (data.success) {
         setMessage({ type: 'success', text: data.message });
+        setShowMFA(false);
+        setMfaCode('');
+        setMfaClientState(null);
+      } else if (data.mfa_required && data.client_state) {
+        // 需要两步验证
+        setMfaClientState(data.client_state);
+        setShowMFA(true);
+        setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
+      } else {
+        setMessage({ type: 'error', text: data.message });
+      }
+    },
+    onError: (error: Error) => {
+      setMessage({ type: 'error', text: error.message });
+    },
+  });
+  
+  // MFA验证
+  const verifyMFAMutation = useMutation({
+    mutationFn: async () => {
+      if (!mfaClientState) throw new Error('验证状态已过期');
+      
+      const res = await fetch(`${API_BASE}/auth/garmin/verify-mfa`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          garmin_email: garminForm.garmin_email,
+          garmin_password: garminForm.garmin_password,
+          is_cn: garminForm.is_cn,
+          mfa_code: mfaCode,
+          client_state: mfaClientState,
+        }),
+      });
+      
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('服务器错误');
+      }
+      
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        setMessage({ type: 'success', text: data.message });
+        setShowMFA(false);
+        setMfaCode('');
+        setMfaClientState(null);
       } else {
         setMessage({ type: 'error', text: data.message });
       }
@@ -610,17 +665,58 @@ function SettingsContent() {
                     </span>
                   </label>
                 </div>
+                
+                {/* MFA 两步验证区域 */}
+                {showMFA && (
+                  <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-2xl">🔐</span>
+                      <h4 className="font-semibold text-indigo-900">两步验证</h4>
+                    </div>
+                    <p className="text-sm text-indigo-700 mb-3">
+                      您的Garmin账号已开启两步验证，请打开验证器应用输入6位验证码。
+                    </p>
+                    <div className="flex gap-3 items-center">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                        className="w-40 p-3 border-2 border-indigo-300 rounded-lg text-gray-900 text-center text-xl font-bold tracking-widest focus:border-indigo-500 focus:outline-none"
+                        placeholder="000000"
+                      />
+                      <button
+                        onClick={() => verifyMFAMutation.mutate()}
+                        disabled={mfaCode.length !== 6 || verifyMFAMutation.isPending}
+                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50"
+                      >
+                        {verifyMFAMutation.isPending ? '验证中...' : '✓ 验证'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowMFA(false);
+                          setMfaCode('');
+                          setMfaClientState(null);
+                        }}
+                        className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex gap-3">
                   <button
                     onClick={() => testConnectionMutation.mutate(garminForm)}
-                    disabled={!garminForm.garmin_email || !garminForm.garmin_password || testConnectionMutation.isPending}
+                    disabled={!garminForm.garmin_email || !garminForm.garmin_password || testConnectionMutation.isPending || showMFA}
                     className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
                   >
                     {testConnectionMutation.isPending ? '测试中...' : '🔍 测试连接'}
                   </button>
                   <button
                     onClick={() => saveGarminMutation.mutate(garminForm)}
-                    disabled={!garminForm.garmin_email || !garminForm.garmin_password || saveGarminMutation.isPending}
+                    disabled={!garminForm.garmin_email || !garminForm.garmin_password || saveGarminMutation.isPending || showMFA}
                     className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50"
                   >
                     {saveGarminMutation.isPending ? '保存中...' : '💾 保存凭证'}
@@ -629,6 +725,9 @@ function SettingsContent() {
                     <button
                       onClick={() => {
                         setShowGarminForm(false);
+                        setShowMFA(false);
+                        setMfaCode('');
+                        setMfaClientState(null);
                         setGarminForm({ garmin_email: '', garmin_password: '', is_cn: false });
                       }}
                       className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"

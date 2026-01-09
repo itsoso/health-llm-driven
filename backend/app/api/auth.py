@@ -11,7 +11,8 @@ from app.models.user import User, GarminCredential
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
     PasswordChange, GarminCredentialCreate, GarminCredentialResponse,
-    GarminSyncRequest, GarminSyncResponse
+    GarminSyncRequest, GarminSyncResponse,
+    GarminTestConnectionResponse, GarminMFAVerifyRequest, GarminMFAVerifyResponse
 )
 from app.services.auth import auth_service, garmin_credential_service, AuthService
 import logging
@@ -512,7 +513,7 @@ async def sync_garmin_data_stream(
     )
 
 
-@router.post("/garmin/test-connection", summary="测试Garmin连接")
+@router.post("/garmin/test-connection", response_model=GarminTestConnectionResponse, summary="测试Garmin连接")
 async def test_garmin_connection(
     credentials: GarminCredentialCreate,
     current_user: User = Depends(get_current_user_required)
@@ -522,65 +523,106 @@ async def test_garmin_connection(
     
     返回明确的提示信息：
     - 成功：✅ 密码正确，连接成功
+    - 需要MFA：🔐 需要两步验证，请输入验证码
     - 失败：❌ 密码错误或账号无效
     
-    注意：中国用户(garmin.cn)需要设置 is_cn=true
+    注意：
+    - 中国用户(garmin.cn)需要设置 is_cn=true
+    - 如果账号开启了两步验证(MFA)，会返回 mfa_required=true 和 client_state
     """
     try:
-        from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
+        from app.services.data_collection.garmin_connect import GarminConnectService
         
         server_type = "中国版(garmin.cn)" if credentials.is_cn else "国际版(garmin.com)"
         logger.info(f"测试Garmin连接 - 服务器: {server_type}, 邮箱: {credentials.garmin_email}")
         
-        # 创建服务实例时会尝试登录
+        # 创建服务实例
         garmin_service = GarminConnectService(
             email=credentials.garmin_email,
             password=credentials.garmin_password,
             is_cn=credentials.is_cn,
             user_id=current_user.id
         )
-        # 尝试获取今天的数据来验证凭证
-        from datetime import date
-        summary = garmin_service.get_user_summary(date.today())
-        if summary is not None:
-            return {
-                "success": True, 
-                "message": "✅ 密码正确！Garmin账号连接成功，可以保存凭证了。"
-            }
-        else:
-            return {
-                "success": True, 
-                "message": "✅ 密码正确！连接成功（今日暂无同步数据）"
-            }
-    except GarminAuthenticationError as e:
-        logger.warning(f"测试Garmin连接失败 - 认证错误: {e}")
-        error_str = str(e)
-        # 检查是否需要设置密码
-        if '设置密码' in error_str or 'set password' in error_str.lower():
-            return {
-                "success": False, 
-                "message": "⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并按提示完成密码设置，然后再尝试连接。"
-            }
-        return {
-            "success": False, 
-            "message": "❌ 密码错误或账号无效！请检查您的Garmin Connect邮箱和密码是否正确。"
-        }
+        
+        # 使用支持 MFA 的测试连接方法
+        result = garmin_service.test_connection_with_mfa()
+        
+        return GarminTestConnectionResponse(
+            success=result.get("success", False),
+            mfa_required=result.get("mfa_required", False),
+            message=result.get("message", ""),
+            client_state=result.get("client_state")
+        )
+        
     except Exception as e:
         logger.error(f"测试Garmin连接失败: {e}")
         error_msg = str(e).lower()
+        
         # 检查是否需要设置密码
         if 'set password' in error_msg or 'unexpected title' in error_msg:
-            return {
-                "success": False, 
-                "message": "⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并按提示完成密码设置。"
-            }
+            return GarminTestConnectionResponse(
+                success=False,
+                mfa_required=False,
+                message="⚠️ Garmin账号需要设置密码！请先访问 connect.garmin.com 登录并按提示完成密码设置。"
+            )
+        
         if any(kw in error_msg for kw in ['401', 'unauthorized', 'credential', 'password', 'login', 'auth', 'oauth']):
-            return {
-                "success": False, 
-                "message": "❌ 密码错误或账号无效！请检查您的Garmin Connect邮箱和密码是否正确。"
-            }
-        return {
-            "success": False, 
-            "message": f"❌ 连接失败: {str(e)}"
-        }
+            return GarminTestConnectionResponse(
+                success=False,
+                mfa_required=False,
+                message="❌ 密码错误或账号无效！请检查您的Garmin Connect邮箱和密码是否正确。"
+            )
+        
+        return GarminTestConnectionResponse(
+            success=False,
+            mfa_required=False,
+            message=f"❌ 连接失败: {str(e)}"
+        )
+
+
+@router.post("/garmin/verify-mfa", response_model=GarminMFAVerifyResponse, summary="验证Garmin两步验证码")
+async def verify_garmin_mfa(
+    mfa_request: GarminMFAVerifyRequest,
+    current_user: User = Depends(get_current_user_required)
+):
+    """
+    使用两步验证码完成Garmin登录验证
+    
+    在调用 test-connection 返回 mfa_required=true 后，使用此接口提交验证码完成验证。
+    
+    参数：
+    - mfa_code: 6位数字验证码（来自您的验证器应用）
+    - client_state: test-connection 返回的客户端状态
+    """
+    try:
+        from app.services.data_collection.garmin_connect import GarminConnectService
+        
+        server_type = "中国版(garmin.cn)" if mfa_request.is_cn else "国际版(garmin.com)"
+        logger.info(f"验证Garmin MFA - 服务器: {server_type}, 邮箱: {mfa_request.garmin_email}")
+        
+        # 创建服务实例
+        garmin_service = GarminConnectService(
+            email=mfa_request.garmin_email,
+            password=mfa_request.garmin_password,
+            is_cn=mfa_request.is_cn,
+            user_id=current_user.id
+        )
+        
+        # 使用验证码恢复登录
+        result = garmin_service.resume_login_with_mfa(
+            client_state=mfa_request.client_state,
+            mfa_code=mfa_request.mfa_code
+        )
+        
+        return GarminMFAVerifyResponse(
+            success=result.get("success", False),
+            message=result.get("message", "")
+        )
+        
+    except Exception as e:
+        logger.error(f"验证Garmin MFA失败: {e}")
+        return GarminMFAVerifyResponse(
+            success=False,
+            message=f"❌ 验证失败: {str(e)}"
+        )
 

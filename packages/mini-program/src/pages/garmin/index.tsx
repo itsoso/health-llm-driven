@@ -15,6 +15,13 @@ interface GarminCredential {
   credentials_valid: boolean;
 }
 
+interface TestConnectionResponse {
+  success: boolean;
+  mfa_required: boolean;
+  message: string;
+  client_state?: Record<string, any>;
+}
+
 export default function Garmin() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,6 +34,12 @@ export default function Garmin() {
   const [password, setPassword] = useState('');
   const [isCN, setIsCN] = useState(false);
   const [syncDays, setSyncDays] = useState(7);
+  
+  // MFA 两步验证
+  const [showMFA, setShowMFA] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [clientState, setClientState] = useState<Record<string, any> | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     loadCredential();
@@ -58,12 +71,30 @@ export default function Garmin() {
     
     setSaving(true);
     try {
-      await post('/auth/garmin/test-connection', {
+      const result = await post<TestConnectionResponse>('/auth/garmin/test-connection', {
         garmin_email: email,
         garmin_password: password,
         is_cn: isCN,
       });
-      Taro.showToast({ title: '连接成功 ✓', icon: 'success' });
+      
+      if (result.success) {
+        Taro.showToast({ title: '连接成功 ✓', icon: 'success' });
+      } else if (result.mfa_required && result.client_state) {
+        // 需要两步验证
+        setClientState(result.client_state);
+        setShowMFA(true);
+        Taro.showToast({ 
+          title: '需要两步验证', 
+          icon: 'none',
+          duration: 2000 
+        });
+      } else {
+        Taro.showToast({ 
+          title: result.message || '连接失败', 
+          icon: 'none',
+          duration: 3000 
+        });
+      }
     } catch (error: any) {
       Taro.showToast({ 
         title: error.message || '连接失败', 
@@ -72,6 +103,52 @@ export default function Garmin() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+  
+  // 验证 MFA 验证码
+  const handleVerifyMFA = async () => {
+    if (!mfaCode || mfaCode.length !== 6) {
+      Taro.showToast({ title: '请输入6位验证码', icon: 'none' });
+      return;
+    }
+    
+    if (!clientState) {
+      Taro.showToast({ title: '验证状态已过期，请重新测试连接', icon: 'none' });
+      setShowMFA(false);
+      return;
+    }
+    
+    setVerifying(true);
+    try {
+      const result = await post<{ success: boolean; message: string }>('/auth/garmin/verify-mfa', {
+        garmin_email: email,
+        garmin_password: password,
+        is_cn: isCN,
+        mfa_code: mfaCode,
+        client_state: clientState,
+      });
+      
+      if (result.success) {
+        Taro.showToast({ title: '验证成功 ✓', icon: 'success' });
+        setShowMFA(false);
+        setMfaCode('');
+        setClientState(null);
+      } else {
+        Taro.showToast({ 
+          title: result.message || '验证失败', 
+          icon: 'none',
+          duration: 3000 
+        });
+      }
+    } catch (error: any) {
+      Taro.showToast({ 
+        title: error.message || '验证失败', 
+        icon: 'none',
+        duration: 3000 
+      });
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -303,12 +380,53 @@ export default function Garmin() {
             </Text>
           </View>
 
+          {/* MFA 两步验证 */}
+          {showMFA && (
+            <View className="mfa-section">
+              <View className="mfa-header">
+                <Text className="mfa-icon">🔐</Text>
+                <Text className="mfa-title">两步验证</Text>
+              </View>
+              <Text className="mfa-desc">
+                您的Garmin账号已开启两步验证，请打开验证器应用输入6位验证码
+              </Text>
+              <Input
+                type="number"
+                maxlength={6}
+                value={mfaCode}
+                onInput={(e) => setMfaCode(e.detail.value)}
+                placeholder="请输入6位验证码"
+                className="mfa-input"
+              />
+              <View className="mfa-actions">
+                <Button 
+                  className="mfa-btn cancel"
+                  onClick={() => {
+                    setShowMFA(false);
+                    setMfaCode('');
+                    setClientState(null);
+                  }}
+                >
+                  取消
+                </Button>
+                <Button 
+                  className="mfa-btn verify"
+                  onClick={handleVerifyMFA}
+                  loading={verifying}
+                  disabled={verifying || mfaCode.length !== 6}
+                >
+                  ✓ 验证
+                </Button>
+              </View>
+            </View>
+          )}
+
           <View className="form-actions">
             <Button 
               className="form-btn test"
               onClick={handleTestConnection}
               loading={saving}
-              disabled={saving || !email || !password}
+              disabled={saving || !email || !password || showMFA}
             >
               🔍 测试连接
             </Button>
@@ -316,7 +434,7 @@ export default function Garmin() {
               className="form-btn save"
               onClick={handleSave}
               loading={saving}
-              disabled={saving || !email || !password}
+              disabled={saving || !email || !password || showMFA}
             >
               💾 保存凭证
             </Button>
