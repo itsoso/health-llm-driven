@@ -72,7 +72,7 @@ export default function GarminDataPage() {
       const endDate = getBeijingDateString(today);
       const startDate = getBeijingDateString(new Date(today.getTime() - 13 * 24 * 60 * 60 * 1000));
       
-      const data = await get<GarminData[]>('/garmin/me', {
+      const data = await get<GarminData[]>('/daily-health/garmin/me', {
         start_date: startDate,
         end_date: endDate,
       });
