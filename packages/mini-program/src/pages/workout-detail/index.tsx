@@ -95,15 +95,29 @@ export default function WorkoutDetail() {
       setLoading(true);
     }
     try {
-      // 添加时间戳防止缓存
+      // 添加时间戳防止缓存，并强制刷新
+      const timestamp = Date.now();
       const data = await get<WorkoutDetail>(`/workout/me/${workoutId}`, { 
-        _t: Date.now() 
+        _t: timestamp,
+        _refresh: '1'
       });
-      setDetail(data);
+      
+      // 确保数据已更新
+      if (data) {
+        console.log(`[WorkoutDetail] 加载数据成功: ID=${workoutId}, 时间戳=${timestamp}`);
+        console.log(`[WorkoutDetail] 数据预览:`, {
+          id: data.id,
+          route_data: data.route_data ? '有GPS数据' : '无GPS数据',
+          elevation_data: data.elevation_data ? '有海拔数据' : '无海拔数据',
+          pace_data: data.pace_data ? '有速度数据' : '无速度数据',
+        });
+        setDetail(data);
+      }
     } catch (error) {
       console.error('加载运动详情失败:', error);
+      console.error('错误详情:', JSON.stringify(error, null, 2));
       if (showLoading) {
-        Taro.showToast({ title: '加载失败', icon: 'none' });
+        Taro.showToast({ title: '加载失败', icon: 'none', duration: 2000 });
       }
     } finally {
       if (showLoading) {

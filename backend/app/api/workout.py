@@ -178,6 +178,11 @@ def get_my_workout(
     db: Session = Depends(get_db)
 ):
     """获取单条运动记录详情"""
+    from fastapi import Response
+    
+    # 刷新数据库会话以确保获取最新数据
+    db.expire_all()
+    
     record = db.query(WorkoutRecord).filter(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
@@ -185,6 +190,12 @@ def get_my_workout(
     
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
+    
+    # 创建响应并设置禁用缓存的头部
+    response = Response(content=record.model_dump_json(), media_type="application/json")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     
     return record
 
