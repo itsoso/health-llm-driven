@@ -6,6 +6,17 @@ import { format, subDays, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import dynamic from 'next/dynamic';
+
+// 动态导入地图组件（客户端组件）
+const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[400px] w-full flex items-center justify-center bg-slate-700/50 rounded-lg">
+      <div className="text-gray-400">加载地图中...</div>
+    </div>
+  ),
+});
 import {
   LineChart,
   Line,
@@ -73,22 +84,42 @@ interface WorkoutDetail {
   workout_type: string;
   workout_name: string | null;
   duration_seconds: number | null;
+  moving_duration_seconds: number | null;
   distance_meters: number | null;
   avg_heart_rate: number | null;
   max_heart_rate: number | null;
+  min_heart_rate: number | null;
   calories: number | null;
+  active_calories: number | null;
   avg_pace_seconds_per_km: number | null;
+  best_pace_seconds_per_km: number | null;
+  avg_speed_kmh: number | null;
+  max_speed_kmh: number | null;
   training_effect_aerobic: number | null;
   training_effect_anaerobic: number | null;
+  training_load: number | null;
+  vo2max: number | null;
   hr_zone_1_seconds: number | null;
   hr_zone_2_seconds: number | null;
   hr_zone_3_seconds: number | null;
   hr_zone_4_seconds: number | null;
   hr_zone_5_seconds: number | null;
+  elevation_gain_meters: number | null;
+  elevation_loss_meters: number | null;
+  min_elevation_meters: number | null;
+  max_elevation_meters: number | null;
+  steps: number | null;
+  avg_cadence: number | null;
+  max_cadence: number | null;
   ai_analysis: string | null;
   heart_rate_data: string | null;
+  pace_data: string | null;
+  elevation_data: string | null;
   source: string;
   external_id: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  route_data?: string | null; // GPS 路线数据 JSON
 }
 
 function formatDuration(seconds: number | null): string {
@@ -263,6 +294,59 @@ function WorkoutContent() {
             time: Math.floor(p.time / 60),
             hr: p.hr,
           }));
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  // 解析配速/速度数据
+  const paceChartData = workoutDetail?.pace_data
+    ? (() => {
+        try {
+          const data = JSON.parse(workoutDetail.pace_data);
+          return data.map((p: { time: number; pace: number }) => ({
+            time: Math.floor(p.time / 60),
+            pace: p.pace,
+            speed: p.pace > 0 ? (3600 / p.pace) : 0, // 转换为 km/h
+          }));
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  // 解析海拔数据
+  const elevationChartData = workoutDetail?.elevation_data
+    ? (() => {
+        try {
+          const data = JSON.parse(workoutDetail.elevation_data);
+          return data.map((p: { distance: number; elevation: number }) => ({
+            distance: (p.distance / 1000).toFixed(2), // 转换为 km
+            elevation: p.elevation,
+          }));
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  // 解析 GPS 路线数据
+  const routeData = workoutDetail?.route_data
+    ? (() => {
+        try {
+          const data = JSON.parse(workoutDetail.route_data);
+          // 支持多种格式：{lat, lng} 或 {latitude, longitude} 或 [lat, lng]
+          return data.map((p: any) => {
+            if (Array.isArray(p)) {
+              return { lat: p[0], lng: p[1] };
+            }
+            return {
+              lat: p.lat || p.latitude,
+              lng: p.lng || p.longitude,
+              elevation: p.elevation || p.elev,
+            };
+          }).filter((p: any) => p.lat && p.lng);
         } catch {
           return [];
         }
@@ -511,6 +595,16 @@ function WorkoutContent() {
                   )}
                 </div>
 
+                {/* 地图显示 */}
+                {routeData.length > 0 && (
+                  <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                    <h3 className="text-lg font-bold text-white mb-4">🗺️ 运动路线</h3>
+                    <div className="h-[400px] w-full">
+                      <WorkoutMap routeData={routeData} />
+                    </div>
+                  </div>
+                )}
+
                 {/* 心率曲线图 */}
                 <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
                   <div className="flex items-center justify-between mb-4">
@@ -556,6 +650,292 @@ function WorkoutContent() {
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* 海拔高度图表 */}
+                {elevationChartData.length > 0 && (
+                  <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                    <h3 className="text-lg font-bold text-white mb-4">⛰️ 海拔高度</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={elevationChartData}>
+                          <defs>
+                            <linearGradient id="elevationGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis dataKey="distance" stroke="#9ca3af" tickFormatter={(v) => `${v}km`} />
+                          <YAxis stroke="#9ca3af" label={{ value: '海拔(m)', angle: -90, position: 'insideLeft' }} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151' }}
+                            labelFormatter={(v) => `距离: ${v} km`}
+                            formatter={(v: number) => [`${v.toFixed(0)} m`, '海拔']}
+                          />
+                          <Area type="monotone" dataKey="elevation" stroke="#10b981" fill="url(#elevationGradient)" strokeWidth={2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {workoutDetail.elevation_gain_meters && workoutDetail.elevation_loss_meters && (
+                      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-green-900/30 rounded-lg p-3 border border-green-800/50">
+                          <div className="text-green-400 text-xs">累计爬升</div>
+                          <div className="text-lg font-bold text-green-400">
+                            {workoutDetail.elevation_gain_meters.toFixed(0)} <span className="text-sm">m</span>
+                          </div>
+                        </div>
+                        <div className="bg-blue-900/30 rounded-lg p-3 border border-blue-800/50">
+                          <div className="text-blue-400 text-xs">累计下降</div>
+                          <div className="text-lg font-bold text-blue-400">
+                            {workoutDetail.elevation_loss_meters.toFixed(0)} <span className="text-sm">m</span>
+                          </div>
+                        </div>
+                        {workoutDetail.min_elevation_meters && (
+                          <div className="bg-slate-700/50 rounded-lg p-3">
+                            <div className="text-gray-400 text-xs">最低海拔</div>
+                            <div className="text-lg font-bold text-white">
+                              {workoutDetail.min_elevation_meters.toFixed(0)} <span className="text-sm">m</span>
+                            </div>
+                          </div>
+                        )}
+                        {workoutDetail.max_elevation_meters && (
+                          <div className="bg-slate-700/50 rounded-lg p-3">
+                            <div className="text-gray-400 text-xs">最高海拔</div>
+                            <div className="text-lg font-bold text-white">
+                              {workoutDetail.max_elevation_meters.toFixed(0)} <span className="text-sm">m</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 速度图表 */}
+                {paceChartData.length > 0 && (
+                  <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                    <h3 className="text-lg font-bold text-white mb-4">⚡ 速度</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={paceChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis dataKey="time" stroke="#9ca3af" tickFormatter={(v) => `${v}分`} />
+                          <YAxis stroke="#9ca3af" label={{ value: '速度(km/h)', angle: -90, position: 'insideLeft' }} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151' }}
+                            labelFormatter={(v) => `${v}分钟`}
+                            formatter={(v: number) => [`${v.toFixed(1)} km/h`, '速度']}
+                          />
+                          <Line type="monotone" dataKey="speed" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {(workoutDetail.avg_speed_kmh || workoutDetail.max_speed_kmh) && (
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        {workoutDetail.avg_speed_kmh && (
+                          <div className="bg-blue-900/30 rounded-lg p-3 border border-blue-800/50">
+                            <div className="text-blue-400 text-xs">平均速度</div>
+                            <div className="text-lg font-bold text-blue-400">
+                              {workoutDetail.avg_speed_kmh.toFixed(1)} <span className="text-sm">km/h</span>
+                            </div>
+                          </div>
+                        )}
+                        {workoutDetail.max_speed_kmh && (
+                          <div className="bg-purple-900/30 rounded-lg p-3 border border-purple-800/50">
+                            <div className="text-purple-400 text-xs">最大速度</div>
+                            <div className="text-lg font-bold text-purple-400">
+                              {workoutDetail.max_speed_kmh.toFixed(1)} <span className="text-sm">km/h</span>
+                            </div>
+                          </div>
+                        )}
+                        {workoutDetail.avg_pace_seconds_per_km && (
+                          <div className="bg-slate-700/50 rounded-lg p-3">
+                            <div className="text-gray-400 text-xs">平均配速</div>
+                            <div className="text-lg font-bold text-white font-mono">
+                              {formatPace(workoutDetail.avg_pace_seconds_per_km)}
+                            </div>
+                          </div>
+                        )}
+                        {workoutDetail.best_pace_seconds_per_km && (
+                          <div className="bg-slate-700/50 rounded-lg p-3">
+                            <div className="text-gray-400 text-xs">最佳配速</div>
+                            <div className="text-lg font-bold text-white font-mono">
+                              {formatPace(workoutDetail.best_pace_seconds_per_km)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 详细统计信息 */}
+                <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                  <h3 className="text-lg font-bold text-white mb-4">📊 详细统计</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* 距离与消耗 */}
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">距离与消耗</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">距离</span>
+                          <span className="text-white font-medium">{formatDistance(workoutDetail.distance_meters)} km</span>
+                        </div>
+                        {workoutDetail.active_calories && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">活动消耗</span>
+                            <span className="text-white font-medium">{workoutDetail.active_calories} kcal</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">总消耗</span>
+                          <span className="text-white font-medium">{workoutDetail.calories || '--'} kcal</span>
+                        </div>
+                        {workoutDetail.calories && workoutDetail.active_calories && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">静息消耗</span>
+                            <span className="text-white font-medium">{workoutDetail.calories - workoutDetail.active_calories} kcal</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 训练效果与负荷 */}
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">训练效果与负荷</h4>
+                      <div className="space-y-2 text-sm">
+                        {workoutDetail.training_effect_aerobic && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">有氧效果</span>
+                            <span className="text-white font-medium">{workoutDetail.training_effect_aerobic.toFixed(1)}</span>
+                          </div>
+                        )}
+                        {workoutDetail.training_effect_anaerobic && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">无氧效果</span>
+                            <span className="text-white font-medium">{workoutDetail.training_effect_anaerobic.toFixed(1)}</span>
+                          </div>
+                        )}
+                        {workoutDetail.training_load && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">运动负荷</span>
+                            <span className="text-white font-medium">{workoutDetail.training_load}</span>
+                          </div>
+                        )}
+                        {workoutDetail.vo2max && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">最大摄氧量</span>
+                            <span className="text-white font-medium">{workoutDetail.vo2max.toFixed(1)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 心率数据 */}
+                    {(workoutDetail.avg_heart_rate || workoutDetail.max_heart_rate || workoutDetail.min_heart_rate) && (
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">心率</h4>
+                        <div className="space-y-2 text-sm">
+                          {workoutDetail.avg_heart_rate && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">平均心率</span>
+                              <span className="text-white font-medium">{workoutDetail.avg_heart_rate} bpm</span>
+                            </div>
+                          )}
+                          {workoutDetail.max_heart_rate && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">最大心率</span>
+                              <span className="text-white font-medium">{workoutDetail.max_heart_rate} bpm</span>
+                            </div>
+                          )}
+                          {workoutDetail.min_heart_rate && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">最小心率</span>
+                              <span className="text-white font-medium">{workoutDetail.min_heart_rate} bpm</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 配速/速度 */}
+                    {(workoutDetail.avg_speed_kmh || workoutDetail.max_speed_kmh || workoutDetail.avg_pace_seconds_per_km) && (
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">配速/速度</h4>
+                        <div className="space-y-2 text-sm">
+                          {workoutDetail.avg_speed_kmh && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">平均速度</span>
+                              <span className="text-white font-medium">{workoutDetail.avg_speed_kmh.toFixed(1)} km/h</span>
+                            </div>
+                          )}
+                          {workoutDetail.max_speed_kmh && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">最大速度</span>
+                              <span className="text-white font-medium">{workoutDetail.max_speed_kmh.toFixed(1)} km/h</span>
+                            </div>
+                          )}
+                          {workoutDetail.avg_pace_seconds_per_km && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">平均配速</span>
+                              <span className="text-white font-mono">{formatPace(workoutDetail.avg_pace_seconds_per_km)}</span>
+                            </div>
+                          )}
+                          {workoutDetail.best_pace_seconds_per_km && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">最佳配速</span>
+                              <span className="text-white font-mono">{formatPace(workoutDetail.best_pace_seconds_per_km)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 计时 */}
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">计时</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">时间</span>
+                          <span className="text-white font-medium font-mono">{formatDuration(workoutDetail.duration_seconds)}</span>
+                        </div>
+                        {workoutDetail.moving_duration_seconds && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">移动时间</span>
+                            <span className="text-white font-medium font-mono">{formatDuration(workoutDetail.moving_duration_seconds)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 其他数据 */}
+                    {(workoutDetail.steps || workoutDetail.avg_cadence) && (
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">其他</h4>
+                        <div className="space-y-2 text-sm">
+                          {workoutDetail.steps && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">步数</span>
+                              <span className="text-white font-medium">{workoutDetail.steps.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {workoutDetail.avg_cadence && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">平均步频</span>
+                              <span className="text-white font-medium">{workoutDetail.avg_cadence} 步/分钟</span>
+                            </div>
+                          )}
+                          {workoutDetail.max_cadence && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">最大步频</span>
+                              <span className="text-white font-medium">{workoutDetail.max_cadence} 步/分钟</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* 心率区间分布 */}
