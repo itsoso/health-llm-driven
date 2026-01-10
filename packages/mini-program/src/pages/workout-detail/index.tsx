@@ -2,7 +2,7 @@
  * 运动详情页面
  */
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Button } from '@tarojs/components';
+import { View, Text, ScrollView, Button, Map } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { get, post } from '../../services/request';
 import './index.scss';
@@ -15,26 +15,37 @@ interface WorkoutDetail {
   workout_type: string;
   workout_name: string | null;
   duration_seconds: number | null;
+  moving_duration_seconds: number | null;
   distance_meters: number | null;
   calories: number | null;
+  active_calories: number | null;
   avg_heart_rate: number | null;
   max_heart_rate: number | null;
+  min_heart_rate: number | null;
   avg_pace_seconds_per_km: number | null;
   max_pace_seconds_per_km: number | null;
   avg_speed_kmh: number | null;
   max_speed_kmh: number | null;
   elevation_gain_meters: number | null;
   elevation_loss_meters: number | null;
+  min_elevation_meters: number | null;
+  max_elevation_meters: number | null;
   training_effect_aerobic: number | null;
   training_effect_anaerobic: number | null;
   vo2max: number | null;
   training_load: number | null;
+  steps: number | null;
+  avg_cadence: number | null;
+  max_cadence: number | null;
   hr_zone_1_seconds: number | null;
   hr_zone_2_seconds: number | null;
   hr_zone_3_seconds: number | null;
   hr_zone_4_seconds: number | null;
   hr_zone_5_seconds: number | null;
   heart_rate_data: string | null;
+  pace_data: string | null;
+  elevation_data: string | null;
+  route_data: string | null;
   ai_analysis: string | null;
   notes: string | null;
   source: string;
@@ -161,43 +172,188 @@ export default function WorkoutDetail() {
            (detail.hr_zone_5_seconds || 0);
   };
 
-  // 渲染心率区间
+  // 解析GPS路线数据
+  const parseRouteData = () => {
+    if (!detail?.route_data) return null;
+    try {
+      const data = JSON.parse(detail.route_data);
+      return data.map((p: any) => ({
+        latitude: p.lat || p.latitude,
+        longitude: p.lng || p.longitude || p.lon,
+        elevation: p.elevation,
+        time: p.time,
+      })).filter((p: any) => p.latitude && p.longitude);
+    } catch {
+      return null;
+    }
+  };
+
+  // 解析海拔数据（按时间）
+  const parseElevationData = () => {
+    const routeData = parseRouteData();
+    if (routeData && routeData.length > 0) {
+      // 从GPS数据中提取海拔和时间
+      return routeData
+        .filter((p: any) => p.elevation !== undefined && p.elevation !== null && p.time !== undefined)
+        .map((p: any) => ({
+          time: Math.floor((p.time || 0) / 60), // 转换为分钟
+          elevation: p.elevation,
+        }));
+    }
+    
+    // 如果没有GPS数据，尝试从elevation_data中提取
+    if (detail?.elevation_data) {
+      try {
+        const data = JSON.parse(detail.elevation_data);
+        if (data[0]?.time !== undefined) {
+          return data.map((p: { time: number; elevation: number }) => ({
+            time: Math.floor(p.time / 60),
+            elevation: p.elevation,
+          }));
+        } else {
+          // 使用距离估算时间
+          const avgSpeed = detail.avg_speed_kmh || 5;
+          return data.map((p: { distance: number; elevation: number }) => ({
+            time: Math.floor((p.distance / 1000 / avgSpeed) * 60),
+            elevation: p.elevation,
+          }));
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  // 解析速度数据
+  const parseSpeedData = () => {
+    if (!detail?.pace_data) return null;
+    try {
+      const data = JSON.parse(detail.pace_data);
+      return data.map((p: { time: number; pace: number }) => ({
+        time: Math.floor(p.time / 60),
+        speed: p.pace > 0 ? (3600 / p.pace) : 0,
+      }));
+    } catch {
+      return null;
+    }
+  };
+
+  // 获取地图中心点和标记点
+  const getMapData = () => {
+    const routeData = parseRouteData();
+    if (!routeData || routeData.length === 0) return null;
+    
+    const latitudes = routeData.map((p: any) => p.latitude);
+    const longitudes = routeData.map((p: any) => p.longitude);
+    const centerLat = (Math.max(...latitudes) + Math.min(...latitudes)) / 2;
+    const centerLng = (Math.max(...longitudes) + Math.min(...longitudes)) / 2;
+    
+    const startPoint = routeData[0];
+    const endPoint = routeData[routeData.length - 1];
+    
+    return {
+      centerLat,
+      centerLng,
+      polyline: [{
+        points: routeData.map((p: any) => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+        })),
+        color: '#3B82F6',
+        width: 4,
+      }],
+      markers: [
+        {
+          id: 0,
+          latitude: startPoint.latitude,
+          longitude: startPoint.longitude,
+          callout: { content: '起点', color: '#fff', fontSize: 12, bgColor: '#10B981', borderRadius: 4, padding: 4 },
+        },
+        {
+          id: 1,
+          latitude: endPoint.latitude,
+          longitude: endPoint.longitude,
+          callout: { content: '终点', color: '#fff', fontSize: 12, bgColor: '#EF4444', borderRadius: 4, padding: 4 },
+        },
+      ],
+    };
+  };
+
+  // 渲染心率区间（改进版：区间用时）
   const renderHrZones = () => {
     if (!detail) return null;
+    const maxHR = detail.max_heart_rate || 220;
     const zones = [
-      detail.hr_zone_1_seconds,
-      detail.hr_zone_2_seconds,
-      detail.hr_zone_3_seconds,
-      detail.hr_zone_4_seconds,
-      detail.hr_zone_5_seconds,
+      { 
+        zone: 1, 
+        name: '热身', 
+        desc: '热身',
+        range: `${Math.round(maxHR * 0.5)} - ${Math.round(maxHR * 0.6)} bpm`,
+        seconds: detail.hr_zone_1_seconds || 0,
+        color: HR_ZONE_COLORS[0],
+      },
+      { 
+        zone: 2, 
+        name: '脂肪燃烧', 
+        desc: '脂肪燃烧',
+        range: `${Math.round(maxHR * 0.6)} - ${Math.round(maxHR * 0.7)} bpm`,
+        seconds: detail.hr_zone_2_seconds || 0,
+        color: HR_ZONE_COLORS[1],
+      },
+      { 
+        zone: 3, 
+        name: '有氧', 
+        desc: '有氧',
+        range: `${Math.round(maxHR * 0.7)} - ${Math.round(maxHR * 0.8)} bpm`,
+        seconds: detail.hr_zone_3_seconds || 0,
+        color: HR_ZONE_COLORS[2],
+      },
+      { 
+        zone: 4, 
+        name: '临界心率', 
+        desc: '临界心率',
+        range: `${Math.round(maxHR * 0.8)} - ${Math.round(maxHR * 0.9)} bpm`,
+        seconds: detail.hr_zone_4_seconds || 0,
+        color: HR_ZONE_COLORS[3],
+      },
+      { 
+        zone: 5, 
+        name: '无氧耐力', 
+        desc: '无氧耐力',
+        range: `> ${Math.round(maxHR * 0.9)} bpm`,
+        seconds: detail.hr_zone_5_seconds || 0,
+        color: HR_ZONE_COLORS[4],
+      },
     ];
     const total = getTotalHrZoneSeconds();
     if (total === 0) return null;
 
     return (
       <View className="hr-zones">
-        {zones.map((seconds, index) => {
-          const percentage = seconds ? (seconds / total) * 100 : 0;
-          if (percentage < 1) return null;
+        {zones.map((zone) => {
+          const percentage = total > 0 ? (zone.seconds / total) * 100 : 0;
           return (
-            <View key={index} className="zone-item">
+            <View key={zone.zone} className="zone-item">
+              <View className="zone-header">
+                <View className="zone-title-row">
+                  <Text className="zone-label">区间 {zone.zone}</Text>
+                  <Text className="zone-range">{zone.range}</Text>
+                  <Text className="zone-desc">({zone.desc})</Text>
+                </View>
+                <View className="zone-stats">
+                  <Text className="zone-time">{formatDuration(zone.seconds)}</Text>
+                  <Text className="zone-percent">{percentage.toFixed(0)}%</Text>
+                </View>
+              </View>
               <View className="zone-bar-container">
                 <View 
                   className="zone-bar" 
                   style={{ 
                     width: `${percentage}%`, 
-                    backgroundColor: HR_ZONE_COLORS[index] 
+                    backgroundColor: zone.color 
                   }} 
                 />
-              </View>
-              <View className="zone-info">
-                <View 
-                  className="zone-dot" 
-                  style={{ backgroundColor: HR_ZONE_COLORS[index] }} 
-                />
-                <Text className="zone-name">{HR_ZONE_NAMES[index]}</Text>
-                <Text className="zone-percent">{percentage.toFixed(0)}%</Text>
-                <Text className="zone-time">{formatDuration(seconds)}</Text>
               </View>
             </View>
           );
@@ -433,57 +589,283 @@ export default function WorkoutDetail() {
         </View>
       )}
 
-      {/* 海拔 */}
-      {(detail.elevation_gain_meters || detail.elevation_loss_meters) && (
-        <View className="section">
-          <Text className="section-title">⛰️ 海拔</Text>
-          <View className="stats-grid">
-            <View className="stat-card">
-              <Text className="stat-value up">+{Math.round(detail.elevation_gain_meters || 0)}</Text>
-              <Text className="stat-label">累计爬升</Text>
-              <Text className="stat-unit">米</Text>
-            </View>
-            <View className="stat-card">
-              <Text className="stat-value down">-{Math.round(detail.elevation_loss_meters || 0)}</Text>
-              <Text className="stat-label">累计下降</Text>
-              <Text className="stat-unit">米</Text>
+      {/* GPS路线地图 */}
+      {(() => {
+        const mapData = getMapData();
+        if (!mapData) return null;
+        return (
+          <View className="section">
+            <Text className="section-title">🗺️ 运动路线</Text>
+            <View className="map-container">
+              <Map
+                longitude={mapData.centerLng}
+                latitude={mapData.centerLat}
+                scale={14}
+                polyline={mapData.polyline}
+                markers={mapData.markers}
+                show-location
+                style={{ width: '100%', height: '400px' }}
+              />
             </View>
           </View>
-        </View>
-      )}
+        );
+      })()}
 
-      {/* 训练效果 */}
-      {(detail.training_effect_aerobic || detail.training_effect_anaerobic) && (
-        <View className="section">
-          <Text className="section-title">💪 训练效果</Text>
-          <View className="stats-grid">
-            {detail.training_effect_aerobic && (
-              <View className="stat-card">
-                <Text className="stat-value effect">{detail.training_effect_aerobic.toFixed(1)}</Text>
-                <Text className="stat-label">有氧效果</Text>
+      {/* 海拔高度图表 */}
+      {(() => {
+        const elevationData = parseElevationData();
+        if (!elevationData || elevationData.length === 0) return null;
+        
+        const values = elevationData.map((p: any) => p.elevation);
+        const maxVal = Math.max(...values);
+        const minVal = Math.min(...values);
+        const range = maxVal - minVal || 1;
+        const sampledData = elevationData.length > 30 
+          ? elevationData.filter((_: any, i: number) => i % Math.ceil(elevationData.length / 30) === 0)
+          : elevationData;
+
+        return (
+          <View className="section">
+            <Text className="section-title">⛰️ 海拔高度</Text>
+            <View className="hr-chart">
+              <View className="chart-header">
+                <Text className="chart-title">海拔曲线</Text>
+                <View className="chart-legend">
+                  <Text className="legend-min">{Math.round(minVal)}</Text>
+                  <Text className="legend-sep">-</Text>
+                  <Text className="legend-max">{Math.round(maxVal)}</Text>
+                  <Text className="legend-unit">米</Text>
+                </View>
+              </View>
+              <View className="chart-bars">
+                {sampledData.map((point: any, index: number) => {
+                  const value = point.elevation || 0;
+                  const height = ((value - minVal) / range) * 100;
+                  return (
+                    <View key={index} className="bar-wrapper">
+                      <View 
+                        className="bar" 
+                        style={{ 
+                          height: `${Math.max(height, 5)}%`,
+                          backgroundColor: '#10B981'
+                        }} 
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+            {(detail.elevation_gain_meters || detail.elevation_loss_meters || detail.min_elevation_meters || detail.max_elevation_meters) && (
+              <View className="stats-grid">
+                {detail.elevation_gain_meters && (
+                  <View className="stat-card">
+                    <Text className="stat-value up">+{Math.round(detail.elevation_gain_meters)}</Text>
+                    <Text className="stat-label">累计爬升</Text>
+                    <Text className="stat-unit">米</Text>
+                  </View>
+                )}
+                {detail.elevation_loss_meters && (
+                  <View className="stat-card">
+                    <Text className="stat-value down">-{Math.round(detail.elevation_loss_meters)}</Text>
+                    <Text className="stat-label">累计下降</Text>
+                    <Text className="stat-unit">米</Text>
+                  </View>
+                )}
+                {detail.min_elevation_meters && (
+                  <View className="stat-card">
+                    <Text className="stat-value">{Math.round(detail.min_elevation_meters)}</Text>
+                    <Text className="stat-label">最低海拔</Text>
+                    <Text className="stat-unit">米</Text>
+                  </View>
+                )}
+                {detail.max_elevation_meters && (
+                  <View className="stat-card">
+                    <Text className="stat-value">{Math.round(detail.max_elevation_meters)}</Text>
+                    <Text className="stat-label">最高海拔</Text>
+                    <Text className="stat-unit">米</Text>
+                  </View>
+                )}
               </View>
             )}
-            {detail.training_effect_anaerobic && (
-              <View className="stat-card">
-                <Text className="stat-value effect">{detail.training_effect_anaerobic.toFixed(1)}</Text>
-                <Text className="stat-label">无氧效果</Text>
+          </View>
+        );
+      })()}
+
+      {/* 速度图表 */}
+      {(() => {
+        const speedData = parseSpeedData();
+        if (!speedData || speedData.length === 0) return null;
+        
+        const values = speedData.map((p: any) => p.speed);
+        const maxVal = Math.max(...values);
+        const minVal = Math.min(...values);
+        const range = maxVal - minVal || 1;
+        const sampledData = speedData.length > 30 
+          ? speedData.filter((_: any, i: number) => i % Math.ceil(speedData.length / 30) === 0)
+          : speedData;
+
+        return (
+          <View className="section">
+            <Text className="section-title">⚡ 速度</Text>
+            <View className="hr-chart">
+              <View className="chart-header">
+                <Text className="chart-title">速度曲线</Text>
+                <View className="chart-legend">
+                  <Text className="legend-min">{minVal.toFixed(1)}</Text>
+                  <Text className="legend-sep">-</Text>
+                  <Text className="legend-max">{maxVal.toFixed(1)}</Text>
+                  <Text className="legend-unit">km/h</Text>
+                </View>
+              </View>
+              <View className="chart-bars">
+                {sampledData.map((point: any, index: number) => {
+                  const value = point.speed || 0;
+                  const height = ((value - minVal) / range) * 100;
+                  return (
+                    <View key={index} className="bar-wrapper">
+                      <View 
+                        className="bar" 
+                        style={{ 
+                          height: `${Math.max(height, 5)}%`,
+                          backgroundColor: '#3B82F6'
+                        }} 
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+            {(detail.avg_speed_kmh || detail.max_speed_kmh || detail.avg_pace_seconds_per_km) && (
+              <View className="stats-grid">
+                {detail.avg_speed_kmh && (
+                  <View className="stat-card">
+                    <Text className="stat-value">{detail.avg_speed_kmh.toFixed(1)}</Text>
+                    <Text className="stat-label">平均速度</Text>
+                    <Text className="stat-unit">km/h</Text>
+                  </View>
+                )}
+                {detail.max_speed_kmh && (
+                  <View className="stat-card">
+                    <Text className="stat-value max">{detail.max_speed_kmh.toFixed(1)}</Text>
+                    <Text className="stat-label">最大速度</Text>
+                    <Text className="stat-unit">km/h</Text>
+                  </View>
+                )}
+                {detail.avg_pace_seconds_per_km && (
+                  <View className="stat-card">
+                    <Text className="stat-value">{formatPace(detail.avg_pace_seconds_per_km)}</Text>
+                    <Text className="stat-label">平均配速</Text>
+                    <Text className="stat-unit">/km</Text>
+                  </View>
+                )}
               </View>
             )}
-            {detail.vo2max && (
-              <View className="stat-card">
-                <Text className="stat-value">{detail.vo2max.toFixed(0)}</Text>
-                <Text className="stat-label">VO2 Max</Text>
+          </View>
+        );
+      })()}
+
+      {/* 详细统计信息 */}
+      <View className="section">
+        <Text className="section-title">📊 详细统计</Text>
+        
+        {/* 距离与消耗 */}
+        <View className="stats-subsection">
+          <Text className="subsection-title">距离与消耗</Text>
+          <View className="stats-list">
+            <View className="stat-row">
+              <Text className="stat-row-label">距离</Text>
+              <Text className="stat-row-value">{formatDistance(detail.distance_meters)}</Text>
+            </View>
+            {detail.calories && detail.active_calories && (
+              <View className="stat-row">
+                <Text className="stat-row-label">静息消耗</Text>
+                <Text className="stat-row-value">{detail.calories - detail.active_calories} kcal</Text>
               </View>
             )}
-            {detail.training_load && (
-              <View className="stat-card">
-                <Text className="stat-value">{detail.training_load}</Text>
-                <Text className="stat-label">训练负荷</Text>
+            {detail.active_calories && (
+              <View className="stat-row">
+                <Text className="stat-row-label">活动消耗</Text>
+                <Text className="stat-row-value">{detail.active_calories} kcal</Text>
+              </View>
+            )}
+            <View className="stat-row">
+              <Text className="stat-row-label">总消耗</Text>
+              <Text className="stat-row-value">{detail.calories || '--'} kcal</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* 训练效果与负荷 */}
+        {(detail.training_effect_aerobic || detail.training_effect_anaerobic || detail.training_load) && (
+          <View className="stats-subsection">
+            <Text className="subsection-title">训练效果与负荷</Text>
+            <View className="stats-list">
+              {detail.training_effect_aerobic && (
+                <View className="stat-row">
+                  <Text className="stat-row-label">有氧效果</Text>
+                  <Text className="stat-row-value">{detail.training_effect_aerobic.toFixed(1)}</Text>
+                </View>
+              )}
+              {detail.training_effect_anaerobic && (
+                <View className="stat-row">
+                  <Text className="stat-row-label">无氧效果</Text>
+                  <Text className="stat-row-value">{detail.training_effect_anaerobic.toFixed(1)}</Text>
+                </View>
+              )}
+              {detail.training_load && (
+                <View className="stat-row">
+                  <Text className="stat-row-label">运动负荷</Text>
+                  <Text className="stat-row-value">{detail.training_load}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* 计时 */}
+        <View className="stats-subsection">
+          <Text className="subsection-title">计时</Text>
+          <View className="stats-list">
+            <View className="stat-row">
+              <Text className="stat-row-label">时间</Text>
+              <Text className="stat-row-value">{formatDuration(detail.duration_seconds)}</Text>
+            </View>
+            {detail.moving_duration_seconds && (
+              <View className="stat-row">
+                <Text className="stat-row-label">移动时间</Text>
+                <Text className="stat-row-value">{formatDuration(detail.moving_duration_seconds)}</Text>
               </View>
             )}
           </View>
         </View>
-      )}
+
+        {/* 其他数据 */}
+        {(detail.steps || detail.avg_cadence || detail.max_cadence) && (
+          <View className="stats-subsection">
+            <Text className="subsection-title">其他</Text>
+            <View className="stats-list">
+              {detail.steps && (
+                <View className="stat-row">
+                  <Text className="stat-row-label">步数</Text>
+                  <Text className="stat-row-value">{detail.steps.toLocaleString()}</Text>
+                </View>
+              )}
+              {detail.avg_cadence && (
+                <View className="stat-row">
+                  <Text className="stat-row-label">平均步频</Text>
+                  <Text className="stat-row-value">{detail.avg_cadence} 步/分钟</Text>
+                </View>
+              )}
+              {detail.max_cadence && (
+                <View className="stat-row">
+                  <Text className="stat-row-label">最大步频</Text>
+                  <Text className="stat-row-value">{detail.max_cadence} 步/分钟</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+      </View>
 
       {/* AI分析 */}
       <View className="section">
