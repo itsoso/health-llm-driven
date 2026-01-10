@@ -217,6 +217,7 @@ class WorkoutSyncService:
                 logger.debug(f"get_activity_splits 失败: {e}")
             
             # 方法2: 尝试获取活动详细信息中的心率数据
+            activity_details = None
             if not hr_data:
                 try:
                     # 活动详情中可能包含 heartRateSamples
@@ -240,8 +241,16 @@ class WorkoutSyncService:
             # 尝试获取GPS路线数据
             gps_data = None
             try:
-                # 方法1: 尝试从活动详情中获取GPS数据
-                if details and isinstance(details, dict):
+                # 方法1: 优先从activity_details获取geoPolylineDTO（这是最可靠的方法）
+                if activity_details and isinstance(activity_details, dict):
+                    gps_data = activity_details.get('geoPolylineDTO')
+                    if gps_data:
+                        logger.debug(f"从activity_details获取geoPolylineDTO，类型: {type(gps_data)}")
+                        if isinstance(gps_data, dict):
+                            logger.debug(f"geoPolylineDTO键: {list(gps_data.keys())}")
+                
+                # 方法2: 尝试从活动详情中获取GPS数据
+                if not gps_data and details and isinstance(details, dict):
                     # 检查是否有GPS相关字段
                     gps_data = details.get('gpsData') or details.get('geoPolylineDTO') or details.get('geoPolyline')
                     if gps_data:
@@ -249,22 +258,7 @@ class WorkoutSyncService:
                         if isinstance(gps_data, dict):
                             logger.debug(f"GPS数据键: {list(gps_data.keys())}")
                 
-                # 方法2: 尝试获取活动GPS数据
-                if not gps_data:
-                    try:
-                        gps_data = self.client.get_activity_gps(activity_id)
-                        if gps_data:
-                            logger.debug(f"从get_activity_gps获取GPS数据，类型: {type(gps_data)}")
-                    except Exception as e:
-                        logger.debug(f"get_activity_gps 失败: {e}")
-                
-                # 方法3: 尝试从活动详情API获取
-                if not gps_data and activity_details:
-                    gps_data = activity_details.get('gpsData') or activity_details.get('geoPolylineDTO') or activity_details.get('geoPolyline')
-                    if gps_data:
-                        logger.debug(f"从activity_details获取GPS数据，类型: {type(gps_data)}")
-                
-                # 方法4: 尝试从details中查找所有可能的GPS字段
+                # 方法3: 尝试从details中查找所有可能的GPS字段
                 if not gps_data and details and isinstance(details, dict):
                     # 查找包含GPS、geo、polyline、route等关键词的字段
                     for key, value in details.items():
@@ -485,9 +479,32 @@ class WorkoutSyncService:
                             "time": i * 10
                         })
             
-            # 格式3: gpsData 字典，包含多个字段
+            # 格式3: gpsData 字典，包含多个字段（包括 geoPolylineDTO）
             elif isinstance(gps_data, dict):
-                # 检查是否有坐标数组
+                # 处理 geoPolylineDTO 格式（Garmin Connect API 返回的格式）
+                # geoPolylineDTO 可能包含: startPoint, endPoint, polyline, encodedPolyline, points 等
+                
+                # 方法1: 检查是否有编码的polyline字符串
+                polyline_str = gps_data.get('polyline') or gps_data.get('encodedPolyline') or gps_data.get('encoded_polyline')
+                if polyline_str and isinstance(polyline_str, str):
+                    try:
+                        import polyline
+                        decoded = polyline.decode(polyline_str)
+                        for i, (lat, lng) in enumerate(decoded):
+                            route_points.append({
+                                "lat": lat,
+                                "lng": lng,
+                                "time": i * 10
+                            })
+                        logger.debug(f"从polyline字符串解码得到 {len(route_points)} 个GPS点")
+                        if route_points:
+                            return route_points
+                    except ImportError:
+                        logger.warning("polyline库未安装，无法解码GPS路线")
+                    except Exception as e:
+                        logger.debug(f"解码polyline失败: {e}")
+                
+                # 方法2: 检查是否有坐标点数组
                 coordinates = gps_data.get('coordinates') or gps_data.get('points') or gps_data.get('trackPoints')
                 if coordinates and isinstance(coordinates, list):
                     for i, coord in enumerate(coordinates):
@@ -514,22 +531,35 @@ class WorkoutSyncService:
                                     route_point["time"] = int(time_offset)
                                 route_points.append(route_point)
                 
-                # 检查是否有编码的polyline
-                polyline_str = gps_data.get('polyline') or gps_data.get('encodedPolyline')
-                if polyline_str and isinstance(polyline_str, str):
-                    try:
-                        import polyline
-                        decoded = polyline.decode(polyline_str)
-                        for i, (lat, lng) in enumerate(decoded):
+                # 方法3: 如果有 startPoint 和 endPoint，至少添加这两个点
+                if not route_points:
+                    start_point = gps_data.get('startPoint')
+                    end_point = gps_data.get('endPoint')
+                    
+                    if start_point and isinstance(start_point, dict):
+                        lat = start_point.get('lat') or start_point.get('latitude')
+                        lng = start_point.get('lon') or start_point.get('lng') or start_point.get('longitude')
+                        if lat and lng:
                             route_points.append({
-                                "lat": lat,
-                                "lng": lng,
-                                "time": i * 10
+                                "lat": float(lat),
+                                "lng": float(lng),
+                                "elevation": start_point.get('altitude') or start_point.get('elevation'),
+                                "time": start_point.get('time', 0)
                             })
-                    except ImportError:
-                        logger.warning("polyline库未安装，无法解码GPS路线")
-                    except Exception as e:
-                        logger.debug(f"解码polyline失败: {e}")
+                    
+                    if end_point and isinstance(end_point, dict):
+                        lat = end_point.get('lat') or end_point.get('latitude')
+                        lng = end_point.get('lon') or end_point.get('lng') or end_point.get('longitude')
+                        if lat and lng:
+                            route_points.append({
+                                "lat": float(lat),
+                                "lng": float(lng),
+                                "elevation": end_point.get('altitude') or end_point.get('elevation'),
+                                "time": end_point.get('time', 0)
+                            })
+                    
+                    if route_points:
+                        logger.debug(f"从startPoint/endPoint得到 {len(route_points)} 个GPS点")
             
             # 去重和采样（每10秒一个点，或每100米一个点）
             if route_points:
