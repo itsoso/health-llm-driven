@@ -245,14 +245,16 @@ class WorkoutSyncService:
                     # 检查是否有GPS相关字段
                     gps_data = details.get('gpsData') or details.get('geoPolylineDTO') or details.get('geoPolyline')
                     if gps_data:
-                        logger.debug(f"从activity获取GPS数据")
+                        logger.debug(f"从activity获取GPS数据，类型: {type(gps_data)}")
+                        if isinstance(gps_data, dict):
+                            logger.debug(f"GPS数据键: {list(gps_data.keys())}")
                 
                 # 方法2: 尝试获取活动GPS数据
                 if not gps_data:
                     try:
                         gps_data = self.client.get_activity_gps(activity_id)
                         if gps_data:
-                            logger.debug(f"从get_activity_gps获取GPS数据")
+                            logger.debug(f"从get_activity_gps获取GPS数据，类型: {type(gps_data)}")
                     except Exception as e:
                         logger.debug(f"get_activity_gps 失败: {e}")
                 
@@ -260,7 +262,17 @@ class WorkoutSyncService:
                 if not gps_data and activity_details:
                     gps_data = activity_details.get('gpsData') or activity_details.get('geoPolylineDTO') or activity_details.get('geoPolyline')
                     if gps_data:
-                        logger.debug(f"从activity_details获取GPS数据")
+                        logger.debug(f"从activity_details获取GPS数据，类型: {type(gps_data)}")
+                
+                # 方法4: 尝试从details中查找所有可能的GPS字段
+                if not gps_data and details and isinstance(details, dict):
+                    # 查找包含GPS、geo、polyline、route等关键词的字段
+                    for key, value in details.items():
+                        if any(keyword in key.lower() for keyword in ['gps', 'geo', 'polyline', 'route', 'track', 'location']):
+                            logger.debug(f"发现可能的GPS字段: {key}, 类型: {type(value)}")
+                            if value:
+                                gps_data = value
+                                break
                 
             except Exception as e:
                 logger.debug(f"获取GPS数据失败: {e}")
