@@ -539,6 +539,154 @@ async def refresh_workout_heart_rate(
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
 
 
+@router.post("/me/{workout_id}/refresh-gps")
+async def refresh_workout_gps(
+    workout_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """刷新运动记录的GPS路线数据"""
+    record = db.query(WorkoutRecord).filter(
+        WorkoutRecord.id == workout_id,
+        WorkoutRecord.user_id == current_user.id
+    ).first()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="运动记录不存在")
+    
+    if not record.external_id or record.source != "garmin":
+        raise HTTPException(status_code=400, detail="仅支持 Garmin 同步的运动记录")
+    
+    from app.services.auth import GarminCredentialService
+    from app.services.workout_sync import WorkoutSyncService
+    
+    # 获取Garmin凭证
+    cred_service = GarminCredentialService()
+    credentials = cred_service.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(status_code=400, detail="请先配置Garmin账号")
+    
+    try:
+        sync_service = WorkoutSyncService(
+            email=credentials["email"],
+            password=credentials["password"],
+            is_cn=credentials.get("is_cn", False),
+            user_id=current_user.id
+        )
+        
+        # 获取活动详情
+        details_data = await sync_service.get_activity_details(int(record.external_id))
+        
+        if details_data and details_data.get("gps_data"):
+            route_points = sync_service._parse_gps_route(details_data["gps_data"], record.start_time)
+            
+            if route_points:
+                record.route_data = json.dumps(route_points)
+                db.commit()
+                logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} GPS数据: {len(route_points)} 点")
+                return {
+                    "status": "success",
+                    "message": f"获取到 {len(route_points)} 个GPS路线点",
+                    "points_count": len(route_points)
+                }
+        
+        return {
+            "status": "no_data",
+            "message": "无法获取GPS数据（可能是室内运动或Garmin未提供GPS数据）",
+            "points_count": 0
+        }
+        
+    except Exception as e:
+        logger.error(f"刷新GPS数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
+
+
+@router.post("/me/refresh-gps-batch")
+async def refresh_workout_gps_batch(
+    days: int = Query(default=30, ge=1, le=365, description="刷新最近N天的记录"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """批量刷新运动记录的GPS路线数据"""
+    from app.services.auth import GarminCredentialService
+    from app.services.workout_sync import WorkoutSyncService
+    from app.utils.timezone import get_china_today
+    
+    # 获取Garmin凭证
+    cred_service = GarminCredentialService()
+    credentials = cred_service.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(status_code=400, detail="请先配置Garmin账号")
+    
+    # 查找需要刷新的记录（Garmin来源、有external_id、没有route_data）
+    today = get_china_today()
+    start_date = today - timedelta(days=days)
+    
+    records = db.query(WorkoutRecord).filter(
+        WorkoutRecord.user_id == current_user.id,
+        WorkoutRecord.source == "garmin",
+        WorkoutRecord.external_id.isnot(None),
+        WorkoutRecord.workout_date >= start_date
+    ).all()
+    
+    if not records:
+        return {
+            "status": "no_records",
+            "message": "没有需要刷新的记录",
+            "refreshed_count": 0,
+            "total_count": 0
+        }
+    
+    try:
+        sync_service = WorkoutSyncService(
+            email=credentials["email"],
+            password=credentials["password"],
+            is_cn=credentials.get("is_cn", False),
+            user_id=current_user.id
+        )
+        
+        refreshed_count = 0
+        failed_count = 0
+        
+        for record in records:
+            try:
+                # 获取活动详情
+                details_data = await sync_service.get_activity_details(int(record.external_id))
+                
+                if details_data and details_data.get("gps_data"):
+                    route_points = sync_service._parse_gps_route(details_data["gps_data"], record.start_time)
+                    
+                    if route_points:
+                        record.route_data = json.dumps(route_points)
+                        refreshed_count += 1
+                        logger.debug(f"刷新运动 {record.id} GPS数据: {len(route_points)} 点")
+                
+                # 添加小延迟，避免请求过快
+                import asyncio
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"刷新运动 {record.id} GPS数据失败: {e}")
+                continue
+        
+        db.commit()
+        
+        return {
+            "status": "success",
+            "message": f"成功刷新 {refreshed_count} 条记录的GPS数据",
+            "refreshed_count": refreshed_count,
+            "failed_count": failed_count,
+            "total_count": len(records)
+        }
+        
+    except Exception as e:
+        logger.error(f"批量刷新GPS数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
+
+
 @router.post("/me/sync-garmin")
 async def sync_garmin_activities(
     days: int = Query(default=7, ge=1, le=30, description="同步最近N天的活动"),

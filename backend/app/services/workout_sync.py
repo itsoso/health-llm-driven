@@ -574,18 +574,19 @@ class WorkoutSyncService:
                         WorkoutRecord.external_id == activity_id
                     ).first()
                     
-                    if existing:
-                        logger.debug(f"{self._log_prefix()}活动 {activity_id} 已存在，跳过")
-                        continue
-                    
                     # 解析活动数据
                     parsed = self._parse_activity(activity, user_id)
+                    
+                    if existing:
+                        # 更新已有记录（只更新缺失的数据，如GPS、心率等）
+                        logger.debug(f"{self._log_prefix()}活动 {activity_id} 已存在，更新数据")
+                        update_fields = {}
                     
                     # 尝试获取详细数据（心率曲线、GPS路线等）
                     try:
                         details_data = await self.get_activity_details(int(activity_id))
                         if details_data:
-                            duration = parsed.get("duration_seconds", 3600)
+                            duration = parsed.get("duration_seconds", 3600) or (existing.duration_seconds if existing else 3600)
                             
                             # 解析心率数据
                             if details_data.get("heart_rate_data"):
@@ -595,8 +596,8 @@ class WorkoutSyncService:
                                     logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
                                 else:
                                     # 如果无法获取详细心率，使用平均心率生成简单曲线
-                                    avg_hr = parsed.get("avg_heart_rate")
-                                    max_hr = parsed.get("max_heart_rate")
+                                    avg_hr = parsed.get("avg_heart_rate") or (existing.avg_heart_rate if existing else None)
+                                    max_hr = parsed.get("max_heart_rate") or (existing.max_heart_rate if existing else None)
                                     if avg_hr and duration:
                                         # 生成模拟心率曲线（热身-运动-冷却）
                                         hr_points = self._generate_simulated_hr_curve(avg_hr, max_hr, duration)
@@ -606,7 +607,7 @@ class WorkoutSyncService:
                             
                             # 解析GPS路线数据
                             if details_data.get("gps_data"):
-                                start_time = parsed.get("start_time")
+                                start_time = parsed.get("start_time") or (existing.start_time if existing else None)
                                 route_points = self._parse_gps_route(details_data["gps_data"], start_time)
                                 if route_points:
                                     parsed["route_data"] = json.dumps(route_points)
@@ -614,12 +615,39 @@ class WorkoutSyncService:
                     except Exception as e:
                         logger.debug(f"获取活动详情失败: {e}")
                     
-                    # 创建记录
-                    db_record = WorkoutRecord(**parsed)
-                    db.add(db_record)
-                    synced_count += 1
-                    
-                    logger.info(f"{self._log_prefix()}同步活动: {parsed['workout_name']} ({parsed['workout_type']})")
+                    if existing:
+                        # 更新已有记录（只更新缺失的数据）
+                        updated = False
+                        
+                        # 更新心率数据（如果缺失）
+                        if not existing.heart_rate_data and parsed.get("heart_rate_data"):
+                            existing.heart_rate_data = parsed["heart_rate_data"]
+                            updated = True
+                        
+                        # 更新GPS数据（如果缺失）
+                        if not existing.route_data and parsed.get("route_data"):
+                            existing.route_data = parsed["route_data"]
+                            updated = True
+                        
+                        # 更新其他可能缺失的字段
+                        if not existing.pace_data and parsed.get("pace_data"):
+                            existing.pace_data = parsed.get("pace_data")
+                            updated = True
+                        
+                        if not existing.elevation_data and parsed.get("elevation_data"):
+                            existing.elevation_data = parsed.get("elevation_data")
+                            updated = True
+                        
+                        if updated:
+                            db.commit()
+                            synced_count += 1
+                            logger.info(f"{self._log_prefix()}更新活动: {parsed['workout_name']} ({parsed['workout_type']})")
+                    else:
+                        # 创建新记录
+                        db_record = WorkoutRecord(**parsed)
+                        db.add(db_record)
+                        synced_count += 1
+                        logger.info(f"{self._log_prefix()}同步活动: {parsed['workout_name']} ({parsed['workout_type']})")
                     
                 except Exception as e:
                     logger.error(f"{self._log_prefix()}解析活动失败: {e}")
