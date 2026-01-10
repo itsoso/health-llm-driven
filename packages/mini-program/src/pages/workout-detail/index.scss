@@ -272,7 +272,15 @@
   min-height: 4px;
 }
 
-// 心率区间
+// 地图容器
+.map-container {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+// 心率区间（改进版）
 .hr-zones {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 16px;
@@ -280,18 +288,53 @@
 }
 
 .zone-item {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 
   &:last-child {
     margin-bottom: 0;
   }
 }
 
+.zone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.zone-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.zone-label {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.zone-range {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.zone-desc {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.zone-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .zone-bar-container {
   height: 12px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  margin-bottom: 8px;
   overflow: hidden;
 }
 
@@ -301,35 +344,18 @@
   transition: width 0.3s ease;
 }
 
-.zone-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.zone-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 6px;
-}
-
-.zone-name {
+.zone-time {
   font-size: 24px;
   color: rgba(255, 255, 255, 0.8);
-  flex: 1;
+  font-weight: 500;
+  min-width: 80px;
+  text-align: right;
 }
 
 .zone-percent {
   font-size: 24px;
   color: rgba(255, 255, 255, 0.6);
-  width: 60px;
-  text-align: right;
-}
-
-.zone-time {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.5);
-  width: 100px;
+  min-width: 50px;
   text-align: right;
 }
 
@@ -410,6 +436,53 @@
   padding: 24px;
   font-size: 24px;
   color: rgba(255, 255, 255, 0.4);
+}
+
+// 统计子区块
+.stats-subsection {
+  margin-bottom: 24px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.subsection-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stats-list {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.stat-row-label {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.stat-row-value {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
 }
 
 .bottom-space {
