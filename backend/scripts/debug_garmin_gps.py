@@ -99,7 +99,11 @@ async def debug_activity_gps(user_id: int, activity_id: int = None):
                     logger.info(f"   GPS相关字段: {gps_keys}")
                     for key in gps_keys:
                         value = activity_details[key]
-                        logger.info(f"   {key}: {type(value)} = {str(value)[:100]}")
+                        if key == 'geoPolylineDTO' and isinstance(value, dict):
+                            logger.info(f"   {key}: {type(value)}")
+                            logger.info(f"   完整内容: {json.dumps(value, indent=2, ensure_ascii=False)}")
+                        else:
+                            logger.info(f"   {key}: {type(value)} = {str(value)[:200]}")
                 else:
                     logger.info("   未找到GPS相关字段")
             else:
