@@ -249,24 +249,14 @@ class WorkoutSyncService:
                         if isinstance(gps_data, dict):
                             logger.debug(f"geoPolylineDTO键: {list(gps_data.keys())}")
                 
-                # 方法2: 尝试从活动详情中获取GPS数据
+                # 方法2: 尝试从活动详情中获取GPS数据（只查找特定的GPS字段，避免误判）
                 if not gps_data and details and isinstance(details, dict):
-                    # 检查是否有GPS相关字段
+                    # 只检查明确的GPS相关字段，不包括locationName等
                     gps_data = details.get('gpsData') or details.get('geoPolylineDTO') or details.get('geoPolyline')
                     if gps_data:
                         logger.debug(f"从activity获取GPS数据，类型: {type(gps_data)}")
                         if isinstance(gps_data, dict):
                             logger.debug(f"GPS数据键: {list(gps_data.keys())}")
-                
-                # 方法3: 尝试从details中查找所有可能的GPS字段
-                if not gps_data and details and isinstance(details, dict):
-                    # 查找包含GPS、geo、polyline、route等关键词的字段
-                    for key, value in details.items():
-                        if any(keyword in key.lower() for keyword in ['gps', 'geo', 'polyline', 'route', 'track', 'location']):
-                            logger.debug(f"发现可能的GPS字段: {key}, 类型: {type(value)}")
-                            if value:
-                                gps_data = value
-                                break
                 
             except Exception as e:
                 logger.debug(f"获取GPS数据失败: {e}")
