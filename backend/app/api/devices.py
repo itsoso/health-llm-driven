@@ -10,7 +10,7 @@ import secrets
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -437,3 +437,215 @@ async def unbind_device(
     db.commit()
     
     return {"success": True, "message": f"{device_type} 设备已解绑"}
+
+
+# ===== Apple Health 文件导入 =====
+
+@router.post("/apple/import", summary="导入 Apple Health 数据")
+async def import_apple_health(
+    file: UploadFile = File(..., description="Apple Health 导出的 XML 文件"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    导入 Apple Health 导出的 XML 文件
+    
+    使用步骤：
+    1. 在 iPhone 上打开"健康" App
+    2. 点击右上角头像 → "导出健康数据"
+    3. 等待导出完成后，将 XML 文件上传到此接口
+    
+    注意：文件可能很大（几十MB），请耐心等待处理
+    """
+    from app.services.device_adapters.apple import AppleHealthAdapter
+    import json
+    
+    # 检查文件类型
+    if not file.filename.endswith('.xml'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请上传 XML 格式的 Apple Health 导出文件"
+        )
+    
+    try:
+        # 读取文件内容
+        content = await file.read()
+        xml_content = content.decode('utf-8')
+        
+        # 解析 XML
+        logger.info(f"开始解析 Apple Health XML 文件 (用户 {current_user.id})")
+        parsed_data = AppleHealthAdapter.parse_health_xml(xml_content)
+        
+        if not parsed_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="XML 文件中未找到有效的健康数据"
+            )
+        
+        # 保存到设备凭证（Apple 使用文件导入，不需要传统凭证）
+        credential = db.query(DeviceCredential).filter(
+            DeviceCredential.user_id == current_user.id,
+            DeviceCredential.device_type == "apple"
+        ).first()
+        
+        if not credential:
+            credential = DeviceCredential(
+                user_id=current_user.id,
+                device_type="apple",
+                auth_type="file",
+                is_valid=True
+            )
+            db.add(credential)
+        
+        # 将解析的数据保存到 config（实际生产环境建议存到数据库表）
+        credential.set_config({
+            "imported_data": parsed_data,
+            "imported_at": datetime.now().isoformat(),
+            "data_days": len(parsed_data),
+            "data_range": {
+                "start": min(parsed_data.keys()) if parsed_data else None,
+                "end": max(parsed_data.keys()) if parsed_data else None
+            }
+        })
+        credential.mark_valid()
+        credential.update_sync_time()
+        db.commit()
+        
+        # 创建适配器并保存数据到数据库
+        adapter = AppleHealthAdapter(imported_data=parsed_data)
+        
+        # 同步所有日期的数据
+        synced = 0
+        failed = 0
+        for date_str in parsed_data.keys():
+            try:
+                from datetime import date as date_class
+                target_date = date_class.fromisoformat(date_str)
+                data = await adapter.fetch_daily_data(target_date)
+                if data:
+                    DeviceManager._save_health_data(db, current_user.id, data)
+                    synced += 1
+            except Exception as e:
+                logger.warning(f"导入 {date_str} 数据失败: {e}")
+                failed += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"导入成功：{synced} 天数据已导入，{failed} 天失败",
+            "data_days": len(parsed_data),
+            "synced_days": synced,
+            "failed_days": failed,
+            "data_range": {
+                "start": min(parsed_data.keys()) if parsed_data else None,
+                "end": max(parsed_data.keys()) if parsed_data else None
+            }
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"XML 解析失败: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"导入 Apple Health 数据失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导入失败: {str(e)}"
+        )
+
+
+@router.post("/apple/test-connection", summary="测试 Apple Health 连接")
+async def test_apple_connection(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """测试 Apple Health 数据是否已导入"""
+    from app.services.device_adapters.apple import AppleHealthAdapter
+    
+    credential = db.query(DeviceCredential).filter(
+        DeviceCredential.user_id == current_user.id,
+        DeviceCredential.device_type == "apple"
+    ).first()
+    
+    if not credential:
+        return {
+            "success": False,
+            "message": "未导入 Apple Health 数据，请先上传导出文件"
+        }
+    
+    config = credential.get_config()
+    imported_data = config.get("imported_data", {})
+    
+    if not imported_data:
+        return {
+            "success": False,
+            "message": "未导入 Apple Health 数据，请先上传导出文件"
+        }
+    
+    adapter = AppleHealthAdapter(imported_data=imported_data)
+    return await adapter.test_connection()
+
+
+@router.post("/apple/sync", response_model=DeviceSyncResult, summary="同步 Apple Health 数据")
+async def sync_apple_data(
+    request: SyncRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    同步 Apple Health 数据
+    
+    注意：Apple Health 数据来自文件导入，此接口会从已导入的数据中同步到数据库
+    """
+    from app.services.device_adapters.apple import AppleHealthAdapter
+    
+    credential = db.query(DeviceCredential).filter(
+        DeviceCredential.user_id == current_user.id,
+        DeviceCredential.device_type == "apple"
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未导入 Apple Health 数据，请先上传导出文件"
+        )
+    
+    config = credential.get_config()
+    imported_data = config.get("imported_data", {})
+    
+    if not imported_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未导入 Apple Health 数据，请先上传导出文件"
+        )
+    
+    adapter = AppleHealthAdapter(imported_data=imported_data)
+    
+    synced = 0
+    failed = 0
+    today = datetime.now().date()
+    
+    for i in range(request.days):
+        target_date = today - timedelta(days=i)
+        try:
+            data = await adapter.fetch_daily_data(target_date)
+            if data:
+                DeviceManager._save_health_data(db, current_user.id, data)
+                synced += 1
+        except Exception as e:
+            logger.warning(f"同步 {target_date} 失败: {e}")
+            failed += 1
+    
+    credential.update_sync_time()
+    credential.mark_valid()
+    db.commit()
+    
+    return DeviceSyncResult(
+        success=True,
+        device="apple",
+        synced_days=synced,
+        failed_days=failed,
+        message=f"同步完成：成功 {synced} 天，失败 {failed} 天"
+    )

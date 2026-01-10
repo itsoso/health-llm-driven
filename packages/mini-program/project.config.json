@@ -4,7 +4,7 @@
   "description": "健康管理系统 - 微信小程序",
   "appid": "wx169f93db056a7dd5",
   "setting": {
-    "urlCheck": true,
+    "urlCheck": false,
     "es6": false,
     "enhance": false,
     "postcss": false,

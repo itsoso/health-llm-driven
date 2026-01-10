@@ -13,8 +13,9 @@ import {
 
 /**
  * 微信登录
+ * @param nickname 可选的用户昵称
  */
-export async function wechatLogin(): Promise<WechatLoginResponse> {
+export async function wechatLogin(nickname?: string): Promise<WechatLoginResponse> {
   // 1. 调用 wx.login 获取 code
   const loginResult = await Taro.login();
   
@@ -22,30 +23,29 @@ export async function wechatLogin(): Promise<WechatLoginResponse> {
     throw new Error('微信登录失败');
   }
 
-  // 2. 获取用户信息（可选）
-  let nickname: string | undefined;
-  let avatarUrl: string | undefined;
-  
-  try {
-    // 注意：getUserProfile 需要用户主动触发
-    // 这里仅作示例，实际应在按钮点击时调用
-  } catch (e) {
-    console.log('获取用户信息失败，使用默认值');
-  }
-
-  // 3. 发送 code 到后端换取 token（登录不需要认证）
+  // 2. 发送 code 到后端换取 token（登录不需要认证）
   const response = await postNoAuth<WechatLoginResponse>(API_ENDPOINTS.AUTH.WECHAT_LOGIN, {
     code: loginResult.code,
-    nickname,
-    avatar_url: avatarUrl,
+    nickname: nickname || undefined,
   });
 
-  // 4. 保存 token 和用户名
+  // 3. 保存 token 和用户名
   setToken(response.access_token);
   if (response.nickname) {
     Taro.setStorageSync('user_name', response.nickname);
   }
 
+  return response;
+}
+
+/**
+ * 更新用户昵称
+ */
+export async function updateUserName(name: string): Promise<{ success: boolean; name: string }> {
+  const response = await post<{ success: boolean; name: string }>('/users/me/name', { name });
+  if (response.success) {
+    Taro.setStorageSync('user_name', response.name);
+  }
   return response;
 }
 

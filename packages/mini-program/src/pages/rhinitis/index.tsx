@@ -29,7 +29,11 @@ type TabType = 'exercise' | 'rhinitis';
 
 export default function Checkin() {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingRunning, setSavingRunning] = useState(false);
+  const [savingSquats, setSavingSquats] = useState(false);
+  const [savingLegRaises, setSavingLegRaises] = useState(false);
+  const [savingSneeze, setSavingSneeze] = useState(false);
+  const [savingNasalWash, setSavingNasalWash] = useState(false);
   const [record, setRecord] = useState<CheckinRecord | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('exercise');
   
@@ -75,7 +79,7 @@ export default function Checkin() {
       Taro.showToast({ title: '请输入跑步数据', icon: 'none' });
       return;
     }
-    setSaving(true);
+    setSavingRunning(true);
     try {
       await post('/checkin/', {
         checkin_date: today,
@@ -87,7 +91,7 @@ export default function Checkin() {
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
     } finally {
-      setSaving(false);
+      setSavingRunning(false);
     }
   };
 
@@ -97,7 +101,7 @@ export default function Checkin() {
       Taro.showToast({ title: '请输入深蹲次数', icon: 'none' });
       return;
     }
-    setSaving(true);
+    setSavingSquats(true);
     try {
       await post('/checkin/', {
         checkin_date: today,
@@ -108,13 +112,13 @@ export default function Checkin() {
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
     } finally {
-      setSaving(false);
+      setSavingSquats(false);
     }
   };
 
   // 保存踢腿
   const handleSaveLegRaises = async (count: number) => {
-    setSaving(true);
+    setSavingLegRaises(true);
     try {
       // 累加踢腿次数
       const currentCount = record?.leg_raises_count || 0;
@@ -127,7 +131,7 @@ export default function Checkin() {
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
     } finally {
-      setSaving(false);
+      setSavingLegRaises(false);
     }
   };
 
@@ -138,7 +142,7 @@ export default function Checkin() {
       return;
     }
 
-    setSaving(true);
+    setSavingSneeze(true);
     try {
       const currentTimes = record?.sneeze_times || [];
       const newTimes = [...currentTimes, { time: sneezeTime, count: sneezeCount }];
@@ -156,13 +160,13 @@ export default function Checkin() {
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
     } finally {
-      setSaving(false);
+      setSavingSneeze(false);
     }
   };
 
   // 添加洗鼻记录
   const handleAddNasalWash = async (type: 'wash' | 'soak') => {
-    setSaving(true);
+    setSavingNasalWash(true);
     try {
       const now = new Date();
       const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -180,7 +184,7 @@ export default function Checkin() {
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
     } finally {
-      setSaving(false);
+      setSavingNasalWash(false);
     }
   };
 
@@ -286,7 +290,7 @@ export default function Checkin() {
             <Button 
               className="save-btn green"
               onClick={handleSaveRunning}
-              loading={saving}
+              loading={savingRunning}
             >
               保存跑步
             </Button>
@@ -319,7 +323,7 @@ export default function Checkin() {
             <Button 
               className="save-btn blue"
               onClick={handleSaveSquats}
-              loading={saving}
+              loading={savingSquats}
             >
               保存深蹲
             </Button>
@@ -339,14 +343,14 @@ export default function Checkin() {
               <Button 
                 className="quick-action-btn orange"
                 onClick={() => handleSaveLegRaises(40)}
-                loading={saving}
+                loading={savingLegRaises}
               >
                 +40 次
               </Button>
               <Button 
                 className="quick-action-btn purple"
                 onClick={() => handleSaveLegRaises(80)}
-                loading={saving}
+                loading={savingLegRaises}
               >
                 +80 次
               </Button>
@@ -393,7 +397,7 @@ export default function Checkin() {
               <Button 
                 className="add-btn" 
                 onClick={handleAddSneeze}
-                loading={saving}
+                loading={savingSneeze}
               >
                 添加
               </Button>
@@ -421,14 +425,14 @@ export default function Checkin() {
               <Button 
                 className="action-btn blue" 
                 onClick={() => handleAddNasalWash('wash')}
-                loading={saving}
+                loading={savingNasalWash}
               >
                 💧 洗鼻
               </Button>
               <Button 
                 className="action-btn purple" 
                 onClick={() => handleAddNasalWash('soak')}
-                loading={saving}
+                loading={savingNasalWash}
               >
                 🫧 泡鼻
               </Button>
