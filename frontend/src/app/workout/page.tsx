@@ -316,6 +316,29 @@ function WorkoutContent() {
       })()
     : [];
 
+  // 解析 GPS 路线数据（先解析，供海拔数据使用）
+  const routeData = workoutDetail?.route_data
+    ? (() => {
+        try {
+          const data = JSON.parse(workoutDetail.route_data);
+          // 支持多种格式：{lat, lng} 或 {latitude, longitude} 或 [lat, lng]
+          return data.map((p: any) => {
+            if (Array.isArray(p)) {
+              return { lat: p[0], lng: p[1] };
+            }
+            return {
+              lat: p.lat || p.latitude,
+              lng: p.lng || p.longitude,
+              elevation: p.elevation || p.elev,
+              time: p.time,
+            };
+          }).filter((p: any) => p.lat && p.lng);
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
   // 解析海拔数据（优先从GPS数据中提取，如果没有则使用elevation_data）
   const elevationChartData = (() => {
     // 首先尝试从GPS路线数据中提取海拔和时间
@@ -355,28 +378,6 @@ function WorkoutContent() {
     }
     return [];
   })();
-
-  // 解析 GPS 路线数据
-  const routeData = workoutDetail?.route_data
-    ? (() => {
-        try {
-          const data = JSON.parse(workoutDetail.route_data);
-          // 支持多种格式：{lat, lng} 或 {latitude, longitude} 或 [lat, lng]
-          return data.map((p: any) => {
-            if (Array.isArray(p)) {
-              return { lat: p[0], lng: p[1] };
-            }
-            return {
-              lat: p.lat || p.latitude,
-              lng: p.lng || p.longitude,
-              elevation: p.elevation || p.elev,
-            };
-          }).filter((p: any) => p.lat && p.lng);
-        } catch {
-          return [];
-        }
-      })()
-    : [];
 
   return (
     <main className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 pt-20 md:pt-24">
