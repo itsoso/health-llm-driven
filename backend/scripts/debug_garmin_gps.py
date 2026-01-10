@@ -49,6 +49,9 @@ async def debug_activity_gps(user_id: int, activity_id: int = None):
             user_id=user_id
         )
         
+        # 确保已认证
+        sync_service._ensure_authenticated()
+        
         # 如果没有指定activity_id，使用最新的有external_id的活动
         if not activity_id:
             record = db.query(WorkoutRecord).filter(
