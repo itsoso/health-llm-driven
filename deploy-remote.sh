@@ -41,7 +41,7 @@ echo ""
 
 # 2. 连接到服务器并执行部署
 echo -e "${YELLOW}[2/6] 连接到服务器...${NC}"
-ssh ${USER}@${SERVER} << 'ENDSSH'
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USER}@${SERVER} << 'ENDSSH'
 set -e
 
 APP_DIR="/opt/health-app"
