@@ -55,6 +55,15 @@ class ElevationPoint(BaseModel):
     elevation: float  # 海拔（米）
 
 
+class RoutePoint(BaseModel):
+    """GPS路线数据点"""
+    lat: float  # 纬度
+    lng: float  # 经度
+    elevation: Optional[float] = None  # 海拔（米）
+    time: Optional[int] = None  # 时间（秒，从运动开始）
+    distance: Optional[float] = None  # 距离（米）
+
+
 class WorkoutRecordBase(BaseModel):
     """运动记录基础字段"""
     workout_date: date
@@ -131,6 +140,7 @@ class WorkoutRecordCreate(WorkoutRecordBase):
     heart_rate_data: Optional[List[HeartRatePoint]] = None
     pace_data: Optional[List[PacePoint]] = None
     elevation_data: Optional[List[ElevationPoint]] = None
+    route_data: Optional[List[RoutePoint]] = None
 
 
 class WorkoutRecordUpdate(BaseModel):
@@ -151,6 +161,7 @@ class WorkoutRecordResponse(WorkoutRecordBase):
     heart_rate_data: Optional[str] = None
     pace_data: Optional[str] = None
     elevation_data: Optional[str] = None
+    route_data: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     

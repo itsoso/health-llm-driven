@@ -265,6 +265,10 @@ def create_workout(
     if workout.elevation_data:
         elevation_data_json = json.dumps([p.model_dump() for p in workout.elevation_data])
     
+    route_data_json = None
+    if workout.route_data:
+        route_data_json = json.dumps([p.model_dump() for p in workout.route_data])
+    
     db_record = WorkoutRecord(
         user_id=current_user.id,
         workout_date=workout.workout_date,
@@ -315,7 +319,8 @@ def create_workout(
         source="manual",
         heart_rate_data=hr_data_json,
         pace_data=pace_data_json,
-        elevation_data=elevation_data_json
+        elevation_data=elevation_data_json,
+        route_data=route_data_json
     )
     
     db.add(db_record)
