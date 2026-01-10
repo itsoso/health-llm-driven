@@ -68,7 +68,16 @@ echo ""
 # 配置 Git 安全目录（解决 dubious ownership 问题）
 echo "[2/5] 配置 Git 并拉取最新代码..."
 git config --global --add safe.directory $APP_DIR || true
-git pull origin main
+
+# 检查是否有本地修改，如果有则先 stash
+if [ -n "$(git status --porcelain)" ]; then
+    echo "检测到本地修改，先暂存..."
+    git stash save "Auto stash before deploy $(date +%Y%m%d_%H%M%S)" || true
+fi
+
+# 拉取最新代码
+git fetch origin main
+git reset --hard origin/main
 echo "✓ 代码已更新"
 echo ""
 
