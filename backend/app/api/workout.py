@@ -178,7 +178,7 @@ def get_my_workout(
     db: Session = Depends(get_db)
 ):
     """获取单条运动记录详情"""
-    from fastapi import Response
+    from fastapi.responses import JSONResponse
     
     # 刷新数据库会话以确保获取最新数据
     db.expire_all()
@@ -191,13 +191,21 @@ def get_my_workout(
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
     
-    # 创建响应并设置禁用缓存的头部
-    response = Response(content=record.model_dump_json(), media_type="application/json")
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    logger.info(f"用户 {current_user.id} 获取运动记录 {workout_id}, route_data存在: {bool(record.route_data)}, updated_at: {record.updated_at}")
+    
+    # 转换为响应模型
+    response_data = WorkoutRecordResponse.model_validate(record).model_dump()
+    
+    # 使用JSONResponse并设置禁用缓存的头部
+    response = JSONResponse(content=response_data)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    # 添加ETag防止缓存
+    updated_timestamp = record.updated_at.timestamp() if record.updated_at else (record.created_at.timestamp() if record.created_at else 0)
+    response.headers["ETag"] = f'"{workout_id}-{updated_timestamp}"'
     
-    return record
+    return response
 
 
 @router.get("/me/{workout_id}/chart", response_model=WorkoutChartData)
