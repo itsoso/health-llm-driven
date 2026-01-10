@@ -97,11 +97,29 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
     return responseData;
   } catch (error: any) {
     console.error('请求失败:', error);
+    console.error('请求URL:', `${BASE_URL}${url}`);
+    console.error('错误详情:', JSON.stringify(error, null, 2));
+    
     if (!silent) {
+      let errorMsg = '网络请求失败';
+      
+      // 处理网络错误
+      if (error.errMsg) {
+        if (error.errMsg.includes('url not in domain list')) {
+          errorMsg = '域名未配置，请在微信公众平台添加合法域名';
+        } else if (error.errMsg.includes('fail')) {
+          errorMsg = `连接失败: ${error.errMsg}`;
+        } else {
+          errorMsg = error.errMsg;
+        }
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
       Taro.showToast({
-        title: error.message || '网络请求失败',
+        title: errorMsg,
         icon: 'none',
-        duration: 2000,
+        duration: 3000,
       });
     }
     throw error;

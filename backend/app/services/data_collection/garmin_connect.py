@@ -29,6 +29,114 @@ class GarminMFARequiredError(Exception):
         self.client_state = client_state
 
 
+# 全局 MFA 会话存储（用于跨请求保持 client 对象）
+# 格式: {session_id: {"client": Garmin, "client_state": dict, "expires": timestamp}}
+_mfa_sessions: Dict[str, Any] = {}
+
+def _cleanup_expired_mfa_sessions():
+    """清理过期的 MFA 会话"""
+    import time
+    current_time = time.time()
+    expired_keys = [k for k, v in _mfa_sessions.items() if v.get("expires", 0) < current_time]
+    for k in expired_keys:
+        del _mfa_sessions[k]
+
+def _generate_mfa_session_id() -> str:
+    """生成 MFA 会话 ID"""
+    import uuid
+    return str(uuid.uuid4())
+
+
+def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
+    """
+    使用 session_id 和 MFA 验证码完成登录
+    
+    这是一个模块级函数，用于处理 MFA 验证流程。
+    因为 client 对象需要在请求之间保持，所以使用全局 session 存储。
+    
+    Args:
+        session_id: test_connection_with_mfa 返回的 session_id
+        mfa_code: 用户输入的 MFA 验证码
+        
+    Returns:
+        dict: {
+            "success": bool,
+            "message": str,
+            "email": str (如果成功),
+            "is_cn": bool (如果成功)
+        }
+    """
+    import time
+    
+    # 清理过期会话
+    _cleanup_expired_mfa_sessions()
+    
+    # 查找会话
+    if session_id not in _mfa_sessions:
+        logger.warning(f"MFA session not found: {session_id}")
+        return {
+            "success": False,
+            "message": "❌ 验证会话已过期，请重新测试连接。"
+        }
+    
+    session = _mfa_sessions[session_id]
+    
+    # 检查是否过期
+    if session.get("expires", 0) < time.time():
+        del _mfa_sessions[session_id]
+        return {
+            "success": False,
+            "message": "❌ 验证会话已过期，请重新测试连接。"
+        }
+    
+    client = session.get("client")
+    client_state = session.get("client_state")
+    email = session.get("email")
+    is_cn = session.get("is_cn")
+    
+    if not client or not client_state:
+        del _mfa_sessions[session_id]
+        return {
+            "success": False,
+            "message": "❌ 会话数据无效，请重新测试连接。"
+        }
+    
+    try:
+        # 使用验证码恢复登录
+        client.resume_login(client_state, mfa_code)
+        
+        server_type = "中国版" if is_cn else "国际版"
+        logger.info(f"[MFA] Garmin {server_type} ({email}) MFA 验证成功")
+        
+        # 清理会话
+        del _mfa_sessions[session_id]
+        
+        return {
+            "success": True,
+            "message": "✅ 验证成功！Garmin账号连接成功，可以保存凭证了。",
+            "email": email,
+            "is_cn": is_cn
+        }
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        
+        if 'invalid' in error_msg or 'incorrect' in error_msg or 'wrong' in error_msg:
+            # 验证码错误，保留会话供重试
+            return {
+                "success": False,
+                "message": "❌ 验证码错误！请检查并重新输入。"
+            }
+        
+        # 其他错误，清理会话
+        del _mfa_sessions[session_id]
+        logger.error(f"[MFA] MFA 验证失败: {e}")
+        return {
+            "success": False,
+            "message": f"❌ 验证失败: {str(e)}"
+        }
+
+
 class GarminConnectService:
     """
     Garmin Connect数据收集服务
@@ -141,14 +249,28 @@ class GarminConnectService:
                 
                 # 检查是否是 MFA 需要的返回格式
                 if first_element == "needs_mfa" and isinstance(second_element, dict):
-                    client_state = second_element
-                    self._mfa_client_state = client_state
+                    import time
+                    
+                    # 清理过期会话
+                    _cleanup_expired_mfa_sessions()
+                    
+                    # 生成会话 ID 并存储 client 和 client_state
+                    session_id = _generate_mfa_session_id()
+                    _mfa_sessions[session_id] = {
+                        "client": self.client,
+                        "client_state": second_element,
+                        "email": self.email,
+                        "is_cn": self.is_cn,
+                        "expires": time.time() + 300  # 5分钟过期
+                    }
+                    
+                    self._mfa_client_state = second_element
                     server_type = "中国版" if self.is_cn else "国际版"
-                    logger.info(f"{prefix} Garmin {server_type} 需要两步验证")
+                    logger.info(f"{prefix} Garmin {server_type} 需要两步验证，session_id: {session_id}")
                     return {
                         "success": False,
                         "mfa_required": True,
-                        "client_state": client_state,
+                        "mfa_session_id": session_id,  # 返回 session_id 而不是 client_state
                         "message": "🔐 需要两步验证！请输入您 Garmin 账号绑定的验证器应用中的验证码。"
                     }
                 
@@ -279,7 +401,8 @@ class GarminConnectService:
                 "success": False,
                 "message": f"❌ 验证失败: {str(e)}"
             }
-    
+
+
     def get_user_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
         获取指定日期的每日摘要数据

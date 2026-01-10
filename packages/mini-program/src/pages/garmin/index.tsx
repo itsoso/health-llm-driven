@@ -19,7 +19,7 @@ interface TestConnectionResponse {
   success: boolean;
   mfa_required: boolean;
   message: string;
-  client_state?: Record<string, any>;
+  mfa_session_id?: string;
 }
 
 export default function Garmin() {
@@ -38,7 +38,7 @@ export default function Garmin() {
   // MFA 两步验证
   const [showMFA, setShowMFA] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
-  const [clientState, setClientState] = useState<Record<string, any> | null>(null);
+  const [mfaSessionId, setMfaSessionId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
@@ -79,9 +79,9 @@ export default function Garmin() {
       
       if (result.success) {
         Taro.showToast({ title: '连接成功 ✓', icon: 'success' });
-      } else if (result.mfa_required && result.client_state) {
+      } else if (result.mfa_required && result.mfa_session_id) {
         // 需要两步验证
-        setClientState(result.client_state);
+        setMfaSessionId(result.mfa_session_id);
         setShowMFA(true);
         Taro.showToast({ 
           title: '需要两步验证', 
@@ -113,7 +113,7 @@ export default function Garmin() {
       return;
     }
     
-    if (!clientState) {
+    if (!mfaSessionId) {
       Taro.showToast({ title: '验证状态已过期，请重新测试连接', icon: 'none' });
       setShowMFA(false);
       return;
@@ -122,18 +122,15 @@ export default function Garmin() {
     setVerifying(true);
     try {
       const result = await post<{ success: boolean; message: string }>('/auth/garmin/verify-mfa', {
-        garmin_email: email,
-        garmin_password: password,
-        is_cn: isCN,
         mfa_code: mfaCode,
-        client_state: clientState,
+        mfa_session_id: mfaSessionId,
       });
       
       if (result.success) {
         Taro.showToast({ title: '验证成功 ✓', icon: 'success' });
         setShowMFA(false);
         setMfaCode('');
-        setClientState(null);
+        setMfaSessionId(null);
       } else {
         Taro.showToast({ 
           title: result.message || '验证失败', 
@@ -404,7 +401,7 @@ export default function Garmin() {
                   onClick={() => {
                     setShowMFA(false);
                     setMfaCode('');
-                    setClientState(null);
+                    setMfaSessionId(null);
                   }}
                 >
                   取消

@@ -551,7 +551,7 @@ async def test_garmin_connection(
             success=result.get("success", False),
             mfa_required=result.get("mfa_required", False),
             message=result.get("message", ""),
-            client_state=result.get("client_state")
+            mfa_session_id=result.get("mfa_session_id")
         )
         
     except Exception as e:
@@ -592,25 +592,16 @@ async def verify_garmin_mfa(
     
     参数：
     - mfa_code: 6位数字验证码（来自您的验证器应用）
-    - client_state: test-connection 返回的客户端状态
+    - mfa_session_id: test-connection 返回的会话ID
     """
     try:
-        from app.services.data_collection.garmin_connect import GarminConnectService
+        from app.services.data_collection.garmin_connect import verify_mfa_with_session
         
-        server_type = "中国版(garmin.cn)" if mfa_request.is_cn else "国际版(garmin.com)"
-        logger.info(f"验证Garmin MFA - 服务器: {server_type}, 邮箱: {mfa_request.garmin_email}")
-        
-        # 创建服务实例
-        garmin_service = GarminConnectService(
-            email=mfa_request.garmin_email,
-            password=mfa_request.garmin_password,
-            is_cn=mfa_request.is_cn,
-            user_id=current_user.id
-        )
+        logger.info(f"验证Garmin MFA - session_id: {mfa_request.mfa_session_id}")
         
         # 使用验证码恢复登录
-        result = garmin_service.resume_login_with_mfa(
-            client_state=mfa_request.client_state,
+        result = verify_mfa_with_session(
+            session_id=mfa_request.mfa_session_id,
             mfa_code=mfa_request.mfa_code
         )
         

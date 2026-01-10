@@ -2,7 +2,7 @@
  * 首页 - 登录/欢迎页
  */
 import { useState, useEffect } from 'react';
-import { View, Text, Button, Image } from '@tarojs/components';
+import { View, Text, Button, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { wechatLogin, getTodayGarminData, getDailyRecommendation, getTodayRhinitis } from '../../services/api';
 import { getToken } from '../../services/request';
@@ -21,6 +21,7 @@ export default function Index() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('');
+  const [inputNickname, setInputNickname] = useState(''); // 登录时输入的昵称
   const [homeData, setHomeData] = useState<HomeData>({
     garmin: null,
     recommendation: null,
@@ -74,7 +75,8 @@ export default function Index() {
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
-      const result = await wechatLogin();
+      // 使用用户输入的昵称（如果有）
+      const result = await wechatLogin(inputNickname || undefined);
       
       Taro.showToast({
         title: result.is_new_user ? '欢迎新用户！' : '登录成功',
@@ -85,6 +87,7 @@ export default function Index() {
       if (result.nickname) {
         setUserName(result.nickname);
       }
+      setInputNickname(''); // 清空输入
 
       // 加载首页数据
       loadHomeData();
@@ -334,6 +337,14 @@ export default function Index() {
       {/* 登录按钮 - 仅未登录时显示 */}
       {!isLoggedIn && (
         <View className="login-section">
+          <Input
+            className="nickname-input"
+            type="text"
+            placeholder="输入您的昵称（可选）"
+            value={inputNickname}
+            onInput={(e) => setInputNickname(e.detail.value)}
+            maxlength={20}
+          />
           <Button
             className="login-btn"
             onClick={handleLogin}

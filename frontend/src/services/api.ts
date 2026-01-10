@@ -254,3 +254,33 @@ export const habitApi = {
     api.get('/habits/me/today-summary'),
 };
 
+// 设备管理
+export const deviceApi = {
+  // 获取支持的设备列表
+  getSupportedDevices: () => api.get('/devices/supported'),
+  // 获取当前用户绑定的设备
+  getMyDevices: () => api.get('/devices/me'),
+  // 获取指定设备凭证
+  getDeviceCredential: (deviceType: string) => api.get(`/devices/me/${deviceType}`),
+  // Apple Health 导入
+  importAppleHealth: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/devices/apple/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  // Apple Health 测试连接
+  testAppleConnection: () => api.post('/devices/apple/test-connection'),
+  // Apple Health 同步
+  syncAppleData: (days: number = 7) => api.post('/devices/apple/sync', { days }),
+  // 通用设备同步
+  syncDevice: (deviceType: string, days: number = 7) => 
+    api.post(`/devices/${deviceType}/sync`, { days }),
+  // 同步所有设备
+  syncAllDevices: (days: number = 7) => api.post('/devices/sync-all', { days }),
+  // 解绑设备
+  unbindDevice: (deviceType: string) => api.delete(`/devices/${deviceType}`),
+};

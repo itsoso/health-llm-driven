@@ -341,6 +341,12 @@ def _register_default_adapters():
     except ImportError as e:
         logger.warning(f"华为适配器注册失败: {e}")
     
+    try:
+        from .apple import AppleHealthAdapter
+        DeviceManager.register_adapter("apple", AppleHealthAdapter)
+    except ImportError as e:
+        logger.warning(f"Apple 适配器注册失败: {e}")
+    
     # TODO: 后续添加更多适配器
     # from .garmin import GarminAdapter
     # DeviceManager.register_adapter("garmin", GarminAdapter)

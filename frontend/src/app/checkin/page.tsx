@@ -23,13 +23,14 @@ function CheckinContent() {
   // axios返回的是response对象，需要取.data
   const todayCheckin = todayCheckinResponse?.data;
 
-  const { data: adviceResponse } = useQuery({
+  const { data: adviceResponse, error: adviceError } = useQuery({
     queryKey: ['advice', today],
     queryFn: () => healthAnalysisApi.getMyAdvice(today),
     enabled: isAuthenticated && !!todayCheckin,
+    retry: false,  // 不重试，避免重复请求
   });
   
-  const advice = adviceResponse?.data;
+  const advice = adviceResponse?.data?.advice;
 
   const mutation = useMutation({
     mutationFn: (data: any) => checkinApi.create(data),
@@ -73,7 +74,18 @@ function CheckinContent() {
         {advice && (
           <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
             <h2 className="font-bold text-gray-900 mb-2">💡 今日个性化建议</h2>
-            <p className="text-sm text-gray-800">{advice.advice}</p>
+            <p className="text-sm text-gray-800">{advice}</p>
+          </div>
+        )}
+        
+        {adviceError && (
+          <div className="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+            <h2 className="font-bold text-gray-900 mb-2">⚠️ 提示</h2>
+            <p className="text-sm text-gray-800">
+              {(adviceError as any)?.response?.data?.detail || 
+               (adviceError as any)?.message || 
+               '获取个性化建议失败，请稍后重试'}
+            </p>
           </div>
         )}
 

@@ -402,11 +402,28 @@ class HealthAnalysisService:
         
         health_data = self.collect_user_health_data(db, user_id, days=7)
         
+        # 检查是否有健康数据
+        garmin_data = health_data.get('garmin_data', [])
+        if not garmin_data:
+            return f"该日期暂无健康数据记录，建议先同步Garmin数据或记录健康信息后再获取个性化建议。"
+        
+        # 检查是否有有效的健康数据（至少有一些非空字段）
+        has_valid_data = any(
+            data.get('sleep_score') or 
+            data.get('steps') or 
+            data.get('avg_heart_rate') or 
+            data.get('resting_heart_rate')
+            for data in garmin_data
+        )
+        
+        if not has_valid_data:
+            return f"该日期暂无有效的健康数据记录，建议先同步Garmin数据后再获取个性化建议。"
+        
         prompt = f"""
 基于以下个人健康数据，为{checkin_date}这一天的健康打卡提供个性化建议。
 
 ## 最近一周的健康数据
-{self._format_garmin_data(health_data.get('garmin_data', []))}
+{self._format_garmin_data(garmin_data)}
 
 请提供：
 1. 今日锻炼建议（考虑最近的睡眠质量和身体电量）
@@ -437,5 +454,6 @@ class HealthAnalysisService:
             
             return response.choices[0].message.content
         except Exception as e:
+            logger.error(f"生成个性化建议失败: {e}", exc_info=True)
             return f"生成建议时出现错误: {str(e)}"
 
