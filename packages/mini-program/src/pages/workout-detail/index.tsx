@@ -83,16 +83,32 @@ export default function WorkoutDetail() {
     }
   }, [workoutId]);
 
-  const loadDetail = async () => {
-    setLoading(true);
+  // 页面显示时刷新数据
+  Taro.useDidShow(() => {
+    if (workoutId) {
+      loadDetail();
+    }
+  });
+
+  const loadDetail = async (showLoading = true) => {
+    if (showLoading) {
+      setLoading(true);
+    }
     try {
-      const data = await get<WorkoutDetail>(`/workout/me/${workoutId}`);
+      // 添加时间戳防止缓存
+      const data = await get<WorkoutDetail>(`/workout/me/${workoutId}`, { 
+        _t: Date.now() 
+      });
       setDetail(data);
     } catch (error) {
       console.error('加载运动详情失败:', error);
-      Taro.showToast({ title: '加载失败', icon: 'none' });
+      if (showLoading) {
+        Taro.showToast({ title: '加载失败', icon: 'none' });
+      }
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
 

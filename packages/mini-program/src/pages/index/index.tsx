@@ -332,6 +332,40 @@ export default function Index() {
             )}
           </View>
         </View>
+
+        {/* 身体电量 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('garmin-data')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">🔋</Text>
+            <Text className="card-title">身体电量</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              homeData.loading ? (
+                <Text className="card-value loading">加载中...</Text>
+              ) : homeData.garmin?.body_battery_most_charged ? (
+                <>
+                  <Text className="card-value">{homeData.garmin.body_battery_most_charged}</Text>
+                  <Text className="card-unit">/100</Text>
+                  <Text className="card-status" style={{ 
+                    color: homeData.garmin.body_battery_most_charged >= 80 ? '#10B981' : 
+                            homeData.garmin.body_battery_most_charged >= 50 ? '#F59E0B' : '#EF4444'
+                  }}>
+                    {homeData.garmin.body_battery_most_charged >= 80 ? '充足' : 
+                     homeData.garmin.body_battery_most_charged >= 50 ? '中等' : '偏低'}
+                  </Text>
+                </>
+              ) : (
+                <Text className="card-desc">暂无数据</Text>
+              )
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
       </View>
 
       {/* 登录按钮 - 仅未登录时显示 */}
