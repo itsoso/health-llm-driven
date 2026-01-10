@@ -685,10 +685,16 @@ class WorkoutSyncService:
                             # 解析GPS路线数据
                             if details_data.get("gps_data"):
                                 start_time = parsed.get("start_time") or (existing.start_time if existing else None)
-                                route_points = self._parse_gps_route(details_data["gps_data"], start_time)
+                                gps_data = details_data["gps_data"]
+                                logger.debug(f"{self._log_prefix()}GPS数据类型: {type(gps_data)}, 是否为dict: {isinstance(gps_data, dict)}, 键: {list(gps_data.keys()) if isinstance(gps_data, dict) else 'N/A'}")
+                                route_points = self._parse_gps_route(gps_data, start_time)
                                 if route_points:
                                     parsed["route_data"] = json.dumps(route_points)
                                     logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(route_points)} 个GPS路线点")
+                                else:
+                                    logger.warning(f"{self._log_prefix()}活动 {activity_id} GPS数据解析失败，gps_data类型: {type(gps_data)}")
+                            else:
+                                logger.debug(f"{self._log_prefix()}活动 {activity_id} 未获取到GPS数据")
                     except Exception as e:
                         logger.debug(f"获取活动详情失败: {e}")
                     
