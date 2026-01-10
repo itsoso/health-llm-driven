@@ -309,6 +309,7 @@ class WorkoutRecord(Base):
     heart_rate_data = Column(Text)  # 心率数据 [{"time": 0, "hr": 120}, ...]
     pace_data = Column(Text)  # 配速数据 [{"time": 0, "pace": 360}, ...]
     elevation_data = Column(Text)  # 海拔数据 [{"distance": 0, "elevation": 100}, ...]
+    route_data = Column(Text)  # GPS路线数据 [{"lat": 39.9, "lng": 116.4, "elevation": 100, "time": 0}, ...]
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

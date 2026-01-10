@@ -197,7 +197,7 @@ class WorkoutSyncService:
         }
     
     async def get_activity_details(self, activity_id: int) -> Optional[Dict[str, Any]]:
-        """获取活动详细数据（包括心率时间序列）"""
+        """获取活动详细数据（包括心率时间序列和GPS路线）"""
         try:
             self._ensure_authenticated()
             
@@ -237,9 +237,38 @@ class WorkoutSyncService:
                 except Exception as e:
                     logger.debug(f"get_activity_hr_in_timezones 失败: {e}")
             
+            # 尝试获取GPS路线数据
+            gps_data = None
+            try:
+                # 方法1: 尝试从活动详情中获取GPS数据
+                if details and isinstance(details, dict):
+                    # 检查是否有GPS相关字段
+                    gps_data = details.get('gpsData') or details.get('geoPolylineDTO') or details.get('geoPolyline')
+                    if gps_data:
+                        logger.debug(f"从activity获取GPS数据")
+                
+                # 方法2: 尝试获取活动GPS数据
+                if not gps_data:
+                    try:
+                        gps_data = self.client.get_activity_gps(activity_id)
+                        if gps_data:
+                            logger.debug(f"从get_activity_gps获取GPS数据")
+                    except Exception as e:
+                        logger.debug(f"get_activity_gps 失败: {e}")
+                
+                # 方法3: 尝试从活动详情API获取
+                if not gps_data and activity_details:
+                    gps_data = activity_details.get('gpsData') or activity_details.get('geoPolylineDTO') or activity_details.get('geoPolyline')
+                    if gps_data:
+                        logger.debug(f"从activity_details获取GPS数据")
+                
+            except Exception as e:
+                logger.debug(f"获取GPS数据失败: {e}")
+            
             return {
                 "details": details,
-                "heart_rate_data": hr_data
+                "heart_rate_data": hr_data,
+                "gps_data": gps_data
             }
         except Exception as e:
             logger.error(f"{self._log_prefix()}获取活动详情失败: {e}")
@@ -389,6 +418,128 @@ class WorkoutSyncService:
         
         return hr_points
     
+    def _parse_gps_route(self, gps_data: Any, start_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """解析GPS路线数据"""
+        route_points = []
+        
+        if not gps_data:
+            return route_points
+        
+        try:
+            # 格式1: geoPolylineDTO 或 geoPolyline (编码的polyline字符串)
+            if isinstance(gps_data, str):
+                # 尝试解码 polyline
+                try:
+                    import polyline
+                    decoded = polyline.decode(gps_data)
+                    for i, (lat, lng) in enumerate(decoded):
+                        route_points.append({
+                            "lat": lat,
+                            "lng": lng,
+                            "time": i * 10  # 假设每10秒一个点
+                        })
+                    logger.debug(f"解码polyline得到 {len(route_points)} 个GPS点")
+                    return route_points
+                except ImportError:
+                    logger.warning("polyline库未安装，无法解码GPS路线")
+                except Exception as e:
+                    logger.debug(f"解码polyline失败: {e}")
+            
+            # 格式2: gpsData 数组，包含坐标点
+            if isinstance(gps_data, list):
+                for i, point in enumerate(gps_data):
+                    if isinstance(point, dict):
+                        lat = point.get('latitude') or point.get('lat')
+                        lng = point.get('longitude') or point.get('lng') or point.get('lon')
+                        elevation = point.get('elevation') or point.get('altitude')
+                        time_offset = point.get('time') or point.get('timestamp') or point.get('startTimeInSeconds') or (i * 10)
+                        
+                        if lat and lng:
+                            route_point = {
+                                "lat": float(lat),
+                                "lng": float(lng)
+                            }
+                            if elevation:
+                                route_point["elevation"] = float(elevation)
+                            if time_offset:
+                                route_point["time"] = int(time_offset)
+                            route_points.append(route_point)
+                    elif isinstance(point, (list, tuple)) and len(point) >= 2:
+                        # [lat, lng] 或 [lat, lng, elevation] 格式
+                        route_points.append({
+                            "lat": float(point[0]),
+                            "lng": float(point[1]),
+                            "elevation": float(point[2]) if len(point) > 2 else None,
+                            "time": i * 10
+                        })
+            
+            # 格式3: gpsData 字典，包含多个字段
+            elif isinstance(gps_data, dict):
+                # 检查是否有坐标数组
+                coordinates = gps_data.get('coordinates') or gps_data.get('points') or gps_data.get('trackPoints')
+                if coordinates and isinstance(coordinates, list):
+                    for i, coord in enumerate(coordinates):
+                        if isinstance(coord, (list, tuple)) and len(coord) >= 2:
+                            route_points.append({
+                                "lat": float(coord[0]),
+                                "lng": float(coord[1]),
+                                "elevation": float(coord[2]) if len(coord) > 2 else None,
+                                "time": i * 10
+                            })
+                        elif isinstance(coord, dict):
+                            lat = coord.get('latitude') or coord.get('lat')
+                            lng = coord.get('longitude') or coord.get('lng') or coord.get('lon')
+                            if lat and lng:
+                                route_point = {
+                                    "lat": float(lat),
+                                    "lng": float(lng)
+                                }
+                                elevation = coord.get('elevation') or coord.get('altitude')
+                                if elevation:
+                                    route_point["elevation"] = float(elevation)
+                                time_offset = coord.get('time') or coord.get('timestamp')
+                                if time_offset:
+                                    route_point["time"] = int(time_offset)
+                                route_points.append(route_point)
+                
+                # 检查是否有编码的polyline
+                polyline_str = gps_data.get('polyline') or gps_data.get('encodedPolyline')
+                if polyline_str and isinstance(polyline_str, str):
+                    try:
+                        import polyline
+                        decoded = polyline.decode(polyline_str)
+                        for i, (lat, lng) in enumerate(decoded):
+                            route_points.append({
+                                "lat": lat,
+                                "lng": lng,
+                                "time": i * 10
+                            })
+                    except ImportError:
+                        logger.warning("polyline库未安装，无法解码GPS路线")
+                    except Exception as e:
+                        logger.debug(f"解码polyline失败: {e}")
+            
+            # 去重和采样（每10秒一个点，或每100米一个点）
+            if route_points:
+                # 按时间排序
+                route_points.sort(key=lambda x: x.get('time', 0))
+                # 采样：每10秒一个点
+                sampled = []
+                last_time = -10
+                for p in route_points:
+                    current_time = p.get('time', 0)
+                    if current_time - last_time >= 10:
+                        sampled.append(p)
+                        last_time = current_time
+                route_points = sampled
+            
+            logger.debug(f"解析GPS数据得到 {len(route_points)} 个路线点")
+            
+        except Exception as e:
+            logger.error(f"解析GPS数据失败: {e}")
+        
+        return route_points
+    
     async def sync_activities(
         self,
         db: Session,
@@ -430,25 +581,36 @@ class WorkoutSyncService:
                     # 解析活动数据
                     parsed = self._parse_activity(activity, user_id)
                     
-                    # 尝试获取详细数据（心率曲线等）
+                    # 尝试获取详细数据（心率曲线、GPS路线等）
                     try:
                         details_data = await self.get_activity_details(int(activity_id))
-                        if details_data and details_data.get("heart_rate_data"):
+                        if details_data:
                             duration = parsed.get("duration_seconds", 3600)
-                            hr_points = self._parse_heart_rate_samples(details_data["heart_rate_data"], duration)
-                            if hr_points:
-                                parsed["heart_rate_data"] = json.dumps(hr_points)
-                                logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
-                            else:
-                                # 如果无法获取详细心率，使用平均心率生成简单曲线
-                                avg_hr = parsed.get("avg_heart_rate")
-                                max_hr = parsed.get("max_heart_rate")
-                                if avg_hr and duration:
-                                    # 生成模拟心率曲线（热身-运动-冷却）
-                                    hr_points = self._generate_simulated_hr_curve(avg_hr, max_hr, duration)
-                                    if hr_points:
-                                        parsed["heart_rate_data"] = json.dumps(hr_points)
-                                        logger.info(f"{self._log_prefix()}活动 {activity_id} 使用模拟心率曲线 ({len(hr_points)} 点)")
+                            
+                            # 解析心率数据
+                            if details_data.get("heart_rate_data"):
+                                hr_points = self._parse_heart_rate_samples(details_data["heart_rate_data"], duration)
+                                if hr_points:
+                                    parsed["heart_rate_data"] = json.dumps(hr_points)
+                                    logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
+                                else:
+                                    # 如果无法获取详细心率，使用平均心率生成简单曲线
+                                    avg_hr = parsed.get("avg_heart_rate")
+                                    max_hr = parsed.get("max_heart_rate")
+                                    if avg_hr and duration:
+                                        # 生成模拟心率曲线（热身-运动-冷却）
+                                        hr_points = self._generate_simulated_hr_curve(avg_hr, max_hr, duration)
+                                        if hr_points:
+                                            parsed["heart_rate_data"] = json.dumps(hr_points)
+                                            logger.info(f"{self._log_prefix()}活动 {activity_id} 使用模拟心率曲线 ({len(hr_points)} 点)")
+                            
+                            # 解析GPS路线数据
+                            if details_data.get("gps_data"):
+                                start_time = parsed.get("start_time")
+                                route_points = self._parse_gps_route(details_data["gps_data"], start_time)
+                                if route_points:
+                                    parsed["route_data"] = json.dumps(route_points)
+                                    logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(route_points)} 个GPS路线点")
                     except Exception as e:
                         logger.debug(f"获取活动详情失败: {e}")
                     
