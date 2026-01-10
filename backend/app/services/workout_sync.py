@@ -216,17 +216,20 @@ class WorkoutSyncService:
             except Exception as e:
                 logger.debug(f"get_activity_splits 失败: {e}")
             
-            # 方法2: 尝试获取活动详细信息中的心率数据
+            # 方法2: 尝试获取活动详细信息（用于获取心率数据和GPS数据）
             activity_details = None
-            if not hr_data:
-                try:
-                    # 活动详情中可能包含 heartRateSamples
-                    activity_details = self.client.get_activity_details(activity_id)
-                    if activity_details:
+            try:
+                # 无论是否已有心率数据，都需要获取activity_details来获取GPS数据
+                activity_details = self.client.get_activity_details(activity_id)
+                if activity_details:
+                    # 如果还没有心率数据，使用activity_details作为心率数据源
+                    if not hr_data:
                         hr_data = activity_details
                         logger.debug(f"从activity_details获取心率数据，键: {list(activity_details.keys()) if isinstance(activity_details, dict) else 'N/A'}")
-                except Exception as e:
-                    logger.debug(f"get_activity_details 失败: {e}")
+                    else:
+                        logger.debug(f"activity_details已获取，键: {list(activity_details.keys()) if isinstance(activity_details, dict) else 'N/A'}")
+            except Exception as e:
+                logger.debug(f"get_activity_details 失败: {e}")
             
             # 方法3: 尝试获取活动心率数据
             if not hr_data:
