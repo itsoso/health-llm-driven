@@ -71,11 +71,23 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
   }
 
   try {
+    // 添加时间戳防止缓存（仅GET请求）
+    let finalUrl = `${BASE_URL}${url}`;
+    if (method === 'GET' && !url.includes('_t=')) {
+      const separator = url.includes('?') ? '&' : '?';
+      finalUrl = `${BASE_URL}${url}${separator}_t=${Date.now()}`;
+    }
+
     const response = await Taro.request<T>({
-      url: `${BASE_URL}${url}`,
+      url: finalUrl,
       method,
       data,
-      header,
+      header: {
+        ...header,
+        // 禁用缓存
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
     });
 
     const { statusCode, data: responseData } = response;
