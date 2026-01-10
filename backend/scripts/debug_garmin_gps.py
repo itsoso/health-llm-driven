@@ -49,20 +49,19 @@ async def debug_activity_gps(user_id: int, activity_id: int = None):
             user_id=user_id
         )
         
-        # 如果没有指定activity_id，使用最新的登山活动
+        # 如果没有指定activity_id，使用最新的有external_id的活动
         if not activity_id:
             record = db.query(WorkoutRecord).filter(
                 WorkoutRecord.user_id == user_id,
-                WorkoutRecord.workout_type == "hiking",
                 WorkoutRecord.external_id.isnot(None)
             ).order_by(WorkoutRecord.workout_date.desc()).first()
             
             if not record:
-                logger.error("没有找到登山活动")
+                logger.error("没有找到有external_id的活动")
                 return
             
             activity_id = int(record.external_id)
-            logger.info(f"使用活动: {record.workout_name} (ID: {activity_id})")
+            logger.info(f"使用活动: {record.workout_name or record.workout_type} (ID: {activity_id}, 日期: {record.workout_date})")
         
         logger.info(f"\n{'='*60}")
         logger.info(f"调试活动 {activity_id} 的GPS数据")
