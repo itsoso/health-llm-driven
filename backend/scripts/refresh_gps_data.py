@@ -24,8 +24,10 @@ from datetime import timedelta
 import json
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
+# 设置workout_sync的日志级别
+logging.getLogger('app.services.workout_sync').setLevel(logging.DEBUG)
 
 
 async def refresh_gps_for_user(db: Session, user_id: int, days: int = 30):
