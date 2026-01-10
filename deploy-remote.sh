@@ -65,8 +65,9 @@ cd $APP_DIR
 echo "✓ 当前目录: $(pwd)"
 echo ""
 
-# 拉取最新代码
-echo "[2/5] 拉取最新代码..."
+# 配置 Git 安全目录（解决 dubious ownership 问题）
+echo "[2/5] 配置 Git 并拉取最新代码..."
+git config --global --add safe.directory $APP_DIR || true
 git pull origin main
 echo "✓ 代码已更新"
 echo ""
