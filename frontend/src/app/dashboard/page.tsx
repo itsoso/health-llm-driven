@@ -150,8 +150,14 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">身体电量</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {todayRecord.body_battery_charged || '-'}
+                  {todayRecord.body_battery_most_charged || todayRecord.body_battery_charged || '-'}
                 </p>
+                {todayRecord.body_battery_most_charged && (
+                  <p className="text-xs text-indigo-200 mt-1">
+                    {todayRecord.body_battery_drained ? `消耗: ${todayRecord.body_battery_drained}` : ''}
+                    {todayRecord.body_battery_lowest ? ` | 最低: ${todayRecord.body_battery_lowest}` : ''}
+                  </p>
+                )}
               </div>
 
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
