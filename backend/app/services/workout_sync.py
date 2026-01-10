@@ -482,10 +482,43 @@ class WorkoutSyncService:
             # 格式3: gpsData 字典，包含多个字段（包括 geoPolylineDTO）
             elif isinstance(gps_data, dict):
                 # 处理 geoPolylineDTO 格式（Garmin Connect API 返回的格式）
-                # geoPolylineDTO 可能包含: startPoint, endPoint, polyline, encodedPolyline, points 等
+                # geoPolylineDTO 包含: startPoint, endPoint, polyline数组, encodedPolyline, points 等
                 
-                # 方法1: 检查是否有编码的polyline字符串
-                polyline_str = gps_data.get('polyline') or gps_data.get('encodedPolyline') or gps_data.get('encoded_polyline')
+                # 方法1: 优先处理 polyline 数组（Garmin Connect 的标准格式）
+                polyline_array = gps_data.get('polyline')
+                if polyline_array and isinstance(polyline_array, list):
+                    for point in polyline_array:
+                        if isinstance(point, dict):
+                            lat = point.get('lat') or point.get('latitude')
+                            lng = point.get('lon') or point.get('lng') or point.get('longitude')
+                            if lat and lng:
+                                route_point = {
+                                    "lat": float(lat),
+                                    "lng": float(lng)
+                                }
+                                # 处理海拔
+                                altitude = point.get('altitude') or point.get('elevation')
+                                if altitude is not None:
+                                    route_point["elevation"] = float(altitude)
+                                # 处理时间（从毫秒转换为秒）
+                                time_ms = point.get('time') or point.get('timestamp')
+                                if time_ms:
+                                    # 如果是毫秒时间戳，需要转换为相对时间（秒）
+                                    # 这里先保存原始时间，后续可以根据start_time计算相对时间
+                                    route_point["time"] = int(time_ms / 1000) if time_ms > 1000000000000 else int(time_ms)
+                                route_points.append(route_point)
+                    if route_points:
+                        logger.debug(f"从polyline数组得到 {len(route_points)} 个GPS点")
+                        # 如果时间戳是绝对时间，转换为相对时间（从第一个点开始）
+                        if route_points and route_points[0].get('time', 0) > 1000000000:
+                            start_time = route_points[0].get('time', 0)
+                            for point in route_points:
+                                if point.get('time'):
+                                    point['time'] = point['time'] - start_time
+                        return route_points
+                
+                # 方法2: 检查是否有编码的polyline字符串
+                polyline_str = gps_data.get('encodedPolyline') or gps_data.get('encoded_polyline')
                 if polyline_str and isinstance(polyline_str, str):
                     try:
                         import polyline
@@ -496,7 +529,7 @@ class WorkoutSyncService:
                                 "lng": lng,
                                 "time": i * 10
                             })
-                        logger.debug(f"从polyline字符串解码得到 {len(route_points)} 个GPS点")
+                        logger.debug(f"从编码polyline字符串解码得到 {len(route_points)} 个GPS点")
                         if route_points:
                             return route_points
                     except ImportError:
@@ -504,7 +537,7 @@ class WorkoutSyncService:
                     except Exception as e:
                         logger.debug(f"解码polyline失败: {e}")
                 
-                # 方法2: 检查是否有坐标点数组
+                # 方法3: 检查是否有其他格式的坐标点数组
                 coordinates = gps_data.get('coordinates') or gps_data.get('points') or gps_data.get('trackPoints')
                 if coordinates and isinstance(coordinates, list):
                     for i, coord in enumerate(coordinates):
@@ -528,10 +561,10 @@ class WorkoutSyncService:
                                     route_point["elevation"] = float(elevation)
                                 time_offset = coord.get('time') or coord.get('timestamp')
                                 if time_offset:
-                                    route_point["time"] = int(time_offset)
+                                    route_point["time"] = int(time_offset / 1000) if time_offset > 1000000000000 else int(time_offset)
                                 route_points.append(route_point)
                 
-                # 方法3: 如果有 startPoint 和 endPoint，至少添加这两个点
+                # 方法4: 如果只有 startPoint 和 endPoint，至少添加这两个点
                 if not route_points:
                     start_point = gps_data.get('startPoint')
                     end_point = gps_data.get('endPoint')
@@ -540,22 +573,24 @@ class WorkoutSyncService:
                         lat = start_point.get('lat') or start_point.get('latitude')
                         lng = start_point.get('lon') or start_point.get('lng') or start_point.get('longitude')
                         if lat and lng:
+                            time_ms = start_point.get('time', 0)
                             route_points.append({
                                 "lat": float(lat),
                                 "lng": float(lng),
                                 "elevation": start_point.get('altitude') or start_point.get('elevation'),
-                                "time": start_point.get('time', 0)
+                                "time": int(time_ms / 1000) if time_ms > 1000000000000 else int(time_ms)
                             })
                     
                     if end_point and isinstance(end_point, dict):
                         lat = end_point.get('lat') or end_point.get('latitude')
                         lng = end_point.get('lon') or end_point.get('lng') or end_point.get('longitude')
                         if lat and lng:
+                            time_ms = end_point.get('time', 0)
                             route_points.append({
                                 "lat": float(lat),
                                 "lng": float(lng),
                                 "elevation": end_point.get('altitude') or end_point.get('elevation'),
-                                "time": end_point.get('time', 0)
+                                "time": int(time_ms / 1000) if time_ms > 1000000000000 else int(time_ms)
                             })
                     
                     if route_points:
