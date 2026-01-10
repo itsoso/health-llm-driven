@@ -41,7 +41,15 @@ echo ""
 
 # 2. 连接到服务器并执行部署
 echo -e "${YELLOW}[2/6] 连接到服务器...${NC}"
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USER}@${SERVER} << 'ENDSSH'
+# 使用环境变量和 SSH 选项绕过 TUN 代理
+# 方法1: 清除代理环境变量
+# 方法2: 使用 ProxyCommand=none 强制直连
+env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+ssh -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o ProxyCommand=none \
+    -o ProxyJump=none \
+    ${USER}@${SERVER} << 'ENDSSH'
 set -e
 
 APP_DIR="/opt/health-app"
