@@ -339,15 +339,24 @@ function SettingsContent() {
           setShowMFA(false);
           setMfaCode('');
           setMfaSessionId(null);
-          setMfaContext(null);
           
           // 自动触发同步
           const syncDays = pendingSyncDays || 7;
           setPendingSyncDays(null);
           
+          // 清除MFA上下文，防止重复触发
+          setMfaContext(null);
+          
           // 延迟一下，让用户看到成功消息
+          // 使用ref来防止重复调用
           setTimeout(() => {
-            startSyncWithProgress(syncDays);
+            // 再次检查是否已经在同步中
+            if (!syncProgress.isSyncing) {
+              console.log('✅ MFA验证成功，自动触发同步:', syncDays, '天');
+              startSyncWithProgress(syncDays);
+            } else {
+              console.log('⚠️ 同步已在进行中，跳过自动触发');
+            }
           }, 500);
         } else {
           // 测试连接场景：提示可以保存凭证
@@ -372,6 +381,12 @@ function SettingsContent() {
   // 流式同步Garmin数据（带进度）
   const startSyncWithProgress = async (days: number) => {
     if (!token) return;
+    
+    // 防止重复调用
+    if (syncProgress.isSyncing) {
+      console.log('⚠️ 同步已在进行中，忽略重复调用');
+      return;
+    }
     
     setMfaContext('sync'); // 设置MFA场景为同步
     setPendingSyncDays(days); // 记录待同步天数
