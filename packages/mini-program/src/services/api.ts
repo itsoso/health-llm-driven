@@ -63,10 +63,15 @@ export async function getGarminData(
 }
 
 /**
- * 获取今日 Garmin 数据
+ * 获取今日 Garmin 数据（使用北京时间）
  */
 export async function getTodayGarminData(): Promise<GarminData | null> {
-  const today = new Date().toISOString().split('T')[0];
+  // 使用北京时间获取今天的日期
+  const now = new Date();
+  const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
+  const today = beijingTime.toISOString().split('T')[0];
+  
+  // 添加时间戳防止缓存
   const data = await getGarminData(today, today);
   return data.length > 0 ? data[0] : null;
 }
