@@ -151,7 +151,8 @@ async def sync_user_garmin_data(
 
 async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
     """同步所有启用同步的用户的Garmin数据"""
-    logger.info(f"开始执行全部用户 Garmin 数据同步: {get_china_now()}")
+    logger.info(f"🚀 开始执行全部用户 Garmin 数据同步任务: {get_china_now()}")
+    logger.info(f"📅 同步天数: {days} 天")
     
     db = SessionLocal()
     results = {
@@ -163,15 +164,17 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
     }
     
     try:
-        # 获取所有启用同步的用户
+        # 获取所有启用同步的用户（已过滤MFA用户）
         users = get_all_sync_enabled_users(db)
         results["total_users"] = len(users)
         
         if not users:
-            logger.warning("没有找到启用同步的用户")
+            logger.warning("⚠️ 没有找到可同步的用户（所有用户都需要MFA或未启用同步）")
             return results
         
-        logger.info(f"找到 {len(users)} 个启用同步的用户")
+        logger.info(f"✅ 找到 {len(users)} 个可同步的用户，开始逐个同步...")
+        for idx, user_info in enumerate(users, 1):
+            logger.info(f"📌 [{idx}/{len(users)}] 开始同步用户 {user_info['user_id']} ({user_info['email']})")
         
         # 逐个同步用户数据
         for user_info in users:
@@ -197,10 +200,18 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
             await asyncio.sleep(2)
         
         logger.info(
-            f"全部用户同步完成: 总计 {results['total_users']} 用户, "
+            f"✅ 全部用户同步完成: 总计 {results['total_users']} 用户, "
             f"成功 {results['success_users']}, 失败 {results['failed_users']}, "
             f"需要MFA验证(已跳过) {results['mfa_users']}"
         )
+        
+        # 详细日志
+        if results['success_users'] > 0:
+            logger.info(f"   ✓ 成功同步: {results['success_users']} 个用户")
+        if results['failed_users'] > 0:
+            logger.warning(f"   ✗ 同步失败: {results['failed_users']} 个用户")
+        if results['mfa_users'] > 0:
+            logger.info(f"   🔐 需要MFA(已跳过): {results['mfa_users']} 个用户")
         
     except Exception as e:
         logger.error(f"全部用户同步过程中出现错误: {str(e)}", exc_info=True)
@@ -217,10 +228,14 @@ async def scheduler_loop(interval_minutes: int = 60):
     Args:
         interval_minutes: 同步间隔（分钟），默认60分钟
     """
-    logger.info(f"Garmin 后台同步调度器已启动，间隔: {interval_minutes} 分钟")
+    logger.info(f"🚀 Garmin 后台同步调度器已启动")
+    logger.info(f"⏰ 同步间隔: {interval_minutes} 分钟")
+    logger.info(f"🔐 重要: 需要MFA验证的用户将被自动跳过，不会触发自动同步")
     
     # 第一次运行前先等待2分钟，确保系统完全启动
+    logger.info(f"⏳ 等待 2 分钟以确保系统完全启动...")
     await asyncio.sleep(120)
+    logger.info(f"✅ 系统启动完成，开始第一次同步任务")
     
     while True:
         try:
