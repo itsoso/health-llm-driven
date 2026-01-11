@@ -196,8 +196,9 @@ class UserMergeService:
             if not target_user.hashed_password and source_user.hashed_password:
                 target_user.hashed_password = source_user.hashed_password
             
-            # 4. 删除source用户
-            db.delete(source_user)
+            # 4. 删除source用户（使用SQL直接删除，避免ORM查询关联表时出现字段不匹配问题）
+            from sqlalchemy import text
+            db.execute(text(f"DELETE FROM users WHERE id = :user_id"), {"user_id": source_user_id})
             
             # 5. 提交事务
             db.commit()
