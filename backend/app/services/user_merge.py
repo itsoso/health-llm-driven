@@ -3,7 +3,8 @@ import logging
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from app.models.user import User, GarminCredential
-from app.models.daily_health import GarminData, HealthCheckin
+from app.models.daily_health import GarminData
+from app.models.health_checkin import HealthCheckin
 from app.models.basic_health import Weight, BloodPressure
 from app.models.goal import Goal
 from app.models.habit import Habit
