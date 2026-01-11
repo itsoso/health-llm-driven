@@ -383,6 +383,11 @@ function SettingsContent() {
 
   // 流式同步Garmin数据（带进度）
   const startSyncWithProgress = async (days: number) => {
+    startSyncWithProgressWithSessionId(days, authenticatedSessionId);
+  };
+  
+  // 带session_id的同步函数（内部使用）
+  const startSyncWithProgressWithSessionId = async (days: number, sessionId: string | null = null) => {
     if (!token) return;
     
     // 防止重复调用
@@ -390,6 +395,9 @@ function SettingsContent() {
       console.log('⚠️ 同步已在进行中，忽略重复调用');
       return;
     }
+    
+    // 使用传入的sessionId，如果没有则使用状态中的authenticatedSessionId
+    const mfaSessionIdToUse = sessionId || authenticatedSessionId;
     
     setMfaContext('sync'); // 设置MFA场景为同步
     setPendingSyncDays(days); // 记录待同步天数
@@ -406,11 +414,11 @@ function SettingsContent() {
     setMessage(null);
     
     try {
-      // 构建URL，如果有authenticatedSessionId则传递
+      // 构建URL，如果有mfaSessionIdToUse则传递
       let url = `${API_BASE}/auth/garmin/sync-stream?days=${days}`;
-      if (authenticatedSessionId) {
-        url += `&mfa_session_id=${authenticatedSessionId}`;
-        console.log('✅ 使用已认证的MFA session进行同步:', authenticatedSessionId);
+      if (mfaSessionIdToUse) {
+        url += `&mfa_session_id=${mfaSessionIdToUse}`;
+        console.log('✅ 使用已认证的MFA session进行同步:', mfaSessionIdToUse);
       } else {
         console.log('⚠️ 没有已认证的MFA session，将重新检测MFA');
       }
