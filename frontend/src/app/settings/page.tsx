@@ -711,6 +711,46 @@ function SettingsContent() {
                     </div>
                   </div>
                 )}
+
+                {/* MFA 两步验证区域（同步时显示） */}
+                {showMFA && mfaSessionId && !showGarminForm && (
+                  <div className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-2xl">🔐</span>
+                      <h4 className="font-semibold text-indigo-900">两步验证</h4>
+                    </div>
+                    <p className="text-sm text-indigo-700 mb-3">
+                      您的Garmin账号已开启两步验证，请打开验证器应用输入6位验证码。
+                    </p>
+                    <div className="flex gap-3 items-center">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                        className="w-40 p-3 border-2 border-indigo-300 rounded-lg text-gray-900 text-center text-xl font-bold tracking-widest focus:border-indigo-500 focus:outline-none"
+                        placeholder="000000"
+                      />
+                      <button
+                        onClick={() => verifyMFAMutation.mutate()}
+                        disabled={mfaCode.length !== 6 || verifyMFAMutation.isPending}
+                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50"
+                      >
+                        {verifyMFAMutation.isPending ? '验证中...' : '✓ 验证'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowMFA(false);
+                          setMfaCode('');
+                          setMfaSessionId(null);
+                        }}
+                        className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
