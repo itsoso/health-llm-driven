@@ -36,6 +36,10 @@ export default function Index() {
   // 页面显示时重新检查登录状态和刷新数据
   Taro.useDidShow(() => {
     checkLoginStatus();
+    // 强制刷新数据，清除可能的缓存
+    if (isLoggedIn) {
+      loadHomeData();
+    }
   });
 
   const checkLoginStatus = async () => {
