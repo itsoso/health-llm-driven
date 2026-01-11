@@ -15,12 +15,22 @@ logger = logging.getLogger(__name__)
 
 def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
     """获取所有启用同步且凭证有效的用户及其解密后的凭证"""
-    # 只获取启用同步且凭证有效且不需要MFA的用户
-    credentials = db.query(GarminCredential).filter(
+    # 查询所有启用同步的用户（包括需要MFA的）
+    all_credentials = db.query(GarminCredential).filter(
         GarminCredential.sync_enabled == True,
-        GarminCredential.credentials_valid == True,  # 只同步凭证有效的用户
-        GarminCredential.requires_mfa == False  # 跳过需要MFA的用户
+        GarminCredential.credentials_valid == True
     ).all()
+    
+    # 统计需要MFA的用户
+    mfa_users = [cred for cred in all_credentials if cred.requires_mfa == True]
+    if mfa_users:
+        mfa_user_ids = [cred.user_id for cred in mfa_users]
+        logger.info(f"🔐 检测到 {len(mfa_users)} 个需要MFA验证的用户，已跳过自动同步: {mfa_user_ids}")
+    
+    # 只获取不需要MFA的用户
+    credentials = [cred for cred in all_credentials if cred.requires_mfa == False]
+    
+    logger.info(f"📊 同步用户统计: 总启用同步用户={len(all_credentials)}, 需要MFA(已跳过)={len(mfa_users)}, 可同步用户={len(credentials)}")
     
     users_with_credentials = []
     for cred in credentials:
@@ -34,8 +44,9 @@ def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
                     "is_cn": decrypted.get("is_cn", False),
                     "last_sync_at": cred.last_sync_at
                 })
+                logger.debug(f"✅ 用户 {cred.user_id} ({decrypted['email']}) 已加入同步队列")
         except Exception as e:
-            logger.error(f"解密用户 {cred.user_id} 的Garmin凭证失败: {e}")
+            logger.error(f"❌ 解密用户 {cred.user_id} 的Garmin凭证失败: {e}")
     
     return users_with_credentials
 
