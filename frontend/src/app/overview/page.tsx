@@ -259,7 +259,7 @@ function OverviewContent() {
         </div>
 
         {/* 健康指标网格 - Garmin风格 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-4 mb-6">
           
           {/* 睡眠分数 */}
           <MetricCard icon="😴" title="睡眠分数">
