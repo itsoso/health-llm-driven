@@ -56,9 +56,13 @@ export async function getGarminData(
   startDate: string,
   endDate: string
 ): Promise<GarminData[]> {
+  // 确保日期格式正确（YYYY-MM-DD）
+  const normalizedStartDate = startDate.split('T')[0];
+  const normalizedEndDate = endDate.split('T')[0];
+  
   return get<GarminData[]>(API_ENDPOINTS.GARMIN.MY_DATA, {
-    start_date: startDate,
-    end_date: endDate,
+    start_date: normalizedStartDate,
+    end_date: normalizedEndDate,
   });
 }
 
