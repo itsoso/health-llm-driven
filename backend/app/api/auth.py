@@ -557,6 +557,37 @@ async def sync_garmin_data_stream(
                 # 小延迟，让前端有时间处理
                 await asyncio.sleep(0.1)
             
+            # 同步运动活动数据
+            synced_activities = 0
+            try:
+                yield f"data: {json.dumps({'type': 'progress', 'current': days, 'total': days, 'message': '开始同步运动活动数据...'})}\n\n"
+                
+                from app.services.workout_sync import WorkoutSyncService
+                workout_sync_service = WorkoutSyncService(
+                    email=credentials["email"],
+                    password=credentials["password"],
+                    is_cn=credentials.get("is_cn", False),
+                    user_id=current_user.id,
+                    mfa_session_id=mfa_session_id  # 传递MFA会话ID以复用认证状态
+                )
+                workout_result = await workout_sync_service.sync_activities(db, current_user.id, days)
+                synced_activities = workout_result.get("synced_count", 0)
+                logger.info(f"[用户 {current_user.id}] 运动活动同步完成，共 {synced_activities} 条")
+            except Exception as e:
+                # 检查是否是MFA错误
+                error_msg = str(e).lower()
+                if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
+                    logger.warning(f"[用户 {current_user.id}] 运动活动同步需要MFA验证")
+                    error_data = {
+                        'type': 'error',
+                        'message': '🔐 运动活动同步需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。',
+                        'mfa_required': True
+                    }
+                    yield f"data: {json.dumps(error_data)}\n\n"
+                    return
+                logger.warning(f"[用户 {current_user.id}] 运动活动同步失败: {e}")
+                # 运动活动同步失败不影响整体同步结果，继续执行
+            
             # 更新同步状态
             garmin_credential_service.update_sync_status(db, current_user.id)
             
@@ -565,7 +596,8 @@ async def sync_garmin_data_stream(
                 'type': 'complete',
                 'synced': synced_days,
                 'failed': failed_days,
-                'message': f'同步完成：成功 {synced_days} 天，失败 {failed_days} 天'
+                'activities': synced_activities,
+                'message': f'同步完成：成功 {synced_days} 天，失败 {failed_days} 天' + (f'，运动活动 {synced_activities} 条' if synced_activities > 0 else '')
             }
             yield f"data: {json.dumps(complete_data)}\n\n"
             
