@@ -1285,29 +1285,29 @@ class GarminConnectService:
         """
         prefix = self._log_prefix()
         try:
-            # 获取所有数据
-            logger.info(f"{prefix} 开始获取 {target_date} 的数据...")
+            # 获取所有数据（减少日志输出，使用debug级别）
+            logger.debug(f"{prefix} 开始获取 {target_date} 的数据...")
             raw_data = self.get_all_daily_data(target_date)
             
             if not raw_data:
-                logger.warning(f"{prefix} 未获取到 {target_date} 的数据（raw_data为空）")
+                logger.debug(f"{prefix} 未获取到 {target_date} 的数据（raw_data为空）")
                 return None
             
-            logger.info(f"{prefix} 获取到 {target_date} 的原始数据，键数量: {len(raw_data) if isinstance(raw_data, dict) else 'N/A'}")
+            logger.debug(f"{prefix} 获取到 {target_date} 的原始数据，键数量: {len(raw_data) if isinstance(raw_data, dict) else 'N/A'}")
             
             # 解析数据
-            logger.info(f"{prefix} 开始解析 {target_date} 的数据...")
+            logger.debug(f"{prefix} 开始解析 {target_date} 的数据...")
             garmin_data = self.parse_to_garmin_data_create(raw_data, user_id, target_date)
             
-            logger.info(f"{prefix} 解析完成，步数: {garmin_data.steps}, 心率: {garmin_data.resting_heart_rate}")
+            logger.debug(f"{prefix} 解析完成，步数: {garmin_data.steps}, 心率: {garmin_data.resting_heart_rate}")
             
             # 保存到数据库
-            logger.info(f"{prefix} 开始保存 {target_date} 的数据到数据库...")
+            logger.debug(f"{prefix} 开始保存 {target_date} 的数据到数据库...")
             from app.services.data_collection.garmin_service import GarminService
             garmin_service = GarminService()
             result = garmin_service.save_garmin_data(db, garmin_data)
             
-            logger.info(f"{prefix} 成功保存 {target_date} 的数据，ID: {result.id}")
+            logger.info(f"{prefix} ✅ 成功同步 {target_date}，ID: {result.id}")
             
             # 同步心率采样数据
             self._sync_heart_rate_samples(db, user_id, target_date)
@@ -1462,9 +1462,9 @@ class GarminConnectService:
             
             current_date += timedelta(days=1)
             
-            # 避免请求过快，添加小延迟
+            # 避免请求过快，添加小延迟（注意：这是同步函数，不能使用asyncio.sleep）
             import time
-            time.sleep(0.8)  # 稍微增加延迟，避免被Garmin限制
+            time.sleep(0.5)  # 减少延迟时间，提高同步速度
         
         return {
             "success_count": len(results),
