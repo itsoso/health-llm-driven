@@ -10,8 +10,10 @@ import './index.scss';
 interface WorkoutDetail {
   id: number;
   workout_date: string;
-  workout_start_time: string;
-  workout_end_time: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  workout_start_time?: string | null; // 兼容字段
+  workout_end_time?: string | null; // 兼容字段
   workout_type: string;
   workout_name: string | null;
   duration_seconds: number | null;
@@ -182,9 +184,35 @@ export default function WorkoutDetail() {
 
   // 格式化时间
   const formatTime = (timeStr: string | null) => {
-    if (!timeStr) return '--';
+    if (!timeStr) return null;
     const date = new Date(timeStr);
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+
+  // 格式化完整时间（日期+时间）
+  const formatDateTime = (timeStr: string | null) => {
+    if (!timeStr) return null;
+    const date = new Date(timeStr);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${month}-${day} ${hours}:${minutes}`;
+  };
+
+  // 计算结束时间（如果结束时间为空，用开始时间+时长计算）
+  const getEndTime = () => {
+    const endTimeStr = detail?.end_time || detail?.workout_end_time;
+    if (endTimeStr) {
+      return formatTime(endTimeStr);
+    }
+    const startTimeStr = detail?.start_time || detail?.workout_start_time;
+    if (startTimeStr && detail?.duration_seconds) {
+      const startDate = new Date(startTimeStr);
+      const endDate = new Date(startDate.getTime() + (detail.duration_seconds * 1000));
+      return `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+    }
+    return null;
   };
 
   // 获取运动类型信息
@@ -565,9 +593,21 @@ export default function WorkoutDetail() {
         </View>
         <Text className="header-name">{detail.workout_name || typeInfo.name}</Text>
         <Text className="header-date">{detail.workout_date}</Text>
-        <Text className="header-time">
-          {formatTime(detail.workout_start_time)} - {formatTime(detail.workout_end_time)}
-        </Text>
+        {(() => {
+          const startTimeStr = detail.start_time || detail.workout_start_time;
+          const endTimeStr = detail.end_time || detail.workout_end_time;
+          const startTime = startTimeStr ? formatTime(startTimeStr) : null;
+          const endTime = endTimeStr ? formatTime(endTimeStr) : (startTimeStr && detail.duration_seconds ? getEndTime() : null);
+          
+          if (startTime && endTime) {
+            return <Text className="header-time">{startTime} - {endTime}</Text>;
+          } else if (startTime) {
+            return <Text className="header-time">{startTime}</Text>;
+          } else if (detail.duration_seconds) {
+            return <Text className="header-time">时长: {formatDuration(detail.duration_seconds)}</Text>;
+          }
+          return null;
+        })()}
       </View>
 
       {/* 核心数据 */}
@@ -948,6 +988,64 @@ export default function WorkoutDetail() {
           </View>
         </View>
       )}
+
+      {/* 时间信息 */}
+      <View className="section">
+        <Text className="section-title">⏰ 时间信息</Text>
+        <View className="stats-list">
+          {(() => {
+            const startTimeStr = detail.start_time || detail.workout_start_time;
+            if (startTimeStr) {
+              return (
+                <View className="stat-row">
+                  <Text className="stat-row-label">开始时间</Text>
+                  <Text className="stat-row-value">{formatDateTime(startTimeStr) || formatTime(startTimeStr) || '--'}</Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
+          {(() => {
+            const startTimeStr = detail.start_time || detail.workout_start_time;
+            const endTimeStr = detail.end_time || detail.workout_end_time;
+            let endTime: string | null = null;
+            
+            if (endTimeStr) {
+              endTime = formatDateTime(endTimeStr);
+            } else if (startTimeStr && detail.duration_seconds) {
+              const startDate = new Date(startTimeStr);
+              const endDate = new Date(startDate.getTime() + (detail.duration_seconds * 1000));
+              const month = String(endDate.getMonth() + 1).padStart(2, '0');
+              const day = String(endDate.getDate()).padStart(2, '0');
+              const hours = String(endDate.getHours()).padStart(2, '0');
+              const minutes = String(endDate.getMinutes()).padStart(2, '0');
+              endTime = `${month}-${day} ${hours}:${minutes}`;
+            }
+            
+            if (endTime) {
+              return (
+                <View className="stat-row">
+                  <Text className="stat-row-label">结束时间</Text>
+                  <Text className="stat-row-value">{endTime}</Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
+          {detail.duration_seconds && (
+            <View className="stat-row">
+              <Text className="stat-row-label">运动时长</Text>
+              <Text className="stat-row-value">{formatDuration(detail.duration_seconds)}</Text>
+            </View>
+          )}
+          {detail.moving_duration_seconds && (
+            <View className="stat-row">
+              <Text className="stat-row-label">移动时长</Text>
+              <Text className="stat-row-value">{formatDuration(detail.moving_duration_seconds)}</Text>
+            </View>
+          )}
+        </View>
+      </View>
 
       {/* 来源 */}
       <View className="source-info">
