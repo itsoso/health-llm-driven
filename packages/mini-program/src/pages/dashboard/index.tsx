@@ -70,7 +70,9 @@ export default function Dashboard() {
   }
 
   const sleepLevel = getSleepScoreLevel(garminData?.sleep_score ?? null);
-  const stressLevel = getStressLevel(garminData?.stress_avg ?? null);
+  // 优先使用 stress_level，如果没有则使用 stress_avg（兼容性）
+  const stressValue = garminData?.stress_level ?? garminData?.stress_avg ?? null;
+  const stressLevel = getStressLevel(stressValue);
   const stepsProgress = getStepsProgress(garminData?.steps ?? null);
   const batteryProgress = getBatteryProgress(garminData?.body_battery_most_charged ?? null);
 
@@ -202,16 +204,16 @@ export default function Dashboard() {
               </View>
               <View className="metric-value-row">
                 <Text className="metric-value" style={{ color: stressLevel.color }}>
-                  {garminData.stress_avg || '--'}
+                  {stressValue || '--'}
                 </Text>
                 <Text className="stress-badge" style={{ backgroundColor: stressLevel.color }}>
                   {stressLevel.level}
                 </Text>
               </View>
               <Text className="stress-tip">
-                {garminData.stress_avg && garminData.stress_avg <= 25 ? '状态放松，继续保持' : 
-                 garminData.stress_avg && garminData.stress_avg <= 50 ? '压力适中，注意休息' :
-                 garminData.stress_avg ? '压力偏高，建议放松' : '暂无数据'}
+                {stressValue && stressValue <= 25 ? '状态放松，继续保持' : 
+                 stressValue && stressValue <= 50 ? '压力适中，注意休息' :
+                 stressValue ? '压力偏高，建议放松' : '暂无数据'}
               </Text>
             </View>
           </View>
