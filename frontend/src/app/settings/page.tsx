@@ -392,7 +392,9 @@ function SettingsContent() {
       let url = `${API_BASE}/auth/garmin/sync-stream?days=${days}`;
       if (authenticatedSessionId) {
         url += `&mfa_session_id=${authenticatedSessionId}`;
-        console.log('使用已认证的MFA session:', authenticatedSessionId);
+        console.log('✅ 使用已认证的MFA session进行同步:', authenticatedSessionId);
+      } else {
+        console.log('⚠️ 没有已认证的MFA session，将重新检测MFA');
       }
       
       const response = await fetch(url, {
