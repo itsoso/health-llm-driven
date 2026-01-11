@@ -116,26 +116,64 @@ async def wechat_login(
     # 2. 查找或创建用户
     user = db.query(User).filter(User.wechat_openid == openid).first()
     is_new_user = False
+    merged_user_id = None
     
     if not user:
-        # 新用户
-        is_new_user = True
-        nickname = request.nickname or f"微信用户_{openid[-6:]}"
+        # 新用户 - 检查是否有匹配的PC用户可以合并
+        from app.services.user_merge import UserMergeService
         
-        user = User(
+        # 先创建临时用户对象用于匹配
+        temp_user = User(
             wechat_openid=openid,
             wechat_unionid=unionid,
             wechat_session_key=session_key,
-            name=nickname,
+            name=request.nickname or f"微信用户_{openid[-6:]}",
             avatar_url=request.avatar_url,
             is_active=True
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        logger.info(f"创建新微信用户: {user.id} ({nickname})")
+        
+        # 查找匹配的PC用户
+        candidates = UserMergeService.find_potential_merge_candidates(db, temp_user)
+        
+        if candidates:
+            # 找到匹配的用户，合并到第一个匹配的用户
+            pc_user = candidates[0]
+            logger.info(f"🔗 发现匹配的PC用户 {pc_user.id}，准备合并...")
+            
+            # 将微信信息添加到PC用户
+            pc_user.wechat_openid = openid
+            pc_user.wechat_unionid = unionid
+            pc_user.wechat_session_key = session_key
+            if request.nickname and (not pc_user.name or pc_user.name.startswith("微信用户")):
+                pc_user.name = request.nickname
+            if request.avatar_url and not pc_user.avatar_url:
+                pc_user.avatar_url = request.avatar_url
+            
+            db.commit()
+            db.refresh(pc_user)
+            user = pc_user
+            merged_user_id = pc_user.id
+            logger.info(f"✅ 已合并微信用户到PC用户 {pc_user.id}")
+        else:
+            # 没有匹配的用户，创建新用户
+            is_new_user = True
+            nickname = request.nickname or f"微信用户_{openid[-6:]}"
+            
+            user = User(
+                wechat_openid=openid,
+                wechat_unionid=unionid,
+                wechat_session_key=session_key,
+                name=nickname,
+                avatar_url=request.avatar_url,
+                is_active=True
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            
+            logger.info(f"创建新微信用户: {user.id} ({nickname})")
     else:
-        # 更新 session_key
+        # 已存在的微信用户 - 更新信息
         user.wechat_session_key = session_key
         if unionid:
             user.wechat_unionid = unionid
