@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Input, Button, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { get, getSilent, post, del } from '../../services/request';
+import { get, getSilent, post, del, getToken } from '../../services/request';
 import './index.scss';
 
 interface GarminCredential {
@@ -40,6 +40,9 @@ export default function Garmin() {
   const [mfaCode, setMfaCode] = useState('');
   const [mfaSessionId, setMfaSessionId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [mfaContext, setMfaContext] = useState<'test' | 'sync' | null>(null); // MFA验证的上下文
+  const [pendingSyncDays, setPendingSyncDays] = useState<number | null>(null); // 待同步的天数
+  const [authenticatedSessionId, setAuthenticatedSessionId] = useState<string | null>(null); // MFA验证成功后的session_id
 
   useEffect(() => {
     loadCredential();
@@ -70,6 +73,7 @@ export default function Garmin() {
     }
     
     setSaving(true);
+    setMfaContext('test'); // 设置为测试连接场景
     try {
       const result = await post<TestConnectionResponse>('/auth/garmin/test-connection', {
         garmin_email: email,
@@ -121,16 +125,45 @@ export default function Garmin() {
     
     setVerifying(true);
     try {
-      const result = await post<{ success: boolean; message: string }>('/auth/garmin/verify-mfa', {
+      const result = await post<{ success: boolean; message: string; session_id?: string }>('/auth/garmin/verify-mfa', {
         mfa_code: mfaCode,
         mfa_session_id: mfaSessionId,
       });
       
       if (result.success) {
-        Taro.showToast({ title: '验证成功 ✓', icon: 'success' });
-        setShowMFA(false);
-        setMfaCode('');
-        setMfaSessionId(null);
+        // 保存验证成功后的session_id
+        const verifiedSessionId = result.session_id || null;
+        if (verifiedSessionId) {
+          setAuthenticatedSessionId(verifiedSessionId);
+        }
+        
+        const isSyncContext = mfaContext === 'sync';
+        
+        if (isSyncContext) {
+          // 同步场景：验证成功后自动触发同步
+          Taro.showToast({ title: '验证成功，开始同步...', icon: 'success' });
+          setShowMFA(false);
+          setMfaCode('');
+          setMfaSessionId(null);
+          
+          // 自动触发同步
+          const syncDays = pendingSyncDays || 7;
+          setPendingSyncDays(null);
+          setMfaContext(null);
+          
+          // 延迟一下，让用户看到成功消息
+          setTimeout(() => {
+            if (!syncing) {
+              handleSyncWithProgress(syncDays, verifiedSessionId);
+            }
+          }, 500);
+        } else {
+          // 测试连接场景
+          Taro.showToast({ title: '验证成功 ✓', icon: 'success' });
+          setShowMFA(false);
+          setMfaCode('');
+          setMfaSessionId(null);
+        }
       } else {
         Taro.showToast({ 
           title: result.message || '验证失败', 
@@ -197,16 +230,82 @@ export default function Garmin() {
     });
   };
 
-  // 同步数据
-  const handleSync = async () => {
+  // 流式同步数据（带进度和MFA支持）
+  const handleSyncWithProgress = async (days: number, sessionId: string | null = null) => {
+    if (syncing) {
+      Taro.showToast({ title: '同步已在进行中', icon: 'none' });
+      return;
+    }
+    
     setSyncing(true);
+    setMfaContext('sync');
+    setPendingSyncDays(days);
+    
+    // 使用传入的sessionId，如果没有则使用状态中的authenticatedSessionId
+    const mfaSessionIdToUse = sessionId || authenticatedSessionId;
+    
     try {
-      Taro.showLoading({ title: `同步最近${syncDays}天...` });
-      // 使用 /auth/garmin/sync 接口，传入 { days: N }
-      await post('/auth/garmin/sync', { days: syncDays });
-      Taro.hideLoading();
-      Taro.showToast({ title: '同步完成 ✓', icon: 'success' });
-      loadCredential();
+      // 构建URL，如果有mfaSessionIdToUse则传递
+      let url = `/auth/garmin/sync-stream?days=${days}`;
+      if (mfaSessionIdToUse) {
+        url += `&mfa_session_id=${encodeURIComponent(mfaSessionIdToUse)}`;
+      }
+      
+      Taro.showLoading({ title: '正在连接Garmin...' });
+      
+      // 使用Taro.request处理SSE流
+      const token = getToken();
+      if (!token) {
+        throw new Error('未登录');
+      }
+      
+      // 小程序环境不支持SSE，使用普通POST请求
+      // 如果有sessionId，通过URL参数传递；否则直接调用同步接口
+      try {
+        // 如果有sessionId，使用带sessionId的同步接口
+        if (mfaSessionIdToUse) {
+          // 使用带mfa_session_id的同步接口
+          await post('/auth/garmin/sync', { days, mfa_session_id: mfaSessionIdToUse });
+        } else {
+          // 普通同步
+          await post('/auth/garmin/sync', { days });
+        }
+        Taro.hideLoading();
+        Taro.showToast({ 
+          title: '同步完成 ✓', 
+          icon: 'success',
+          duration: 2000
+        });
+        loadCredential();
+      } catch (syncError: any) {
+        Taro.hideLoading();
+        
+        // 检查是否是MFA错误
+        const errorMsg = syncError.message || '';
+        const errorDetail = (syncError as any)?.detail || '';
+        const fullErrorMsg = errorMsg + ' ' + errorDetail;
+        
+        if (fullErrorMsg.includes('两步验证') || fullErrorMsg.includes('MFA') || fullErrorMsg.includes('two-factor') || fullErrorMsg.includes('mfa_required')) {
+          // 需要MFA，显示提示信息
+          Taro.showModal({
+            title: '需要两步验证',
+            content: '您的Garmin账号需要两步验证。请先修改凭证并完成验证，然后再进行同步。',
+            showCancel: false,
+            confirmText: '去修改',
+            success: (res) => {
+              if (res.confirm) {
+                setShowForm(true);
+              }
+            }
+          });
+        } else {
+          Taro.showToast({ 
+            title: errorMsg || '同步失败', 
+            icon: 'none',
+            duration: 3000
+          });
+        }
+      }
     } catch (error: any) {
       Taro.hideLoading();
       Taro.showToast({ 
@@ -216,7 +315,14 @@ export default function Garmin() {
       });
     } finally {
       setSyncing(false);
+      setMfaContext(null);
+      setPendingSyncDays(null);
     }
+  };
+  
+  // 同步数据
+  const handleSync = async () => {
+    handleSyncWithProgress(syncDays, authenticatedSessionId);
   };
 
   // 切换同步开关
@@ -385,7 +491,9 @@ export default function Garmin() {
                 <Text className="mfa-title">两步验证</Text>
               </View>
               <Text className="mfa-desc">
-                您的Garmin账号已开启两步验证，请打开验证器应用输入6位验证码
+                您的Garmin账号已开启两步验证{'\n'}
+                请打开验证器应用（或查看邮件/短信）输入6位验证码{'\n'}
+                验证码每30秒更新一次
               </Text>
               <Input
                 type="number"
