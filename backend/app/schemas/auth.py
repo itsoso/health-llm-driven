@@ -87,6 +87,7 @@ class GarminCredentialResponse(BaseModel):
 class GarminSyncRequest(BaseModel):
     """Garmin同步请求"""
     days: int = Field(default=7, ge=1, le=730, description="同步天数")
+    mfa_session_id: Optional[str] = Field(default=None, description="MFA会话ID（如果已完成MFA验证）")
 
 
 class GarminSyncResponse(BaseModel):
