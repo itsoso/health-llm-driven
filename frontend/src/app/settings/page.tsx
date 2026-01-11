@@ -373,11 +373,21 @@ function SettingsContent() {
         // 刷新凭证状态
         queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
       } else {
-        setMessage({ type: 'error', text: data.message });
+        // 改进错误提示
+        let errorMsg = data.message;
+        if (errorMsg.includes('Couldn\'t find ticket') || errorMsg.includes('验证失败')) {
+          errorMsg = '❌ 验证码错误或已过期！请检查验证器应用中的最新验证码（每30秒更新一次）。';
+        }
+        setMessage({ type: 'error', text: errorMsg });
       }
     },
     onError: (error: Error) => {
-      setMessage({ type: 'error', text: error.message });
+      let errorMsg = error.message;
+      // 如果是验证失败的错误，提供更友好的提示
+      if (errorMsg.includes('Couldn\'t find ticket') || errorMsg.includes('验证失败')) {
+        errorMsg = '❌ 验证码错误或已过期！请检查验证器应用中的最新验证码（每30秒更新一次）。';
+      }
+      setMessage({ type: 'error', text: errorMsg });
     },
   });
 
