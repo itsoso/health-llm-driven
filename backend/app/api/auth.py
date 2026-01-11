@@ -437,11 +437,16 @@ async def sync_garmin_data(
 @router.get("/garmin/sync-stream", summary="流式同步Garmin数据（带进度）")
 async def sync_garmin_data_stream(
     days: int = 7,
+    mfa_session_id: Optional[str] = Query(default=None, description="MFA会话ID（如果已完成MFA验证）"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
     使用 Server-Sent Events 流式同步Garmin数据，实时返回进度
+    
+    参数：
+    - days: 同步最近N天的数据
+    - mfa_session_id: MFA会话ID（可选，如果已完成MFA验证可传入以复用认证状态）
     """
     # 获取解密后的凭证
     credentials = garmin_credential_service.get_decrypted_credentials(db, current_user.id)
