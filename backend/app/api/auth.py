@@ -459,7 +459,42 @@ async def sync_garmin_data_stream(
         yield f"data: {json.dumps({'type': 'start', 'total': days, 'message': '开始同步...'})}\n\n"
         
         try:
-            # 创建Garmin服务实例
+            # 先测试连接，检测是否需要MFA
+            from app.services.data_collection.garmin_connect import GarminConnectService
+            test_service = GarminConnectService(
+                email=credentials["email"],
+                password=credentials["password"],
+                is_cn=credentials.get("is_cn", False),
+                user_id=current_user.id
+            )
+            
+            # 尝试测试连接来检测MFA
+            try:
+                test_result = test_service.test_connection_with_mfa()
+                if test_result.get("mfa_required") and test_result.get("mfa_session_id"):
+                    error_data = {
+                        'type': 'error',
+                        'message': '🔐 Garmin账号需要两步验证！请输入验证码完成验证。',
+                        'mfa_required': True,
+                        'mfa_session_id': test_result.get("mfa_session_id")
+                    }
+                    yield f"data: {json.dumps(error_data)}\n\n"
+                    return
+            except Exception as test_error:
+                # 如果测试连接失败，检查是否是MFA错误
+                error_msg = str(test_error).lower()
+                if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
+                    error_data = {
+                        'type': 'error',
+                        'message': '🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。',
+                        'mfa_required': True
+                    }
+                    yield f"data: {json.dumps(error_data)}\n\n"
+                    return
+                # 其他错误，继续尝试同步（可能是测试连接的问题，实际同步可能成功）
+                logger.warning(f"测试连接失败，继续尝试同步: {test_error}")
+            
+            # 创建Garmin服务实例（如果测试连接成功，这个实例应该已经认证）
             garmin_service = GarminConnectService(
                 email=credentials["email"],
                 password=credentials["password"],
@@ -478,6 +513,16 @@ async def sync_garmin_data_stream(
                     synced_days += 1
                     status_msg = "success"
                 except Exception as e:
+                    # 检查是否是MFA错误
+                    error_msg = str(e).lower()
+                    if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
+                        error_data = {
+                            'type': 'error',
+                            'message': '🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。',
+                            'mfa_required': True
+                        }
+                        yield f"data: {json.dumps(error_data)}\n\n"
+                        return
                     logger.warning(f"同步 {target_date} 失败: {e}")
                     failed_days += 1
                     status_msg = "failed"
