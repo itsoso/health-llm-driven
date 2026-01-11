@@ -101,12 +101,14 @@ function MetricCard({
   className?: string;
 }) {
   return (
-    <div className={`bg-white rounded-2xl shadow-lg p-5 ${className}`}>
+    <div className={`bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-200 p-5 flex flex-col ${className}`}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xl">{icon}</span>
-        <span className="text-gray-600 font-medium">{title}</span>
+        <span className="text-gray-600 font-medium text-sm">{title}</span>
       </div>
-      {children}
+      <div className="flex-1">
+        {children}
+      </div>
     </div>
   );
 }
@@ -240,14 +242,14 @@ function OverviewContent() {
   }
 
   return (
-    <main className="min-h-screen p-4 md:p-6 bg-gray-100 pt-20 md:pt-24">
+    <main className="min-h-screen p-4 md:p-6 bg-gradient-to-br from-gray-50 to-gray-100 pt-20 md:pt-24">
       <div className="max-w-7xl mx-auto">
         {/* 页面标题 */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">概览</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-1">概览</h1>
             {record && (
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-500">
                 数据日期: {format(new Date(record.record_date), 'yyyy年MM月dd日', { locale: zhCN })}
                 {record.record_date !== today && (
                   <span className="ml-2 text-orange-500">(非今日数据)</span>
@@ -255,11 +257,12 @@ function OverviewContent() {
               </p>
             )}
           </div>
-          <span className="text-blue-500 text-sm cursor-pointer hover:underline">查看全部</span>
+          <span className="text-blue-500 text-sm font-medium cursor-pointer hover:text-blue-600 hover:underline transition-colors">查看全部</span>
         </div>
 
         {/* 健康指标网格 - Garmin风格 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-4 mb-6">
+        {/* 第一行：重要指标 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           
           {/* 睡眠分数 */}
           <MetricCard icon="😴" title="睡眠分数">
@@ -403,7 +406,10 @@ function OverviewContent() {
             </div>
             <div className="text-xs text-gray-400 text-center mt-1">过去 7 天</div>
           </MetricCard>
+        </div>
 
+        {/* 第二行：活动指标 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           {/* 强度活动时间 */}
           <MetricCard icon="🏃" title="强度活动时间">
             <div className="flex justify-center">
@@ -513,7 +519,10 @@ function OverviewContent() {
               </div>
             )}
           </MetricCard>
+        </div>
 
+        {/* 第三行：次要指标，紧凑排列 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
           {/* 血氧饱和度 */}
           <MetricCard icon="🩸" title="脉搏血氧饱和度适应">
             {record?.spo2_avg ? (
