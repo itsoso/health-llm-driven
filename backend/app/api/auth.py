@@ -666,9 +666,16 @@ async def verify_garmin_mfa(
             mfa_code=mfa_request.mfa_code
         )
         
+        # 如果验证成功，将session_id保存到用户的凭证中（临时存储，用于后续同步）
+        if result.get("success") and result.get("session_id"):
+            # 可以选择将session_id临时存储到Redis或内存中
+            # 这里简单起见，通过响应返回给前端，前端再传给同步接口
+            pass
+        
         return GarminMFAVerifyResponse(
             success=result.get("success", False),
-            message=result.get("message", "")
+            message=result.get("message", ""),
+            session_id=result.get("session_id")  # 返回session_id
         )
         
     except Exception as e:

@@ -40,6 +40,7 @@ function SettingsContent() {
   const [mfaSessionId, setMfaSessionId] = useState<string | null>(null);
   const [mfaContext, setMfaContext] = useState<'test' | 'sync' | null>(null); // MFA验证的上下文：测试连接或同步
   const [pendingSyncDays, setPendingSyncDays] = useState<number | null>(null); // 待同步的天数（如果是在同步场景）
+  const [authenticatedSessionId, setAuthenticatedSessionId] = useState<string | null>(null); // MFA验证成功后的session_id，用于复用认证状态
   
   // Apple Watch 状态
   const [appleFile, setAppleFile] = useState<File | null>(null);
@@ -326,6 +327,11 @@ function SettingsContent() {
     onSuccess: (data) => {
       if (data.success) {
         const isSyncContext = mfaContext === 'sync';
+        
+        // 保存验证成功后的session_id，用于后续同步复用
+        if (data.session_id) {
+          setAuthenticatedSessionId(data.session_id);
+        }
         
         if (isSyncContext) {
           // 同步场景：验证成功后自动触发同步

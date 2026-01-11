@@ -108,14 +108,24 @@ def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
         server_type = "中国版" if is_cn else "国际版"
         logger.info(f"[MFA] Garmin {server_type} ({email}) MFA 验证成功")
         
-        # 清理会话
-        del _mfa_sessions[session_id]
+        # 不要立即删除会话，标记为已认证，并延长过期时间（10分钟）
+        # 这样后续同步可以复用已认证的client
+        import time
+        _mfa_sessions[session_id] = {
+            "client": client,
+            "client_state": client_state,
+            "email": email,
+            "is_cn": is_cn,
+            "authenticated": True,  # 标记为已认证
+            "expires": time.time() + 600  # 10分钟后过期
+        }
         
         return {
             "success": True,
             "message": "✅ 验证成功！Garmin账号连接成功，可以保存凭证了。",
             "email": email,
-            "is_cn": is_cn
+            "is_cn": is_cn,
+            "session_id": session_id  # 返回session_id，以便后续复用
         }
         
     except Exception as e:
@@ -151,7 +161,7 @@ class GarminConnectService:
     - 中国版: connect.garmin.cn (is_cn=True)
     """
     
-    def __init__(self, email: str, password: str, is_cn: bool = False, user_id: int = None):
+    def __init__(self, email: str, password: str, is_cn: bool = False, user_id: int = None, mfa_session_id: str = None):
         """
         初始化Garmin Connect服务
         
@@ -160,6 +170,7 @@ class GarminConnectService:
             password: Garmin Connect账号密码
             is_cn: 是否使用中国服务器 (garmin.cn)，默认False使用国际版
             user_id: 用户ID，用于日志记录
+            mfa_session_id: MFA会话ID（如果已完成MFA验证，可以传入以复用认证状态）
         """
         if not GARMINCONNECT_AVAILABLE:
             raise ImportError(
@@ -174,6 +185,7 @@ class GarminConnectService:
         self.client: Optional[Garmin] = None
         self._authenticated = False
         self._mfa_client_state = None  # 用于存储 MFA 状态
+        self._mfa_session_id = mfa_session_id  # 存储MFA会话ID
     
     def _log_prefix(self) -> str:
         """生成日志前缀，包含用户信息"""
@@ -190,6 +202,21 @@ class GarminConnectService:
     def _ensure_authenticated(self):
         """确保已认证，认证失败时抛出异常"""
         prefix = self._log_prefix()
+        
+        # 如果有MFA会话ID，尝试复用已认证的client
+        if self._mfa_session_id and not self._authenticated:
+            _cleanup_expired_mfa_sessions()
+            if self._mfa_session_id in _mfa_sessions:
+                session = _mfa_sessions[self._mfa_session_id]
+                if session.get("authenticated") and session.get("email") == self.email:
+                    # 复用已认证的client
+                    self.client = session.get("client")
+                    if self.client and hasattr(self.client, 'garth') and self.client.garth.oauth2_token:
+                        self._authenticated = True
+                        server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+                        logger.info(f"{prefix} 复用已认证的Garmin会话 - {server_type}")
+                        return
+        
         if not self._authenticated or self.client is None:
             try:
                 # 创建支持 MFA 提前返回的客户端

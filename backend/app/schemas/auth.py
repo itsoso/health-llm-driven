@@ -114,6 +114,7 @@ class GarminMFAVerifyResponse(BaseModel):
     """Garmin MFA验证响应"""
     success: bool
     message: str
+    session_id: Optional[str] = None  # 验证成功后返回的session_id，用于后续同步复用
 
 
 # 更新Token模型以避免循环引用
