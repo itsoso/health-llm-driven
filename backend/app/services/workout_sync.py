@@ -48,7 +48,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
 class WorkoutSyncService:
     """Garmin运动活动同步服务"""
     
-    def __init__(self, email: str, password: str, is_cn: bool = False, user_id: int = None, mfa_session_id: str = None):
+    def __init__(self, email: str, password: str, is_cn: bool = False, user_id: int = None, mfa_session_id: str = None, client: Optional[Garmin] = None):
         if not GARMINCONNECT_AVAILABLE:
             raise ImportError("garminconnect库未安装")
         
@@ -56,9 +56,16 @@ class WorkoutSyncService:
         self.password = password
         self.is_cn = is_cn
         self.user_id = user_id
-        self.client: Optional[Garmin] = None
-        self._authenticated = False
         self._mfa_session_id = mfa_session_id  # 存储MFA会话ID
+        
+        # 如果直接传入了已认证的client，直接使用
+        if client and hasattr(client, 'garth') and client.garth.oauth2_token:
+            self.client = client
+            self._authenticated = True
+            logger.info(f"{self._log_prefix()}WorkoutSyncService: 直接使用已认证的client")
+        else:
+            self.client: Optional[Garmin] = None
+            self._authenticated = False
     
     def _log_prefix(self) -> str:
         return f"[用户 {self.user_id}] " if self.user_id else ""
