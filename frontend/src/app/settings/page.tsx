@@ -305,6 +305,8 @@ function SettingsContent() {
     mutationFn: async () => {
       if (!mfaSessionId) throw new Error('验证状态已过期');
       
+      console.log('🔐 发送MFA验证请求:', { mfaSessionId, mfaCodeLength: mfaCode.length });
+      
       const res = await fetch(`${API_BASE}/auth/garmin/verify-mfa`, {
         method: 'POST',
         headers: {
@@ -325,6 +327,7 @@ function SettingsContent() {
       return res.json();
     },
     onSuccess: (data) => {
+      console.log('✅ MFA验证成功回调:', { success: data.success, session_id: data.session_id, mfaContext });
       if (data.success) {
         const isSyncContext = mfaContext === 'sync';
         
