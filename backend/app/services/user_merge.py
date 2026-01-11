@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from app.models.user import User, GarminCredential
 from app.models.daily_health import GarminData
 from app.models.health_checkin import HealthCheckin
-from app.models.basic_health import Weight, BloodPressure
+from app.models.weight import WeightRecord
+from app.models.blood_pressure import BloodPressureRecord
 from app.models.goal import Goal
-from app.models.habit import Habit
-from app.models.supplement import Supplement
+from app.models.habit import HabitRecord
+from app.models.supplement import SupplementRecord
 from app.models.medical_exam import MedicalExam
 
 logger = logging.getLogger(__name__)
@@ -130,14 +131,14 @@ class UserMergeService:
             merge_stats["health_checkins"] = checkin_count
             
             # 体重
-            weight_count = db.query(Weight).filter(
-                Weight.user_id == source_user_id
+            weight_count = db.query(WeightRecord).filter(
+                WeightRecord.user_id == source_user_id
             ).update({"user_id": target_user_id})
             merge_stats["weights"] = weight_count
             
             # 血压
-            bp_count = db.query(BloodPressure).filter(
-                BloodPressure.user_id == source_user_id
+            bp_count = db.query(BloodPressureRecord).filter(
+                BloodPressureRecord.user_id == source_user_id
             ).update({"user_id": target_user_id})
             merge_stats["blood_pressures"] = bp_count
             
@@ -148,14 +149,14 @@ class UserMergeService:
             merge_stats["goals"] = goal_count
             
             # 习惯
-            habit_count = db.query(Habit).filter(
-                Habit.user_id == source_user_id
+            habit_count = db.query(HabitRecord).filter(
+                HabitRecord.user_id == source_user_id
             ).update({"user_id": target_user_id})
             merge_stats["habits"] = habit_count
             
             # 补剂
-            supplement_count = db.query(Supplement).filter(
-                Supplement.user_id == source_user_id
+            supplement_count = db.query(SupplementRecord).filter(
+                SupplementRecord.user_id == source_user_id
             ).update({"user_id": target_user_id})
             merge_stats["supplements"] = supplement_count
             
