@@ -23,10 +23,13 @@ interface WorkoutRecord {
 
 interface WorkoutStats {
   total_workouts: number;
-  total_duration_seconds: number;
+  total_duration_minutes?: number;
+  total_duration_seconds?: number; // 兼容字段
   total_calories: number;
-  total_distance_meters: number;
-  workout_types: Record<string, number>;
+  total_distance_km?: number;
+  total_distance_meters?: number; // 兼容字段
+  workout_types?: Record<string, number>;
+  workouts_by_type?: Record<string, { count: number; duration_minutes: number }>;
 }
 
 // 运动类型映射
@@ -60,12 +63,29 @@ export default function Workout() {
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       
       const [workoutList, workoutStats] = await Promise.all([
-        get<WorkoutRecord[]>('/workout/me', { start_date: startDate, end_date: endDate, limit: 20 }),
+        get<WorkoutRecord[]>('/workout/me', { days: 30 }),
         get<WorkoutStats>('/workout/me/stats', { days: 30 }).catch(() => null),
       ]);
       
       setWorkouts(workoutList || []);
-      setStats(workoutStats);
+      
+      // 如果后端没有返回统计数据，从列表计算
+      if (workoutStats) {
+        setStats(workoutStats);
+      } else if (workoutList && workoutList.length > 0) {
+        // 从列表计算统计数据
+        const totalDurationSeconds = workoutList.reduce((sum, w) => sum + (w.duration_seconds || 0), 0);
+        const totalDistanceMeters = workoutList.reduce((sum, w) => sum + (w.distance_meters || 0), 0);
+        const calculatedStats: WorkoutStats = {
+          total_workouts: workoutList.length,
+          total_duration_minutes: Math.round(totalDurationSeconds / 60),
+          total_duration_seconds: totalDurationSeconds,
+          total_calories: workoutList.reduce((sum, w) => sum + (w.calories || 0), 0),
+          total_distance_km: Math.round((totalDistanceMeters / 1000) * 100) / 100,
+          total_distance_meters: totalDistanceMeters,
+        };
+        setStats(calculatedStats);
+      }
     } catch (error) {
       console.error('加载运动数据失败:', error);
     } finally {
@@ -81,24 +101,26 @@ export default function Workout() {
     });
   };
 
-  // 格式化时长
-  const formatDuration = (seconds: number | null) => {
-    if (!seconds) return '--';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+  // 格式化时长（支持秒或分钟）
+  const formatDuration = (secondsOrMinutes: number | null | undefined, isMinutes = false) => {
+    if (secondsOrMinutes === null || secondsOrMinutes === undefined || secondsOrMinutes === 0) return '0分钟';
+    const totalSeconds = isMinutes ? secondsOrMinutes * 60 : secondsOrMinutes;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     if (hours > 0) {
       return `${hours}小时${minutes}分`;
     }
     return `${minutes}分钟`;
   };
 
-  // 格式化距离
-  const formatDistance = (meters: number | null) => {
-    if (!meters) return '--';
-    if (meters >= 1000) {
-      return `${(meters / 1000).toFixed(2)} km`;
+  // 格式化距离（支持米或公里）
+  const formatDistance = (metersOrKm: number | null | undefined, isKm = false) => {
+    if (metersOrKm === null || metersOrKm === undefined || metersOrKm === 0) return '0 km';
+    const totalMeters = isKm ? metersOrKm * 1000 : metersOrKm;
+    if (totalMeters >= 1000) {
+      return `${(totalMeters / 1000).toFixed(2)} km`;
     }
-    return `${meters} m`;
+    return `${Math.round(totalMeters)} m`;
   };
 
   // 获取运动类型信息
@@ -144,28 +166,55 @@ export default function Workout() {
       </View>
 
       {/* 统计概览 */}
-      {stats && (
-        <View className="stats-section">
-          <View className="stats-row">
-            <View className="stat-item">
-              <Text className="stat-value">{stats.total_workouts}</Text>
-              <Text className="stat-label">训练次数</Text>
-            </View>
-            <View className="stat-item">
-              <Text className="stat-value">{formatDuration(stats.total_duration_seconds)}</Text>
-              <Text className="stat-label">总时长</Text>
-            </View>
-            <View className="stat-item">
-              <Text className="stat-value">{formatDistance(stats.total_distance_meters)}</Text>
-              <Text className="stat-label">总距离</Text>
-            </View>
-            <View className="stat-item">
-              <Text className="stat-value">{stats.total_calories?.toLocaleString() || 0}</Text>
-              <Text className="stat-label">消耗卡路里</Text>
-            </View>
+      <View className="stats-section">
+        <View className="stats-row">
+          <View className="stat-item">
+            <Text className="stat-value">{stats?.total_workouts || workouts.length || 0}</Text>
+            <Text className="stat-label">训练次数</Text>
+          </View>
+          <View className="stat-item">
+            <Text className="stat-value">
+              {(() => {
+                if (stats) {
+                  const totalSeconds = stats.total_duration_seconds ?? (stats.total_duration_minutes ? stats.total_duration_minutes * 60 : 0);
+                  return formatDuration(totalSeconds, false);
+                }
+                // 如果没有统计数据，从列表计算
+                const totalSeconds = workouts.reduce((sum, w) => sum + (w.duration_seconds || 0), 0);
+                return formatDuration(totalSeconds, false);
+              })()}
+            </Text>
+            <Text className="stat-label">总时长</Text>
+          </View>
+          <View className="stat-item">
+            <Text className="stat-value">
+              {(() => {
+                if (stats) {
+                  const totalMeters = stats.total_distance_meters ?? (stats.total_distance_km ? stats.total_distance_km * 1000 : 0);
+                  return formatDistance(totalMeters, false);
+                }
+                // 如果没有统计数据，从列表计算
+                const totalMeters = workouts.reduce((sum, w) => sum + (w.distance_meters || 0), 0);
+                return formatDistance(totalMeters, false);
+              })()}
+            </Text>
+            <Text className="stat-label">总距离</Text>
+          </View>
+          <View className="stat-item">
+            <Text className="stat-value">
+              {(() => {
+                if (stats) {
+                  return stats.total_calories?.toLocaleString() || '0';
+                }
+                // 如果没有统计数据，从列表计算
+                const totalCalories = workouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+                return totalCalories.toLocaleString();
+              })()}
+            </Text>
+            <Text className="stat-label">消耗卡路里</Text>
           </View>
         </View>
-      )}
+      </View>
 
       {/* 运动记录列表 */}
       {workouts.length === 0 ? (
