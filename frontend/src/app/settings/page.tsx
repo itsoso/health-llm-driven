@@ -400,7 +400,18 @@ function SettingsContent() {
                 setMessage({ type: 'success', text: data.message });
               } else if (data.type === 'error') {
                 setSyncProgress(prev => ({ ...prev, isSyncing: false }));
-                setMessage({ type: 'error', text: data.message });
+                // 检查是否是MFA错误
+                if (data.mfa_required) {
+                  if (data.mfa_session_id) {
+                    setMfaSessionId(data.mfa_session_id);
+                    setShowMFA(true);
+                    setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
+                  } else {
+                    setMessage({ type: 'error', text: data.message || '需要两步验证，请先在设置页面完成MFA验证' });
+                  }
+                } else {
+                  setMessage({ type: 'error', text: data.message });
+                }
               }
             } catch (e) {
               // 忽略解析错误
@@ -410,7 +421,13 @@ function SettingsContent() {
       }
     } catch (error: any) {
       setSyncProgress(prev => ({ ...prev, isSyncing: false }));
-      setMessage({ type: 'error', text: error.message || '同步失败' });
+      const errorMsg = error.message || '同步失败';
+      // 检查是否是MFA错误
+      if (errorMsg.includes('两步验证') || errorMsg.includes('MFA') || errorMsg.includes('two-factor')) {
+        setMessage({ type: 'error', text: '🔐 ' + errorMsg + ' 请先在设置页面完成MFA验证，然后再尝试同步。' });
+      } else {
+        setMessage({ type: 'error', text: errorMsg });
+      }
     }
   };
 
