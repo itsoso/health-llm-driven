@@ -809,18 +809,30 @@ function SettingsContent() {
                     </div>
                     <div className="text-sm text-indigo-700 mb-3 space-y-2">
                       <p className="font-medium">如何获取验证码：</p>
-                      <ol className="list-decimal list-inside space-y-1 ml-2">
-                        <li>打开手机上的验证器应用（如Google Authenticator、Microsoft Authenticator等）</li>
-                        <li>找到您的Garmin账号</li>
-                        <li>查看显示的6位数字验证码（每30秒自动更新）</li>
-                        <li>在下方输入框中输入这个验证码</li>
-                      </ol>
-                      <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-                        <strong>⚠️ 重要提示：</strong>
+                      <div className="space-y-2">
+                        <div>
+                          <p className="font-semibold text-indigo-800">方式1：验证器应用（推荐）</p>
+                          <ol className="list-decimal list-inside space-y-1 ml-2 text-xs">
+                            <li>打开手机上的验证器应用（如Google Authenticator、Microsoft Authenticator等）</li>
+                            <li>找到您的Garmin账号</li>
+                            <li>查看显示的6位数字验证码（每30秒自动更新）</li>
+                          </ol>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-indigo-800">方式2：邮件验证码</p>
+                          <p className="text-xs ml-2">如果您的账号配置为通过邮件接收验证码，请检查您的邮箱（包括垃圾邮件文件夹）</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-indigo-800">方式3：短信验证码</p>
+                          <p className="text-xs ml-2">如果您的账号配置为通过短信接收验证码，请检查您的手机短信</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                        <strong>💡 提示：</strong>
                         <ul className="list-disc list-inside mt-1 space-y-0.5">
-                          <li>验证码不是通过邮件或短信发送的</li>
-                          <li>如果您没有设置验证器应用，请先访问 connect.garmin.cn 登录并设置两步验证</li>
-                          <li>验证码每30秒更新一次，请使用最新的验证码</li>
+                          <li>验证码格式通常是6位数字</li>
+                          <li>如果验证失败，请检查验证码是否正确且未过期</li>
+                          <li>验证码可能有时间限制，请尽快输入</li>
                         </ul>
                       </div>
                     </div>
