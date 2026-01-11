@@ -34,6 +34,7 @@ class WechatLoginResponse(BaseModel):
     user_id: int
     is_new_user: bool
     nickname: Optional[str]
+    merged_user_id: Optional[int] = None  # 如果合并了PC用户，返回PC用户ID
 
 
 class WechatUserInfo(BaseModel):
@@ -152,7 +153,8 @@ async def wechat_login(
         access_token=access_token,
         user_id=user.id,
         is_new_user=is_new_user,
-        nickname=user.name
+        nickname=user.name,
+        merged_user_id=merged_user_id
     )
 
 

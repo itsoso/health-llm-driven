@@ -32,6 +32,7 @@ api_router = APIRouter()
 # 认证路由（放在最前面）
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(wechat.router, prefix="/wechat", tags=["wechat"])
+api_router.include_router(user_merge.router, prefix="/user-merge", tags=["user-merge"])
 
 # 管理员路由
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
