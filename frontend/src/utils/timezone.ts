@@ -40,16 +40,37 @@ export function formatBeijingTime(
  * @returns 格式：YYYY/MM/DD HH:mm:ss
  */
 export function formatDateTime(dateString: string | null | undefined): string {
-  return formatBeijingTime(dateString, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Shanghai'
-  });
+  if (!dateString) return '--';
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '--';
+    
+    // 使用Intl.DateTimeFormat转换为北京时间，然后手动格式化为 YYYY/MM/DD HH:mm:ss
+    const formatter = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Shanghai'
+    });
+    
+    const parts = formatter.formatToParts(date);
+    const year = parts.find(p => p.type === 'year')?.value || '';
+    const month = parts.find(p => p.type === 'month')?.value.padStart(2, '0') || '';
+    const day = parts.find(p => p.type === 'day')?.value.padStart(2, '0') || '';
+    const hour = parts.find(p => p.type === 'hour')?.value.padStart(2, '0') || '';
+    const minute = parts.find(p => p.type === 'minute')?.value.padStart(2, '0') || '';
+    const second = parts.find(p => p.type === 'second')?.value.padStart(2, '0') || '';
+    
+    return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+  } catch (error) {
+    console.error('时间格式化错误:', error);
+    return '--';
+  }
 }
 
 /**
