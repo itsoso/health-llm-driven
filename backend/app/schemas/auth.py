@@ -76,6 +76,7 @@ class GarminCredentialResponse(BaseModel):
     last_sync_at: Optional[datetime] = None
     sync_enabled: bool = True
     credentials_valid: bool = True  # 凭证是否有效
+    requires_mfa: bool = False  # 是否需要两步验证
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     

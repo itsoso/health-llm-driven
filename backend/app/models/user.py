@@ -55,6 +55,7 @@ class GarminCredential(Base):
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
     sync_enabled = Column(Boolean, default=True)
     credentials_valid = Column(Boolean, default=True)  # 凭证是否有效（登录失败时设为False）
+    requires_mfa = Column(Boolean, default=False)  # 是否需要两步验证（MFA）
     last_error = Column(Text, nullable=True)  # 最后一次错误信息
     error_count = Column(Integer, default=0)  # 连续错误次数
     
