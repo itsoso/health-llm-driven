@@ -32,7 +32,7 @@ export default defineAppConfig({
       },
       {
         pagePath: 'pages/dashboard/index',
-        text: '数据',
+        text: 'AI建议',
         iconPath: 'assets/icons/chart.png',
         selectedIconPath: 'assets/icons/chart-active.png',
       },
