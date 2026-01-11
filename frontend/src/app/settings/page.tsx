@@ -38,6 +38,8 @@ function SettingsContent() {
   const [showMFA, setShowMFA] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaSessionId, setMfaSessionId] = useState<string | null>(null);
+  const [mfaContext, setMfaContext] = useState<'test' | 'sync' | null>(null); // MFA验证的上下文：测试连接或同步
+  const [pendingSyncDays, setPendingSyncDays] = useState<number | null>(null); // 待同步的天数（如果是在同步场景）
   
   // Apple Watch 状态
   const [appleFile, setAppleFile] = useState<File | null>(null);
@@ -320,10 +322,33 @@ function SettingsContent() {
     },
     onSuccess: (data) => {
       if (data.success) {
-        setMessage({ type: 'success', text: data.message || '验证成功！现在可以重新尝试同步。' });
-        setShowMFA(false);
-        setMfaCode('');
-        setMfaSessionId(null);
+        const isSyncContext = mfaContext === 'sync';
+        
+        if (isSyncContext) {
+          // 同步场景：验证成功后自动触发同步
+          setMessage({ type: 'success', text: '✅ 验证成功！正在开始同步...' });
+          setShowMFA(false);
+          setMfaCode('');
+          setMfaSessionId(null);
+          setMfaContext(null);
+          
+          // 自动触发同步
+          const syncDays = pendingSyncDays || 7;
+          setPendingSyncDays(null);
+          
+          // 延迟一下，让用户看到成功消息
+          setTimeout(() => {
+            startSyncWithProgress(syncDays);
+          }, 500);
+        } else {
+          // 测试连接场景：提示可以保存凭证
+          setMessage({ type: 'success', text: data.message || '✅ 验证成功！Garmin账号连接成功，可以保存凭证了。' });
+          setShowMFA(false);
+          setMfaCode('');
+          setMfaSessionId(null);
+          setMfaContext(null);
+        }
+        
         // 刷新凭证状态
         queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
       } else {
@@ -406,6 +431,8 @@ function SettingsContent() {
                 if (data.mfa_required) {
                   if (data.mfa_session_id) {
                     setMfaSessionId(data.mfa_session_id);
+                    setMfaContext('sync'); // 标记为同步场景
+                    setPendingSyncDays(days); // 保存待同步的天数
                     setShowMFA(true);
                     setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
                   } else {
