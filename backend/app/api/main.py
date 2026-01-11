@@ -25,6 +25,7 @@ from app.api import (
     workout,
     wechat,
     devices,  # 多设备管理
+    user_merge,  # 用户合并
 )
 
 api_router = APIRouter()
