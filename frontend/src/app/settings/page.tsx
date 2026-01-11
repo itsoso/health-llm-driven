@@ -423,6 +423,7 @@ function SettingsContent() {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
+              console.log('收到SSE消息:', data); // 调试日志
               
               if (data.type === 'progress') {
                 setSyncProgress(prev => ({

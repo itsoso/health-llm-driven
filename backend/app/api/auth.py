@@ -482,6 +482,7 @@ async def sync_garmin_data_stream(
             # 尝试测试连接来检测MFA
             try:
                 test_result = test_service.test_connection_with_mfa()
+                logger.info(f"测试连接结果: success={test_result.get('success')}, mfa_required={test_result.get('mfa_required')}, mfa_session_id={test_result.get('mfa_session_id')}")
                 if test_result.get("mfa_required") and test_result.get("mfa_session_id"):
                     error_data = {
                         'type': 'error',
@@ -489,6 +490,7 @@ async def sync_garmin_data_stream(
                         'mfa_required': True,
                         'mfa_session_id': test_result.get("mfa_session_id")
                     }
+                    logger.info(f"发送MFA错误消息: {error_data}")
                     yield f"data: {json.dumps(error_data)}\n\n"
                     return
             except Exception as test_error:
