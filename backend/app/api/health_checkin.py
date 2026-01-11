@@ -36,9 +36,22 @@ def create_health_checkin(
     if existing:
         # 更新现有记录
         logger.info(f"更新现有记录 ID={existing.id}")
-        for key, value in checkin.model_dump(exclude={"user_id", "checkin_date"}).items():
+        checkin_dict = checkin.model_dump(exclude={"user_id", "checkin_date"})
+        
+        # 特殊处理数组字段：如果提供了新值，则合并或替换
+        for key, value in checkin_dict.items():
             if value is not None:
-                setattr(existing, key, value)
+                # 对于数组字段（sneeze_times, nasal_wash_times），如果提供了新值，则合并
+                if key in ['sneeze_times', 'nasal_wash_times'] and isinstance(value, list):
+                    existing_value = getattr(existing, key) or []
+                    # 合并数组（去重基于时间）
+                    existing_times = {item.get('time'): item for item in existing_value}
+                    for item in value:
+                        existing_times[item.get('time')] = item
+                    setattr(existing, key, list(existing_times.values()))
+                else:
+                    setattr(existing, key, value)
+        
         db.commit()
         db.refresh(existing)
         return existing

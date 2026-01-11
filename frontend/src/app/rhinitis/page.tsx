@@ -75,9 +75,32 @@ function RhinitisContent() {
         }),
       });
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || '保存失败');
+        // 检查响应内容类型
+        const contentType = res.headers.get('content-type');
+        let errorMessage = '保存失败';
+        
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await res.json();
+            errorMessage = errorData.detail || errorData.message || '保存失败';
+          } catch {
+            errorMessage = `服务器错误 (${res.status})`;
+          }
+        } else {
+          // 非JSON响应，可能是HTML错误页面
+          const text = await res.text();
+          errorMessage = `服务器错误 (${res.status}): ${text.substring(0, 100)}`;
+        }
+        
+        throw new Error(errorMessage);
       }
+      
+      // 确保响应是JSON格式
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('服务器返回了非JSON格式的响应');
+      }
+      
       return res.json();
     },
     onSuccess: () => {
