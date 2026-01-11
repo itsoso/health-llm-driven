@@ -563,12 +563,14 @@ async def sync_garmin_data_stream(
                 yield f"data: {json.dumps({'type': 'progress', 'current': days, 'total': days, 'message': '开始同步运动活动数据...'})}\n\n"
                 
                 from app.services.workout_sync import WorkoutSyncService
+                # 优先复用已认证的garmin_service的client，如果没有则使用MFA会话
                 workout_sync_service = WorkoutSyncService(
                     email=credentials["email"],
                     password=credentials["password"],
                     is_cn=credentials.get("is_cn", False),
                     user_id=current_user.id,
-                    mfa_session_id=mfa_session_id  # 传递MFA会话ID以复用认证状态
+                    mfa_session_id=mfa_session_id,  # 传递MFA会话ID以复用认证状态
+                    client=garmin_service.client if garmin_service._authenticated and garmin_service.client else None  # 直接复用已认证的client
                 )
                 workout_result = await workout_sync_service.sync_activities(db, current_user.id, days)
                 synced_activities = workout_result.get("synced_count", 0)
