@@ -656,6 +656,17 @@ async def test_garmin_connection(
         # 使用支持 MFA 的测试连接方法
         result = garmin_service.test_connection_with_mfa()
         
+        # 如果检测到需要MFA，更新数据库中的requires_mfa字段
+        if result.get("mfa_required"):
+            db = next(get_db())
+            try:
+                garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=True)
+                logger.info(f"已更新用户 {current_user.id} 的MFA状态为需要MFA")
+            except Exception as e:
+                logger.warning(f"更新MFA状态失败: {e}")
+            finally:
+                db.close()
+        
         return GarminTestConnectionResponse(
             success=result.get("success", False),
             mfa_required=result.get("mfa_required", False),
@@ -714,11 +725,16 @@ async def verify_garmin_mfa(
             mfa_code=mfa_request.mfa_code
         )
         
-        # 如果验证成功，将session_id保存到用户的凭证中（临时存储，用于后续同步）
+        # 如果验证成功，更新数据库中的requires_mfa字段为True
         if result.get("success") and result.get("session_id"):
-            # 可以选择将session_id临时存储到Redis或内存中
-            # 这里简单起见，通过响应返回给前端，前端再传给同步接口
-            pass
+            db = next(get_db())
+            try:
+                garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=True)
+                logger.info(f"MFA验证成功，已更新用户 {current_user.id} 的MFA状态为需要MFA")
+            except Exception as e:
+                logger.warning(f"更新MFA状态失败: {e}")
+            finally:
+                db.close()
         
         return GarminMFAVerifyResponse(
             success=result.get("success", False),
