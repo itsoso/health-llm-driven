@@ -371,6 +371,14 @@ async def sync_garmin_data(
                 garmin_service.sync_daily_data(db, current_user.id, target_date)
                 synced_days += 1
             except Exception as e:
+                # 检查是否是MFA错误
+                error_msg = str(e).lower()
+                if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
+                    logger.warning(f"[用户 {current_user.id}] 同步需要MFA验证")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。"
+                    ) from e
                 logger.warning(f"同步 {target_date} 失败: {e}")
                 failed_days += 1
         
@@ -387,6 +395,14 @@ async def sync_garmin_data(
             synced_activities = result.get("synced_count", 0)
             logger.info(f"[用户 {current_user.id}] 运动活动同步完成，共 {synced_activities} 条")
         except Exception as e:
+            # 检查是否是MFA错误
+            error_msg = str(e).lower()
+            if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
+                logger.warning(f"[用户 {current_user.id}] 运动活动同步需要MFA验证")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。"
+                ) from e
             logger.warning(f"[用户 {current_user.id}] 运动活动同步失败: {e}")
         
         # 更新同步状态
