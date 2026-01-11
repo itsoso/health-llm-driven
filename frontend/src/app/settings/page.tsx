@@ -282,9 +282,12 @@ function SettingsContent() {
         setShowMFA(false);
         setMfaCode('');
         setMfaSessionId(null);
+        setMfaContext(null);
+        setPendingSyncDays(null);
       } else if (data.mfa_required && data.mfa_session_id) {
         // 需要两步验证
         setMfaSessionId(data.mfa_session_id);
+        setMfaContext('test'); // 标记为测试连接场景
         setShowMFA(true);
         setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
       } else {
@@ -860,6 +863,8 @@ function SettingsContent() {
                           setShowMFA(false);
                           setMfaCode('');
                           setMfaSessionId(null);
+                          setMfaContext(null);
+                          setPendingSyncDays(null);
                         }}
                         className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
                       >
@@ -891,6 +896,8 @@ function SettingsContent() {
                         setShowMFA(false);
                         setMfaCode('');
                         setMfaSessionId(null);
+                        setMfaContext(null);
+                        setPendingSyncDays(null);
                         setGarminForm({ garmin_email: '', garmin_password: '', is_cn: false });
                       }}
                       className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
