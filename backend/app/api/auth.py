@@ -356,11 +356,13 @@ async def sync_garmin_data(
         from datetime import date, timedelta
         
         # 创建Garmin服务实例（传入凭证，会自动登录）
+        # 如果有mfa_session_id，传递给服务以复用已认证的会话
         garmin_service = GarminConnectService(
             email=credentials["email"],
             password=credentials["password"],
             is_cn=credentials.get("is_cn", False),
-            user_id=current_user.id
+            user_id=current_user.id,
+            mfa_session_id=sync_request.mfa_session_id  # 传递MFA session ID
         )
         
         # 同步每日健康数据
@@ -388,11 +390,14 @@ async def sync_garmin_data(
         # 同步运动活动数据
         synced_activities = 0
         try:
+            # 复用已认证的garmin_service的client（如果可用）
+            workout_client = garmin_service.client if hasattr(garmin_service, 'client') and garmin_service.client else None
             workout_sync_service = WorkoutSyncService(
                 email=credentials["email"],
                 password=credentials["password"],
                 is_cn=credentials.get("is_cn", False),
-                user_id=current_user.id
+                user_id=current_user.id,
+                client=workout_client  # 传递已认证的client
             )
             result = await workout_sync_service.sync_activities(db, current_user.id, sync_request.days)
             synced_activities = result.get("synced_count", 0)
