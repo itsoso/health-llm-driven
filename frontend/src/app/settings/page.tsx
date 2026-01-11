@@ -373,6 +373,9 @@ function SettingsContent() {
   const startSyncWithProgress = async (days: number) => {
     if (!token) return;
     
+    setMfaContext('sync'); // 设置MFA场景为同步
+    setPendingSyncDays(days); // 记录待同步天数
+    
     setSyncProgress({
       isSyncing: true,
       current: 0,
@@ -385,7 +388,14 @@ function SettingsContent() {
     setMessage(null);
     
     try {
-      const response = await fetch(`${API_BASE}/auth/garmin/sync-stream?days=${days}`, {
+      // 构建URL，如果有authenticatedSessionId则传递
+      let url = `${API_BASE}/auth/garmin/sync-stream?days=${days}`;
+      if (authenticatedSessionId) {
+        url += `&mfa_session_id=${authenticatedSessionId}`;
+        console.log('使用已认证的MFA session:', authenticatedSessionId);
+      }
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
