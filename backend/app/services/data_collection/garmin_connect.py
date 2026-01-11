@@ -1035,7 +1035,8 @@ class GarminConnectService:
         if most_charged is None and isinstance(summary, dict):
             charged = charged or summary.get('bodyBatteryChargedValue') or summary.get('bodyBatteryCharged')
             drained = drained or summary.get('bodyBatteryDrainedValue') or summary.get('bodyBatteryDrained')
-            most_charged = summary.get('bodyBatteryMostRecentValue') or summary.get('bodyBatteryHighestValue') or summary.get('bodyBatteryMostCharged')
+            # 优先使用最高值，而不是最近值（MostRecentValue是当前值，不是最高值）
+            most_charged = summary.get('bodyBatteryHighestValue') or summary.get('bodyBatteryMostCharged') or summary.get('bodyBatteryChargedValue')
             lowest = summary.get('bodyBatteryLowestValue') or summary.get('bodyBatteryLowest')
         
         logger.info(f"最终身体电量: charged={charged}, drained={drained}, most_charged={most_charged}, lowest={lowest}")
