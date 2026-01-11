@@ -532,53 +532,34 @@ function OverviewContent() {
               </div>
             )}
           </MetricCard>
-        </div>
 
-        {/* 第三行 - 更多数据 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           {/* 步数 */}
-          <div className="bg-white rounded-xl p-4 shadow-md">
-            <div className="flex items-center gap-2 mb-2">
-              <span>👣</span>
-              <span className="text-gray-600 text-sm">步数</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-800">
+          <MetricCard icon="👣" title="步数">
+            <div className="text-3xl font-bold text-gray-800">
               {record?.steps?.toLocaleString() || '--'}
             </div>
-          </div>
+          </MetricCard>
 
           {/* 距离 */}
-          <div className="bg-white rounded-xl p-4 shadow-md">
-            <div className="flex items-center gap-2 mb-2">
-              <span>📏</span>
-              <span className="text-gray-600 text-sm">距离</span>
+          <MetricCard icon="📏" title="距离">
+            <div className="text-3xl font-bold text-gray-800">
+              {record?.distance_meters ? (record.distance_meters / 1000).toFixed(2) : '--'} <span className="text-lg font-normal text-gray-500">km</span>
             </div>
-            <div className="text-2xl font-bold text-gray-800">
-              {record?.distance_meters ? (record.distance_meters / 1000).toFixed(2) : '--'} <span className="text-sm font-normal">km</span>
-            </div>
-          </div>
+          </MetricCard>
 
           {/* 楼层 */}
-          <div className="bg-white rounded-xl p-4 shadow-md">
-            <div className="flex items-center gap-2 mb-2">
-              <span>🏢</span>
-              <span className="text-gray-600 text-sm">楼层</span>
+          <MetricCard icon="🏢" title="楼层">
+            <div className="text-3xl font-bold text-gray-800">
+              {record?.floors_climbed || '--'} <span className="text-lg font-normal text-gray-500">层</span>
             </div>
-            <div className="text-2xl font-bold text-gray-800">
-              {record?.floors_climbed || '--'} <span className="text-sm font-normal">层</span>
-            </div>
-          </div>
+          </MetricCard>
 
           {/* 压力 */}
-          <div className="bg-white rounded-xl p-4 shadow-md">
-            <div className="flex items-center gap-2 mb-2">
-              <span>😰</span>
-              <span className="text-gray-600 text-sm">压力</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-800">
+          <MetricCard icon="😰" title="压力">
+            <div className="text-3xl font-bold text-gray-800">
               {record?.stress_level || '--'}
             </div>
-          </div>
+          </MetricCard>
         </div>
       </div>
     </main>
