@@ -19,11 +19,13 @@ from app.database import SessionLocal
 from app.models.daily_health import GarminData
 from app.services.data_collection.garmin_connect import GarminConnectService
 import logging
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+from app.utils.logging_config import setup_beijing_logging
+
+setup_beijing_logging(level=logging.INFO, format_string="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 

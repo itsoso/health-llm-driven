@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { deviceApi } from '@/services/api';
+import { formatDateTime } from '@/utils/timezone';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -699,7 +700,7 @@ function SettingsContent() {
                   </p>
                   {garminCredential.last_sync_at && (
                     <p className={`text-xs mt-1 ${garminCredential.sync_enabled ? 'text-green-600' : 'text-gray-400'}`}>
-                      最后同步: {new Date(garminCredential.last_sync_at).toLocaleString('zh-CN')}
+                      最后同步: {formatDateTime(garminCredential.last_sync_at)}
                     </p>
                   )}
                 </div>
@@ -1032,7 +1033,7 @@ function SettingsContent() {
               
               {appleDevice.last_sync_at && (
                 <p className="text-xs text-green-700 mt-2">
-                  最后同步: {new Date(appleDevice.last_sync_at).toLocaleString('zh-CN')}
+                  最后同步: {formatDateTime(appleDevice.last_sync_at)}
                 </p>
               )}
 
