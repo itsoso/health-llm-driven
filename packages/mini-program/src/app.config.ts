@@ -1,4 +1,4 @@
-export default defineAppConfig({
+export default {
   pages: [
     'pages/index/index',         // 首页
     'pages/dashboard/index',     // 数据面板
@@ -50,4 +50,4 @@ export default defineAppConfig({
       },
     ],
   },
-});
+};
