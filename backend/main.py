@@ -4,16 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.api.main import api_router
 from app.scheduler import start_scheduler
-import logging
+from app.utils.logging_config import setup_beijing_logging
 
-# 设置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
+# 设置日志，使用北京时间
+setup_beijing_logging()
 
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
