@@ -417,6 +417,7 @@ export default function AdminPage() {
             <table className="w-full">
               <thead className="bg-white/5">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase tracking-wider">ID</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase tracking-wider">用户</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase tracking-wider">邮箱</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-purple-200 uppercase tracking-wider">状态</th>
@@ -430,19 +431,20 @@ export default function AdminPage() {
               <tbody className="divide-y divide-white/10">
                 {usersLoading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-purple-200">
+                    <td colSpan={9} className="px-4 py-8 text-center text-purple-200">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
                     </td>
                   </tr>
                 ) : userList?.users.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-purple-200">
+                    <td colSpan={9} className="px-4 py-8 text-center text-purple-200">
                       暂无用户数据
                     </td>
                   </tr>
                 ) : (
                   userList?.users.map((u) => (
                     <tr key={u.id} className="hover:bg-white/5 transition-colors">
+                      <td className="px-4 py-3 text-purple-200 text-sm font-mono">{u.id}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center">
                           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm mr-3">
@@ -671,6 +673,7 @@ export default function AdminPage() {
                 <table className="w-full">
                   <thead className="bg-white/5">
                     <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">ID</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">用户</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-purple-200 uppercase">Garmin邮箱</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-purple-200 uppercase">凭证状态</th>
@@ -683,19 +686,20 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-white/10">
                     {garminStatusLoading ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-purple-200">
+                        <td colSpan={8} className="px-4 py-8 text-center text-purple-200">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
                         </td>
                       </tr>
                     ) : garminSyncStatus?.users.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-purple-200">
+                        <td colSpan={8} className="px-4 py-8 text-center text-purple-200">
                           暂无配置Garmin的用户
                         </td>
                       </tr>
                     ) : (
                       garminSyncStatus?.users.map((gu) => (
                         <tr key={gu.user_id} className="hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 text-purple-200 text-sm font-mono">{gu.user_id}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center">
                               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center text-white font-semibold text-sm mr-3">
