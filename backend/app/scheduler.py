@@ -55,7 +55,8 @@ async def sync_user_garmin_data(
         "error_count": 0,
         "activities_count": 0,
         "message": "",
-        "is_auth_error": False
+        "is_auth_error": False,
+        "requires_mfa": False  # 是否需要MFA验证
     }
     
     try:
@@ -114,6 +115,19 @@ async def sync_user_garmin_data(
         error_str = str(e).lower()
         error_message = str(e)
         
+        # 检测是否需要MFA验证
+        requires_mfa = any(keyword in error_str for keyword in [
+            'mfa', 'two-factor', '两步验证', 'two factor', 'verification'
+        ])
+        
+        if requires_mfa:
+            # 需要MFA验证的用户，跳过同步，不标记为失败
+            result["requires_mfa"] = True
+            result["message"] = "需要两步验证，跳过自动同步"
+            logger.info(f"用户 {user_id} 需要MFA两步验证，跳过后台自动同步")
+            # 不更新错误状态，保持凭证有效
+            return result
+        
         # 检测是否为认证错误
         is_auth_error = any(keyword in error_str for keyword in [
             '401', 'unauthorized', 'authentication', 'login failed', 
@@ -143,6 +157,7 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
         "total_users": 0,
         "success_users": 0,
         "failed_users": 0,
+        "mfa_users": 0,  # 需要MFA验证的用户数
         "details": []
     }
     
@@ -172,6 +187,8 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
             
             if user_result["success"]:
                 results["success_users"] += 1
+            elif user_result.get("requires_mfa"):
+                results["mfa_users"] += 1
             else:
                 results["failed_users"] += 1
             
@@ -180,7 +197,8 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
         
         logger.info(
             f"全部用户同步完成: 总计 {results['total_users']} 用户, "
-            f"成功 {results['success_users']}, 失败 {results['failed_users']}"
+            f"成功 {results['success_users']}, 失败 {results['failed_users']}, "
+            f"需要MFA验证(已跳过) {results['mfa_users']}"
         )
         
     except Exception as e:
