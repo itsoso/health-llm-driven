@@ -206,16 +206,24 @@ class GarminConnectService:
         # 如果有MFA会话ID，尝试复用已认证的client
         if self._mfa_session_id and not self._authenticated:
             _cleanup_expired_mfa_sessions()
+            logger.info(f"{prefix} 尝试复用MFA会话: {self._mfa_session_id}")
             if self._mfa_session_id in _mfa_sessions:
                 session = _mfa_sessions[self._mfa_session_id]
+                logger.info(f"{prefix} 找到MFA会话: authenticated={session.get('authenticated')}, email={session.get('email')}, 当前email={self.email}")
                 if session.get("authenticated") and session.get("email") == self.email:
                     # 复用已认证的client
                     self.client = session.get("client")
                     if self.client and hasattr(self.client, 'garth') and self.client.garth.oauth2_token:
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-                        logger.info(f"{prefix} 复用已认证的Garmin会话 - {server_type}")
+                        logger.info(f"{prefix} ✅ 成功复用已认证的Garmin会话 - {server_type}")
                         return
+                    else:
+                        logger.warning(f"{prefix} MFA会话中的client无效或没有oauth2_token")
+                else:
+                    logger.warning(f"{prefix} MFA会话未认证或email不匹配")
+            else:
+                logger.warning(f"{prefix} MFA会话不存在或已过期: {self._mfa_session_id}")
         
         if not self._authenticated or self.client is None:
             try:
