@@ -320,10 +320,12 @@ function SettingsContent() {
     },
     onSuccess: (data) => {
       if (data.success) {
-        setMessage({ type: 'success', text: data.message });
+        setMessage({ type: 'success', text: data.message || '验证成功！现在可以重新尝试同步。' });
         setShowMFA(false);
         setMfaCode('');
         setMfaSessionId(null);
+        // 刷新凭证状态
+        queryClient.invalidateQueries({ queryKey: ['garmin-credential'] });
       } else {
         setMessage({ type: 'error', text: data.message });
       }
