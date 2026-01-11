@@ -35,10 +35,13 @@ export default function Index() {
 
   // 页面显示时重新检查登录状态和刷新数据
   Taro.useDidShow(() => {
-    checkLoginStatus();
-    // 强制刷新数据，清除可能的缓存
-    if (isLoggedIn) {
+    const token = getToken();
+    if (token) {
+      // 已登录，强制刷新数据
       loadHomeData();
+    } else {
+      // 未登录，检查登录状态
+      checkLoginStatus();
     }
   });
 
