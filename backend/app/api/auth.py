@@ -464,11 +464,14 @@ async def sync_garmin_data_stream(
         try:
             # 先测试连接，检测是否需要MFA
             from app.services.data_collection.garmin_connect import GarminConnectService
+            
+            # 如果提供了mfa_session_id，尝试复用已认证的会话
             test_service = GarminConnectService(
                 email=credentials["email"],
                 password=credentials["password"],
                 is_cn=credentials.get("is_cn", False),
-                user_id=current_user.id
+                user_id=current_user.id,
+                mfa_session_id=mfa_session_id  # 传递MFA会话ID
             )
             
             # 尝试测试连接来检测MFA
@@ -502,7 +505,8 @@ async def sync_garmin_data_stream(
                 email=credentials["email"],
                 password=credentials["password"],
                 is_cn=credentials.get("is_cn", False),
-                user_id=current_user.id
+                user_id=current_user.id,
+                mfa_session_id=mfa_session_id  # 传递MFA会话ID以复用认证状态
             )
             
             yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
