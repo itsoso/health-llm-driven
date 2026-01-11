@@ -456,6 +456,22 @@ async def sync_garmin_data_stream(
             detail="未配置Garmin凭证，请先在设置中配置"
         )
     
+    def _sync_single_date_helper(garmin_service, user_id: int, target_date: date, date_str: str) -> dict:
+        """在独立线程中同步单个日期的数据（辅助函数）"""
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            garmin_service.sync_daily_data(db, user_id, target_date)
+            return {"success": True}
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
+                return {"success": False, "mfa_required": True}
+            logger.warning(f"同步 {date_str} 失败: {e}")
+            return {"success": False}
+        finally:
+            db.close()
+    
     async def generate_progress() -> AsyncGenerator[str, None]:
         from app.services.data_collection.garmin_connect import GarminConnectService
         
@@ -518,44 +534,73 @@ async def sync_garmin_data_stream(
             
             yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
             
-            for i in range(days):
-                target_date = today - timedelta(days=i)
-                date_str = target_date.strftime("%Y-%m-%d")
+            # 使用线程池执行同步操作，避免阻塞事件循环
+            import concurrent.futures
+            from app.database import SessionLocal
+            
+            # 创建线程池（最多3个并发）
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                futures = []
                 
-                try:
-                    garmin_service.sync_daily_data(db, current_user.id, target_date)
-                    synced_days += 1
-                    status_msg = "success"
-                except Exception as e:
-                    # 检查是否是MFA错误
-                    error_msg = str(e).lower()
-                    if 'mfa' in error_msg or 'two-factor' in error_msg or '两步验证' in error_msg or 'verification' in error_msg:
-                        error_data = {
-                            'type': 'error',
-                            'message': '🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。',
-                            'mfa_required': True
-                        }
-                        yield f"data: {json.dumps(error_data)}\n\n"
-                        return
-                    logger.warning(f"同步 {target_date} 失败: {e}")
-                    failed_days += 1
-                    status_msg = "failed"
+                for i in range(days):
+                    target_date = today - timedelta(days=i)
+                    date_str = target_date.strftime("%Y-%m-%d")
+                    
+                    # 提交同步任务到线程池
+                    future = executor.submit(
+                        _sync_single_date_helper,
+                        garmin_service,
+                        current_user.id,
+                        target_date,
+                        date_str
+                    )
+                    futures.append((i, target_date, date_str, future))
                 
-                # 发送进度更新
-                progress_data = {
-                    'type': 'progress',
-                    'current': i + 1,
-                    'total': days,
-                    'date': date_str,
-                    'status': status_msg,
-                    'synced': synced_days,
-                    'failed': failed_days,
-                    'message': f'正在同步 {date_str}...'
-                }
-                yield f"data: {json.dumps(progress_data)}\n\n"
-                
-                # 小延迟，让前端有时间处理
-                await asyncio.sleep(0.1)
+                # 处理完成的任务
+                for i, target_date, date_str, future in futures:
+                    try:
+                        # 等待任务完成，但设置超时避免卡死
+                        result = future.result(timeout=30)  # 30秒超时
+                        if result.get("success"):
+                            synced_days += 1
+                            status_msg = "success"
+                        else:
+                            failed_days += 1
+                            status_msg = "failed"
+                            
+                            # 检查是否是MFA错误
+                            if result.get("mfa_required"):
+                                error_data = {
+                                    'type': 'error',
+                                    'message': '🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。',
+                                    'mfa_required': True
+                                }
+                                yield f"data: {json.dumps(error_data)}\n\n"
+                                return
+                    except concurrent.futures.TimeoutError:
+                        logger.warning(f"同步 {target_date} 超时")
+                        failed_days += 1
+                        status_msg = "timeout"
+                    except Exception as e:
+                        logger.warning(f"同步 {target_date} 失败: {e}")
+                        failed_days += 1
+                        status_msg = "failed"
+                    
+                    # 发送进度更新
+                    progress_data = {
+                        'type': 'progress',
+                        'current': i + 1,
+                        'total': days,
+                        'date': date_str,
+                        'status': status_msg,
+                        'synced': synced_days,
+                        'failed': failed_days,
+                        'message': f'正在同步 {date_str}...'
+                    }
+                    yield f"data: {json.dumps(progress_data)}\n\n"
+                    
+                    # 小延迟，让前端有时间处理
+                    await asyncio.sleep(0.05)  # 减少延迟时间
             
             # 同步运动活动数据
             synced_activities = 0
