@@ -447,13 +447,16 @@ function SettingsContent() {
                 setMessage({ type: 'success', text: data.message });
               } else if (data.type === 'error') {
                 setSyncProgress(prev => ({ ...prev, isSyncing: false }));
+                console.log('收到错误消息:', data); // 调试日志
                 // 检查是否是MFA错误
                 if (data.mfa_required) {
+                  console.log('检测到MFA要求:', { mfa_session_id: data.mfa_session_id, showGarminForm }); // 调试日志
                   if (data.mfa_session_id) {
                     setMfaSessionId(data.mfa_session_id);
                     setMfaContext('sync'); // 标记为同步场景
                     setPendingSyncDays(days); // 保存待同步的天数
                     setShowMFA(true);
+                    console.log('设置MFA状态:', { showMFA: true, mfaSessionId: data.mfa_session_id, showGarminForm }); // 调试日志
                     setMessage({ type: 'error', text: '🔐 需要两步验证，请输入验证码' });
                   } else {
                     setMessage({ type: 'error', text: data.message || '需要两步验证，请先在设置页面完成MFA验证' });
