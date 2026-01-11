@@ -392,62 +392,80 @@ export default function WorkoutDetail() {
     );
   };
 
-  // 渲染AI分析（美化JSON）
+  // 渲染AI分析（优化版：只显示关键洞察及之后的内容，类似web版本）
   const renderAiAnalysis = (analysisStr: string) => {
     try {
       const analysis = JSON.parse(analysisStr);
       
-      // 如果是对象，格式化显示
+      // 如果是对象，只显示关键洞察及之后的内容
       if (typeof analysis === 'object' && analysis !== null) {
-        const sections: { title: string; content: string; icon: string }[] = [];
+        const sections: React.ReactNode[] = [];
         
-        // 常见字段映射
-        const fieldMap: Record<string, { title: string; icon: string }> = {
-          summary: { title: '总结', icon: '📋' },
-          overall_summary: { title: '总结', icon: '📋' },
-          intensity: { title: '运动强度', icon: '💪' },
-          intensity_analysis: { title: '强度分析', icon: '💪' },
-          heart_rate_analysis: { title: '心率分析', icon: '❤️' },
-          performance: { title: '表现评价', icon: '🏆' },
-          suggestion: { title: '建议', icon: '💡' },
-          suggestions: { title: '建议', icon: '💡' },
-          improvement: { title: '改进建议', icon: '📈' },
-          recovery: { title: '恢复建议', icon: '🛌' },
-          next_workout: { title: '下次训练建议', icon: '🎯' },
-          calories_analysis: { title: '热量消耗', icon: '🔥' },
-          pace_analysis: { title: '配速分析', icon: '⚡' },
-          training_effect: { title: '训练效果', icon: '📊' },
-        };
-
-        for (const [key, value] of Object.entries(analysis)) {
-          if (value && typeof value === 'string' && value.trim()) {
-            const fieldInfo = fieldMap[key] || { title: key.replace(/_/g, ' '), icon: '•' };
-            sections.push({
-              title: fieldInfo.title,
-              content: value as string,
-              icon: fieldInfo.icon,
-            });
-          } else if (Array.isArray(value) && value.length > 0) {
-            const fieldInfo = fieldMap[key] || { title: key.replace(/_/g, ' '), icon: '•' };
-            sections.push({
-              title: fieldInfo.title,
-              content: value.join('\n• '),
-              icon: fieldInfo.icon,
-            });
-          }
-        }
-
-        if (sections.length > 0) {
-          return (
-            <>
-              {sections.map((section, index) => (
-                <View key={index} className="ai-section">
-                  <Text className="ai-section-title">{section.icon} {section.title}</Text>
-                  <Text className="ai-section-content">{section.content}</Text>
-                </View>
-              ))}
-            </>
+        // 1. AI增强洞察（如果有）
+        if (analysis.ai_enhanced_insights && typeof analysis.ai_enhanced_insights === 'string' && analysis.ai_enhanced_insights.trim()) {
+          sections.push(
+            <View key="enhanced-insights" className="ai-section">
+              <Text className="ai-section-content">{analysis.ai_enhanced_insights}</Text>
+            </View>
           );
+        }
+        
+        // 2. 关键洞察
+        if (analysis.key_insights && Array.isArray(analysis.key_insights) && analysis.key_insights.length > 0) {
+          sections.push(
+            <View key="key-insights" className="ai-section">
+              <Text className="ai-section-title">💡 关键洞察</Text>
+              <View className="ai-list">
+                {analysis.key_insights.map((insight: string, idx: number) => (
+                  <View key={idx} className="ai-list-item">
+                    <Text className="ai-list-bullet">•</Text>
+                    <Text className="ai-list-text">{insight}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          );
+        }
+        
+        // 3. 改进建议
+        if (analysis.improvement_tips && Array.isArray(analysis.improvement_tips) && analysis.improvement_tips.length > 0) {
+          sections.push(
+            <View key="improvement-tips" className="ai-section">
+              <Text className="ai-section-title">📈 改进建议</Text>
+              <View className="ai-list">
+                {analysis.improvement_tips.map((tip: string, idx: number) => (
+                  <View key={idx} className="ai-list-item">
+                    <Text className="ai-list-bullet">•</Text>
+                    <Text className="ai-list-text">{tip}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          );
+        }
+        
+        // 4. 恢复建议
+        if (analysis.recovery_recommendation && typeof analysis.recovery_recommendation === 'string' && analysis.recovery_recommendation.trim()) {
+          sections.push(
+            <View key="recovery" className="ai-section recovery-section">
+              <Text className="ai-section-title">🛌 恢复建议</Text>
+              <Text className="ai-section-content">{analysis.recovery_recommendation}</Text>
+            </View>
+          );
+        }
+        
+        // 5. 下次训练建议
+        if (analysis.next_workout_suggestion && typeof analysis.next_workout_suggestion === 'string' && analysis.next_workout_suggestion.trim()) {
+          sections.push(
+            <View key="next-workout" className="ai-section">
+              <Text className="ai-section-title">🎯 下次训练建议</Text>
+              <Text className="ai-section-content">{analysis.next_workout_suggestion}</Text>
+            </View>
+          );
+        }
+        
+        if (sections.length > 0) {
+          return <>{sections}</>;
         }
       }
       

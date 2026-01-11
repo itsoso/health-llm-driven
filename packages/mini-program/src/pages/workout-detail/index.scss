@@ -402,11 +402,45 @@
 }
 
 .ai-section-title {
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 600;
   color: #ffffff;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   display: block;
+}
+
+.ai-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-list-item {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ai-list-bullet {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.ai-list-text {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+  flex: 1;
+}
+
+.recovery-section {
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 8px;
 }
 
 .ai-section-content {
