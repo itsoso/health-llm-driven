@@ -331,9 +331,13 @@ function SettingsContent() {
       if (data.success) {
         const isSyncContext = mfaContext === 'sync';
         
-        // 保存验证成功后的session_id，用于后续同步复用
-        if (data.session_id) {
-          setAuthenticatedSessionId(data.session_id);
+        // 保存验证成功后的session_id到闭包变量和状态
+        const verifiedSessionId = data.session_id;
+        if (verifiedSessionId) {
+          setAuthenticatedSessionId(verifiedSessionId);
+          console.log('✅ 保存已验证的MFA session_id:', verifiedSessionId);
+        } else {
+          console.warn('⚠️ MFA验证成功但未返回session_id');
         }
         
         if (isSyncContext) {
@@ -351,12 +355,13 @@ function SettingsContent() {
           setMfaContext(null);
           
           // 延迟一下，让用户看到成功消息
-          // 使用ref来防止重复调用
+          // 直接使用闭包中的verifiedSessionId，不依赖状态更新
           setTimeout(() => {
             // 再次检查是否已经在同步中
             if (!syncProgress.isSyncing) {
-              console.log('✅ MFA验证成功，自动触发同步:', syncDays, '天');
-              startSyncWithProgress(syncDays);
+              console.log('✅ MFA验证成功，自动触发同步:', syncDays, '天', '使用session_id:', verifiedSessionId);
+              // 直接传递闭包中的verifiedSessionId，确保使用正确的值
+              startSyncWithProgressWithSessionId(syncDays, verifiedSessionId);
             } else {
               console.log('⚠️ 同步已在进行中，跳过自动触发');
             }
