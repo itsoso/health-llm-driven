@@ -27,9 +27,10 @@ export interface GarminData {
   light_sleep_duration: number | null;
   rem_sleep_duration: number | null;
   awake_duration: number | null;
-  stress_avg: number | null;
-  stress_max: number | null;
-  stress_rest_duration: number | null;
+  stress_level: number | null;
+  stress_avg?: number | null; // 兼容字段
+  stress_max?: number | null; // 兼容字段
+  stress_rest_duration?: number | null; // 兼容字段
   body_battery_charged: number | null;
   body_battery_drained: number | null;
   body_battery_most_charged: number | null;
@@ -126,7 +127,7 @@ export function getSleepScoreLevel(score: number | null): { level: string; color
   return { level: '较差', color: '#EF4444' };
 }
 
-export function getStressLevel(stress: number | null): { level: string; color: string } {
+export function getStressLevel(stress: number | null | undefined): { level: string; color: string } {
   if (stress === null || stress === undefined) {
     return { level: '未知', color: '#9CA3AF' };
   }
@@ -134,4 +135,14 @@ export function getStressLevel(stress: number | null): { level: string; color: s
   if (stress <= 50) return { level: '正常', color: '#3B82F6' };
   if (stress <= 75) return { level: '中等', color: '#F59E0B' };
   return { level: '高压', color: '#EF4444' };
+}
+
+// 获取血氧饱和度状态
+export function getSpO2Level(spo2: number | null | undefined): { level: string; color: string } {
+  if (spo2 === null || spo2 === undefined) {
+    return { level: '未知', color: '#9CA3AF' };
+  }
+  if (spo2 >= 95) return { level: '正常', color: '#10B981' };
+  if (spo2 >= 90) return { level: '偏低', color: '#F59E0B' };
+  return { level: '异常', color: '#EF4444' };
 }

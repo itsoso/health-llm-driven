@@ -6,7 +6,7 @@ import { View, Text, Button, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { wechatLogin, getTodayGarminData, getDailyRecommendation, getTodayRhinitis } from '../../services/api';
 import { getToken } from '../../services/request';
-import { GarminData, DailyRecommendation, RhinitisRecord } from '../../types';
+import { GarminData, DailyRecommendation, RhinitisRecord, getStressLevel, getSpO2Level } from '../../types';
 import logoImage from '../../assets/logo.png';
 import './index.scss';
 
@@ -356,6 +356,70 @@ export default function Index() {
                   }}>
                     {homeData.garmin.body_battery_most_charged >= 80 ? '充足' : 
                      homeData.garmin.body_battery_most_charged >= 50 ? '中等' : '偏低'}
+                  </Text>
+                </>
+              ) : (
+                <Text className="card-desc">暂无数据</Text>
+              )
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
+        {/* 压力水平 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('garmin-data')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">😰</Text>
+            <Text className="card-title">压力水平</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              homeData.loading ? (
+                <Text className="card-value loading">加载中...</Text>
+              ) : (() => {
+                const stress = homeData.garmin?.stress_level ?? homeData.garmin?.stress_avg ?? null;
+                const stressInfo = getStressLevel(stress);
+                return stress ? (
+                  <>
+                    <Text className="card-value">{stress}</Text>
+                    <Text className="card-unit">/100</Text>
+                    <Text className="card-status" style={{ color: stressInfo.color }}>
+                      {stressInfo.level}
+                    </Text>
+                  </>
+                ) : (
+                  <Text className="card-desc">暂无数据</Text>
+                );
+              })()
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
+        {/* 血氧饱和度 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('garmin-data')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">🩸</Text>
+            <Text className="card-title">血氧饱和度</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              homeData.loading ? (
+                <Text className="card-value loading">加载中...</Text>
+              ) : homeData.garmin?.spo2_avg ? (
+                <>
+                  <Text className="card-value">{Math.round(homeData.garmin.spo2_avg)}</Text>
+                  <Text className="card-unit">%</Text>
+                  <Text className="card-status" style={{ color: getSpO2Level(homeData.garmin.spo2_avg).color }}>
+                    {getSpO2Level(homeData.garmin.spo2_avg).level}
                   </Text>
                 </>
               ) : (
