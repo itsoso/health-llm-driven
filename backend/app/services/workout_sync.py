@@ -65,10 +65,59 @@ class WorkoutSyncService:
     def _ensure_authenticated(self):
         """确保已认证"""
         if not self._authenticated or self.client is None:
-            self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
-            self.client.login()
-            self._authenticated = True
-            logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
+            try:
+                # 创建支持 MFA 提前返回的客户端
+                self.client = Garmin(
+                    self.email, 
+                    self.password, 
+                    is_cn=self.is_cn,
+                    return_on_mfa=True  # 需要 MFA 时提前返回
+                )
+                
+                result = self.client.login()
+                
+                # 检查是否需要 MFA
+                if result and isinstance(result, tuple) and len(result) >= 2:
+                    first_element = result[0]
+                    second_element = result[1]
+                    
+                    # 检查是否是 MFA 需要的返回格式
+                    if first_element == "needs_mfa" and isinstance(second_element, dict):
+                        logger.warning(f"{self._log_prefix()}Garmin需要两步验证")
+                        from app.services.data_collection.garmin_connect import GarminMFARequiredError
+                        raise GarminMFARequiredError(
+                            "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
+                            {"client_state": second_element}
+                        )
+                    
+                    # 正常登录成功返回 (oauth1_token, oauth2_token)
+                    if self.client.garth.oauth2_token:
+                        self._authenticated = True
+                        logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
+                        return
+                
+                # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
+                if not self._authenticated:
+                    # 如果没有oauth2_token，尝试重新登录
+                    if not hasattr(self.client, 'garth') or not self.client.garth.oauth2_token:
+                        self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                        self.client.login()
+                    self._authenticated = True
+                    logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # 检查是否需要MFA（某些版本的库可能通过异常表示需要MFA）
+                if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
+                    logger.warning(f"{self._log_prefix()}Garmin账号需要两步验证")
+                    from app.services.data_collection.garmin_connect import GarminMFARequiredError
+                    raise GarminMFARequiredError(
+                        "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
+                        {}
+                    ) from e
+                
+                # 其他错误直接抛出
+                raise
     
     def _map_activity_type(self, garmin_type: str) -> str:
         """将Garmin活动类型映射到系统类型"""

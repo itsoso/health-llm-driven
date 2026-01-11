@@ -192,11 +192,66 @@ class GarminConnectService:
         prefix = self._log_prefix()
         if not self._authenticated or self.client is None:
             try:
-                self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
-                self.client.login()
-                self._authenticated = True
-                server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-                logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
+                # 创建支持 MFA 提前返回的客户端
+                self.client = Garmin(
+                    self.email, 
+                    self.password, 
+                    is_cn=self.is_cn,
+                    return_on_mfa=True  # 需要 MFA 时提前返回
+                )
+                
+                result = self.client.login()
+                
+                # 检查是否需要 MFA
+                if result and isinstance(result, tuple) and len(result) >= 2:
+                    first_element = result[0]
+                    second_element = result[1]
+                    
+                    # 检查是否是 MFA 需要的返回格式
+                    if first_element == "needs_mfa" and isinstance(second_element, dict):
+                        import time
+                        
+                        # 清理过期会话
+                        _cleanup_expired_mfa_sessions()
+                        
+                        # 生成会话 ID 并存储 client 和 client_state
+                        session_id = _generate_mfa_session_id()
+                        _mfa_sessions[session_id] = {
+                            "client": self.client,
+                            "client_state": second_element,
+                            "email": self.email,
+                            "is_cn": self.is_cn,
+                            "expires": time.time() + 300  # 5分钟过期
+                        }
+                        
+                        self._mfa_client_state = second_element
+                        server_type = "中国版" if self.is_cn else "国际版"
+                        logger.warning(f"{prefix} Garmin {server_type} 需要两步验证，session_id: {session_id}")
+                        raise GarminMFARequiredError(
+                            f"🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。会话ID: {session_id}",
+                            {"session_id": session_id, "client_state": second_element}
+                        )
+                    
+                    # 正常登录成功返回 (oauth1_token, oauth2_token)
+                    if self.client.garth.oauth2_token:
+                        self._authenticated = True
+                        server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+                        logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
+                        return
+                
+                # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
+                if not self._authenticated:
+                    # 如果没有oauth2_token，尝试重新登录
+                    if not hasattr(self.client, 'garth') or not self.client.garth.oauth2_token:
+                        self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                        self.client.login()
+                    self._authenticated = True
+                    server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
+                    logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
+                    
+            except GarminMFARequiredError:
+                # MFA错误直接抛出
+                raise
             except Exception as e:
                 self._authenticated = False
                 error_msg = str(e).lower()
@@ -206,6 +261,14 @@ class GarminConnectService:
                     logger.warning(f"{prefix} Garmin账号需要设置密码")
                     raise GarminAuthenticationError(
                         "Garmin账号需要设置密码！请先访问 https://connect.garmin.com 登录并按提示完成密码设置，然后再尝试同步。"
+                    ) from e
+                
+                # 检查是否需要MFA（某些版本的库可能通过异常表示需要MFA）
+                if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
+                    logger.warning(f"{prefix} Garmin账号需要两步验证")
+                    raise GarminMFARequiredError(
+                        "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
+                        {}
                     ) from e
                 
                 # 将登录失败转换为明确的认证错误
