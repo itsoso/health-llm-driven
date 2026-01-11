@@ -1028,7 +1028,8 @@ class GarminConnectService:
             battery_data = battery_data_raw
             charged = battery_data.get('charged') or battery_data.get('bodyBatteryCharged') or battery_data.get('chargedValue')
             drained = battery_data.get('drained') or battery_data.get('bodyBatteryDrained') or battery_data.get('drainedValue')
-            most_charged = battery_data.get('mostCharged') or battery_data.get('bodyBatteryMostCharged') or battery_data.get('mostChargedValue')
+            # 优先使用最高值字段，而不是最近值
+            most_charged = battery_data.get('bodyBatteryHighestValue') or battery_data.get('mostCharged') or battery_data.get('bodyBatteryMostCharged') or battery_data.get('mostChargedValue')
             lowest = battery_data.get('lowest') or battery_data.get('bodyBatteryLowest') or battery_data.get('lowestValue')
         
         # 如果还没有获取到，尝试从 summary 获取
