@@ -193,8 +193,8 @@ def get_my_workout(
     
     logger.info(f"用户 {current_user.id} 获取运动记录 {workout_id}, route_data存在: {bool(record.route_data)}, updated_at: {record.updated_at}")
     
-    # 转换为响应模型
-    response_data = WorkoutRecordResponse.model_validate(record).model_dump()
+    # 转换为响应模型，使用mode='json'确保日期和datetime字段被正确序列化
+    response_data = WorkoutRecordResponse.model_validate(record).model_dump(mode='json')
     
     # 使用JSONResponse并设置禁用缓存的头部
     response = JSONResponse(content=response_data)
