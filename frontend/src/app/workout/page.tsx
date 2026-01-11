@@ -180,16 +180,23 @@ function WorkoutContent() {
   });
 
   // 获取运动详情
-  const { data: workoutDetail, isLoading: loadingDetail } = useQuery<WorkoutDetail>({
+  const { data: workoutDetail, isLoading: loadingDetail, error: detailError } = useQuery<WorkoutDetail>({
     queryKey: ['workout-detail', selectedWorkout],
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/workout/me/${selectedWorkout}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('获取运动详情失败');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: '获取运动详情失败' }));
+        if (res.status === 404) {
+          throw new Error(errorData.detail || '运动记录不存在');
+        }
+        throw new Error(errorData.detail || `获取运动详情失败 (${res.status})`);
+      }
       return res.json();
     },
     enabled: !!token && !!selectedWorkout,
+    retry: false, // 404错误不重试
   });
 
   // 同步Garmin活动
@@ -525,7 +532,26 @@ function WorkoutContent() {
 
           {/* 运动详情 */}
           <div className="lg:col-span-2 space-y-6">
-            {selectedWorkout && workoutDetail ? (
+            {selectedWorkout && loadingDetail ? (
+              <div className="bg-slate-800/60 rounded-xl p-12 border border-slate-700 text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-400">加载运动详情中...</p>
+              </div>
+            ) : selectedWorkout && detailError ? (
+              <div className="bg-red-900/30 rounded-xl p-8 border border-red-700/50 text-center">
+                <div className="text-4xl mb-4">❌</div>
+                <h3 className="text-xl font-bold text-red-400 mb-2">加载失败</h3>
+                <p className="text-red-300 mb-4">{detailError.message || '获取运动详情失败'}</p>
+                <button
+                  onClick={() => {
+                    queryClient.invalidateQueries({ queryKey: ['workout-detail', selectedWorkout] });
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  重试
+                </button>
+              </div>
+            ) : selectedWorkout && workoutDetail ? (
               <>
                 {/* 详情头部 */}
                 <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
