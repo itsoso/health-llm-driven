@@ -259,12 +259,15 @@ async def save_garmin_credentials(
     
     - **is_cn**: 如果是中国用户(garmin.cn账号)，设置为 true
     """
+    # 注意：这个接口是简单保存凭证，不做MFA检测
+    # MFA检测在test-connection-with-credentials接口中进行
     credential = garmin_credential_service.save_credentials(
         db=db,
         user_id=current_user.id,
         garmin_email=credentials.garmin_email,
         garmin_password=credentials.garmin_password,
-        is_cn=credentials.is_cn
+        is_cn=credentials.is_cn,
+        requires_mfa=False  # 默认为False，将在test-connection时更新
     )
     return credential
 

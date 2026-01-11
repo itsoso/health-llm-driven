@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 
 def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
     """获取所有启用同步且凭证有效的用户及其解密后的凭证"""
-    # 只获取启用同步且凭证有效的用户
+    # 只获取启用同步且凭证有效且不需要MFA的用户
     credentials = db.query(GarminCredential).filter(
         GarminCredential.sync_enabled == True,
-        GarminCredential.credentials_valid == True  # 只同步凭证有效的用户
+        GarminCredential.credentials_valid == True,  # 只同步凭证有效的用户
+        GarminCredential.requires_mfa == False  # 跳过需要MFA的用户
     ).all()
     
     users_with_credentials = []

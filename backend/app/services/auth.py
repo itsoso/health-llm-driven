@@ -148,7 +148,7 @@ class GarminCredentialService:
         return fernet.decrypt(encrypted_password.encode()).decode()
     
     @staticmethod
-    def save_credentials(db: Session, user_id: int, garmin_email: str, garmin_password: str, is_cn: bool = False) -> GarminCredential:
+    def save_credentials(db: Session, user_id: int, garmin_email: str, garmin_password: str, is_cn: bool = False, requires_mfa: bool = False) -> GarminCredential:
         """保存或更新Garmin凭证"""
         encrypted_password = GarminCredentialService.encrypt_password(garmin_password)
         
@@ -161,6 +161,7 @@ class GarminCredentialService:
             credential.encrypted_password = encrypted_password
             credential.is_cn = is_cn
             credential.credentials_valid = True  # 重置凭证状态
+            credential.requires_mfa = requires_mfa  # 更新MFA标志
             credential.error_count = 0
             credential.last_error = None
             credential.updated_at = datetime.utcnow()
@@ -170,7 +171,8 @@ class GarminCredentialService:
                 user_id=user_id,
                 garmin_email=garmin_email,
                 encrypted_password=encrypted_password,
-                is_cn=is_cn
+                is_cn=is_cn,
+                requires_mfa=requires_mfa
             )
             db.add(credential)
         
