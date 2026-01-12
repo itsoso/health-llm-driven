@@ -371,21 +371,24 @@ export default function Index() {
             {isLoggedIn ? (
               homeData.loading ? (
                 <Text className="card-value loading">加载中...</Text>
-              ) : homeData.garmin?.body_battery_most_charged ? (
-                <>
-                  <Text className="card-value">{homeData.garmin.body_battery_most_charged}</Text>
-                  <Text className="card-unit">/100</Text>
-                  <Text className="card-status" style={{ 
-                    color: homeData.garmin.body_battery_most_charged >= 80 ? '#10B981' : 
-                            homeData.garmin.body_battery_most_charged >= 50 ? '#F59E0B' : '#EF4444'
-                  }}>
-                    {homeData.garmin.body_battery_most_charged >= 80 ? '充足' : 
-                     homeData.garmin.body_battery_most_charged >= 50 ? '中等' : '偏低'}
-                  </Text>
-                </>
-              ) : (
-                <Text className="card-desc">暂无数据</Text>
-              )
+              ) : (() => {
+                const batteryValue = homeData.garmin?.body_battery_most_charged ?? homeData.garmin?.body_battery_charged;
+                return batteryValue !== null && batteryValue !== undefined ? (
+                  <>
+                    <Text className="card-value">{batteryValue}</Text>
+                    <Text className="card-unit">/100</Text>
+                    <Text className="card-status" style={{ 
+                      color: batteryValue >= 80 ? '#10B981' : 
+                              batteryValue >= 50 ? '#F59E0B' : '#EF4444'
+                    }}>
+                      {batteryValue >= 80 ? '充足' : 
+                       batteryValue >= 50 ? '中等' : '偏低'}
+                    </Text>
+                  </>
+                ) : (
+                  <Text className="card-desc">暂无数据</Text>
+                );
+              })()
             ) : (
               <Text className="card-desc">登录后查看</Text>
             )}
