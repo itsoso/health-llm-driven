@@ -1125,8 +1125,8 @@ class GarminConnectService:
         else:
             logger.info(f"summary无效或为空，将从活动数据获取所有指标")
         
-        # 如果summary中没有数据，尝试从活动数据中获取
-        if steps is None or calories is None or distance is None:
+        # 如果summary中没有数据（或summary无效），尝试从活动数据中获取
+        if not has_valid_summary or steps is None or calories is None or distance is None:
             try:
                 activities = self.client.get_activities_by_date(record_date, record_date)
                 if activities and isinstance(activities, list):
