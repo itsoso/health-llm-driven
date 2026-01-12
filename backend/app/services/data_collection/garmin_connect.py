@@ -1127,8 +1127,11 @@ class GarminConnectService:
         
         # 如果summary中没有数据（或summary无效），尝试从活动数据中获取
         if not has_valid_summary or steps is None or calories is None or distance is None:
+            logger.info(f"触发活动数据查询: has_valid_summary={has_valid_summary}, steps={steps}, calories={calories}, distance={distance}")
             try:
+                logger.info(f"正在调用 get_activities_by_date({record_date}, {record_date})")
                 activities = self.client.get_activities_by_date(record_date, record_date)
+                logger.info(f"get_activities_by_date 返回: type={type(activities)}, len={len(activities) if isinstance(activities, list) else 'N/A'}")
                 if activities and isinstance(activities, list):
                     # 计算当天所有活动的汇总数据
                     total_steps = 0
