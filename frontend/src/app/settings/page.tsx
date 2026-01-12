@@ -31,7 +31,7 @@ function SettingsContent() {
     is_cn: false,
   });
   const [showGarminForm, setShowGarminForm] = useState(false);
-  const [syncDays, setSyncDays] = useState(7);
+  const [syncDays, setSyncDays] = useState(1);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [highlightGarmin, setHighlightGarmin] = useState(false);
   
@@ -349,7 +349,7 @@ function SettingsContent() {
           setMfaSessionId(null);
           
           // 自动触发同步
-          const syncDays = pendingSyncDays || 7;
+          const syncDays = pendingSyncDays || 1;
           setPendingSyncDays(null);
           
           // 清除MFA上下文，防止重复触发
