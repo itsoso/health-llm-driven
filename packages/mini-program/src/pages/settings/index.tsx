@@ -248,7 +248,7 @@ export default function Settings() {
 
       {/* 版本信息 */}
       <View className="version-info">
-        <Text>自律靠AI v1.0.0</Text>
+        <Text>自律靠AI v1.0.0 (正式版)</Text>
       </View>
     </View>
   );
