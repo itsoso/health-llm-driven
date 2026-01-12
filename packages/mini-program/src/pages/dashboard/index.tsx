@@ -302,14 +302,18 @@ export default function Dashboard() {
               console.log('渲染时检查 - recommendation:', recommendation);
               
               if (recommendations.length > 0) {
+                console.log('准备渲染建议列表，数量:', recommendations.length);
                 return (
                   <View className="recommendation-list">
                     {recommendations.map((rec, i) => {
-                      console.log(`渲染建议 ${i}:`, rec);
+                      console.log(`渲染建议 ${i}:`, rec, typeof rec);
+                      if (!rec || typeof rec !== 'string') {
+                        console.warn(`建议 ${i} 格式异常:`, rec);
+                      }
                       return (
-                        <View key={i} className="recommendation-item">
+                        <View key={`rec-${i}`} className="recommendation-item">
                           <View className="rec-number">{i + 1}</View>
-                          <Text className="rec-text">{rec}</Text>
+                          <Text className="rec-text">{String(rec || '')}</Text>
                         </View>
                       );
                     })}
