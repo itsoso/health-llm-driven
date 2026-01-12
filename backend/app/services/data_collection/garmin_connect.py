@@ -1085,6 +1085,25 @@ class GarminConnectService:
                 summary.get('steps') or 
                 safe_get_nested(summary, 'stepGoal', 'steps')
             )
+            logger.debug(f"从summary获取步数: {steps}")
+        
+        # 如果summary中没有步数，尝试从活动数据中获取
+        if steps is None:
+            try:
+                activities = self.client.get_activities_by_date(record_date, record_date)
+                if activities and isinstance(activities, list):
+                    # 计算当天所有活动的总步数
+                    total_steps = 0
+                    for activity in activities:
+                        if isinstance(activity, dict):
+                            activity_steps = activity.get('steps') or activity.get('totalSteps') or 0
+                            if activity_steps:
+                                total_steps += int(activity_steps)
+                    if total_steps > 0:
+                        steps = total_steps
+                        logger.info(f"从活动数据获取步数: {steps}")
+            except Exception as e:
+                logger.debug(f"从活动数据获取步数失败: {e}")
             # 卡路里：优先使用totalKilocalories
             calories = (
                 summary.get('totalKilocalories') or
