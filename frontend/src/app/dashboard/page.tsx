@@ -181,12 +181,12 @@ function DashboardContent() {
                   <p className="text-sm font-medium text-indigo-100">身体电量</p>
                 </div>
                 <p className="text-3xl font-bold">
-                  {todayRecord.body_battery_most_charged || todayRecord.body_battery_charged || '-'}
+                  {todayRecord.body_battery_most_charged ?? todayRecord.body_battery_charged ?? '-'}
                 </p>
-                {todayRecord.body_battery_most_charged && (
+                {(todayRecord.body_battery_most_charged !== null || todayRecord.body_battery_charged !== null) && (
                   <p className="text-xs text-indigo-200 mt-1">
-                    {todayRecord.body_battery_drained ? `消耗: ${todayRecord.body_battery_drained}` : ''}
-                    {todayRecord.body_battery_lowest ? ` | 最低: ${todayRecord.body_battery_lowest}` : ''}
+                    {todayRecord.body_battery_drained !== null && todayRecord.body_battery_drained !== undefined ? `消耗: ${todayRecord.body_battery_drained}` : ''}
+                    {todayRecord.body_battery_lowest !== null && todayRecord.body_battery_lowest !== undefined ? ` | 最低: ${todayRecord.body_battery_lowest}` : ''}
                   </p>
                 )}
               </div>
