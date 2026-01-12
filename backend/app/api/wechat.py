@@ -1,7 +1,7 @@
 """微信小程序认证API"""
 import logging
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -25,7 +25,7 @@ class WechatLoginRequest(BaseModel):
     code: str  # wx.login() 获取的临时登录凭证
     nickname: Optional[str] = None  # 用户昵称
     avatar_url: Optional[str] = None  # 头像URL
-    invite_code: str  # 邀请码（新用户注册时必需）
+    invite_code: Optional[str] = None  # 邀请码（新用户注册时必需，老用户登录时可选）
 
 
 class WechatLoginResponse(BaseModel):
@@ -126,7 +126,12 @@ async def wechat_login(
     
     if not user:
         # 新用户 - 验证邀请码
-        if not request.invite_code or request.invite_code.upper() != settings.default_invite_code.upper():
+        if not request.invite_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"新用户注册需要邀请码，请输入邀请码"
+            )
+        if request.invite_code.upper() != settings.default_invite_code.upper():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"邀请码错误，请输入正确的邀请码"
