@@ -292,9 +292,20 @@ class GarminConnectService:
                     
                     # 正常登录成功返回 (oauth1_token, oauth2_token)
                     if self.client.garth.oauth2_token:
+                        # 确保 display_name 已设置（使用 return_on_mfa=True 时可能未加载 profile）
+                        if not self.client.display_name:
+                            try:
+                                prof = self.client.garth.connectapi("/userprofile-service/userprofile/profile")
+                                if prof and isinstance(prof, dict):
+                                    self.client.display_name = prof.get("displayName")
+                                    self.client.full_name = prof.get("fullName")
+                                    logger.info(f"{prefix} 加载用户配置: display_name={self.client.display_name}")
+                            except Exception as e:
+                                logger.warning(f"{prefix} 加载用户配置失败: {e}")
+                        
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-                        logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
+                        logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}, display_name={self.client.display_name}")
                         return
                 
                 # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
@@ -1152,8 +1163,10 @@ class GarminConnectService:
         if not has_valid_summary or steps is None or calories is None or distance is None:
             logger.info(f"触发活动数据查询: has_valid_summary={has_valid_summary}, steps={steps}, calories={calories}, distance={distance}")
             try:
-                logger.info(f"正在调用 get_activities_by_date({record_date}, {record_date})")
-                activities = self.client.get_activities_by_date(record_date, record_date)
+                # get_activities_by_date 需要字符串格式的日期
+                date_str = record_date.isoformat() if hasattr(record_date, 'isoformat') else str(record_date)
+                logger.info(f"正在调用 get_activities_by_date({date_str}, {date_str})")
+                activities = self.client.get_activities_by_date(date_str, date_str)
                 logger.info(f"get_activities_by_date 返回: type={type(activities)}, len={len(activities) if isinstance(activities, list) else 'N/A'}")
                 if activities and isinstance(activities, list):
                     # 计算当天所有活动的汇总数据
