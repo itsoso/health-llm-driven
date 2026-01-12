@@ -17,6 +17,8 @@ class User(Base):
     hashed_password = Column(String, nullable=True)  # 加密后的密码
     is_active = Column(Boolean, default=True)  # 账户是否激活
     is_admin = Column(Boolean, default=False)  # 是否管理员
+    is_approved = Column(Boolean, default=False)  # 是否已通过管理员审核
+    invite_code = Column(String, nullable=True)  # 注册时使用的邀请码
     
     # 微信小程序认证
     wechat_openid = Column(String, unique=True, index=True, nullable=True)  # 微信 OpenID

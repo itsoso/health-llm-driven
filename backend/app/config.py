@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Garmin凭证加密密钥（用于加密存储的Garmin密码）
     garmin_encryption_key: Optional[str] = None
     
+    # 邀请码配置
+    default_invite_code: str = "LLM"  # 默认邀请码
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

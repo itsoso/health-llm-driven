@@ -10,6 +10,7 @@ class UserRegister(BaseModel):
     email: EmailStr = Field(..., description="邮箱")
     password: str = Field(..., min_length=6, max_length=100, description="密码")
     name: str = Field(..., min_length=1, max_length=100, description="姓名")
+    invite_code: str = Field(..., description="邀请码")
 
 
 class UserLogin(BaseModel):

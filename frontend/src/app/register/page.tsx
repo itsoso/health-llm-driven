@@ -15,6 +15,7 @@ export default function RegisterPage() {
     password: '',
     confirmPassword: '',
     name: '',
+    inviteCode: '',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,15 +44,23 @@ export default function RegisterPage() {
 
     setIsLoading(true);
 
+    // 验证邀请码
+    if (!formData.inviteCode.trim()) {
+      setError('请输入邀请码');
+      setIsLoading(false);
+      return;
+    }
+
     const result = await register({
       username: formData.username,
       email: formData.email,
       password: formData.password,
       name: formData.name,
+      invite_code: formData.inviteCode.trim().toUpperCase(),
     });
     
     if (result.success) {
-      // 显示成功弹窗，引导用户配置 Garmin
+      // 显示成功弹窗，提示等待审核
       setShowSuccessModal(true);
     } else {
       setError(result.error || '注册失败');
@@ -164,6 +173,22 @@ export default function RegisterPage() {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                邀请码 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.inviteCode}
+                onChange={(e) => setFormData({ ...formData, inviteCode: e.target.value.toUpperCase() })}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 uppercase"
+                placeholder="请输入邀请码"
+                maxLength={20}
+              />
+              <p className="text-xs text-gray-500 mt-1">注册后需要管理员审核通过才能登录</p>
+            </div>
+
             <button
               type="submit"
               disabled={isLoading}
@@ -201,17 +226,17 @@ export default function RegisterPage() {
                 <span className="text-4xl">🎉</span>
               </div>
               <h2 className="text-2xl font-bold text-gray-900">注册成功！</h2>
-              <p className="text-gray-600 mt-2">欢迎加入健康自律靠AI</p>
+              <p className="text-gray-600 mt-2">您的账号已提交审核</p>
             </div>
 
-            {/* Garmin 提示 */}
-            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-5 mb-6 border border-indigo-100">
+            {/* 审核提示 */}
+            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-5 mb-6 border border-yellow-200">
               <div className="flex items-start gap-3">
-                <span className="text-3xl">⌚</span>
+                <span className="text-3xl">⏳</span>
                 <div>
-                  <h3 className="font-semibold text-gray-900">配置 Garmin Connect</h3>
+                  <h3 className="font-semibold text-gray-900">等待管理员审核</h3>
                   <p className="text-gray-600 text-sm mt-1">
-                    绑定您的 Garmin 账号，自动同步心率、睡眠、运动等健康数据，获取个性化健康建议。
+                    您的账号已成功注册，但需要管理员审核通过后才能登录使用。审核通过后，您将可以正常登录并配置 Garmin 账号。
                   </p>
                 </div>
               </div>
@@ -220,22 +245,15 @@ export default function RegisterPage() {
             {/* 按钮 */}
             <div className="space-y-3">
               <button
-                onClick={handleGoToSettings}
-                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md flex items-center justify-center gap-2"
+                onClick={() => router.push('/login')}
+                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md"
               >
-                <span>⚙️</span>
-                立即配置 Garmin
-              </button>
-              <button
-                onClick={handleGoToDashboard}
-                className="w-full py-3 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
-              >
-                稍后再说，先看看
+                前往登录页面
               </button>
             </div>
 
             <p className="text-center text-gray-400 text-xs mt-4">
-              您也可以稍后在「设置」中配置 Garmin 账号
+              审核通过后，您将收到通知
             </p>
           </div>
         </div>

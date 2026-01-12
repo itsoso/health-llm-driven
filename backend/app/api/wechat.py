@@ -25,16 +25,19 @@ class WechatLoginRequest(BaseModel):
     code: str  # wx.login() 获取的临时登录凭证
     nickname: Optional[str] = None  # 用户昵称
     avatar_url: Optional[str] = None  # 头像URL
+    invite_code: str  # 邀请码（新用户注册时必需）
 
 
 class WechatLoginResponse(BaseModel):
     """微信登录响应"""
-    access_token: str
+    access_token: Optional[str] = None  # 如果未审核，则为None
     token_type: str = "bearer"
     user_id: int
     is_new_user: bool
     nickname: Optional[str]
     merged_user_id: Optional[int] = None  # 如果合并了PC用户，返回PC用户ID
+    is_approved: bool = False  # 是否已通过审核
+    message: Optional[str] = None  # 提示信息
 
 
 class WechatUserInfo(BaseModel):
@@ -113,13 +116,23 @@ async def wechat_login(
     if not openid:
         raise HTTPException(status_code=400, detail="获取微信 openid 失败")
     
-    # 2. 查找或创建用户
+    # 2. 验证邀请码（新用户需要）
+    from app.config import settings
+    
+    # 查找用户
     user = db.query(User).filter(User.wechat_openid == openid).first()
     is_new_user = False
     merged_user_id = None
     
     if not user:
-        # 新用户 - 检查是否有匹配的PC用户可以合并
+        # 新用户 - 验证邀请码
+        if not request.invite_code or request.invite_code.upper() != settings.default_invite_code.upper():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"邀请码错误，请输入正确的邀请码"
+            )
+        
+        # 检查是否有匹配的PC用户可以合并
         from app.services.user_merge import UserMergeService
         
         # 先创建临时用户对象用于匹配
@@ -155,7 +168,7 @@ async def wechat_login(
             merged_user_id = pc_user.id
             logger.info(f"✅ 已合并微信用户到PC用户 {pc_user.id}")
         else:
-            # 没有匹配的用户，创建新用户
+            # 没有匹配的用户，创建新用户（未审核状态）
             is_new_user = True
             nickname = request.nickname or f"微信用户_{openid[-6:]}"
             
@@ -165,13 +178,15 @@ async def wechat_login(
                 wechat_session_key=session_key,
                 name=nickname,
                 avatar_url=request.avatar_url,
-                is_active=True
+                is_active=True,
+                is_approved=False,  # 需要管理员审核
+                invite_code=request.invite_code.upper()
             )
             db.add(user)
             db.commit()
             db.refresh(user)
             
-            logger.info(f"创建新微信用户: {user.id} ({nickname})")
+            logger.info(f"创建新微信用户: {user.id} ({nickname}), 邀请码: {user.invite_code}, 待审核")
     else:
         # 已存在的微信用户 - 更新信息
         user.wechat_session_key = session_key
@@ -184,7 +199,19 @@ async def wechat_login(
         db.commit()
         logger.info(f"微信用户登录: {user.id} ({user.name})")
     
-    # 3. 生成 token
+    # 3. 检查审核状态
+    if not user.is_approved:
+        return WechatLoginResponse(
+            access_token=None,
+            user_id=user.id,
+            is_new_user=is_new_user,
+            nickname=user.name,
+            merged_user_id=merged_user_id,
+            is_approved=False,
+            message="注册成功！请等待管理员审核通过后即可使用。"
+        )
+    
+    # 4. 生成 token（已审核用户）
     access_token = create_access_token(user.id)
     
     return WechatLoginResponse(
@@ -192,7 +219,9 @@ async def wechat_login(
         user_id=user.id,
         is_new_user=is_new_user,
         nickname=user.name,
-        merged_user_id=merged_user_id
+        merged_user_id=merged_user_id,
+        is_approved=True,
+        message=None
     )
 
 

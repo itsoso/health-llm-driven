@@ -33,6 +33,7 @@ interface RegisterData {
   email: string;
   password: string;
   name: string;
+  invite_code: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -146,13 +147,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const result = await res.json();
 
-      if (res.ok) {
-        setToken(result.access_token);
-        setUser(result.user);
-        localStorage.setItem('auth_token', result.access_token);
+      if (res.ok || res.status === 201) {
+        // 注册成功，但可能未审核，不设置token
+        if (result.access_token) {
+          setToken(result.access_token);
+          setUser(result.user);
+          localStorage.setItem('auth_token', result.access_token);
+        }
         return { success: true };
       } else {
-        return { success: false, error: result.detail || '注册失败' };
+        return { success: false, error: result.detail || result.message || '注册失败' };
       }
     } catch (error) {
       console.error('注册失败:', error);

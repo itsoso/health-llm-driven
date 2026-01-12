@@ -14,8 +14,9 @@ import {
 /**
  * 微信登录
  * @param nickname 可选的用户昵称
+ * @param inviteCode 邀请码（新用户注册时必需）
  */
-export async function wechatLogin(nickname?: string): Promise<WechatLoginResponse> {
+export async function wechatLogin(nickname?: string, inviteCode?: string): Promise<WechatLoginResponse> {
   // 1. 调用 wx.login 获取 code
   const loginResult = await Taro.login();
   
@@ -27,10 +28,13 @@ export async function wechatLogin(nickname?: string): Promise<WechatLoginRespons
   const response = await postNoAuth<WechatLoginResponse>(API_ENDPOINTS.AUTH.WECHAT_LOGIN, {
     code: loginResult.code,
     nickname: nickname || undefined,
+    invite_code: inviteCode || undefined,
   });
 
-  // 3. 保存 token 和用户名
-  setToken(response.access_token);
+  // 3. 保存 token 和用户名（仅当已审核时）
+  if (response.access_token) {
+    setToken(response.access_token);
+  }
   if (response.nickname) {
     Taro.setStorageSync('user_name', response.nickname);
   }

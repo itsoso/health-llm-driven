@@ -61,6 +61,11 @@ async def get_current_user_required(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被禁用"
         )
+    if not current_user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户尚未通过管理员审核，请等待审核"
+        )
     return current_user
 
 
@@ -81,16 +86,26 @@ def user_to_response(user: User, db: Session) -> UserResponse:
     )
 
 
-@router.post("/register", response_model=Token, summary="用户注册")
+@router.post("/register", summary="用户注册")
 async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     """
-    用户注册
+    用户注册（需要邀请码，注册后需管理员审核）
     
     - **username**: 用户名（3-50字符，唯一）
     - **email**: 邮箱（唯一）
     - **password**: 密码（至少6字符）
     - **name**: 姓名
+    - **invite_code**: 邀请码（默认：LLM）
     """
+    from app.config import settings
+    
+    # 验证邀请码
+    if user_data.invite_code.upper() != settings.default_invite_code.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="邀请码错误"
+        )
+    
     # 检查用户名是否已存在
     if auth_service.get_user_by_username(db, user_data.username):
         raise HTTPException(
@@ -105,7 +120,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
             detail="邮箱已被注册"
         )
     
-    # 创建用户
+    # 创建用户（未审核状态）
     user = auth_service.create_user(
         db=db,
         username=user_data.username,
@@ -114,16 +129,20 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         name=user_data.name
     )
     
-    # 生成令牌
-    access_token = auth_service.create_access_token(
-        data={"sub": str(user.id), "username": user.username}
-    )
+    # 设置邀请码和审核状态
+    user.invite_code = user_data.invite_code.upper()
+    user.is_approved = False  # 需要管理员审核
+    db.commit()
+    db.refresh(user)
     
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user=user_to_response(user, db)
-    )
+    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 待审核")
+    
+    # 注册成功但不返回token，需要等待审核
+    return {
+        "message": "注册成功！请等待管理员审核通过后即可登录。",
+        "user_id": user.id,
+        "is_approved": False
+    }
 
 
 @router.post("/login", response_model=Token, summary="用户登录")
@@ -133,6 +152,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     
     - **username**: 用户名或邮箱
     - **password**: 密码
+    
+    注意：未通过管理员审核的用户无法登录
     """
     user = auth_service.authenticate_user(db, form_data.username, form_data.password)
     
@@ -147,6 +168,13 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被禁用"
+        )
+    
+    # 检查是否已通过审核
+    if not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户尚未通过管理员审核，请等待审核通过后再登录"
         )
     
     # 生成令牌

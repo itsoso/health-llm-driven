@@ -22,6 +22,7 @@ export default function Index() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('');
   const [inputNickname, setInputNickname] = useState(''); // 登录时输入的昵称
+  const [inputInviteCode, setInputInviteCode] = useState(''); // 邀请码
   const [homeData, setHomeData] = useState<HomeData>({
     garmin: null,
     recommendation: null,
@@ -80,11 +81,33 @@ export default function Index() {
   };
 
   const handleLogin = async () => {
+    // 检查邀请码（新用户需要）
+    if (!inputInviteCode.trim()) {
+      Taro.showToast({
+        title: '请输入邀请码',
+        icon: 'none',
+      });
+      return;
+    }
+
     setLoginLoading(true);
     try {
-      // 使用用户输入的昵称（如果有）
-      const result = await wechatLogin(inputNickname || undefined);
+      // 使用用户输入的昵称和邀请码
+      const result = await wechatLogin(inputNickname || undefined, inputInviteCode.trim());
       
+      // 检查审核状态
+      if (!result.is_approved) {
+        Taro.showModal({
+          title: '注册成功',
+          content: result.message || '请等待管理员审核通过后即可使用',
+          showCancel: false,
+        });
+        setInputNickname('');
+        setInputInviteCode('');
+        setLoginLoading(false);
+        return;
+      }
+
       Taro.showToast({
         title: result.is_new_user ? '欢迎新用户！' : '登录成功',
         icon: 'success',
@@ -95,6 +118,7 @@ export default function Index() {
         setUserName(result.nickname);
       }
       setInputNickname(''); // 清空输入
+      setInputInviteCode(''); // 清空邀请码
 
       // 加载首页数据
       loadHomeData();
@@ -448,6 +472,14 @@ export default function Index() {
             placeholder="输入您的昵称（可选）"
             value={inputNickname}
             onInput={(e) => setInputNickname(e.detail.value)}
+            maxlength={20}
+          />
+          <Input
+            className="invite-code-input"
+            type="text"
+            placeholder="请输入邀请码（必填）"
+            value={inputInviteCode}
+            onInput={(e) => setInputInviteCode(e.detail.value.toUpperCase())}
             maxlength={20}
           />
           <Button
