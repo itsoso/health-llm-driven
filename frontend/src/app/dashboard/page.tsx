@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi } from '@/services/api';
 import { format, subDays } from 'date-fns';
 import {
@@ -21,16 +21,18 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 
 function DashboardContent() {
   const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const userId = user?.id;
   const [days] = useState(30);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const endDate = format(new Date(), 'yyyy-MM-dd');
   const startDate = format(subDays(new Date(), days), 'yyyy-MM-dd');
   const today = format(new Date(), 'yyyy-MM-dd');
 
   // 获取今天的实时数据
-  const { data: todayData, refetch: refetchToday } = useQuery({
+  const { data: todayData, refetch: refetchToday, isFetching: isFetchingToday } = useQuery({
     queryKey: ['garmin-today', userId, today],
     queryFn: () => dailyHealthApi.getMyGarminData(today, today),
     refetchInterval: 5 * 60 * 1000, // 每5分钟自动刷新
@@ -38,25 +40,46 @@ function DashboardContent() {
   });
 
   // 获取Garmin数据
-  const { data: garminData } = useQuery({
+  const { data: garminData, refetch: refetchGarminData } = useQuery({
     queryKey: ['garmin-data', userId, startDate, endDate],
     queryFn: () => dailyHealthApi.getMyGarminData(startDate, endDate),
     enabled: !!userId,
   });
 
   // 获取基础健康数据
-  const { data: basicHealth } = useQuery({
+  const { data: basicHealth, refetch: refetchBasicHealth } = useQuery({
     queryKey: ['basic-health', userId],
     queryFn: () => basicHealthApi.getMyLatest(),
     enabled: !!userId,
   });
 
   // 获取综合分析
-  const { data: comprehensive } = useQuery({
+  const { data: comprehensive, refetch: refetchComprehensive } = useQuery({
     queryKey: ['garmin-comprehensive', userId, 7],
     queryFn: () => garminAnalysisApi.getMyComprehensive(7),
     enabled: !!userId,
   });
+
+  // 手动刷新所有数据
+  const handleManualRefresh = async () => {
+    if (isRefreshing) return; // 防止重复点击
+    
+    setIsRefreshing(true);
+    try {
+      // 使所有相关查询失效并重新获取
+      await Promise.all([
+        refetchToday(),
+        refetchGarminData(),
+        refetchBasicHealth(),
+        refetchComprehensive(),
+      ]);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('刷新数据失败:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // 监听数据更新
   useEffect(() => {
@@ -101,13 +124,21 @@ function DashboardContent() {
               </p>
             </div>
             <button
-              onClick={() => {
-                refetchToday();
-                setLastUpdate(new Date());
-              }}
-              className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition-all backdrop-blur-sm border border-white/30"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || isFetchingToday}
+              className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition-all backdrop-blur-sm border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              🔄 手动刷新
+              {isRefreshing || isFetchingToday ? (
+                <>
+                  <span className="animate-spin">🔄</span>
+                  <span>刷新中...</span>
+                </>
+              ) : (
+                <>
+                  <span>🔄</span>
+                  <span>手动刷新</span>
+                </>
+              )}
             </button>
           </div>
 
