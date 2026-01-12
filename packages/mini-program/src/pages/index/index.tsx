@@ -461,17 +461,21 @@ export default function Index() {
             {isLoggedIn ? (
               homeData.loading ? (
                 <Text className="card-value loading">加载中...</Text>
-              ) : homeData.garmin?.spo2_avg ? (
-                <>
-                  <Text className="card-value">{Math.round(homeData.garmin.spo2_avg)}</Text>
-                  <Text className="card-unit">%</Text>
-                  <Text className="card-status" style={{ color: getSpO2Level(homeData.garmin.spo2_avg).color }}>
-                    {getSpO2Level(homeData.garmin.spo2_avg).level}
-                  </Text>
-                </>
-              ) : (
-                <Text className="card-desc">暂无数据</Text>
-              )
+              ) : (() => {
+                const spo2Value = homeData.garmin?.spo2_avg;
+                console.log('血氧数据检查:', { spo2_avg: spo2Value });
+                return spo2Value !== null && spo2Value !== undefined ? (
+                  <>
+                    <Text className="card-value">{Math.round(spo2Value)}</Text>
+                    <Text className="card-unit">%</Text>
+                    <Text className="card-status" style={{ color: getSpO2Level(spo2Value).color }}>
+                      {getSpO2Level(spo2Value).level}
+                    </Text>
+                  </>
+                ) : (
+                  <Text className="card-desc">暂无数据</Text>
+                );
+              })()
             ) : (
               <Text className="card-desc">登录后查看</Text>
             )}
