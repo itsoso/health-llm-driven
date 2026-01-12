@@ -741,7 +741,15 @@ class GarminConnectService:
         logger.debug(f"解析Garmin数据，原始数据结构（前2000字符）:\n{raw_data_str}")
         
         # 从get_user_summary获取的数据在根级别
-        summary = raw_data.copy() if isinstance(raw_data, dict) else {}
+        # 注意：raw_data包含sleep、body_battery等，但summary数据可能为空
+        # 需要单独提取summary部分，而不是整个raw_data
+        summary = {}
+        if isinstance(raw_data, dict):
+            # 排除sleep、body_battery、heart_rate、stress等独立API的数据
+            # 只保留来自get_user_summary的字段
+            exclude_keys = {'sleep', 'body_battery', 'heart_rate', 'stress'}
+            summary = {k: v for k, v in raw_data.items() if k not in exclude_keys}
+            logger.debug(f"提取summary数据，排除独立API数据后的键: {list(summary.keys())[:20]}")
         
         # 处理睡眠数据（可能来自get_sleep_data或summary）
         sleep_data_raw = raw_data.get('sleep') if isinstance(raw_data, dict) else None
