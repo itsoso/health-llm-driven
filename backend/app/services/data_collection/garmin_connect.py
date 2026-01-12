@@ -667,6 +667,8 @@ class GarminConnectService:
                 logger.debug(f"从get_user_summary获取的数据键: {list(summary.keys())[:20]}")
             else:
                 logger.warning(f"get_user_summary返回的不是字典类型: {type(summary)}")
+        else:
+            logger.warning(f"[用户 {self.user_id}] get_user_summary返回空，将依赖其他API和活动数据")
         
         # 获取睡眠数据（优先使用独立API，数据更详细）
         sleep_data = self.get_sleep_data(target_date)
