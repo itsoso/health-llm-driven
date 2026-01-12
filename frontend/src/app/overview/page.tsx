@@ -525,13 +525,13 @@ function OverviewContent() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
           {/* 血氧饱和度 */}
           <MetricCard icon="🩸" title="脉搏血氧饱和度适应">
-            {record?.spo2_avg ? (
+            {record?.spo2_avg !== null && record?.spo2_avg !== undefined ? (
               <div>
                 <div className="text-4xl font-bold text-green-500">
                   {record.spo2_avg.toFixed(0)}%
                 </div>
                 <div className="text-sm text-gray-500 mt-1">
-                  范围: {record.spo2_min?.toFixed(0) || '--'}% - {record.spo2_max?.toFixed(0) || '--'}%
+                  范围: {record.spo2_min !== null && record.spo2_min !== undefined ? record.spo2_min.toFixed(0) : '--'}% - {record.spo2_max !== null && record.spo2_max !== undefined ? record.spo2_max.toFixed(0) : '--'}%
                 </div>
               </div>
             ) : (

@@ -255,7 +255,11 @@ export default function GarminDataPage() {
                   <Text className="item-label">压力</Text>
                 </View>
                 <View className="detail-item">
-                  <Text className="item-value">{data.spo2_avg || '--'}%</Text>
+                  <Text className="item-value">
+                    {data.spo2_avg !== null && data.spo2_avg !== undefined 
+                      ? `${Math.round(data.spo2_avg)}%` 
+                      : '--%'}
+                  </Text>
                   <Text className="item-label">血氧</Text>
                 </View>
               </View>
