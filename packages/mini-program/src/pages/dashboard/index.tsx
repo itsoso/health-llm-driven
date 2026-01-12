@@ -96,6 +96,12 @@ export default function Dashboard() {
     batteryValue,
     batteryProgress,
   });
+  
+  console.log('血氧数据 - dashboard:', {
+    spo2_avg: garminData?.spo2_avg,
+    spo2_min: garminData?.spo2_min,
+    spo2_max: garminData?.spo2_max,
+  });
 
   // 获取建议列表
   const getRecommendations = () => {
@@ -290,11 +296,16 @@ export default function Dashboard() {
                 <Text className="metric-label">血氧饱和度</Text>
               </View>
               <View className="metric-value-row">
-                <Text className="metric-value">{garminData.spo2_avg || '--'}</Text>
+                <Text className="metric-value">
+                  {garminData.spo2_avg !== null && garminData.spo2_avg !== undefined 
+                    ? Math.round(garminData.spo2_avg) 
+                    : '--'}
+                </Text>
                 <Text className="metric-unit">%</Text>
               </View>
               <Text className="spo2-range">
-                {garminData.spo2_min && garminData.spo2_max 
+                {garminData.spo2_min !== null && garminData.spo2_min !== undefined &&
+                 garminData.spo2_max !== null && garminData.spo2_max !== undefined
                   ? `${garminData.spo2_min}% - ${garminData.spo2_max}%`
                   : '暂无数据'}
               </Text>
