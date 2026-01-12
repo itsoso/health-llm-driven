@@ -1073,10 +1073,12 @@ class GarminConnectService:
         
         logger.debug(f"提取的压力水平: {stress_level} (来源: {'stress数据' if stress_data_raw else 'summary' if isinstance(summary, dict) else '无'})")
         
-        # 活动数据（从summary获取）
+        # 活动数据（从summary获取，如果失败则从活动数据获取）
         steps = None
         calories = None
         active_minutes = None
+        distance = None
+        floors = None
         
         if isinstance(summary, dict):
             # 步数：优先使用totalSteps
@@ -1086,24 +1088,7 @@ class GarminConnectService:
                 safe_get_nested(summary, 'stepGoal', 'steps')
             )
             logger.debug(f"从summary获取步数: {steps}")
-        
-        # 如果summary中没有步数，尝试从活动数据中获取
-        if steps is None:
-            try:
-                activities = self.client.get_activities_by_date(record_date, record_date)
-                if activities and isinstance(activities, list):
-                    # 计算当天所有活动的总步数
-                    total_steps = 0
-                    for activity in activities:
-                        if isinstance(activity, dict):
-                            activity_steps = activity.get('steps') or activity.get('totalSteps') or 0
-                            if activity_steps:
-                                total_steps += int(activity_steps)
-                    if total_steps > 0:
-                        steps = total_steps
-                        logger.info(f"从活动数据获取步数: {steps}")
-            except Exception as e:
-                logger.debug(f"从活动数据获取步数失败: {e}")
+            
             # 卡路里：优先使用totalKilocalories
             calories = (
                 summary.get('totalKilocalories') or
@@ -1113,10 +1098,64 @@ class GarminConnectService:
                 summary.get('totalCalories') or
                 safe_get_nested(summary, 'netCalorieGoal', 'calories')
             )
+            
+            # 距离和楼层
+            distance = summary.get('totalDistanceMeters') or summary.get('distanceInMeters')
+            floors = summary.get('floorsAscended') or summary.get('floorsClimbed')
+            
             moderate_mins = summary.get('moderateIntensityMinutes') or summary.get('moderateActivityMinutes') or 0
             vigorous_mins = summary.get('vigorousIntensityMinutes') or summary.get('vigorousActivityMinutes') or 0
             highly_active_seconds = summary.get('highlyActiveSeconds') or 0
             active_minutes = summary.get('activeMinutes') or (highly_active_seconds // 60 if highly_active_seconds else 0) or (moderate_mins + vigorous_mins) or 0
+        
+        # 如果summary中没有数据，尝试从活动数据中获取
+        if steps is None or calories is None or distance is None:
+            try:
+                activities = self.client.get_activities_by_date(record_date, record_date)
+                if activities and isinstance(activities, list):
+                    # 计算当天所有活动的汇总数据
+                    total_steps = 0
+                    total_calories = 0
+                    total_distance = 0
+                    total_floors = 0
+                    
+                    for activity in activities:
+                        if isinstance(activity, dict):
+                            # 步数
+                            activity_steps = activity.get('steps') or activity.get('totalSteps') or 0
+                            if activity_steps:
+                                total_steps += int(activity_steps)
+                            
+                            # 卡路里
+                            activity_calories = activity.get('calories') or activity.get('totalCalories') or 0
+                            if activity_calories:
+                                total_calories += int(activity_calories)
+                            
+                            # 距离（米）
+                            activity_distance = activity.get('distance') or activity.get('distanceInMeters') or 0
+                            if activity_distance:
+                                total_distance += float(activity_distance)
+                            
+                            # 楼层
+                            activity_floors = activity.get('elevationGain') or activity.get('floorsAscended') or 0
+                            if activity_floors:
+                                total_floors += int(activity_floors)
+                    
+                    # 更新数据（如果之前没有获取到）
+                    if steps is None and total_steps > 0:
+                        steps = total_steps
+                        logger.info(f"从活动数据获取步数: {steps}")
+                    if calories is None and total_calories > 0:
+                        calories = total_calories
+                        logger.info(f"从活动数据获取卡路里: {calories}")
+                    if distance is None and total_distance > 0:
+                        distance = total_distance
+                        logger.info(f"从活动数据获取距离: {distance}米")
+                    if floors is None and total_floors > 0:
+                        floors = total_floors
+                        logger.info(f"从活动数据获取楼层: {floors}")
+            except Exception as e:
+                logger.debug(f"从活动数据获取活动指标失败: {e}")
         
         # 安全的数值转换函数
         def safe_int(value):
@@ -1229,13 +1268,12 @@ class GarminConnectService:
             vo2max_run = summary.get('vo2MaxRunning') or summary.get('vo2Max')
             vo2max_cycle = summary.get('vo2MaxCycling')
         
-        # 楼层和距离
-        floors = None
+        # 楼层和距离（如果之前没有从活动数据获取到，再从summary获取）
         floors_goal_val = None
-        distance = None
-        if isinstance(summary, dict):
+        if floors is None and isinstance(summary, dict):
             floors = summary.get('floorsAscended') or summary.get('floorsClimbed')
             floors_goal_val = summary.get('floorsAscendedGoal') or summary.get('floorsGoal')
+        if distance is None and isinstance(summary, dict):
             distance = summary.get('totalDistanceMeters') or summary.get('distanceInMeters')
         
         # 记录解析结果用于调试
