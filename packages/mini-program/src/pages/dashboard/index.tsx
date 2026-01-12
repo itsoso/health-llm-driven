@@ -95,27 +95,32 @@ export default function Dashboard() {
       return [];
     }
     
-    console.log('recommendation数据:', {
-      status: recommendation.status,
-      one_day: recommendation.one_day,
-      priority_recommendations: recommendation.one_day?.priority_recommendations,
-    });
+    console.log('recommendation完整数据:', recommendation);
+    console.log('recommendation.one_day:', recommendation.one_day);
+    console.log('recommendation.one_day?.priority_recommendations:', recommendation.one_day?.priority_recommendations);
     
     // 不检查status，直接尝试获取建议
     const oneDay = recommendation.one_day;
     if (oneDay?.priority_recommendations && Array.isArray(oneDay.priority_recommendations)) {
-      return oneDay.priority_recommendations.slice(0, 5);
+      const recs = oneDay.priority_recommendations.slice(0, 5);
+      console.log('从priority_recommendations获取到建议:', recs);
+      return recs;
     }
     
     // 如果没有priority_recommendations，尝试从其他字段获取
     if (oneDay?.daily_goals && Array.isArray(oneDay.daily_goals)) {
-      return oneDay.daily_goals.slice(0, 5);
+      const recs = oneDay.daily_goals.slice(0, 5);
+      console.log('从daily_goals获取到建议:', recs);
+      return recs;
     }
     
+    console.log('未找到建议数据，oneDay:', oneDay);
     return [];
   };
 
   const recommendations = getRecommendations();
+  console.log('最终recommendations数组:', recommendations);
+  console.log('recommendations.length:', recommendations.length);
 
   return (
     <ScrollView className="dashboard-page" scrollY>
@@ -290,21 +295,34 @@ export default function Dashboard() {
               <Text className="section-icon">💡</Text>
               <Text className="section-title">AI 健康建议</Text>
             </View>
-            {recommendations.length > 0 ? (
-              <View className="recommendation-list">
-                {recommendations.map((rec, i) => (
-                  <View key={i} className="recommendation-item">
-                    <View className="rec-number">{i + 1}</View>
-                    <Text className="rec-text">{rec}</Text>
+            {(() => {
+              console.log('渲染时检查 - recommendations:', recommendations);
+              console.log('渲染时检查 - recommendations.length:', recommendations.length);
+              console.log('渲染时检查 - recommendation:', recommendation);
+              
+              if (recommendations.length > 0) {
+                return (
+                  <View className="recommendation-list">
+                    {recommendations.map((rec, i) => {
+                      console.log(`渲染建议 ${i}:`, rec);
+                      return (
+                        <View key={i} className="recommendation-item">
+                          <View className="rec-number">{i + 1}</View>
+                          <Text className="rec-text">{rec}</Text>
+                        </View>
+                      );
+                    })}
                   </View>
-                ))}
-              </View>
-            ) : (
-              <View className="no-recommendation">
-                <Text className="no-rec-text">暂无建议数据</Text>
-                <Text className="no-rec-tip">请先同步Garmin数据</Text>
-              </View>
-            )}
+                );
+              } else {
+                return (
+                  <View className="no-recommendation">
+                    <Text className="no-rec-text">暂无建议数据</Text>
+                    <Text className="no-rec-tip">请先同步Garmin数据</Text>
+                  </View>
+                );
+              }
+            })()}
           </View>
 
           {/* 底部留白 */}
