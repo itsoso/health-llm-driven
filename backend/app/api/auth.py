@@ -225,10 +225,22 @@ async def login_json(login_data: UserLogin, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse, summary="获取当前用户信息")
 async def get_me(
-    current_user: User = Depends(get_current_user_required),
+    current_user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取当前登录用户的信息"""
+    """获取当前登录用户的信息（允许未审核用户查看自己的信息）"""
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未登录或登录已过期",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
+        )
+    # 允许未审核用户查看自己的信息，但不允许访问其他功能
     return user_to_response(current_user, db)
 
 
