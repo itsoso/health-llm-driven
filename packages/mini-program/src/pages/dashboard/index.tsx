@@ -67,8 +67,8 @@ export default function Dashboard() {
   };
 
   // 计算身体电量进度
-  const getBatteryProgress = (battery: number | null) => {
-    if (!battery) return 0;
+  const getBatteryProgress = (battery: number | null | undefined) => {
+    if (battery === null || battery === undefined) return 0;
     return battery;
   };
 
@@ -86,7 +86,16 @@ export default function Dashboard() {
   const stressValue = garminData?.stress_level ?? garminData?.stress_avg ?? null;
   const stressLevel = getStressLevel(stressValue);
   const stepsProgress = getStepsProgress(garminData?.steps ?? null);
-  const batteryProgress = getBatteryProgress(garminData?.body_battery_most_charged ?? null);
+  // 优先使用 body_battery_most_charged，如果没有则使用 body_battery_charged
+  const batteryValue = garminData?.body_battery_most_charged ?? garminData?.body_battery_charged ?? null;
+  const batteryProgress = getBatteryProgress(batteryValue);
+  
+  console.log('身体电量数据 - dashboard:', {
+    most_charged: garminData?.body_battery_most_charged,
+    charged: garminData?.body_battery_charged,
+    batteryValue,
+    batteryProgress,
+  });
 
   // 获取建议列表
   const getRecommendations = () => {
@@ -225,8 +234,10 @@ export default function Dashboard() {
                   <View className="battery-level" style={{ height: `${batteryProgress}%` }} />
                 </View>
                 <View className="battery-info">
-                  <Text className="metric-value">{garminData.body_battery_most_charged || '--'}</Text>
-                  <Text className="battery-range">最低 {garminData.body_battery_lowest || '--'}</Text>
+                  <Text className="metric-value">
+                    {batteryValue !== null && batteryValue !== undefined ? batteryValue : '--'}
+                  </Text>
+                  <Text className="battery-range">最低 {garminData.body_battery_lowest ?? garminData.body_battery_drained ?? '--'}</Text>
                 </View>
               </View>
             </View>
