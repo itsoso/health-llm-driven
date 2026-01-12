@@ -686,6 +686,33 @@ class GarminConnectService:
             logger.error(f"{prefix} 获取血氧数据失败: {str(e)}")
             return None
     
+    def get_respiration_data(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """
+        获取呼吸数据
+        
+        Args:
+            target_date: 目标日期
+            
+        Returns:
+            呼吸数据字典
+        """
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            resp_data = self.client.get_respiration_data(target_date.isoformat())
+            if resp_data:
+                logger.info(f"{prefix} 获取 {target_date} 的呼吸数据成功，类型: {type(resp_data).__name__}")
+                if isinstance(resp_data, dict):
+                    logger.debug(f"{prefix} 呼吸数据键: {list(resp_data.keys())}")
+            else:
+                logger.debug(f"{prefix} 获取 {target_date} 的呼吸数据为空")
+            return resp_data
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.error(f"{prefix} 获取呼吸数据失败: {str(e)}")
+            return None
+    
     def get_stress_data(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
         获取压力数据
@@ -785,6 +812,15 @@ class GarminConnectService:
                 logger.debug(f"从get_spo2_data获取的是列表，长度: {len(spo2_data)}")
             elif isinstance(spo2_data, dict):
                 logger.debug(f"从get_spo2_data获取的数据键: {list(spo2_data.keys())[:20]}")
+        
+        # 获取呼吸数据
+        resp_data = self.get_respiration_data(target_date)
+        if resp_data:
+            result['respiration'] = resp_data
+            if isinstance(resp_data, list):
+                logger.debug(f"从get_respiration_data获取的是列表，长度: {len(resp_data)}")
+            elif isinstance(resp_data, dict):
+                logger.debug(f"从get_respiration_data获取的数据键: {list(resp_data.keys())[:20]}")
         
         return result
     
@@ -1326,23 +1362,69 @@ class GarminConnectService:
             active_cals = summary.get('activeKilocalories') or summary.get('activeCalories')
             bmr_cals = summary.get('bmrKilocalories') or summary.get('restingCalories') or summary.get('bmrCalories')
         
-        # 呼吸数据
+        # 呼吸数据（优先从get_respiration_data获取，否则从sleep_data和summary获取）
         avg_resp_awake = None
         avg_resp_sleep = None
         lowest_resp = None
         highest_resp = None
-        if isinstance(sleep_data, dict):
+        
+        # 从呼吸独立API获取
+        resp_data_raw = raw_data.get('respiration') if isinstance(raw_data, dict) else None
+        if resp_data_raw:
+            logger.info(f"处理呼吸数据，原始类型: {type(resp_data_raw)}")
+            if isinstance(resp_data_raw, dict):
+                # 尝试多种可能的字段名
+                avg_resp_awake = (resp_data_raw.get('avgWakingRespirationValue') or 
+                                 resp_data_raw.get('averageWakingRespirationValue') or
+                                 resp_data_raw.get('avgAwakeRespirationValue'))
+                avg_resp_sleep = (resp_data_raw.get('avgSleepingRespirationValue') or 
+                                 resp_data_raw.get('averageSleepingRespirationValue') or
+                                 resp_data_raw.get('avgSleepRespirationValue'))
+                lowest_resp = (resp_data_raw.get('lowestRespirationValue') or 
+                              resp_data_raw.get('minRespirationValue') or
+                              resp_data_raw.get('lowest'))
+                highest_resp = (resp_data_raw.get('highestRespirationValue') or 
+                               resp_data_raw.get('maxRespirationValue') or
+                               resp_data_raw.get('highest'))
+                logger.info(f"从respiration API获取呼吸数据: awake={avg_resp_awake}, sleep={avg_resp_sleep}, low={lowest_resp}, high={highest_resp}")
+                logger.debug(f"respiration数据键: {list(resp_data_raw.keys())}")
+            elif isinstance(resp_data_raw, list) and resp_data_raw:
+                # 如果是列表，尝试计算
+                values = []
+                for item in resp_data_raw:
+                    if isinstance(item, dict):
+                        val = item.get('respirationValue') or item.get('value')
+                        if val is not None:
+                            values.append(val)
+                    elif isinstance(item, (int, float)):
+                        values.append(item)
+                if values:
+                    avg_resp_awake = sum(values) / len(values)
+                    lowest_resp = min(values)
+                    highest_resp = max(values)
+                    logger.info(f"从respiration列表计算呼吸数据: avg={avg_resp_awake}, low={lowest_resp}, high={highest_resp}, 样本数={len(values)}")
+        
+        # 如果独立API没有数据，从sleep_data获取
+        if avg_resp_sleep is None and isinstance(sleep_data, dict):
             daily_dto = sleep_data.get('dailySleepDTO', {})
             if isinstance(daily_dto, dict):
                 avg_resp_sleep = daily_dto.get('avgRespirationValue') or daily_dto.get('averageRespirationValue')
-                lowest_resp = daily_dto.get('lowestRespirationValue')
-                highest_resp = daily_dto.get('highestRespirationValue')
-        if isinstance(summary, dict):
+                if lowest_resp is None:
+                    lowest_resp = daily_dto.get('lowestRespirationValue')
+                if highest_resp is None:
+                    highest_resp = daily_dto.get('highestRespirationValue')
+                if avg_resp_sleep:
+                    logger.info(f"从sleep_data获取呼吸数据: sleep={avg_resp_sleep}, low={lowest_resp}, high={highest_resp}")
+        
+        # 如果还没有数据，从summary获取
+        if avg_resp_awake is None and isinstance(summary, dict):
             avg_resp_awake = summary.get('avgWakingRespirationValue') or summary.get('averageRespirationValue')
-            if lowest_resp is None:
-                lowest_resp = summary.get('lowestRespirationValue')
-            if highest_resp is None:
-                highest_resp = summary.get('highestRespirationValue')
+            if avg_resp_awake:
+                logger.info(f"从summary获取清醒呼吸数据: awake={avg_resp_awake}")
+        if lowest_resp is None and isinstance(summary, dict):
+            lowest_resp = summary.get('lowestRespirationValue')
+        if highest_resp is None and isinstance(summary, dict):
+            highest_resp = summary.get('highestRespirationValue')
         
         # 血氧数据（优先从get_spo2_data获取，否则从summary获取）
         spo2_avg = None
