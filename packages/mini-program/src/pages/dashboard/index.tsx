@@ -123,9 +123,10 @@ export default function Dashboard() {
   console.log('recommendations.length:', recommendations.length);
 
   return (
-    <ScrollView className="dashboard-page" scrollY>
-      {/* 头部 */}
-      <View className="header">
+    <ScrollView className="dashboard-scroll" scrollY>
+      <View className="dashboard-page">
+        {/* 头部 */}
+        <View className="header">
         <View className="header-left">
           <Text className="title">健康数据</Text>
           <Text className="subtitle">
@@ -329,6 +330,7 @@ export default function Dashboard() {
           <View className="bottom-space" />
         </>
       )}
+      </View>
     </ScrollView>
   );
 }

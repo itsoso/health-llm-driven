@@ -1,6 +1,10 @@
+.dashboard-scroll {
+  height: 100vh;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+}
+
 .dashboard-page {
   min-height: 100vh;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
   padding: 24px 20px;
   box-sizing: border-box;
 
