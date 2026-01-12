@@ -33,7 +33,7 @@ export default function Garmin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isCN, setIsCN] = useState(false);
-  const [syncDays, setSyncDays] = useState(7);
+  const [syncDays, setSyncDays] = useState(1);
   
   // MFA 两步验证
   const [showMFA, setShowMFA] = useState(false);
@@ -147,7 +147,7 @@ export default function Garmin() {
           setMfaSessionId(null);
           
           // 自动触发同步
-          const syncDays = pendingSyncDays || 7;
+          const syncDays = pendingSyncDays || 1;
           setPendingSyncDays(null);
           setMfaContext(null);
           
