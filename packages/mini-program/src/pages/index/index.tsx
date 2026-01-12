@@ -382,8 +382,17 @@ export default function Index() {
               homeData.loading ? (
                 <Text className="card-value loading">加载中...</Text>
               ) : (() => {
+                // 调试日志
+                console.log('身体电量数据检查:', {
+                  garmin: homeData.garmin,
+                  most_charged: homeData.garmin?.body_battery_most_charged,
+                  charged: homeData.garmin?.body_battery_charged,
+                });
+                
                 const batteryValue = homeData.garmin?.body_battery_most_charged ?? homeData.garmin?.body_battery_charged;
-                return batteryValue !== null && batteryValue !== undefined ? (
+                const hasValue = batteryValue !== null && batteryValue !== undefined;
+                
+                return hasValue ? (
                   <>
                     <Text className="card-value">{batteryValue}</Text>
                     <Text className="card-unit">/100</Text>
