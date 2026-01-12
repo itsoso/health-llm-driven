@@ -410,6 +410,26 @@
   flex: 1;
 }
 
+.no-recommendation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.no-rec-text {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+}
+
+.no-rec-tip {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
 .bottom-space {
   height: 40px;
 }
