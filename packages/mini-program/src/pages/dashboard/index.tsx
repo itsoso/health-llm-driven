@@ -27,11 +27,23 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const [garmin, rec] = await Promise.all([
-        getTodayGarminData(),
-        getDailyRecommendation().catch(() => null),
+        getTodayGarminData().catch((err) => {
+          console.error('获取Garmin数据失败:', err);
+          return null;
+        }),
+        getDailyRecommendation().catch((err) => {
+          console.error('获取AI建议失败:', err);
+          console.error('错误详情:', err);
+          return null;
+        }),
       ]);
       setGarminData(garmin);
       setRecommendation(rec);
+      console.log('Dashboard数据加载完成:', {
+        hasGarminData: !!garmin,
+        hasRecommendation: !!rec,
+        recommendation: rec,
+      });
     } catch (error) {
       console.error('加载数据失败:', error);
     } finally {
@@ -78,11 +90,28 @@ export default function Dashboard() {
 
   // 获取建议列表
   const getRecommendations = () => {
-    if (!recommendation || recommendation.status !== 'success') return [];
-    const oneDay = recommendation.one_day;
-    if (oneDay?.priority_recommendations) {
-      return oneDay.priority_recommendations.slice(0, 3);
+    if (!recommendation) {
+      console.log('recommendation为空');
+      return [];
     }
+    
+    console.log('recommendation数据:', {
+      status: recommendation.status,
+      one_day: recommendation.one_day,
+      priority_recommendations: recommendation.one_day?.priority_recommendations,
+    });
+    
+    // 不检查status，直接尝试获取建议
+    const oneDay = recommendation.one_day;
+    if (oneDay?.priority_recommendations && Array.isArray(oneDay.priority_recommendations)) {
+      return oneDay.priority_recommendations.slice(0, 5);
+    }
+    
+    // 如果没有priority_recommendations，尝试从其他字段获取
+    if (oneDay?.daily_goals && Array.isArray(oneDay.daily_goals)) {
+      return oneDay.daily_goals.slice(0, 5);
+    }
+    
     return [];
   };
 
@@ -256,12 +285,12 @@ export default function Dashboard() {
           </View>
 
           {/* AI 建议 */}
-          {recommendations.length > 0 && (
-            <View className="recommendation-section">
-              <View className="section-header">
-                <Text className="section-icon">💡</Text>
-                <Text className="section-title">AI 健康建议</Text>
-              </View>
+          <View className="recommendation-section">
+            <View className="section-header">
+              <Text className="section-icon">💡</Text>
+              <Text className="section-title">AI 健康建议</Text>
+            </View>
+            {recommendations.length > 0 ? (
               <View className="recommendation-list">
                 {recommendations.map((rec, i) => (
                   <View key={i} className="recommendation-item">
@@ -270,8 +299,13 @@ export default function Dashboard() {
                   </View>
                 ))}
               </View>
-            </View>
-          )}
+            ) : (
+              <View className="no-recommendation">
+                <Text className="no-rec-text">暂无建议数据</Text>
+                <Text className="no-rec-tip">请先同步Garmin数据</Text>
+              </View>
+            )}
+          </View>
 
           {/* 底部留白 */}
           <View className="bottom-space" />
