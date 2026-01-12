@@ -31,6 +31,8 @@ class AdminUserResponse(BaseModel):
     gender: Optional[str]
     is_active: bool
     is_admin: bool
+    is_approved: bool = False  # 是否已通过审核
+    invite_code: Optional[str] = None  # 邀请码
     created_at: Optional[datetime]
     last_activity: Optional[datetime]
     has_garmin: bool
@@ -69,6 +71,11 @@ class SetAdminRequest(BaseModel):
 class SetActiveRequest(BaseModel):
     """设置用户状态请求"""
     is_active: bool
+
+
+class ApproveUserRequest(BaseModel):
+    """审核用户请求"""
+    is_approved: bool
 
 
 # ========== 权限检查 ==========
@@ -184,6 +191,8 @@ async def get_users(
             gender=user.gender,
             is_active=user.is_active if user.is_active is not None else True,
             is_admin=getattr(user, 'is_admin', False) or False,
+            is_approved=getattr(user, 'is_approved', False) or False,
+            invite_code=getattr(user, 'invite_code', None),
             created_at=user.created_at,
             last_activity=last_activity,
             has_garmin=has_garmin,
@@ -239,6 +248,8 @@ async def get_user_detail(
         gender=user.gender,
         is_active=user.is_active if user.is_active is not None else True,
         is_admin=getattr(user, 'is_admin', False) or False,
+        is_approved=getattr(user, 'is_approved', False) or False,
+        invite_code=getattr(user, 'invite_code', None),
         created_at=user.created_at,
         last_activity=last_activity,
         has_garmin=has_garmin,
@@ -301,6 +312,29 @@ async def set_user_active(
     db.commit()
     
     return {"message": f"已{'启用' if request.is_active else '禁用'}用户{user.name}"}
+
+
+@router.put("/users/{user_id}/approve", summary="审核用户")
+async def approve_user(
+    user_id: int,
+    request: ApproveUserRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """审核通过或拒绝用户"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+    
+    user.is_approved = request.is_approved
+    db.commit()
+    
+    logger.info(f"管理员 {admin_user.name} {'通过' if request.is_approved else '拒绝'}了用户 {user.name} (ID: {user_id}) 的审核")
+    
+    return {"message": f"已{'通过' if request.is_approved else '拒绝'}用户{user.name}的审核"}
 
 
 @router.delete("/users/{user_id}", summary="删除用户")

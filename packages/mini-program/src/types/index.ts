@@ -4,11 +4,13 @@
 
 // 微信登录响应
 export interface WechatLoginResponse {
-  access_token: string;
+  access_token?: string | null;  // 如果未审核，则为null
   token_type: string;
   user_id?: number;
   is_new_user?: boolean;
   nickname?: string;
+  is_approved?: boolean;  // 是否已通过审核
+  message?: string;  // 提示信息
 }
 
 // Garmin 数据
