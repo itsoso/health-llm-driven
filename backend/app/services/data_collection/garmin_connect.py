@@ -1081,8 +1081,13 @@ class GarminConnectService:
         active_minutes = None
         distance = None
         floors = None
+        moderate_mins = 0
+        vigorous_mins = 0
         
-        if isinstance(summary, dict):
+        # 检查summary是否有效（不是None且不是空字典）
+        has_valid_summary = isinstance(summary, dict) and len(summary) > 0
+        
+        if has_valid_summary:
             # 步数：优先使用totalSteps
             steps = (
                 summary.get('totalSteps') or 
@@ -1109,6 +1114,8 @@ class GarminConnectService:
             vigorous_mins = summary.get('vigorousIntensityMinutes') or summary.get('vigorousActivityMinutes') or 0
             highly_active_seconds = summary.get('highlyActiveSeconds') or 0
             active_minutes = summary.get('activeMinutes') or (highly_active_seconds // 60 if highly_active_seconds else 0) or (moderate_mins + vigorous_mins) or 0
+        else:
+            logger.info(f"summary无效或为空，将从活动数据获取所有指标")
         
         # 如果summary中没有数据，尝试从活动数据中获取
         if steps is None or calories is None or distance is None:
