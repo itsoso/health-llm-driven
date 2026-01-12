@@ -659,6 +659,33 @@ class GarminConnectService:
             logger.error(f"{prefix} 获取身体电量数据失败: {str(e)}")
             return None
     
+    def get_spo2_data(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """
+        获取血氧饱和度数据
+        
+        Args:
+            target_date: 目标日期
+            
+        Returns:
+            血氧数据字典
+        """
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            spo2_data = self.client.get_spo2_data(target_date.isoformat())
+            if spo2_data:
+                logger.info(f"{prefix} 获取 {target_date} 的血氧数据成功，类型: {type(spo2_data).__name__}")
+                if isinstance(spo2_data, dict):
+                    logger.debug(f"{prefix} 血氧数据键: {list(spo2_data.keys())}")
+            else:
+                logger.debug(f"{prefix} 获取 {target_date} 的血氧数据为空")
+            return spo2_data
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.error(f"{prefix} 获取血氧数据失败: {str(e)}")
+            return None
+    
     def get_stress_data(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
         获取压力数据
@@ -749,6 +776,15 @@ class GarminConnectService:
                 logger.debug(f"从get_stress_data获取的是列表，长度: {len(stress_data)}")
             elif isinstance(stress_data, dict):
                 logger.debug(f"从get_stress_data获取的数据键: {list(stress_data.keys())[:20]}")
+        
+        # 获取血氧数据
+        spo2_data = self.get_spo2_data(target_date)
+        if spo2_data:
+            result['spo2'] = spo2_data
+            if isinstance(spo2_data, list):
+                logger.debug(f"从get_spo2_data获取的是列表，长度: {len(spo2_data)}")
+            elif isinstance(spo2_data, dict):
+                logger.debug(f"从get_spo2_data获取的数据键: {list(spo2_data.keys())[:20]}")
         
         return result
     
@@ -1308,14 +1344,56 @@ class GarminConnectService:
             if highest_resp is None:
                 highest_resp = summary.get('highestRespirationValue')
         
-        # 血氧数据
+        # 血氧数据（优先从get_spo2_data获取，否则从summary获取）
         spo2_avg = None
         spo2_min = None
         spo2_max = None
-        if isinstance(summary, dict):
+        
+        # 从spo2独立API获取
+        spo2_data_raw = raw_data.get('spo2') if isinstance(raw_data, dict) else None
+        if spo2_data_raw:
+            logger.info(f"处理血氧数据，原始类型: {type(spo2_data_raw)}")
+            if isinstance(spo2_data_raw, dict):
+                # 尝试多种可能的字段名
+                spo2_avg = (spo2_data_raw.get('avgOxygenPercentage') or 
+                           spo2_data_raw.get('averageSpO2') or 
+                           spo2_data_raw.get('avgSpO2') or
+                           spo2_data_raw.get('average'))
+                spo2_min = (spo2_data_raw.get('lowestOxygenPercentage') or 
+                           spo2_data_raw.get('lowestSpO2') or 
+                           spo2_data_raw.get('minSpO2') or
+                           spo2_data_raw.get('lowest') or
+                           spo2_data_raw.get('minimum'))
+                spo2_max = (spo2_data_raw.get('highestOxygenPercentage') or 
+                           spo2_data_raw.get('highestSpO2') or 
+                           spo2_data_raw.get('maxSpO2') or
+                           spo2_data_raw.get('highest') or
+                           spo2_data_raw.get('maximum'))
+                logger.info(f"从spo2 API获取血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}")
+                logger.debug(f"spo2数据键: {list(spo2_data_raw.keys())}")
+            elif isinstance(spo2_data_raw, list) and spo2_data_raw:
+                # 如果是列表，尝试计算平均值等
+                values = []
+                for item in spo2_data_raw:
+                    if isinstance(item, dict):
+                        val = item.get('oxygenPercentage') or item.get('spo2') or item.get('value')
+                        if val is not None:
+                            values.append(val)
+                    elif isinstance(item, (int, float)):
+                        values.append(item)
+                if values:
+                    spo2_avg = sum(values) / len(values)
+                    spo2_min = min(values)
+                    spo2_max = max(values)
+                    logger.info(f"从spo2列表计算血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}, 样本数={len(values)}")
+        
+        # 如果spo2独立API没有数据，尝试从summary获取
+        if spo2_avg is None and isinstance(summary, dict):
             spo2_avg = summary.get('averageSpO2') or summary.get('avgSpO2')
             spo2_min = summary.get('lowestSpO2') or summary.get('minSpO2')
             spo2_max = summary.get('highestSpO2') or summary.get('maxSpO2')
+            if spo2_avg:
+                logger.info(f"从summary获取血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}")
         
         # VO2 Max
         vo2max_run = None
