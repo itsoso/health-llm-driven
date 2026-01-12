@@ -81,19 +81,13 @@ export default function Index() {
   };
 
   const handleLogin = async () => {
-    // 检查邀请码（新用户需要）
-    if (!inputInviteCode.trim()) {
-      Taro.showToast({
-        title: '请输入邀请码',
-        icon: 'none',
-      });
-      return;
-    }
-
     setLoginLoading(true);
     try {
-      // 使用用户输入的昵称和邀请码
-      const result = await wechatLogin(inputNickname || undefined, inputInviteCode.trim());
+      // 使用用户输入的昵称和邀请码（邀请码可选，新用户需要）
+      const result = await wechatLogin(
+        inputNickname || undefined, 
+        inputInviteCode.trim() || undefined
+      );
       
       // 检查审核状态
       if (!result.is_approved) {
