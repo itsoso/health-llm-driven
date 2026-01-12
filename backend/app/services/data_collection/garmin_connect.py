@@ -105,8 +105,20 @@ def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
         # 使用验证码恢复登录
         client.resume_login(client_state, mfa_code)
         
+        # 重要：MFA验证后需要手动加载 profile 来获取 display_name
+        # 否则后续的 API 调用会因为 display_name 为 None 而失败
+        try:
+            if not client.display_name:
+                prof = client.garth.connectapi("/userprofile-service/userprofile/profile")
+                if prof and isinstance(prof, dict):
+                    client.display_name = prof.get("displayName")
+                    client.full_name = prof.get("fullName")
+                    logger.info(f"[MFA] 成功加载用户配置: display_name={client.display_name}")
+        except Exception as profile_error:
+            logger.warning(f"[MFA] 加载用户配置失败: {profile_error}")
+        
         server_type = "中国版" if is_cn else "国际版"
-        logger.info(f"[MFA] Garmin {server_type} ({email}) MFA 验证成功")
+        logger.info(f"[MFA] Garmin {server_type} ({email}) MFA 验证成功, display_name={client.display_name}")
         
         # 不要立即删除会话，标记为已认证，并延长过期时间（10分钟）
         # 这样后续同步可以复用已认证的client
@@ -214,9 +226,20 @@ class GarminConnectService:
                     # 复用已认证的client
                     self.client = session.get("client")
                     if self.client and hasattr(self.client, 'garth') and self.client.garth.oauth2_token:
+                        # 确保 display_name 已设置
+                        if not self.client.display_name:
+                            try:
+                                prof = self.client.garth.connectapi("/userprofile-service/userprofile/profile")
+                                if prof and isinstance(prof, dict):
+                                    self.client.display_name = prof.get("displayName")
+                                    self.client.full_name = prof.get("fullName")
+                                    logger.info(f"{prefix} 加载用户配置: display_name={self.client.display_name}")
+                            except Exception as e:
+                                logger.warning(f"{prefix} 加载用户配置失败: {e}")
+                        
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
-                        logger.info(f"{prefix} ✅ 成功复用已认证的Garmin会话 - {server_type}")
+                        logger.info(f"{prefix} ✅ 成功复用已认证的Garmin会话 - {server_type}, display_name={self.client.display_name}")
                         return
                     else:
                         logger.warning(f"{prefix} MFA会话中的client无效或没有oauth2_token")
