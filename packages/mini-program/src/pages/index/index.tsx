@@ -68,8 +68,18 @@ export default function Index() {
         getTodayRhinitis(),
       ]);
 
+      const garminResult = garminData.status === 'fulfilled' ? garminData.value : null;
+      // 调试日志
+      if (garminResult) {
+        console.log('Garmin数据:', {
+          body_battery_most_charged: garminResult.body_battery_most_charged,
+          body_battery_charged: garminResult.body_battery_charged,
+          body_battery_drained: garminResult.body_battery_drained,
+        });
+      }
+      
       setHomeData({
-        garmin: garminData.status === 'fulfilled' ? garminData.value : null,
+        garmin: garminResult,
         recommendation: recommendationData.status === 'fulfilled' ? recommendationData.value : null,
         rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
         loading: false,
