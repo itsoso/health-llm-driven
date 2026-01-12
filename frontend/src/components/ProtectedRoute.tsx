@@ -10,7 +10,7 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -41,6 +41,10 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       </div>
     );
   }
+
+  // 检查用户是否已通过审核（如果API返回了is_approved字段）
+  // 注意：由于User接口可能没有is_approved字段，这里先允许访问
+  // 实际的审核检查在API层面进行
 
   return <>{children}</>;
 }

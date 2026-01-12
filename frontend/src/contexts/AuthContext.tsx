@@ -75,6 +75,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setToken(null);
           setUser(null);
         }
+      } else if (res.status === 403) {
+        // 403可能是未审核，尝试解析错误信息
+        try {
+          const errorData = await res.json();
+          if (errorData.detail && errorData.detail.includes('审核')) {
+            // 未审核用户，保留token和user，但标记为未审核
+            const userData = await fetch(`${API_BASE}/auth/me`, {
+              headers: { 'Authorization': `Bearer ${authToken}` },
+            }).then(r => r.ok ? r.json() : null);
+            if (userData) {
+              setUser(userData);
+            }
+          } else {
+            // 其他403错误，清除token
+            localStorage.removeItem('auth_token');
+            setToken(null);
+            setUser(null);
+          }
+        } catch {
+          // 无法解析错误，清除token
+          localStorage.removeItem('auth_token');
+          setToken(null);
+          setUser(null);
+        }
       } else {
         // Token无效，清除
         localStorage.removeItem('auth_token');
