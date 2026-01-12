@@ -261,12 +261,17 @@ function DashboardContent() {
               <span className="text-2xl">🔋</span>
             </div>
             <p className="text-4xl font-bold text-yellow-700 mb-1">
-              {todayRecord?.body_battery_most_charged || 
-               comprehensive?.data?.body_battery?.average_most_charged?.toFixed(0) || 
-               comprehensive?.data?.body_battery?.average_charged?.toFixed(0) || '-'}
+              {todayRecord?.body_battery_most_charged ?? 
+               todayRecord?.body_battery_charged ??
+               comprehensive?.data?.body_battery?.average_most_charged?.toFixed(0) ?? 
+               comprehensive?.data?.body_battery?.average_charged?.toFixed(0) ?? '-'}
             </p>
             <p className="text-xs font-medium text-gray-600">
-              {todayRecord?.body_battery_most_charged ? '今日最高' : '最近7天平均'}
+              {todayRecord?.body_battery_most_charged !== null && todayRecord?.body_battery_most_charged !== undefined 
+                ? '今日最高' 
+                : todayRecord?.body_battery_charged !== null && todayRecord?.body_battery_charged !== undefined
+                ? '当前值'
+                : '最近7天平均'}
             </p>
           </div>
         </div>
