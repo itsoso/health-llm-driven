@@ -1239,7 +1239,7 @@ class GarminConnectService:
             distance = summary.get('totalDistanceMeters') or summary.get('distanceInMeters')
         
         # 记录解析结果用于调试
-        logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}")
+        logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}, 步数: {steps}")
         
         result = GarminDataCreate(
             user_id=user_id,
