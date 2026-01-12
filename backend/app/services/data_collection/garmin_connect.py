@@ -1175,7 +1175,7 @@ class GarminConnectService:
                         floors = total_floors
                         logger.info(f"从活动数据获取楼层: {floors}")
             except Exception as e:
-                logger.debug(f"从活动数据获取活动指标失败: {e}")
+                logger.error(f"从活动数据获取活动指标失败: {e}")
         
         # 安全的数值转换函数
         def safe_int(value):
