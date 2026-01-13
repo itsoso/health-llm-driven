@@ -274,6 +274,9 @@ class GarminConnectService:
         email_parts = self.email.split('@')
         if len(email_parts) == 2 and len(email_parts[0]) > 3:
             masked_email = email_parts[0][:2] + '***' + '@' + email_parts[1]
+        else:
+            masked_email = '***'
+        return f"[{masked_email}]"
     
     def _ensure_display_name(self) -> bool:
         """
@@ -344,9 +347,6 @@ class GarminConnectService:
         
         logger.error(f"{prefix} 无法获取 display_name，部分 API 可能无法正常工作")
         return False
-        else:
-            masked_email = '***'
-        return f"[{masked_email}]"
     
     def _ensure_authenticated(self):
         """确保已认证，认证失败时抛出异常"""
