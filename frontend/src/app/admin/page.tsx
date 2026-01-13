@@ -158,11 +158,20 @@ export default function AdminPage() {
       const res = await api.delete(`/admin/users/${userId}`);
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setShowDeleteConfirm(false);
       setSelectedUser(null);
+      alert(data.message || '用户删除成功');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+    onError: (error: any) => {
+      console.error('删除用户失败:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || '删除用户失败，请稍后重试';
+      alert(`❌ ${errorMessage}`);
+      // 即使失败也关闭对话框
+      setShowDeleteConfirm(false);
+      setSelectedUser(null);
     },
   });
 
@@ -791,8 +800,20 @@ export default function AdminPage() {
 
       {/* 删除确认弹窗 */}
       {showDeleteConfirm && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-white/20">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            // 点击背景关闭对话框
+            if (e.target === e.currentTarget) {
+              setShowDeleteConfirm(false);
+              setSelectedUser(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-white/20"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-xl font-bold text-white mb-4">确认删除</h3>
             <p className="text-purple-200 mb-6">
               确定要删除用户 <span className="text-white font-semibold">{selectedUser.name}</span> 吗？
@@ -801,18 +822,31 @@ export default function AdminPage() {
             </p>
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   setShowDeleteConfirm(false);
                   setSelectedUser(null);
                 }}
-                className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+                disabled={deleteUserMutation.isPending}
+                className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 取消
               </button>
               <button
-                onClick={() => deleteUserMutation.mutate(selectedUser.id)}
-                disabled={deleteUserMutation.isPending}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('确认删除按钮被点击，用户ID:', selectedUser.id);
+                  if (selectedUser && selectedUser.id) {
+                    deleteUserMutation.mutate(selectedUser.id);
+                  } else {
+                    console.error('selectedUser 或 selectedUser.id 为空');
+                    alert('错误：无法获取用户ID');
+                  }
+                }}
+                disabled={deleteUserMutation.isPending || !selectedUser}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {deleteUserMutation.isPending ? '删除中...' : '确认删除'}
               </button>
