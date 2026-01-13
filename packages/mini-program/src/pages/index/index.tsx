@@ -382,31 +382,25 @@ export default function Index() {
               homeData.loading ? (
                 <Text className="card-value loading">加载中...</Text>
               ) : (() => {
-                // 调试日志
-                console.log('身体电量数据检查:', {
-                  garmin: homeData.garmin,
-                  most_charged: homeData.garmin?.body_battery_most_charged,
-                  charged: homeData.garmin?.body_battery_charged,
-                });
-                
                 const batteryValue = homeData.garmin?.body_battery_most_charged ?? homeData.garmin?.body_battery_charged;
                 const hasValue = batteryValue !== null && batteryValue !== undefined;
                 
-                return hasValue ? (
-                  <>
-                    <Text className="card-value">{batteryValue}</Text>
-                    <Text className="card-unit">/100</Text>
-                    <Text className="card-status" style={{ 
-                      color: batteryValue >= 80 ? '#10B981' : 
-                              batteryValue >= 50 ? '#F59E0B' : '#EF4444'
-                    }}>
-                      {batteryValue >= 80 ? '充足' : 
-                       batteryValue >= 50 ? '中等' : '偏低'}
-                    </Text>
-                  </>
-                ) : (
-                  <Text className="card-desc">暂无数据</Text>
-                );
+                if (hasValue) {
+                  return (
+                    <>
+                      <Text className="card-value">{batteryValue}</Text>
+                      <Text className="card-unit">/100</Text>
+                      <Text className="card-status" style={{ 
+                        color: batteryValue >= 80 ? '#10B981' : 
+                                batteryValue >= 50 ? '#F59E0B' : '#EF4444'
+                      }}>
+                        {batteryValue >= 80 ? '充足' : 
+                         batteryValue >= 50 ? '中等' : '偏低'}
+                      </Text>
+                    </>
+                  );
+                }
+                return <Text className="card-desc">暂无数据</Text>;
               })()
             ) : (
               <Text className="card-desc">登录后查看</Text>
@@ -429,18 +423,19 @@ export default function Index() {
                 <Text className="card-value loading">加载中...</Text>
               ) : (() => {
                 const stress = homeData.garmin?.stress_level ?? homeData.garmin?.stress_avg ?? null;
-                const stressInfo = getStressLevel(stress);
-                return stress ? (
-                  <>
-                    <Text className="card-value">{stress}</Text>
-                    <Text className="card-unit">/100</Text>
-                    <Text className="card-status" style={{ color: stressInfo.color }}>
-                      {stressInfo.level}
-                    </Text>
-                  </>
-                ) : (
-                  <Text className="card-desc">暂无数据</Text>
-                );
+                if (stress !== null && stress !== undefined) {
+                  const stressInfo = getStressLevel(stress);
+                  return (
+                    <>
+                      <Text className="card-value">{stress}</Text>
+                      <Text className="card-unit">/100</Text>
+                      <Text className="card-status" style={{ color: stressInfo.color }}>
+                        {stressInfo.level}
+                      </Text>
+                    </>
+                  );
+                }
+                return <Text className="card-desc">暂无数据</Text>;
               })()
             ) : (
               <Text className="card-desc">登录后查看</Text>
@@ -463,18 +458,19 @@ export default function Index() {
                 <Text className="card-value loading">加载中...</Text>
               ) : (() => {
                 const spo2Value = homeData.garmin?.spo2_avg;
-                console.log('血氧数据检查:', { spo2_avg: spo2Value });
-                return spo2Value !== null && spo2Value !== undefined ? (
-                  <>
-                    <Text className="card-value">{Math.round(spo2Value)}</Text>
-                    <Text className="card-unit">%</Text>
-                    <Text className="card-status" style={{ color: getSpO2Level(spo2Value).color }}>
-                      {getSpO2Level(spo2Value).level}
-                    </Text>
-                  </>
-                ) : (
-                  <Text className="card-desc">暂无数据</Text>
-                );
+                if (spo2Value !== null && spo2Value !== undefined) {
+                  const spo2Info = getSpO2Level(spo2Value);
+                  return (
+                    <>
+                      <Text className="card-value">{Math.round(spo2Value)}</Text>
+                      <Text className="card-unit">%</Text>
+                      <Text className="card-status" style={{ color: spo2Info.color }}>
+                        {spo2Info.level}
+                      </Text>
+                    </>
+                  );
+                }
+                return <Text className="card-desc">暂无数据</Text>;
               })()
             ) : (
               <Text className="card-desc">登录后查看</Text>
