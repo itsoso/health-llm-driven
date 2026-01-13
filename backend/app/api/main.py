@@ -29,6 +29,7 @@ from app.api import (
     # executor-v2: 新增模块
     user_profile,  # 用户画像
     checkin,  # 打卡系统2.0
+    knowledge,  # 知识库RAG系统
 )
 
 api_router = APIRouter()

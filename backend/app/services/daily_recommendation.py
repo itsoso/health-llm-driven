@@ -13,6 +13,14 @@ import json
 
 logger = logging.getLogger(__name__)
 
+# 尝试导入 RAG Pipeline
+try:
+    from app.services.knowledge.rag_pipeline import rag_pipeline
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    logger.warning("RAG Pipeline 未导入，知识库增强功能将不可用")
+
 
 class DailyRecommendationService:
     """
@@ -550,6 +558,40 @@ class DailyRecommendationService:
                 "heart_health": llm_result.get("heart_health_advice"),
                 "recovery": llm_result.get("recovery_advice")
             }
+        
+        # RAG 知识库增强（如果可用）
+        if RAG_AVAILABLE and rag_pipeline.is_available():
+            try:
+                # 构建用户上下文
+                user_context = llm_analyzer._build_user_context(db, user_id)
+                
+                # 获取知识库增强建议
+                rag_result = rag_pipeline.enhance_daily_advice(
+                    rule_analysis=rule_analysis,
+                    user_context=user_context,
+                    health_data={
+                        "sleep_score": yesterday_data.sleep_score if yesterday_data else None,
+                        "steps": yesterday_data.steps if yesterday_data else None,
+                        "resting_heart_rate": yesterday_data.resting_heart_rate if yesterday_data else None,
+                        "stress_level": yesterday_data.stress_level if yesterday_data else None,
+                        "body_battery": yesterday_data.body_battery_most_charged if yesterday_data else None
+                    }
+                )
+                
+                if rag_result.get("enhanced"):
+                    rule_result["knowledge_enhanced"] = True
+                    rule_result["knowledge_tips"] = rag_result.get("enhanced_tips", [])
+                    rule_result["knowledge_highlights"] = rag_result.get("knowledge_highlights", [])
+                    rule_result["personalized_focus"] = rag_result.get("personalized_focus")
+                    logger.info(f"RAG 知识库增强成功，使用了 {rag_result.get('knowledge_sources', 0)} 条知识")
+                else:
+                    rule_result["knowledge_enhanced"] = False
+                    
+            except Exception as e:
+                logger.error(f"RAG 知识库增强失败: {e}")
+                rule_result["knowledge_enhanced"] = False
+        else:
+            rule_result["knowledge_enhanced"] = False
         
         return rule_result
     

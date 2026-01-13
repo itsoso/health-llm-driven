@@ -75,14 +75,16 @@
 - [ ] 打卡数据分析和趋势预测
 - [ ] 目标达成建议
 
-### Phase 3: 知识库建设 (预计3周)
+### Phase 3: 知识库建设 ✅ (已完成基础架构)
 
 #### 1. RAG 系统搭建
-- [ ] 向量数据库集成 (Chroma/Pinecone)
-- [ ] 文档解析器
-- [ ] 检索增强生成管道
+- [x] 向量数据库集成 (Chroma)
+- [x] 文档解析器 (支持 txt/md/json)
+- [x] 检索增强生成管道
+- [x] 知识库管理 API
 
 #### 2. 知识库内容
+- [x] 基础健康知识初始化接口
 - [ ] 冯雪健康课程内容导入
 - [ ] 皮皮妈妈公众号内容导入
 - [ ] 专业健康书籍内容
@@ -124,12 +126,14 @@ backend/app/
 │   └── checkin.py           # 打卡系统 Schemas [NEW]
 ├── api/
 │   ├── user_profile.py      # 用户画像 API [NEW]
-│   └── checkin.py           # 打卡系统 API [NEW]
+│   ├── checkin.py           # 打卡系统 API [NEW]
+│   └── knowledge.py         # 知识库管理 API [NEW]
 └── services/
-    └── knowledge/           # 知识库服务 [TODO]
+    └── knowledge/           # 知识库服务 [NEW]
         ├── __init__.py
-        ├── vectorstore.py
-        └── rag_pipeline.py
+        ├── vectorstore.py   # 向量存储服务 (Chroma)
+        ├── document_loader.py # 文档加载器
+        └── rag_pipeline.py  # RAG 检索增强生成管道
 
 scripts/migrations/
 └── 012_add_user_profile_and_checkin.sql  # 数据库迁移 [NEW]
