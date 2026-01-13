@@ -19,7 +19,7 @@ from app.services.knowledge.vectorstore import vector_store
 from app.services.knowledge.rag_pipeline import rag_pipeline
 from app.services.knowledge.document_loader import document_loader
 
-router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge-base"])
+router = APIRouter(prefix="/knowledge", tags=["knowledge-base"])
 logger = logging.getLogger(__name__)
 
 
