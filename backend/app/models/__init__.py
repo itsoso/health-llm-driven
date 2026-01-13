@@ -23,6 +23,10 @@ from app.models.device_credential import DeviceCredential
 # executor-v2: 新增模型
 from app.models.user_profile import UserProfile, HealthGoal
 from app.models.checkin import CheckinTemplate, CheckinRecord
+from app.models.disease_tracking import (
+    DiseaseTemplate, UserDiseaseProfile, SymptomLog,
+    VisionRecord, DailyEyeHabit
+)
 
 __all__ = [
     "User",
@@ -53,5 +57,11 @@ __all__ = [
     "HealthGoal",
     "CheckinTemplate",
     "CheckinRecord",
+    # 疾病追踪模型
+    "DiseaseTemplate",
+    "UserDiseaseProfile",
+    "SymptomLog",
+    "VisionRecord",
+    "DailyEyeHabit",
 ]
 
