@@ -1,0 +1,285 @@
+"""
+空气质量数据服务
+
+获取实时空气质量数据，用于健康建议生成
+"""
+
+import httpx
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
+
+
+class AirQualityService:
+    """
+    空气质量数据服务
+    
+    支持:
+    - 实时 AQI 查询
+    - PM2.5、PM10 等污染物数据
+    - 健康建议生成
+    """
+    
+    # Open-Meteo Air Quality API (免费)
+    OPENMETEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    
+    def __init__(self):
+        self._cache: Dict[str, Any] = {}
+        self._cache_time: Dict[str, datetime] = {}
+        self._cache_duration = timedelta(minutes=60)  # 缓存1小时
+        logger.info("空气质量服务初始化完成")
+    
+    def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
+        """获取缓存"""
+        if key in self._cache:
+            if datetime.now() - self._cache_time.get(key, datetime.min) < self._cache_duration:
+                return self._cache[key]
+        return None
+    
+    def _set_cache(self, key: str, data: Dict[str, Any]):
+        """设置缓存"""
+        self._cache[key] = data
+        self._cache_time[key] = datetime.now()
+    
+    async def get_air_quality(
+        self,
+        city: str = None,
+        lat: float = None,
+        lon: float = None
+    ) -> Dict[str, Any]:
+        """
+        获取当前空气质量
+        
+        Args:
+            city: 城市名称
+            lat, lon: 经纬度
+            
+        Returns:
+            空气质量数据
+        """
+        if lat is None or lon is None:
+            lat, lon = self._city_to_coords(city)
+        
+        cache_key = f"aqi_{lat},{lon}"
+        cached = self._get_cache(cache_key)
+        if cached:
+            return cached
+        
+        try:
+            result = await self._get_openmeteo_aqi(lat, lon)
+            self._set_cache(cache_key, result)
+            return result
+        except Exception as e:
+            logger.error(f"获取空气质量数据失败: {e}")
+            return self._get_default_aqi()
+    
+    async def _get_openmeteo_aqi(self, lat: float, lon: float) -> Dict[str, Any]:
+        """使用 Open-Meteo API 获取空气质量"""
+        async with httpx.AsyncClient() as client:
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current": "european_aqi,us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
+                "timezone": "Asia/Shanghai"
+            }
+            
+            response = await client.get(self.OPENMETEO_AQ_URL, params=params, timeout=10)
+            data = response.json()
+            
+            current = data.get("current", {})
+            
+            # 使用美国 AQI 标准
+            us_aqi = current.get("us_aqi", 0)
+            pm25 = current.get("pm2_5", 0)
+            pm10 = current.get("pm10", 0)
+            
+            return {
+                "available": True,
+                "source": "open-meteo",
+                "aqi": us_aqi,
+                "aqi_level": self._aqi_to_level(us_aqi),
+                "aqi_description": self._aqi_to_description(us_aqi),
+                "pm25": pm25,
+                "pm10": pm10,
+                "co": current.get("carbon_monoxide", 0),
+                "no2": current.get("nitrogen_dioxide", 0),
+                "so2": current.get("sulphur_dioxide", 0),
+                "o3": current.get("ozone", 0),
+                "update_time": current.get("time", ""),
+                "health_implications": self._get_health_implications(us_aqi),
+                "exercise_advice": self._get_exercise_advice(us_aqi)
+            }
+    
+    def _aqi_to_level(self, aqi: int) -> str:
+        """AQI 转等级"""
+        if aqi <= 50:
+            return "excellent"  # 优
+        elif aqi <= 100:
+            return "good"  # 良
+        elif aqi <= 150:
+            return "moderate"  # 轻度污染
+        elif aqi <= 200:
+            return "unhealthy"  # 中度污染
+        elif aqi <= 300:
+            return "very_unhealthy"  # 重度污染
+        else:
+            return "hazardous"  # 严重污染
+    
+    def _aqi_to_description(self, aqi: int) -> str:
+        """AQI 转描述"""
+        level_desc = {
+            "excellent": "优",
+            "good": "良",
+            "moderate": "轻度污染",
+            "unhealthy": "中度污染",
+            "very_unhealthy": "重度污染",
+            "hazardous": "严重污染"
+        }
+        return level_desc.get(self._aqi_to_level(aqi), "未知")
+    
+    def _get_health_implications(self, aqi: int) -> str:
+        """获取健康影响说明"""
+        if aqi <= 50:
+            return "空气质量优良，对健康无影响"
+        elif aqi <= 100:
+            return "空气质量可接受，敏感人群可能有轻微不适"
+        elif aqi <= 150:
+            return "敏感人群可能出现健康症状，普通人群影响较小"
+        elif aqi <= 200:
+            return "所有人群可能开始出现健康影响，敏感人群影响加重"
+        elif aqi <= 300:
+            return "健康警告，所有人群可能出现较严重健康影响"
+        else:
+            return "健康紧急状况，所有人群都可能受到严重健康影响"
+    
+    def _get_exercise_advice(self, aqi: int) -> Dict[str, Any]:
+        """获取运动建议"""
+        if aqi <= 50:
+            return {
+                "outdoor_suitable": True,
+                "level": "excellent",
+                "advice": "空气质量优，非常适合户外运动",
+                "recommended_activities": ["跑步", "骑行", "户外球类", "登山"]
+            }
+        elif aqi <= 100:
+            return {
+                "outdoor_suitable": True,
+                "level": "good",
+                "advice": "空气质量良好，适合户外运动",
+                "recommended_activities": ["跑步", "骑行", "散步", "户外健身"]
+            }
+        elif aqi <= 150:
+            return {
+                "outdoor_suitable": False,
+                "level": "moderate",
+                "advice": "空气质量一般，敏感人群应减少户外运动",
+                "recommended_activities": ["室内健身", "游泳", "瑜伽"],
+                "caution": "有呼吸道疾病者应避免户外剧烈运动"
+            }
+        elif aqi <= 200:
+            return {
+                "outdoor_suitable": False,
+                "level": "unhealthy",
+                "advice": "空气质量较差，建议减少户外活动",
+                "recommended_activities": ["室内健身", "瑜伽", "拉伸"],
+                "caution": "所有人群应避免长时间户外运动"
+            }
+        elif aqi <= 300:
+            return {
+                "outdoor_suitable": False,
+                "level": "very_unhealthy",
+                "advice": "空气质量很差，应避免户外运动",
+                "recommended_activities": ["室内轻度活动", "居家锻炼"],
+                "caution": "建议佩戴口罩，减少外出"
+            }
+        else:
+            return {
+                "outdoor_suitable": False,
+                "level": "hazardous",
+                "advice": "空气质量极差，严禁户外运动",
+                "recommended_activities": ["休息", "室内轻度拉伸"],
+                "caution": "尽量待在室内，使用空气净化器"
+            }
+    
+    def _city_to_coords(self, city: str) -> tuple:
+        """城市名转经纬度"""
+        city_coords = {
+            "北京": (39.9042, 116.4074),
+            "上海": (31.2304, 121.4737),
+            "广州": (23.1291, 113.2644),
+            "深圳": (22.5431, 114.0579),
+            "杭州": (30.2741, 120.1551),
+            "南京": (32.0603, 118.7969),
+            "成都": (30.5728, 104.0668),
+            "武汉": (30.5928, 114.3055),
+            "西安": (34.3416, 108.9398),
+            "重庆": (29.4316, 106.9123),
+        }
+        return city_coords.get(city, (39.9042, 116.4074))
+    
+    def _get_default_aqi(self) -> Dict[str, Any]:
+        """返回默认空气质量数据"""
+        return {
+            "available": False,
+            "source": "default",
+            "aqi": 50,
+            "aqi_level": "good",
+            "aqi_description": "良",
+            "pm25": 0,
+            "pm10": 0,
+            "error": "无法获取空气质量数据"
+        }
+    
+    def get_rhinitis_advice(self, aqi_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        为鼻炎患者生成空气质量相关建议
+        
+        Args:
+            aqi_data: 空气质量数据
+            
+        Returns:
+            鼻炎相关建议
+        """
+        if not aqi_data.get("available"):
+            return {"advice": "空气质量数据不可用", "risk_level": "unknown"}
+        
+        aqi = aqi_data.get("aqi", 50)
+        pm25 = aqi_data.get("pm25", 0)
+        
+        if aqi <= 50 and pm25 <= 35:
+            return {
+                "risk_level": "low",
+                "advice": "空气质量好，鼻炎症状风险低",
+                "recommendations": [
+                    "可以适当开窗通风",
+                    "适合户外活动"
+                ]
+            }
+        elif aqi <= 100 or pm25 <= 75:
+            return {
+                "risk_level": "moderate",
+                "advice": "空气质量一般，注意防护",
+                "recommendations": [
+                    "外出建议佩戴口罩",
+                    "回家后及时洗鼻",
+                    "保持室内空气净化"
+                ]
+            }
+        else:
+            return {
+                "risk_level": "high",
+                "advice": "空气质量差，鼻炎易加重",
+                "recommendations": [
+                    "尽量减少外出",
+                    "必须外出时佩戴N95口罩",
+                    "增加洗鼻频次",
+                    "使用空气净化器",
+                    "保持室内湿度适宜"
+                ]
+            }
+
+
+# 单例实例
+air_quality_service = AirQualityService()
