@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { request } from '../../services/request';
@@ -34,6 +34,21 @@ interface CheckinStats {
   daily_trend: { date: string; count: number; rate: number }[];
 }
 
+interface CalendarDayData {
+  completed: boolean;
+  rate: number;
+  records: number;
+}
+
+interface CalendarData {
+  year: number;
+  month: number;
+  days: Record<string, CalendarDayData>;
+  total_days: number;
+  completed_days: number;
+  completion_rate: number;
+}
+
 const categoryLabels: Record<string, string> = {
   exercise: '运动',
   health: '健康',
@@ -52,6 +67,30 @@ export default function CheckinPage() {
   const [currentTemplate, setCurrentTemplate] = useState<CheckinTemplate | null>(null);
   const [checkinValue, setCheckinValue] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Tab 和日历状态
+  const [activeTab, setActiveTab] = useState<'checkin' | 'calendar'>('checkin');
+  const today = new Date();
+  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(today.getMonth() + 1);
+  const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
+  
+  // 生成日历网格
+  const calendarGrid = useMemo(() => {
+    const firstDay = new Date(calendarYear, calendarMonth - 1, 1);
+    const lastDay = new Date(calendarYear, calendarMonth, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDayOfWeek = firstDay.getDay();
+    
+    const grid: (number | null)[] = [];
+    for (let i = 0; i < startDayOfWeek; i++) {
+      grid.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      grid.push(day);
+    }
+    return grid;
+  }, [calendarYear, calendarMonth]);
 
   // 加载数据
   const loadData = useCallback(async () => {
@@ -95,6 +134,25 @@ export default function CheckinPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // 加载日历数据
+  useEffect(() => {
+    if (activeTab === 'calendar') {
+      loadCalendarData();
+    }
+  }, [activeTab, calendarYear, calendarMonth]);
+
+  const loadCalendarData = async () => {
+    try {
+      const res = await request<CalendarData>({
+        url: `/checkin/calendar/${calendarYear}/${calendarMonth}`,
+        method: 'GET',
+      });
+      setCalendarData(res.data);
+    } catch (error) {
+      console.error('加载日历数据失败:', error);
+    }
+  };
 
   // 初始化默认模板
   const initTemplates = async () => {
@@ -186,7 +244,26 @@ export default function CheckinPage() {
 
   return (
     <View className="checkin-page">
-      {/* 今日进度 */}
+      {/* Tab 切换 */}
+      <View className="tab-bar">
+        <View
+          className={`tab-item ${activeTab === 'checkin' ? 'active' : ''}`}
+          onClick={() => setActiveTab('checkin')}
+        >
+          <Text>📝 打卡</Text>
+        </View>
+        <View
+          className={`tab-item ${activeTab === 'calendar' ? 'active' : ''}`}
+          onClick={() => setActiveTab('calendar')}
+        >
+          <Text>📅 日历</Text>
+        </View>
+      </View>
+
+      {/* 打卡 Tab */}
+      {activeTab === 'checkin' && (
+        <>
+          {/* 今日进度 */}
       {summary && (
         <View className="progress-card">
           <View className="progress-header">
@@ -293,6 +370,115 @@ export default function CheckinPage() {
           ))}
         </View>
       </ScrollView>
+        </>
+      )}
+
+      {/* 日历 Tab */}
+      {activeTab === 'calendar' && (
+        <View className="calendar-container">
+          {/* 月份切换 */}
+          <View className="calendar-header">
+            <View
+              className="month-btn"
+              onClick={() => {
+                if (calendarMonth === 1) {
+                  setCalendarYear(calendarYear - 1);
+                  setCalendarMonth(12);
+                } else {
+                  setCalendarMonth(calendarMonth - 1);
+                }
+              }}
+            >
+              <Text>← 上月</Text>
+            </View>
+            <Text className="month-title">{calendarYear}年{calendarMonth}月</Text>
+            <View
+              className="month-btn"
+              onClick={() => {
+                if (calendarMonth === 12) {
+                  setCalendarYear(calendarYear + 1);
+                  setCalendarMonth(1);
+                } else {
+                  setCalendarMonth(calendarMonth + 1);
+                }
+              }}
+            >
+              <Text>下月 →</Text>
+            </View>
+          </View>
+
+          {/* 月份统计 */}
+          {calendarData && (
+            <View className="month-stats">
+              <View className="month-stat-item">
+                <Text className="month-stat-value green">{calendarData.completed_days}</Text>
+                <Text className="month-stat-label">打卡天数</Text>
+              </View>
+              <View className="month-stat-item">
+                <Text className="month-stat-value">{calendarData.total_days}</Text>
+                <Text className="month-stat-label">本月天数</Text>
+              </View>
+              <View className="month-stat-item">
+                <Text className={`month-stat-value ${calendarData.completion_rate >= 80 ? 'green' : calendarData.completion_rate >= 50 ? 'yellow' : ''}`}>
+                  {calendarData.completion_rate}%
+                </Text>
+                <Text className="month-stat-label">完成率</Text>
+              </View>
+            </View>
+          )}
+
+          {/* 星期标题 */}
+          <View className="weekday-row">
+            {['日', '一', '二', '三', '四', '五', '六'].map(day => (
+              <Text key={day} className="weekday-item">{day}</Text>
+            ))}
+          </View>
+
+          {/* 日历网格 */}
+          <View className="calendar-grid">
+            {calendarGrid.map((day, index) => {
+              if (day === null) {
+                return <View key={`empty-${index}`} className="calendar-day empty" />;
+              }
+              
+              const dayData = calendarData?.days[String(day)];
+              const isToday = 
+                calendarYear === today.getFullYear() && 
+                calendarMonth === today.getMonth() + 1 && 
+                day === today.getDate();
+              const isFuture = new Date(calendarYear, calendarMonth - 1, day) > today;
+              
+              return (
+                <View
+                  key={day}
+                  className={`calendar-day ${isToday ? 'today' : ''} ${isFuture ? 'future' : ''} ${dayData?.completed ? 'completed' : dayData?.records ? 'partial' : ''}`}
+                >
+                  <Text className="day-number">{day}</Text>
+                  {dayData && dayData.records > 0 && (
+                    <Text className="day-count">{dayData.records}项</Text>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* 图例 */}
+          <View className="calendar-legend">
+            <View className="legend-item">
+              <View className="legend-dot completed" />
+              <Text className="legend-text">全部完成</Text>
+            </View>
+            <View className="legend-item">
+              <View className="legend-dot partial" />
+              <Text className="legend-text">部分完成</Text>
+            </View>
+            <View className="legend-item">
+              <View className="legend-dot" />
+              <Text className="legend-text">未打卡</Text>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* 打卡弹窗 */}
       {showModal && currentTemplate && (
