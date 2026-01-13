@@ -3,6 +3,8 @@ export default {
     'pages/index/index',         // 首页
     'pages/dashboard/index',     // 数据面板
     'pages/checkin/index',       // 打卡2.0
+    'pages/environment/index',   // 环境健康
+    'pages/disease/index',       // 疾病管理
     'pages/rhinitis/index',      // 鼻炎打卡（旧版）
     'pages/settings/index',      // 我的
     'pages/workout/index',       // 运动训练

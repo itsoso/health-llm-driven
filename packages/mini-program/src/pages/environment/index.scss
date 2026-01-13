@@ -1,0 +1,340 @@
+.environment-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding: 24px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 28px;
+  margin-top: 24px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 评分卡片
+.score-card {
+  border-radius: 24px;
+  padding: 32px;
+  margin-bottom: 24px;
+
+  &.excellent { background: linear-gradient(135deg, #10b981, #059669); }
+  &.good { background: linear-gradient(135deg, #3b82f6, #0891b2); }
+  &.moderate { background: linear-gradient(135deg, #eab308, #f59e0b); }
+  &.poor { background: linear-gradient(135deg, #f97316, #ef4444); }
+  &.not_recommended { background: linear-gradient(135deg, #dc2626, #e11d48); }
+}
+
+.score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.score-info {
+  .score-label {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.8);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .score-value {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+
+  .score-number {
+    font-size: 80px;
+    font-weight: bold;
+    color: #fff;
+  }
+
+  .score-total {
+    font-size: 32px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-left: 8px;
+  }
+
+  .score-status {
+    font-size: 28px;
+    color: rgba(255, 255, 255, 0.9);
+    display: block;
+  }
+}
+
+.score-icon {
+  text-align: center;
+
+  .icon-emoji {
+    font-size: 100px;
+    display: block;
+  }
+
+  .status-label {
+    font-size: 28px;
+    color: rgba(255, 255, 255, 0.8);
+    margin-top: 8px;
+    display: block;
+  }
+}
+
+// 数据卡片行
+.data-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.data-card {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 24px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+
+  .card-icon {
+    font-size: 32px;
+  }
+
+  .card-title {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.7);
+  }
+}
+
+// 天气内容
+.weather-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.weather-main {
+  .temperature {
+    font-size: 56px;
+    font-weight: bold;
+    color: #fff;
+    display: block;
+  }
+
+  .feels-like {
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+  }
+}
+
+.weather-detail {
+  text-align: right;
+
+  .weather-text {
+    font-size: 32px;
+    color: #fff;
+    display: block;
+  }
+
+  .wind {
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+    margin-top: 4px;
+  }
+}
+
+.humidity {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// 空气质量
+.aqi-content {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.aqi-main {
+  .aqi-value {
+    font-size: 56px;
+    font-weight: bold;
+    display: block;
+
+    &.excellent { color: #4ade80; }
+    &.good { color: #60a5fa; }
+    &.moderate { color: #facc15; }
+    &.unhealthy { color: #fb923c; }
+    &.very_unhealthy { color: #f87171; }
+    &.hazardous { color: #c084fc; }
+  }
+
+  .aqi-label {
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+  }
+}
+
+.aqi-desc {
+  font-size: 36px;
+
+  &.excellent { color: #4ade80; }
+  &.good { color: #60a5fa; }
+  &.moderate { color: #facc15; }
+  &.unhealthy { color: #fb923c; }
+  &.very_unhealthy { color: #f87171; }
+  &.hazardous { color: #c084fc; }
+}
+
+.pm25 {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// 通用 Section
+.advice-section,
+.warning-section,
+.activities-section,
+.briefing-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+
+  .section-icon {
+    font-size: 32px;
+  }
+
+  .section-title {
+    font-size: 28px;
+    font-weight: 500;
+    color: #fff;
+  }
+}
+
+// 建议列表
+.advice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.advice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+
+  .advice-dot {
+    color: #60a5fa;
+    font-size: 28px;
+  }
+
+  .advice-text {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 28px;
+    line-height: 1.5;
+  }
+}
+
+// 警告
+.warning-section {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.warning-item {
+  .warning-text {
+    color: #fca5a5;
+    font-size: 28px;
+    line-height: 1.5;
+  }
+}
+
+// 活动标签
+.activities-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.activity-tag {
+  padding: 16px 28px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  font-size: 26px;
+  border-radius: 32px;
+}
+
+// 简报
+.briefing-section {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(236, 72, 153, 0.2));
+  border-color: rgba(147, 51, 234, 0.3);
+}
+
+.briefing-text {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+  white-space: pre-line;
+  display: block;
+}
+
+.key-advice {
+  margin-top: 24px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+
+  .key-advice-text {
+    font-size: 28px;
+    color: #d8b4fe;
+    font-weight: 500;
+  }
+}
+
+.bottom-spacer {
+  height: 48px;
+}
