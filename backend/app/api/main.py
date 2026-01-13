@@ -67,3 +67,4 @@ api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  
 # executor-v2: 新增路由
 api_router.include_router(user_profile.router, tags=["user-profile"])  # 用户画像
 api_router.include_router(checkin.router, tags=["checkin-v2"])  # 打卡系统2.0
+api_router.include_router(knowledge.router, tags=["knowledge-base"])  # 知识库RAG系统
