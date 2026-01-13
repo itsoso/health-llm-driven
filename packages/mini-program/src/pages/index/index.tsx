@@ -31,18 +31,26 @@ export default function Index() {
   });
 
   useEffect(() => {
-    checkLoginStatus();
+    try {
+      checkLoginStatus();
+    } catch (error) {
+      console.error('初始化失败:', error);
+    }
   }, []);
 
   // 页面显示时重新检查登录状态和刷新数据
   Taro.useDidShow(() => {
-    const token = getToken();
-    if (token) {
-      // 已登录，强制刷新数据
-      loadHomeData();
-    } else {
-      // 未登录，检查登录状态
-      checkLoginStatus();
+    try {
+      const token = getToken();
+      if (token) {
+        // 已登录，强制刷新数据
+        loadHomeData();
+      } else {
+        // 未登录，检查登录状态
+        checkLoginStatus();
+      }
+    } catch (error) {
+      console.error('页面显示时错误:', error);
     }
   });
 
