@@ -1199,7 +1199,9 @@ class GarminConnectService:
         vigorous_mins = None
         
         # 检查summary是否有效（不是None且不是空字典）
+        # 注意：summary可能包含其他API的数据（sleep、heart_rate等），需要检查是否有基础活动数据
         has_valid_summary = isinstance(summary, dict) and len(summary) > 0
+        has_activity_data = has_valid_summary and any(key in summary for key in ['totalSteps', 'steps', 'totalCalories', 'calories', 'distance'])
         
         if has_valid_summary:
             # 步数：优先使用totalSteps
@@ -1231,9 +1233,9 @@ class GarminConnectService:
         else:
             logger.info(f"summary无效或为空，将从活动数据获取所有指标")
         
-        # 如果summary中没有数据（或summary无效），尝试从活动数据中获取
-        if not has_valid_summary or steps is None or calories is None or distance is None:
-            logger.info(f"触发活动数据查询: has_valid_summary={has_valid_summary}, steps={steps}, calories={calories}, distance={distance}")
+        # 如果summary中没有活动数据，尝试从活动数据API中获取
+        if not has_activity_data or steps is None or calories is None or distance is None:
+            logger.info(f"触发活动数据查询: has_activity_data={has_activity_data}, steps={steps}, calories={calories}, distance={distance}")
             try:
                 # get_activities_by_date 需要字符串格式的日期
                 date_str = record_date.isoformat() if hasattr(record_date, 'isoformat') else str(record_date)
