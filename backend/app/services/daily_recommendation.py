@@ -4,12 +4,14 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
 from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.models.basic_health import BasicHealthData
 from app.models.daily_recommendation import DailyRecommendation
 from app.services.llm_health_analyzer import llm_analyzer
 from app.utils.timezone import get_china_today, get_china_now
 import logging
 import json
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,14 @@ except ImportError:
     RAG_AVAILABLE = False
     logger.warning("RAG Pipeline 未导入，知识库增强功能将不可用")
 
+# 尝试导入环境服务
+try:
+    from app.services.environment import environment_advisor
+    ENVIRONMENT_AVAILABLE = True
+except ImportError:
+    ENVIRONMENT_AVAILABLE = False
+    logger.warning("环境服务未导入，环境建议功能将不可用")
+
 
 class DailyRecommendationService:
     """
@@ -29,6 +39,62 @@ class DailyRecommendationService:
     基于前一天的Garmin数据（睡眠、运动、心率等），
     生成今天的个性化健康建议
     """
+    
+    async def get_environment_data(
+        self,
+        db: Session,
+        user_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        获取用户所在城市的环境数据（天气、空气质量）
+        
+        Returns:
+            包含天气、空气质量和运动建议的字典
+        """
+        if not ENVIRONMENT_AVAILABLE:
+            return None
+        
+        try:
+            # 获取用户画像中的城市
+            profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+            city = profile.city if profile and profile.city else "北京"
+            user_conditions = profile.chronic_conditions if profile else []
+            
+            # 获取综合环境建议
+            env_advice = await environment_advisor.get_comprehensive_advice(
+                city=city,
+                user_conditions=user_conditions
+            )
+            
+            logger.info(f"获取环境数据成功 - 城市: {city}, 用户: {user_id}")
+            return env_advice
+            
+        except Exception as e:
+            logger.error(f"获取环境数据失败: {e}")
+            return None
+    
+    def get_environment_data_sync(
+        self,
+        db: Session,
+        user_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """同步方式获取环境数据"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 如果已经在异步循环中，创建新的任务
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        self.get_environment_data(db, user_id)
+                    )
+                    return future.result(timeout=10)
+            else:
+                return loop.run_until_complete(self.get_environment_data(db, user_id))
+        except Exception as e:
+            logger.error(f"同步获取环境数据失败: {e}")
+            return None
     
     def get_latest_data(
         self,
@@ -516,13 +582,31 @@ class DailyRecommendationService:
         recent_data = rule_result.pop("_recent_data", [])
         rule_analysis = rule_result.pop("_rule_analysis", {})
         
-        # 执行LLM分析
+        # 获取环境数据
+        environment_data = None
+        if ENVIRONMENT_AVAILABLE:
+            try:
+                environment_data = self.get_environment_data_sync(db, user_id)
+                if environment_data:
+                    rule_result["environment"] = {
+                        "weather": environment_data.get("weather", {}),
+                        "air_quality": environment_data.get("air_quality", {}),
+                        "exercise": environment_data.get("exercise", {}),
+                        "advices": environment_data.get("advices", []),
+                        "warnings": environment_data.get("warnings", [])
+                    }
+                    logger.info(f"环境数据已添加到建议中，用户: {user_id}")
+            except Exception as e:
+                logger.error(f"获取环境数据时出错: {e}")
+        
+        # 执行LLM分析（传入环境数据）
         llm_result = llm_analyzer.analyze_daily_health(
             db=db,
             user_id=user_id,
             yesterday_data=yesterday_data,
             recent_data=recent_data,
-            rule_analysis=rule_analysis
+            rule_analysis=rule_analysis,
+            environment_data=environment_data
         )
         
         # 合并结果
@@ -556,8 +640,13 @@ class DailyRecommendationService:
                 "sleep": llm_result.get("sleep_advice"),
                 "activity": llm_result.get("activity_advice"),
                 "heart_health": llm_result.get("heart_health_advice"),
-                "recovery": llm_result.get("recovery_advice")
+                "recovery": llm_result.get("recovery_advice"),
+                "environment": llm_result.get("environment_advice")
             }
+            
+            # 添加运动推荐
+            if llm_result.get("exercise_recommendations"):
+                rule_result["exercise_recommendations"] = llm_result.get("exercise_recommendations")
         
         # RAG 知识库增强（如果可用）
         if RAG_AVAILABLE and rag_pipeline.is_available():
