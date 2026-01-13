@@ -63,3 +63,6 @@ api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  # 多设备管理
 
+# executor-v2: 新增路由
+api_router.include_router(user_profile.router, tags=["user-profile"])  # 用户画像
+api_router.include_router(checkin.router, tags=["checkin-v2"])  # 打卡系统2.0
