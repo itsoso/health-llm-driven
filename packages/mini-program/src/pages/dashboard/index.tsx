@@ -134,26 +134,24 @@ export default function Dashboard() {
   };
 
   const recommendations = getRecommendations();
-  console.log('最终recommendations数组:', recommendations);
-  console.log('recommendations.length:', recommendations.length);
 
   return (
     <ScrollView className="dashboard-scroll" scrollY>
       <View className="dashboard-page">
         {/* 头部 */}
         <View className="header">
-        <View className="header-left">
-          <Text className="title">健康数据</Text>
-          <Text className="subtitle">
-            {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })}
-          </Text>
+          <View className="header-left">
+            <Text className="title">健康数据</Text>
+            <Text className="subtitle">
+              {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })}
+            </Text>
+          </View>
+          <View className="refresh-btn" onClick={handleRefresh}>
+            <Text className="refresh-icon">🔄</Text>
+          </View>
         </View>
-        <View className="refresh-btn" onClick={handleRefresh}>
-          <Text className="refresh-icon">🔄</Text>
-        </View>
-      </View>
 
-      {!garminData ? (
+        {!garminData ? (
         <View className="no-data">
           <View className="no-data-icon-wrap">
             <Text className="no-data-icon">📊</Text>
@@ -318,38 +316,27 @@ export default function Dashboard() {
               <Text className="section-icon">💡</Text>
               <Text className="section-title">AI 健康建议</Text>
             </View>
-            {(() => {
-              console.log('渲染时检查 - recommendations:', recommendations);
-              console.log('渲染时检查 - recommendations.length:', recommendations.length);
-              console.log('渲染时检查 - recommendation:', recommendation);
-              
-              if (recommendations.length > 0) {
-                console.log('准备渲染建议列表，数量:', recommendations.length);
-                return (
-                  <View className="recommendation-list">
-                    {recommendations.map((rec, i) => {
-                      console.log(`渲染建议 ${i}:`, rec, typeof rec);
-                      if (!rec || typeof rec !== 'string') {
-                        console.warn(`建议 ${i} 格式异常:`, rec);
-                      }
-                      return (
-                        <View key={`rec-${i}`} className="recommendation-item">
-                          <View className="rec-number">{i + 1}</View>
-                          <Text className="rec-text">{String(rec || '')}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              } else {
-                return (
-                  <View className="no-recommendation">
-                    <Text className="no-rec-text">暂无建议数据</Text>
-                    <Text className="no-rec-tip">请先同步Garmin数据</Text>
-                  </View>
-                );
-              }
-            })()}
+            {recommendations.length > 0 ? (
+              <View className="recommendation-list">
+                {recommendations.map((rec, i) => {
+                  if (!rec || typeof rec !== 'string') {
+                    console.warn(`建议 ${i} 格式异常:`, rec);
+                    return null;
+                  }
+                  return (
+                    <View key={`rec-${i}`} className="recommendation-item">
+                      <View className="rec-number">{i + 1}</View>
+                      <Text className="rec-text">{String(rec)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View className="no-recommendation">
+                <Text className="no-rec-text">暂无建议数据</Text>
+                <Text className="no-rec-tip">请先同步Garmin数据</Text>
+              </View>
+            )}
           </View>
 
           {/* 底部留白 */}
