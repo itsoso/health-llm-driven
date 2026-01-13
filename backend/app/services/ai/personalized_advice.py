@@ -10,9 +10,31 @@ from sqlalchemy.orm import Session
 from app.models.user_profile import UserProfile
 from app.models.checkin import CheckinTemplate, CheckinRecord
 from app.models.daily_health import GarminData
-from app.services.llm_service import get_llm_advice
 
 logger = logging.getLogger(__name__)
+
+
+def get_llm_advice(prompt: str) -> str:
+    """调用LLM生成建议"""
+    try:
+        from app.services.llm_health_analyzer import LLMHealthAnalyzer
+        analyzer = LLMHealthAnalyzer()
+        if analyzer.is_available() and analyzer.client:
+            response = analyzer.client.chat.completions.create(
+                model=analyzer.model,
+                messages=[
+                    {"role": "system", "content": "你是一位专业的健康管理顾问，善于根据用户的个人情况提供个性化的健康建议。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500
+            )
+            return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"LLM调用失败: {e}")
+    
+    # 如果LLM不可用，返回默认建议
+    return "暂无AI建议，请确保系统已配置OpenAI API。"
 
 
 class PersonalizedAdviceService:
