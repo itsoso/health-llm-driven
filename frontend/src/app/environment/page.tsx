@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api';
-import Navigation from '@/components/Navigation';
 
 interface WeatherData {
   available: boolean;
@@ -143,30 +142,39 @@ export default function EnvironmentPage() {
   const airQuality = advice?.air_quality;
   const exercise = advice?.exercise;
 
+  // 当前显示的位置
+  const currentLocation = advice?.location || city || '北京';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Navigation />
-      
       <main className="max-w-6xl mx-auto px-4 py-8">
         {/* 页面标题 */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">🌤️ 环境健康</h1>
-            <p className="text-white/60">实时环境数据与健康建议</p>
+            <div className="flex items-center gap-2 text-white/60">
+              <span>📍 当前位置：</span>
+              <span className="text-blue-400 font-medium">{currentLocation}</span>
+              {advice?.timestamp && (
+                <span className="text-white/40 text-sm ml-2">
+                  更新于 {new Date(advice.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <input
               type="text"
-              placeholder="输入城市名..."
+              placeholder="切换城市..."
               value={city}
               onChange={(e) => setCity(e.target.value)}
-              className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-blue-500"
+              className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-blue-500 w-36"
             />
             <button
               onClick={() => refetchAdvice()}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
             >
-              刷新
+              🔄 刷新
             </button>
           </div>
         </div>
