@@ -132,7 +132,8 @@ class LLMHealthAnalyzer:
         yesterday_data: GarminData,
         recent_data: List[GarminData],
         rule_analysis: Dict[str, Any],
-        user_context: Dict[str, Any]
+        user_context: Dict[str, Any],
+        environment_data: Optional[Dict[str, Any]] = None
     ) -> str:
         """构建健康数据分析提示词"""
         
@@ -291,7 +292,45 @@ class LLMHealthAnalyzer:
 {chr(10).join(['- ' + issue for issue in rule_analysis.get('stress_analysis', {}).get('issues', [])])}
 """
         
-        return user_info + yesterday_info + trend_info + rule_summary
+        # 添加环境数据
+        environment_info = ""
+        if environment_data:
+            weather = environment_data.get("weather", {})
+            air_quality = environment_data.get("air_quality", {})
+            exercise = environment_data.get("exercise", {})
+            env_advices = environment_data.get("advices", [])
+            env_warnings = environment_data.get("warnings", [])
+            
+            environment_info = f"""
+
+【今日环境信息】
+天气情况:
+- 温度: {weather.get('temperature', '未知')}°C
+- 体感温度: {weather.get('feels_like', '未知')}°C
+- 湿度: {weather.get('humidity', '未知')}%
+- 天气: {weather.get('weather', '未知')}
+- 风速: {weather.get('wind_speed', '未知')} km/h
+
+空气质量:
+- AQI: {air_quality.get('aqi', '未知')}
+- 空气质量等级: {air_quality.get('level', '未知')} - {air_quality.get('description', '')}
+- PM2.5: {air_quality.get('pm25', '未知')} μg/m³
+- 健康影响: {air_quality.get('health_implications', '未知')}
+
+户外运动评估:
+- 户外运动适宜: {'是' if exercise.get('outdoor_suitable', False) else '否'}
+- 适宜度评分: {exercise.get('score', '未知')}/100
+- 状态: {exercise.get('status', '未知')}
+- 推荐活动: {', '.join(exercise.get('recommended_activities', [])) or '无'}
+
+环境相关建议:
+{chr(10).join(['- ' + advice for advice in env_advices]) if env_advices else '- 暂无'}
+
+环境相关警告:
+{chr(10).join(['- ' + warning for warning in env_warnings]) if env_warnings else '- 暂无'}
+"""
+        
+        return user_info + yesterday_info + trend_info + rule_summary + environment_info
     
     def analyze_daily_health(
         self,
@@ -299,7 +338,8 @@ class LLMHealthAnalyzer:
         user_id: int,
         yesterday_data: GarminData,
         recent_data: List[GarminData],
-        rule_analysis: Dict[str, Any]
+        rule_analysis: Dict[str, Any],
+        environment_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         使用大模型分析每日健康数据
@@ -310,6 +350,7 @@ class LLMHealthAnalyzer:
             yesterday_data: 昨日数据
             recent_data: 最近几天的数据
             rule_analysis: 规则分析结果
+            environment_data: 环境数据（天气、空气质量）
             
         Returns:
             包含LLM分析结果的字典
@@ -323,11 +364,11 @@ class LLMHealthAnalyzer:
         try:
             user_context = self._build_user_context(db, user_id)
             health_prompt = self._build_health_data_prompt(
-                yesterday_data, recent_data, rule_analysis, user_context
+                yesterday_data, recent_data, rule_analysis, user_context, environment_data
             )
             
             system_prompt = """你是一位专业的健康顾问和运动生理学专家。
-你需要基于用户的可穿戴设备数据和个人画像，提供科学、高度个性化的健康建议。
+你需要基于用户的可穿戴设备数据、个人画像和当地环境信息，提供科学、高度个性化的健康建议。
 
 分析原则:
 1. 【个性化优先】深度结合用户画像信息（健康目标、慢性病、生活习惯、工作环境等），给出真正针对TA个人情况的建议
@@ -338,6 +379,8 @@ class LLMHealthAnalyzer:
 6. 【数据趋势】关注数据变化趋势，不仅看单日数据
 7. 【具体可行】建议要具体、可执行，包含时间、数量等具体指标
 8. 【积极鼓励】保持积极鼓励的语气，同时客观指出需要改进的地方
+9. 【环境适应】根据当天的天气和空气质量，推荐合适的运动方式和时间
+10.【运动推荐】给出具体的锻炼方式推荐，包括室内/室外选择、运动类型、时长、强度等
 
 请用JSON格式返回分析结果，包含以下字段:
 {
@@ -347,9 +390,20 @@ class LLMHealthAnalyzer:
     "activity_advice": "针对运动活动的具体建议，结合用户的目标步数、运动频率和工作类型",
     "heart_health_advice": "针对心率/心血管的建议",
     "recovery_advice": "针对恢复和压力管理的建议，考虑用户的工作强度",
+    "environment_advice": "基于当天天气和空气质量的运动建议",
+    "exercise_recommendations": [
+        {
+            "type": "运动类型（如跑步、瑜伽、力量训练等）",
+            "location": "室内/室外",
+            "duration": "建议时长（如30分钟）",
+            "intensity": "强度（低/中/高）",
+            "best_time": "最佳运动时间（如上午9-11点）",
+            "reason": "推荐原因"
+        }
+    ],
     "today_focus": "今天最应该关注的一件事（与用户目标相关）",
     "today_actions": ["今天要做的具体行动1（包含时间和数量）", "行动2", "行动3"],
-    "warnings": ["需要注意的健康风险，特别关注用户的慢性病情况"],
+    "warnings": ["需要注意的健康风险，特别关注用户的慢性病情况和环境因素"],
     "encouragement": "一句针对用户当前状态的鼓励话语"
 }
 
@@ -359,7 +413,7 @@ class LLMHealthAnalyzer:
 
 {health_prompt}
 
-请分析这些数据并给出具体、可执行的建议。"""
+请分析这些数据并给出具体、可执行的建议，特别注意结合环境信息给出合适的运动推荐。"""
 
             response = self.client.chat.completions.create(
                 model=self.model,
