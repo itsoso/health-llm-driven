@@ -30,6 +30,7 @@ from app.api import (
     user_profile,  # 用户画像
     checkin,  # 打卡系统2.0
     knowledge,  # 知识库RAG系统
+    environment,  # 环境数据（天气、空气质量）
 )
 
 api_router = APIRouter()
@@ -68,3 +69,4 @@ api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  
 api_router.include_router(user_profile.router, tags=["user-profile"])  # 用户画像
 api_router.include_router(checkin.router, tags=["checkin-v2"])  # 打卡系统2.0
 api_router.include_router(knowledge.router, tags=["knowledge-base"])  # 知识库RAG系统
+api_router.include_router(environment.router, tags=["environment"])  # 环境数据
