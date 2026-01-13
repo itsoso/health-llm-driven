@@ -3,6 +3,7 @@ export default {
     'pages/index/index',         // 首页
     'pages/dashboard/index',     // 数据面板
     'pages/checkin/index',       // 打卡2.0
+    'pages/diet/index',          // 饮食记录（AI识别）
     'pages/environment/index',   // 环境健康
     'pages/disease/index',       // 疾病管理
     'pages/rhinitis/index',      // 鼻炎打卡（旧版）
