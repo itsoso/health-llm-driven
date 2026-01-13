@@ -2,290 +2,471 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { checkinApi, healthAnalysisApi } from '@/services/api';
-import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import ProtectedRoute from '@/components/ProtectedRoute';
+import api from '@/services/api';
 
-function CheckinContent() {
-  const { user, isAuthenticated } = useAuth();
-  const userId = user?.id;
-  const today = format(new Date(), 'yyyy-MM-dd');
+interface CheckinTemplate {
+  id: number;
+  user_id: number;
+  name: string;
+  description: string | null;
+  icon: string;
+  color: string;
+  category: string;
+  unit: string;
+  default_target: number;
+  total_checkins: number;
+  current_streak: number;
+  best_streak: number;
+  last_checkin_date: string | null;
+  is_active: boolean;
+  today_completed: boolean;
+}
+
+interface CheckinRecord {
+  id: number;
+  template_id: number;
+  checkin_date: string;
+  value: number;
+  target: number;
+  completion_rate: number;
+  template_name: string;
+  template_icon: string;
+  template_category: string;
+  checkin_time: string;
+}
+
+interface DailySummary {
+  date: string;
+  total_templates: number;
+  completed_templates: number;
+  completion_rate: number;
+  records: CheckinRecord[];
+}
+
+interface CheckinStats {
+  total_checkins: number;
+  total_templates: number;
+  active_templates: number;
+  current_streak: number;
+  best_streak: number;
+  checkins_today: number;
+  checkins_this_week: number;
+  checkins_this_month: number;
+  completion_rate_today: number;
+  by_category: Record<string, { count: number; total_checkins: number }>;
+  daily_trend: { date: string; count: number; rate: number }[];
+}
+
+const categoryLabels: Record<string, string> = {
+  exercise: '运动',
+  health: '健康',
+  habit: '习惯',
+  medicine: '用药',
+  custom: '自定义',
+};
+
+const categoryColors: Record<string, string> = {
+  exercise: 'from-blue-600 to-cyan-500',
+  health: 'from-red-600 to-pink-500',
+  habit: 'from-green-600 to-emerald-500',
+  medicine: 'from-purple-600 to-violet-500',
+  custom: 'from-orange-600 to-amber-500',
+};
+
+export default function CheckinPage() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-
-  const { data: todayCheckinResponse, isLoading } = useQuery({
-    queryKey: ['checkin', 'today'],
-    queryFn: () => checkinApi.getMyToday(),
-    retry: false,
-    enabled: isAuthenticated,
-  });
   
-  // axios返回的是response对象，需要取.data
-  const todayCheckin = todayCheckinResponse?.data;
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showQuickCheckin, setShowQuickCheckin] = useState<CheckinTemplate | null>(null);
+  const [quickValue, setQuickValue] = useState<number | ''>('');
 
-  const { data: adviceResponse, error: adviceError } = useQuery({
-    queryKey: ['advice', today],
-    queryFn: () => healthAnalysisApi.getMyAdvice(today),
-    enabled: isAuthenticated && !!todayCheckin,
-    retry: false,  // 不重试，避免重复请求
+  // 获取今日打卡汇总
+  const { data: todaySummary, isLoading: summaryLoading } = useQuery<DailySummary>({
+    queryKey: ['checkinToday'],
+    queryFn: async () => {
+      const response = await api.get('/checkin/records/today');
+      return response.data;
+    },
+    enabled: !!user,
   });
-  
-  const advice = adviceResponse?.data?.advice;
 
-  const mutation = useMutation({
-    mutationFn: (data: any) => checkinApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['checkin'] });
+  // 获取打卡模板
+  const { data: templatesData, isLoading: templatesLoading } = useQuery<{
+    templates: CheckinTemplate[];
+    total: number;
+    categories: Record<string, number>;
+  }>({
+    queryKey: ['checkinTemplates', selectedCategory],
+    queryFn: async () => {
+      const params = selectedCategory ? { category: selectedCategory } : {};
+      const response = await api.get('/checkin/templates', { params });
+      return response.data;
+    },
+    enabled: !!user,
+  });
+
+  // 获取统计数据
+  const { data: stats } = useQuery<CheckinStats>({
+    queryKey: ['checkinStats'],
+    queryFn: async () => {
+      const response = await api.get('/checkin/stats');
+      return response.data;
+    },
+    enabled: !!user,
+  });
+
+  // 初始化默认模板
+  const initMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/checkin/templates/init-defaults');
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['checkinTemplates'] });
+      queryClient.invalidateQueries({ queryKey: ['checkinStats'] });
+      alert(data.message);
     },
   });
 
-  const [formData, setFormData] = useState({
-    running_distance: '',
-    running_duration: '',
-    squats_count: '',
-    tai_chi_duration: '',
-    ba_duan_jin_duration: '',
-    notes: '',
+  // 快速打卡
+  const quickCheckinMutation = useMutation({
+    mutationFn: async ({ template_id, value }: { template_id: number; value?: number }) => {
+      const response = await api.post('/checkin/records/quick', {
+        template_id,
+        value,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['checkinToday'] });
+      queryClient.invalidateQueries({ queryKey: ['checkinTemplates'] });
+      queryClient.invalidateQueries({ queryKey: ['checkinStats'] });
+      setShowQuickCheckin(null);
+      setQuickValue('');
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.detail || '打卡失败');
+    },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    mutation.mutate({
-      checkin_date: today,
-      running_distance: formData.running_distance || null,
-      running_duration: formData.running_duration || null,
-      squats_count: formData.squats_count || null,
-      tai_chi_duration: formData.tai_chi_duration || null,
-      ba_duan_jin_duration: formData.ba_duan_jin_duration || null,
-      notes: formData.notes || null,
-    });
+  const handleQuickCheckin = (template: CheckinTemplate) => {
+    if (template.today_completed) {
+      alert('今日已完成此项打卡');
+      return;
+    }
+    setShowQuickCheckin(template);
+    setQuickValue(template.default_target);
   };
 
-  if (isLoading) {
-    return <div className="p-8">加载中...</div>;
+  const confirmQuickCheckin = () => {
+    if (showQuickCheckin) {
+      quickCheckinMutation.mutate({
+        template_id: showQuickCheckin.id,
+        value: quickValue || undefined,
+      });
+    }
+  };
+
+  if (authLoading || summaryLoading || templatesLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-400"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    router.push('/login');
+    return null;
+  }
+
+  const templates = templatesData?.templates || [];
+  const categories = templatesData?.categories || {};
+
+  // 没有模板时显示初始化提示
+  if (templates.length === 0 && !selectedCategory) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <header className="bg-black/20 backdrop-blur-sm border-b border-white/10">
+          <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
+            <button onClick={() => router.back()} className="text-white/70 hover:text-white">
+              ← 返回
+            </button>
+            <h1 className="text-xl font-bold text-white">每日打卡</h1>
+          </div>
+        </header>
+        
+        <main className="max-w-4xl mx-auto px-4 py-12">
+          <div className="text-center">
+            <div className="text-6xl mb-6">🎯</div>
+            <h2 className="text-2xl font-bold text-white mb-4">开始你的打卡之旅</h2>
+            <p className="text-white/70 mb-8 max-w-md mx-auto">
+              通过每日打卡，记录你的健康习惯，微小的进步将汇聚成巨大的改变
+            </p>
+            <button
+              onClick={() => initMutation.mutate()}
+              disabled={initMutation.isPending}
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {initMutation.isPending ? '初始化中...' : '✨ 初始化默认打卡项目'}
+            </button>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24 pb-8 px-8">
-      <div className="max-w-4xl mx-auto">
-        <p className="text-gray-800 font-semibold mb-8 text-lg">日期: {today}</p>
-
-        {advice && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h2 className="font-bold text-gray-900 mb-2">💡 今日个性化建议</h2>
-            <p className="text-sm text-gray-800">{advice}</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* 头部 */}
+      <header className="bg-black/20 backdrop-blur-sm border-b border-white/10">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => router.back()} className="text-white/70 hover:text-white">
+              ← 返回
+            </button>
+            <h1 className="text-xl font-bold text-white">每日打卡</h1>
           </div>
-        )}
-        
-        {adviceError && (
-          <div className="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <h2 className="font-bold text-gray-900 mb-2">⚠️ 提示</h2>
-            <p className="text-sm text-gray-800">
-              {(adviceError as any)?.response?.data?.detail || 
-               (adviceError as any)?.message || 
-               '获取个性化建议失败，请稍后重试'}
-            </p>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">🏃 专项锻炼</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">跑步距离 (km)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.running_distance}
-                  onChange={(e) =>
-                    setFormData({ ...formData, running_distance: e.target.value })
-                  }
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">跑步时长 (分钟)</label>
-                <input
-                  type="number"
-                  value={formData.running_duration}
-                  onChange={(e) =>
-                    setFormData({ ...formData, running_duration: e.target.value })
-                  }
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">深蹲次数</label>
-                <input
-                  type="number"
-                  value={formData.squats_count}
-                  onChange={(e) =>
-                    setFormData({ ...formData, squats_count: e.target.value })
-                  }
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">太极拳时长 (分钟)</label>
-                <input
-                  type="number"
-                  value={formData.tai_chi_duration}
-                  onChange={(e) =>
-                    setFormData({ ...formData, tai_chi_duration: e.target.value })
-                  }
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">八段锦时长 (分钟)</label>
-                <input
-                  type="number"
-                  value={formData.ba_duan_jin_duration}
-                  onChange={(e) =>
-                    setFormData({ ...formData, ba_duan_jin_duration: e.target.value })
-                  }
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-            <label className="block text-sm font-semibold text-gray-800 mb-2">📝 备注</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-              rows={4}
-            />
-          </div>
-
           <button
-            type="submit"
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-4 rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all duration-200"
-            disabled={mutation.isPending}
+            onClick={() => router.push('/profile')}
+            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/80 rounded-lg text-sm transition-colors"
           >
-            {mutation.isPending ? '提交中...' : '✓ 提交打卡'}
+            👤 个人画像
           </button>
-        </form>
+        </div>
+      </header>
 
-        {todayCheckin && (
-          <div className="mt-6 p-6 bg-green-50 rounded-lg border border-green-200 shadow-sm">
-            <h3 className="font-bold text-gray-900 mb-4 text-lg">✅ 今日已打卡</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {todayCheckin.running_distance && (
-                <div className="bg-white p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">🏃</span>
-                    <div>
-                      <div className="text-sm text-gray-600">跑步距离</div>
-                      <div className="text-lg font-bold text-gray-900">{todayCheckin.running_distance} km</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {todayCheckin.running_duration && (
-                <div className="bg-white p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">⏱️</span>
-                    <div>
-                      <div className="text-sm text-gray-600">跑步时长</div>
-                      <div className="text-lg font-bold text-gray-900">{todayCheckin.running_duration} 分钟</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {todayCheckin.squats_count && (
-                <div className="bg-white p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">🏋️</span>
-                    <div>
-                      <div className="text-sm text-gray-600">深蹲</div>
-                      <div className="text-lg font-bold text-gray-900">{todayCheckin.squats_count} 次</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {todayCheckin.tai_chi_duration && (
-                <div className="bg-white p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">🥋</span>
-                    <div>
-                      <div className="text-sm text-gray-600">太极拳</div>
-                      <div className="text-lg font-bold text-gray-900">{todayCheckin.tai_chi_duration} 分钟</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {todayCheckin.ba_duan_jin_duration && (
-                <div className="bg-white p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">🧘</span>
-                    <div>
-                      <div className="text-sm text-gray-600">八段锦</div>
-                      <div className="text-lg font-bold text-gray-900">{todayCheckin.ba_duan_jin_duration} 分钟</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </div>
-            
-            {todayCheckin.notes && (
-              <div className="mt-4 p-4 bg-white rounded-lg border border-green-200">
-                <div className="flex items-start gap-2">
-                  <span className="text-xl">📝</span>
-                  <div>
-                    <div className="text-sm text-gray-600 font-semibold mb-1">备注</div>
-                    <div className="text-gray-800">{todayCheckin.notes}</div>
-                  </div>
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* 今日进度 */}
+        {todaySummary && (
+          <div className="bg-gradient-to-r from-purple-600/30 to-pink-600/30 rounded-2xl p-6 border border-purple-500/30">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-white/70 text-sm mb-1">今日打卡进度</h2>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-white">{todaySummary.completed_templates}</span>
+                  <span className="text-white/50">/ {todaySummary.total_templates}</span>
                 </div>
               </div>
-            )}
-            
-            <div className="mt-4 text-xs text-gray-600">
-              打卡时间: {todayCheckin.created_at 
-                ? new Date(todayCheckin.created_at).toLocaleString('zh-CN')
-                : todayCheckin.checkin_date 
-                  ? todayCheckin.checkin_date 
-                  : today}
+              <div className="text-right">
+                <div className={`text-3xl font-bold ${
+                  todaySummary.completion_rate >= 80 ? 'text-green-400' :
+                  todaySummary.completion_rate >= 50 ? 'text-yellow-400' : 'text-white'
+                }`}>
+                  {todaySummary.completion_rate}%
+                </div>
+                <span className="text-white/50 text-sm">完成率</span>
+              </div>
+            </div>
+            {/* 进度条 */}
+            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  todaySummary.completion_rate >= 80 ? 'bg-green-500' :
+                  todaySummary.completion_rate >= 50 ? 'bg-yellow-500' : 'bg-purple-500'
+                }`}
+                style={{ width: `${todaySummary.completion_rate}%` }}
+              />
             </div>
           </div>
         )}
 
-        {mutation.isSuccess && (
-          <div className="mt-4 p-4 bg-green-100 rounded-lg text-green-900 border border-green-300 font-semibold">
-            ✓ 打卡成功！
+        {/* 统计卡片 */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-2xl font-bold text-white">{stats.current_streak}</div>
+              <div className="text-white/50 text-sm">当前连续</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-2xl font-bold text-white">{stats.best_streak}</div>
+              <div className="text-white/50 text-sm">最佳连续</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-2xl font-bold text-white">{stats.checkins_this_week}</div>
+              <div className="text-white/50 text-sm">本周打卡</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-2xl font-bold text-white">{stats.total_checkins}</div>
+              <div className="text-white/50 text-sm">总打卡次数</div>
+            </div>
           </div>
         )}
 
-        {mutation.isError && (
-          <div className="mt-4 p-4 bg-red-100 rounded-lg text-red-900 border border-red-300 font-semibold">
-            ✗ 打卡失败，请重试
+        {/* 分类筛选 */}
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${
+              !selectedCategory
+                ? 'bg-purple-600 text-white'
+                : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            全部 ({templates.length})
+          </button>
+          {Object.entries(categories).map(([cat, count]) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+              className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${
+                selectedCategory === cat
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              {categoryLabels[cat] || cat} ({count})
+            </button>
+          ))}
+        </div>
+
+        {/* 打卡项目列表 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {templates.map(template => (
+            <div
+              key={template.id}
+              className={`relative overflow-hidden rounded-xl border transition-all ${
+                template.today_completed
+                  ? 'bg-green-500/10 border-green-500/30'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {/* 背景装饰 */}
+              <div className={`absolute inset-0 bg-gradient-to-br ${categoryColors[template.category] || 'from-gray-600 to-gray-500'} opacity-5`} />
+              
+              <div className="relative p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">{template.icon}</span>
+                    <div>
+                      <h3 className="text-white font-medium">{template.name}</h3>
+                      <span className="text-white/50 text-sm">
+                        {categoryLabels[template.category]} · {template.default_target} {template.unit}
+                      </span>
+                    </div>
+                  </div>
+                  {template.today_completed && (
+                    <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">
+                      ✓ 已完成
+                    </span>
+                  )}
+                </div>
+                
+                {/* 统计信息 */}
+                <div className="flex items-center gap-4 text-sm text-white/50 mb-3">
+                  <span>🔥 连续 {template.current_streak} 天</span>
+                  <span>⭐ 最佳 {template.best_streak} 天</span>
+                  <span>📊 共 {template.total_checkins} 次</span>
+                </div>
+                
+                {/* 打卡按钮 */}
+                <button
+                  onClick={() => handleQuickCheckin(template)}
+                  disabled={template.today_completed || quickCheckinMutation.isPending}
+                  className={`w-full py-2.5 rounded-lg font-medium transition-all ${
+                    template.today_completed
+                      ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90'
+                  }`}
+                >
+                  {template.today_completed ? '今日已打卡' : '立即打卡'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 7天趋势图 */}
+        {stats && stats.daily_trend.length > 0 && (
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <h3 className="text-white font-medium mb-4">最近7天趋势</h3>
+            <div className="flex items-end justify-between h-32 gap-2">
+              {stats.daily_trend.map((day, index) => (
+                <div key={day.date} className="flex-1 flex flex-col items-center gap-2">
+                  <div
+                    className={`w-full rounded-t transition-all ${
+                      day.rate >= 80 ? 'bg-green-500' :
+                      day.rate >= 50 ? 'bg-yellow-500' :
+                      day.rate > 0 ? 'bg-purple-500' : 'bg-white/10'
+                    }`}
+                    style={{ height: `${Math.max(day.rate, 5)}%` }}
+                  />
+                  <span className="text-white/50 text-xs">
+                    {new Date(day.date).getDate()}日
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-      </div>
-    </main>
+      </main>
+
+      {/* 快速打卡弹窗 */}
+      {showQuickCheckin && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-white/20">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="text-4xl">{showQuickCheckin.icon}</span>
+              <div>
+                <h3 className="text-xl font-bold text-white">{showQuickCheckin.name}</h3>
+                <span className="text-white/50 text-sm">
+                  目标: {showQuickCheckin.default_target} {showQuickCheckin.unit}
+                </span>
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <label className="block text-white/70 text-sm mb-2">完成数量</label>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setQuickValue(prev => Math.max(0, (Number(prev) || 0) - 1))}
+                  className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white text-xl rounded-lg transition-colors"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  value={quickValue}
+                  onChange={e => setQuickValue(e.target.value ? Number(e.target.value) : '')}
+                  className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white text-center text-xl focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  onClick={() => setQuickValue(prev => (Number(prev) || 0) + 1)}
+                  className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white text-xl rounded-lg transition-colors"
+                >
+                  +
+                </button>
+              </div>
+              <span className="text-white/40 text-xs mt-1 block text-center">
+                单位: {showQuickCheckin.unit}
+              </span>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowQuickCheckin(null);
+                  setQuickValue('');
+                }}
+                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmQuickCheckin}
+                disabled={quickCheckinMutation.isPending}
+                className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {quickCheckinMutation.isPending ? '打卡中...' : '确认打卡'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
-
-// 导出受保护的页面
-export default function CheckinPage() {
-  return (
-    <ProtectedRoute>
-      <CheckinContent />
-    </ProtectedRoute>
-  );
-}
-

@@ -2,7 +2,8 @@ export default {
   pages: [
     'pages/index/index',         // 首页
     'pages/dashboard/index',     // 数据面板
-    'pages/rhinitis/index',      // 打卡
+    'pages/checkin/index',       // 打卡2.0
+    'pages/rhinitis/index',      // 鼻炎打卡（旧版）
     'pages/settings/index',      // 我的
     'pages/workout/index',       // 运动训练
     'pages/workout-detail/index',// 运动详情
@@ -11,6 +12,7 @@ export default {
     'pages/garmin-data/index',   // Garmin数据列表
     'pages/huawei/index',        // 华为手表绑定
     'pages/admin/index',         // 管理后台
+    'pages/profile/index',       // 用户画像设置
   ],
   window: {
     backgroundTextStyle: 'light',
@@ -37,7 +39,7 @@ export default {
         selectedIconPath: 'assets/icons/chart-active.png',
       },
       {
-        pagePath: 'pages/rhinitis/index',
+        pagePath: 'pages/checkin/index',
         text: '打卡',
         iconPath: 'assets/icons/nose.png',
         selectedIconPath: 'assets/icons/nose-active.png',
