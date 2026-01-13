@@ -74,11 +74,11 @@ class AuthService:
         except jwt.ExpiredSignatureError:
             logger.warning("[Auth] Token已过期")
             return None
-        except jwt.InvalidTokenError as e:
-            logger.warning(f"[Auth] Token无效: {e}")
-            return None
         except JWTError as e:
             logger.warning(f"[Auth] JWT错误: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[Auth] Token解码异常: {e}")
             return None
     
     @staticmethod
