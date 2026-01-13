@@ -329,6 +329,24 @@ export default function Index() {
           </View>
         </View>
 
+        {/* 饮食记录 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('diet')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">🍽️</Text>
+            <Text className="card-title">饮食记录</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              <Text className="card-desc">📸 拍照识别热量</Text>
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
         {/* 运动训练 */}
         <View 
           className={`feature-card ${isLoggedIn ? 'active' : ''}`}
