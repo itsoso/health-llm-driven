@@ -1,0 +1,238 @@
+.profile-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding: 24px;
+  padding-bottom: 140px;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #a855f7;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 28px;
+  margin-top: 24px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// BMI 卡片
+.bmi-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.3), rgba(236, 72, 153, 0.3));
+  border: 1px solid rgba(147, 51, 234, 0.3);
+  border-radius: 24px;
+  padding: 32px;
+  margin-bottom: 24px;
+}
+
+.bmi-left {
+  .bmi-label {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.7);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .bmi-value {
+    font-size: 56px;
+    font-weight: bold;
+    color: #fff;
+    display: inline;
+  }
+
+  .bmi-category {
+    font-size: 28px;
+    font-weight: 500;
+    margin-left: 16px;
+
+    &.normal { color: #4ade80; }
+    &.thin { color: #60a5fa; }
+    &.overweight { color: #facc15; }
+    &.obese { color: #f87171; }
+  }
+}
+
+.bmi-right {
+  text-align: right;
+
+  .age-label {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.7);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .age-value {
+    font-size: 40px;
+    font-weight: bold;
+    color: #fff;
+  }
+}
+
+// Tab 导航
+.tab-nav {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+
+.tab-item {
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 28px;
+  border-radius: 16px;
+  white-space: nowrap;
+  transition: all 0.2s;
+
+  &.active {
+    background: #9333ea;
+    color: #fff;
+  }
+}
+
+// 内容区域
+.content-scroll {
+  height: calc(100vh - 400px);
+}
+
+.tab-content {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 32px;
+}
+
+// 表单项
+.form-item {
+  margin-bottom: 32px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.form-label {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 16px;
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  color: #fff;
+  font-size: 32px;
+  box-sizing: border-box;
+}
+
+.picker-value {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  color: #fff;
+  font-size: 32px;
+}
+
+.form-hint {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 8px;
+  display: block;
+}
+
+// 健康状况
+.section {
+  margin-bottom: 40px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.section-title {
+  font-size: 32px;
+  font-weight: 500;
+  color: #fff;
+  margin-bottom: 20px;
+  display: block;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.tag {
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 28px;
+  border-radius: 32px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+
+  &.active {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #f87171;
+  }
+
+  &.orange.active {
+    background: rgba(249, 115, 22, 0.2);
+    border-color: rgba(249, 115, 22, 0.3);
+    color: #fb923c;
+  }
+}
+
+.selected-tags {
+  margin-top: 16px;
+  font-size: 26px;
+  color: #f87171;
+
+  &.orange {
+    color: #fb923c;
+  }
+}
+
+// 保存按钮
+.save-btn {
+  position: fixed;
+  bottom: 40px;
+  left: 24px;
+  right: 24px;
+  padding: 28px;
+  background: linear-gradient(135deg, #9333ea, #ec4899);
+  color: #fff;
+  font-size: 32px;
+  font-weight: 500;
+  text-align: center;
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(147, 51, 234, 0.4);
+}
