@@ -1233,9 +1233,17 @@ class GarminConnectService:
         else:
             logger.info(f"summary无效或为空，将从活动数据获取所有指标")
         
-        # 如果summary中没有活动数据，尝试从活动数据API中获取
-        if not has_activity_data or steps is None or calories is None or distance is None:
-            logger.info(f"触发活动数据查询: has_activity_data={has_activity_data}, steps={steps}, calories={calories}, distance={distance}")
+        # 如果summary中没有活动数据，或者关键指标缺失，尝试从活动数据API中获取
+        # 注意：即使值为0，也可能是有效数据，但如果summary中没有这些字段，应该从活动数据获取
+        needs_activity_data = (
+            not has_activity_data or 
+            steps is None or 
+            calories is None or 
+            distance is None or
+            floors is None
+        )
+        if needs_activity_data:
+            logger.info(f"触发活动数据查询: has_activity_data={has_activity_data}, steps={steps}, calories={calories}, distance={distance}, floors={floors}")
             try:
                 # get_activities_by_date 需要字符串格式的日期
                 date_str = record_date.isoformat() if hasattr(record_date, 'isoformat') else str(record_date)
@@ -1298,18 +1306,18 @@ class GarminConnectService:
                                 if activity_vigorous:
                                     total_vigorous_mins += int(activity_vigorous)
                     
-                    # 更新数据（如果之前没有获取到）
-                    if steps is None and total_steps > 0:
-                        steps = total_steps
+                    # 更新数据（如果之前没有获取到，或者值为0但活动数据中有值）
+                    if steps is None or (steps == 0 and total_steps > 0):
+                        steps = total_steps if total_steps > 0 else steps
                         logger.info(f"从活动数据获取步数: {steps}")
-                    if calories is None and total_calories > 0:
-                        calories = total_calories
+                    if calories is None or (calories == 0 and total_calories > 0):
+                        calories = total_calories if total_calories > 0 else calories
                         logger.info(f"从活动数据获取卡路里: {calories}")
-                    if distance is None and total_distance > 0:
-                        distance = total_distance
+                    if distance is None or (distance == 0 and total_distance > 0):
+                        distance = total_distance if total_distance > 0 else distance
                         logger.info(f"从活动数据获取距离: {distance}米")
-                    if floors is None and total_floors > 0:
-                        floors = total_floors
+                    if floors is None or (floors == 0 and total_floors > 0):
+                        floors = total_floors if total_floors > 0 else floors
                         logger.info(f"从活动数据获取楼层: {floors}")
                     # 更新强度活动时间（如果之前没有获取到或为0）
                     if (moderate_mins is None or moderate_mins == 0) and total_moderate_mins > 0:
@@ -1530,11 +1538,15 @@ class GarminConnectService:
         
         # 楼层和距离（如果之前没有从活动数据获取到，再从summary获取）
         floors_goal_val = None
-        if floors is None and isinstance(summary, dict):
-            floors = summary.get('floorsAscended') or summary.get('floorsClimbed')
+        if (floors is None or floors == 0) and isinstance(summary, dict):
+            floors_from_summary = summary.get('floorsAscended') or summary.get('floorsClimbed')
+            if floors_from_summary:
+                floors = floors_from_summary
             floors_goal_val = summary.get('floorsAscendedGoal') or summary.get('floorsGoal')
-        if distance is None and isinstance(summary, dict):
-            distance = summary.get('totalDistanceMeters') or summary.get('distanceInMeters')
+        if (distance is None or distance == 0) and isinstance(summary, dict):
+            distance_from_summary = summary.get('totalDistanceMeters') or summary.get('distanceInMeters')
+            if distance_from_summary:
+                distance = distance_from_summary
         
         # 记录解析结果用于调试
         logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}, 步数: {steps}")
