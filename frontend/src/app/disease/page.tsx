@@ -155,7 +155,7 @@ export default function DiseasePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['diseaseTemplates'] });
-      alert('初始化成功');
+      window.alert('初始化成功');
     },
   });
 
