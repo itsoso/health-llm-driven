@@ -56,6 +56,8 @@ export default function Navigation() {
         { href: '/heart-rate', label: '心率监测', icon: '❤️' },
         { href: '/weight', label: '体重追踪', icon: '⚖️' },
         { href: '/blood-pressure', label: '血压追踪', icon: '🩺' },
+        { href: '/environment', label: '环境健康', icon: '🌤️' },
+        { href: '/disease', label: '疾病管理', icon: '🏥' },
       ],
     },
     {
