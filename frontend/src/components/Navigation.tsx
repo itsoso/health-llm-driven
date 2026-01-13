@@ -219,6 +219,14 @@ export default function Navigation() {
                           <span>⚙️</span>
                           <span>个人设置</span>
                         </Link>
+                        <Link
+                          href="/profile"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-all"
+                        >
+                          <span>👤</span>
+                          <span>个人画像</span>
+                        </Link>
                         {user?.is_admin && (
                           <Link
                             href="/admin"
@@ -378,6 +386,14 @@ export default function Navigation() {
                     >
                       <span className="mr-3 text-xl">⚙️</span>
                       个人设置
+                    </Link>
+                    <Link
+                      href="/profile"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-gray-700 hover:bg-indigo-50"
+                    >
+                      <span className="mr-3 text-xl">👤</span>
+                      个人画像
                     </Link>
                     {user?.is_admin && (
                       <Link
