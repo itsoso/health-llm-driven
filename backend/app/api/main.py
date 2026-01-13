@@ -26,6 +26,9 @@ from app.api import (
     wechat,
     devices,  # 多设备管理
     user_merge,  # 用户合并
+    # executor-v2: 新增模块
+    user_profile,  # 用户画像
+    checkin,  # 打卡系统2.0
 )
 
 api_router = APIRouter()

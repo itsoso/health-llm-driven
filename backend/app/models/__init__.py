@@ -20,6 +20,9 @@ from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.device_credential import DeviceCredential
+# executor-v2: 新增模型
+from app.models.user_profile import UserProfile, HealthGoal
+from app.models.checkin import CheckinTemplate, CheckinRecord
 
 __all__ = [
     "User",
@@ -45,5 +48,10 @@ __all__ = [
     "WeightRecord",
     "BloodPressureRecord",
     "DeviceCredential",
+    # executor-v2: 新增模型
+    "UserProfile",
+    "HealthGoal",
+    "CheckinTemplate",
+    "CheckinRecord",
 ]
 

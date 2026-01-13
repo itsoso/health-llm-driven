@@ -39,6 +39,10 @@ class User(Base):
     daily_recommendations = relationship("DailyRecommendation", back_populates="user")
     health_analysis_cache = relationship("HealthAnalysisCache", back_populates="user")
     garmin_credentials = relationship("GarminCredential", back_populates="user", uselist=False)
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+    checkin_templates = relationship("CheckinTemplate", backref="user")
+    checkin_records = relationship("CheckinRecord", backref="user")
+    health_goals = relationship("HealthGoal", backref="user")
 
 
 class GarminCredential(Base):
