@@ -1195,8 +1195,8 @@ class GarminConnectService:
         active_minutes = None
         distance = None
         floors = None
-        moderate_mins = 0
-        vigorous_mins = 0
+        moderate_mins = None
+        vigorous_mins = None
         
         # 检查summary是否有效（不是None且不是空字典）
         has_valid_summary = isinstance(summary, dict) and len(summary) > 0
@@ -1227,7 +1227,7 @@ class GarminConnectService:
             moderate_mins = summary.get('moderateIntensityMinutes') or summary.get('moderateActivityMinutes') or 0
             vigorous_mins = summary.get('vigorousIntensityMinutes') or summary.get('vigorousActivityMinutes') or 0
             highly_active_seconds = summary.get('highlyActiveSeconds') or 0
-            active_minutes = summary.get('activeMinutes') or (highly_active_seconds // 60 if highly_active_seconds else 0) or (moderate_mins + vigorous_mins) or 0
+            active_minutes = summary.get('activeMinutes') or (highly_active_seconds // 60 if highly_active_seconds else 0) or ((moderate_mins or 0) + (vigorous_mins or 0)) or 0
         else:
             logger.info(f"summary无效或为空，将从活动数据获取所有指标")
         
@@ -1246,6 +1246,8 @@ class GarminConnectService:
                     total_calories = 0
                     total_distance = 0
                     total_floors = 0
+                    total_moderate_mins = 0
+                    total_vigorous_mins = 0
                     
                     for activity in activities:
                         if isinstance(activity, dict):
@@ -1268,6 +1270,31 @@ class GarminConnectService:
                             activity_floors = activity.get('elevationGain') or activity.get('floorsAscended') or 0
                             if activity_floors:
                                 total_floors += int(activity_floors)
+                            
+                            # 强度活动时间（从活动数据获取）
+                            activity_moderate = activity.get('moderateIntensityMinutes') or activity.get('moderateActivityMinutes') or 0
+                            activity_vigorous = activity.get('vigorousIntensityMinutes') or activity.get('vigorousActivityMinutes') or 0
+                            
+                            # 如果没有直接的强度时间，尝试从活动时长和类型推断
+                            if not activity_moderate and not activity_vigorous:
+                                duration_seconds = activity.get('duration') or activity.get('elapsedDuration') or 0
+                                if duration_seconds:
+                                    duration_minutes = duration_seconds / 60
+                                    activity_type = activity.get('activityType', {}).get('typeKey', '').lower() if isinstance(activity.get('activityType'), dict) else str(activity.get('activityType', '')).lower()
+                                    
+                                    # 根据活动类型判断强度
+                                    vigorous_types = ['running', 'cycling', 'swimming', 'rowing', 'elliptical', 'strength_training']
+                                    moderate_types = ['walking', 'hiking', 'yoga', 'pilates']
+                                    
+                                    if any(vt in activity_type for vt in vigorous_types):
+                                        total_vigorous_mins += duration_minutes
+                                    elif any(mt in activity_type for mt in moderate_types):
+                                        total_moderate_mins += duration_minutes
+                            else:
+                                if activity_moderate:
+                                    total_moderate_mins += int(activity_moderate)
+                                if activity_vigorous:
+                                    total_vigorous_mins += int(activity_vigorous)
                     
                     # 更新数据（如果之前没有获取到）
                     if steps is None and total_steps > 0:
@@ -1282,6 +1309,13 @@ class GarminConnectService:
                     if floors is None and total_floors > 0:
                         floors = total_floors
                         logger.info(f"从活动数据获取楼层: {floors}")
+                    # 更新强度活动时间（如果之前没有获取到或为0）
+                    if (moderate_mins is None or moderate_mins == 0) and total_moderate_mins > 0:
+                        moderate_mins = total_moderate_mins
+                        logger.info(f"从活动数据获取中等强度活动时间: {moderate_mins}分钟")
+                    if (vigorous_mins is None or vigorous_mins == 0) and total_vigorous_mins > 0:
+                        vigorous_mins = total_vigorous_mins
+                        logger.info(f"从活动数据获取高强度活动时间: {vigorous_mins}分钟")
             except Exception as e:
                 logger.error(f"从活动数据获取活动指标失败: {e}")
         
@@ -1346,7 +1380,7 @@ class GarminConnectService:
             # 7天平均HRV - 从weeklyAverages或直接值
             hrv_7day_avg = safe_get_nested(sleep_data, 'hrvData', 'weeklyAvg') or sleep_data.get('hrvWeeklyAverage')
         
-        # 强度活动时间
+        # 强度活动时间（优先从summary获取，如果为0或None则使用从活动数据获取的值）
         moderate_intensity_mins = 0
         vigorous_intensity_mins = 0
         intensity_goal = None
@@ -1354,6 +1388,14 @@ class GarminConnectService:
             moderate_intensity_mins = summary.get('moderateIntensityMinutes', 0) or 0
             vigorous_intensity_mins = summary.get('vigorousIntensityMinutes', 0) or 0
             intensity_goal = summary.get('intensityMinutesGoal') or summary.get('weeklyIntensityMinutesGoal')
+        
+        # 如果summary中的强度活动时间为0或None，使用从活动数据获取的值
+        if (moderate_intensity_mins == 0 and vigorous_intensity_mins == 0) and (moderate_mins is not None or vigorous_mins is not None):
+            if moderate_mins is not None and moderate_mins > 0:
+                moderate_intensity_mins = moderate_mins
+            if vigorous_mins is not None and vigorous_mins > 0:
+                vigorous_intensity_mins = vigorous_mins
+            logger.info(f"使用从活动数据获取的强度活动时间: moderate={moderate_intensity_mins}, vigorous={vigorous_intensity_mins}")
         
         # 卡路里详细分类
         active_cals = None
