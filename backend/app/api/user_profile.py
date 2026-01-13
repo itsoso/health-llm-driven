@@ -262,3 +262,39 @@ async def update_goal_progress(
         response.progress_percentage = round((goal.current_value / goal.target_value) * 100, 1)
     
     return response
+
+
+# =====================================================
+# AI 个性化建议 API
+# =====================================================
+
+@router.get("/advice/morning")
+async def get_morning_advice(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取早间个性化健康建议"""
+    from app.services.ai.personalized_advice import get_personalized_advice
+    return get_personalized_advice(db, current_user.id, 'morning')
+
+
+@router.get("/advice/summary")
+async def get_daily_summary_advice(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取每日总结和建议"""
+    from app.services.ai.personalized_advice import get_personalized_advice
+    return get_personalized_advice(db, current_user.id, 'summary')
+
+
+@router.get("/advice/checkin/{template_name}")
+async def get_checkin_advice(
+    template_name: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取打卡前的鼓励建议"""
+    from app.services.ai.personalized_advice import PersonalizedAdviceService
+    service = PersonalizedAdviceService(db, current_user.id)
+    return {"advice": service.get_checkin_advice(template_name)}
