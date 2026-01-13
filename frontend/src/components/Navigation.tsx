@@ -228,14 +228,24 @@ export default function Navigation() {
                           <span>个人画像</span>
                         </Link>
                         {user?.is_admin && (
-                          <Link
-                            href="/admin"
-                            onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition-all"
-                          >
-                            <span>🛡️</span>
-                            <span>管理后台</span>
-                          </Link>
+                          <>
+                            <Link
+                              href="/admin"
+                              onClick={() => setShowUserMenu(false)}
+                              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition-all"
+                            >
+                              <span>🛡️</span>
+                              <span>管理后台</span>
+                            </Link>
+                            <Link
+                              href="/knowledge"
+                              onClick={() => setShowUserMenu(false)}
+                              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition-all"
+                            >
+                              <span>📚</span>
+                              <span>知识库管理</span>
+                            </Link>
+                          </>
                         )}
                         <button
                           onClick={() => { logout(); setShowUserMenu(false); }}
@@ -396,14 +406,24 @@ export default function Navigation() {
                       个人画像
                     </Link>
                     {user?.is_admin && (
-                      <Link
-                        href="/admin"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-purple-700 hover:bg-purple-50"
-                      >
-                        <span className="mr-3 text-xl">🛡️</span>
-                        管理后台
-                      </Link>
+                      <>
+                        <Link
+                          href="/admin"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-purple-700 hover:bg-purple-50"
+                        >
+                          <span className="mr-3 text-xl">🛡️</span>
+                          管理后台
+                        </Link>
+                        <Link
+                          href="/knowledge"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-purple-700 hover:bg-purple-50"
+                        >
+                          <span className="mr-3 text-xl">📚</span>
+                          知识库管理
+                        </Link>
+                      </>
                     )}
                     <button
                       onClick={() => { logout(); setIsMobileMenuOpen(false); }}
