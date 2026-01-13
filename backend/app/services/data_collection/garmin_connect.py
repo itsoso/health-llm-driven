@@ -47,6 +47,81 @@ def _generate_mfa_session_id() -> str:
     return str(uuid.uuid4())
 
 
+def _ensure_display_name_for_client(client, email: str) -> bool:
+    """
+    确保 client 的 display_name 已设置，尝试多种方式获取
+    
+    这是一个独立函数，用于 verify_mfa_with_session 等场景
+    
+    Args:
+        client: Garmin client 对象
+        email: 用户邮箱
+        
+    Returns:
+        bool: 是否成功获取 display_name
+    """
+    if client.display_name:
+        return True
+    
+    # 方法1: 尝试 userprofile API
+    try:
+        prof = client.garth.connectapi("/userprofile-service/userprofile/profile")
+        if prof and isinstance(prof, dict):
+            client.display_name = prof.get("displayName") or prof.get("userName")
+            client.full_name = prof.get("fullName")
+            if client.display_name:
+                logger.info(f"[MFA] 从 userprofile API 获取 display_name: {client.display_name}")
+                return True
+    except Exception as e:
+        logger.debug(f"[MFA] userprofile API 失败: {e}")
+    
+    # 方法2: 尝试 socialProfile API
+    try:
+        social = client.garth.connectapi("/userprofile-service/socialProfile")
+        if social and isinstance(social, dict):
+            client.display_name = social.get("displayName") or social.get("userName")
+            client.full_name = social.get("fullName")
+            if client.display_name:
+                logger.info(f"[MFA] 从 socialProfile API 获取 display_name: {client.display_name}")
+                return True
+    except Exception as e:
+        logger.debug(f"[MFA] socialProfile API 失败: {e}")
+    
+    # 方法3: 尝试从 garth 的 profile 属性获取
+    try:
+        if hasattr(client.garth, 'profile') and client.garth.profile:
+            profile = client.garth.profile
+            client.display_name = getattr(profile, 'display_name', None) or getattr(profile, 'email', None)
+            if client.display_name:
+                logger.info(f"[MFA] 从 garth.profile 获取 display_name: {client.display_name}")
+                return True
+    except Exception as e:
+        logger.debug(f"[MFA] garth.profile 获取失败: {e}")
+    
+    # 方法4: 尝试调用 get_full_name()
+    try:
+        full_name = client.get_full_name()
+        if full_name:
+            client.display_name = full_name
+            logger.info(f"[MFA] 从 get_full_name() 获取 display_name: {client.display_name}")
+            return True
+    except Exception as e:
+        logger.debug(f"[MFA] get_full_name() 失败: {e}")
+    
+    # 方法5: 从邮箱地址提取用户名作为后备
+    try:
+        email_username = email.split('@')[0]
+        if email_username:
+            client.display_name = email_username
+            logger.warning(f"[MFA] 使用邮箱用户名作为 display_name: {client.display_name}")
+            return True
+    except Exception as e:
+        logger.debug(f"[MFA] 邮箱提取失败: {e}")
+    
+    logger.error(f"[MFA] 无法获取 display_name，部分 API 可能无法正常工作")
+    return False
+
+
 def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
     """
     使用 session_id 和 MFA 验证码完成登录
@@ -107,15 +182,7 @@ def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
         
         # 重要：MFA验证后需要手动加载 profile 来获取 display_name
         # 否则后续的 API 调用会因为 display_name 为 None 而失败
-        try:
-            if not client.display_name:
-                prof = client.garth.connectapi("/userprofile-service/userprofile/profile")
-                if prof and isinstance(prof, dict):
-                    client.display_name = prof.get("displayName")
-                    client.full_name = prof.get("fullName")
-                    logger.info(f"[MFA] 成功加载用户配置: display_name={client.display_name}")
-        except Exception as profile_error:
-            logger.warning(f"[MFA] 加载用户配置失败: {profile_error}")
+        _ensure_display_name_for_client(client, email)
         
         server_type = "中国版" if is_cn else "国际版"
         logger.info(f"[MFA] Garmin {server_type} ({email}) MFA 验证成功, display_name={client.display_name}")
@@ -207,6 +274,76 @@ class GarminConnectService:
         email_parts = self.email.split('@')
         if len(email_parts) == 2 and len(email_parts[0]) > 3:
             masked_email = email_parts[0][:2] + '***' + '@' + email_parts[1]
+    
+    def _ensure_display_name(self) -> bool:
+        """
+        确保 display_name 已设置，尝试多种方式获取
+        
+        Returns:
+            bool: 是否成功获取 display_name
+        """
+        prefix = self._log_prefix()
+        
+        if self.client.display_name:
+            return True
+        
+        # 方法1: 尝试 userprofile API
+        try:
+            prof = self.client.garth.connectapi("/userprofile-service/userprofile/profile")
+            if prof and isinstance(prof, dict):
+                self.client.display_name = prof.get("displayName") or prof.get("userName")
+                self.client.full_name = prof.get("fullName")
+                if self.client.display_name:
+                    logger.info(f"{prefix} 从 userprofile API 获取 display_name: {self.client.display_name}")
+                    return True
+        except Exception as e:
+            logger.debug(f"{prefix} userprofile API 失败: {e}")
+        
+        # 方法2: 尝试 socialProfile API
+        try:
+            social = self.client.garth.connectapi("/userprofile-service/socialProfile")
+            if social and isinstance(social, dict):
+                self.client.display_name = social.get("displayName") or social.get("userName")
+                self.client.full_name = social.get("fullName")
+                if self.client.display_name:
+                    logger.info(f"{prefix} 从 socialProfile API 获取 display_name: {self.client.display_name}")
+                    return True
+        except Exception as e:
+            logger.debug(f"{prefix} socialProfile API 失败: {e}")
+        
+        # 方法3: 尝试从 garth 的 profile 属性获取
+        try:
+            if hasattr(self.client.garth, 'profile') and self.client.garth.profile:
+                profile = self.client.garth.profile
+                self.client.display_name = getattr(profile, 'display_name', None) or getattr(profile, 'email', None)
+                if self.client.display_name:
+                    logger.info(f"{prefix} 从 garth.profile 获取 display_name: {self.client.display_name}")
+                    return True
+        except Exception as e:
+            logger.debug(f"{prefix} garth.profile 获取失败: {e}")
+        
+        # 方法4: 尝试调用 get_full_name()
+        try:
+            full_name = self.client.get_full_name()
+            if full_name:
+                self.client.display_name = full_name
+                logger.info(f"{prefix} 从 get_full_name() 获取 display_name: {self.client.display_name}")
+                return True
+        except Exception as e:
+            logger.debug(f"{prefix} get_full_name() 失败: {e}")
+        
+        # 方法5: 从邮箱地址提取用户名作为后备
+        try:
+            email_username = self.email.split('@')[0]
+            if email_username:
+                self.client.display_name = email_username
+                logger.warning(f"{prefix} 使用邮箱用户名作为 display_name: {self.client.display_name}")
+                return True
+        except Exception as e:
+            logger.debug(f"{prefix} 邮箱提取失败: {e}")
+        
+        logger.error(f"{prefix} 无法获取 display_name，部分 API 可能无法正常工作")
+        return False
         else:
             masked_email = '***'
         return f"[{masked_email}]"
@@ -227,15 +364,7 @@ class GarminConnectService:
                     self.client = session.get("client")
                     if self.client and hasattr(self.client, 'garth') and self.client.garth.oauth2_token:
                         # 确保 display_name 已设置
-                        if not self.client.display_name:
-                            try:
-                                prof = self.client.garth.connectapi("/userprofile-service/userprofile/profile")
-                                if prof and isinstance(prof, dict):
-                                    self.client.display_name = prof.get("displayName")
-                                    self.client.full_name = prof.get("fullName")
-                                    logger.info(f"{prefix} 加载用户配置: display_name={self.client.display_name}")
-                            except Exception as e:
-                                logger.warning(f"{prefix} 加载用户配置失败: {e}")
+                        self._ensure_display_name()
                         
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
@@ -293,15 +422,7 @@ class GarminConnectService:
                     # 正常登录成功返回 (oauth1_token, oauth2_token)
                     if self.client.garth.oauth2_token:
                         # 确保 display_name 已设置（使用 return_on_mfa=True 时可能未加载 profile）
-                        if not self.client.display_name:
-                            try:
-                                prof = self.client.garth.connectapi("/userprofile-service/userprofile/profile")
-                                if prof and isinstance(prof, dict):
-                                    self.client.display_name = prof.get("displayName")
-                                    self.client.full_name = prof.get("fullName")
-                                    logger.info(f"{prefix} 加载用户配置: display_name={self.client.display_name}")
-                            except Exception as e:
-                                logger.warning(f"{prefix} 加载用户配置失败: {e}")
+                        self._ensure_display_name()
                         
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
