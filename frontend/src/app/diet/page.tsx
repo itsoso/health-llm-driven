@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,6 +15,28 @@ const MEAL_TYPES = [
   { value: 'dinner', label: '晚餐', icon: '🌙', color: 'bg-indigo-100 text-indigo-800' },
   { value: 'snack', label: '加餐', icon: '🍎', color: 'bg-green-100 text-green-800' },
 ];
+
+interface RecognizedFood {
+  name: string;
+  quantity?: string;
+  calories?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  confidence?: number;
+}
+
+interface RecognitionResult {
+  success: boolean;
+  foods: RecognizedFood[];
+  meal_description?: string;
+  health_tips?: string;
+  total_calories?: number;
+  total_protein?: number;
+  total_carbs?: number;
+  total_fat?: number;
+  error?: string;
+}
 
 function DietContent() {
   const { user, isAuthenticated } = useAuth();
@@ -31,6 +53,13 @@ function DietContent() {
     fat: '',
     notes: '',
   });
+
+  // 图片识别相关状态
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [isRecognizing, setIsRecognizing] = useState(false);
+  const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
@@ -78,8 +107,35 @@ function DietContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['diet-summary'] });
       queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
-      setShowForm(false);
-      setFormData({ meal_type: 'breakfast', food_items: '', calories: '', protein: '', carbs: '', fat: '', notes: '' });
+      resetForm();
+    },
+    onError: (error: Error) => {
+      alert(`保存失败: ${error.message}`);
+    },
+  });
+
+  // AI识别并保存
+  const recognizeAndSaveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch(`${API_BASE}/diet/recognize-and-save`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `保存失败: ${res.status}`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['diet-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
+      resetForm();
+      alert('✅ 识别并保存成功！');
     },
     onError: (error: Error) => {
       alert(`保存失败: ${error.message}`);
@@ -100,6 +156,109 @@ function DietContent() {
       queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
     },
   });
+
+  // 重置表单
+  const resetForm = () => {
+    setShowForm(false);
+    setFormData({ meal_type: 'breakfast', food_items: '', calories: '', protein: '', carbs: '', fat: '', notes: '' });
+    setImagePreview(null);
+    setImageBase64(null);
+    setRecognitionResult(null);
+  };
+
+  // 处理图片选择
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      alert('请选择图片文件');
+      return;
+    }
+
+    // 检查文件大小（限制10MB）
+    if (file.size > 10 * 1024 * 1024) {
+      alert('图片大小不能超过10MB');
+      return;
+    }
+
+    // 读取图片并转为Base64
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      setImagePreview(result);
+      // 提取Base64数据（去掉前缀）
+      const base64Data = result.split(',')[1];
+      setImageBase64(base64Data);
+      setRecognitionResult(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // AI识别图片
+  const handleRecognize = async () => {
+    if (!imageBase64) {
+      alert('请先选择图片');
+      return;
+    }
+
+    setIsRecognizing(true);
+    try {
+      const res = await fetch(`${API_BASE}/diet/recognize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          image_base64: imageBase64,
+          image_type: 'jpeg',
+        }),
+      });
+
+      const result = await res.json();
+      setRecognitionResult(result);
+
+      if (result.success && result.foods?.length > 0) {
+        // 自动填充表单
+        const foodNames = result.foods.map((f: RecognizedFood) => 
+          `${f.name}${f.quantity ? ` (${f.quantity})` : ''}`
+        ).join(', ');
+        
+        setFormData({
+          ...formData,
+          food_items: foodNames,
+          calories: result.total_calories?.toString() || '',
+          protein: result.total_protein?.toFixed(1) || '',
+          carbs: result.total_carbs?.toFixed(1) || '',
+          fat: result.total_fat?.toFixed(1) || '',
+          notes: result.health_tips || '',
+        });
+      }
+    } catch (error) {
+      console.error('识别失败:', error);
+      alert('识别失败，请重试');
+    } finally {
+      setIsRecognizing(false);
+    }
+  };
+
+  // 一键识别并保存
+  const handleRecognizeAndSave = async () => {
+    if (!imageBase64) {
+      alert('请先选择图片');
+      return;
+    }
+
+    recognizeAndSaveMutation.mutate({
+      image_base64: imageBase64,
+      image_type: 'jpeg',
+      record_date: selectedDate,
+      meal_type: formData.meal_type,
+      notes: formData.notes || null,
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +307,7 @@ function DietContent() {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-orange-500"
             />
-            <p className="text-gray-600 text-sm">记录每日饮食，控制热量摄入</p>
+            <p className="text-gray-600 text-sm">📸 拍照识别食物，AI自动计算热量</p>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -199,100 +358,210 @@ function DietContent() {
         {showForm && (
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-orange-200">
             <h3 className="text-xl font-bold text-gray-900 mb-4">🍽️ 添加饮食记录</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">餐食类型</label>
-                <div className="flex flex-wrap gap-2">
-                  {MEAL_TYPES.map(meal => (
-                    <button
-                      key={meal.value}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, meal_type: meal.value })}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                        formData.meal_type === meal.value
-                          ? 'bg-orange-500 text-white shadow-md'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+            
+            {/* 图片上传区域 */}
+            <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border-2 border-dashed border-blue-300">
+              <h4 className="text-lg font-semibold text-gray-800 mb-3">📸 AI智能识别</h4>
+              
+              <div className="flex flex-col md:flex-row gap-4">
+                {/* 图片预览 */}
+                <div className="flex-1">
+                  {imagePreview ? (
+                    <div className="relative">
+                      <img 
+                        src={imagePreview} 
+                        alt="食物图片" 
+                        className="w-full h-48 object-cover rounded-lg shadow-md"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImagePreview(null);
+                          setImageBase64(null);
+                          setRecognitionResult(null);
+                        }}
+                        className="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full text-sm hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full h-48 bg-gray-100 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
                     >
-                      {meal.icon} {meal.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">食物列表 *</label>
-                <textarea
-                  required
-                  value={formData.food_items}
-                  onChange={(e) => setFormData({ ...formData, food_items: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                  rows={2}
-                  placeholder="例如: 鸡蛋2个, 全麦面包1片, 牛奶200ml"
-                />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-800 mb-2">热量 (kcal)</label>
+                      <span className="text-4xl mb-2">📷</span>
+                      <span className="text-gray-600">点击上传食物图片</span>
+                      <span className="text-gray-400 text-sm">支持 JPG、PNG 格式</span>
+                    </div>
+                  )}
                   <input
-                    type="number"
-                    value={formData.calories}
-                    onChange={(e) => setFormData({ ...formData, calories: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                    placeholder="300"
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-800 mb-2">蛋白质 (g)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formData.protein}
-                    onChange={(e) => setFormData({ ...formData, protein: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                    placeholder="20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-800 mb-2">碳水 (g)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formData.carbs}
-                    onChange={(e) => setFormData({ ...formData, carbs: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                    placeholder="30"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-800 mb-2">脂肪 (g)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formData.fat}
-                    onChange={(e) => setFormData({ ...formData, fat: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                    placeholder="10"
-                  />
+
+                {/* 识别结果 */}
+                <div className="flex-1">
+                  {recognitionResult ? (
+                    <div className="h-48 overflow-auto">
+                      {recognitionResult.success ? (
+                        <div>
+                          <p className="text-green-600 font-semibold mb-2">✅ 识别成功！</p>
+                          <div className="space-y-1 text-sm">
+                            {recognitionResult.foods?.map((food, idx) => (
+                              <div key={idx} className="flex justify-between bg-white p-2 rounded">
+                                <span className="text-gray-800">{food.name} {food.quantity && `(${food.quantity})`}</span>
+                                <span className="text-orange-600">{food.calories} kcal</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 pt-2 border-t text-sm">
+                            <p className="text-gray-600">总计: <strong className="text-orange-600">{recognitionResult.total_calories}</strong> kcal</p>
+                          </div>
+                          {recognitionResult.health_tips && (
+                            <p className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                              💡 {recognitionResult.health_tips}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-red-600">
+                          <p>❌ 识别失败</p>
+                          <p className="text-sm">{recognitionResult.error}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="h-48 flex items-center justify-center text-gray-400">
+                      <p>上传图片后点击"AI识别"</p>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">备注</label>
-                <input
-                  type="text"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                  placeholder="可选备注..."
-                />
+
+              {/* 操作按钮 */}
+              <div className="flex gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={handleRecognize}
+                  disabled={!imageBase64 || isRecognizing}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isRecognizing ? '🔍 识别中...' : '🔍 AI识别'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRecognizeAndSave}
+                  disabled={!imageBase64 || recognizeAndSaveMutation.isPending}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {recognizeAndSaveMutation.isPending ? '⏳ 保存中...' : '✨ 一键识别并保存'}
+                </button>
               </div>
-              <button
-                type="submit"
-                disabled={createMutation.isPending}
-                className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-red-600 disabled:opacity-50 shadow-md transition-all"
-              >
-                {createMutation.isPending ? '保存中...' : '✓ 保存记录'}
-              </button>
-            </form>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <p className="text-sm text-gray-500 mb-4">或者手动输入：</p>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">餐食类型</label>
+                  <div className="flex flex-wrap gap-2">
+                    {MEAL_TYPES.map(meal => (
+                      <button
+                        key={meal.value}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, meal_type: meal.value })}
+                        className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                          formData.meal_type === meal.value
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {meal.icon} {meal.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">食物列表 *</label>
+                  <textarea
+                    required
+                    value={formData.food_items}
+                    onChange={(e) => setFormData({ ...formData, food_items: e.target.value })}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                    rows={2}
+                    placeholder="例如: 鸡蛋2个, 全麦面包1片, 牛奶200ml"
+                  />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">热量 (kcal)</label>
+                    <input
+                      type="number"
+                      value={formData.calories}
+                      onChange={(e) => setFormData({ ...formData, calories: e.target.value })}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                      placeholder="300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">蛋白质 (g)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.protein}
+                      onChange={(e) => setFormData({ ...formData, protein: e.target.value })}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                      placeholder="20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">碳水 (g)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.carbs}
+                      onChange={(e) => setFormData({ ...formData, carbs: e.target.value })}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                      placeholder="30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">脂肪 (g)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.fat}
+                      onChange={(e) => setFormData({ ...formData, fat: e.target.value })}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                      placeholder="10"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">备注</label>
+                  <input
+                    type="text"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                    placeholder="可选备注..."
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending}
+                  className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-red-600 disabled:opacity-50 shadow-md transition-all"
+                >
+                  {createMutation.isPending ? '保存中...' : '✓ 保存记录'}
+                </button>
+              </form>
+            </div>
           </div>
         )}
 
@@ -303,6 +572,7 @@ function DietContent() {
             <div className="text-center py-10 text-gray-500">
               <p className="text-4xl mb-2">🍽️</p>
               <p>今天还没有饮食记录</p>
+              <p className="text-sm mt-2">点击"添加饮食"开始记录</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -318,6 +588,9 @@ function DietContent() {
                         {meal.calories && (
                           <span className="text-sm text-orange-600 font-medium">{meal.calories} kcal</span>
                         )}
+                        {meal.ai_recognized === 1 && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">🤖 AI识别</span>
+                        )}
                       </div>
                       <p className="text-gray-900 font-medium">{meal.food_items}</p>
                       <div className="flex gap-4 mt-2 text-xs text-gray-500">
@@ -325,7 +598,12 @@ function DietContent() {
                         {meal.carbs && <span>碳水: {meal.carbs}g</span>}
                         {meal.fat && <span>脂肪: {meal.fat}g</span>}
                       </div>
-                      {meal.notes && <p className="text-sm text-gray-500 mt-1">{meal.notes}</p>}
+                      {meal.health_tips && (
+                        <p className="text-xs text-blue-600 mt-2 bg-blue-50 p-2 rounded">💡 {meal.health_tips}</p>
+                      )}
+                      {meal.notes && !meal.health_tips && (
+                        <p className="text-sm text-gray-500 mt-1">{meal.notes}</p>
+                      )}
                     </div>
                     <button
                       onClick={() => deleteMutation.mutate(meal.id)}
@@ -352,4 +630,3 @@ export default function DietPage() {
     </ProtectedRoute>
   );
 }
-

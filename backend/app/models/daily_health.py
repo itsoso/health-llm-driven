@@ -132,9 +132,17 @@ class DietRecord(Base):
     fat = Column(Float)  # 脂肪 (g)
     fiber = Column(Float)  # 纤维 (g)
     
+    # 图片和AI识别
+    image_url = Column(String, nullable=True)  # 食物图片URL
+    ai_recognized = Column(Integer, default=0)  # 是否AI识别: 0=否, 1=是
+    ai_confidence = Column(Float, nullable=True)  # AI识别置信度
+    ai_raw_result = Column(Text, nullable=True)  # AI识别原始结果(JSON)
+    
     notes = Column(Text)  # 备注
+    health_tips = Column(Text, nullable=True)  # AI健康提示
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", backref="diet_records")
 

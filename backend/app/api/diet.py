@@ -1,5 +1,7 @@
 """饮食记录API"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+import json
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
@@ -16,9 +18,14 @@ from app.schemas.diet import (
     DietRecordResponse,
     DailyDietSummary,
     DietStats,
+    FoodRecognitionRequest,
+    FoodRecognitionResponse,
+    CreateDietFromImageRequest,
 )
+from app.services.ai.food_recognition import food_recognition_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/records", response_model=DietRecordResponse)
@@ -77,6 +84,10 @@ def _convert_to_response(record) -> DietRecordResponse:
         fat=record.fat,
         fiber=record.fiber,
         notes=record.notes,
+        image_url=getattr(record, 'image_url', None),
+        ai_recognized=getattr(record, 'ai_recognized', 0),
+        ai_confidence=getattr(record, 'ai_confidence', None),
+        health_tips=getattr(record, 'health_tips', None),
         created_at=record.created_at,
         updated_at=record.updated_at if hasattr(record, 'updated_at') else None,
     )
@@ -305,4 +316,168 @@ def delete_diet_record(record_id: int, db: Session = Depends(get_db)):
     db.delete(record)
     db.commit()
     return {"message": "Record deleted successfully"}
+
+
+# ========== AI食物识别端点 ==========
+
+@router.post("/recognize", response_model=FoodRecognitionResponse)
+async def recognize_food(
+    request: FoodRecognitionRequest,
+    current_user: User = Depends(get_current_user_required)
+):
+    """
+    AI识别食物图片
+    
+    上传Base64编码的图片，AI会识别出食物并估算营养信息
+    """
+    if not food_recognition_service.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail="AI食物识别服务不可用，请检查OpenAI配置"
+        )
+    
+    try:
+        result = await food_recognition_service.recognize_food_from_base64(
+            request.image_base64,
+            request.image_type
+        )
+        
+        if not result.get("success"):
+            return FoodRecognitionResponse(
+                success=False,
+                error=result.get("error", "识别失败"),
+                foods=[]
+            )
+        
+        return FoodRecognitionResponse(
+            success=True,
+            foods=result.get("foods", []),
+            meal_description=result.get("meal_description"),
+            health_tips=result.get("health_tips"),
+            total_calories=result.get("total_calories"),
+            total_protein=result.get("total_protein"),
+            total_carbs=result.get("total_carbs"),
+            total_fat=result.get("total_fat")
+        )
+        
+    except Exception as e:
+        logger.error(f"食物识别失败: {e}")
+        raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
+
+
+@router.post("/recognize-and-save", response_model=DietRecordResponse)
+async def recognize_and_save_diet(
+    request: CreateDietFromImageRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    AI识别食物图片并直接保存为饮食记录
+    
+    一键拍照 -> AI识别 -> 保存记录
+    """
+    if not food_recognition_service.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail="AI食物识别服务不可用"
+        )
+    
+    try:
+        # AI识别
+        result = await food_recognition_service.recognize_food_from_base64(
+            request.image_base64,
+            request.image_type
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "AI识别失败")
+            )
+        
+        foods = result.get("foods", [])
+        if not foods:
+            raise HTTPException(
+                status_code=400,
+                detail="未识别到任何食物，请重新拍照"
+            )
+        
+        # 组合食物名称
+        food_items = ", ".join([f.get("name", "") + (f" ({f.get('quantity', '')})" if f.get('quantity') else "") for f in foods])
+        
+        # 计算平均置信度
+        confidences = [f.get("confidence", 0) for f in foods if f.get("confidence")]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else None
+        
+        # 创建饮食记录
+        db_record = DietRecordModel(
+            user_id=current_user.id,
+            record_date=request.record_date,
+            meal_type=request.meal_type.value,
+            food_items=food_items,
+            calories=result.get("total_calories"),
+            protein=result.get("total_protein"),
+            carbs=result.get("total_carbs"),
+            fat=result.get("total_fat"),
+            notes=request.notes,
+            ai_recognized=1,
+            ai_confidence=avg_confidence,
+            ai_raw_result=json.dumps(result, ensure_ascii=False),
+            health_tips=result.get("health_tips")
+        )
+        
+        db.add(db_record)
+        db.commit()
+        db.refresh(db_record)
+        
+        logger.info(f"用户 {current_user.id} 通过AI识别创建饮食记录: {food_items}")
+        
+        return _convert_to_response(db_record)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"AI识别并保存失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+
+
+@router.post("/estimate-nutrition", response_model=FoodRecognitionResponse)
+async def estimate_nutrition_from_text(
+    food_description: str = Query(..., description="食物描述文字"),
+    current_user: User = Depends(get_current_user_required)
+):
+    """
+    根据文字描述估算营养信息（不需要图片）
+    
+    例如: "两个鸡蛋，一碗米饭，炒青菜"
+    """
+    if not food_recognition_service.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail="AI服务不可用"
+        )
+    
+    try:
+        result = food_recognition_service.estimate_nutrition_from_text(food_description)
+        
+        if not result.get("success"):
+            return FoodRecognitionResponse(
+                success=False,
+                error=result.get("error", "估算失败"),
+                foods=[]
+            )
+        
+        return FoodRecognitionResponse(
+            success=True,
+            foods=result.get("foods", []),
+            health_tips=result.get("health_tips"),
+            total_calories=result.get("total_calories"),
+            total_protein=result.get("total_protein"),
+            total_carbs=result.get("total_carbs"),
+            total_fat=result.get("total_fat")
+        )
+        
+    except Exception as e:
+        logger.error(f"营养估算失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
