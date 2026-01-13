@@ -1,4 +1,5 @@
 """Garmin数据收集服务"""
+import logging
 import httpx
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
 from app.schemas.daily_health import GarminDataCreate
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class GarminService:
@@ -53,10 +56,10 @@ class GarminService:
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    print(f"Garmin API错误: {response.status_code}")
+                    logger.warning(f"Garmin API错误: {response.status_code}")
                     return None
         except Exception as e:
-            print(f"获取Garmin数据失败: {str(e)}")
+            logger.error(f"获取Garmin数据失败: {str(e)}")
             return None
     
     def parse_garmin_data(
