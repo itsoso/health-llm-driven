@@ -232,13 +232,79 @@ async def sync_all_users_garmin_task(days: int = 3) -> Dict[str, Any]:
     return results
 
 
+def get_seconds_until_next_sync(target_hour: int = 8, target_minute: int = 1) -> int:
+    """
+    计算到下一个指定时间（北京时间）的秒数
+    
+    Args:
+        target_hour: 目标小时（0-23），默认8点
+        target_minute: 目标分钟（0-59），默认1分
+    
+    Returns:
+        到下一个目标时间的秒数
+    """
+    now = get_china_now()
+    
+    # 构造今天的目标时间
+    target_today = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+    
+    # 如果今天的目标时间已过，则计算到明天的目标时间
+    if now >= target_today:
+        target_time = target_today + timedelta(days=1)
+    else:
+        target_time = target_today
+    
+    # 计算差值（秒）
+    delta = target_time - now
+    return int(delta.total_seconds())
+
+
+async def scheduler_loop_daily(target_hour: int = 8, target_minute: int = 1):
+    """
+    每日定时任务调度器 - 每天在指定时间（北京时间）执行一次同步
+    
+    Args:
+        target_hour: 同步执行的小时（0-23），默认8点
+        target_minute: 同步执行的分钟（0-59），默认1分
+    
+    注意：每天只同步一次，避免频繁登录导致Garmin账户被锁定
+    """
+    logger.info(f"🚀 Garmin 每日定时同步调度器已启动")
+    logger.info(f"⏰ 每日同步时间: {target_hour:02d}:{target_minute:02d} (北京时间)")
+    logger.info(f"🔐 重要: 需要MFA验证的用户将被自动跳过，不会触发自动同步")
+    logger.info(f"⚠️  为避免Garmin账户被锁定，系统每天只自动同步一次")
+    
+    while True:
+        # 计算到下一次同步的等待时间
+        wait_seconds = get_seconds_until_next_sync(target_hour, target_minute)
+        next_sync_time = get_china_now() + timedelta(seconds=wait_seconds)
+        
+        logger.info(f"⏳ 下一次同步将在 {next_sync_time.strftime('%Y-%m-%d %H:%M:%S')} (北京时间) 执行")
+        logger.info(f"   距离下次同步还有: {wait_seconds // 3600}小时{(wait_seconds % 3600) // 60}分钟")
+        
+        # 等待到目标时间
+        await asyncio.sleep(wait_seconds)
+        
+        # 执行同步任务
+        try:
+            logger.info(f"🕐 到达定时同步时间: {get_china_now().strftime('%Y-%m-%d %H:%M:%S')}")
+            await sync_all_users_garmin_task(days=1)  # 每天只同步1天的数据
+        except Exception as e:
+            logger.error(f"定时同步任务出错: {e}", exc_info=True)
+        
+        # 短暂等待，避免在同一分钟内重复触发
+        await asyncio.sleep(60)
+
+
 async def scheduler_loop(interval_minutes: int = 60):
     """
-    无限循环的任务调度器
+    [已弃用] 间隔同步调度器 - 可能导致账户锁定，请使用 scheduler_loop_daily
     
     Args:
         interval_minutes: 同步间隔（分钟），默认60分钟
     """
+    logger.warning("⚠️ 使用间隔同步模式，频繁登录可能导致Garmin账户被锁定！")
+    logger.warning("⚠️ 建议使用 scheduler_loop_daily 进行每日定时同步")
     logger.info(f"🚀 Garmin 后台同步调度器已启动")
     logger.info(f"⏰ 同步间隔: {interval_minutes} 分钟")
     logger.info(f"🔐 重要: 需要MFA验证的用户将被自动跳过，不会触发自动同步")
@@ -258,22 +324,33 @@ async def scheduler_loop(interval_minutes: int = 60):
         await asyncio.sleep(interval_minutes * 60)
 
 
-def start_scheduler(app, interval_minutes: int = 60):
+def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = True):
     """
     在后台线程中启动异步调度器
     
     Args:
         app: FastAPI应用实例
-        interval_minutes: 同步间隔（分钟），默认60分钟
+        interval_minutes: 同步间隔（分钟），仅在 use_daily_schedule=False 时有效
+        use_daily_schedule: 是否使用每日定时同步（默认True，每天08:01同步一次）
     """
     def run_async_loop():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(scheduler_loop(interval_minutes))
+        if use_daily_schedule:
+            # 使用每日定时同步（默认08:01），避免账户锁定
+            loop.run_until_complete(scheduler_loop_daily(target_hour=8, target_minute=1))
+        else:
+            # 使用间隔同步（不推荐，可能导致账户锁定）
+            loop.run_until_complete(scheduler_loop(interval_minutes))
         loop.close()
 
     # 使用守护线程，确保主程序退出时线程也退出
     thread = threading.Thread(target=run_async_loop, daemon=True)
     thread.start()
-    logger.info("后台同步调度器线程已启动")
+    
+    if use_daily_schedule:
+        logger.info("✅ 后台每日定时同步调度器线程已启动（每天08:01北京时间执行）")
+    else:
+        logger.info(f"⚠️ 后台间隔同步调度器线程已启动（每{interval_minutes}分钟执行）")
+    
     return thread
