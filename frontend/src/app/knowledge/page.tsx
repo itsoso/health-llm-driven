@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
+// API_BASE 已经通过 next.config.js 的 rewrite 规则添加了 /v1
+const API_BASE = '/api';
 
 interface KnowledgeStats {
   available: boolean;
@@ -64,7 +65,7 @@ function KnowledgeManagement() {
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery<KnowledgeStats>({
     queryKey: ['knowledgeStats'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/v1/knowledge/stats`, {
+      const res = await fetch(`${API_BASE}/knowledge/stats`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       return res.json();
@@ -75,7 +76,7 @@ function KnowledgeManagement() {
   // 初始化基础知识
   const initBasicsMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/v1/knowledge/init/health-basics`, {
+      const res = await fetch(`${API_BASE}/knowledge/init/health-basics`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -94,7 +95,7 @@ function KnowledgeManagement() {
   // 添加文本
   const addTextMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/v1/knowledge/documents/text`, {
+      const res = await fetch(`${API_BASE}/knowledge/documents/text`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -132,7 +133,7 @@ function KnowledgeManagement() {
       formData.append('source', uploadSource || file.name);
       formData.append('category', uploadCategory);
 
-      const res = await fetch(`${API_BASE}/v1/knowledge/documents/upload`, {
+      const res = await fetch(`${API_BASE}/knowledge/documents/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -157,7 +158,7 @@ function KnowledgeManagement() {
   // 搜索
   const searchMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/v1/knowledge/search`, {
+      const res = await fetch(`${API_BASE}/knowledge/search`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -182,7 +183,7 @@ function KnowledgeManagement() {
   // RAG 问答
   const askMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/v1/knowledge/ask`, {
+      const res = await fetch(`${API_BASE}/knowledge/ask`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -211,7 +212,7 @@ function KnowledgeManagement() {
       if (!confirm('确定要清空整个知识库吗？此操作不可恢复！')) {
         throw new Error('已取消');
       }
-      const res = await fetch(`${API_BASE}/v1/knowledge/documents/all?confirm=true`, {
+      const res = await fetch(`${API_BASE}/knowledge/documents/all?confirm=true`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
