@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
 from app.models.user import User
 from app.models.basic_health import BasicHealthData
+from app.models.user_profile import UserProfile
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -48,11 +49,16 @@ class LLMHealthAnalyzer:
         db: Session,
         user_id: int
     ) -> Dict[str, Any]:
-        """构建用户上下文信息"""
+        """构建用户上下文信息（包含用户画像）"""
         user = db.query(User).filter(User.id == user_id).first()
         basic_health = db.query(BasicHealthData).filter(
             BasicHealthData.user_id == user_id
         ).order_by(BasicHealthData.record_date.desc()).first()
+        
+        # 获取用户画像
+        user_profile = db.query(UserProfile).filter(
+            UserProfile.user_id == user_id
+        ).first()
         
         context = {
             "name": user.name if user else "用户",
@@ -72,6 +78,53 @@ class LLMHealthAnalyzer:
                 "blood_pressure": f"{basic_health.systolic_bp}/{basic_health.diastolic_bp}" if basic_health.systolic_bp else None
             })
         
+        # 从用户画像中补充信息
+        if user_profile:
+            # 基本信息（如果没有从User获取到）
+            if not context.get("gender"):
+                context["gender"] = user_profile.gender
+            if not context.get("age") and user_profile.birth_date:
+                today = date.today()
+                context["age"] = today.year - user_profile.birth_date.year
+            if not context.get("height"):
+                context["height"] = user_profile.height_cm
+            if not context.get("weight"):
+                context["weight"] = user_profile.current_weight_kg
+            
+            # 健康目标
+            context["health_goals"] = {
+                "target_weight": user_profile.target_weight_kg,
+                "target_sleep_hours": user_profile.target_sleep_hours,
+                "target_steps": user_profile.target_steps,
+                "target_water_ml": user_profile.target_water_ml,
+                "target_exercise_minutes": user_profile.target_exercise_minutes
+            }
+            
+            # 健康状况
+            context["health_conditions"] = {
+                "chronic_conditions": user_profile.chronic_conditions or [],
+                "allergies": user_profile.allergies or [],
+                "current_medications": user_profile.current_medications or []
+            }
+            
+            # 生活习惯
+            context["lifestyle"] = {
+                "exercise_frequency": user_profile.exercise_frequency,
+                "diet_preference": user_profile.diet_preference,
+                "smoking_status": user_profile.smoking_status,
+                "alcohol_consumption": user_profile.alcohol_consumption,
+                "usual_sleep_time": user_profile.usual_sleep_time,
+                "usual_wake_time": user_profile.usual_wake_time
+            }
+            
+            # 工作环境
+            context["work_environment"] = {
+                "work_type": user_profile.work_type,
+                "work_hours_per_day": user_profile.work_hours_per_day,
+                "sitting_hours_per_day": user_profile.sitting_hours_per_day,
+                "city": user_profile.city
+            }
+        
         return context
     
     def _build_health_data_prompt(
@@ -83,7 +136,7 @@ class LLMHealthAnalyzer:
     ) -> str:
         """构建健康数据分析提示词"""
         
-        # 构建用户信息部分
+        # 构建用户基本信息
         user_info = f"""
 用户信息:
 - 姓名: {user_context.get('name', '未知')}
@@ -94,6 +147,86 @@ class LLMHealthAnalyzer:
 - BMI: {user_context.get('bmi', '未知')}
 - 血压: {user_context.get('blood_pressure', '未知')}
 """
+        
+        # 添加健康目标（如果有）
+        health_goals = user_context.get('health_goals', {})
+        if health_goals and any(v for v in health_goals.values() if v is not None):
+            user_info += f"""
+健康目标:
+- 目标体重: {health_goals.get('target_weight') or '未设置'}kg
+- 目标睡眠: {health_goals.get('target_sleep_hours') or '未设置'}小时
+- 目标步数: {health_goals.get('target_steps') or '未设置'}步
+- 目标饮水: {health_goals.get('target_water_ml') or '未设置'}ml
+- 目标运动时长: {health_goals.get('target_exercise_minutes') or '未设置'}分钟
+"""
+        
+        # 添加健康状况（如果有）
+        health_conditions = user_context.get('health_conditions', {})
+        chronic_conditions = health_conditions.get('chronic_conditions', [])
+        allergies = health_conditions.get('allergies', [])
+        medications = health_conditions.get('current_medications', [])
+        
+        if chronic_conditions or allergies or medications:
+            user_info += "\n健康状况:"
+            if chronic_conditions:
+                user_info += f"\n- 慢性病: {', '.join(chronic_conditions)}"
+            if allergies:
+                user_info += f"\n- 过敏: {', '.join(allergies)}"
+            if medications:
+                user_info += f"\n- 正在服用药物: {', '.join(medications)}"
+        
+        # 添加生活习惯（如果有）
+        lifestyle = user_context.get('lifestyle', {})
+        if lifestyle and any(v for v in lifestyle.values() if v is not None):
+            lifestyle_map = {
+                'sedentary': '久坐不动',
+                'light': '轻度活动',
+                'moderate': '中度活动', 
+                'active': '活跃',
+                'very_active': '非常活跃',
+                'vegetarian': '素食',
+                'vegan': '纯素食',
+                'keto': '生酮饮食',
+                'paleo': '原始饮食',
+                'omnivore': '杂食',
+                'never': '从不',
+                'former': '曾经',
+                'current': '目前',
+                'social': '社交场合',
+                'moderate': '适度',
+                'heavy': '大量'
+            }
+            user_info += "\n生活习惯:"
+            if lifestyle.get('exercise_frequency'):
+                user_info += f"\n- 运动频率: {lifestyle_map.get(lifestyle['exercise_frequency'], lifestyle['exercise_frequency'])}"
+            if lifestyle.get('diet_preference'):
+                user_info += f"\n- 饮食偏好: {lifestyle_map.get(lifestyle['diet_preference'], lifestyle['diet_preference'])}"
+            if lifestyle.get('smoking_status'):
+                user_info += f"\n- 吸烟状态: {lifestyle_map.get(lifestyle['smoking_status'], lifestyle['smoking_status'])}"
+            if lifestyle.get('alcohol_consumption'):
+                user_info += f"\n- 饮酒习惯: {lifestyle_map.get(lifestyle['alcohol_consumption'], lifestyle['alcohol_consumption'])}"
+            if lifestyle.get('usual_sleep_time'):
+                user_info += f"\n- 通常入睡时间: {lifestyle['usual_sleep_time']}"
+            if lifestyle.get('usual_wake_time'):
+                user_info += f"\n- 通常起床时间: {lifestyle['usual_wake_time']}"
+        
+        # 添加工作环境（如果有）
+        work_env = user_context.get('work_environment', {})
+        if work_env and any(v for v in work_env.values() if v is not None):
+            work_type_map = {
+                'office': '办公室工作',
+                'manual': '体力劳动',
+                'hybrid': '混合工作'
+            }
+            user_info += "\n工作环境:"
+            if work_env.get('work_type'):
+                user_info += f"\n- 工作类型: {work_type_map.get(work_env['work_type'], work_env['work_type'])}"
+            if work_env.get('work_hours_per_day'):
+                user_info += f"\n- 每日工作时长: {work_env['work_hours_per_day']}小时"
+            if work_env.get('sitting_hours_per_day'):
+                user_info += f"\n- 每日久坐时长: {work_env['sitting_hours_per_day']}小时"
+            if work_env.get('city'):
+                user_info += f"\n- 所在城市: {work_env['city']}"
         
         # 构建昨日数据部分
         yesterday_info = f"""
@@ -194,27 +327,30 @@ class LLMHealthAnalyzer:
             )
             
             system_prompt = """你是一位专业的健康顾问和运动生理学专家。
-你需要基于用户的可穿戴设备数据，提供科学、个性化的健康建议。
+你需要基于用户的可穿戴设备数据和个人画像，提供科学、高度个性化的健康建议。
 
 分析原则:
-1. 结合用户的个人信息（年龄、性别、BMI等）给出针对性建议
-2. 关注数据趋势，不仅看单日数据
-3. 建议要具体、可执行，避免泛泛而谈
-4. 如果发现异常数据，要提醒用户关注
-5. 保持积极鼓励的语气，同时客观指出需要改进的地方
+1. 【个性化优先】深度结合用户画像信息（健康目标、慢性病、生活习惯、工作环境等），给出真正针对TA个人情况的建议
+2. 【目标导向】如果用户设定了健康目标（如目标体重、步数等），建议应围绕帮助达成这些目标
+3. 【慢性病关注】如果用户有慢性病（如鼻炎、咽炎等），建议应考虑这些疾病的管理和预防
+4. 【工作适配】根据用户的工作类型和久坐时长，给出切实可行的运动建议
+5. 【生活习惯】考虑用户的作息习惯、饮食偏好，让建议更容易被接受和执行
+6. 【数据趋势】关注数据变化趋势，不仅看单日数据
+7. 【具体可行】建议要具体、可执行，包含时间、数量等具体指标
+8. 【积极鼓励】保持积极鼓励的语气，同时客观指出需要改进的地方
 
 请用JSON格式返回分析结果，包含以下字段:
 {
-    "health_summary": "一段话总结用户当前的健康状况（100字以内）",
-    "key_insights": ["关键洞察1", "关键洞察2", "关键洞察3"],
-    "sleep_advice": "针对睡眠的具体建议（基于数据分析）",
-    "activity_advice": "针对运动活动的具体建议",
+    "health_summary": "一段话总结用户当前的健康状况，结合TA的健康目标进行评估（100字以内）",
+    "key_insights": ["基于用户个人情况的关键洞察1", "关键洞察2", "关键洞察3"],
+    "sleep_advice": "针对睡眠的具体建议，考虑用户的作息习惯和工作情况",
+    "activity_advice": "针对运动活动的具体建议，结合用户的目标步数、运动频率和工作类型",
     "heart_health_advice": "针对心率/心血管的建议",
-    "recovery_advice": "针对恢复和压力管理的建议",
-    "today_focus": "今天最应该关注的一件事",
-    "today_actions": ["今天要做的具体行动1", "今天要做的具体行动2", "今天要做的具体行动3"],
-    "warnings": ["需要注意的健康风险（如果有）"],
-    "encouragement": "一句鼓励的话"
+    "recovery_advice": "针对恢复和压力管理的建议，考虑用户的工作强度",
+    "today_focus": "今天最应该关注的一件事（与用户目标相关）",
+    "today_actions": ["今天要做的具体行动1（包含时间和数量）", "行动2", "行动3"],
+    "warnings": ["需要注意的健康风险，特别关注用户的慢性病情况"],
+    "encouragement": "一句针对用户当前状态的鼓励话语"
 }
 
 注意：只返回JSON，不要有其他文字。"""
