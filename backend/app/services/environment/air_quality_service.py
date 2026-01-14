@@ -102,7 +102,7 @@ class AirQualityService:
         数据来源: 各地环保厅官方监测站
         """
         async with httpx.AsyncClient() as client:
-            # 优先使用城市名查询
+            # 城市名到 aqicn ID 的映射
             city_mapping = {
                 "杭州": "hangzhou",
                 "北京": "beijing",
@@ -114,9 +114,28 @@ class AirQualityService:
                 "武汉": "wuhan",
                 "西安": "xian",
                 "重庆": "chongqing",
+                "苏州": "suzhou",
+                "天津": "tianjin",
+                "郑州": "zhengzhou",
+                "长沙": "changsha",
+                "青岛": "qingdao",
+                "厦门": "xiamen",
+                "宁波": "ningbo",
+                "无锡": "wuxi",
+                "合肥": "hefei",
+                "福州": "fuzhou",
             }
             
-            query = city_mapping.get(city, f"geo:{lat};{lon}")
+            # 优先使用城市名查询，否则使用经纬度
+            if city and city in city_mapping:
+                query = city_mapping[city]
+            elif lat and lon:
+                query = f"geo:{lat};{lon}"
+            else:
+                # 默认使用杭州
+                query = "hangzhou"
+            
+            logger.info(f"aqicn.org 查询: city={city}, query={query}")
             url = f"{self.AQICN_URL}/{query}/?token={self.AQICN_TOKEN}"
             
             response = await client.get(url, timeout=10)
