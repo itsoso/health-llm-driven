@@ -90,6 +90,7 @@ export default function AdminPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [syncDays, setSyncDays] = useState(3);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncingUserId, setSyncingUserId] = useState<number | null>(null); // 追踪当前正在同步的用户
   const pageSize = 15;
 
   // 权限检查
@@ -200,11 +201,16 @@ export default function AdminPage() {
   // 同步单个用户
   const syncUserMutation = useMutation({
     mutationFn: async ({ userId, days }: { userId: number; days: number }) => {
+      setSyncingUserId(userId); // 开始同步时设置正在同步的用户ID
       const res = await api.post(`/admin/garmin/sync-user/${userId}?days=${days}`);
       return res.data;
     },
     onSuccess: () => {
+      setSyncingUserId(null); // 成功后清除
       queryClient.invalidateQueries({ queryKey: ['admin-garmin-sync-status'] });
+    },
+    onError: () => {
+      setSyncingUserId(null); // 失败后也清除
     },
   });
 
@@ -767,11 +773,11 @@ export default function AdminPage() {
                               {/* 立即同步按钮 */}
                               <button
                                 onClick={() => syncUserMutation.mutate({ userId: gu.user_id, days: syncDays })}
-                                disabled={syncUserMutation.isPending || !gu.credentials_valid}
+                                disabled={syncingUserId !== null || !gu.credentials_valid}
                                 className="px-2 py-1 bg-blue-600/80 text-white text-xs rounded hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 title={gu.credentials_valid ? "立即同步数据" : "凭证失效，无法同步"}
                               >
-                                {syncUserMutation.isPending ? '...' : '同步'}
+                                {syncingUserId === gu.user_id ? '同步中...' : '同步'}
                               </button>
                               
                               {/* 重置凭证按钮 */}
