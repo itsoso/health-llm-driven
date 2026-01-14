@@ -71,15 +71,15 @@
       }
 
       .stat-value {
-        font-size: 20px;
+        font-size: 28px;
         font-weight: bold;
         display: block;
         margin-bottom: 4px;
       }
 
       .stat-label {
-        font-size: 11px;
-        color: #888;
+        font-size: 14px;
+        color: #666;
       }
     }
   }
@@ -361,28 +361,30 @@
 
   .records-section {
     .section-title {
-      font-size: 16px;
+      font-size: 18px;
       font-weight: bold;
       color: #333;
-      margin-bottom: 12px;
-      display: block;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .loading, .empty {
       background: white;
       border-radius: 16px;
-      padding: 40px 20px;
+      padding: 48px 24px;
       text-align: center;
       color: #888;
 
       .empty-icon {
-        font-size: 48px;
+        font-size: 56px;
         display: block;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
       }
 
       .empty-text {
-        font-size: 14px;
+        font-size: 16px;
       }
     }
 
@@ -403,13 +405,14 @@
         .meal-tag {
           background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
           color: white;
-          padding: 4px 12px;
+          padding: 6px 14px;
           border-radius: 12px;
-          font-size: 12px;
+          font-size: 15px;
+          font-weight: 500;
         }
 
         .record-calories {
-          font-size: 14px;
+          font-size: 18px;
           font-weight: bold;
           color: #ff7e5f;
         }
@@ -417,33 +420,35 @@
         .ai-tag {
           background: #eff6ff;
           color: #2563eb;
-          padding: 2px 8px;
+          padding: 4px 10px;
           border-radius: 8px;
-          font-size: 11px;
+          font-size: 13px;
         }
       }
 
       .record-foods {
-        font-size: 14px;
+        font-size: 17px;
         color: #333;
-        line-height: 1.5;
-        margin-bottom: 8px;
+        line-height: 1.6;
+        margin-bottom: 10px;
+        font-weight: 500;
       }
 
       .record-nutrition {
         display: flex;
-        gap: 12px;
-        font-size: 12px;
-        color: #888;
+        gap: 16px;
+        font-size: 14px;
+        color: #666;
       }
 
       .record-tips {
-        margin-top: 10px;
-        padding: 8px;
+        margin-top: 12px;
+        padding: 10px 12px;
         background: #eff6ff;
-        border-radius: 8px;
-        font-size: 12px;
+        border-radius: 10px;
+        font-size: 14px;
         color: #2563eb;
+        line-height: 1.5;
       }
 
       .record-delete {
