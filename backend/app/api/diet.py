@@ -403,7 +403,11 @@ async def recognize_and_save_diet(
             )
         
         # 组合食物名称
+        food_names = [f.get("name", "") for f in foods if f.get("name")]
         food_items = ", ".join([f.get("name", "") + (f" ({f.get('quantity', '')})" if f.get('quantity') else "") for f in foods])
+        
+        # 取第一个食物名称作为主名称（兼容旧字段）
+        primary_food_name = food_names[0] if food_names else "AI识别食物"
         
         # 计算平均置信度
         confidences = [f.get("confidence", 0) for f in foods if f.get("confidence")]
@@ -414,6 +418,7 @@ async def recognize_and_save_diet(
             user_id=current_user.id,
             record_date=request.record_date,
             meal_type=request.meal_type.value,
+            food_name=primary_food_name,  # 必填字段
             food_items=food_items,
             calories=result.get("total_calories"),
             protein=result.get("total_protein"),
