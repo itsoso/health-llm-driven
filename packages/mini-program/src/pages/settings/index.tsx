@@ -172,8 +172,19 @@ export default function Settings() {
         </View>
       </View>
 
-      {/* 功能列表 */}
+      {/* 个人资料 - 重要入口放在最前面 */}
+      <View className="menu-section profile-section">
+        <View className="menu-item highlight" onClick={() => Taro.navigateTo({ url: '/pages/profile/index' })}>
+          <Text className="menu-icon">👤</Text>
+          <Text className="menu-text">个人资料</Text>
+          <Text className="menu-desc">完善资料，获得更精准的AI建议</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
+      </View>
+
+      {/* 设备绑定 */}
       <View className="menu-section">
+        <Text className="section-label">设备绑定</Text>
         <View className="menu-item" onClick={handleGoToGarmin}>
           <Text className="menu-icon">⌚</Text>
           <Text className="menu-text">Garmin 绑定</Text>
@@ -191,7 +202,11 @@ export default function Settings() {
           </Text>
           <Text className="menu-arrow">›</Text>
         </View>
-        
+      </View>
+
+      {/* 功能列表 */}
+      <View className="menu-section">
+        <Text className="section-label">健康功能</Text>
         <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/dashboard/index' })}>
           <Text className="menu-icon">📊</Text>
           <Text className="menu-text">健康数据</Text>
@@ -207,6 +222,12 @@ export default function Settings() {
         <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/workout/index' })}>
           <Text className="menu-icon">🏃</Text>
           <Text className="menu-text">运动记录</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
+
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/diet/index' })}>
+          <Text className="menu-icon">🍽️</Text>
+          <Text className="menu-text">饮食记录</Text>
           <Text className="menu-arrow">›</Text>
         </View>
       </View>

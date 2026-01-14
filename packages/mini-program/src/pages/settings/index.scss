@@ -63,14 +63,49 @@
   &.admin-section {
     border: 2px solid #f59e0b;
   }
+
+  &.profile-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    
+    .menu-item.highlight {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 28px;
+      
+      .menu-icon {
+        font-size: 48px;
+        margin-bottom: 12px;
+      }
+      
+      .menu-text {
+        color: #ffffff;
+        font-size: 34px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      
+      .menu-desc {
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 26px;
+      }
+      
+      .menu-arrow {
+        position: absolute;
+        right: 24px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(255, 255, 255, 0.8);
+      }
+    }
+  }
 }
 
 .section-label {
   display: block;
-  padding: 16px 24px 0;
-  font-size: 24px;
-  color: #f59e0b;
-  font-weight: 600;
+  padding: 20px 24px 8px;
+  font-size: 26px;
+  color: #6b7280;
+  font-weight: 500;
 }
 
 .menu-item {
@@ -79,6 +114,7 @@
   padding: 32px 24px;
   border-bottom: 1px solid #f3f4f6;
   transition: background-color 0.2s ease;
+  position: relative;
 
   &:active {
     background-color: #f9fafb;
