@@ -20,16 +20,24 @@ class AirQualityService:
     - 实时 AQI 查询
     - PM2.5、PM10 等污染物数据
     - 健康建议生成
+    
+    数据源优先级:
+    1. aqicn.org (官方监测站数据，更准确)
+    2. Open-Meteo (全球模型估算，作为备用)
     """
     
-    # Open-Meteo Air Quality API (免费)
+    # aqicn.org API (免费，使用官方监测站数据)
+    AQICN_URL = "https://api.waqi.info/feed"
+    AQICN_TOKEN = "demo"  # 免费 token，可申请专用 token: https://aqicn.org/data-platform/token/
+    
+    # Open-Meteo Air Quality API (免费，作为备用)
     OPENMETEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
     
     def __init__(self):
         self._cache: Dict[str, Any] = {}
         self._cache_time: Dict[str, datetime] = {}
-        self._cache_duration = timedelta(minutes=60)  # 缓存1小时
-        logger.info("空气质量服务初始化完成")
+        self._cache_duration = timedelta(minutes=30)  # 缓存30分钟
+        logger.info("空气质量服务初始化完成 (优先使用 aqicn.org 官方数据)")
     
     def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
         """获取缓存"""
@@ -52,6 +60,8 @@ class AirQualityService:
         """
         获取当前空气质量
         
+        优先使用 aqicn.org (官方监测站数据)，失败时回退到 Open-Meteo
+        
         Args:
             city: 城市名称
             lat, lon: 经纬度
@@ -62,11 +72,21 @@ class AirQualityService:
         if lat is None or lon is None:
             lat, lon = self._city_to_coords(city)
         
-        cache_key = f"aqi_{lat},{lon}"
+        cache_key = f"aqi_{city or f'{lat},{lon}'}"
         cached = self._get_cache(cache_key)
         if cached:
             return cached
         
+        # 优先使用 aqicn.org (官方监测站数据)
+        try:
+            result = await self._get_aqicn_aqi(city, lat, lon)
+            if result.get("available"):
+                self._set_cache(cache_key, result)
+                return result
+        except Exception as e:
+            logger.warning(f"aqicn.org 获取失败: {e}，尝试 Open-Meteo")
+        
+        # 回退到 Open-Meteo
         try:
             result = await self._get_openmeteo_aqi(lat, lon)
             self._set_cache(cache_key, result)
@@ -74,6 +94,73 @@ class AirQualityService:
         except Exception as e:
             logger.error(f"获取空气质量数据失败: {e}")
             return self._get_default_aqi()
+    
+    async def _get_aqicn_aqi(self, city: str, lat: float, lon: float) -> Dict[str, Any]:
+        """
+        使用 aqicn.org API 获取空气质量 (官方监测站数据)
+        
+        数据来源: 各地环保厅官方监测站
+        """
+        async with httpx.AsyncClient() as client:
+            # 优先使用城市名查询
+            city_mapping = {
+                "杭州": "hangzhou",
+                "北京": "beijing",
+                "上海": "shanghai",
+                "广州": "guangzhou",
+                "深圳": "shenzhen",
+                "南京": "nanjing",
+                "成都": "chengdu",
+                "武汉": "wuhan",
+                "西安": "xian",
+                "重庆": "chongqing",
+            }
+            
+            query = city_mapping.get(city, f"geo:{lat};{lon}")
+            url = f"{self.AQICN_URL}/{query}/?token={self.AQICN_TOKEN}"
+            
+            response = await client.get(url, timeout=10)
+            data = response.json()
+            
+            if data.get("status") != "ok":
+                logger.warning(f"aqicn.org 返回错误: {data}")
+                return {"available": False}
+            
+            aqi_data = data.get("data", {})
+            aqi = aqi_data.get("aqi", 0)
+            
+            # 解析各项污染物
+            iaqi = aqi_data.get("iaqi", {})
+            pm25 = iaqi.get("pm25", {}).get("v", 0)
+            pm10 = iaqi.get("pm10", {}).get("v", 0)
+            co = iaqi.get("co", {}).get("v", 0)
+            no2 = iaqi.get("no2", {}).get("v", 0)
+            so2 = iaqi.get("so2", {}).get("v", 0)
+            o3 = iaqi.get("o3", {}).get("v", 0)
+            
+            # 获取监测站信息
+            city_info = aqi_data.get("city", {})
+            station_name = city_info.get("name", "")
+            
+            logger.info(f"aqicn.org 数据: {station_name}, AQI={aqi}, PM2.5={pm25}")
+            
+            return {
+                "available": True,
+                "source": "aqicn.org",
+                "station": station_name,
+                "aqi": int(aqi) if aqi else 0,
+                "aqi_level": self._aqi_to_level(int(aqi) if aqi else 0),
+                "aqi_description": self._aqi_to_description(int(aqi) if aqi else 0),
+                "pm25": pm25,
+                "pm10": pm10,
+                "co": co,
+                "no2": no2,
+                "so2": so2,
+                "o3": o3,
+                "update_time": aqi_data.get("time", {}).get("s", ""),
+                "health_implications": self._get_health_implications(int(aqi) if aqi else 0),
+                "exercise_advice": self._get_exercise_advice(int(aqi) if aqi else 0)
+            }
     
     async def _get_openmeteo_aqi(self, lat: float, lon: float) -> Dict[str, Any]:
         """使用 Open-Meteo API 获取空气质量"""
