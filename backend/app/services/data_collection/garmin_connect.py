@@ -834,6 +834,36 @@ class GarminConnectService:
             logger.error(f"{prefix} 获取呼吸数据失败: {str(e)}")
             return None
     
+    def get_max_metrics(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """
+        获取最大摄氧量(VO2Max)和健身年龄等指标
+        
+        Args:
+            target_date: 目标日期
+            
+        Returns:
+            最大指标数据字典，包含 vo2MaxRunning, vo2MaxCycling, fitnessAge 等
+        """
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            max_metrics = self.client.get_max_metrics(target_date.isoformat())
+            if max_metrics:
+                logger.info(f"{prefix} 获取 {target_date} 的最大摄氧量数据成功，类型: {type(max_metrics).__name__}")
+                if isinstance(max_metrics, dict):
+                    # 记录关键字段
+                    vo2max = max_metrics.get('generic', {}).get('vo2MaxPreciseValue') or max_metrics.get('vo2MaxValue')
+                    fitness_age = max_metrics.get('generic', {}).get('fitnessAge')
+                    logger.info(f"{prefix} VO2Max={vo2max}, 健身年龄={fitness_age}")
+            else:
+                logger.debug(f"{prefix} 获取 {target_date} 的最大摄氧量数据为空")
+            return max_metrics
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.error(f"{prefix} 获取最大摄氧量数据失败: {str(e)}")
+            return None
+    
     def get_stress_data(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
         获取压力数据
@@ -942,6 +972,13 @@ class GarminConnectService:
                 logger.debug(f"从get_respiration_data获取的是列表，长度: {len(resp_data)}")
             elif isinstance(resp_data, dict):
                 logger.debug(f"从get_respiration_data获取的数据键: {list(resp_data.keys())[:20]}")
+        
+        # 获取最大摄氧量和健康年龄数据
+        max_metrics = self.get_max_metrics(target_date)
+        if max_metrics:
+            result['max_metrics'] = max_metrics
+            if isinstance(max_metrics, dict):
+                logger.info(f"从get_max_metrics获取的数据键: {list(max_metrics.keys())}")
         
         return result
     
@@ -1650,12 +1687,38 @@ class GarminConnectService:
             if spo2_avg:
                 logger.info(f"从summary获取血氧数据: avg={spo2_avg}, min={spo2_min}, max={spo2_max}")
         
-        # VO2 Max
+        # VO2 Max - 优先从 max_metrics 获取
         vo2max_run = None
         vo2max_cycle = None
-        if isinstance(summary, dict):
+        max_metrics = raw_data.get('max_metrics')
+        if isinstance(max_metrics, dict):
+            # max_metrics 结构可能是: {generic: {vo2MaxPreciseValue, fitnessAge}, running: {...}, cycling: {...}}
+            generic = max_metrics.get('generic', {})
+            running = max_metrics.get('running', {})
+            cycling = max_metrics.get('cycling', {})
+            
+            # 尝试多种可能的字段名
+            vo2max_run = (
+                generic.get('vo2MaxPreciseValue') or 
+                generic.get('vo2MaxValue') or 
+                running.get('vo2MaxPreciseValue') or
+                running.get('vo2MaxValue') or
+                max_metrics.get('vo2MaxPreciseValue') or
+                max_metrics.get('vo2MaxValue')
+            )
+            vo2max_cycle = (
+                cycling.get('vo2MaxPreciseValue') or
+                cycling.get('vo2MaxValue')
+            )
+            if vo2max_run:
+                logger.info(f"从max_metrics获取VO2Max: running={vo2max_run}, cycling={vo2max_cycle}")
+        
+        # 如果 max_metrics 没有，回退到 summary
+        if vo2max_run is None and isinstance(summary, dict):
             vo2max_run = summary.get('vo2MaxRunning') or summary.get('vo2Max')
             vo2max_cycle = summary.get('vo2MaxCycling')
+            if vo2max_run:
+                logger.info(f"从summary获取VO2Max: running={vo2max_run}, cycling={vo2max_cycle}")
         
         # 楼层和距离（如果之前没有从活动数据获取到，再从summary获取）
         floors_goal_val = None
