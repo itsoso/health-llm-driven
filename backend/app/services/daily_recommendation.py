@@ -79,22 +79,39 @@ class DailyRecommendationService:
         db: Session,
         user_id: int
     ) -> Optional[Dict[str, Any]]:
-        """同步方式获取环境数据"""
+        """同步方式获取环境数据（修复异步事件循环问题）"""
+        if not ENVIRONMENT_AVAILABLE:
+            return None
+        
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 如果已经在异步循环中，创建新的任务
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        self.get_environment_data(db, user_id)
+            # 获取用户画像中的城市
+            profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+            city = profile.city if profile and profile.city else "北京"
+            user_conditions = profile.chronic_conditions if profile else []
+            
+            # 使用新的事件循环运行异步函数
+            def run_async():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(
+                        environment_advisor.get_comprehensive_advice(
+                            city=city,
+                            user_conditions=user_conditions
+                        )
                     )
-                    return future.result(timeout=10)
-            else:
-                return loop.run_until_complete(self.get_environment_data(db, user_id))
+                finally:
+                    loop.close()
+            
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_async)
+                result = future.result(timeout=15)
+                logger.info(f"获取环境数据成功 - 城市: {city}, 用户: {user_id}")
+                return result
+                
         except Exception as e:
-            logger.error(f"同步获取环境数据失败: {e}")
+            logger.error(f"同步获取环境数据失败: {e}", exc_info=True)
             return None
     
     def get_latest_data(
