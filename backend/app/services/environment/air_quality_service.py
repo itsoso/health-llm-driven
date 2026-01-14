@@ -26,9 +26,10 @@ class AirQualityService:
     2. Open-Meteo (全球模型估算，作为备用)
     """
     
-    # aqicn.org API (免费，使用官方监测站数据)
+    # aqicn.org API 
+    # 注意: demo token 有限制，建议申请正式 token: https://aqicn.org/data-platform/token/
     AQICN_URL = "https://api.waqi.info/feed"
-    AQICN_TOKEN = "demo"  # 免费 token，可申请专用 token: https://aqicn.org/data-platform/token/
+    AQICN_TOKEN = "demo"  # demo token 有限制，可能只返回上海数据
     
     # Open-Meteo Air Quality API (免费，作为备用)
     OPENMETEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -162,6 +163,11 @@ class AirQualityService:
             station_name = city_info.get("name", "")
             
             logger.info(f"aqicn.org 数据: {station_name}, AQI={aqi}, PM2.5={pm25}")
+            
+            # 检查返回的城市是否与请求的城市匹配 (demo token 可能返回错误城市)
+            if city and city != "上海" and "Shanghai" in station_name:
+                logger.warning(f"aqicn.org demo token 限制: 请求 {city} 但返回上海数据，将使用 Open-Meteo")
+                return {"available": False, "reason": "demo_token_limit"}
             
             return {
                 "available": True,
