@@ -23,13 +23,14 @@ except ImportError:
     RAG_AVAILABLE = False
     logger.warning("RAG Pipeline 未导入，知识库增强功能将不可用")
 
-# 尝试导入环境服务
+# 尝试导入环境服务 (直接从子模块导入，避免 app.services 包的循环依赖)
 try:
-    from app.services.environment import environment_advisor
+    from app.services.environment.environment_advisor import environment_advisor
     ENVIRONMENT_AVAILABLE = True
-except ImportError:
+    logger.info("✅ 环境服务已成功导入")
+except ImportError as e:
     ENVIRONMENT_AVAILABLE = False
-    logger.warning("环境服务未导入，环境建议功能将不可用")
+    logger.warning(f"环境服务未导入，环境建议功能将不可用: {e}")
 
 
 class DailyRecommendationService:
@@ -584,9 +585,12 @@ class DailyRecommendationService:
         
         # 获取环境数据
         environment_data = None
+        logger.info(f"[环境数据] ENVIRONMENT_AVAILABLE={ENVIRONMENT_AVAILABLE}, 用户: {user_id}")
         if ENVIRONMENT_AVAILABLE:
             try:
+                logger.info(f"[环境数据] 开始获取环境数据，用户: {user_id}")
                 environment_data = self.get_environment_data_sync(db, user_id)
+                logger.info(f"[环境数据] 获取结果: {'成功' if environment_data else '无数据'}")
                 if environment_data:
                     rule_result["environment"] = {
                         "weather": environment_data.get("weather", {}),
@@ -595,9 +599,11 @@ class DailyRecommendationService:
                         "advices": environment_data.get("advices", []),
                         "warnings": environment_data.get("warnings", [])
                     }
-                    logger.info(f"环境数据已添加到建议中，用户: {user_id}")
+                    logger.info(f"[环境数据] 已添加到建议中，温度: {environment_data.get('weather', {}).get('temperature')}°C, AQI: {environment_data.get('air_quality', {}).get('aqi')}")
             except Exception as e:
-                logger.error(f"获取环境数据时出错: {e}")
+                logger.error(f"[环境数据] 获取失败: {e}", exc_info=True)
+        else:
+            logger.warning(f"[环境数据] 环境服务不可用，跳过环境数据获取")
         
         # 执行LLM分析（传入环境数据）
         llm_result = llm_analyzer.analyze_daily_health(
