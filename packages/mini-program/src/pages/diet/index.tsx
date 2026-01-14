@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Taro from '@tarojs/taro';
 import { View, Text, Image, ScrollView, Input, Picker } from '@tarojs/components';
-import { request } from '../../utils/request';
+import { request } from '../../services/request';
 import { API_ENDPOINTS } from '@health-shared/api';
 import './index.scss';
 
