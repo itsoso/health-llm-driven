@@ -607,13 +607,35 @@ function MedicalExamsContent() {
       formData.append('file', file);
       const res = await fetch(`${API_BASE}/medical-exams/parse-pdf-preview`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
+      
+      // 获取响应文本
+      const responseText = await res.text();
+      
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.detail || '解析失败');
+        // 尝试解析JSON错误
+        try {
+          const error = JSON.parse(responseText);
+          throw new Error(error.detail || '解析失败');
+        } catch (e) {
+          // 如果不是JSON，显示状态码和部分响应
+          if (responseText.startsWith('<')) {
+            throw new Error(`服务器返回错误 (${res.status})，请稍后重试`);
+          }
+          throw new Error(responseText.slice(0, 200) || `解析失败 (${res.status})`);
+        }
       }
-      return res.json();
+      
+      // 解析成功的响应
+      try {
+        return JSON.parse(responseText);
+      } catch (e) {
+        throw new Error('服务器返回格式错误');
+      }
     },
     onSuccess: (data) => {
       setPdfPreview(data);
@@ -632,13 +654,33 @@ function MedicalExamsContent() {
       formData.append('file', file);
       const res = await fetch(`${API_BASE}/medical-exams/import/pdf?user_id=${userId}`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
+      
+      // 获取响应文本
+      const responseText = await res.text();
+      
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.detail || '导入失败');
+        // 尝试解析JSON错误
+        try {
+          const error = JSON.parse(responseText);
+          throw new Error(error.detail || '导入失败');
+        } catch (e) {
+          if (responseText.startsWith('<')) {
+            throw new Error(`服务器返回错误 (${res.status})，请稍后重试`);
+          }
+          throw new Error(responseText.slice(0, 200) || `导入失败 (${res.status})`);
+        }
       }
-      return res.json();
+      
+      try {
+        return JSON.parse(responseText);
+      } catch (e) {
+        throw new Error('服务器返回格式错误');
+      }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['medical-exams'] });
@@ -649,6 +691,7 @@ function MedicalExamsContent() {
       alert(`✅ PDF导入成功！已解析 ${data.items_count} 个检查项目`);
     },
     onError: (error: any) => {
+      setUploadProgress('');
       alert(`❌ PDF导入失败: ${error.message}`);
     },
   });
