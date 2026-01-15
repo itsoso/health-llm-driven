@@ -38,6 +38,7 @@ interface DietRecord {
   ai_recognized?: number;
   health_tips?: string;
   notes?: string;
+  image_url?: string;  // 食物图片URL
 }
 
 interface DailySummary {
@@ -480,6 +481,12 @@ export default function DietPage() {
           ) : (
             dailySummary.meals.map(meal => {
               const mealInfo = getMealInfo(meal.meal_type);
+              // 构建完整的图片URL
+              const fullImageUrl = meal.image_url 
+                ? (meal.image_url.startsWith('http') 
+                    ? meal.image_url 
+                    : `https://health.westwetlandtech.com${meal.image_url}`)
+                : null;
               return (
                 <View key={meal.id} className="record-card">
                   <View className="record-header">
@@ -493,6 +500,22 @@ export default function DietPage() {
                       <Text className="ai-tag">🤖 AI</Text>
                     )}
                   </View>
+                  {/* 显示食物图片 */}
+                  {fullImageUrl && (
+                    <View className="record-image-wrap">
+                      <Image 
+                        src={fullImageUrl} 
+                        mode="aspectFill" 
+                        className="record-image"
+                        onClick={() => {
+                          Taro.previewImage({
+                            current: fullImageUrl,
+                            urls: [fullImageUrl]
+                          });
+                        }}
+                      />
+                    </View>
+                  )}
                   <Text className="record-foods">{meal.food_items}</Text>
                   <View className="record-nutrition">
                     {meal.protein && <Text>蛋白质: {meal.protein}g</Text>}
