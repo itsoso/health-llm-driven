@@ -67,6 +67,7 @@ export default function DietPage() {
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);  // 文字分析loading
   const [formData, setFormData] = useState({
     food_items: '',
     calories: '',
@@ -204,6 +205,46 @@ export default function DietPage() {
       Taro.showToast({ title: error.message || '保存失败', icon: 'none' });
     } finally {
       setIsRecognizing(false);
+    }
+  };
+
+  // 文字智能分析营养
+  const handleTextAnalyze = async () => {
+    const text = formData.food_items.trim();
+    if (!text) {
+      Taro.showToast({ title: '请先输入食物内容', icon: 'none' });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const result = await request<RecognitionResult>({
+        url: `/diet/estimate-nutrition?food_description=${encodeURIComponent(text)}`,
+        method: 'POST',
+      });
+
+      if (result.success && result.foods?.length > 0) {
+        // 自动填充营养数据
+        setFormData(prev => ({
+          ...prev,
+          calories: result.total_calories?.toString() || prev.calories,
+          protein: result.total_protein?.toFixed(1) || prev.protein,
+          carbs: result.total_carbs?.toFixed(1) || prev.carbs,
+          fat: result.total_fat?.toFixed(1) || prev.fat,
+          notes: result.health_tips || prev.notes,
+        }));
+
+        // 显示识别结果
+        setRecognitionResult(result);
+        Taro.showToast({ title: '分析成功！', icon: 'success' });
+      } else {
+        Taro.showToast({ title: result.error || '分析失败', icon: 'none' });
+      }
+    } catch (error: any) {
+      console.error('文字分析失败:', error);
+      Taro.showToast({ title: '分析失败，请重试', icon: 'none' });
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -347,32 +388,53 @@ export default function DietPage() {
               ))}
             </View>
 
-            {/* 图片区域 */}
-            <View className="image-section">
-              {imagePreview ? (
-                <View className="image-preview-wrap">
-                  <Image
-                    src={imagePreview}
-                    mode="aspectFill"
-                    className="image-preview"
-                  />
-                  <View className="image-remove" onClick={() => {
-                    setImagePreview(null);
-                    setRecognitionResult(null);
-                  }}>×</View>
-                </View>
-              ) : (
-                <View className="image-placeholder" onClick={handleChooseImage}>
-                  <Text className="placeholder-icon">📷</Text>
-                  <Text className="placeholder-text">点击拍照或选择图片</Text>
+            {/* 方式一：图片识别（可选） */}
+            <View className="section-block">
+              <Text className="block-title">📷 拍照识别（可选）</Text>
+              <View className="image-section">
+                {imagePreview ? (
+                  <View className="image-preview-wrap">
+                    <Image
+                      src={imagePreview}
+                      mode="aspectFill"
+                      className="image-preview"
+                    />
+                    <View className="image-remove" onClick={() => {
+                      setImagePreview(null);
+                      setRecognitionResult(null);
+                    }}>×</View>
+                  </View>
+                ) : (
+                  <View className="image-placeholder" onClick={handleChooseImage}>
+                    <Text className="placeholder-icon">📷</Text>
+                    <Text className="placeholder-text">点击拍照或选择图片</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* 图片操作按钮 */}
+              {imagePreview && (
+                <View className="action-buttons">
+                  <View
+                    className={`action-btn recognize ${isRecognizing ? 'disabled' : ''}`}
+                    onClick={isRecognizing ? undefined : handleRecognize}
+                  >
+                    <Text>{isRecognizing ? '🔍 识别中...' : '🔍 AI识别'}</Text>
+                  </View>
+                  <View
+                    className={`action-btn save ${isRecognizing ? 'disabled' : ''}`}
+                    onClick={isRecognizing ? undefined : handleRecognizeAndSave}
+                  >
+                    <Text>✨ 一键保存</Text>
+                  </View>
                 </View>
               )}
             </View>
 
-            {/* 识别结果 */}
+            {/* 识别/分析结果 */}
             {recognitionResult && recognitionResult.success && (
               <View className="recognition-result">
-                <Text className="result-title">✅ 识别结果</Text>
+                <Text className="result-title">✅ AI分析结果</Text>
                 {recognitionResult.foods?.map((food, idx) => (
                   <View key={idx} className="food-item">
                     <Text className="food-name">{food.name} {food.quantity && `(${food.quantity})`}</Text>
@@ -390,33 +452,24 @@ export default function DietPage() {
               </View>
             )}
 
-            {/* 操作按钮 */}
-            <View className="action-buttons">
-              <View
-                className={`action-btn recognize ${!imagePreview || isRecognizing ? 'disabled' : ''}`}
-                onClick={!imagePreview || isRecognizing ? undefined : handleRecognize}
-              >
-                <Text>{isRecognizing ? '🔍 识别中...' : '🔍 AI识别'}</Text>
-              </View>
-              <View
-                className={`action-btn save ${!imagePreview || isRecognizing ? 'disabled' : ''}`}
-                onClick={!imagePreview || isRecognizing ? undefined : handleRecognizeAndSave}
-              >
-                <Text>✨ 一键保存</Text>
-              </View>
-            </View>
-
-            {/* 手动输入 */}
+            {/* 方式二：文字输入 */}
             <View className="manual-input">
-              <Text className="manual-title">或手动输入：</Text>
-              <View className="input-row">
+              <Text className="manual-title">📝 文字记录（无需图片）：</Text>
+              <View className="input-row-with-btn">
                 <Input
-                  className="input-field"
-                  placeholder="食物列表，如：鸡蛋2个，面包1片"
+                  className="input-field flex-1"
+                  placeholder="输入食物，如：一个鸡蛋，一碗米饭"
                   value={formData.food_items}
                   onInput={(e) => setFormData({ ...formData, food_items: e.detail.value })}
                 />
+                <View 
+                  className={`analyze-btn ${isAnalyzing || !formData.food_items.trim() ? 'disabled' : ''}`}
+                  onClick={isAnalyzing || !formData.food_items.trim() ? undefined : handleTextAnalyze}
+                >
+                  <Text>{isAnalyzing ? '⏳' : '🤖'}</Text>
+                </View>
               </View>
+              <Text className="input-hint">💡 输入食物后点击🤖自动分析营养成分</Text>
               <View className="input-grid">
                 <View className="input-item">
                   <Text className="input-label">热量</Text>
