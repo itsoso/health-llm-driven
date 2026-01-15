@@ -37,6 +37,7 @@ interface RequestConfig {
   url: string;
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   data?: any;
+  params?: Record<string, any>; // GET 请求的查询参数
   header?: Record<string, string>;
   needAuth?: boolean;
   silent?: boolean; // 静默模式，不显示错误toast
@@ -55,7 +56,7 @@ interface ResponseData<T = any> {
  * 封装请求
  */
 export async function request<T = any>(config: RequestConfig): Promise<T> {
-  const { url, method = 'GET', data, header = {}, needAuth = true, silent = false } = config;
+  const { url, method = 'GET', data, params, header = {}, needAuth = true, silent = false } = config;
 
   // 添加认证头
   if (needAuth) {
@@ -71,11 +72,23 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
   }
 
   try {
+    // 构建 URL，处理 params 参数
+    let finalUrl = url;
+    if (params && Object.keys(params).length > 0) {
+      const queryString = Object.entries(params)
+        .filter(([_, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+      if (queryString) {
+        finalUrl = `${url}${url.includes('?') ? '&' : '?'}${queryString}`;
+      }
+    }
+    
     // 添加时间戳防止缓存（仅GET请求）
-    let finalUrl = `${BASE_URL}${url}`;
-    if (method === 'GET' && !url.includes('_t=')) {
-      const separator = url.includes('?') ? '&' : '?';
-      finalUrl = `${BASE_URL}${url}${separator}_t=${Date.now()}`;
+    finalUrl = `${BASE_URL}${finalUrl}`;
+    if (method === 'GET' && !finalUrl.includes('_t=')) {
+      const separator = finalUrl.includes('?') ? '&' : '?';
+      finalUrl = `${finalUrl}${separator}_t=${Date.now()}`;
     }
 
     const response = await Taro.request<T>({

@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { getTodayGarminData, getDailyRecommendation } from '../../services/api';
+import { getTodayGarminData, getDailyRecommendation, syncMyGarminData } from '../../services/api';
 import { formatSleepDuration, getSleepScoreLevel, getStressLevel } from '../../types';
 import type { GarminData, DailyRecommendation } from '../../types';
 import './index.scss';
@@ -15,12 +15,21 @@ export default function Dashboard() {
   const [recommendation, setRecommendation] = useState<DailyRecommendation | null>(null);
 
   useEffect(() => {
+    // 检查是否已登录
+    const token = Taro.getStorageSync('access_token');
+    if (!token) {
+      Taro.redirectTo({ url: '/pages/index/index' });
+      return;
+    }
     loadData();
   }, []);
 
   // 页面显示时刷新
   Taro.useDidShow(() => {
-    loadData();
+    const token = Taro.getStorageSync('access_token');
+    if (token) {
+      loadData();
+    }
   });
 
   const loadData = async () => {
@@ -51,12 +60,42 @@ export default function Dashboard() {
     }
   };
 
-  const handleRefresh = () => {
-    Taro.showLoading({ title: '刷新中...' });
-    loadData().finally(() => {
+  const [syncing, setSyncing] = useState(false);
+
+  const handleRefresh = async () => {
+    Taro.showLoading({ title: '同步中...' });
+    setSyncing(true);
+    
+    try {
+      // 先尝试同步 Garmin 数据
+      const syncResult = await syncMyGarminData(1).catch((err) => {
+        console.log('Garmin同步失败或未绑定:', err?.message || err);
+        return null;
+      });
+      
+      if (syncResult?.status === 'success') {
+        Taro.showToast({ title: '同步成功', icon: 'success', duration: 1500 });
+      } else if (syncResult?.status === 'no_data') {
+        Taro.showToast({ title: '暂无新数据', icon: 'none', duration: 1500 });
+      } else if (syncResult?.status === 'skipped') {
+        Taro.showToast({ title: syncResult.message || '同步跳过', icon: 'none', duration: 1500 });
+      }
+      
+      // 延迟一下再刷新数据
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 重新加载数据
+      await loadData();
+      
+    } catch (error: any) {
+      console.error('刷新失败:', error);
+      // 如果是未绑定，仍然刷新数据
+      await loadData();
+      Taro.showToast({ title: '数据已刷新', icon: 'success', duration: 1000 });
+    } finally {
+      setSyncing(false);
       Taro.hideLoading();
-      Taro.showToast({ title: '刷新成功', icon: 'success', duration: 1000 });
-    });
+    }
   };
 
   // 计算步数进度
@@ -146,8 +185,8 @@ export default function Dashboard() {
               {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })}
             </Text>
           </View>
-          <View className="refresh-btn" onClick={handleRefresh}>
-            <Text className="refresh-icon">🔄</Text>
+          <View className={`refresh-btn ${syncing ? 'syncing' : ''}`} onClick={syncing ? undefined : handleRefresh}>
+            <Text className="refresh-icon">{syncing ? '⏳' : '🔄'}</Text>
           </View>
         </View>
 

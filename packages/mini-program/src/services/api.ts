@@ -126,3 +126,16 @@ export async function checkGarminBinding(userId: number): Promise<{
 }> {
   return get(`/wechat/check-binding/${userId}`);
 }
+
+/**
+ * 同步当前用户的 Garmin 数据（使用已保存的凭据）
+ */
+export async function syncMyGarminData(days: number = 1): Promise<{
+  status: string;
+  message: string;
+  success_count?: number;
+  error_count?: number;
+  activities_count?: number;
+}> {
+  return post(`/data-collection/garmin/me/sync?days=${days}`, {});
+}
