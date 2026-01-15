@@ -37,6 +37,7 @@ export interface GarminData {
   body_battery_drained: number | null;
   body_battery_most_charged: number | null;
   body_battery_lowest: number | null;
+  body_battery_current: number | null;
   calories_total: number | null;
   active_calories: number | null;
   spo2_avg: number | null;

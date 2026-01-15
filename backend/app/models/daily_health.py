@@ -42,6 +42,7 @@ class GarminData(Base):
     body_battery_drained = Column(Integer)  # 身体电量消耗值
     body_battery_most_charged = Column(Integer)  # 最高充电值
     body_battery_lowest = Column(Integer)  # 最低值
+    body_battery_current = Column(Integer)  # 当前实时电量
     
     # 压力数据
     stress_level = Column(Integer)  # 压力水平 (0-100)

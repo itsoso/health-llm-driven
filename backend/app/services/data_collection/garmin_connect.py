@@ -1263,6 +1263,7 @@ class GarminConnectService:
         drained = None
         most_charged = None
         lowest = None
+        current_battery = None  # 当前实时电量
         
         if isinstance(battery_data_raw, list) and battery_data_raw:
             # Garmin返回的是一个时间序列列表，每个元素包含 bodyBatteryLevel 等
@@ -1282,6 +1283,7 @@ class GarminConnectService:
             if battery_levels:
                 most_charged = max(battery_levels)
                 lowest = min(battery_levels)
+                current_battery = battery_levels[-1]  # 最后一个值是当前电量
                 # 估算充电和消耗（简化计算）
                 if charged is None and len(battery_levels) >= 2:
                     # 计算总充电量（上升的部分之和）
@@ -1296,7 +1298,7 @@ class GarminConnectService:
                     charged = total_charged if total_charged > 0 else None
                     drained = total_drained if total_drained > 0 else None
             
-            logger.info(f"从列表计算: most_charged={most_charged}, lowest={lowest}, charged={charged}, drained={drained}")
+            logger.info(f"从列表计算: most_charged={most_charged}, lowest={lowest}, current={current_battery}, charged={charged}, drained={drained}")
             
         elif isinstance(battery_data_raw, dict):
             battery_data = battery_data_raw
@@ -1305,6 +1307,8 @@ class GarminConnectService:
             # 优先使用最高值字段，而不是最近值
             most_charged = battery_data.get('bodyBatteryHighestValue') or battery_data.get('mostCharged') or battery_data.get('bodyBatteryMostCharged') or battery_data.get('mostChargedValue')
             lowest = battery_data.get('lowest') or battery_data.get('bodyBatteryLowest') or battery_data.get('lowestValue')
+            # 当前实时电量
+            current_battery = battery_data.get('bodyBatteryMostRecentValue') or battery_data.get('currentValue') or battery_data.get('current')
         
         # 如果还没有获取到，尝试从 summary 获取
         if most_charged is None and isinstance(summary, dict):
@@ -1314,7 +1318,11 @@ class GarminConnectService:
             most_charged = summary.get('bodyBatteryHighestValue') or summary.get('bodyBatteryMostCharged') or summary.get('bodyBatteryChargedValue')
             lowest = summary.get('bodyBatteryLowestValue') or summary.get('bodyBatteryLowest')
         
-        logger.info(f"最终身体电量: charged={charged}, drained={drained}, most_charged={most_charged}, lowest={lowest}")
+        # 如果还没有当前电量，从 summary 获取
+        if current_battery is None and isinstance(summary, dict):
+            current_battery = summary.get('bodyBatteryMostRecentValue') or summary.get('bodyBatteryCurrentValue')
+        
+        logger.info(f"最终身体电量: charged={charged}, drained={drained}, most_charged={most_charged}, lowest={lowest}, current={current_battery}")
         
         # 压力数据（可能来自get_all_day_stress或summary）
         stress_data_raw = None
@@ -1756,6 +1764,7 @@ class GarminConnectService:
             body_battery_drained=safe_int(drained),
             body_battery_most_charged=safe_int(most_charged),
             body_battery_lowest=safe_int(lowest),
+            body_battery_current=safe_int(current_battery),
             stress_level=safe_int(stress_level),
             steps=safe_int(steps),
             calories_burned=safe_int(calories),

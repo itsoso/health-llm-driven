@@ -129,14 +129,17 @@ export default function Dashboard() {
   const stressValue = garminData?.stress_level ?? garminData?.stress_avg ?? null;
   const stressLevel = getStressLevel(stressValue);
   const stepsProgress = getStepsProgress(garminData?.steps ?? null);
-  // 优先使用 body_battery_most_charged，如果没有则使用 body_battery_charged
-  const batteryValue = garminData?.body_battery_most_charged ?? garminData?.body_battery_charged ?? null;
-  const batteryProgress = getBatteryProgress(batteryValue);
+  // 优先使用当前电量，其次使用最高电量
+  const currentBattery = garminData?.body_battery_current ?? null;
+  const maxBattery = garminData?.body_battery_most_charged ?? garminData?.body_battery_charged ?? null;
+  const displayBattery = currentBattery ?? maxBattery;
+  const batteryProgress = getBatteryProgress(displayBattery);
   
   console.log('身体电量数据 - dashboard:', {
+    current: garminData?.body_battery_current,
     most_charged: garminData?.body_battery_most_charged,
     charged: garminData?.body_battery_charged,
-    batteryValue,
+    displayBattery,
     batteryProgress,
   });
   
@@ -282,9 +285,14 @@ export default function Dashboard() {
                 </View>
                 <View className="battery-info">
                   <Text className="metric-value">
-                    {batteryValue !== null && batteryValue !== undefined ? batteryValue : '--'}
+                    {displayBattery !== null && displayBattery !== undefined ? displayBattery : '--'}
                   </Text>
-                  <Text className="battery-range">最低 {garminData.body_battery_lowest ?? garminData.body_battery_drained ?? '--'}</Text>
+                  <Text className="battery-range">
+                    {currentBattery !== null ? '当前' : '峰值'} · 
+                    {maxBattery !== null && currentBattery !== null && currentBattery !== maxBattery 
+                      ? ` 峰值${maxBattery}`
+                      : ` 最低${garminData.body_battery_lowest ?? garminData.body_battery_drained ?? '--'}`}
+                  </Text>
                 </View>
               </View>
             </View>
