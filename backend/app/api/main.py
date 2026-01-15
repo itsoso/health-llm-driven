@@ -26,6 +26,7 @@ from app.api import (
     wechat,
     devices,  # 多设备管理
     user_merge,  # 用户合并
+    upload,  # 文件上传
     # executor-v2: 新增模块
     user_profile,  # 用户画像
     checkin,  # 打卡系统2.0
@@ -65,6 +66,7 @@ api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  # 多设备管理
+api_router.include_router(upload.router, prefix="/upload", tags=["upload"])  # 文件上传
 
 # executor-v2: 新增路由
 api_router.include_router(user_profile.router, tags=["user-profile"])  # 用户画像

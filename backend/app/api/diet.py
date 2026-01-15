@@ -1,4 +1,5 @@
 """饮食记录API"""
+import os
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
@@ -413,6 +414,36 @@ async def recognize_and_save_diet(
         confidences = [f.get("confidence", 0) for f in foods if f.get("confidence")]
         avg_confidence = sum(confidences) / len(confidences) if confidences else None
         
+        # 保存图片（如果有）
+        image_url = None
+        if request.image_base64:
+            try:
+                from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
+                import base64 as b64
+                
+                ensure_upload_dir()
+                image_type = request.image_type.lower()
+                if image_type == "jpg":
+                    image_type = "jpeg"
+                
+                # 解码并保存图片
+                base64_data = request.image_base64
+                if "," in base64_data:
+                    base64_data = base64_data.split(",", 1)[1]
+                
+                image_data = b64.b64decode(base64_data)
+                filename = generate_filename(image_type, "diet")
+                filepath = os.path.join(UPLOAD_DIR, filename)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                
+                with open(filepath, "wb") as f:
+                    f.write(image_data)
+                
+                image_url = f"/api/v1/upload/files/{filename}"
+                logger.info(f"保存饮食图片: {filename}")
+            except Exception as e:
+                logger.warning(f"保存图片失败: {e}")
+        
         # 创建饮食记录
         db_record = DietRecordModel(
             user_id=current_user.id,
@@ -425,6 +456,7 @@ async def recognize_and_save_diet(
             carbs=result.get("total_carbs"),
             fat=result.get("total_fat"),
             notes=request.notes,
+            image_url=image_url,  # 保存图片URL
             ai_recognized=1,
             ai_confidence=avg_confidence,
             ai_raw_result=json.dumps(result, ensure_ascii=False),
