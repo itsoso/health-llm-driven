@@ -305,7 +305,8 @@ export default function Index() {
         {/* 每日打卡 */}
         <View 
           className={`feature-card ${isLoggedIn ? 'active' : ''}`}
-          onClick={() => handleQuickNav('rhinitis')}
+          hoverClass="feature-card-hover"
+          onClick={() => handleQuickNav('checkin')}
         >
           <View className="card-header">
             <Text className="card-icon">✅</Text>
