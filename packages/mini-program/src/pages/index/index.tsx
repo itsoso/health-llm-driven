@@ -408,20 +408,29 @@ export default function Index() {
               homeData.loading ? (
                 <Text className="card-value loading">加载中...</Text>
               ) : (() => {
-                const batteryValue = homeData.garmin?.body_battery_most_charged ?? homeData.garmin?.body_battery_charged;
-                const hasValue = batteryValue !== null && batteryValue !== undefined;
+                const currentBattery = homeData.garmin?.body_battery_current;
+                const maxBattery = homeData.garmin?.body_battery_most_charged ?? homeData.garmin?.body_battery_charged;
+                const displayBattery = currentBattery ?? maxBattery;
+                const hasValue = displayBattery !== null && displayBattery !== undefined;
                 
                 if (hasValue) {
                   return (
                     <>
-                      <Text className="card-value">{batteryValue}</Text>
-                      <Text className="card-unit">/100</Text>
+                      <View style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center' }}>
+                        <Text className="card-value">{displayBattery}</Text>
+                        <Text className="card-unit">/100</Text>
+                      </View>
+                      {currentBattery !== null && currentBattery !== undefined && maxBattery !== null && maxBattery !== undefined && currentBattery !== maxBattery && (
+                        <Text style={{ fontSize: '12px', color: '#9CA3AF', marginTop: '4px' }}>
+                          峰值 {maxBattery}
+                        </Text>
+                      )}
                       <Text className="card-status" style={{ 
-                        color: batteryValue >= 80 ? '#10B981' : 
-                                batteryValue >= 50 ? '#F59E0B' : '#EF4444'
+                        color: displayBattery >= 80 ? '#10B981' : 
+                                displayBattery >= 50 ? '#F59E0B' : '#EF4444'
                       }}>
-                        {batteryValue >= 80 ? '充足' : 
-                         batteryValue >= 50 ? '中等' : '偏低'}
+                        {currentBattery !== null && currentBattery !== undefined ? '当前' : '最高'} · {displayBattery >= 80 ? '充足' : 
+                         displayBattery >= 50 ? '中等' : '偏低'}
                       </Text>
                     </>
                   );

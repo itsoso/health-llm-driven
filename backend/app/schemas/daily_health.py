@@ -28,6 +28,7 @@ class GarminDataCreate(BaseModel):
     body_battery_drained: Optional[int] = None
     body_battery_most_charged: Optional[int] = None
     body_battery_lowest: Optional[int] = None
+    body_battery_current: Optional[int] = None
     stress_level: Optional[int] = None
     steps: Optional[int] = None
     calories_burned: Optional[int] = None
@@ -76,6 +77,7 @@ class GarminDataResponse(BaseModel):
     body_battery_drained: Optional[int] = None
     body_battery_most_charged: Optional[int] = None
     body_battery_lowest: Optional[int] = None
+    body_battery_current: Optional[int] = None
     stress_level: Optional[int] = None
     steps: Optional[int] = None
     calories_burned: Optional[int] = None
