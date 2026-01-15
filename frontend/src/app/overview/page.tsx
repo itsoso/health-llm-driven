@@ -46,6 +46,7 @@ interface GarminData {
   body_battery_drained: number | null;
   body_battery_most_charged: number | null;
   body_battery_lowest: number | null;
+  body_battery_current: number | null;  // 当前实时电量
   avg_respiration_awake: number | null;
   avg_respiration_sleep: number | null;
   lowest_respiration: number | null;
@@ -339,49 +340,77 @@ function OverviewContent() {
 
           {/* 身体电量 */}
           <MetricCard icon="🔋" title="身体电量">
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`text-3xl font-bold ${
-                record?.body_battery_most_charged !== null && record.body_battery_most_charged >= 80 ? 'text-green-500' :
-                record?.body_battery_most_charged !== null && record.body_battery_most_charged >= 50 ? 'text-yellow-500' :
-                record?.body_battery_most_charged !== null ? 'text-red-500' : 'text-gray-400'
-              }`}>
-                {record?.body_battery_most_charged || record?.body_battery_charged || '--'}
-              </span>
-              <span className="text-lg text-gray-500">/100</span>
-            </div>
-            <div className="text-sm text-gray-500 mb-3">
-              {record?.body_battery_most_charged !== null ? '今日最高' : record?.body_battery_charged !== null ? '当前值' : '暂无数据'}
-            </div>
-            
-            {/* 身体电量进度条 */}
-            <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden mb-3">
-              <div 
-                className={`h-full transition-all ${
-                  record?.body_battery_most_charged !== null && record.body_battery_most_charged >= 80 ? 'bg-green-500' :
-                  record?.body_battery_most_charged !== null && record.body_battery_most_charged >= 50 ? 'bg-yellow-500' :
-                  record?.body_battery_most_charged !== null ? 'bg-red-500' : 'bg-gray-400'
-                }`}
-                style={{ 
-                  width: `${Math.min((record?.body_battery_most_charged || record?.body_battery_charged || 0), 100)}%` 
-                }}
-              />
-            </div>
-            
-            {/* 身体电量详情 */}
-            <div className="space-y-1 text-sm">
-              {record?.body_battery_drained !== null && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">消耗</span>
-                  <span className="text-gray-800 font-medium">{record.body_battery_drained}</span>
-                </div>
-              )}
-              {record?.body_battery_lowest !== null && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">最低</span>
-                  <span className="text-gray-800 font-medium">{record.body_battery_lowest}</span>
-                </div>
-              )}
-            </div>
+            {(() => {
+              const currentBattery = record?.body_battery_current;
+              const peakBattery = record?.body_battery_most_charged ?? record?.body_battery_charged;
+              const displayBattery = currentBattery ?? peakBattery;
+              const hasCurrent = currentBattery !== null && currentBattery !== undefined;
+              const hasPeak = peakBattery !== null && peakBattery !== undefined;
+              
+              const getBatteryColor = (value: number | null | undefined) => {
+                if (value === null || value === undefined) return 'text-gray-400';
+                if (value >= 80) return 'text-green-500';
+                if (value >= 50) return 'text-yellow-500';
+                return 'text-red-500';
+              };
+              
+              const getBatteryBgColor = (value: number | null | undefined) => {
+                if (value === null || value === undefined) return 'bg-gray-400';
+                if (value >= 80) return 'bg-green-500';
+                if (value >= 50) return 'bg-yellow-500';
+                return 'bg-red-500';
+              };
+              
+              return (
+                <>
+                  {/* 主显示：当前值或峰值 */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-4xl font-bold ${getBatteryColor(displayBattery)}`}>
+                      {displayBattery ?? '--'}
+                    </span>
+                    <span className="text-lg text-gray-500">/100</span>
+                  </div>
+                  <div className="text-sm text-gray-500 mb-2">
+                    {hasCurrent ? '当前' : hasPeak ? '峰值' : '暂无数据'}
+                    {hasCurrent && (
+                      <span className={`ml-2 ${getBatteryColor(currentBattery)}`}>
+                        {currentBattery! >= 80 ? '充足' : currentBattery! >= 50 ? '中等' : '偏低'}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* 身体电量进度条 */}
+                  <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden mb-3">
+                    <div 
+                      className={`h-full transition-all ${getBatteryBgColor(displayBattery)}`}
+                      style={{ width: `${Math.min(displayBattery ?? 0, 100)}%` }}
+                    />
+                  </div>
+                  
+                  {/* 身体电量详情：峰值、最低、消耗 */}
+                  <div className="space-y-1 text-sm">
+                    {hasCurrent && hasPeak && currentBattery !== peakBattery && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">📈 峰值</span>
+                        <span className={`font-medium ${getBatteryColor(peakBattery)}`}>{peakBattery}</span>
+                      </div>
+                    )}
+                    {record?.body_battery_lowest !== null && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">📉 最低</span>
+                        <span className="text-gray-800 font-medium">{record.body_battery_lowest}</span>
+                      </div>
+                    )}
+                    {record?.body_battery_drained !== null && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">⚡ 消耗</span>
+                        <span className="text-orange-600 font-medium">-{record.body_battery_drained}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </MetricCard>
 
           {/* 心率 */}
