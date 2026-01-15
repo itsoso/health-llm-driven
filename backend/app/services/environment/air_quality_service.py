@@ -27,9 +27,7 @@ class AirQualityService:
     """
     
     # aqicn.org API 
-    # 注意: demo token 有限制，建议申请正式 token: https://aqicn.org/data-platform/token/
     AQICN_URL = "https://api.waqi.info/feed"
-    AQICN_TOKEN = "demo"  # demo token 有限制，可能只返回上海数据
     
     # Open-Meteo Air Quality API (免费，作为备用)
     OPENMETEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -38,7 +36,15 @@ class AirQualityService:
         self._cache: Dict[str, Any] = {}
         self._cache_time: Dict[str, datetime] = {}
         self._cache_duration = timedelta(minutes=30)  # 缓存30分钟
-        logger.info("空气质量服务初始化完成 (优先使用 aqicn.org 官方数据)")
+        
+        # 从配置读取 API Token
+        from app.config import settings
+        self.aqicn_token = settings.aqicn_api_token or "demo"
+        
+        if self.aqicn_token == "demo":
+            logger.warning("⚠️ 使用 aqicn.org demo token，数据可能不准确。建议配置 AQICN_API_TOKEN 环境变量")
+        else:
+            logger.info("✅ 空气质量服务初始化完成 (使用正式 API Token)")
     
     def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
         """获取缓存"""
@@ -136,8 +142,8 @@ class AirQualityService:
                 # 默认使用杭州
                 query = "hangzhou"
             
-            logger.info(f"aqicn.org 查询: city={city}, query={query}")
-            url = f"{self.AQICN_URL}/{query}/?token={self.AQICN_TOKEN}"
+            logger.info(f"aqicn.org 查询: city={city}, query={query}, token={'正式' if self.aqicn_token != 'demo' else 'demo'}")
+            url = f"{self.AQICN_URL}/{query}/?token={self.aqicn_token}"
             
             response = await client.get(url, timeout=10)
             data = response.json()
@@ -164,8 +170,8 @@ class AirQualityService:
             
             logger.info(f"aqicn.org 数据: {station_name}, AQI={aqi}, PM2.5={pm25}")
             
-            # 检查返回的城市是否与请求的城市匹配 (demo token 可能返回错误城市)
-            if city and city != "上海" and "Shanghai" in station_name:
+            # 检查返回的城市是否与请求的城市匹配 (仅 demo token 有此限制)
+            if self.aqicn_token == "demo" and city and city != "上海" and "Shanghai" in station_name:
                 logger.warning(f"aqicn.org demo token 限制: 请求 {city} 但返回上海数据，将使用 Open-Meteo")
                 return {"available": False, "reason": "demo_token_limit"}
             

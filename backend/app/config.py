@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     wechat_appid: Optional[str] = None  # 小程序 AppID
     wechat_secret: Optional[str] = None  # 小程序 AppSecret
     
+    # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
+    aqicn_api_token: Optional[str] = None  # aqicn.org API Token
+    
     # 数据库配置
     database_url: str = "sqlite:///./health.db"
     
