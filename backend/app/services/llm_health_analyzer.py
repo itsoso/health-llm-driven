@@ -186,9 +186,16 @@ class LLMHealthAnalyzer:
         # 获取当前时间上下文
         time_context = self._get_time_context()
         
-        # 构建时间上下文说明
+        # 获取北京时间的今天和昨天日期
+        china_today = get_china_now().date()
+        china_yesterday = china_today - timedelta(days=1)
+        
+        # 构建时间上下文说明（明确北京时间）
         time_info = f"""
-当前时间: {time_context['current_time']} ({time_context['period']})
+【重要：以下所有时间均为北京时间 (UTC+8)】
+当前北京时间: {time_context['current_time']} ({time_context['period']})
+今天日期(北京时间): {china_today}
+昨天日期(北京时间): {china_yesterday}
 今日剩余时间: 约{time_context['remaining_hours']}小时
 当前时段: {time_context['period']}
 适宜运动时段: {time_context['exercise_window']}
@@ -286,9 +293,10 @@ class LLMHealthAnalyzer:
             if work_env.get('city'):
                 user_info += f"\n- 所在城市: {work_env['city']}"
         
-        # 构建昨日数据部分
+        # 构建分析数据部分（注意：这是数据库中记录的日期）
+        data_date = yesterday_data.record_date
         yesterday_info = f"""
-昨日健康数据 ({yesterday_data.record_date}):
+健康数据 (数据日期: {data_date}):
 
 【睡眠数据】
 - 睡眠分数: {yesterday_data.sleep_score or '无数据'}/100
@@ -438,12 +446,13 @@ class LLMHealthAnalyzer:
 8. 【积极鼓励】保持积极鼓励的语气，同时客观指出需要改进的地方
 9. 【环境适应】根据当天的天气和空气质量，推荐合适的运动方式和时间
 10.【运动推荐】给出具体的锻炼方式推荐，包括室内/室外选择、运动类型、时长、强度等
-11.【时间感知】重要！分析步数时必须考虑当前时间：
+11.【时间感知】重要！所有分析必须基于北京时间 (UTC+8)：
    - 上午（6-12点）：步数较少是正常的，不要批评步数不足，应该鼓励安排今天的锻炼计划
    - 下午（12-18点）：步数应该逐渐增加，可以适当督促
    - 晚上（18-22点）：步数应该接近目标，可以评估今日完成情况
    - 如果当前是上午，即使步数只有几百步也不要说"步数不足"，而应该说"今天还有充足时间完成运动目标"
-   - 结合昨天的运动情况给出今天的锻炼督促，例如"昨天已完成X步，今天继续保持/可以适当放松"
+   - 结合数据中显示的运动情况给出今天的锻炼督促
+12.【时区注意】用户在中国，所有时间分析都应该基于北京时间。数据中的日期是北京时间日期。
 
 请用JSON格式返回分析结果，包含以下字段:
 {
