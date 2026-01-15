@@ -336,12 +336,13 @@ export default function CheckinPage() {
       </ScrollView>
 
       {/* 打卡项目列表 */}
-      <ScrollView scrollY className="template-scroll">
+      <ScrollView scrollY className="template-scroll" enhanced showScrollbar={false}>
         <View className="template-list">
           {templates.map(template => (
             <View
               key={template.id}
               className={`template-card ${template.today_completed ? 'completed' : ''}`}
+              hoverClass="template-card-hover"
               onClick={() => openCheckin(template)}
             >
               <View className="template-header">
