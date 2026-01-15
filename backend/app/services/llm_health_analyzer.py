@@ -1,7 +1,7 @@
 """基于大模型的健康分析服务"""
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.basic_health import BasicHealthData
 from app.models.user_profile import UserProfile
 from app.config import settings
+from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,51 @@ class LLMHealthAnalyzer:
         
         return context
     
+    def _get_time_context(self) -> Dict[str, Any]:
+        """获取当前时间上下文"""
+        now = get_china_now()
+        hour = now.hour
+        
+        if hour < 6:
+            period = "凌晨"
+            period_en = "early_morning"
+            step_expectation = "very_low"  # 凌晨步数极低正常
+        elif hour < 9:
+            period = "早晨"
+            period_en = "morning"
+            step_expectation = "low"  # 早晨步数较低正常
+        elif hour < 12:
+            period = "上午"
+            period_en = "late_morning"
+            step_expectation = "moderate_low"  # 上午步数偏低正常
+        elif hour < 14:
+            period = "中午"
+            period_en = "noon"
+            step_expectation = "moderate"  # 中午应有一定步数
+        elif hour < 18:
+            period = "下午"
+            period_en = "afternoon"
+            step_expectation = "moderate_high"  # 下午应有较多步数
+        elif hour < 21:
+            period = "傍晚"
+            period_en = "evening"
+            step_expectation = "high"  # 傍晚应有较高步数
+        else:
+            period = "晚上"
+            period_en = "night"
+            step_expectation = "near_final"  # 晚上步数接近一天最终值
+        
+        return {
+            "current_time": now.strftime("%Y-%m-%d %H:%M"),
+            "hour": hour,
+            "period": period,
+            "period_en": period_en,
+            "step_expectation": step_expectation,
+            "is_work_hours": 9 <= hour <= 18,
+            "remaining_hours": 24 - hour,
+            "exercise_window": "上午" if hour < 12 else ("下午" if hour < 18 else "晚间")
+        }
+    
     def _build_health_data_prompt(
         self,
         yesterday_data: GarminData,
@@ -136,6 +182,17 @@ class LLMHealthAnalyzer:
         environment_data: Optional[Dict[str, Any]] = None
     ) -> str:
         """构建健康数据分析提示词"""
+        
+        # 获取当前时间上下文
+        time_context = self._get_time_context()
+        
+        # 构建时间上下文说明
+        time_info = f"""
+当前时间: {time_context['current_time']} ({time_context['period']})
+今日剩余时间: 约{time_context['remaining_hours']}小时
+当前时段: {time_context['period']}
+适宜运动时段: {time_context['exercise_window']}
+"""
         
         # 构建用户基本信息
         user_info = f"""
@@ -330,7 +387,7 @@ class LLMHealthAnalyzer:
 {chr(10).join(['- ' + warning for warning in env_warnings]) if env_warnings else '- 暂无'}
 """
         
-        return user_info + yesterday_info + trend_info + rule_summary + environment_info
+        return time_info + user_info + yesterday_info + trend_info + rule_summary + environment_info
     
     def analyze_daily_health(
         self,
@@ -381,13 +438,19 @@ class LLMHealthAnalyzer:
 8. 【积极鼓励】保持积极鼓励的语气，同时客观指出需要改进的地方
 9. 【环境适应】根据当天的天气和空气质量，推荐合适的运动方式和时间
 10.【运动推荐】给出具体的锻炼方式推荐，包括室内/室外选择、运动类型、时长、强度等
+11.【时间感知】重要！分析步数时必须考虑当前时间：
+   - 上午（6-12点）：步数较少是正常的，不要批评步数不足，应该鼓励安排今天的锻炼计划
+   - 下午（12-18点）：步数应该逐渐增加，可以适当督促
+   - 晚上（18-22点）：步数应该接近目标，可以评估今日完成情况
+   - 如果当前是上午，即使步数只有几百步也不要说"步数不足"，而应该说"今天还有充足时间完成运动目标"
+   - 结合昨天的运动情况给出今天的锻炼督促，例如"昨天已完成X步，今天继续保持/可以适当放松"
 
 请用JSON格式返回分析结果，包含以下字段:
 {
     "health_summary": "一段话总结用户当前的健康状况，结合TA的健康目标进行评估（100字以内）",
     "key_insights": ["基于用户个人情况的关键洞察1", "关键洞察2", "关键洞察3"],
     "sleep_advice": "针对睡眠的具体建议，考虑用户的作息习惯和工作情况",
-    "activity_advice": "针对运动活动的具体建议，结合用户的目标步数、运动频率和工作类型",
+    "activity_advice": "针对运动活动的具体建议，必须考虑当前时间！如果是上午不要批评步数少，而是给出今天的锻炼计划和督促。结合昨天的运动情况给建议。",
     "heart_health_advice": "针对心率/心血管的建议",
     "recovery_advice": "针对恢复和压力管理的建议，考虑用户的工作强度",
     "environment_advice": "基于当天天气和空气质量的运动建议",
