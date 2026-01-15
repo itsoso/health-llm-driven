@@ -1049,6 +1049,8 @@ class GarminConnectService:
         nap_seconds = 0
         avg_heart_rate_during_sleep = None
         hrv = None  # HRV数据，优先从睡眠数据获取
+        sleep_start_time = None  # 睡眠开始时间
+        sleep_end_time = None    # 睡眠结束时间
         
         if isinstance(sleep_data, dict) and sleep_data:
             # Garmin睡眠数据结构:
@@ -1123,7 +1125,26 @@ class GarminConnectService:
             if hrv is None:
                 hrv = sleep_data.get('avgOvernightHrv')
             
-            logger.info(f"解析睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}, HRV={hrv}")
+            # 睡眠开始和结束时间（从时间戳转换）
+            sleep_start_ts = daily_sleep_dto.get('sleepStartTimestampLocal') or daily_sleep_dto.get('sleepStartTimestampGMT')
+            sleep_end_ts = daily_sleep_dto.get('sleepEndTimestampLocal') or daily_sleep_dto.get('sleepEndTimestampGMT')
+            
+            # 将毫秒时间戳转换为时间对象
+            from datetime import datetime as dt, time as dt_time
+            if sleep_start_ts:
+                try:
+                    sleep_start_dt = dt.fromtimestamp(sleep_start_ts / 1000)
+                    sleep_start_time = sleep_start_dt.time()
+                except Exception as e:
+                    logger.warning(f"解析睡眠开始时间失败: {e}")
+            if sleep_end_ts:
+                try:
+                    sleep_end_dt = dt.fromtimestamp(sleep_end_ts / 1000)
+                    sleep_end_time = sleep_end_dt.time()
+                except Exception as e:
+                    logger.warning(f"解析睡眠结束时间失败: {e}")
+            
+            logger.info(f"解析睡眠数据: 分数={sleep_score}, 时长秒={sleep_duration_seconds}, 深睡={deep_sleep_seconds}, REM={rem_sleep_seconds}, HRV={hrv}, 开始时间={sleep_start_time}, 结束时间={sleep_end_time}")
         else:
             logger.warning(f"睡眠数据为空或格式不正确: type={type(sleep_data)}, 值={sleep_data}")
         
@@ -1760,6 +1781,8 @@ class GarminConnectService:
             light_sleep_duration=seconds_to_minutes(light_sleep_seconds),
             awake_duration=seconds_to_minutes(awake_seconds),
             nap_duration=seconds_to_minutes(nap_seconds),
+            sleep_start_time=sleep_start_time,
+            sleep_end_time=sleep_end_time,
             body_battery_charged=safe_int(charged),
             body_battery_drained=safe_int(drained),
             body_battery_most_charged=safe_int(most_charged),
