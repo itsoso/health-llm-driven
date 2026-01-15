@@ -28,6 +28,8 @@ interface GarminData {
   record_date: string;
   sleep_score: number | null;
   total_sleep_duration: number | null;
+  sleep_start_time: string | null;  // 睡眠开始时间 HH:MM:SS
+  sleep_end_time: string | null;    // 睡眠结束时间 HH:MM:SS
   resting_heart_rate: number | null;
   avg_heart_rate: number | null;
   hrv: number | null;
@@ -78,6 +80,19 @@ function getHrvStatusText(status: string | null | undefined): { text: string; co
     'low': { text: '偏低', color: 'text-red-500' },
   };
   return statusMap[status || ''] || { text: status || '--', color: 'text-gray-500' };
+}
+
+// 格式化睡眠时间 (HH:MM:SS -> 12小时制)
+function formatSleepTime(timeStr: string | null | undefined): string {
+  if (!timeStr) return '--';
+  try {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+  } catch {
+    return '--';
+  }
 }
 
 // 睡眠分数颜色
@@ -291,8 +306,8 @@ function OverviewContent() {
               </ResponsiveContainer>
             </div>
             <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>11:34 PM</span>
-              <span>7:32 AM</span>
+              <span>{formatSleepTime(record?.sleep_start_time)}</span>
+              <span>{formatSleepTime(record?.sleep_end_time)}</span>
             </div>
           </MetricCard>
 
