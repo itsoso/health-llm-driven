@@ -71,16 +71,30 @@ export async function getGarminData(
 }
 
 /**
+ * 获取北京时间的今日日期 (YYYY-MM-DD)
+ */
+function getBeijingToday(): string {
+  const now = new Date();
+  // 使用 UTC 时间加上 8 小时得到北京时间
+  const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
+  
+  const year = beijingTime.getFullYear();
+  const month = String(beijingTime.getMonth() + 1).padStart(2, '0');
+  const day = String(beijingTime.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * 获取今日 Garmin 数据（使用北京时间）
  */
 export async function getTodayGarminData(): Promise<GarminData | null> {
-  // 使用北京时间获取今天的日期
-  const now = new Date();
-  const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
-  const today = beijingTime.toISOString().split('T')[0];
+  const today = getBeijingToday();
+  console.log('[API] 获取今日 Garmin 数据, 日期:', today);
   
-  // 添加时间戳防止缓存
   const data = await getGarminData(today, today);
+  console.log('[API] 获取到的数据:', data.length > 0 ? `steps=${data[0].steps}, battery=${data[0].body_battery_most_charged}` : '无数据');
   return data.length > 0 ? data[0] : null;
 }
 

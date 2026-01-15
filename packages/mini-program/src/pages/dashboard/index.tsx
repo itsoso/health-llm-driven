@@ -68,27 +68,31 @@ export default function Dashboard() {
     
     try {
       // 先尝试同步 Garmin 数据
+      console.log('[Dashboard] 开始同步 Garmin 数据...');
       const syncResult = await syncMyGarminData(1).catch((err) => {
-        console.log('Garmin同步失败或未绑定:', err?.message || err);
+        console.log('[Dashboard] Garmin同步失败或未绑定:', err?.message || err);
         return null;
       });
       
+      console.log('[Dashboard] 同步结果:', syncResult);
+      
       if (syncResult?.status === 'success') {
         Taro.showToast({ title: '同步成功', icon: 'success', duration: 1500 });
+        // 同步成功后等待更长时间让数据入库
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } else if (syncResult?.status === 'no_data') {
         Taro.showToast({ title: '暂无新数据', icon: 'none', duration: 1500 });
       } else if (syncResult?.status === 'skipped') {
         Taro.showToast({ title: syncResult.message || '同步跳过', icon: 'none', duration: 1500 });
       }
       
-      // 延迟一下再刷新数据
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       // 重新加载数据
+      console.log('[Dashboard] 开始重新加载数据...');
       await loadData();
+      console.log('[Dashboard] 数据加载完成');
       
     } catch (error: any) {
-      console.error('刷新失败:', error);
+      console.error('[Dashboard] 刷新失败:', error);
       // 如果是未绑定，仍然刷新数据
       await loadData();
       Taro.showToast({ title: '数据已刷新', icon: 'success', duration: 1000 });
