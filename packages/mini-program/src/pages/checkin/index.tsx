@@ -94,7 +94,7 @@ export default function CheckinPage() {
 
   // 加载数据
   const loadData = useCallback(async () => {
-    const token = Taro.getStorageSync('token');
+    const token = Taro.getStorageSync('access_token');
     if (!token) {
       Taro.redirectTo({ url: '/pages/index/index' });
       return;
@@ -120,9 +120,10 @@ export default function CheckinPage() {
         }),
       ]);
 
-      setTemplates(templatesRes.data?.templates || []);
-      setSummary(summaryRes.data);
-      setStats(statsRes.data);
+      // request 函数直接返回响应数据
+      setTemplates(templatesRes?.templates || []);
+      setSummary(summaryRes);
+      setStats(statsRes);
     } catch (error) {
       console.error('加载数据失败:', error);
       Taro.showToast({ title: '加载失败', icon: 'none' });
@@ -148,7 +149,8 @@ export default function CheckinPage() {
         url: `/checkin/calendar/${calendarYear}/${calendarMonth}`,
         method: 'GET',
       });
-      setCalendarData(res.data);
+      // request 函数直接返回响应数据
+      setCalendarData(res);
     } catch (error) {
       console.error('加载日历数据失败:', error);
     }
