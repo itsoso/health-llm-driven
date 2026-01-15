@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { wechatLogin, getTodayGarminData, getDailyRecommendation, getTodayRhinitis } from '../../services/api';
+import { wechatLogin, getTodayGarminData, getDailyRecommendation, getTodayRhinitis, syncMyGarminData } from '../../services/api';
 import { getToken } from '../../services/request';
 import { GarminData, DailyRecommendation, RhinitisRecord, getStressLevel, getSpO2Level } from '../../types';
 import logoImage from '../../assets/logo.png';
@@ -549,9 +549,27 @@ export default function Index() {
           </Button>
           <Text 
             className="refresh-link" 
-            onClick={() => loadHomeData()}
+            onClick={async () => {
+              Taro.showLoading({ title: '同步中...' });
+              try {
+                // 先尝试同步 Garmin 数据
+                await syncMyGarminData(1).catch((err) => {
+                  console.log('Garmin同步失败或未绑定:', err?.message || err);
+                });
+                // 等待一下让数据入库
+                await new Promise(resolve => setTimeout(resolve, 500));
+                // 重新加载数据
+                await loadHomeData();
+                Taro.showToast({ title: '刷新成功', icon: 'success', duration: 1000 });
+              } catch (error) {
+                console.error('刷新失败:', error);
+                await loadHomeData();
+              } finally {
+                Taro.hideLoading();
+              }
+            }}
           >
-            🔄 刷新数据
+            🔄 同步并刷新
           </Text>
         </View>
       )}
