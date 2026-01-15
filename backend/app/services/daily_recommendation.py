@@ -569,7 +569,10 @@ class DailyRecommendationService:
                 "steps": yesterday.steps,
                 "resting_heart_rate": yesterday.resting_heart_rate,
                 "stress_level": yesterday.stress_level,
-                "body_battery_highest": yesterday.body_battery_most_charged
+                "body_battery_highest": yesterday.body_battery_most_charged,
+                "body_battery_current": yesterday.body_battery_current,
+                "body_battery_lowest": yesterday.body_battery_lowest,
+                "body_battery_drained": yesterday.body_battery_drained
             },
             # 保存分析上下文供LLM使用
             "_rule_analysis": rule_analysis,
@@ -1074,6 +1077,9 @@ class DailyRecommendationService:
                 "resting_heart_rate": yesterday_data.resting_heart_rate if yesterday_data else None,
                 "stress_level": yesterday_data.stress_level if yesterday_data else None,
                 "body_battery_highest": yesterday_data.body_battery_most_charged if yesterday_data else None,
+                "body_battery_current": yesterday_data.body_battery_current if yesterday_data else None,
+                "body_battery_lowest": yesterday_data.body_battery_lowest if yesterday_data else None,
+                "body_battery_drained": yesterday_data.body_battery_drained if yesterday_data else None,
             }
         }
         

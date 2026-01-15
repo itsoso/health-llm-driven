@@ -75,6 +75,9 @@ interface DailyRecommendation {
     resting_heart_rate: number | null;
     stress_level: number | null;
     body_battery_highest: number | null;
+    body_battery_current: number | null;
+    body_battery_lowest: number | null;
+    body_battery_drained: number | null;
   };
   // 环境数据
   environment?: {
@@ -395,12 +398,54 @@ function DailyInsightsContent() {
           <div className="bg-white rounded-xl shadow p-4">
             <div className="text-3xl mb-2">🔋</div>
             <div className="text-sm text-gray-700 font-medium">身体电量</div>
-            <div className="text-2xl font-bold text-yellow-600">
-              {activeTab === 'seven-day' && sevenDayData?.averages?.body_battery 
+            {(() => {
+              const currentBattery = currentData?.raw_data?.body_battery_current;
+              const peakBattery = activeTab === 'seven-day' && sevenDayData?.averages?.body_battery 
                 ? sevenDayData.averages.body_battery 
-                : currentData?.raw_data?.body_battery_highest || '-'}
-            </div>
-            <div className="text-xs text-gray-600">最高值</div>
+                : currentData?.raw_data?.body_battery_highest;
+              const lowestBattery = currentData?.raw_data?.body_battery_lowest;
+              const displayBattery = currentBattery ?? peakBattery;
+              const hasCurrent = currentBattery !== null && currentBattery !== undefined;
+              
+              const getBatteryColor = (value: number | null | undefined) => {
+                if (value === null || value === undefined) return 'text-gray-400';
+                if (value >= 80) return 'text-green-600';
+                if (value >= 50) return 'text-yellow-600';
+                return 'text-red-500';
+              };
+              
+              const getBatteryStatus = (value: number | null | undefined) => {
+                if (value === null || value === undefined) return '';
+                if (value >= 80) return '充足';
+                if (value >= 50) return '中等';
+                return '偏低';
+              };
+              
+              return (
+                <>
+                  <div className={`text-2xl font-bold ${getBatteryColor(displayBattery)}`}>
+                    {displayBattery ?? '-'}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {hasCurrent ? (
+                      <span>当前 · {getBatteryStatus(currentBattery)}</span>
+                    ) : (
+                      <span>{activeTab === 'seven-day' ? '7天平均' : '峰值'}</span>
+                    )}
+                  </div>
+                  {(peakBattery || lowestBattery) && activeTab === 'one-day' && (
+                    <div className="mt-1 text-xs space-y-0.5">
+                      {hasCurrent && peakBattery && (
+                        <div className="text-gray-500">📈 峰值 <span className="text-green-600 font-medium">{peakBattery}</span></div>
+                      )}
+                      {lowestBattery && (
+                        <div className="text-gray-500">📉 最低 <span className="text-gray-700 font-medium">{lowestBattery}</span></div>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -839,8 +884,29 @@ function DailyInsightsContent() {
                 <div className="text-xs text-gray-600 font-medium">压力水平</div>
               </div>
               <div className="text-center p-2 bg-gray-50 rounded">
-                <div className="text-lg font-bold text-gray-900">{currentData?.stress_analysis?.body_battery_highest || '-'}</div>
-                <div className="text-xs text-gray-600 font-medium">身体电量峰值</div>
+                {(() => {
+                  const currentBattery = currentData?.raw_data?.body_battery_current;
+                  const peakBattery = currentData?.stress_analysis?.body_battery_highest;
+                  const displayValue = currentBattery ?? peakBattery;
+                  const hasCurrent = currentBattery !== null && currentBattery !== undefined;
+                  return (
+                    <>
+                      <div className={`text-lg font-bold ${
+                        displayValue !== null && displayValue !== undefined
+                          ? (displayValue >= 80 ? 'text-green-600' : displayValue >= 50 ? 'text-yellow-600' : 'text-red-500')
+                          : 'text-gray-900'
+                      }`}>
+                        {displayValue ?? '-'}
+                      </div>
+                      <div className="text-xs text-gray-600 font-medium">
+                        {hasCurrent ? '当前电量' : '电量峰值'}
+                      </div>
+                      {hasCurrent && peakBattery && (
+                        <div className="text-xs text-gray-500">峰值 {peakBattery}</div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
             
