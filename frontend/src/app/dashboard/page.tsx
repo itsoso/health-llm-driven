@@ -180,15 +180,49 @@ function DashboardContent() {
                   <span className="text-2xl">🔋</span>
                   <p className="text-sm font-medium text-indigo-100">身体电量</p>
                 </div>
-                <p className="text-3xl font-bold">
-                  {todayRecord.body_battery_most_charged ?? todayRecord.body_battery_charged ?? '-'}
-                </p>
-                {(todayRecord.body_battery_most_charged !== null || todayRecord.body_battery_charged !== null) && (
-                  <p className="text-xs text-indigo-200 mt-1">
-                    {todayRecord.body_battery_drained !== null && todayRecord.body_battery_drained !== undefined ? `消耗: ${todayRecord.body_battery_drained}` : ''}
-                    {todayRecord.body_battery_lowest !== null && todayRecord.body_battery_lowest !== undefined ? ` | 最低: ${todayRecord.body_battery_lowest}` : ''}
-                  </p>
-                )}
+                {(() => {
+                  const currentBattery = todayRecord.body_battery_current;
+                  const peakBattery = todayRecord.body_battery_most_charged ?? todayRecord.body_battery_charged;
+                  const lowestBattery = todayRecord.body_battery_lowest;
+                  const drainedBattery = todayRecord.body_battery_drained;
+                  const displayBattery = currentBattery ?? peakBattery;
+                  const hasCurrent = currentBattery !== null && currentBattery !== undefined;
+                  
+                  const getBatteryStatus = (value: number | null | undefined) => {
+                    if (value === null || value === undefined) return '';
+                    if (value >= 80) return '充足';
+                    if (value >= 50) return '中等';
+                    return '偏低';
+                  };
+                  
+                  return (
+                    <>
+                      <p className={`text-3xl font-bold ${
+                        displayBattery !== null && displayBattery !== undefined
+                          ? (displayBattery >= 80 ? 'text-green-400' : displayBattery >= 50 ? 'text-yellow-400' : 'text-red-400')
+                          : ''
+                      }`}>
+                        {displayBattery ?? '-'}
+                        {displayBattery !== null && displayBattery !== undefined && (
+                          <span className="text-sm ml-2 font-normal opacity-80">
+                            {hasCurrent ? `当前 · ${getBatteryStatus(currentBattery)}` : '峰值'}
+                          </span>
+                        )}
+                      </p>
+                      <div className="text-xs text-indigo-200 mt-1 space-y-0.5">
+                        {hasCurrent && peakBattery !== null && peakBattery !== undefined && (
+                          <p>📈 峰值 {peakBattery}</p>
+                        )}
+                        {lowestBattery !== null && lowestBattery !== undefined && (
+                          <p>📉 最低 {lowestBattery}</p>
+                        )}
+                        {drainedBattery !== null && drainedBattery !== undefined && (
+                          <p>⚡ 消耗 -{drainedBattery}</p>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
@@ -260,19 +294,56 @@ function DashboardContent() {
               <p className="text-sm font-semibold text-gray-700">身体电量</p>
               <span className="text-2xl">🔋</span>
             </div>
-            <p className="text-4xl font-bold text-yellow-700 mb-1">
-              {todayRecord?.body_battery_most_charged ?? 
-               todayRecord?.body_battery_charged ??
-               comprehensive?.data?.body_battery?.average_most_charged?.toFixed(0) ?? 
-               comprehensive?.data?.body_battery?.average_charged?.toFixed(0) ?? '-'}
-            </p>
-            <p className="text-xs font-medium text-gray-600">
-              {todayRecord?.body_battery_most_charged !== null && todayRecord?.body_battery_most_charged !== undefined 
-                ? '今日最高' 
-                : todayRecord?.body_battery_charged !== null && todayRecord?.body_battery_charged !== undefined
-                ? '当前值'
-                : '最近7天平均'}
-            </p>
+            {(() => {
+              const currentBattery = todayRecord?.body_battery_current;
+              const peakBattery = todayRecord?.body_battery_most_charged ?? todayRecord?.body_battery_charged;
+              const lowestBattery = todayRecord?.body_battery_lowest;
+              const avgBattery = comprehensive?.data?.body_battery?.average_most_charged ?? comprehensive?.data?.body_battery?.average_charged;
+              const displayBattery = currentBattery ?? peakBattery ?? avgBattery;
+              const hasCurrent = currentBattery !== null && currentBattery !== undefined;
+              const hasPeak = peakBattery !== null && peakBattery !== undefined;
+              
+              const getBatteryColor = (value: number | null | undefined) => {
+                if (value === null || value === undefined) return 'text-gray-400';
+                if (value >= 80) return 'text-green-600';
+                if (value >= 50) return 'text-yellow-600';
+                return 'text-red-500';
+              };
+              
+              const getBatteryStatus = (value: number | null | undefined) => {
+                if (value === null || value === undefined) return '';
+                if (value >= 80) return '充足';
+                if (value >= 50) return '中等';
+                return '偏低';
+              };
+              
+              return (
+                <>
+                  <p className={`text-4xl font-bold mb-1 ${getBatteryColor(displayBattery)}`}>
+                    {displayBattery?.toFixed ? displayBattery.toFixed(0) : displayBattery ?? '-'}
+                  </p>
+                  <p className="text-xs font-medium text-gray-600 mb-2">
+                    {hasCurrent ? `当前 · ${getBatteryStatus(currentBattery)}` : hasPeak ? '今日峰值' : '最近7天平均'}
+                  </p>
+                  {(hasCurrent || lowestBattery !== null) && (
+                    <div className="text-xs text-gray-500 space-y-0.5 border-t pt-2 mt-1">
+                      {hasCurrent && hasPeak && (
+                        <p className="flex justify-between">
+                          <span>📈 峰值</span>
+                          <span className="text-green-600 font-medium">{peakBattery}</span>
+                        </p>
+                      )}
+                      {lowestBattery !== null && lowestBattery !== undefined && (
+                        <p className="flex justify-between">
+                          <span>📉 最低</span>
+                          <span className="font-medium">{lowestBattery}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 
