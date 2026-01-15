@@ -98,7 +98,7 @@ function GarminContent() {
       avgHeartRate: item.avg_heart_rate,
       hrv: item.hrv,
       steps: item.steps,
-      bodyBattery: item.body_battery_charged,
+      bodyBattery: item.body_battery_most_charged ?? item.body_battery_charged,
       stressLevel: item.stress_level,
     })) || [];
 
@@ -608,7 +608,7 @@ function GarminContent() {
                           {item.active_minutes || '-'}
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 font-medium border-r border-gray-100">
-                          {item.body_battery_charged || '-'}
+                          {item.body_battery_most_charged ?? item.body_battery_charged ?? '-'}
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
                           <span className={`font-semibold ${
@@ -976,8 +976,8 @@ function GarminContent() {
             {batteryAnalysis.data.status === 'success' ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-5 bg-yellow-50 rounded-xl border-2 border-yellow-200">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">平均充电值</p>
-                  <p className="text-3xl font-bold text-yellow-700">{batteryAnalysis.data.average_charged?.toFixed(0)}</p>
+                  <p className="text-sm font-semibold text-gray-700 mb-2">平均峰值</p>
+                  <p className="text-3xl font-bold text-yellow-700">{batteryAnalysis.data.average_most_charged?.toFixed(0) ?? batteryAnalysis.data.average_charged?.toFixed(0)}</p>
                 </div>
                 <div className="p-5 bg-orange-50 rounded-xl border-2 border-orange-200">
                   <p className="text-sm font-semibold text-gray-700 mb-2">平均消耗值</p>
@@ -1077,9 +1077,9 @@ function GarminContent() {
                   <div className="p-5 bg-yellow-50 rounded-xl border-2 border-yellow-200">
                     <h3 className="text-lg font-bold mb-3 text-gray-900">身体电量</h3>
                     <p className="text-3xl font-bold text-yellow-700">
-                      {comprehensiveAnalysis.data.body_battery.average_charged?.toFixed(0)}/100
+                      {comprehensiveAnalysis.data.body_battery.average_most_charged?.toFixed(0) ?? comprehensiveAnalysis.data.body_battery.average_charged?.toFixed(0)}/100
                     </p>
-                    <p className="text-sm font-semibold text-gray-700 mt-2">平均充电值</p>
+                    <p className="text-sm font-semibold text-gray-700 mt-2">平均峰值</p>
                   </div>
                 )}
               </div>
