@@ -108,8 +108,8 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
     // 处理 401 未授权
     if (statusCode === 401) {
       clearToken();
-      // 跳转到登录页
-      Taro.redirectTo({ url: '/pages/index/index' });
+      // 跳转到登录页（首页是TabBar页面，必须用switchTab）
+      Taro.switchTab({ url: '/pages/index/index' });
       throw new Error('登录已过期，请重新登录');
     }
 
