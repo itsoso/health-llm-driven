@@ -8,7 +8,9 @@ import {
   WechatLoginResponse, 
   GarminData, 
   RhinitisRecord,
-  DailyRecommendation 
+  DailyRecommendation,
+  WorkoutSummary,
+  DailyDietSummary,
 } from '../types';
 
 /**
@@ -152,4 +154,29 @@ export async function syncMyGarminData(days: number = 1): Promise<{
   activities_count?: number;
 }> {
   return post(`/data-collection/garmin/me/sync?days=${days}`, {});
+}
+
+/**
+ * 获取今日运动记录
+ */
+export async function getTodayWorkouts(): Promise<WorkoutSummary[]> {
+  try {
+    return await get<WorkoutSummary[]>(API_ENDPOINTS.WORKOUT.MY_LIST, { days: 1 });
+  } catch (e) {
+    console.error('获取运动记录失败:', e);
+    return [];
+  }
+}
+
+/**
+ * 获取今日饮食汇总
+ */
+export async function getTodayDietSummary(): Promise<DailyDietSummary | null> {
+  try {
+    const today = getBeijingToday();
+    return await get<DailyDietSummary>(`${API_ENDPOINTS.DIET.MY_DAILY}/${today}`);
+  } catch (e) {
+    console.error('获取饮食汇总失败:', e);
+    return null;
+  }
 }

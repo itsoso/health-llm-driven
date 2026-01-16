@@ -4,9 +4,9 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { wechatLogin, getTodayGarminData, getDailyRecommendation, getTodayRhinitis, syncMyGarminData } from '../../services/api';
+import { wechatLogin, getTodayGarminData, getDailyRecommendation, getTodayRhinitis, syncMyGarminData, getTodayWorkouts, getTodayDietSummary } from '../../services/api';
 import { getToken } from '../../services/request';
-import { GarminData, DailyRecommendation, RhinitisRecord, getStressLevel, getSpO2Level } from '../../types';
+import { GarminData, DailyRecommendation, RhinitisRecord, WorkoutSummary, DailyDietSummary, getStressLevel, getSpO2Level } from '../../types';
 import logoImage from '../../assets/logo.png';
 import './index.scss';
 
@@ -14,6 +14,8 @@ interface HomeData {
   garmin: GarminData | null;
   recommendation: DailyRecommendation | null;
   rhinitis: RhinitisRecord | null;
+  workouts: WorkoutSummary[];
+  diet: DailyDietSummary | null;
   loading: boolean;
 }
 
@@ -27,6 +29,8 @@ export default function Index() {
     garmin: null,
     recommendation: null,
     rhinitis: null,
+    workouts: [],
+    diet: null,
     loading: false,
   });
 
@@ -70,10 +74,12 @@ export default function Index() {
     
     try {
       // 并行获取数据
-      const [garminData, recommendationData, rhinitisData] = await Promise.allSettled([
+      const [garminData, recommendationData, rhinitisData, workoutsData, dietData] = await Promise.allSettled([
         getTodayGarminData(),
         getDailyRecommendation(),
         getTodayRhinitis(),
+        getTodayWorkouts(),
+        getTodayDietSummary(),
       ]);
 
       const garminResult = garminData.status === 'fulfilled' ? garminData.value : null;
@@ -90,6 +96,8 @@ export default function Index() {
         garmin: garminResult,
         recommendation: recommendationData.status === 'fulfilled' ? recommendationData.value : null,
         rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
+        workouts: workoutsData.status === 'fulfilled' ? workoutsData.value : [],
+        diet: dietData.status === 'fulfilled' ? dietData.value : null,
         loading: false,
       });
     } catch (error) {
@@ -507,6 +515,126 @@ export default function Index() {
                   );
                 }
                 return <Text className="card-desc">暂无数据</Text>;
+              })()
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
+        {/* 今日运动消耗 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('workout')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">🏋️</Text>
+            <Text className="card-title">运动消耗</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              homeData.loading ? (
+                <Text className="card-value loading">加载中...</Text>
+              ) : (() => {
+                const workouts = homeData.workouts || [];
+                const totalCalories = workouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+                const totalDuration = workouts.reduce((sum, w) => sum + (w.duration_seconds || 0), 0);
+                
+                if (workouts.length > 0) {
+                  return (
+                    <>
+                      <Text className="card-value">{totalCalories.toLocaleString()}</Text>
+                      <Text className="card-unit">大卡</Text>
+                      <Text className="card-status" style={{ color: '#F59E0B' }}>
+                        {workouts.length}次 · {Math.floor(totalDuration / 60)}分钟
+                      </Text>
+                    </>
+                  );
+                }
+                return <Text className="card-desc">今日暂无运动</Text>;
+              })()
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
+        {/* 今日饮食摄入 */}
+        <View 
+          className={`feature-card ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('diet')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">🥗</Text>
+            <Text className="card-title">饮食摄入</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              homeData.loading ? (
+                <Text className="card-value loading">加载中...</Text>
+              ) : (() => {
+                const diet = homeData.diet;
+                if (diet && diet.meals_count > 0) {
+                  return (
+                    <>
+                      <Text className="card-value">{diet.total_calories.toLocaleString()}</Text>
+                      <Text className="card-unit">大卡</Text>
+                      <Text className="card-status" style={{ color: '#10B981' }}>
+                        {diet.meals_count}餐 · {diet.total_protein.toFixed(0)}g蛋白
+                      </Text>
+                    </>
+                  );
+                }
+                return <Text className="card-desc">今日暂无记录</Text>;
+              })()
+            ) : (
+              <Text className="card-desc">登录后查看</Text>
+            )}
+          </View>
+        </View>
+
+        {/* 能量平衡 */}
+        <View 
+          className={`feature-card energy-balance ${isLoggedIn ? 'active' : ''}`}
+          onClick={() => handleNavToPage('garmin-data')}
+        >
+          <View className="card-header">
+            <Text className="card-icon">⚖️</Text>
+            <Text className="card-title">能量平衡</Text>
+          </View>
+          <View className="card-content">
+            {isLoggedIn ? (
+              homeData.loading ? (
+                <Text className="card-value loading">加载中...</Text>
+              ) : (() => {
+                const garmin = homeData.garmin;
+                const diet = homeData.diet;
+                
+                // 总消耗 = Garmin calories_total 或基础代谢估算
+                const totalOut = garmin?.calories_total || (garmin?.active_calories ? garmin.active_calories + 1800 : 0);
+                // 总摄入
+                const totalIn = diet?.total_calories || 0;
+                // 能量差
+                const balance = totalIn - totalOut;
+                
+                if (totalOut > 0 || totalIn > 0) {
+                  const isDeficit = balance < 0;
+                  return (
+                    <>
+                      <Text className="card-value" style={{ color: isDeficit ? '#EF4444' : '#10B981' }}>
+                        {balance > 0 ? '+' : ''}{balance.toLocaleString()}
+                      </Text>
+                      <Text className="card-unit">大卡</Text>
+                      <Text className="card-status" style={{ color: isDeficit ? '#EF4444' : '#10B981' }}>
+                        {isDeficit ? '热量亏损' : balance === 0 ? '能量平衡' : '热量盈余'}
+                      </Text>
+                      <Text style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '4px' }}>
+                        消耗{totalOut} · 摄入{totalIn}
+                      </Text>
+                    </>
+                  );
+                }
+                return <Text className="card-desc">记录运动和饮食</Text>;
               })()
             ) : (
               <Text className="card-desc">登录后查看</Text>
