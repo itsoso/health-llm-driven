@@ -95,6 +95,45 @@ export interface DailyRecommendation {
   cached?: boolean;
 }
 
+// 运动记录摘要
+export interface WorkoutSummary {
+  id: number;
+  workout_date: string;
+  workout_type: string;
+  workout_name: string | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  avg_heart_rate: number | null;
+  calories: number | null;
+  feeling: string | null;
+  has_ai_analysis: boolean;
+}
+
+// 饮食记录
+export interface DietRecord {
+  id: number;
+  record_date: string;
+  meal_type: string;
+  food_items: string;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  fiber: number | null;
+}
+
+// 每日饮食汇总
+export interface DailyDietSummary {
+  record_date: string;
+  total_calories: number;
+  total_protein: number;
+  total_carbs: number;
+  total_fat: number;
+  total_fiber: number;
+  meals_count: number;
+  meals: DietRecord[];
+}
+
 // API 端点
 export const API_ENDPOINTS = {
   AUTH: {
@@ -109,6 +148,12 @@ export const API_ENDPOINTS = {
   CHECKIN: {
     TODAY: '/checkin/me/today',
     CREATE: '/checkin/me',
+  },
+  WORKOUT: {
+    MY_LIST: '/workout/me',
+  },
+  DIET: {
+    MY_DAILY: '/diet/records/me/date',
   },
 };
 
