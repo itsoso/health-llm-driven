@@ -18,7 +18,7 @@ export default function Dashboard() {
     // 检查是否已登录
     const token = Taro.getStorageSync('access_token');
     if (!token) {
-      Taro.redirectTo({ url: '/pages/index/index' });
+      Taro.switchTab({ url: '/pages/index/index' });
       return;
     }
     loadData();

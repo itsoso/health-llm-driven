@@ -116,7 +116,7 @@ export default function Settings() {
         if (res.confirm) {
           clearToken();
           Taro.removeStorageSync('user_name');
-          Taro.redirectTo({ url: '/pages/index/index' });
+          Taro.switchTab({ url: '/pages/index/index' });
         }
       },
     });

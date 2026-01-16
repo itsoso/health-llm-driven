@@ -96,7 +96,7 @@ export default function CheckinPage() {
   const loadData = useCallback(async () => {
     const token = Taro.getStorageSync('access_token');
     if (!token) {
-      Taro.redirectTo({ url: '/pages/index/index' });
+      Taro.switchTab({ url: '/pages/index/index' });
       return;
     }
 
