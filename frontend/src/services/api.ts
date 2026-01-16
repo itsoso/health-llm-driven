@@ -1,8 +1,17 @@
 import axios from 'axios';
 
-// 使用相对路径，通过Next.js的rewrites代理到后端
-// 这样无论用什么IP/域名访问前端，都能正确转发API请求
-const API_BASE_URL = '/api';
+// 判断是否为原生App环境
+// 原生App使用完整的API地址，Web版本使用相对路径（通过Next.js代理）
+const isNativeApp = typeof window !== 'undefined' && (
+  process.env.NEXT_PUBLIC_IS_NATIVE_APP === 'true' ||
+  // Capacitor 环境检测
+  (window as any).Capacitor?.isNativePlatform?.()
+);
+
+// API基础地址
+const API_BASE_URL = isNativeApp 
+  ? 'https://health.westwetlandtech.com/api'  // 原生App直接调用线上API
+  : (process.env.NEXT_PUBLIC_API_BASE_URL || '/api');  // Web版本使用代理
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
