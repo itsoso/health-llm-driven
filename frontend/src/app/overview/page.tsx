@@ -23,6 +23,45 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
+// 运动记录类型
+interface WorkoutSummary {
+  id: number;
+  workout_date: string;
+  workout_type: string;
+  workout_name: string | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  avg_heart_rate: number | null;
+  calories: number | null;
+  feeling: string | null;
+  has_ai_analysis: boolean;
+}
+
+// 饮食记录类型
+interface DietRecord {
+  id: number;
+  record_date: string;
+  meal_type: string;
+  food_items: string;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  fiber: number | null;
+}
+
+// 每日饮食汇总
+interface DailyDietSummary {
+  record_date: string;
+  total_calories: number;
+  total_protein: number;
+  total_carbs: number;
+  total_fat: number;
+  total_fiber: number;
+  meals_count: number;
+  meals: DietRecord[];
+}
+
 interface GarminData {
   id: number;
   record_date: string;
@@ -156,6 +195,32 @@ function OverviewContent() {
     },
     enabled: !!token,
   });
+
+  // 获取今日运动记录
+  const { data: workoutsData } = useQuery<WorkoutSummary[]>({
+    queryKey: ['workouts-today', today],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/workout/me?days=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('获取运动数据失败');
+      return res.json();
+    },
+    enabled: !!token,
+  });
+
+  // 获取今日饮食汇总
+  const { data: dietData } = useQuery<DailyDietSummary>({
+    queryKey: ['diet-today', today],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/diet/records/me/date/${today}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('获取饮食数据失败');
+      return res.json();
+    },
+    enabled: !!token,
+  });
   
   // 调试日志
   console.log('[Overview] token:', !!token);
@@ -212,6 +277,45 @@ function OverviewContent() {
   const avg7DayRestingHR = weekRecords.length > 0
     ? Math.round(weekRecords.reduce((sum, r) => sum + (r.resting_heart_rate || 0), 0) / weekRecords.filter(r => r.resting_heart_rate).length)
     : null;
+
+  // 计算今日运动数据
+  const todayWorkouts = workoutsData?.filter(w => w.workout_date === today) || [];
+  const totalWorkoutCalories = todayWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+  const totalWorkoutDuration = todayWorkouts.reduce((sum, w) => sum + (w.duration_seconds || 0), 0);
+  const totalWorkoutDistance = todayWorkouts.reduce((sum, w) => sum + (w.distance_meters || 0), 0);
+
+  // 获取运动类型名称
+  const getWorkoutTypeName = (type: string): string => {
+    const typeMap: Record<string, string> = {
+      running: '跑步',
+      walking: '步行',
+      cycling: '骑行',
+      swimming: '游泳',
+      strength: '力量训练',
+      yoga: '瑜伽',
+      hiking: '徒步',
+      other: '其他',
+    };
+    return typeMap[type] || type;
+  };
+
+  // 获取餐食类型名称
+  const getMealTypeName = (type: string): string => {
+    const typeMap: Record<string, string> = {
+      breakfast: '早餐',
+      lunch: '午餐',
+      dinner: '晚餐',
+      snack: '加餐',
+      extra: '其他',
+    };
+    return typeMap[type] || type;
+  };
+
+  // 计算能量差
+  const bmrCalories = record?.bmr_calories || 1800; // 基础代谢，默认1800
+  const totalCaloriesOut = (record?.calories_burned || 0); // 总消耗（包含基础代谢+活动消耗）
+  const totalCaloriesIn = dietData?.total_calories || 0; // 摄入热量
+  const energyBalance = totalCaloriesIn - totalCaloriesOut; // 能量差（正数=盈余，负数=亏损）
 
   if (isLoading) {
     return (
@@ -449,6 +553,172 @@ function OverviewContent() {
               </ResponsiveContainer>
             </div>
             <div className="text-xs text-gray-400 text-center mt-1">过去 7 天</div>
+          </MetricCard>
+        </div>
+
+        {/* 运动与饮食 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          {/* 今日运动 */}
+          <MetricCard icon="🏋️" title="今日运动">
+            {todayWorkouts.length > 0 ? (
+              <div>
+                <div className="text-3xl font-bold text-orange-500 mb-1">
+                  {totalWorkoutCalories.toLocaleString()}
+                  <span className="text-lg font-normal text-gray-500 ml-1">大卡</span>
+                </div>
+                <div className="text-sm text-gray-500 mb-3">运动消耗热量</div>
+                
+                {/* 运动统计 */}
+                <div className="flex gap-4 text-sm mb-3">
+                  <div>
+                    <span className="text-gray-800 font-medium">
+                      {Math.floor(totalWorkoutDuration / 60)}分钟
+                    </span>
+                    <span className="text-gray-500 ml-1">时长</span>
+                  </div>
+                  {totalWorkoutDistance > 0 && (
+                    <div>
+                      <span className="text-gray-800 font-medium">
+                        {(totalWorkoutDistance / 1000).toFixed(2)}km
+                      </span>
+                      <span className="text-gray-500 ml-1">距离</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 运动记录列表 */}
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {todayWorkouts.map((workout) => (
+                    <div key={workout.id} className="flex justify-between items-center text-sm bg-gray-50 rounded-lg px-3 py-2">
+                      <div>
+                        <span className="font-medium text-gray-800">
+                          {workout.workout_name || getWorkoutTypeName(workout.workout_type)}
+                        </span>
+                        <span className="text-gray-400 ml-2">
+                          {Math.floor((workout.duration_seconds || 0) / 60)}分钟
+                        </span>
+                      </div>
+                      <span className="text-orange-500 font-medium">{workout.calories || 0}卡</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <div className="text-4xl mb-2">🏃‍♂️</div>
+                <p className="text-gray-500 text-sm">今日暂无运动记录</p>
+                <p className="text-gray-400 text-xs mt-1">记录运动以追踪消耗热量</p>
+              </div>
+            )}
+          </MetricCard>
+
+          {/* 今日饮食 */}
+          <MetricCard icon="🍽️" title="今日饮食">
+            {dietData && dietData.meals_count > 0 ? (
+              <div>
+                <div className="text-3xl font-bold text-green-500 mb-1">
+                  {dietData.total_calories.toLocaleString()}
+                  <span className="text-lg font-normal text-gray-500 ml-1">大卡</span>
+                </div>
+                <div className="text-sm text-gray-500 mb-3">摄入热量</div>
+                
+                {/* 营养素摘要 */}
+                <div className="grid grid-cols-3 gap-2 text-sm mb-3">
+                  <div className="bg-blue-50 rounded-lg p-2 text-center">
+                    <div className="font-medium text-blue-600">{dietData.total_protein.toFixed(0)}g</div>
+                    <div className="text-xs text-gray-500">蛋白质</div>
+                  </div>
+                  <div className="bg-yellow-50 rounded-lg p-2 text-center">
+                    <div className="font-medium text-yellow-600">{dietData.total_carbs.toFixed(0)}g</div>
+                    <div className="text-xs text-gray-500">碳水</div>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-2 text-center">
+                    <div className="font-medium text-red-500">{dietData.total_fat.toFixed(0)}g</div>
+                    <div className="text-xs text-gray-500">脂肪</div>
+                  </div>
+                </div>
+
+                {/* 餐食列表 */}
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {dietData.meals.map((meal) => (
+                    <div key={meal.id} className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">
+                        {getMealTypeName(meal.meal_type)}
+                      </span>
+                      <span className="text-green-500 font-medium">{meal.calories || 0}卡</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <div className="text-4xl mb-2">🥗</div>
+                <p className="text-gray-500 text-sm">今日暂无饮食记录</p>
+                <p className="text-gray-400 text-xs mt-1">记录饮食以追踪摄入热量</p>
+              </div>
+            )}
+          </MetricCard>
+
+          {/* 能量平衡 */}
+          <MetricCard icon="⚖️" title="能量平衡">
+            <div>
+              {/* 能量差显示 */}
+              <div className={`text-3xl font-bold mb-1 ${
+                energyBalance > 0 ? 'text-green-500' : energyBalance < 0 ? 'text-red-500' : 'text-gray-500'
+              }`}>
+                {energyBalance > 0 ? '+' : ''}{energyBalance.toLocaleString()}
+                <span className="text-lg font-normal text-gray-500 ml-1">大卡</span>
+              </div>
+              <div className="text-sm text-gray-500 mb-3">
+                {energyBalance > 0 ? '热量盈余' : energyBalance < 0 ? '热量亏损' : '能量平衡'}
+              </div>
+              
+              {/* 能量构成进度条 */}
+              <div className="space-y-3">
+                {/* 消耗 */}
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-500">总消耗</span>
+                    <span className="text-red-500 font-medium">{totalCaloriesOut.toLocaleString()} 大卡</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-red-400 rounded-full"
+                      style={{ width: `${Math.min((totalCaloriesOut / Math.max(totalCaloriesOut, totalCaloriesIn, 1)) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>基础代谢: {bmrCalories}</span>
+                    <span>活动: {record?.active_calories || 0}</span>
+                  </div>
+                </div>
+                
+                {/* 摄入 */}
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-500">总摄入</span>
+                    <span className="text-green-500 font-medium">{totalCaloriesIn.toLocaleString()} 大卡</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-green-400 rounded-full"
+                      style={{ width: `${Math.min((totalCaloriesIn / Math.max(totalCaloriesOut, totalCaloriesIn, 1)) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>{dietData?.meals_count || 0} 餐</span>
+                    <span>{dietData?.total_protein?.toFixed(0) || 0}g 蛋白质</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 小提示 */}
+              <div className="mt-3 text-xs text-gray-400 bg-gray-50 rounded-lg p-2">
+                💡 {energyBalance < -500 ? '今日热量亏损较大，注意适当补充' : 
+                    energyBalance > 500 ? '今日热量摄入较多，建议增加运动' : 
+                    '能量摄入适中，继续保持！'}
+              </div>
+            </div>
           </MetricCard>
         </div>
 
