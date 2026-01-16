@@ -70,16 +70,27 @@ def calculate_hr_zone_distribution(record: WorkoutRecord) -> Optional[HeartRateZ
 def get_my_workouts(
     days: int = Query(default=30, ge=1, le=365, description="获取最近N天的记录"),
     workout_type: Optional[str] = Query(default=None, description="按运动类型筛选"),
+    start_date: Optional[date] = Query(default=None, description="开始日期(优先于days参数)"),
+    end_date: Optional[date] = Query(default=None, description="结束日期"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取当前用户的运动记录列表"""
     today = get_china_today()
-    start_date = today - timedelta(days=days)
+    
+    # 如果指定了日期范围，使用日期范围查询
+    if start_date:
+        query_start = start_date
+        query_end = end_date or today
+    else:
+        # days=1 表示只查询今天，days=7 表示查询最近7天(包括今天)
+        query_start = today - timedelta(days=days - 1) if days > 1 else today
+        query_end = today
     
     query = db.query(WorkoutRecord).filter(
         WorkoutRecord.user_id == current_user.id,
-        WorkoutRecord.workout_date >= start_date
+        WorkoutRecord.workout_date >= query_start,
+        WorkoutRecord.workout_date <= query_end
     )
     
     if workout_type:
