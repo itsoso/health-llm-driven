@@ -82,10 +82,33 @@ export default function Index() {
         getTodayDietSummary(),
       ]);
 
+      // 调试日志 - 记录所有请求的状态
+      console.log('[首页数据] 请求状态:', {
+        garmin: garminData.status,
+        recommendation: recommendationData.status,
+        rhinitis: rhinitisData.status,
+        workouts: workoutsData.status,
+        diet: dietData.status,
+      });
+
+      // 记录失败的请求原因
+      if (garminData.status === 'rejected') {
+        console.error('[首页] Garmin数据获取失败:', garminData.reason?.message || garminData.reason);
+      }
+      if (recommendationData.status === 'rejected') {
+        console.error('[首页] 建议数据获取失败:', recommendationData.reason?.message || recommendationData.reason);
+      }
+      if (workoutsData.status === 'rejected') {
+        console.error('[首页] 运动数据获取失败:', workoutsData.reason?.message || workoutsData.reason);
+      }
+      if (dietData.status === 'rejected') {
+        console.error('[首页] 饮食数据获取失败:', dietData.reason?.message || dietData.reason);
+      }
+
       const garminResult = garminData.status === 'fulfilled' ? garminData.value : null;
       // 调试日志
       if (garminResult) {
-        console.log('Garmin数据:', {
+        console.log('[首页] Garmin数据:', {
           body_battery_most_charged: garminResult.body_battery_most_charged,
           body_battery_charged: garminResult.body_battery_charged,
           body_battery_drained: garminResult.body_battery_drained,
@@ -100,8 +123,8 @@ export default function Index() {
         diet: dietData.status === 'fulfilled' ? dietData.value : null,
         loading: false,
       });
-    } catch (error) {
-      console.error('加载首页数据失败:', error);
+    } catch (error: any) {
+      console.error('[首页] 加载数据异常:', error?.message || error);
       setHomeData(prev => ({ ...prev, loading: false }));
     }
   };

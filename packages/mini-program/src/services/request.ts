@@ -121,24 +121,39 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
 
     return responseData;
   } catch (error: any) {
-    console.error('请求失败:', error);
-    console.error('请求URL:', `${BASE_URL}${url}`);
-    console.error('错误详情:', JSON.stringify(error, null, 2));
+    // 构建错误信息字符串（避免 [object Object]）
+    let errorStr = '';
+    try {
+      if (typeof error === 'string') {
+        errorStr = error;
+      } else if (error?.message) {
+        errorStr = error.message;
+      } else if (error?.errMsg) {
+        errorStr = error.errMsg;
+      } else {
+        errorStr = JSON.stringify(error);
+      }
+    } catch {
+      errorStr = '未知错误';
+    }
+    
+    console.error('[请求失败] URL:', `${BASE_URL}${url}`);
+    console.error('[请求失败] 错误:', errorStr);
     
     if (!silent) {
       let errorMsg = '网络请求失败';
       
       // 处理网络错误
-      if (error.errMsg) {
+      if (error?.errMsg) {
         if (error.errMsg.includes('url not in domain list')) {
           errorMsg = '域名未配置，请在微信公众平台添加合法域名';
         } else if (error.errMsg.includes('fail')) {
-          errorMsg = `连接失败: ${error.errMsg}`;
+          errorMsg = '连接失败，请检查网络';
         } else {
-          errorMsg = error.errMsg;
+          errorMsg = String(error.errMsg).substring(0, 50);
         }
-      } else if (error.message) {
-        errorMsg = error.message;
+      } else if (error?.message) {
+        errorMsg = String(error.message).substring(0, 50);
       }
       
       Taro.showToast({
