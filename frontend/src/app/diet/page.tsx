@@ -16,6 +16,27 @@ const MEAL_TYPES = [
   { value: 'snack', label: '加餐', icon: '🍎', color: 'bg-green-100 text-green-800' },
 ];
 
+/**
+ * 根据北京时间自动选择默认餐食类型
+ */
+function getDefaultMealType(): string {
+  // 获取北京时间
+  const now = new Date();
+  const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
+  const hour = beijingTime.getHours();
+  
+  if (hour >= 6 && hour < 10) {
+    return 'breakfast';  // 6:00-10:00 早餐
+  } else if (hour >= 10 && hour < 14) {
+    return 'lunch';      // 10:00-14:00 午餐
+  } else if (hour >= 17 && hour < 21) {
+    return 'dinner';     // 17:00-21:00 晚餐
+  } else {
+    return 'snack';      // 其他时间 加餐
+  }
+}
+
 interface RecognizedFood {
   name: string;
   quantity?: string;
@@ -45,7 +66,7 @@ function DietContent() {
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [formData, setFormData] = useState({
-    meal_type: 'breakfast',
+    meal_type: getDefaultMealType(),
     food_items: '',
     calories: '',
     protein: '',
