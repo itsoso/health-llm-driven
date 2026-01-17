@@ -17,31 +17,186 @@ except ImportError:
 
 
 # 运动类型映射（Garmin类型 -> 系统类型）
+# 包含国际版和中国版的typeKey，以及活动名称关键字
 GARMIN_ACTIVITY_TYPE_MAP = {
+    # 跑步类
     "running": "running",
     "trail_running": "running",
     "treadmill_running": "running",
     "indoor_running": "running",
+    "track_running": "running",
+    "ultra_run": "running",
+    "virtual_run": "running",
+    
+    # 骑行类
     "cycling": "cycling",
     "road_biking": "cycling",
     "mountain_biking": "cycling",
     "indoor_cycling": "cycling",
     "virtual_ride": "cycling",
+    "gravel_cycling": "cycling",
+    "cyclocross": "cycling",
+    "bmx": "cycling",
+    "e_bike": "cycling",
+    "recumbent_cycling": "cycling",
+    
+    # 游泳类
     "swimming": "swimming",
     "lap_swimming": "swimming",
     "open_water_swimming": "swimming",
     "pool_swimming": "swimming",
+    
+    # 步行类
     "walking": "walking",
+    "casual_walking": "walking",
+    "speed_walking": "walking",
+    
+    # 登山/徒步类
     "hiking": "hiking",
+    "mountaineering": "hiking",
+    "rock_climbing": "hiking",
+    "indoor_climbing": "hiking",
+    "bouldering": "hiking",
+    "via_ferrata": "hiking",
+    "multi_sport": "hiking",  # 多运动可能是徒步
+    "tracking": "hiking",  # 追踪活动
+    "gps_tracking": "hiking",
+    "uncategorized": "hiking",  # 未分类的户外活动
+    
+    # 有氧类
     "cardio": "cardio",
     "fitness_equipment": "cardio",
     "elliptical": "cardio",
     "stair_climbing": "cardio",
     "indoor_cardio": "cardio",
+    "rowing": "cardio",
+    "indoor_rowing": "cardio",
+    "stair_stepper": "cardio",
+    "jump_rope": "cardio",
+    "skipping": "cardio",  # 跳绳
+    "aerobics": "cardio",
+    "dance": "cardio",  # 舞蹈
+    "zumba": "cardio",
+    "skating": "cardio",
+    "inline_skating": "cardio",
+    "skiing": "cardio",
+    "snowboarding": "cardio",
+    "cross_country_skiing": "cardio",
+    
+    # HIIT/高强度
     "hiit": "hiit",
+    "functional_training": "hiit",
+    "interval_training": "hiit",
+    "circuit_training": "hiit",
+    "bootcamp": "hiit",
+    "crossfit": "hiit",
+    
+    # 力量训练类
     "strength_training": "strength",
+    "weight_training": "strength",
+    "gym": "strength",
+    "traditional_strength_training": "strength",
+    "floor_climbing": "strength",
+    
+    # 瑜伽/冥想类
     "yoga": "yoga",
-    "other": "other"
+    "pilates": "yoga",
+    "meditation": "yoga",  # 冥想归入瑜伽类
+    "breathwork": "yoga",
+    "stretching": "yoga",
+    "flexibility": "yoga",
+    
+    # 球类运动
+    "tennis": "cardio",
+    "table_tennis": "cardio",  # 乒乓球
+    "badminton": "cardio",
+    "squash": "cardio",
+    "racquetball": "cardio",
+    "soccer": "cardio",
+    "football": "cardio",
+    "basketball": "cardio",
+    "volleyball": "cardio",
+    "golf": "walking",  # 高尔夫归入步行
+    "disc_golf": "walking",
+    
+    # 水上运动
+    "surfing": "cardio",
+    "paddling": "cardio",
+    "stand_up_paddleboarding": "cardio",
+    "kayaking": "cardio",
+    "canoeing": "cardio",
+    "sailing": "cardio",
+    "windsurfing": "cardio",
+    "kiteboarding": "cardio",
+    "diving": "swimming",
+    "snorkeling": "swimming",
+    
+    # 其他
+    "other": "other",
+    "all_day_activity_tracking": "other",  # 全天活动追踪
+    "unknown": "other",
+}
+
+# 活动名称关键字映射（用于typeKey无法识别时的备选）
+ACTIVITY_NAME_KEYWORDS = {
+    "跑步": "running",
+    "跑": "running",
+    "run": "running",
+    "慢跑": "running",
+    "健跑": "running",
+    "马拉松": "running",
+    
+    "骑行": "cycling",
+    "骑车": "cycling",
+    "单车": "cycling",
+    "自行车": "cycling",
+    "bike": "cycling",
+    "cycling": "cycling",
+    
+    "游泳": "swimming",
+    "swim": "swimming",
+    
+    "走路": "walking",
+    "步行": "walking",
+    "散步": "walking",
+    "walk": "walking",
+    
+    "登山": "hiking",
+    "徒步": "hiking",
+    "爬山": "hiking",
+    "hike": "hiking",
+    "hiking": "hiking",
+    "追踪": "hiking",  # 追踪活动通常是户外
+    
+    "有氧": "cardio",
+    "椭圆机": "cardio",
+    "跳绳": "cardio",
+    "跳操": "cardio",
+    "舞蹈": "cardio",
+    "滑雪": "cardio",
+    "乒乓": "cardio",
+    "羽毛球": "cardio",
+    "网球": "cardio",
+    "篮球": "cardio",
+    "足球": "cardio",
+    
+    "力量": "strength",
+    "举重": "strength",
+    "健身房": "strength",
+    "gym": "strength",
+    "weight": "strength",
+    
+    "瑜伽": "yoga",
+    "yoga": "yoga",
+    "冥想": "yoga",
+    "meditation": "yoga",
+    "拉伸": "yoga",
+    "放松": "yoga",
+    "专注": "yoga",
+    
+    "hiit": "hiit",
+    "间歇": "hiit",
+    "高强度": "hiit",
 }
 
 
@@ -151,10 +306,41 @@ class WorkoutSyncService:
                 # 其他错误直接抛出
                 raise
     
-    def _map_activity_type(self, garmin_type: str) -> str:
-        """将Garmin活动类型映射到系统类型"""
-        garmin_type_lower = garmin_type.lower().replace(" ", "_") if garmin_type else "other"
-        return GARMIN_ACTIVITY_TYPE_MAP.get(garmin_type_lower, "other")
+    def _map_activity_type(self, garmin_type: str, activity_name: str = None) -> str:
+        """
+        将Garmin活动类型映射到系统类型
+        
+        Args:
+            garmin_type: Garmin的typeKey
+            activity_name: 活动名称（用于备选匹配）
+        """
+        if not garmin_type:
+            garmin_type = "other"
+        
+        garmin_type_lower = garmin_type.lower().replace(" ", "_").replace("-", "_")
+        
+        # 1. 直接匹配 typeKey
+        mapped = GARMIN_ACTIVITY_TYPE_MAP.get(garmin_type_lower)
+        if mapped:
+            return mapped
+        
+        # 2. 尝试部分匹配 typeKey
+        for key, value in GARMIN_ACTIVITY_TYPE_MAP.items():
+            if key in garmin_type_lower or garmin_type_lower in key:
+                logger.debug(f"typeKey部分匹配: {garmin_type} -> {key} -> {value}")
+                return value
+        
+        # 3. 通过活动名称关键字匹配
+        if activity_name:
+            activity_name_lower = activity_name.lower()
+            for keyword, value in ACTIVITY_NAME_KEYWORDS.items():
+                if keyword in activity_name_lower:
+                    logger.info(f"通过活动名称匹配: '{activity_name}' 包含 '{keyword}' -> {value}")
+                    return value
+        
+        # 4. 未知类型，记录日志
+        logger.warning(f"未识别的运动类型: typeKey='{garmin_type}', 活动名称='{activity_name}'，归类为other")
+        return "other"
     
     def _parse_activity(self, activity: Dict[str, Any], user_id: int) -> Dict[str, Any]:
         """解析Garmin活动数据"""
@@ -239,7 +425,7 @@ class WorkoutSyncService:
             "workout_date": workout_date,
             "start_time": start_time,
             "end_time": start_time + timedelta(seconds=duration_seconds) if start_time else None,
-            "workout_type": self._map_activity_type(type_key),
+            "workout_type": self._map_activity_type(type_key, activity_name),
             "workout_name": activity_name,
             "duration_seconds": duration_seconds,
             "moving_duration_seconds": moving_duration,
