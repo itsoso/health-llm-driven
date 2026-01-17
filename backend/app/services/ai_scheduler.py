@@ -239,16 +239,20 @@ class AIScheduler:
         
         # 1. 睡眠回顾
         if yesterday_data and yesterday_data.sleep_score:
+            # 睡眠时长（分钟转小时）
+            sleep_hours = yesterday_data.total_sleep_duration / 60 if yesterday_data.total_sleep_duration else None
+            deep_sleep_hours = yesterday_data.deep_sleep_duration / 60 if yesterday_data.deep_sleep_duration else None
+            
             sleep_section = {
                 "title": "😴 昨晚睡眠",
                 "status": "good" if yesterday_data.sleep_score >= 80 else "warning" if yesterday_data.sleep_score >= 60 else "poor",
                 "items": [
                     f"睡眠分数: {yesterday_data.sleep_score}分",
-                    f"睡眠时长: {yesterday_data.sleep_duration_hours:.1f}小时" if yesterday_data.sleep_duration_hours else "时长未记录",
+                    f"睡眠时长: {sleep_hours:.1f}小时" if sleep_hours else "时长未记录",
                 ]
             }
-            if yesterday_data.deep_sleep_hours:
-                sleep_section["items"].append(f"深睡: {yesterday_data.deep_sleep_hours:.1f}小时")
+            if deep_sleep_hours:
+                sleep_section["items"].append(f"深睡: {deep_sleep_hours:.1f}小时")
             briefing["sections"].append(sleep_section)
         
         # 2. 身体状态
