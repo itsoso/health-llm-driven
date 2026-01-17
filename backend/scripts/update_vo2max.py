@@ -22,14 +22,17 @@ from app.models.user import User
 
 def check_vo2max_data(db: Session, user_id: int, days: int = 30):
     """检查用户最近的 VO2Max 数据"""
+    from app.models.daily_health import WorkoutRecord
+    
     start_date = date.today() - timedelta(days=days)
     
+    # 检查 Garmin 每日数据
     records = db.query(GarminDailyData).filter(
         GarminDailyData.user_id == user_id,
         GarminDailyData.record_date >= start_date
     ).order_by(GarminDailyData.record_date.desc()).all()
     
-    print(f"\n用户 {user_id} 最近 {days} 天的 VO2Max 数据:")
+    print(f"\n用户 {user_id} 最近 {days} 天的 Garmin 每日数据 VO2Max:")
     print("-" * 60)
     
     has_vo2max = False
@@ -40,7 +43,26 @@ def check_vo2max_data(db: Session, user_id: int, days: int = 30):
             has_vo2max = True
     
     if not has_vo2max:
-        print("\n⚠️ 没有找到任何 VO2Max 数据")
+        print("\n⚠️ Garmin 每日数据中没有 VO2Max")
+    
+    # 检查运动记录中的 VO2Max
+    workouts = db.query(WorkoutRecord).filter(
+        WorkoutRecord.user_id == user_id,
+        WorkoutRecord.workout_date >= start_date
+    ).order_by(WorkoutRecord.workout_date.desc()).all()
+    
+    print(f"\n用户 {user_id} 最近 {days} 天的运动记录 VO2Max:")
+    print("-" * 60)
+    
+    workout_has_vo2max = False
+    for w in workouts:
+        vo2_str = f"{w.vo2max:.1f}" if w.vo2max else "无"
+        print(f"  {w.workout_date} {w.workout_type}: VO2Max={vo2_str}, 名称={w.workout_name}")
+        if w.vo2max:
+            workout_has_vo2max = True
+    
+    if not workout_has_vo2max:
+        print("\n⚠️ 运动记录中没有 VO2Max 数据")
     
     return records
 
