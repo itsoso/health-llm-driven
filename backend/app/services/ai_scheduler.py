@@ -20,7 +20,7 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.daily_health import GarminData
 from app.models.basic_health import BasicHealthData
-from app.models.checkin import DailyCheckin
+from app.models.checkin import CheckinRecord
 from app.utils.timezone import get_china_today, get_china_now
 
 logger = logging.getLogger(__name__)
@@ -226,9 +226,9 @@ class AIScheduler:
         ).first()
         
         # 获取今日打卡记录
-        today_checkin = db.query(DailyCheckin).filter(
-            DailyCheckin.user_id == user_id,
-            DailyCheckin.checkin_date == china_today
+        today_checkin = db.query(CheckinRecord).filter(
+            CheckinRecord.user_id == user_id,
+            CheckinRecord.record_date == china_today
         ).first()
         
         briefing = {
