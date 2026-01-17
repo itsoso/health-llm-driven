@@ -8,7 +8,7 @@
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import List, Dict, Any
 from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
 from app.services.auth import garmin_credential_service
@@ -22,6 +22,50 @@ logger = logging.getLogger(__name__)
 
 # 获取全局会话管理器
 session_manager = get_session_manager()
+
+
+def _update_vo2max_from_workouts(db, user_id: int, days: int = 7):
+    """
+    从运动记录中提取最新的 VO2Max 并更新到每日健康数据
+    
+    VO2Max 通常来自跑步活动，Garmin 会在每次跑步后更新这个值
+    """
+    from app.models.daily_health import WorkoutRecord, GarminDailyData
+    from datetime import date, timedelta
+    
+    try:
+        end_date = get_china_today()
+        start_date = end_date - timedelta(days=days)
+        
+        # 查找最近有 VO2Max 数据的跑步记录
+        workout_with_vo2max = db.query(WorkoutRecord).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= start_date,
+            WorkoutRecord.vo2max.isnot(None),
+            WorkoutRecord.workout_type.in_(['running', 'trail_running', 'treadmill_running'])
+        ).order_by(WorkoutRecord.workout_date.desc()).first()
+        
+        if workout_with_vo2max and workout_with_vo2max.vo2max:
+            latest_vo2max = workout_with_vo2max.vo2max
+            logger.info(f"用户 {user_id} 从跑步记录获取到 VO2Max: {latest_vo2max}")
+            
+            # 更新最近的 Garmin 每日数据（如果 vo2max_running 为空）
+            garmin_records = db.query(GarminDailyData).filter(
+                GarminDailyData.user_id == user_id,
+                GarminDailyData.record_date >= start_date
+            ).all()
+            
+            updated_count = 0
+            for record in garmin_records:
+                if record.vo2max_running is None:
+                    record.vo2max_running = latest_vo2max
+                    updated_count += 1
+            
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"用户 {user_id} 更新了 {updated_count} 条 Garmin 记录的 VO2Max")
+    except Exception as e:
+        logger.warning(f"用户 {user_id} 更新 VO2Max 失败: {e}")
 
 
 def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
@@ -141,6 +185,9 @@ async def sync_user_garmin_data(
             workout_result = await workout_sync_service.sync_activities(db, user_id, days)
             result["activities_count"] = workout_result.get("synced_count", 0)
             logger.info(f"用户 {user_id} 运动活动同步完成: {result['activities_count']} 条")
+            
+            # 从运动记录中提取最新的 VO2Max 并更新到每日数据
+            _update_vo2max_from_workouts(db, user_id, days)
         except Exception as e:
             logger.warning(f"用户 {user_id} 运动活动同步失败: {e}")
         
