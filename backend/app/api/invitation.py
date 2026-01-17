@@ -10,7 +10,8 @@ import json
 from app.database import get_db
 from app.models.invitation import InvitationCode, UserApplication, ApplicationStatus
 from app.models.user import User
-from app.api.users import get_current_user_required, get_password_hash
+from app.api.users import get_current_user_required
+from app.services.auth import AuthService
 
 router = APIRouter(prefix="/invitation", tags=["邀请码管理"])
 
@@ -443,7 +444,7 @@ async def review_application(
             email=application.email,
             name=application.name,
             phone=application.phone,
-            hashed_password=get_password_hash("temp_password_123"),  # 临时密码
+            hashed_password=AuthService.get_password_hash("temp_password_123"),  # 临时密码
             is_active=True,
             is_approved=True,
             invite_code=application.invitation.code,
