@@ -55,7 +55,10 @@ class FoodRecognitionService:
         Returns:
             包含识别结果的字典
         """
+        logger.info(f"开始食物图片识别, 图片类型: {image_type}, base64长度: {len(image_base64) if image_base64 else 0}")
+        
         if not self.is_available():
+            logger.error("AI服务不可用")
             return {
                 "success": False,
                 "error": "AI服务不可用，请检查OpenAI配置",
@@ -65,6 +68,7 @@ class FoodRecognitionService:
         try:
             # 构建图片URL
             data_url = f"data:image/{image_type};base64,{image_base64}"
+            logger.info(f"调用GPT-4 Vision API, 模型: {self.model}")
             
             # 调用GPT-4 Vision
             response = self.client.chat.completions.create(
@@ -140,15 +144,17 @@ class FoodRecognitionService:
             return result
             
         except json.JSONDecodeError as e:
-            logger.error(f"解析AI响应失败: {e}, 原始内容: {content[:500]}")
+            logger.error(f"解析AI响应失败: {e}, 原始内容: {content[:500] if 'content' in locals() else 'N/A'}")
             return {
                 "success": False,
                 "error": f"解析AI响应失败: {str(e)}",
                 "foods": [],
-                "raw_response": content[:500] if 'content' in dir() else None
+                "raw_response": content[:500] if 'content' in locals() else None
             }
         except Exception as e:
+            import traceback
             logger.error(f"食物识别失败: {e}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return {
                 "success": False,
                 "error": f"识别失败: {str(e)}",
