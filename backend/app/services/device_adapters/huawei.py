@@ -595,3 +595,107 @@ class HuaweiHealthAdapter(DeviceAdapter):
         except Exception as e:
             logger.warning(f"华为血氧获取失败: {e}")
             return {}
+    
+    async def _fetch_weight(self, target_date: date) -> Dict[str, Any]:
+        """获取体重数据（来自华为体脂秤）"""
+        try:
+            headers = self._get_auth_headers()
+            start_ts = self._date_to_timestamp(target_date)
+            end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.api_base}/healthkit/v1/data/weight/list"
+                params = {"startTime": start_ts, "endTime": end_ts}
+                
+                async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status != 200:
+                        return {}
+                    
+                    result = await resp.json()
+                    data = result.get("data", [])
+                    
+                    if data:
+                        # 取最新的一条记录
+                        latest = data[-1]
+                        return {
+                            "weight_kg": latest.get("weight"),  # 体重 (kg)
+                            "bmi": latest.get("bmi"),
+                            "timestamp": latest.get("measureTime"),
+                        }
+                    return {}
+                    
+        except Exception as e:
+            logger.warning(f"华为体重获取失败: {e}")
+            return {}
+    
+    async def _fetch_body_fat(self, target_date: date) -> Dict[str, Any]:
+        """获取体脂数据（来自华为体脂秤）"""
+        try:
+            headers = self._get_auth_headers()
+            start_ts = self._date_to_timestamp(target_date)
+            end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.api_base}/healthkit/v1/data/bodyfat/list"
+                params = {"startTime": start_ts, "endTime": end_ts}
+                
+                async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status != 200:
+                        return {}
+                    
+                    result = await resp.json()
+                    data = result.get("data", [])
+                    
+                    if data:
+                        # 取最新的一条记录
+                        latest = data[-1]
+                        return {
+                            "body_fat_percentage": latest.get("bodyFatRate"),  # 体脂率 (%)
+                            "muscle_mass_kg": latest.get("muscleMass"),  # 肌肉量 (kg)
+                            "visceral_fat_level": latest.get("visceralFat"),  # 内脏脂肪等级
+                            "bone_mass_kg": latest.get("boneMass"),  # 骨量 (kg)
+                            "body_water_percentage": latest.get("waterRate"),  # 水分率 (%)
+                            "basal_metabolism": latest.get("basalMetabolism"),  # 基础代谢 (kcal)
+                            "protein_percentage": latest.get("proteinRate"),  # 蛋白质率 (%)
+                            "body_age": latest.get("bodyAge"),  # 身体年龄
+                            "timestamp": latest.get("measureTime"),
+                        }
+                    return {}
+                    
+        except Exception as e:
+            logger.warning(f"华为体脂获取失败: {e}")
+            return {}
+    
+    async def fetch_weight_and_body_fat(self, target_date: date) -> Dict[str, Any]:
+        """
+        获取体重和体脂数据（华为体脂秤综合数据）
+        
+        Returns:
+            {
+                "weight_kg": 70.5,
+                "bmi": 22.5,
+                "body_fat_percentage": 18.5,
+                "muscle_mass_kg": 55.0,
+                "visceral_fat_level": 8,
+                "bone_mass_kg": 3.2,
+                "body_water_percentage": 55.0,
+                "basal_metabolism": 1650,
+                "protein_percentage": 18.0,
+                "body_age": 28,
+                "timestamp": 1705468800000
+            }
+        """
+        if not self.access_token:
+            raise ValueError("未认证，请先完成 OAuth 授权")
+        
+        weight_data = await self._fetch_weight(target_date)
+        body_fat_data = await self._fetch_body_fat(target_date)
+        
+        # 合并数据
+        result = {}
+        if weight_data:
+            result.update(weight_data)
+        if body_fat_data:
+            result.update(body_fat_data)
+        
+        return result
