@@ -14,7 +14,16 @@ export default function Home() {
     <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {/* 今日建议 - 放在最显眼的位置 */}
+          {/* AI 助手 - 最重要的入口 */}
+          <Link
+            href="/ai-assistant"
+            className="p-6 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105 md:col-span-2 lg:col-span-1"
+          >
+            <h2 className="text-xl font-bold mb-2">🤖 AI 健康助手</h2>
+            <p className="text-purple-100 text-sm">智能日程、实时建议、健康提醒</p>
+          </Link>
+
+          {/* 今日建议 */}
           <Link
             href="/daily-insights"
             className="p-6 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
@@ -77,6 +86,30 @@ export default function Home() {
           >
             <h2 className="text-xl font-bold mb-2 text-gray-800">🔍 健康分析</h2>
             <p className="text-gray-600 text-sm">AI驱动的健康问题分析</p>
+          </Link>
+
+          <Link
+            href="/profile"
+            className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2 text-gray-800">👤 个人画像</h2>
+            <p className="text-gray-600 text-sm">设置健康目标和个人信息</p>
+          </Link>
+
+          <Link
+            href="/knowledge"
+            className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2 text-gray-800">📚 知识库</h2>
+            <p className="text-gray-600 text-sm">健康知识管理与问答</p>
+          </Link>
+
+          <Link
+            href="/environment"
+            className="p-6 bg-gradient-to-r from-blue-500 to-cyan-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2">🌤️ 环境健康</h2>
+            <p className="text-blue-100 text-sm">天气、空气质量与运动建议</p>
           </Link>
         </div>
 

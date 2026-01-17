@@ -1,0 +1,344 @@
+.ai-assistant {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%);
+  padding: 24px;
+  padding-bottom: 100px;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .loading-spinner {
+    width: 60px;
+    height: 60px;
+    border: 3px solid rgba(167, 139, 250, 0.3);
+    border-top-color: #a78bfa;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .loading-text {
+    margin-top: 20px;
+    color: #a78bfa;
+    font-size: 16px;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 头部
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-icon {
+    font-size: 36px;
+  }
+
+  .header-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .header-title {
+    font-size: 20px;
+    font-weight: bold;
+    background: linear-gradient(90deg, #a78bfa, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .header-time {
+    text-align: right;
+  }
+
+  .time-value {
+    font-size: 24px;
+    font-family: monospace;
+    color: #a78bfa;
+    display: block;
+  }
+
+  .time-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+}
+
+// 实时建议卡片
+.recommendation-card {
+  display: flex;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(244, 114, 182, 0.2));
+  border-radius: 16px;
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  margin-bottom: 20px;
+
+  .rec-icon {
+    font-size: 48px;
+    flex-shrink: 0;
+  }
+
+  .rec-content {
+    flex: 1;
+  }
+
+  .rec-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #fff;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .rec-message {
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.8);
+    display: block;
+    line-height: 1.5;
+  }
+
+  .rec-secondary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .sec-item {
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+}
+
+// 区块通用
+.section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  .section-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #fff;
+    display: block;
+    margin-bottom: 12px;
+  }
+}
+
+// 提醒区块
+.reminders-section {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.05);
+
+  .reminder-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(251, 191, 36, 0.1);
+    border-radius: 12px;
+    margin-bottom: 8px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .reminder-emoji {
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+
+  .reminder-content {
+    flex: 1;
+  }
+
+  .reminder-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    display: block;
+  }
+
+  .reminder-msg {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+    display: block;
+    margin-top: 4px;
+  }
+
+  .reminder-time {
+    font-size: 16px;
+    font-family: monospace;
+    color: #fbbf24;
+    flex-shrink: 0;
+  }
+}
+
+// 健康简报
+.briefing-section {
+  .greeting {
+    font-size: 16px;
+    color: #a78bfa;
+    display: block;
+    margin-bottom: 12px;
+  }
+
+  .briefing-block {
+    padding: 12px;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    border: 1px solid transparent;
+
+    &.status-good {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+      .block-title { color: #10b981; }
+    }
+
+    &.status-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.3);
+      .block-title { color: #f59e0b; }
+    }
+
+    &.status-poor {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      .block-title { color: #ef4444; }
+    }
+
+    &.status-info {
+      background: rgba(59, 130, 246, 0.1);
+      border-color: rgba(59, 130, 246, 0.3);
+      .block-title { color: #3b82f6; }
+    }
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .block-title {
+    font-size: 15px;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .block-item {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.8);
+    display: block;
+    line-height: 1.6;
+  }
+}
+
+// 今日日程
+.schedule-section {
+  .schedule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .schedule-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+
+    &.cat-routine { border-left: 3px solid #64748b; }
+    &.cat-meal { border-left: 3px solid #f97316; }
+    &.cat-work { border-left: 3px solid #3b82f6; }
+    &.cat-exercise { border-left: 3px solid #22c55e; }
+    &.cat-rest { border-left: 3px solid #a855f7; }
+    &.cat-leisure { border-left: 3px solid #ec4899; }
+    &.cat-sleep { border-left: 3px solid #6366f1; }
+    &.cat-default { border-left: 3px solid #6b7280; }
+  }
+
+  .sch-time {
+    font-size: 14px;
+    font-family: monospace;
+    color: rgba(255, 255, 255, 0.5);
+    flex-shrink: 0;
+    min-width: 50px;
+  }
+
+  .sch-content {
+    flex: 1;
+  }
+
+  .sch-activity {
+    font-size: 15px;
+    font-weight: 500;
+    color: #fff;
+    display: block;
+  }
+
+  .sch-tasks {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+    margin-top: 2px;
+  }
+}
+
+// 刷新按钮
+.refresh-btn {
+  margin: 24px auto;
+  padding: 14px 32px;
+  background: linear-gradient(90deg, #a78bfa, #f472b6);
+  border-radius: 25px;
+  text-align: center;
+  width: fit-content;
+
+  text {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+  }
+}
+
+// 底部
+.footer {
+  text-align: center;
+  padding: 20px;
+
+  text {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
