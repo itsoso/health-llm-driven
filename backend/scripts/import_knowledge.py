@@ -48,6 +48,18 @@ KNOWLEDGE_SOURCES = {
         "name": "皮皮妈妈免疫健康",
         "description": "皮皮妈妈公众号的家庭免疫健康知识",
         "directory": KNOWLEDGE_BASE_DIR / "pipi_mama",
+        "categories": ["immune_basics", "cold_fever", "allergy", "children_health"]
+    },
+    "exercise_science": {
+        "name": "运动科学",
+        "description": "基于《跑步治愈》和运动生理学的科学训练知识",
+        "directory": KNOWLEDGE_BASE_DIR / "exercise_science",
+        "categories": ["running", "heart_rate_training", "strength_training", "recovery", "sports_nutrition"]
+    },
+    "general": {
+        "name": "通用健康知识",
+        "description": "通用健康管理知识",
+        "directory": KNOWLEDGE_BASE_DIR / "general",
         "categories": ["immune_basics", "children_health", "cold_fever", "allergy", "vaccination", "nutrition_immunity"]
     },
     "exercise_science": {
