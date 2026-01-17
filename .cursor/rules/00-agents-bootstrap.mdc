@@ -1,0 +1,14 @@
+---
+description: Bootstrap: always obey AGENTS.md
+alwaysApply: true
+---
+
+# Non-negotiable
+- Before planning or editing, open and read AGENTS.md and treat it as the source of truth.
+- If AGENTS.md is not present in context, ask the user to add @AGENTS.md (do not guess).
+- If instructions conflict, prefer: user request in chat > nearest AGENTS.md > project rules > general best practices.
+
+# Execution protocol
+- First: restate the applicable constraints from AGENTS.md (brief checklist).
+- Then: propose a short plan.
+- Then: implement with minimal changes and verify using the commands/checks specified in AGENTS.md.
