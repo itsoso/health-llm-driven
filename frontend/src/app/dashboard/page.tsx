@@ -112,7 +112,7 @@ function DashboardContent() {
   })();
 
   return (
-    <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24">
+    <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4">
       <div className="max-w-7xl mx-auto">
         {/* 今日实时数据 */}
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">

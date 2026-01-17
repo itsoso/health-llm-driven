@@ -208,7 +208,7 @@ export default function DiseasePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <main className="max-w-6xl mx-auto px-4 py-8 pt-24">
+      <main className="max-w-6xl mx-auto px-4 py-8 pt-4">
         {/* 页面标题 */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">🏥 疾病管理</h1>

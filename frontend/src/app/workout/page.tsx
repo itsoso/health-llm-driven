@@ -387,7 +387,7 @@ function WorkoutContent() {
   })();
 
   return (
-    <main className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 pt-20 md:pt-24">
+    <main className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 pt-4 md:pt-4">
       <div className="max-w-7xl mx-auto">
         {/* 页面标题 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">

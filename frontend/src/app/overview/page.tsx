@@ -327,7 +327,7 @@ function OverviewContent() {
 
   if (error) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-20">
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-4">
         <div className="text-center">
           <div className="text-6xl mb-4">❌</div>
           <h2 className="text-xl font-bold text-red-700 mb-2">获取数据失败</h2>
@@ -342,7 +342,7 @@ function OverviewContent() {
 
   if (!record) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-20">
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-4">
         <div className="text-center">
           <div className="text-6xl mb-4">📊</div>
           <h2 className="text-xl font-bold text-gray-700 mb-2">暂无健康数据</h2>
@@ -362,7 +362,7 @@ function OverviewContent() {
   }
 
   return (
-    <main className="min-h-screen p-4 md:p-6 bg-gradient-to-br from-gray-50 to-gray-100 pt-20 md:pt-24">
+    <main className="min-h-screen p-4 md:p-6 bg-gradient-to-br from-gray-50 to-gray-100 pt-4 md:pt-4">
       <div className="max-w-7xl mx-auto">
         {/* 页面标题 */}
         <div className="flex justify-between items-center mb-6">

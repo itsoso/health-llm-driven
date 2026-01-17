@@ -145,7 +145,7 @@ function RhinitisContent() {
   const nasalWashTimes = todayRecord?.nasal_wash_times || [];
 
   return (
-    <main className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 pt-20 md:pt-24">
+    <main className="min-h-screen p-4 md:p-8 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 pt-4 md:pt-4">
       <div className="max-w-4xl mx-auto">
         {/* 页面标题 */}
         <div className="mb-6">

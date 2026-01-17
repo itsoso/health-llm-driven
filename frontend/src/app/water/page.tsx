@@ -169,7 +169,7 @@ function WaterContent() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-24 pb-8 px-8">
+      <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4 pb-8 px-8">
         <div className="max-w-6xl mx-auto">
           <div className="text-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
@@ -181,7 +181,7 @@ function WaterContent() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-blue-50 pt-24 pb-8 px-8">
+    <main className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-blue-50 pt-4 pb-8 px-8">
       <div className="max-w-6xl mx-auto">
         {/* 头部 */}
         <div className="flex justify-between items-center mb-6">
