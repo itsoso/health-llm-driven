@@ -65,6 +65,10 @@ class GarminCredential(Base):
     last_error = Column(Text, nullable=True)  # 最后一次错误信息
     error_count = Column(Integer, default=0)  # 连续错误次数
     
+    # OAuth Token 缓存 - 防止频繁登录导致账号锁定
+    garth_session = Column(Text, nullable=True)  # 序列化的 garth session (JSON)
+    session_expires_at = Column(DateTime(timezone=True), nullable=True)  # session 过期时间
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

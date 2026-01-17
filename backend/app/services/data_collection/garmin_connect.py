@@ -1,5 +1,8 @@
 """Garmin Connect数据收集服务（使用社区库garminconnect）"""
 import asyncio
+import json
+import os
+import tempfile
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
@@ -8,6 +11,9 @@ from app.schemas.daily_health import GarminDataCreate
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Token 缓存有效期（小时）- garth OAuth token 通常有效 24 小时
+TOKEN_CACHE_HOURS = 23
 
 try:
     from garminconnect import Garmin
@@ -278,6 +284,143 @@ class GarminConnectService:
             masked_email = '***'
         return f"[{masked_email}]"
     
+    def _save_session_to_db(self, db: Session) -> bool:
+        """
+        保存 garth session 到数据库，避免频繁登录
+        
+        Args:
+            db: 数据库会话
+            
+        Returns:
+            bool: 是否保存成功
+        """
+        if not self.user_id or not self.client or not hasattr(self.client, 'garth'):
+            return False
+        
+        prefix = self._log_prefix()
+        
+        try:
+            from app.models.user import GarminCredential
+            
+            # 使用 garth 的 dumps 方法序列化 session
+            with tempfile.TemporaryDirectory() as tmpdir:
+                self.client.garth.dump(tmpdir)
+                
+                # 读取所有 token 文件
+                session_data = {}
+                for filename in ['oauth1_token.json', 'oauth2_token.json']:
+                    filepath = os.path.join(tmpdir, filename)
+                    if os.path.exists(filepath):
+                        with open(filepath, 'r') as f:
+                            session_data[filename] = json.load(f)
+                
+                if not session_data:
+                    logger.warning(f"{prefix} garth session 数据为空，无法保存")
+                    return False
+                
+                # 保存到数据库
+                cred = db.query(GarminCredential).filter(
+                    GarminCredential.user_id == self.user_id
+                ).first()
+                
+                if cred:
+                    cred.garth_session = json.dumps(session_data)
+                    cred.session_expires_at = datetime.utcnow() + timedelta(hours=TOKEN_CACHE_HOURS)
+                    db.commit()
+                    logger.info(f"{prefix} ✅ garth session 已缓存到数据库")
+                    return True
+                    
+        except Exception as e:
+            logger.warning(f"{prefix} 保存 garth session 失败: {e}")
+            db.rollback()
+        
+        return False
+    
+    def _load_session_from_db(self, db: Session) -> bool:
+        """
+        从数据库加载缓存的 garth session
+        
+        Args:
+            db: 数据库会话
+            
+        Returns:
+            bool: 是否加载成功且 session 有效
+        """
+        if not self.user_id:
+            return False
+        
+        prefix = self._log_prefix()
+        
+        try:
+            from app.models.user import GarminCredential
+            
+            cred = db.query(GarminCredential).filter(
+                GarminCredential.user_id == self.user_id
+            ).first()
+            
+            if not cred or not cred.garth_session:
+                logger.debug(f"{prefix} 数据库中无缓存的 garth session")
+                return False
+            
+            # 检查是否过期
+            if cred.session_expires_at and cred.session_expires_at < datetime.utcnow():
+                logger.info(f"{prefix} 缓存的 garth session 已过期")
+                return False
+            
+            # 解析 session 数据
+            session_data = json.loads(cred.garth_session)
+            
+            # 使用 garth 恢复 session
+            with tempfile.TemporaryDirectory() as tmpdir:
+                # 写入 token 文件
+                for filename, data in session_data.items():
+                    filepath = os.path.join(tmpdir, filename)
+                    with open(filepath, 'w') as f:
+                        json.dump(data, f)
+                
+                # 创建 Garmin 客户端并恢复 session
+                self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                self.client.garth.load(tmpdir)
+                
+                # 验证 session 是否有效
+                if self.client.garth.oauth2_token:
+                    # 尝试一个简单的 API 调用来验证 token
+                    try:
+                        self.client.garth.connectapi("/userprofile-service/userprofile/profile")
+                        self._ensure_display_name()
+                        self._authenticated = True
+                        logger.info(f"{prefix} ✅ 从数据库加载 garth session 成功，无需重新登录")
+                        return True
+                    except Exception as e:
+                        logger.warning(f"{prefix} 缓存的 session 无效，需要重新登录: {e}")
+                        self._authenticated = False
+                        return False
+                        
+        except Exception as e:
+            logger.warning(f"{prefix} 加载 garth session 失败: {e}")
+        
+        return False
+    
+    def _clear_session_from_db(self, db: Session):
+        """清除数据库中缓存的 session"""
+        if not self.user_id:
+            return
+        
+        try:
+            from app.models.user import GarminCredential
+            
+            cred = db.query(GarminCredential).filter(
+                GarminCredential.user_id == self.user_id
+            ).first()
+            
+            if cred:
+                cred.garth_session = None
+                cred.session_expires_at = None
+                db.commit()
+                logger.info(f"{self._log_prefix()} 已清除缓存的 garth session")
+        except Exception as e:
+            logger.warning(f"{self._log_prefix()} 清除 session 失败: {e}")
+    
     def _ensure_display_name(self) -> bool:
         """
         确保 display_name 已设置，尝试多种方式获取
@@ -348,11 +491,27 @@ class GarminConnectService:
         logger.error(f"{prefix} 无法获取 display_name，部分 API 可能无法正常工作")
         return False
     
-    def _ensure_authenticated(self):
-        """确保已认证，认证失败时抛出异常"""
+    def _ensure_authenticated(self, db: Session = None):
+        """
+        确保已认证，认证失败时抛出异常
+        
+        优先尝试以下方式（按顺序）：
+        1. 从数据库加载缓存的 OAuth Token（避免频繁登录导致账号锁定）
+        2. 从 MFA 会话复用已认证的 client
+        3. 重新登录并缓存 Token
+        
+        Args:
+            db: 数据库会话（可选，用于 token 缓存）
+        """
         prefix = self._log_prefix()
         
-        # 如果有MFA会话ID，尝试复用已认证的client
+        # 1. 优先尝试从数据库加载缓存的 session（避免频繁登录触发账号锁定）
+        if db and self.user_id and not self._authenticated:
+            if self._load_session_from_db(db):
+                logger.info(f"{prefix} ✅ 使用缓存的 OAuth Token，避免重新登录")
+                return
+        
+        # 2. 如果有MFA会话ID，尝试复用已认证的client
         if self._mfa_session_id and not self._authenticated:
             _cleanup_expired_mfa_sessions()
             logger.info(f"{prefix} 尝试复用MFA会话: {self._mfa_session_id}")
@@ -369,6 +528,10 @@ class GarminConnectService:
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
                         logger.info(f"{prefix} ✅ 成功复用已认证的Garmin会话 - {server_type}, display_name={self.client.display_name}")
+                        
+                        # 保存 session 到数据库
+                        if db:
+                            self._save_session_to_db(db)
                         return
                     else:
                         logger.warning(f"{prefix} MFA会话中的client无效或没有oauth2_token")
@@ -377,6 +540,7 @@ class GarminConnectService:
             else:
                 logger.warning(f"{prefix} MFA会话不存在或已过期: {self._mfa_session_id}")
         
+        # 3. 重新登录
         if not self._authenticated or self.client is None:
             try:
                 # 创建支持 MFA 提前返回的客户端
@@ -427,6 +591,10 @@ class GarminConnectService:
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
                         logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}, display_name={self.client.display_name}")
+                        
+                        # 🔑 登录成功后缓存 session 到数据库，避免下次重新登录
+                        if db:
+                            self._save_session_to_db(db)
                         return
                 
                 # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
@@ -438,6 +606,10 @@ class GarminConnectService:
                     self._authenticated = True
                     server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
                     logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
+                    
+                    # 🔑 登录成功后缓存 session 到数据库
+                    if db:
+                        self._save_session_to_db(db)
                     
             except GarminMFARequiredError:
                 # MFA错误直接抛出
@@ -1832,6 +2004,9 @@ class GarminConnectService:
         """
         prefix = self._log_prefix()
         try:
+            # 🔑 优先使用缓存的 token 进行认证，避免频繁登录触发账号锁定
+            self._ensure_authenticated(db)
+            
             # 获取所有数据（减少日志输出，使用debug级别）
             logger.debug(f"{prefix} 开始获取 {target_date} 的数据...")
             raw_data = self.get_all_daily_data(target_date)
