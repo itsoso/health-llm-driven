@@ -27,6 +27,7 @@ from app.models.disease_tracking import (
     DiseaseTemplate, UserDiseaseProfile, SymptomLog,
     VisionRecord, DailyEyeHabit
 )
+from app.models.invitation import InvitationCode, UserApplication, ApplicationStatus
 
 __all__ = [
     "User",
@@ -63,5 +64,9 @@ __all__ = [
     "SymptomLog",
     "VisionRecord",
     "DailyEyeHabit",
+    # 邀请码和用户申请
+    "InvitationCode",
+    "UserApplication",
+    "ApplicationStatus",
 ]
 
