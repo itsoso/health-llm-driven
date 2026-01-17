@@ -58,6 +58,35 @@
   padding: 20px 16px;
   margin-bottom: 16px;
   box-sizing: border-box;
+
+  // AI 助手卡片 - 占满整行
+  &.ai-assistant-card {
+    width: 100%;
+    background: linear-gradient(135deg, rgba(167, 139, 250, 0.25), rgba(244, 114, 182, 0.25));
+    border-color: rgba(167, 139, 250, 0.4);
+    
+    .card-icon {
+      font-size: 36px;
+    }
+    
+    .card-title {
+      font-size: 18px;
+      background: linear-gradient(90deg, #a78bfa, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .card-value {
+      font-size: 16px;
+      color: rgba(255, 255, 255, 0.9);
+    }
+    
+    .card-hint {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-top: 4px;
+    }
+  }
   transition: all 0.2s ease;
   
   &.active {

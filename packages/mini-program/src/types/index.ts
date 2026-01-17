@@ -194,3 +194,49 @@ export function getSpO2Level(spo2: number | null | undefined): { level: string; 
   if (spo2 >= 90) return { level: '偏低', color: '#F59E0B' };
   return { level: '异常', color: '#EF4444' };
 }
+
+// ========== AI 调度器类型 ==========
+
+// 简报区块
+export interface BriefingSection {
+  title: string;
+  status: 'good' | 'warning' | 'poor' | 'info';
+  items: string[];
+}
+
+// 早间简报
+export interface MorningBriefing {
+  date: string;
+  greeting: string;
+  sections: BriefingSection[];
+}
+
+// 实时建议
+export interface AIRecommendation {
+  timestamp: string;
+  primary: {
+    icon: string;
+    title: string;
+    message: string;
+  } | null;
+  secondary: string[];
+  status: Record<string, any>;
+}
+
+// 健康提醒
+export interface HealthReminder {
+  type: string;
+  title: string;
+  message: string;
+  scheduled_time: string;
+  priority: number;
+}
+
+// 日程项
+export interface ScheduleItem {
+  time: string;
+  activity: string;
+  category: string;
+  duration_minutes: number;
+  tasks: string[];
+}

@@ -180,3 +180,77 @@ export async function getTodayDietSummary(): Promise<DailyDietSummary | null> {
     return null;
   }
 }
+
+// ========== AI 调度器 API ==========
+
+import { 
+  MorningBriefing, 
+  AIRecommendation, 
+  HealthReminder, 
+  ScheduleItem 
+} from '../types';
+
+/**
+ * 获取早间健康简报
+ */
+export async function getMorningBriefing(): Promise<MorningBriefing | null> {
+  try {
+    return await get<MorningBriefing>('/ai-scheduler/morning-briefing');
+  } catch (e) {
+    console.error('获取早间简报失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 获取实时健康建议
+ */
+export async function getAIRecommendation(): Promise<AIRecommendation | null> {
+  try {
+    return await get<AIRecommendation>('/ai-scheduler/recommendation');
+  } catch (e) {
+    console.error('获取实时建议失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 获取当前时段提醒
+ */
+export async function getCurrentReminders(): Promise<{ reminders: HealthReminder[]; current_time: string }> {
+  try {
+    return await get<{ reminders: HealthReminder[]; current_time: string }>('/ai-scheduler/reminders');
+  } catch (e) {
+    console.error('获取当前提醒失败:', e);
+    return { reminders: [], current_time: '' };
+  }
+}
+
+/**
+ * 获取今日日程安排
+ */
+export async function getDailySchedule(): Promise<{ schedule: ScheduleItem[]; generated_at: string }> {
+  try {
+    return await get<{ schedule: ScheduleItem[]; generated_at: string }>('/ai-scheduler/daily-schedule');
+  } catch (e) {
+    console.error('获取日程安排失败:', e);
+    return { schedule: [], generated_at: '' };
+  }
+}
+
+/**
+ * 获取综合健康摘要
+ */
+export async function getAISummary(): Promise<{
+  briefing: MorningBriefing;
+  recommendation: AIRecommendation;
+  reminders: HealthReminder[];
+  generated_at: string;
+} | null> {
+  try {
+    return await get('/ai-scheduler/summary');
+  } catch (e) {
+    console.error('获取健康摘要失败:', e);
+    return null;
+  }
+}

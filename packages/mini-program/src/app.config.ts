@@ -1,6 +1,7 @@
 export default {
   pages: [
     'pages/index/index',         // 首页
+    'pages/ai-assistant/index',  // AI 健康助手
     'pages/dashboard/index',     // 数据面板
     'pages/checkin/index',       // 打卡2.0
     'pages/diet/index',          // 饮食记录（AI识别）
