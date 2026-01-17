@@ -286,7 +286,7 @@ export default function Index() {
         {/* AI 健康助手 - 最重要的入口 */}
         <View 
           className={`feature-card ai-assistant-card ${isLoggedIn ? 'active' : ''}`} 
-          onClick={() => handleQuickNav('ai-assistant')}
+          onClick={() => handleNavToPage('ai-assistant')}
         >
           <View className="card-header">
             <Text className="card-icon">🤖</Text>

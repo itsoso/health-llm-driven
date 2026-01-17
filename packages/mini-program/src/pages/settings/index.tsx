@@ -204,15 +204,26 @@ export default function Settings() {
         </View>
       </View>
 
-      {/* 功能列表 */}
+      {/* AI 功能 */}
       <View className="menu-section">
-        <Text className="section-label">健康功能</Text>
-        <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/dashboard/index' })}>
-          <Text className="menu-icon">📊</Text>
-          <Text className="menu-text">健康数据</Text>
+        <Text className="section-label">AI 功能</Text>
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/ai-assistant/index' })}>
+          <Text className="menu-icon">🤖</Text>
+          <Text className="menu-text">AI 健康助手</Text>
+          <Text className="menu-desc">智能日程 · 实时建议</Text>
           <Text className="menu-arrow">›</Text>
         </View>
 
+        <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/dashboard/index' })}>
+          <Text className="menu-icon">💡</Text>
+          <Text className="menu-text">AI 健康建议</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
+      </View>
+
+      {/* 功能列表 */}
+      <View className="menu-section">
+        <Text className="section-label">健康功能</Text>
         <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/heart-rate/index' })}>
           <Text className="menu-icon">❤️</Text>
           <Text className="menu-text">心率追踪</Text>
@@ -228,6 +239,18 @@ export default function Settings() {
         <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/diet/index' })}>
           <Text className="menu-icon">🍽️</Text>
           <Text className="menu-text">饮食记录</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
+
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/environment/index' })}>
+          <Text className="menu-icon">🌤️</Text>
+          <Text className="menu-text">环境健康</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
+
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/garmin-data/index' })}>
+          <Text className="menu-icon">📊</Text>
+          <Text className="menu-text">历史数据</Text>
           <Text className="menu-arrow">›</Text>
         </View>
       </View>
