@@ -53,6 +53,14 @@ export default function AIAssistantPage() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [testResult, setTestResult] = useState<{
+    name: string;
+    path: string;
+    data: any;
+    error: string | null;
+    loading: boolean;
+    duration: number;
+  } | null>(null);
 
   // 更新当前时间
   useEffect(() => {
@@ -70,6 +78,27 @@ export default function AIAssistantPage() {
 
     fetchAllData();
   }, []);
+
+  const testApi = async (path: string, name: string) => {
+    setTestResult({ name, path, data: null, error: null, loading: true, duration: 0 });
+    const startTime = Date.now();
+    
+    try {
+      const response = await api.get(path);
+      const duration = Date.now() - startTime;
+      setTestResult({ name, path, data: response.data, error: null, loading: false, duration });
+    } catch (err: any) {
+      const duration = Date.now() - startTime;
+      setTestResult({ 
+        name, 
+        path, 
+        data: null, 
+        error: err.response?.data?.detail || err.message || '请求失败', 
+        loading: false, 
+        duration 
+      });
+    }
+  };
 
   const fetchAllData = async () => {
     setLoading(true);
@@ -322,21 +351,82 @@ export default function AIAssistantPage() {
         <section className="bg-slate-800/30 rounded-2xl p-6 border border-slate-700/50">
           <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
             <span>🧪</span> API 测试端点
+            <span className="text-sm font-normal text-slate-400">（点击卡片测试）</span>
           </h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
             {[
-              { name: '早间简报', path: '/api/v1/ai-scheduler/morning-briefing' },
-              { name: '实时建议', path: '/api/v1/ai-scheduler/recommendation' },
-              { name: '当前提醒', path: '/api/v1/ai-scheduler/reminders' },
-              { name: '今日日程', path: '/api/v1/ai-scheduler/daily-schedule' },
-              { name: '综合摘要', path: '/api/v1/ai-scheduler/summary' },
-            ].map((api) => (
-              <div key={api.path} className="p-3 bg-slate-700/30 rounded-lg">
-                <div className="font-medium text-sm">{api.name}</div>
-                <code className="text-xs text-purple-400 break-all">{api.path}</code>
-              </div>
+              { name: '早间简报', path: '/ai-scheduler/morning-briefing', icon: '📋' },
+              { name: '实时建议', path: '/ai-scheduler/recommendation', icon: '💡' },
+              { name: '当前提醒', path: '/ai-scheduler/reminders', icon: '🔔' },
+              { name: '今日日程', path: '/ai-scheduler/daily-schedule', icon: '📅' },
+              { name: '综合摘要', path: '/ai-scheduler/summary', icon: '📊' },
+            ].map((apiItem) => (
+              <button
+                key={apiItem.path}
+                onClick={() => testApi(apiItem.path, apiItem.name)}
+                className="p-3 bg-slate-700/30 rounded-lg hover:bg-slate-600/50 transition-all text-left group"
+              >
+                <div className="font-medium text-sm flex items-center gap-2">
+                  <span>{apiItem.icon}</span>
+                  {apiItem.name}
+                  <span className="text-xs text-slate-500 group-hover:text-purple-400">→ 点击测试</span>
+                </div>
+                <code className="text-xs text-purple-400 break-all">/api/v1{apiItem.path}</code>
+              </button>
             ))}
           </div>
+          
+          {/* API 测试结果弹窗 */}
+          {testResult && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setTestResult(null)}>
+              <div className="bg-slate-800 rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-700">
+                  <h3 className="text-lg font-bold">{testResult.name} - API 响应</h3>
+                  <button onClick={() => setTestResult(null)} className="text-slate-400 hover:text-white text-2xl">×</button>
+                </div>
+                <div className="p-4 overflow-auto max-h-[60vh]">
+                  {testResult.loading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mx-auto"></div>
+                      <p className="text-slate-400 mt-2">加载中...</p>
+                    </div>
+                  ) : testResult.error ? (
+                    <div className="bg-rose-500/20 border border-rose-500/30 rounded-lg p-4 text-rose-300">
+                      <p className="font-bold">❌ 请求失败</p>
+                      <p className="text-sm mt-1">{testResult.error}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded text-xs">200 OK</span>
+                        <span className="text-xs text-slate-500">{testResult.duration}ms</span>
+                      </div>
+                      <pre className="bg-slate-900 rounded-lg p-4 overflow-auto text-sm text-slate-300 font-mono">
+                        {JSON.stringify(testResult.data, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 border-t border-slate-700 flex justify-end gap-2">
+                  <button 
+                    onClick={() => testResult.path && testApi(testResult.path, testResult.name)}
+                    className="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-500 text-sm"
+                  >
+                    🔄 重新请求
+                  </button>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(testResult.data, null, 2));
+                      alert('已复制到剪贴板');
+                    }}
+                    className="px-4 py-2 bg-slate-600 rounded-lg hover:bg-slate-500 text-sm"
+                  >
+                    📋 复制 JSON
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       </main>
 
