@@ -93,19 +93,48 @@ class VectorStoreService:
         """检查服务是否可用"""
         return self.collection is not None
     
-    def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """获取文本的向量表示"""
-        if self.openai_client:
-            try:
+    def _get_embeddings(self, texts: List[str], batch_size: int = 50) -> List[List[float]]:
+        """
+        获取文本的向量表示（分批处理）
+        
+        Args:
+            texts: 要转换的文本列表
+            batch_size: 每批处理的文本数量，默认 50
+            
+        Returns:
+            向量列表
+        """
+        if not self.openai_client:
+            return None
+            
+        try:
+            all_embeddings = []
+            total_batches = (len(texts) + batch_size - 1) // batch_size
+            
+            logger.info(f"开始生成 embeddings，共 {len(texts)} 个文档，{total_batches} 批")
+            
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i + batch_size]
+                batch_num = i // batch_size + 1
+                
+                logger.info(f"处理第 {batch_num}/{total_batches} 批，{len(batch)} 个文档...")
+                
                 response = self.openai_client.embeddings.create(
                     model=self.embedding_model,
-                    input=texts
+                    input=batch
                 )
-                return [item.embedding for item in response.data]
-            except Exception as e:
-                logger.error(f"OpenAI embeddings 失败: {e}")
-                return None
-        return None
+                
+                batch_embeddings = [item.embedding for item in response.data]
+                all_embeddings.extend(batch_embeddings)
+                
+                logger.info(f"第 {batch_num} 批完成")
+            
+            logger.info(f"所有 embeddings 生成完成，共 {len(all_embeddings)} 个")
+            return all_embeddings
+            
+        except Exception as e:
+            logger.error(f"OpenAI embeddings 失败: {e}")
+            return None
     
     def add_documents(
         self,
