@@ -1,4 +1,4 @@
-# AGENT.md - AI Agent 开发规范
+# AGENTS.md - AI Agent 开发规范
 
 > executor.life 项目 AI Agent 必须遵循的开发规则和安全准则
 
