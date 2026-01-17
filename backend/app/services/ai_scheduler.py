@@ -228,7 +228,7 @@ class AIScheduler:
         # 获取今日打卡记录
         today_checkin = db.query(CheckinRecord).filter(
             CheckinRecord.user_id == user_id,
-            CheckinRecord.record_date == china_today
+            CheckinRecord.checkin_date == china_today
         ).first()
         
         briefing = {
