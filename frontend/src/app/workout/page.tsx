@@ -45,9 +45,9 @@ const WORKOUT_TYPES = {
   hiit: { name: 'HIIT', icon: '🔥', color: '#f97316' },
   cardio: { name: '有氧', icon: '❤️', color: '#ec4899' },
   strength: { name: '力量', icon: '💪', color: '#8b5cf6' },
-  yoga: { name: '瑜伽', icon: '🧘', color: '#10b981' },
+  yoga: { name: '瑜伽/冥想', icon: '🧘', color: '#10b981' },
   walking: { name: '步行', icon: '🚶', color: '#84cc16' },
-  hiking: { name: '徒步', icon: '⛰️', color: '#a855f7' },
+  hiking: { name: '登山/徒步', icon: '⛰️', color: '#a855f7' },
   other: { name: '其他', icon: '🏅', color: '#6b7280' },
 };
 
