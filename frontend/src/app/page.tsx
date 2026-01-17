@@ -23,6 +23,15 @@ export default function Home() {
             <p className="text-purple-100 text-sm">智能日程、实时建议、健康提醒</p>
           </Link>
 
+          {/* 数字孪生 - 个性化健康模型 */}
+          <Link
+            href="/digital-twin"
+            className="p-6 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
+          >
+            <h2 className="text-xl font-bold mb-2">🧬 数字孪生</h2>
+            <p className="text-cyan-100 text-sm">个性化健康模型、生理指标、趋势分析</p>
+          </Link>
+
           {/* 今日建议 */}
           <Link
             href="/daily-insights"
