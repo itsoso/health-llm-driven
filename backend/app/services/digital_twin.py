@@ -273,7 +273,7 @@ class DigitalTwinService:
         # 从运动记录获取详细运动
         workouts = self.db.query(WorkoutRecord).filter(
             WorkoutRecord.user_id == self.user_id,
-            WorkoutRecord.start_time >= datetime.combine(start_date, datetime.min.time())
+            WorkoutRecord.workout_date >= start_date
         ).all()
         
         steps = [r.steps for r in garmin_records if r.steps]
@@ -281,7 +281,8 @@ class DigitalTwinService:
         
         workout_types = {}
         for w in workouts:
-            workout_types[w.activity_type] = workout_types.get(w.activity_type, 0) + 1
+            wtype = w.workout_type or 'unknown'
+            workout_types[wtype] = workout_types.get(wtype, 0) + 1
         
         return {
             'avg_daily_steps': round(sum(steps) / len(steps), 0) if steps else 0,
