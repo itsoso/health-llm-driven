@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
-from app.dependencies import get_db, get_current_user_required
+from app.database import get_db
+from app.api.deps import get_current_user_required
 from app.models.user import User
 from app.models.notification import (
     UserNotificationSetting, 
