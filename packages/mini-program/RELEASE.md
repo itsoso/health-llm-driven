@@ -74,9 +74,9 @@
 
 ## 注意事项
 
-1. **域名配置**：确保 `health.westwetlandtech.com` 已在微信公众平台配置为合法域名
+1. **域名配置**：确保 `health.westlandtech.com` 已在微信公众平台配置为合法域名
 2. **服务器域名**：
-   - request合法域名：`https://health.westwetlandtech.com`
+   - request合法域名：`https://health.westlandtech.com`
    - socket合法域名：（如需要）
    - uploadFile合法域名：（如需要）
    - downloadFile合法域名：（如需要）
