@@ -29,6 +29,33 @@ class Settings(BaseSettings):
     # 数据库配置
     database_url: str = "sqlite:///./health.db"
     
+    # PostgreSQL配置（可选，优先于sqlite）
+    postgres_host: Optional[str] = None
+    postgres_port: int = 5432
+    postgres_db: str = "health_db"
+    postgres_user: str = "health_user"
+    postgres_password: Optional[str] = None
+    
+    # Redis配置
+    redis_url: str = "redis://localhost:6379/0"
+    
+    # 微信小程序推送配置
+    wechat_mini_app_id: Optional[str] = None
+    wechat_mini_app_secret: Optional[str] = None
+    
+    # iOS APNs 推送配置
+    apns_key_id: Optional[str] = None
+    apns_team_id: Optional[str] = None
+    apns_private_key_path: Optional[str] = None
+    apns_bundle_id: str = "life.executor.health"
+    
+    @property
+    def effective_database_url(self) -> str:
+        """获取实际使用的数据库URL"""
+        if self.postgres_host and self.postgres_password:
+            return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        return self.database_url
+    
     # 应用配置
     app_env: str = "development"
     debug: bool = True
