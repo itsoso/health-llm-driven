@@ -28,6 +28,11 @@ from app.models.disease_tracking import (
     VisionRecord, DailyEyeHabit
 )
 from app.models.invitation import InvitationCode, UserApplication, ApplicationStatus
+# 推送通知模型
+from app.models.notification import (
+    UserNotificationSetting, NotificationLog, ReminderConfig,
+    NotificationChannel, NotificationType, NotificationStatus
+)
 
 __all__ = [
     "User",
@@ -68,5 +73,12 @@ __all__ = [
     "InvitationCode",
     "UserApplication",
     "ApplicationStatus",
+    # 推送通知
+    "UserNotificationSetting",
+    "NotificationLog",
+    "ReminderConfig",
+    "NotificationChannel",
+    "NotificationType",
+    "NotificationStatus",
 ]
 

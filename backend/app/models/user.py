@@ -43,6 +43,7 @@ class User(Base):
     checkin_templates = relationship("CheckinTemplate", backref="user")
     checkin_records = relationship("CheckinRecord", backref="user")
     health_goals = relationship("HealthGoal", backref="user")
+    notification_settings = relationship("UserNotificationSetting", back_populates="user", uselist=False)
 
 
 class GarminCredential(Base):
