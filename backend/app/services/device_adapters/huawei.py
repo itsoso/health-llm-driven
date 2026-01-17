@@ -70,6 +70,8 @@ class HuaweiHealthAdapter(DeviceAdapter):
         "https://www.huawei.com/healthkit/activity.read",    # 活动
         "https://www.huawei.com/healthkit/oxygen.read",      # 血氧
         "https://www.huawei.com/healthkit/stress.read",      # 压力
+        "https://www.huawei.com/healthkit/weight.read",      # 体重
+        "https://www.huawei.com/healthkit/bodyfat.read",     # 体脂
     ]
     
     def __init__(
