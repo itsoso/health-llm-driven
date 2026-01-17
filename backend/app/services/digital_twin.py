@@ -260,7 +260,7 @@ class DigitalTwinService:
     def analyze_exercise_trend(self, days: int = 30) -> Dict[str, Any]:
         """分析运动趋势"""
         from app.models.daily_health import GarminData
-        from app.models.workout import WorkoutRecord
+        from app.models.daily_health import WorkoutRecord
         
         start_date = date.today() - timedelta(days=days)
         
