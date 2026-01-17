@@ -371,8 +371,8 @@ function KnowledgeManagement() {
                   '💧 健康饮水指南',
                   '🚶 步数与健康',
                 ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                    <span>{item}</span>
+                  <div key={i} className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3">
+                    <span className="text-gray-800 font-medium">{item}</span>
                   </div>
                 ))}
               </div>
