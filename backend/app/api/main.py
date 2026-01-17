@@ -27,6 +27,7 @@ from app.api import (
     devices,  # 多设备管理
     user_merge,  # 用户合并
     upload,  # 文件上传
+    invitation,  # 邀请码系统
     # executor-v2: 新增模块
     user_profile,  # 用户画像
     checkin,  # 打卡系统2.0
@@ -41,6 +42,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(wechat.router, prefix="/wechat", tags=["wechat"])
 api_router.include_router(user_merge.router, prefix="/user-merge", tags=["user-merge"])
+api_router.include_router(invitation.router, tags=["invitation"])  # 邀请码系统
 
 # 管理员路由
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
