@@ -62,7 +62,7 @@ export default function AIAssistantPage() {
 
   // 获取数据
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');
     if (!token) {
       router.push('/login');
       return;
