@@ -55,9 +55,9 @@
 1. 登录微信公众平台 (mp.weixin.qq.com)
 2. 进入"开发" -> "开发管理" -> "开发设置"
 3. 在"服务器域名"中添加:
-   - request合法域名: `https://health.westlandtech.com`
-   - uploadFile合法域名: `https://health.westlandtech.com`
-   - downloadFile合法域名: `https://health.westlandtech.com`
+   - request合法域名: `https://health.westwetlandtech.com`
+   - uploadFile合法域名: `https://health.westwetlandtech.com`
+   - downloadFile合法域名: `https://health.westwetlandtech.com`
 
 #### 问题2: Token过期
 **错误信息**: `登录已过期，请重新登录`

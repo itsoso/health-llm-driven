@@ -4,7 +4,7 @@
 import Taro from '@tarojs/taro';
 
 // API 基础地址 - nginx 已配置 /api/ → /api/v1/
-const BASE_URL = 'https://health.westlandtech.com/api';
+const BASE_URL = 'https://health.westwetlandtech.com/api';
 
 // Token 存储 key
 const TOKEN_KEY = 'access_token';

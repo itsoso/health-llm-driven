@@ -559,7 +559,7 @@ export default function DietPage() {
               const fullImageUrl = meal.image_url 
                 ? (meal.image_url.startsWith('http') 
                     ? meal.image_url 
-                    : `https://health.westlandtech.com${meal.image_url}`)
+                    : `https://health.westwetlandtech.com${meal.image_url}`)
                 : null;
               return (
                 <View key={meal.id} className="record-card">
