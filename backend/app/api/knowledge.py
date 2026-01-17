@@ -198,7 +198,10 @@ async def upload_document(
     
     try:
         # 读取文件内容
+        logger.info(f"[知识库上传] 用户 {current_user.id} 开始上传文件: {filename}")
         content = await file.read()
+        file_size_kb = len(content) / 1024
+        logger.info(f"[知识库上传] 文件大小: {file_size_kb:.1f} KB")
         text = content.decode("utf-8")
         
         # 根据文件类型处理
@@ -242,7 +245,9 @@ async def upload_document(
                 detail="文件内容为空或无法解析"
             )
         
+        logger.info(f"[知识库上传] 文件解析完成，共 {len(documents)} 个文档块，开始向量化...")
         result = vector_store.add_documents(documents, source=source)
+        logger.info(f"[知识库上传] 完成，结果: {result}")
         
         if not result.get("success"):
             raise HTTPException(
