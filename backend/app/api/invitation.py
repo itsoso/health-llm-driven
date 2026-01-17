@@ -301,10 +301,14 @@ async def submit_application(
     if data.health_questionnaire:
         questionnaire_json = json.dumps(data.health_questionnaire.model_dump(), ensure_ascii=False)
     
+    # 加密用户密码
+    hashed_password = AuthService.get_password_hash(data.password)
+    
     application = UserApplication(
         email=data.email,
         name=data.name,
         phone=data.phone,
+        hashed_password=hashed_password,  # 保存加密后的密码
         invitation_code_id=invitation.id,
         health_questionnaire=questionnaire_json,
     )
@@ -437,14 +441,12 @@ async def review_application(
     application.review_note = review.note
     
     if review.approved:
-        # 创建用户账号
-        # 注意：这里需要处理密码，实际上应该在申请时就保存加密后的密码
-        # 或者发送重置密码链接
+        # 创建用户账号，使用申请时保存的密码
         new_user = User(
             email=application.email,
             name=application.name,
             phone=application.phone,
-            hashed_password=AuthService.get_password_hash("temp_password_123"),  # 临时密码
+            hashed_password=application.hashed_password,  # 使用申请时保存的密码
             is_active=True,
             is_approved=True,
             invite_code=application.invitation.code,
@@ -458,13 +460,12 @@ async def review_application(
         
         db.commit()
         
-        # TODO: 发送邮件通知，包含临时密码或重置密码链接
+        # TODO: 发送邮件通知
         
         return {
             "message": "申请已通过，用户账号已创建",
             "user_id": new_user.id,
-            "email": new_user.email,
-            "temp_password": "temp_password_123"  # 实际应该通过邮件发送
+            "email": new_user.email
         }
     else:
         application.status = ApplicationStatus.REJECTED.value

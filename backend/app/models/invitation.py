@@ -81,6 +81,7 @@ class UserApplication(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     phone = Column(String, nullable=True)
+    hashed_password = Column(Text, nullable=True)  # 加密后的密码
     
     # 邀请码
     invitation_code_id = Column(Integer, ForeignKey("invitation_codes.id"), nullable=False)
