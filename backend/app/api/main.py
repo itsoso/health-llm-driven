@@ -28,6 +28,7 @@ from app.api import (
     user_merge,  # 用户合并
     upload,  # 文件上传
     invitation,  # 邀请码系统
+    monitoring,  # 系统监控
     # executor-v2: 新增模块
     user_profile,  # 用户画像
     checkin,  # 打卡系统2.0
@@ -47,6 +48,7 @@ api_router.include_router(invitation.router, tags=["invitation"])  # 邀请码�
 
 # 管理员路由
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])  # 系统监控
 
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])
