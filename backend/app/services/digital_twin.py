@@ -305,7 +305,7 @@ class DigitalTwinService:
         if not records:
             return {'status': 'no_data'}
         
-        weights = [(r.record_date, r.weight_kg) for r in records]
+        weights = [(r.record_date, r.weight) for r in records]
         body_fats = [(r.record_date, r.body_fat_percentage) for r in records if r.body_fat_percentage]
         
         # 计算变化
