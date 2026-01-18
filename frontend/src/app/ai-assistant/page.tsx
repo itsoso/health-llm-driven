@@ -225,7 +225,7 @@ export default function AIAssistantPage() {
           </section>
         )}
 
-        {/* 当前提醒 */}
+        {/* 当前提醒 - 只在有提醒时显示 */}
         {reminders.length > 0 && (
           <section className="bg-slate-800/50 rounded-2xl p-6 border border-amber-500/20">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -249,13 +249,6 @@ export default function AIAssistantPage() {
                 </div>
               ))}
             </div>
-          </section>
-        )}
-
-        {reminders.length === 0 && (
-          <section className="bg-slate-800/30 rounded-2xl p-6 border border-slate-700/50 text-center">
-            <span className="text-4xl">✅</span>
-            <p className="text-slate-400 mt-2">当前时段没有待处理的提醒</p>
           </section>
         )}
 
@@ -293,7 +286,7 @@ export default function AIAssistantPage() {
               <span>📅</span> 今日日程
             </h2>
             
-            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+            <div className="space-y-2 max-h-[calc(100vh-320px)] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
               {schedule.map((item, idx) => {
                 const isCurrentTime = (() => {
                   const [h, m] = item.time.split(':').map(Number);
