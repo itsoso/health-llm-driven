@@ -219,8 +219,15 @@ class AIScheduler:
         # 获取用户画像
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
         
-        # 获取昨日健康数据
-        yesterday_data = db.query(GarminData).filter(
+        # 获取今日睡眠数据（记录在今天的日期下）
+        # Garmin 的睡眠数据记录在醒来当天，所以今天的睡眠数据就是昨晚的睡眠
+        today_data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date == china_today
+        ).first()
+        
+        # 如果今天没有数据，尝试获取昨天的数据
+        yesterday_data = today_data if today_data else db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == yesterday
         ).first()
@@ -243,8 +250,10 @@ class AIScheduler:
             sleep_hours = yesterday_data.total_sleep_duration / 60 if yesterday_data.total_sleep_duration else None
             deep_sleep_hours = yesterday_data.deep_sleep_duration / 60 if yesterday_data.deep_sleep_duration else None
             
+            # 显示数据日期
+            data_date = yesterday_data.record_date
             sleep_section = {
-                "title": f"😴 昨晚睡眠 ({yesterday.month}月{yesterday.day}日)",
+                "title": f"😴 昨晚睡眠 ({data_date.month}月{data_date.day}日数据)",
                 "status": "good" if yesterday_data.sleep_score >= 80 else "warning" if yesterday_data.sleep_score >= 60 else "poor",
                 "items": [
                     f"睡眠分数: {yesterday_data.sleep_score}分",
