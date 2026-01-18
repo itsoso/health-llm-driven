@@ -177,29 +177,25 @@ export default function AIAssistantPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
-      {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-900/70 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">🤖</span>
-              <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  AI 健康助手
-                </h1>
-                <p className="text-xs text-slate-400">executor.life · Phase 2 测试</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-mono text-purple-300">{formatTime(currentTime)}</div>
-              <div className="text-xs text-slate-500">北京时间</div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white pt-4">
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {/* 页面标题 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">🤖</span>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                AI 健康助手
+              </h1>
+              <p className="text-sm text-slate-400">executor.life · 智能健康分析</p>
             </div>
           </div>
+          <div className="text-right">
+            <div className="text-xl font-mono text-purple-300">{formatTime(currentTime)}</div>
+            <div className="text-xs text-slate-500">北京时间</div>
+          </div>
         </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {error && (
           <div className="bg-rose-500/20 border border-rose-500/30 rounded-xl p-4 text-rose-300">
             ⚠️ {error}
