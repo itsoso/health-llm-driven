@@ -238,7 +238,7 @@ export default function Index() {
   // 获取鼻炎打卡状态
   const getRhinitisStatus = () => {
     const record = homeData.rhinitis;
-    if (!record) return { done: false, text: '今日未打卡' };
+    if (!record) return { done: false, text: '点击打卡' };
     
     const hasSneeze = record.sneeze_count !== null && record.sneeze_count > 0;
     const hasWash = record.nasal_wash_done;
@@ -367,7 +367,7 @@ export default function Index() {
                   <View className={`status-badge ${rhinitisStatus.done ? 'done' : 'pending'}`}>
                     <Text>{rhinitisStatus.done ? '✓' : '○'}</Text>
                   </View>
-                  <Text className="card-desc">{rhinitisStatus.done ? '今日已打卡' : '去打卡'}</Text>
+                  <Text className="card-desc">{rhinitisStatus.text}</Text>
                 </>
               )
             ) : (
