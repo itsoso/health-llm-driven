@@ -98,6 +98,123 @@ def get_my_today_checkin(
     return checkin
 
 
+@router.get("/me/history", response_model=List[HealthCheckinResponse])
+def get_my_checkin_history(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    days: int = 30,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的健康打卡历史记录（需要登录）"""
+    from datetime import timedelta
+    
+    query = db.query(HealthCheckin).filter(HealthCheckin.user_id == current_user.id)
+    
+    if start_date:
+        query = query.filter(HealthCheckin.checkin_date >= start_date)
+    elif not end_date:
+        # 如果没有指定日期范围，默认获取最近N天
+        start_date = date.today() - timedelta(days=days)
+        query = query.filter(HealthCheckin.checkin_date >= start_date)
+    
+    if end_date:
+        query = query.filter(HealthCheckin.checkin_date <= end_date)
+    
+    checkins = query.order_by(HealthCheckin.checkin_date.desc()).all()
+    return checkins
+
+
+@router.get("/me/stats")
+def get_my_checkin_stats(
+    days: int = 30,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的健康打卡统计（需要登录）"""
+    from datetime import timedelta
+    from sqlalchemy import func
+    
+    today = date.today()
+    start_date = today - timedelta(days=days)
+    
+    # 获取历史记录
+    checkins = db.query(HealthCheckin).filter(
+        HealthCheckin.user_id == current_user.id,
+        HealthCheckin.checkin_date >= start_date
+    ).order_by(HealthCheckin.checkin_date).all()
+    
+    if not checkins:
+        return {
+            "days": days,
+            "total_records": 0,
+            "sneeze_stats": {
+                "total_count": 0,
+                "avg_per_day": 0,
+                "max_per_day": 0,
+                "trend": []
+            },
+            "nasal_wash_stats": {
+                "total_count": 0,
+                "avg_per_day": 0,
+                "max_per_day": 0,
+                "trend": []
+            },
+            "daily_trend": []
+        }
+    
+    # 计算打喷嚏统计
+    sneeze_counts = [c.sneeze_count for c in checkins if c.sneeze_count]
+    total_sneeze = sum(sneeze_counts) if sneeze_counts else 0
+    avg_sneeze = total_sneeze / len(sneeze_counts) if sneeze_counts else 0
+    max_sneeze = max(sneeze_counts) if sneeze_counts else 0
+    
+    # 计算洗鼻统计
+    nasal_wash_counts = [c.nasal_wash_count for c in checkins if c.nasal_wash_count]
+    total_nasal_wash = sum(nasal_wash_counts) if nasal_wash_counts else 0
+    avg_nasal_wash = total_nasal_wash / len(nasal_wash_counts) if nasal_wash_counts else 0
+    max_nasal_wash = max(nasal_wash_counts) if nasal_wash_counts else 0
+    
+    # 构建每日趋势数据
+    daily_trend = []
+    sneeze_trend = []
+    nasal_wash_trend = []
+    
+    for checkin in checkins:
+        daily_trend.append({
+            "date": checkin.checkin_date.isoformat(),
+            "sneeze_count": checkin.sneeze_count or 0,
+            "nasal_wash_count": checkin.nasal_wash_count or 0,
+            "notes": checkin.notes
+        })
+        sneeze_trend.append({
+            "date": checkin.checkin_date.isoformat(),
+            "count": checkin.sneeze_count or 0
+        })
+        nasal_wash_trend.append({
+            "date": checkin.checkin_date.isoformat(),
+            "count": checkin.nasal_wash_count or 0
+        })
+    
+    return {
+        "days": days,
+        "total_records": len(checkins),
+        "sneeze_stats": {
+            "total_count": total_sneeze,
+            "avg_per_day": round(avg_sneeze, 1),
+            "max_per_day": max_sneeze,
+            "trend": sneeze_trend
+        },
+        "nasal_wash_stats": {
+            "total_count": total_nasal_wash,
+            "avg_per_day": round(avg_nasal_wash, 1),
+            "max_per_day": max_nasal_wash,
+            "trend": nasal_wash_trend
+        },
+        "daily_trend": daily_trend
+    }
+
+
 @router.get("/user/{user_id}", response_model=List[HealthCheckinResponse])
 def get_user_checkins(
     user_id: int,

@@ -1,11 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tantml:react-query';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -32,6 +44,7 @@ function RhinitisContent() {
   const [nasalWashType, setNasalWashType] = useState<'wash' | 'soak'>('wash');
   const [notes, setNotes] = useState<string>('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [days, setDays] = useState<number>(30);
 
   // 获取今日记录
   const { data: todayRecord, isLoading } = useQuery({
@@ -47,6 +60,19 @@ function RhinitisContent() {
       } catch {
         return null;
       }
+    },
+    enabled: !!token,
+  });
+
+  // 获取统计数据
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['rhinitis-stats', days],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/checkin/me/stats?days=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('获取统计失败');
+      return res.json();
     },
     enabled: !!token,
   });
@@ -328,7 +354,7 @@ function RhinitisContent() {
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="记录今日鼻炎症状、用药情况等..."
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none text-gray-900"
               />
               <button
                 onClick={saveNotes}
@@ -338,6 +364,149 @@ function RhinitisContent() {
                 {saveMutation.isPending ? '保存中...' : '💾 保存备注'}
               </button>
             </div>
+
+            {/* 历史统计 */}
+            {stats && !statsLoading && stats.total_records > 0 && (
+              <>
+                {/* 统计卡片 */}
+                <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-6 shadow-lg text-white">
+                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <span>📊</span> 最近 {days} 天统计
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-white/20 rounded-lg p-4 backdrop-blur-sm">
+                      <div className="text-sm opacity-90">打卡天数</div>
+                      <div className="text-2xl font-bold">{stats.total_records}</div>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-4 backdrop-blur-sm">
+                      <div className="text-sm opacity-90">平均打喷嚏</div>
+                      <div className="text-2xl font-bold">{stats.sneeze_stats.avg_per_day} <span className="text-sm">次/天</span></div>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-4 backdrop-blur-sm">
+                      <div className="text-sm opacity-90">平均洗鼻</div>
+                      <div className="text-2xl font-bold">{stats.nasal_wash_stats.avg_per_day} <span className="text-sm">次/天</span></div>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-4 backdrop-blur-sm">
+                      <div className="text-sm opacity-90">最多打喷嚏</div>
+                      <div className="text-2xl font-bold">{stats.sneeze_stats.max_per_day} <span className="text-sm">次</span></div>
+                    </div>
+                  </div>
+                  
+                  {/* 时间范围选择 */}
+                  <div className="mt-4 flex gap-2">
+                    {[7, 14, 30, 90].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setDays(d)}
+                        className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+                          days === d
+                            ? 'bg-white text-amber-600 font-semibold'
+                            : 'bg-white/20 hover:bg-white/30'
+                        }`}
+                      >
+                        {d}天
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 趋势图表 */}
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                  <h2 className="text-lg font-bold text-gray-900 mb-4">📈 打喷嚏趋势</h2>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={stats.daily_trend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="#6b7280"
+                        style={{ fontSize: '12px' }}
+                        tickFormatter={(value) => format(new Date(value), 'MM-dd')}
+                      />
+                      <YAxis 
+                        stroke="#6b7280"
+                        style={{ fontSize: '12px' }}
+                        label={{ value: '次数', angle: -90, position: 'insideLeft' }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'white', 
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px'
+                        }}
+                        labelFormatter={(value) => format(new Date(value), 'yyyy-MM-dd')}
+                      />
+                      <Legend />
+                      <Line 
+                        type="monotone" 
+                        dataKey="sneeze_count" 
+                        stroke="#f59e0b" 
+                        strokeWidth={2}
+                        name="打喷嚏次数"
+                        dot={{ fill: '#f59e0b', r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* 洗鼻趋势 */}
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                  <h2 className="text-lg font-bold text-gray-900 mb-4">💧 洗鼻/泡鼻趋势</h2>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={stats.daily_trend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="#6b7280"
+                        style={{ fontSize: '12px' }}
+                        tickFormatter={(value) => format(new Date(value), 'MM-dd')}
+                      />
+                      <YAxis 
+                        stroke="#6b7280"
+                        style={{ fontSize: '12px' }}
+                        label={{ value: '次数', angle: -90, position: 'insideLeft' }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'white', 
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px'
+                        }}
+                        labelFormatter={(value) => format(new Date(value), 'yyyy-MM-dd')}
+                      />
+                      <Legend />
+                      <Bar 
+                        dataKey="nasal_wash_count" 
+                        fill="#3b82f6" 
+                        name="洗鼻次数"
+                        radius={[8, 8, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* AI 建议 */}
+                <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl p-6 shadow-lg text-white">
+                  <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+                    <span>🤖</span> AI 健康建议
+                  </h2>
+                  <div className="space-y-2 text-sm">
+                    {stats.sneeze_stats.avg_per_day > 10 && (
+                      <p>• 最近打喷嚏较频繁（平均 {stats.sneeze_stats.avg_per_day} 次/天），建议增加洗鼻频率，避免接触过敏原</p>
+                    )}
+                    {stats.nasal_wash_stats.avg_per_day < 2 && (
+                      <p>• 洗鼻次数偏少（平均 {stats.nasal_wash_stats.avg_per_day} 次/天），建议每天早晚各洗鼻一次，保持鼻腔清洁</p>
+                    )}
+                    {stats.nasal_wash_stats.avg_per_day >= 2 && stats.sneeze_stats.avg_per_day < 5 && (
+                      <p>• 坚持得很好！继续保持每天洗鼻的习惯，鼻炎症状明显改善 ✨</p>
+                    )}
+                    {stats.sneeze_stats.max_per_day > 20 && (
+                      <p>• 单日最多打喷嚏 {stats.sneeze_stats.max_per_day} 次，建议记录当天的环境和饮食，找出过敏原</p>
+                    )}
+                    <p>• 建议：保持室内空气湿度在 40-60%，定期清洁床品，避免尘螨滋生</p>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
