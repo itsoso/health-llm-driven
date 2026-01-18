@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api';
@@ -78,20 +78,85 @@ interface ClearCacheResult {
   deleted_count: number;
 }
 
+// 邀请码相关类型
+interface InvitationCode {
+  id: number;
+  code: string;
+  note: string | null;
+  max_uses: number;
+  used_count: number;
+  remaining_uses: number;
+  is_active: boolean;
+  is_valid: boolean;
+  expires_at: string | null;
+  created_at: string;
+  creator_name: string | null;
+}
+
+interface Application {
+  id: number;
+  email: string;
+  name: string;
+  phone: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  health_questionnaire: {
+    age?: number;
+    gender?: string;
+    height_cm?: number;
+    weight_kg?: number;
+    health_goals?: string[];
+    chronic_conditions?: string[];
+    wearable_devices?: string[];
+    exercise_frequency?: string;
+    why_join?: string;
+  } | null;
+  review_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewer_name: string | null;
+}
+
+interface InvitationStats {
+  invitation_codes: {
+    total: number;
+    active: number;
+    total_uses: number;
+  };
+  applications: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  };
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   
-  const [activeTab, setActiveTab] = useState<'users' | 'garmin'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [syncDays, setSyncDays] = useState(3);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [syncingUserId, setSyncingUserId] = useState<number | null>(null); // 追踪当前正在同步的用户
+  const [syncingUserId, setSyncingUserId] = useState<number | null>(null);
   const pageSize = 15;
+
+  // 邀请码相关 state
+  const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [invitationStats, setInvitationStats] = useState<InvitationStats | null>(null);
+  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('pending');
+  const [showCreateCode, setShowCreateCode] = useState(false);
+  const [newCodeNote, setNewCodeNote] = useState('');
+  const [newCodeMaxUses, setNewCodeMaxUses] = useState(10);
+  const [newCodeExpiresDays, setNewCodeExpiresDays] = useState<number | null>(null);
+  const [invitationLoading, setInvitationLoading] = useState(false);
 
   // 权限检查
   useEffect(() => {
@@ -101,6 +166,32 @@ export default function AdminPage() {
       router.push('/');
     }
   }, [authLoading, isAuthenticated, user, router]);
+
+  // 获取邀请码数据
+  const fetchInvitationData = useCallback(async () => {
+    setInvitationLoading(true);
+    try {
+      const [appsRes, codesRes, statsRes] = await Promise.all([
+        api.get(`/invitation/applications${statusFilter ? `?status=${statusFilter}` : ''}`),
+        api.get('/invitation/codes'),
+        api.get('/invitation/stats'),
+      ]);
+      setApplications(appsRes.data);
+      setInvitationCodes(codesRes.data);
+      setInvitationStats(statsRes.data);
+    } catch (error) {
+      console.error('Failed to fetch invitation data:', error);
+    } finally {
+      setInvitationLoading(false);
+    }
+  }, [statusFilter]);
+
+  // 切换到邀请码 tab 时加载数据
+  useEffect(() => {
+    if (activeTab === 'invitation' && isAuthenticated && user?.is_admin) {
+      fetchInvitationData();
+    }
+  }, [activeTab, isAuthenticated, user, fetchInvitationData]);
 
   // 获取统计数据
   const { data: stats, isLoading: statsLoading } = useQuery<AdminStats>({
@@ -170,7 +261,6 @@ export default function AdminPage() {
       console.error('删除用户失败:', error);
       const errorMessage = error?.response?.data?.detail || error?.message || '删除用户失败，请稍后重试';
       alert(`❌ ${errorMessage}`);
-      // 即使失败也关闭对话框
       setShowDeleteConfirm(false);
       setSelectedUser(null);
     },
@@ -201,16 +291,16 @@ export default function AdminPage() {
   // 同步单个用户
   const syncUserMutation = useMutation({
     mutationFn: async ({ userId, days }: { userId: number; days: number }) => {
-      setSyncingUserId(userId); // 开始同步时设置正在同步的用户ID
+      setSyncingUserId(userId);
       const res = await api.post(`/admin/garmin/sync-user/${userId}?days=${days}`);
       return res.data;
     },
     onSuccess: () => {
-      setSyncingUserId(null); // 成功后清除
+      setSyncingUserId(null);
       queryClient.invalidateQueries({ queryKey: ['admin-garmin-sync-status'] });
     },
     onError: () => {
-      setSyncingUserId(null); // 失败后也清除
+      setSyncingUserId(null);
     },
   });
 
@@ -269,6 +359,59 @@ export default function AdminPage() {
     },
   });
 
+  // 邀请码相关操作
+  const handleReview = async (approved: boolean) => {
+    if (!selectedApp) return;
+    
+    try {
+      await api.post(`/invitation/applications/${selectedApp.id}/review`, {
+        approved,
+        note: reviewNote || null,
+      });
+      setSelectedApp(null);
+      setReviewNote('');
+      fetchInvitationData();
+    } catch (error) {
+      console.error('Failed to review:', error);
+      alert('审批失败，请重试');
+    }
+  };
+
+  const handleCreateCode = async () => {
+    try {
+      await api.post('/invitation/codes', {
+        note: newCodeNote || null,
+        max_uses: newCodeMaxUses,
+        expires_days: newCodeExpiresDays,
+      });
+      setShowCreateCode(false);
+      setNewCodeNote('');
+      setNewCodeMaxUses(10);
+      setNewCodeExpiresDays(null);
+      fetchInvitationData();
+    } catch (error) {
+      console.error('Failed to create code:', error);
+      alert('创建失败，请重试');
+    }
+  };
+
+  const handleDisableCode = async (codeId: number) => {
+    if (!confirm('确定要禁用此邀请码吗？')) return;
+    
+    try {
+      await api.delete(`/invitation/codes/${codeId}`);
+      fetchInvitationData();
+    } catch (error) {
+      console.error('Failed to disable code:', error);
+      alert('操作失败，请重试');
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert('已复制到剪贴板');
+  };
+
   // 加载状态
   if (authLoading || !isAuthenticated || !user?.is_admin) {
     return (
@@ -306,7 +449,7 @@ export default function AdminPage() {
         {/* 页面标题 */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">🛡️ 管理后台</h1>
-          <p className="text-purple-200">管理用户和查看系统统计</p>
+          <p className="text-purple-200">管理用户、Garmin同步和邀请码</p>
         </div>
 
         {/* Tab 切换 */}
@@ -330,6 +473,16 @@ export default function AdminPage() {
             }`}
           >
             ⌚ Garmin同步
+          </button>
+          <button
+            onClick={() => setActiveTab('invitation')}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'invitation'
+                ? 'bg-purple-600 text-white'
+                : 'bg-white/10 text-purple-200 hover:bg-white/20'
+            }`}
+          >
+            🎫 邀请码管理
           </button>
         </div>
 
@@ -802,14 +955,171 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {/* 邀请码管理 Tab */}
+        {activeTab === 'invitation' && (
+          <div className="space-y-6">
+            {/* 统计卡片 */}
+            {invitationStats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                  <div className="text-3xl font-bold text-yellow-400">{invitationStats.applications.pending}</div>
+                  <div className="text-purple-200 text-sm">待审批申请</div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                  <div className="text-3xl font-bold text-green-400">{invitationStats.applications.approved}</div>
+                  <div className="text-purple-200 text-sm">已通过</div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                  <div className="text-3xl font-bold text-purple-400">{invitationStats.invitation_codes.active}</div>
+                  <div className="text-purple-200 text-sm">有效邀请码</div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                  <div className="text-3xl font-bold text-blue-400">{invitationStats.invitation_codes.total_uses}</div>
+                  <div className="text-purple-200 text-sm">总使用次数</div>
+                </div>
+              </div>
+            )}
+
+            {/* 邀请码列表 */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">🎫 邀请码列表</h2>
+                <button
+                  onClick={() => setShowCreateCode(true)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                >
+                  + 创建邀请码
+                </button>
+              </div>
+
+              {invitationLoading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
+                </div>
+              ) : invitationCodes.length === 0 ? (
+                <div className="p-8 text-center text-purple-200">暂无邀请码</div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {invitationCodes.map((code) => (
+                    <div key={code.id} className="p-4 hover:bg-white/5 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <code className="px-3 py-1.5 bg-purple-500/20 text-purple-300 rounded font-mono text-lg">
+                            {code.code}
+                          </code>
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            code.is_valid
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                          }`}>
+                            {code.is_valid ? '有效' : '已失效'}
+                          </span>
+                          <span className="text-purple-200 text-sm">
+                            {code.used_count}/{code.max_uses} 次
+                          </span>
+                          {code.note && (
+                            <span className="text-gray-400 text-sm">({code.note})</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => copyToClipboard(code.code)}
+                            className="px-3 py-1 bg-white/10 text-white rounded hover:bg-white/20 transition-colors text-sm"
+                          >
+                            复制
+                          </button>
+                          {code.is_active && (
+                            <button
+                              onClick={() => handleDisableCode(code.id)}
+                              className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-sm"
+                            >
+                              禁用
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-gray-400 text-xs">
+                        创建于 {formatDate(code.created_at)}
+                        {code.creator_name && ` · 创建者: ${code.creator_name}`}
+                        {code.expires_at && ` · 过期时间: ${formatDate(code.expires_at)}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 用户申请列表 */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-4 border-b border-white/10">
+                <h2 className="text-lg font-semibold text-white mb-4">📝 用户申请</h2>
+                <div className="flex items-center gap-2">
+                  {['pending', 'approved', 'rejected', ''].map((status) => (
+                    <button
+                      key={status || 'all'}
+                      onClick={() => setStatusFilter(status)}
+                      className={`px-3 py-1 rounded text-sm ${
+                        statusFilter === status
+                          ? 'bg-purple-500 text-white'
+                          : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                      }`}
+                    >
+                      {status === 'pending' ? '待审批' : 
+                       status === 'approved' ? '已通过' : 
+                       status === 'rejected' ? '已拒绝' : '全部'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {invitationLoading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
+                </div>
+              ) : applications.length === 0 ? (
+                <div className="p-8 text-center text-purple-200">暂无申请记录</div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {applications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="p-4 hover:bg-white/5 cursor-pointer transition-colors"
+                      onClick={() => setSelectedApp(app)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-white font-medium">{app.name}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs ${
+                              app.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                              app.status === 'approved' ? 'bg-green-500/20 text-green-400' :
+                              'bg-red-500/20 text-red-400'
+                            }`}>
+                              {app.status === 'pending' ? '待审批' :
+                               app.status === 'approved' ? '已通过' : '已拒绝'}
+                            </span>
+                          </div>
+                          <div className="text-gray-400 text-sm mt-1">
+                            {app.email} · 申请时间：{formatDate(app.created_at)}
+                          </div>
+                        </div>
+                        <span className="text-gray-500">→</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 删除确认弹窗 */}
+      {/* 删除用户确认弹窗 */}
       {showDeleteConfirm && selectedUser && (
         <div 
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={(e) => {
-            // 点击背景关闭对话框
             if (e.target === e.currentTarget) {
               setShowDeleteConfirm(false);
               setSelectedUser(null);
@@ -843,12 +1153,8 @@ export default function AdminPage() {
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log('确认删除按钮被点击，用户ID:', selectedUser.id);
                   if (selectedUser && selectedUser.id) {
                     deleteUserMutation.mutate(selectedUser.id);
-                  } else {
-                    console.error('selectedUser 或 selectedUser.id 为空');
-                    alert('错误：无法获取用户ID');
                   }
                 }}
                 disabled={deleteUserMutation.isPending || !selectedUser}
@@ -860,7 +1166,231 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* 创建邀请码弹窗 */}
+      {showCreateCode && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowCreateCode(false);
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-white/20"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-white mb-4">创建邀请码</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-purple-200 text-sm mb-2">备注（可选）</label>
+                <input
+                  type="text"
+                  value={newCodeNote}
+                  onChange={(e) => setNewCodeNote(e.target.value)}
+                  placeholder="例如：给朋友的邀请码"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-purple-200 text-sm mb-2">最大使用次数</label>
+                <input
+                  type="number"
+                  value={newCodeMaxUses}
+                  onChange={(e) => setNewCodeMaxUses(Number(e.target.value))}
+                  min={1}
+                  max={100}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-purple-200 text-sm mb-2">过期天数（可选）</label>
+                <input
+                  type="number"
+                  value={newCodeExpiresDays || ''}
+                  onChange={(e) => setNewCodeExpiresDays(e.target.value ? Number(e.target.value) : null)}
+                  placeholder="留空表示永不过期"
+                  min={1}
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                onClick={() => setShowCreateCode(false)}
+                className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateCode}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 审批申请弹窗 */}
+      {selectedApp && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedApp(null);
+              setReviewNote('');
+            }
+          }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-white/20 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-white mb-4">申请详情</h3>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-gray-400 text-sm">姓名</span>
+                  <p className="text-white">{selectedApp.name}</p>
+                </div>
+                <div>
+                  <span className="text-gray-400 text-sm">邮箱</span>
+                  <p className="text-white">{selectedApp.email}</p>
+                </div>
+                {selectedApp.phone && (
+                  <div>
+                    <span className="text-gray-400 text-sm">手机</span>
+                    <p className="text-white">{selectedApp.phone}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-gray-400 text-sm">状态</span>
+                  <p className={`${
+                    selectedApp.status === 'pending' ? 'text-yellow-400' :
+                    selectedApp.status === 'approved' ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {selectedApp.status === 'pending' ? '待审批' :
+                     selectedApp.status === 'approved' ? '已通过' : '已拒绝'}
+                  </p>
+                </div>
+              </div>
+
+              {selectedApp.health_questionnaire && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <h4 className="text-purple-200 font-medium mb-3">健康问卷</h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {selectedApp.health_questionnaire.age && (
+                      <div>
+                        <span className="text-gray-400">年龄</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.age}岁</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.gender && (
+                      <div>
+                        <span className="text-gray-400">性别</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.gender}</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.height_cm && (
+                      <div>
+                        <span className="text-gray-400">身高</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.height_cm}cm</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.weight_kg && (
+                      <div>
+                        <span className="text-gray-400">体重</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.weight_kg}kg</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.exercise_frequency && (
+                      <div className="col-span-2">
+                        <span className="text-gray-400">运动频率</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.exercise_frequency}</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.health_goals && selectedApp.health_questionnaire.health_goals.length > 0 && (
+                      <div className="col-span-2">
+                        <span className="text-gray-400">健康目标</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.health_goals.join(', ')}</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.wearable_devices && selectedApp.health_questionnaire.wearable_devices.length > 0 && (
+                      <div className="col-span-2">
+                        <span className="text-gray-400">穿戴设备</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.wearable_devices.join(', ')}</p>
+                      </div>
+                    )}
+                    {selectedApp.health_questionnaire.why_join && (
+                      <div className="col-span-2">
+                        <span className="text-gray-400">加入原因</span>
+                        <p className="text-white">{selectedApp.health_questionnaire.why_join}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedApp.status === 'pending' && (
+                <div>
+                  <label className="block text-purple-200 text-sm mb-2">审批备注（可选）</label>
+                  <textarea
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                    placeholder="输入审批备注..."
+                    rows={3}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                  />
+                </div>
+              )}
+
+              {selectedApp.review_note && (
+                <div className="bg-white/5 rounded-lg p-3">
+                  <span className="text-gray-400 text-sm">审批备注</span>
+                  <p className="text-white">{selectedApp.review_note}</p>
+                  {selectedApp.reviewer_name && (
+                    <p className="text-gray-400 text-xs mt-1">
+                      审批人: {selectedApp.reviewer_name} · {formatDate(selectedApp.reviewed_at)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                onClick={() => {
+                  setSelectedApp(null);
+                  setReviewNote('');
+                }}
+                className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+              >
+                关闭
+              </button>
+              {selectedApp.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => handleReview(false)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    拒绝
+                  </button>
+                  <button
+                    onClick={() => handleReview(true)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    通过
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
-

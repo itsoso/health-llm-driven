@@ -1,5 +1,5 @@
 /**
- * AI 健康助手页面
+ * AI 健康助手页面 - 优化版
  */
 import { View, Text, ScrollView } from '@tarojs/components';
 import { useState, useEffect } from 'react';
@@ -73,6 +73,19 @@ export default function AIAssistant() {
     }
   };
 
+  const getCategoryIcon = (category: string) => {
+    const icons: Record<string, string> = {
+      routine: '🌅',
+      meal: '🍽️',
+      work: '💼',
+      exercise: '🏃',
+      rest: '☕',
+      leisure: '🎮',
+      sleep: '😴',
+    };
+    return icons[category] || '📌';
+  };
+
   const getCategoryClass = (category: string) => {
     const classes: Record<string, string> = {
       routine: 'cat-routine',
@@ -89,40 +102,35 @@ export default function AIAssistant() {
   if (loading) {
     return (
       <View className="ai-assistant loading">
+        <View className="loading-container">
         <View className="loading-spinner"></View>
-        <Text className="loading-text">加载 AI 助手...</Text>
+          <Text className="loading-text">AI 正在分析您的健康数据...</Text>
+        </View>
       </View>
     );
   }
 
   return (
     <ScrollView className="ai-assistant" scrollY>
-      {/* 头部 */}
-      <View className="header">
-        <View className="header-left">
-          <Text className="header-icon">🤖</Text>
-          <View className="header-text">
-            <Text className="header-title">AI 健康助手</Text>
-            <Text className="header-subtitle">executor.life</Text>
-          </View>
-        </View>
-        <View className="header-time">
-          <Text className="time-value">{currentTime}</Text>
-          <Text className="time-label">北京时间</Text>
-        </View>
-      </View>
-
-      {/* 实时建议 - 最重要 */}
+      {/* 实时建议卡片 - 最醒目 */}
       {recommendation && recommendation.primary && (
-        <View className="recommendation-card">
-          <Text className="rec-icon">{recommendation.primary.icon}</Text>
-          <View className="rec-content">
-            <Text className="rec-title">{recommendation.primary.title}</Text>
-            <Text className="rec-message">{recommendation.primary.message}</Text>
+        <View className="hero-card">
+          <View className="hero-glow"></View>
+          <View className="hero-content">
+            <View className="hero-header">
+              <Text className="hero-icon">{recommendation.primary.icon}</Text>
+              <View className="hero-time">
+                <Text className="time-value">{currentTime}</Text>
+              </View>
+            </View>
+            <Text className="hero-title">{recommendation.primary.title}</Text>
+            <Text className="hero-message">{recommendation.primary.message}</Text>
             {recommendation.secondary.length > 0 && (
-              <View className="rec-secondary">
-                {recommendation.secondary.map((item, idx) => (
-                  <Text key={idx} className="sec-item">{item}</Text>
+              <View className="hero-tags">
+                {recommendation.secondary.slice(0, 3).map((item, idx) => (
+                  <View key={idx} className="hero-tag">
+                    <Text>{item}</Text>
+                  </View>
                 ))}
               </View>
             )}
@@ -133,47 +141,75 @@ export default function AIAssistant() {
       {/* 当前提醒 */}
       {reminders.length > 0 && (
         <View className="section reminders-section">
-          <Text className="section-title">🔔 当前提醒</Text>
+          <View className="section-header">
+            <Text className="section-icon">🔔</Text>
+            <Text className="section-title">当前提醒</Text>
+          </View>
+          <View className="reminders-list">
           {reminders.map((reminder, idx) => (
-            <View key={idx} className="reminder-item">
+              <View key={idx} className="reminder-card">
+                <View className="reminder-left">
               <Text className="reminder-emoji">{reminder.title.split(' ')[0]}</Text>
-              <View className="reminder-content">
+                </View>
+                <View className="reminder-center">
                 <Text className="reminder-title">{reminder.title.replace(/^[^\s]+\s/, '')}</Text>
                 <Text className="reminder-msg">{reminder.message}</Text>
               </View>
+                <View className="reminder-right">
               <Text className="reminder-time">{reminder.scheduled_time}</Text>
+                </View>
             </View>
           ))}
+          </View>
         </View>
       )}
 
       {/* 健康简报 */}
       {briefing && (
         <View className="section briefing-section">
-          <Text className="section-title">📋 健康简报</Text>
+          <View className="section-header">
+            <Text className="section-icon">📊</Text>
+            <Text className="section-title">健康简报</Text>
+          </View>
+          <View className="greeting-box">
           <Text className="greeting">{briefing.greeting}</Text>
+          </View>
+          <View className="briefing-grid">
           {briefing.sections.map((section, idx) => (
-            <View key={idx} className={`briefing-block ${getStatusClass(section.status)}`}>
-              <Text className="block-title">{section.title}</Text>
+              <View key={idx} className={`briefing-card ${getStatusClass(section.status)}`}>
+                <Text className="card-title">{section.title}</Text>
+                <View className="card-items">
               {section.items.map((item, itemIdx) => (
-                <Text key={itemIdx} className="block-item">• {item}</Text>
+                    <Text key={itemIdx} className="card-item">• {item}</Text>
               ))}
+                </View>
             </View>
           ))}
+          </View>
         </View>
       )}
 
       {/* 今日日程 */}
       {schedule.length > 0 && (
         <View className="section schedule-section">
-          <Text className="section-title">📅 今日日程</Text>
-          <View className="schedule-list">
-            {schedule.slice(0, 8).map((item, idx) => (
-              <View key={idx} className={`schedule-item ${getCategoryClass(item.category)}`}>
-                <Text className="sch-time">{item.time}</Text>
-                <View className="sch-content">
-                  <Text className="sch-activity">{item.activity}</Text>
-                  <Text className="sch-tasks">{item.tasks.join(' · ')}</Text>
+          <View className="section-header">
+            <Text className="section-icon">📅</Text>
+            <Text className="section-title">今日日程</Text>
+          </View>
+          <View className="timeline">
+            {schedule.slice(0, 10).map((item, idx) => (
+              <View key={idx} className={`timeline-item ${getCategoryClass(item.category)}`}>
+                <View className="timeline-dot">
+                  <Text className="dot-icon">{getCategoryIcon(item.category)}</Text>
+                </View>
+                <View className="timeline-content">
+                  <View className="timeline-header">
+                    <Text className="timeline-time">{item.time}</Text>
+                    <Text className="timeline-activity">{item.activity}</Text>
+                  </View>
+                  {item.tasks.length > 0 && (
+                    <Text className="timeline-tasks">{item.tasks.join(' · ')}</Text>
+                  )}
                 </View>
               </View>
             ))}
@@ -182,12 +218,11 @@ export default function AIAssistant() {
       )}
 
       {/* 刷新按钮 */}
+      <View className="refresh-area">
       <View className="refresh-btn" onClick={loadData}>
-        <Text>🔄 刷新数据</Text>
+          <Text className="refresh-icon">↻</Text>
+          <Text className="refresh-text">刷新数据</Text>
       </View>
-
-      <View className="footer">
-        <Text>executor.life · AI 健康助手</Text>
       </View>
     </ScrollView>
   );

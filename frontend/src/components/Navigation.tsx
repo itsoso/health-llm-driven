@@ -240,6 +240,14 @@ export default function Navigation() {
                               <span>管理后台</span>
                             </Link>
                             <Link
+                              href="/admin/applications"
+                              onClick={() => setShowUserMenu(false)}
+                              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition-all"
+                            >
+                              <span>🎫</span>
+                              <span>邀请码审批</span>
+                            </Link>
+                            <Link
                               href="/knowledge"
                               onClick={() => setShowUserMenu(false)}
                               className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition-all"
@@ -416,6 +424,14 @@ export default function Navigation() {
                         >
                           <span className="mr-3 text-xl">🛡️</span>
                           管理后台
+                        </Link>
+                        <Link
+                          href="/admin/applications"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className="flex items-center px-4 py-3 rounded-lg text-base font-semibold text-purple-700 hover:bg-purple-50"
+                        >
+                          <span className="mr-3 text-xl">🎫</span>
+                          邀请码审批
                         </Link>
                         <Link
                           href="/knowledge"

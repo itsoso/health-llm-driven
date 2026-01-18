@@ -37,6 +37,12 @@ export default {
         selectedIconPath: 'assets/icons/home-active.png',
       },
       {
+        pagePath: 'pages/ai-assistant/index',
+        text: 'AI助手',
+        iconPath: 'assets/icons/ai-assistant.png',
+        selectedIconPath: 'assets/icons/ai-assistant-active.png',
+      },
+      {
         pagePath: 'pages/dashboard/index',
         text: 'AI建议',
         iconPath: 'assets/icons/chart.png',
