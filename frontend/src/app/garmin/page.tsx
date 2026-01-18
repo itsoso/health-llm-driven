@@ -22,7 +22,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 function GarminContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(7);
   const [activeTab, setActiveTab] = useState<'data' | 'sleep' | 'heart' | 'battery' | 'activity' | 'comprehensive'>('data');
   
   // 分页状态
