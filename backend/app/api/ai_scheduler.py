@@ -36,6 +36,7 @@ async def get_morning_briefing(
     """
     try:
         briefing = ai_scheduler.generate_morning_briefing(db, current_user.id)
+        logger.info(f"用户 {current_user.id} 获取早间简报: 日期={briefing.get('date')}, 睡眠部分={[s.get('title') for s in briefing.get('sections', [])]}")
         return briefing
     except Exception as e:
         logger.error(f"生成早间简报失败: {e}")
