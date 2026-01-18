@@ -244,7 +244,7 @@ class AIScheduler:
             deep_sleep_hours = yesterday_data.deep_sleep_duration / 60 if yesterday_data.deep_sleep_duration else None
             
             sleep_section = {
-                "title": "😴 昨晚睡眠",
+                "title": f"😴 昨晚睡眠 ({yesterday.month}月{yesterday.day}日)",
                 "status": "good" if yesterday_data.sleep_score >= 80 else "warning" if yesterday_data.sleep_score >= 60 else "poor",
                 "items": [
                     f"睡眠分数: {yesterday_data.sleep_score}分",
