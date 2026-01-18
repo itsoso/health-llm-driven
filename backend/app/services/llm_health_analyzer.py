@@ -296,9 +296,13 @@ class LLMHealthAnalyzer:
         # 构建分析数据部分（注意：这是数据库中记录的日期）
         data_date = yesterday_data.record_date
         yesterday_info = f"""
-健康数据 (数据日期: {data_date}):
+昨天的健康数据 (数据日期: {data_date}，即昨天 {china_yesterday}):
+【重要】以下数据是昨天的数据，不是今天的！今天才刚开始，所以分析时应该：
+1. 睡眠数据：分析的是昨晚（{data_date}晚上）的睡眠情况
+2. 活动数据：分析的是昨天（{data_date}）全天的运动量，不是今天的！
+3. 运动建议：应该基于昨天的运动情况和本周的累计运动量，给出今天的锻炼计划
 
-【睡眠数据】
+【睡眠数据 - 昨晚】
 - 睡眠分数: {yesterday_data.sleep_score or '无数据'}/100
 - 总睡眠时长: {round(yesterday_data.total_sleep_duration / 60, 1) if yesterday_data.total_sleep_duration else '无数据'}小时
 - 深度睡眠: {yesterday_data.deep_sleep_duration or '无数据'}分钟
@@ -306,19 +310,19 @@ class LLMHealthAnalyzer:
 - 浅睡眠: {yesterday_data.light_sleep_duration or '无数据'}分钟
 - 清醒时间: {yesterday_data.awake_duration or '无数据'}分钟
 
-【心率数据】
+【心率数据 - 昨天】
 - 静息心率: {yesterday_data.resting_heart_rate or '无数据'} bpm
 - 平均心率: {yesterday_data.avg_heart_rate or '无数据'} bpm
 - 最高心率: {yesterday_data.max_heart_rate or '无数据'} bpm
 - 最低心率: {yesterday_data.min_heart_rate or '无数据'} bpm
 - 心率变异性(HRV): {yesterday_data.hrv or '无数据'} ms
 
-【活动数据】
+【活动数据 - 昨天全天】
 - 步数: {yesterday_data.steps or '无数据'}步
 - 活动分钟: {yesterday_data.active_minutes or '无数据'}分钟
 - 消耗卡路里: {yesterday_data.calories_burned or '无数据'} kcal
 
-【压力与恢复】
+【压力与恢复 - 昨天】
 - 压力水平: {yesterday_data.stress_level or '无数据'}/100
 - 身体电量最高值: {yesterday_data.body_battery_most_charged or '无数据'}
 - 身体电量最低值: {yesterday_data.body_battery_lowest or '无数据'}
@@ -331,12 +335,24 @@ class LLMHealthAnalyzer:
             sleep_scores = [d.sleep_score for d in recent_data if d.sleep_score]
             steps_list = [d.steps for d in recent_data if d.steps]
             rhr_list = [d.resting_heart_rate for d in recent_data if d.resting_heart_rate]
+            active_minutes_list = [d.active_minutes for d in recent_data if d.active_minutes]
+            
+            # 计算本周累计运动时长
+            total_active_minutes = sum(active_minutes_list) if active_minutes_list else 0
+            weekly_goal = 150  # WHO建议每周150分钟中等强度运动
+            weekly_progress = round(total_active_minutes / weekly_goal * 100, 1) if total_active_minutes else 0
             
             trend_info = f"""
-最近{len(recent_data)}天趋势:
+最近{len(recent_data)}天趋势（包括昨天）:
 - 平均睡眠分数: {round(sum(sleep_scores)/len(sleep_scores), 1) if sleep_scores else '无数据'}
 - 平均步数: {round(sum(steps_list)/len(steps_list)) if steps_list else '无数据'}步
 - 平均静息心率: {round(sum(rhr_list)/len(rhr_list), 1) if rhr_list else '无数据'} bpm
+
+本周运动情况（WHO建议每周150分钟中等强度有氧运动）:
+- 本周累计运动时长: {total_active_minutes}分钟
+- 目标完成度: {weekly_progress}% (目标: {weekly_goal}分钟/周)
+- 还需运动: {max(0, weekly_goal - total_active_minutes)}分钟
+【重要】给出运动建议时，应该考虑本周的累计运动量，督促用户完成每周150分钟的目标！
 """
         else:
             trend_info = ""
@@ -459,7 +475,7 @@ class LLMHealthAnalyzer:
     "health_summary": "一段话总结用户当前的健康状况，结合TA的健康目标进行评估（100字以内）",
     "key_insights": ["基于用户个人情况的关键洞察1", "关键洞察2", "关键洞察3"],
     "sleep_advice": "针对睡眠的具体建议，考虑用户的作息习惯和工作情况",
-    "activity_advice": "针对运动活动的具体建议，必须考虑当前时间！如果是上午不要批评步数少，而是给出今天的锻炼计划和督促。结合昨天的运动情况给建议。",
+    "activity_advice": "针对运动活动的具体建议。【重要】数据中的活动数据是昨天的，不是今天的！应该：1) 分析昨天的运动量是否达标；2) 结合本周累计运动时长（目标150分钟/周）；3) 给出今天的具体锻炼计划和督促。如果是上午，不要批评今天步数少（今天才刚开始），而是基于昨天和本周情况给出今天的计划。",
     "heart_health_advice": "针对心率/心血管的建议",
     "recovery_advice": "针对恢复和压力管理的建议，考虑用户的工作强度",
     "environment_advice": "基于当天天气和空气质量的运动建议",
