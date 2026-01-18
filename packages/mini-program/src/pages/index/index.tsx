@@ -268,19 +268,6 @@ export default function Index() {
 
   return (
     <View className="index-page">
-      {/* Logo 区域 */}
-      <View className="logo-section">
-        <Image 
-          className="logo-image" 
-          src={logoImage} 
-          mode="aspectFit"
-        />
-        <Text className="app-title">自律靠AI</Text>
-        <Text className="app-subtitle">
-          {isLoggedIn ? `欢迎回来，${userName}` : 'AI 驱动的个人健康管理助手'}
-        </Text>
-      </View>
-
       {/* 功能卡片区域 */}
       <View className="features-section">
         {/* AI 健康建议 */}
