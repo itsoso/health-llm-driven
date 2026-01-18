@@ -149,7 +149,7 @@ function WorkoutContent() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
   const [selectedWorkout, setSelectedWorkout] = useState<number | null>(null);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(7);
   const [syncDays, setSyncDays] = useState(7);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
