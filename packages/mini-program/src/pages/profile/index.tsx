@@ -61,7 +61,8 @@ export default function ProfilePage() {
         url: '/profile/me',
         method: 'GET',
       });
-      setProfile(res.data);
+      // request 直接返回响应数据，不需要再取 .data
+      setProfile(res as UserProfile);
     } catch (error) {
       console.error('加载失败:', error);
       Taro.showToast({ title: '加载失败', icon: 'none' });
