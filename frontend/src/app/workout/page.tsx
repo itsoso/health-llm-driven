@@ -480,7 +480,7 @@ function WorkoutContent() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
               </div>
             ) : workouts && workouts.length > 0 ? (
-              <div className="space-y-2 max-h-[600px] overflow-y-auto">
+              <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto">
                 {workouts.map((w) => {
                   const typeConfig = WORKOUT_TYPES[w.workout_type as keyof typeof WORKOUT_TYPES] || WORKOUT_TYPES.other;
                   return (
