@@ -1,10 +1,23 @@
 .index-page {
   min-height: 100vh;
-  background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #334155 100%);
   display: flex;
   flex-direction: column;
-  padding: 40px 24px 32px;
+  padding: 48px 32px 40px;
   box-sizing: border-box;
+  position: relative;
+  
+  // 添加背景装饰
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 400px;
+    background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15), transparent 70%);
+    pointer-events: none;
+  }
 }
 
 // Logo 区域
@@ -12,32 +25,45 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 32px;
+  margin-bottom: 48px;
+  position: relative;
+  z-index: 1;
 }
 
 .logo-image {
-  width: 140px;
-  height: 140px;
-  margin-bottom: 16px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3),
-              0 0 32px rgba(79, 70, 229, 0.2);
+  width: 160px;
+  height: 160px;
+  margin-bottom: 24px;
+  border-radius: 32px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.95));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4),
+              0 0 40px rgba(99, 102, 241, 0.3),
+              inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  transition: transform 0.3s ease;
+  
+  &:active {
+    transform: scale(0.95);
+  }
 }
 
 .app-title {
-  font-size: 44px;
+  font-size: 52px;
   font-weight: 800;
-  color: #ffffff;
-  margin-bottom: 8px;
-  letter-spacing: 3px;
-  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 12px;
+  letter-spacing: 4px;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .app-subtitle {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 1px;
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 1.5px;
+  font-weight: 500;
 }
 
 // 功能卡片区域 - 2x2 网格
@@ -46,56 +72,71 @@
   flex-direction: row;
   flex-wrap: wrap;
   justify-content: space-between;
-  margin-bottom: 32px;
+  margin-bottom: 40px;
+  position: relative;
+  z-index: 1;
 }
 
 // 功能卡片样式
 .feature-card {
   width: 48%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 20px 16px;
-  margin-bottom: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  padding: 24px 20px;
+  margin-bottom: 20px;
   box-sizing: border-box;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
   // AI 助手卡片 - 占满整行
   &.ai-assistant-card {
     width: 100%;
-    background: linear-gradient(135deg, rgba(167, 139, 250, 0.25), rgba(244, 114, 182, 0.25));
-    border-color: rgba(167, 139, 250, 0.4);
+    background: linear-gradient(135deg, 
+      rgba(99, 102, 241, 0.2) 0%, 
+      rgba(139, 92, 246, 0.2) 50%,
+      rgba(244, 114, 182, 0.2) 100%);
+    border: 2px solid rgba(139, 92, 246, 0.4);
+    box-shadow: 0 12px 40px rgba(99, 102, 241, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
     
     .card-icon {
-      font-size: 36px;
+      font-size: 40px;
+      filter: drop-shadow(0 2px 8px rgba(139, 92, 246, 0.5));
     }
     
     .card-title {
-      font-size: 18px;
-      background: linear-gradient(90deg, #a78bfa, #f472b6);
+      font-size: 32px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #a78bfa 0%, #f472b6 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     
     .card-value {
-      font-size: 16px;
-      color: rgba(255, 255, 255, 0.9);
+      font-size: 28px;
+      color: rgba(255, 255, 255, 0.95);
+      font-weight: 600;
     }
     
     .card-hint {
-      font-size: 13px;
-      color: rgba(255, 255, 255, 0.6);
-      margin-top: 4px;
+      font-size: 24px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 8px;
     }
   }
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   
   &.active {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+    border-color: rgba(255, 255, 255, 0.2);
     
     &:active {
-      transform: scale(0.98);
-      background: rgba(255, 255, 255, 0.18);
+      transform: scale(0.96);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.1);
     }
   }
 }
@@ -103,18 +144,20 @@
 .card-header {
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .card-icon {
-  font-size: 28px;
-  margin-right: 8px;
+  font-size: 32px;
+  margin-right: 12px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .card-title {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 600;
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .card-content {
@@ -122,60 +165,70 @@
   flex-direction: row;
   align-items: baseline;
   flex-wrap: wrap;
-  min-height: 48px;
+  min-height: 56px;
 }
 
 .card-value {
-  font-size: 40px;
-  font-weight: 700;
+  font-size: 44px;
+  font-weight: 800;
   color: #ffffff;
   line-height: 1;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   
   &.loading {
-    font-size: 22px;
+    font-size: 24px;
     color: rgba(255, 255, 255, 0.5);
+    font-weight: 600;
   }
 }
 
 .card-unit {
-  font-size: 20px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-left: 4px;
-}
-
-.card-status {
-  font-size: 20px;
-  margin-left: 8px;
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-left: 6px;
   font-weight: 500;
 }
 
-.card-desc {
+.card-status {
   font-size: 22px;
-  color: rgba(255, 255, 255, 0.6);
-  line-height: 1.4;
+  margin-left: 10px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.card-desc {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+  font-weight: 500;
 }
 
 // 状态徽章
 .status-badge {
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 8px;
-  font-size: 20px;
+  margin-right: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   
   &.done {
-    background: rgba(16, 185, 129, 0.2);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.3));
     color: #10B981;
-    border: 1px solid rgba(16, 185, 129, 0.4);
+    border: 2px solid rgba(16, 185, 129, 0.5);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
   }
   
   &.pending {
-    background: rgba(156, 163, 175, 0.2);
+    background: linear-gradient(135deg, rgba(156, 163, 175, 0.3), rgba(107, 114, 128, 0.3));
     color: #9CA3AF;
-    border: 1px solid rgba(156, 163, 175, 0.4);
+    border: 2px solid rgba(156, 163, 175, 0.5);
   }
 }
 
@@ -185,56 +238,88 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 .login-btn {
   width: 100%;
-  height: 96px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 104px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
   color: #ffffff;
-  font-size: 32px;
-  font-weight: 600;
-  border-radius: 48px;
+  font-size: 34px;
+  font-weight: 700;
+  border-radius: 52px;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
-  letter-spacing: 2px;
+  box-shadow: 0 12px 48px rgba(99, 102, 241, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  letter-spacing: 3px;
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  &:active::before {
+    left: 100%;
+  }
 
   &::after {
     border: none;
   }
 
   &:active {
-    transform: scale(0.98);
-    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+    transform: scale(0.97);
+    box-shadow: 0 6px 24px rgba(99, 102, 241, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 }
 
 .nickname-input,
 .invite-code-input {
   width: 100%;
-  height: 88px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 44px;
-  padding: 0 32px;
-  font-size: 28px;
+  height: 96px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+  backdrop-filter: blur(20px);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 48px;
+  padding: 0 36px;
+  font-size: 30px;
   color: #ffffff;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
   text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
   
   &::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.45);
+  }
+  
+  &:focus {
+    border-color: rgba(99, 102, 241, 0.6);
+    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 }
 
 .login-tip {
-  font-size: 20px;
-  color: rgba(255, 255, 255, 0.4);
-  margin-top: 16px;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 20px;
   text-align: center;
+  font-weight: 500;
 }
 
 // 已登录状态
@@ -243,40 +328,68 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 .action-btn {
   width: 100%;
-  height: 96px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  height: 104px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
   color: #ffffff;
-  font-size: 32px;
-  font-weight: 600;
-  border-radius: 48px;
+  font-size: 34px;
+  font-weight: 700;
+  border-radius: 52px;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 40px rgba(16, 185, 129, 0.4);
-  letter-spacing: 2px;
+  box-shadow: 0 12px 48px rgba(16, 185, 129, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  letter-spacing: 3px;
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  &:active::before {
+    left: 100%;
+  }
 
   &::after {
     border: none;
   }
   
   &:active {
-    transform: scale(0.98);
-    box-shadow: 0 5px 20px rgba(16, 185, 129, 0.3);
+    transform: scale(0.97);
+    box-shadow: 0 6px 24px rgba(16, 185, 129, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 }
 
 .refresh-link {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-top: 20px;
-  padding: 8px 16px;
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 24px;
+  padding: 12px 20px;
+  font-weight: 600;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
   
   &:active {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.1);
+    transform: scale(0.95);
   }
 }
