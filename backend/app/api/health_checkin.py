@@ -82,19 +82,18 @@ def create_health_checkin(
 
 # ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
 
-@router.get("/me/today", response_model=HealthCheckinResponse)
+@router.get("/me/today", response_model=Optional[HealthCheckinResponse])
 def get_my_today_checkin(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户今日健康打卡（需要登录）"""
+    """获取当前用户今日健康打卡（需要登录）- 如果未打卡返回 null"""
     today = date.today()
     checkin = db.query(HealthCheckin).filter(
         HealthCheckin.user_id == current_user.id,
         HealthCheckin.checkin_date == today
     ).first()
-    if not checkin:
-        raise HTTPException(status_code=404, detail="今日尚未打卡")
+    # 未打卡时返回 None，不抛出错误
     return checkin
 
 
@@ -240,13 +239,13 @@ def get_user_checkins(
     return checkins
 
 
-@router.get("/user/{user_id}/today", response_model=HealthCheckinResponse)
+@router.get("/user/{user_id}/today", response_model=Optional[HealthCheckinResponse])
 def get_today_checkin(
     user_id: int,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取今日健康打卡（需要登录，只能查看自己的）"""
+    """获取今日健康打卡（需要登录，只能查看自己的）- 如果未打卡返回 null"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
     
@@ -256,7 +255,6 @@ def get_today_checkin(
         HealthCheckin.checkin_date == today
     ).first()
     
-    if not checkin:
-        raise HTTPException(status_code=404, detail="今日尚未打卡")
+    # 未打卡时返回 None，不抛出错误
     return checkin
 
