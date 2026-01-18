@@ -20,52 +20,6 @@
   }
 }
 
-// Logo 区域
-.logo-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 48px;
-  position: relative;
-  z-index: 1;
-}
-
-.logo-image {
-  width: 160px;
-  height: 160px;
-  margin-bottom: 24px;
-  border-radius: 32px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.95));
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4),
-              0 0 40px rgba(99, 102, 241, 0.3),
-              inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  transition: transform 0.3s ease;
-  
-  &:active {
-    transform: scale(0.95);
-  }
-}
-
-.app-title {
-  font-size: 52px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 12px;
-  letter-spacing: 4px;
-  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-
-.app-subtitle {
-  font-size: 26px;
-  color: rgba(255, 255, 255, 0.75);
-  letter-spacing: 1.5px;
-  font-weight: 500;
-}
-
 // 功能卡片区域 - 2x2 网格
 .features-section {
   display: flex;
