@@ -283,21 +283,6 @@ export default function Index() {
 
       {/* 功能卡片区域 */}
       <View className="features-section">
-        {/* AI 健康助手 - 最重要的入口 */}
-        <View 
-          className={`feature-card ai-assistant-card ${isLoggedIn ? 'active' : ''}`} 
-          onClick={() => handleNavToPage('ai-assistant')}
-        >
-          <View className="card-header">
-            <Text className="card-icon">🤖</Text>
-            <Text className="card-title">AI 健康助手</Text>
-          </View>
-          <View className="card-content">
-            <Text className="card-value">智能日程 · 实时建议</Text>
-            <Text className="card-hint">点击查看个性化健康安排</Text>
-          </View>
-        </View>
-
         {/* AI 健康建议 */}
         <View 
           className={`feature-card ${isLoggedIn ? 'active' : ''}`} 
