@@ -1,349 +1,566 @@
+// 首页样式 - 整合 AI 健康助手
 .index-page {
   min-height: 100vh;
-  background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+  background: linear-gradient(165deg, #0c0c1e 0%, #1a1a3e 40%, #0f1629 100%);
+  
+  &.ai-home {
+    padding: 20px;
+    padding-bottom: 140px;
+  }
+}
+
+// ==================== 登录页面 ====================
+.login-page {
   display: flex;
   flex-direction: column;
-  padding: 32px 32px 40px;
-  box-sizing: border-box;
-  position: relative;
-  
-  // 添加背景装饰
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 400px;
-    background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15), transparent 70%);
-    pointer-events: none;
-  }
-}
-
-// 功能卡片区域 - 2x2 网格
-.features-section {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  margin-bottom: 40px;
-  position: relative;
-  z-index: 1;
-}
-
-// 功能卡片样式
-.feature-card {
-  width: 48%;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
-  backdrop-filter: blur(20px);
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
-  border-radius: 24px;
-  padding: 24px 20px;
-  margin-bottom: 20px;
-  box-sizing: border-box;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2),
-              inset 0 1px 0 rgba(255, 255, 255, 0.1);
-
-  // AI 助手卡片 - 占满整行
-  &.ai-assistant-card {
-    width: 100%;
-    background: linear-gradient(135deg, 
-      rgba(99, 102, 241, 0.2) 0%, 
-      rgba(139, 92, 246, 0.2) 50%,
-      rgba(244, 114, 182, 0.2) 100%);
-    border: 2px solid rgba(139, 92, 246, 0.4);
-    box-shadow: 0 12px 40px rgba(99, 102, 241, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    
-    .card-icon {
-      font-size: 40px;
-      filter: drop-shadow(0 2px 8px rgba(139, 92, 246, 0.5));
-    }
-    
-    .card-title {
-      font-size: 32px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #a78bfa 0%, #f472b6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    
-    .card-value {
-      font-size: 28px;
-      color: rgba(255, 255, 255, 0.95);
-      font-weight: 600;
-    }
-    
-    .card-hint {
-      font-size: 24px;
-      color: rgba(255, 255, 255, 0.7);
-      margin-top: 8px;
-    }
-  }
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  
-  &.active {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
-    border-color: rgba(255, 255, 255, 0.2);
-    
-    &:active {
-      transform: scale(0.96);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3),
-                  inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-  }
-}
-
-.card-header {
-  display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+.login-title {
+  font-size: 48px;
+  font-weight: 700;
+  color: #ffffff;
+  display: block;
   margin-bottom: 16px;
 }
 
-.card-icon {
-  font-size: 32px;
-  margin-right: 12px;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-}
-
-.card-title {
+.login-subtitle {
   font-size: 28px;
-  color: rgba(255, 255, 255, 0.95);
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.card-content {
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  flex-wrap: wrap;
-  min-height: 56px;
+.login-card {
+  width: 100%;
+  max-width: 600px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.card-value {
-  font-size: 44px;
-  font-weight: 800;
-  color: #ffffff;
-  line-height: 1;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  
-  &.loading {
-    font-size: 24px;
-    color: rgba(255, 255, 255, 0.5);
-    font-weight: 600;
-  }
-}
-
-.card-unit {
-  font-size: 22px;
-  color: rgba(255, 255, 255, 0.65);
-  margin-left: 6px;
-  font-weight: 500;
-}
-
-.card-status {
-  font-size: 22px;
-  margin-left: 10px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 12px;
+.login-input {
+  width: 100%;
+  height: 88px;
   background: rgba(255, 255, 255, 0.1);
-}
-
-.card-desc {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.5;
-  font-weight: 500;
-}
-
-// 状态徽章
-.status-badge {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-  font-size: 22px;
-  font-weight: 700;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 0 24px;
+  font-size: 28px;
+  color: #ffffff;
+  margin-bottom: 24px;
   
-  &.done {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.3));
-    color: #10B981;
-    border: 2px solid rgba(16, 185, 129, 0.5);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.4);
   }
-  
-  &.pending {
-    background: linear-gradient(135deg, rgba(156, 163, 175, 0.3), rgba(107, 114, 128, 0.3));
-    color: #9CA3AF;
-    border: 2px solid rgba(156, 163, 175, 0.5);
-  }
-}
-
-// 登录区域
-.login-section {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-  z-index: 1;
 }
 
 .login-btn {
   width: 100%;
-  height: 104px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+  height: 96px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  border-radius: 16px;
+  font-size: 32px;
+  font-weight: 600;
   color: #ffffff;
-  font-size: 34px;
-  font-weight: 700;
-  border-radius: 52px;
   border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 12px 48px rgba(99, 102, 241, 0.5),
-              inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  letter-spacing: 3px;
-  position: relative;
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-  }
-
-  &:active::before {
-    left: 100%;
-  }
-
+  margin-top: 16px;
+  
   &::after {
     border: none;
-  }
-
-  &:active {
-    transform: scale(0.97);
-    box-shadow: 0 6px 24px rgba(99, 102, 241, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  }
-}
-
-.nickname-input,
-.invite-code-input {
-  width: 100%;
-  height: 96px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
-  backdrop-filter: blur(20px);
-  border: 2px solid rgba(255, 255, 255, 0.25);
-  border-radius: 48px;
-  padding: 0 36px;
-  font-size: 30px;
-  color: #ffffff;
-  margin-bottom: 28px;
-  text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2),
-              inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
-  
-  &::placeholder {
-    color: rgba(255, 255, 255, 0.45);
-  }
-  
-  &:focus {
-    border-color: rgba(99, 102, 241, 0.6);
-    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 }
 
 .login-tip {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.5);
-  margin-top: 20px;
+  display: block;
   text-align: center;
-  font-weight: 500;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 24px;
 }
 
-// 已登录状态
-.logged-in-section {
-  margin-top: auto;
+.login-features {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 80px;
+}
+
+.feature-item {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 12px;
+}
+
+.feature-icon {
+  font-size: 48px;
+}
+
+.feature-text {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// ==================== 加载状态 ====================
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(12, 12, 30, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(139, 92, 246, 0.2);
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-text {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 28px;
+  margin-top: 24px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// ==================== Hero 卡片 ====================
+.hero-card {
   position: relative;
+  margin-bottom: 28px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(139, 92, 246, 0.3) 0%, rgba(99, 102, 241, 0.2) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.hero-glow {
+  position: absolute;
+  top: -50%;
+  right: -30%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-content {
+  position: relative;
+  padding: 32px;
   z-index: 1;
 }
 
-.action-btn {
-  width: 100%;
-  height: 104px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
-  color: #ffffff;
-  font-size: 34px;
-  font-weight: 700;
-  border-radius: 52px;
-  border: none;
+.hero-header {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 12px 48px rgba(16, 185, 129, 0.5),
-              inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  letter-spacing: 3px;
-  position: relative;
-  overflow: hidden;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
 
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-  }
+.hero-icon {
+  font-size: 56px;
+}
 
-  &:active::before {
-    left: 100%;
-  }
+.hero-time {
+  text-align: right;
+}
 
-  &::after {
-    border: none;
-  }
+.time-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+  display: block;
+}
+
+.time-greeting {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.hero-title {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.hero-message {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+  display: block;
+}
+
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.hero-tag {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: 8px 16px;
   
-  &:active {
-    transform: scale(0.97);
-    box-shadow: 0 6px 24px rgba(16, 185, 129, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.9);
   }
 }
 
-.refresh-link {
-  font-size: 26px;
-  color: rgba(255, 255, 255, 0.65);
-  margin-top: 24px;
-  padding: 12px 20px;
+// ==================== 通用区块 ====================
+.section {
+  margin-bottom: 28px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.section-icon {
+  font-size: 32px;
+}
+
+.section-title {
+  font-size: 30px;
   font-weight: 600;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
+  color: #ffffff;
+}
+
+// ==================== 提醒区块 ====================
+.reminders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reminder-card {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.reminder-left {
+  margin-right: 16px;
+}
+
+.reminder-emoji {
+  font-size: 40px;
+}
+
+.reminder-center {
+  flex: 1;
+}
+
+.reminder-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  display: block;
+}
+
+.reminder-msg {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 4px;
+  display: block;
+}
+
+.reminder-right {
+  margin-left: 16px;
+}
+
+.reminder-time {
+  font-size: 28px;
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+// ==================== 快捷功能 ====================
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.action-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 24px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   
   &:active {
-    color: rgba(255, 255, 255, 0.95);
     background: rgba(255, 255, 255, 0.1);
-    transform: scale(0.95);
   }
+}
+
+.action-icon {
+  font-size: 44px;
+}
+
+.action-label {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+}
+
+// ==================== 健康简报 ====================
+.greeting-box {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(99, 102, 241, 0.1) 100%);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.greeting {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+}
+
+.briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.briefing-card {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  
+  &.status-good {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+  
+  &.status-warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%);
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+  
+  &.status-poor {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+}
+
+.card-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.card-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-item {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+}
+
+// ==================== 数据统计 ====================
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 20px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  
+  &:active {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.stat-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.stat-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.stat-unit {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 4px;
+}
+
+.stat-empty {
+  font-size: 32px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.stat-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+// ==================== 今日日程 ====================
+.timeline {
+  position: relative;
+  padding-left: 32px;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 16px;
+    bottom: 16px;
+    width: 2px;
+    background: rgba(139, 92, 246, 0.3);
+  }
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0;
+  position: relative;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -32px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #1a1a3e;
+  border: 2px solid rgba(139, 92, 246, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dot-icon {
+  font-size: 14px;
+}
+
+.timeline-content {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.timeline-time {
+  font-size: 26px;
+  font-weight: 600;
+  color: #8b5cf6;
+}
+
+.timeline-activity {
+  font-size: 26px;
+  color: #ffffff;
+}
+
+.timeline-tasks {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 8px;
+  display: block;
+}
+
+// 日程分类颜色
+.cat-routine .timeline-time { color: #f59e0b; }
+.cat-meal .timeline-time { color: #10b981; }
+.cat-work .timeline-time { color: #3b82f6; }
+.cat-exercise .timeline-time { color: #ef4444; }
+.cat-rest .timeline-time { color: #8b5cf6; }
+.cat-leisure .timeline-time { color: #ec4899; }
+.cat-sleep .timeline-time { color: #6366f1; }
+
+// ==================== 刷新区域 ====================
+.refresh-area {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 24px;
+  padding: 16px 32px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  
+  &:active {
+    background: rgba(139, 92, 246, 0.3);
+  }
+}
+
+.refresh-icon {
+  font-size: 28px;
+  color: #8b5cf6;
+}
+
+.refresh-text {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.8);
 }

@@ -207,7 +207,7 @@ export default function Settings() {
       {/* AI 功能 */}
       <View className="menu-section">
         <Text className="section-label">AI 功能</Text>
-        <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/ai-assistant/index' })}>
+        <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/index/index' })}>
           <Text className="menu-icon">🤖</Text>
           <Text className="menu-text">AI 健康助手</Text>
           <Text className="menu-desc">智能日程 · 实时建议</Text>
