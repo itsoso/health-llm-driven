@@ -1292,8 +1292,8 @@ function WorkoutContent() {
                         <Tooltip
                           contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', color: '#fff' }}
                           formatter={(v: number, name: string) => [
-                            name === 'count' ? `${v} 次` : `${Math.floor(v / 60)}小时${v % 60}分钟`,
-                            name === 'count' ? '训练次数' : '总时长'
+                            name === '次数' ? `${v} 次` : `${Math.floor(v / 60)}小时${v % 60}分钟`,
+                            name === '次数' ? '训练次数' : '总时长'
                           ]}
                         />
                         <Legend wrapperStyle={{ color: '#9ca3af' }} />
