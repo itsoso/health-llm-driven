@@ -91,9 +91,10 @@ function GarminContent() {
     .map((item: any) => ({
       date: format(new Date(item.record_date), 'MM-dd'),
       sleepScore: item.sleep_score,
-      deepSleep: item.deep_sleep_duration ? Math.floor(item.deep_sleep_duration / 60) : null,
-      remSleep: item.rem_sleep_duration ? Math.floor(item.rem_sleep_duration / 60) : null,
-      awake: item.awake_duration ? Math.floor(item.awake_duration / 60) : null,
+      deepSleep: item.deep_sleep_duration ? Math.round(item.deep_sleep_duration / 60 * 10) / 10 : null,
+      remSleep: item.rem_sleep_duration ? Math.round(item.rem_sleep_duration / 60 * 10) / 10 : null,
+      lightSleep: item.light_sleep_duration ? Math.round(item.light_sleep_duration / 60 * 10) / 10 : null,
+      awake: item.awake_duration ? Math.round(item.awake_duration / 60 * 10) / 10 : null,
       nap: item.nap_duration ? Math.floor(item.nap_duration / 60) : null,
       avgHeartRate: item.avg_heart_rate,
       hrv: item.hrv,
@@ -323,6 +324,7 @@ function GarminContent() {
                   />
                   <Bar dataKey="deepSleep" stackId="sleep" fill="#8b5cf6" name="深睡" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="remSleep" stackId="sleep" fill="#6366f1" name="快速眼动" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="lightSleep" stackId="sleep" fill="#60a5fa" name="浅睡" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="awake" stackId="sleep" fill="#f59e0b" name="清醒" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -331,6 +333,7 @@ function GarminContent() {
                 <ul className="space-y-1">
                   <li>• <span className="text-purple-700 font-medium">深睡</span>：深度恢复阶段，占总睡眠15-20%为佳</li>
                   <li>• <span className="text-indigo-700 font-medium">快速眼动</span>：记忆巩固阶段，占总睡眠20-25%为佳</li>
+                  <li>• <span className="text-blue-500 font-medium">浅睡</span>：过渡阶段，占总睡眠50-60%</li>
                   <li>• <span className="text-orange-700 font-medium">清醒</span>：夜间醒来时间，越少越好</li>
                 </ul>
               </div>
