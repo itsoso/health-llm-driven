@@ -293,16 +293,59 @@ class LLMHealthAnalyzer:
             if work_env.get('city'):
                 user_info += f"\n- 所在城市: {work_env['city']}"
         
-        # 构建分析数据部分（注意：这是数据库中记录的日期）
+        # 构建分析数据部分
+        # 注意：Garmin 的睡眠数据按醒来日期记录
+        # 例如：1月18日的睡眠数据 = 1月17日晚上到1月18日早上的睡眠
         data_date = yesterday_data.record_date
-        yesterday_info = f"""
-昨天的健康数据 (数据日期: {data_date}，即昨天 {china_yesterday}):
-【重要】以下数据是昨天的数据，不是今天的！今天才刚开始，所以分析时应该：
-1. 睡眠数据：分析的是昨晚（{data_date}晚上）的睡眠情况
-2. 活动数据：分析的是昨天（{data_date}）全天的运动量，不是今天的！
-3. 运动建议：应该基于昨天的运动情况和本周的累计运动量，给出今天的锻炼计划
+        china_today = get_china_today()
+        
+        # 判断数据是今天还是昨天的
+        is_today_data = (data_date == china_today)
+        
+        if is_today_data:
+            # 如果是今天的数据，睡眠是昨晚的，运动数据不完整
+            yesterday_info = f"""
+健康数据 (数据日期: {data_date}，即今天 {china_today}):
+【重要数据说明】
+1. 睡眠数据：这是昨晚（{china_yesterday}晚上到{china_today}早上）的睡眠情况 ✅ 完整数据
+2. 活动数据：今天才刚开始，步数和运动数据不完整，不要基于这些数据给建议！❌
+3. 运动建议：应该基于昨天的运动情况（需要查看昨天的数据）和本周累计，给出今天的锻炼计划
 
-【睡眠数据 - 昨晚】
+【睡眠数据 - 昨晚 ({china_yesterday}晚 → {china_today}晨)】
+- 睡眠分数: {yesterday_data.sleep_score or '无数据'}/100
+- 总睡眠时长: {round(yesterday_data.total_sleep_duration / 60, 1) if yesterday_data.total_sleep_duration else '无数据'}小时
+- 深度睡眠: {yesterday_data.deep_sleep_duration or '无数据'}分钟
+- REM睡眠: {yesterday_data.rem_sleep_duration or '无数据'}分钟
+- 浅睡眠: {yesterday_data.light_sleep_duration or '无数据'}分钟
+- 清醒时间: {yesterday_data.awake_duration or '无数据'}分钟
+
+【心率数据 - 今天（不完整）】
+- 静息心率: {yesterday_data.resting_heart_rate or '无数据'} bpm
+- 平均心率: {yesterday_data.avg_heart_rate or '无数据'} bpm
+- 最高心率: {yesterday_data.max_heart_rate or '无数据'} bpm
+- 最低心率: {yesterday_data.min_heart_rate or '无数据'} bpm
+- 心率变异性(HRV): {yesterday_data.hrv or '无数据'} ms
+
+【活动数据 - 今天（不完整，不要基于此给建议）】
+- 步数: {yesterday_data.steps or '无数据'}步 ⚠️ 今天才刚开始
+- 活动分钟: {yesterday_data.active_minutes or '无数据'}分钟 ⚠️ 今天才刚开始
+- 消耗卡路里: {yesterday_data.calories_burned or '无数据'} kcal ⚠️ 今天才刚开始
+
+【压力与恢复 - 今天（不完整）】
+- 压力水平: {yesterday_data.stress_level or '无数据'}/100
+- 身体电量最高值: {yesterday_data.body_battery_most_charged or '无数据'}
+- 身体电量最低值: {yesterday_data.body_battery_lowest or '无数据'}
+"""
+        else:
+            # 如果是昨天的数据，所有数据都是完整的
+            yesterday_info = f"""
+健康数据 (数据日期: {data_date}，即昨天 {china_yesterday}):
+【重要数据说明】
+1. 睡眠数据：这是前天晚上的睡眠情况（{data_date - timedelta(days=1)}晚 → {data_date}晨）
+2. 活动数据：这是昨天全天的运动数据 ✅ 完整数据
+3. 运动建议：应该基于这些完整的昨天数据和本周累计，给出今天的锻炼计划
+
+【睡眠数据 - 前天晚上】
 - 睡眠分数: {yesterday_data.sleep_score or '无数据'}/100
 - 总睡眠时长: {round(yesterday_data.total_sleep_duration / 60, 1) if yesterday_data.total_sleep_duration else '无数据'}小时
 - 深度睡眠: {yesterday_data.deep_sleep_duration or '无数据'}分钟
@@ -317,7 +360,7 @@ class LLMHealthAnalyzer:
 - 最低心率: {yesterday_data.min_heart_rate or '无数据'} bpm
 - 心率变异性(HRV): {yesterday_data.hrv or '无数据'} ms
 
-【活动数据 - 昨天全天】
+【活动数据 - 昨天全天 ✅】
 - 步数: {yesterday_data.steps or '无数据'}步
 - 活动分钟: {yesterday_data.active_minutes or '无数据'}分钟
 - 消耗卡路里: {yesterday_data.calories_burned or '无数据'} kcal

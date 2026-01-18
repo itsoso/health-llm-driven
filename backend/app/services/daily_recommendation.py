@@ -490,30 +490,44 @@ class DailyRecommendationService:
         """
         生成每日健康分析摘要
         
+        数据获取逻辑：
+        - 睡眠数据：使用今天的 record_date（因为 Garmin 按醒来日期记录，今天的数据=昨晚的睡眠）
+        - 运动数据：使用昨天的 record_date（因为今天才刚开始，运动数据不完整）
+        
         Returns:
             包含睡眠、活动、心率、压力分析和综合建议的完整报告
         """
         if reference_date is None:
             reference_date = get_china_today()
         
-        # 【重要】始终使用昨天的数据进行分析，因为今天才刚开始
-        # 运动建议应该基于昨天的运动量和本周累计，而不是今天的（今天可能才几百步）
-        china_yesterday = get_china_today() - timedelta(days=1)
+        china_today = get_china_today()
+        china_yesterday = china_today - timedelta(days=1)
+        
+        # 获取今天的数据（用于睡眠分析 - 昨晚的睡眠）
+        today_data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date == china_today
+        ).first()
+        
+        # 获取昨天的数据（用于运动分析 - 昨天全天的运动）
         yesterday_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == china_yesterday
         ).first()
         
-        # 获取最近7天的数据（用于趋势分析）
+        # 获取最近7天的数据（用于趋势分析，不包括今天）
         recent_data = self.get_recent_data(db, user_id, 7, include_today=False)
         
         # 获取用户信息
         user = db.query(User).filter(User.id == user_id).first()
         
-        if not yesterday_data or not self._has_meaningful_data(yesterday_data):
+        # 优先使用今天的睡眠数据，如果没有则用昨天的
+        primary_data = today_data if (today_data and self._has_meaningful_data(today_data)) else yesterday_data
+        
+        if not primary_data:
             return {
                 "status": "no_data",
-                "message": "暂无昨日数据",
+                "message": "暂无健康数据",
                 "date": reference_date.isoformat(),
                 "user": user.name if user else None,
                 "sleep_analysis": None,
@@ -525,14 +539,19 @@ class DailyRecommendationService:
                 "daily_goals": []
             }
         
-        # 使用昨天的数据进行分析
-        yesterday = yesterday_data
+        # 使用组合数据进行分析
+        # 睡眠分析：优先用今天的数据（昨晚的睡眠）
+        sleep_data = today_data if (today_data and today_data.sleep_score) else yesterday_data
+        # 运动分析：用昨天的数据（昨天全天的运动）
+        activity_data = yesterday_data if yesterday_data else today_data
+        # 心率/压力分析：优先用今天的数据
+        vital_data = today_data if today_data else yesterday_data
         
         # 各项分析
-        sleep_analysis = self.analyze_sleep(yesterday, recent_data)
-        activity_analysis = self.analyze_activity(yesterday, recent_data)
-        heart_rate_analysis = self.analyze_heart_rate(yesterday, recent_data)
-        stress_analysis = self.analyze_stress_and_energy(yesterday)
+        sleep_analysis = self.analyze_sleep(sleep_data, recent_data) if sleep_data else None
+        activity_analysis = self.analyze_activity(activity_data, recent_data) if activity_data else None
+        heart_rate_analysis = self.analyze_heart_rate(vital_data, recent_data) if vital_data else None
+        stress_analysis = self.analyze_stress_and_energy(vital_data) if vital_data else None
         
         # 综合评估
         overall_status = self._calculate_overall_status(
@@ -546,7 +565,7 @@ class DailyRecommendationService:
         
         # 生成今日目标
         daily_goals = self._generate_daily_goals(
-            yesterday, sleep_analysis, activity_analysis, stress_analysis
+            activity_data or vital_data, sleep_analysis, activity_analysis, stress_analysis
         )
         
         # 构建规则分析结果
@@ -560,7 +579,7 @@ class DailyRecommendationService:
         
         return {
             "status": "success",
-            "date": yesterday.record_date.isoformat(),
+            "date": (sleep_data or activity_data or vital_data).record_date.isoformat(),
             "analysis_date": reference_date.isoformat(),
             "user": user.name if user else None,
             "sleep_analysis": sleep_analysis,
@@ -583,7 +602,9 @@ class DailyRecommendationService:
             },
             # 保存分析上下文供LLM使用
             "_rule_analysis": rule_analysis,
-            "_yesterday_data": yesterday,
+            "_sleep_data": sleep_data,  # 今天的睡眠数据（昨晚的睡眠）
+            "_activity_data": activity_data,  # 昨天的运动数据
+            "_yesterday_data": activity_data or sleep_data or vital_data,  # 兼容性
             "_recent_data": recent_data
         }
     
@@ -606,7 +627,9 @@ class DailyRecommendationService:
             return rule_result
         
         # 提取上下文数据
-        yesterday_data = rule_result.pop("_yesterday_data", None)
+        sleep_data = rule_result.pop("_sleep_data", None)  # 今天的睡眠数据
+        activity_data = rule_result.pop("_activity_data", None)  # 昨天的运动数据
+        yesterday_data = rule_result.pop("_yesterday_data", None)  # 兼容性
         recent_data = rule_result.pop("_recent_data", [])
         rule_analysis = rule_result.pop("_rule_analysis", {})
         
@@ -633,10 +656,19 @@ class DailyRecommendationService:
             logger.warning(f"[环境数据] 环境服务不可用，跳过环境数据获取")
         
         # 执行LLM分析（传入环境数据）
+        # 注意：传递给LLM的数据需要区分睡眠和运动
+        # - 睡眠数据来自今天的记录（昨晚的睡眠）
+        # - 运动数据来自昨天的记录（昨天全天的运动）
+        # 为了兼容现有接口，我们创建一个组合数据对象
+        combined_data = activity_data or sleep_data or yesterday_data
+        if combined_data and sleep_data and sleep_data != activity_data:
+            # 如果睡眠和运动数据来自不同日期，需要在提示词中明确说明
+            logger.info(f"睡眠数据日期: {sleep_data.record_date if sleep_data else 'N/A'}, 运动数据日期: {activity_data.record_date if activity_data else 'N/A'}")
+        
         llm_result = llm_analyzer.analyze_daily_health(
             db=db,
             user_id=user_id,
-            yesterday_data=yesterday_data,
+            yesterday_data=combined_data,
             recent_data=recent_data,
             rule_analysis=rule_analysis,
             environment_data=environment_data
