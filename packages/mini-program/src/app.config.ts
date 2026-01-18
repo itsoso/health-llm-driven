@@ -39,14 +39,14 @@ export default {
       {
         pagePath: 'pages/dashboard/index',
         text: 'AI建议',
-        iconPath: 'assets/icons/chart.png',
-        selectedIconPath: 'assets/icons/chart-active.png',
+        iconPath: 'assets/icons/ai-assistant.png',
+        selectedIconPath: 'assets/icons/ai-assistant-active.png',
       },
       {
         pagePath: 'pages/checkin/index',
         text: '打卡',
-        iconPath: 'assets/icons/nose.png',
-        selectedIconPath: 'assets/icons/nose-active.png',
+        iconPath: 'assets/icons/checkin.png',
+        selectedIconPath: 'assets/icons/checkin-active.png',
       },
       {
         pagePath: 'pages/settings/index',

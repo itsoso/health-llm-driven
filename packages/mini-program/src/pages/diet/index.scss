@@ -2,54 +2,60 @@
   min-height: 100vh;
   background: linear-gradient(135deg, #fff5f0 0%, #fff8f5 100%);
   padding-bottom: 100px;
+  overflow-x: hidden;
+  width: 100%;
+  box-sizing: border-box;
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 40px 30px 20px;
+    padding: 44px 24px 24px;
     background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
     color: white;
-    border-radius: 0 0 30px 30px;
+    border-radius: 0 0 24px 24px;
+    box-sizing: border-box;
 
     .header-title {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
 
       .title-icon {
-        font-size: 32px;
+        font-size: 36px;
       }
 
       .title-text {
-        font-size: 24px;
+        font-size: 32px;
         font-weight: bold;
       }
     }
 
     .date-picker {
       background: rgba(255, 255, 255, 0.2);
-      padding: 8px 16px;
+      padding: 8px 18px;
       border-radius: 20px;
-      font-size: 14px;
+      font-size: 26px;
     }
   }
 
   .content-scroll {
     height: calc(100vh - 140px);
     padding: 20px;
+    box-sizing: border-box;
+    width: 100%;
   }
 
   .stats-section {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 
     .stat-card {
       background: white;
       border-radius: 16px;
-      padding: 18px 10px;
+      padding: 16px 10px;
       text-align: center;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 
@@ -71,21 +77,22 @@
       }
 
       .stat-value {
-        font-size: 36px;
+        font-size: 32px;
         font-weight: bold;
         display: block;
         margin-bottom: 6px;
       }
 
       .stat-label {
-        font-size: 17px;
+        font-size: 22px;
         color: #666;
+        white-space: nowrap;
       }
     }
   }
 
   .add-section {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 
     .add-btn {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -95,7 +102,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 
       .add-icon {
@@ -103,7 +110,7 @@
       }
 
       .add-text {
-        font-size: 16px;
+        font-size: 28px;
         font-weight: 500;
       }
     }
@@ -113,45 +120,45 @@
     background: white;
     border-radius: 20px;
     padding: 20px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 
     .form-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
 
       .form-title {
-        font-size: 18px;
+        font-size: 30px;
         font-weight: bold;
         color: #333;
       }
 
       .form-close {
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
         background: #f5f5f5;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         color: #888;
-        font-size: 16px;
+        font-size: 24px;
       }
     }
 
     .meal-types {
       display: flex;
       gap: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
 
       .meal-type-btn {
-        padding: 14px 22px;
+        padding: 12px 20px;
         background: #f5f5f5;
         border-radius: 20px;
-        font-size: 18px;
+        font-size: 26px;
         color: #666;
 
         &.active {
@@ -162,19 +169,19 @@
     }
 
     .section-block {
-      margin-bottom: 18px;
+      margin-bottom: 20px;
       
       .block-title {
-        font-size: 18px;
+        font-size: 28px;
         color: #333;
         font-weight: 500;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
         display: block;
       }
     }
 
     .image-section {
-      margin-bottom: 12px;
+      margin-bottom: 16px;
 
       .image-preview-wrap {
         position: relative;
@@ -184,44 +191,44 @@
         .image-preview {
           width: 100%;
           height: 100%;
-          border-radius: 12px;
+          border-radius: 16px;
           object-fit: cover;
         }
 
         .image-remove {
           position: absolute;
-          top: 8px;
-          right: 8px;
-          width: 28px;
-          height: 28px;
+          top: 12px;
+          right: 12px;
+          width: 32px;
+          height: 32px;
           background: rgba(0, 0, 0, 0.5);
           color: white;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 18px;
+          font-size: 24px;
         }
       }
 
       .image-placeholder {
         width: 100%;
-        height: 200px;
+        height: 180px;
         background: #f8f8f8;
         border: 2px dashed #ddd;
-        border-radius: 12px;
+        border-radius: 16px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 8px;
+        gap: 12px;
 
         .placeholder-icon {
           font-size: 48px;
         }
 
         .placeholder-text {
-          font-size: 17px;
+          font-size: 26px;
           color: #888;
         }
       }
@@ -230,53 +237,53 @@
     .recognition-result {
       background: #f0fdf4;
       border: 1px solid #bbf7d0;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 18px;
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 20px;
 
       .result-title {
-        font-size: 18px;
+        font-size: 28px;
         font-weight: bold;
         color: #16a34a;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
         display: block;
       }
 
       .food-item {
         display: flex;
         justify-content: space-between;
-        padding: 12px;
+        padding: 14px;
         background: white;
-        border-radius: 8px;
-        margin-bottom: 8px;
+        border-radius: 12px;
+        margin-bottom: 10px;
 
         .food-name {
-          font-size: 17px;
+          font-size: 26px;
           color: #333;
         }
 
         .food-calories {
-          font-size: 17px;
+          font-size: 26px;
           color: #ff7e5f;
           font-weight: 500;
         }
       }
 
       .result-total {
-        margin-top: 12px;
-        padding-top: 12px;
+        margin-top: 14px;
+        padding-top: 14px;
         border-top: 1px solid #bbf7d0;
-        font-size: 18px;
+        font-size: 28px;
         font-weight: bold;
         color: #ff7e5f;
       }
 
       .health-tips {
-        margin-top: 12px;
-        padding: 12px;
+        margin-top: 14px;
+        padding: 14px;
         background: #eff6ff;
-        border-radius: 8px;
-        font-size: 16px;
+        border-radius: 12px;
+        font-size: 24px;
         color: #2563eb;
         line-height: 1.6;
       }
@@ -285,14 +292,14 @@
     .action-buttons {
       display: flex;
       gap: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 20px;
 
       .action-btn {
         flex: 1;
-        padding: 16px;
-        border-radius: 12px;
+        padding: 18px;
+        border-radius: 16px;
         text-align: center;
-        font-size: 17px;
+        font-size: 28px;
         font-weight: 500;
 
         &.recognize {
@@ -314,27 +321,27 @@
 
     .manual-input {
       border-top: 1px solid #eee;
-      padding-top: 18px;
+      padding-top: 20px;
 
       .manual-title {
-        font-size: 18px;
+        font-size: 28px;
         color: #333;
         font-weight: 500;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
         display: block;
       }
 
       .input-row-with-btn {
         display: flex;
         gap: 12px;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
 
         .input-field.flex-1 {
           flex: 1;
           padding: 16px;
           background: #f5f5f5;
-          border-radius: 10px;
-          font-size: 18px;
+          border-radius: 12px;
+          font-size: 26px;
         }
 
         .analyze-btn {
@@ -355,45 +362,48 @@
       }
 
       .input-hint {
-        font-size: 16px;
+        font-size: 22px;
         color: #888;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
         display: block;
       }
 
       .input-row {
         margin-bottom: 14px;
-
+        
         .input-field {
           width: 100%;
           padding: 16px;
           background: #f5f5f5;
-          border-radius: 10px;
-          font-size: 18px;
+          border-radius: 12px;
+          font-size: 26px;
+          box-sizing: border-box;
         }
       }
 
       .input-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
-        margin-bottom: 18px;
+        gap: 10px;
+        margin-bottom: 20px;
 
         .input-item {
           .input-label {
-            font-size: 15px;
+            font-size: 22px;
             color: #888;
             margin-bottom: 8px;
             display: block;
+            text-align: center;
           }
 
           .input-field.small {
             width: 100%;
-            padding: 14px 10px;
+            padding: 14px 6px;
             background: #f5f5f5;
-            border-radius: 8px;
-            font-size: 17px;
+            border-radius: 10px;
+            font-size: 24px;
             text-align: center;
+            box-sizing: border-box;
           }
         }
       }
@@ -402,9 +412,9 @@
         background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
         color: white;
         padding: 18px;
-        border-radius: 12px;
+        border-radius: 16px;
         text-align: center;
-        font-size: 19px;
+        font-size: 28px;
         font-weight: 500;
       }
     }
@@ -412,7 +422,7 @@
 
   .records-section {
     .section-title {
-      font-size: 22px;
+      font-size: 30px;
       font-weight: bold;
       color: #333;
       margin-bottom: 18px;
@@ -423,25 +433,25 @@
 
     .loading, .empty {
       background: white;
-      border-radius: 16px;
-      padding: 52px 28px;
+      border-radius: 20px;
+      padding: 48px 24px;
       text-align: center;
       color: #888;
 
       .empty-icon {
-        font-size: 64px;
+        font-size: 56px;
         display: block;
         margin-bottom: 18px;
       }
 
       .empty-text {
-        font-size: 19px;
+        font-size: 26px;
       }
     }
 
     .record-card {
       background: white;
-      border-radius: 16px;
+      border-radius: 20px;
       padding: 20px;
       margin-bottom: 16px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -451,7 +461,7 @@
         width: 100%;
         height: 200px;
         margin-bottom: 16px;
-        border-radius: 12px;
+        border-radius: 16px;
         overflow: hidden;
 
         .record-image {
@@ -464,20 +474,20 @@
       .record-header {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 12px;
         margin-bottom: 14px;
 
         .meal-tag {
           background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
           color: white;
-          padding: 10px 18px;
-          border-radius: 12px;
-          font-size: 18px;
+          padding: 8px 16px;
+          border-radius: 10px;
+          font-size: 24px;
           font-weight: 500;
         }
 
         .record-calories {
-          font-size: 22px;
+          font-size: 28px;
           font-weight: bold;
           color: #ff7e5f;
         }
@@ -485,16 +495,16 @@
         .ai-tag {
           background: #eff6ff;
           color: #2563eb;
-          padding: 6px 14px;
+          padding: 6px 12px;
           border-radius: 8px;
-          font-size: 16px;
+          font-size: 22px;
         }
       }
 
       .record-foods {
-        font-size: 20px;
+        font-size: 28px;
         color: #333;
-        line-height: 1.6;
+        line-height: 1.5;
         margin-bottom: 14px;
         font-weight: 500;
       }
@@ -502,16 +512,17 @@
       .record-nutrition {
         display: flex;
         gap: 20px;
-        font-size: 17px;
+        font-size: 24px;
         color: #666;
+        flex-wrap: wrap;
       }
 
       .record-tips {
-        margin-top: 16px;
+        margin-top: 14px;
         padding: 14px 16px;
         background: #eff6ff;
-        border-radius: 10px;
-        font-size: 17px;
+        border-radius: 12px;
+        font-size: 24px;
         color: #2563eb;
         line-height: 1.6;
       }
@@ -520,8 +531,9 @@
         position: absolute;
         top: 20px;
         right: 20px;
-        font-size: 16px;
+        font-size: 24px;
         color: #e74c3c;
+        padding: 6px 12px;
       }
     }
   }

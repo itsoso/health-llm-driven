@@ -1,14 +1,60 @@
-// 首页样式 - 整合 AI 健康助手
+// 首页样式 V2 - 整体协调优化版
+// 深色午夜蓝主题，统一视觉风格
+
+// ==================== 变量定义 ====================
+$bg-dark: #0B0E14;           // 深午夜蓝背景
+$card-dark: #161B28;         // 卡片背景
+$card-border: #2D3748;       // 卡片边框
+$primary: #7C3AED;           // 主紫色
+$text-white: #FFFFFF;
+$text-gray-100: #F3F4F6;
+$text-gray-200: #E5E7EB;
+$text-gray-300: #D1D5DB;
+$text-gray-400: #9CA3AF;
+$text-gray-500: #6B7280;
+$accent-yellow: #FACC15;
+$accent-red: #EF4444;
+$accent-green: #10B981;
+$accent-blue: #3B82F6;
+$accent-orange: #F97316;
+$accent-indigo: #6366F1;
+$accent-emerald: #10B981;
+$accent-pink: #EC4899;
+$accent-teal: #14B8A6;
+
+// 统一圆角
+$radius-sm: 12px;
+$radius-md: 16px;
+$radius-lg: 20px;
+$radius-full: 100px;
+
+// 统一间距
+$gap-xs: 8px;
+$gap-sm: 12px;
+$gap-md: 16px;
+$gap-lg: 20px;
+
+// ==================== 玻璃卡片混入 ====================
+@mixin glass-card {
+  background: rgba(30, 41, 59, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: $radius-md;
+}
+
+// ==================== 基础页面 ====================
 .index-page {
   min-height: 100vh;
-  background: linear-gradient(165deg, #0c0c1e 0%, #1a1a3e 40%, #0f1629 100%);
-  overflow-x: hidden;
+  background-color: $bg-dark;
+  color: $text-white;
   width: 100%;
   box-sizing: border-box;
-  
+  overflow-x: hidden;
+
   &.ai-home {
-    padding: 32px 24px;
-    padding-bottom: 160px;
+    padding: $gap-md;
+    padding-bottom: 140px;
   }
 }
 
@@ -18,107 +64,97 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 40px;
+  padding: 60px 32px;
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 60px;
+  margin-bottom: 48px;
 }
 
 .login-title {
-  font-size: 48px;
+  font-size: 40px;
   font-weight: 700;
-  color: #ffffff;
+  color: $text-white;
   display: block;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .login-subtitle {
-  font-size: 28px;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 26px;
+  color: $text-gray-400;
 }
 
 .login-card {
   width: 100%;
-  max-width: 600px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  padding: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-width: 560px;
+  @include glass-card;
+  padding: 32px;
 }
 
 .login-input {
   width: 100%;
-  height: 88px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  padding: 0 24px;
+  height: 80px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid $card-border;
+  border-radius: $radius-sm;
+  padding: 0 20px;
   font-size: 28px;
-  color: #ffffff;
-  margin-bottom: 24px;
+  color: $text-white;
+  margin-bottom: 20px;
+  box-sizing: border-box;
   
   &::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: $text-gray-500;
   }
 }
 
 .login-btn {
   width: 100%;
-  height: 96px;
-  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-  border-radius: 16px;
-  font-size: 32px;
+  height: 88px;
+  background: linear-gradient(135deg, $accent-indigo 0%, $primary 100%);
+  border-radius: $radius-sm;
+  font-size: 30px;
   font-weight: 600;
-  color: #ffffff;
+  color: $text-white;
   border: none;
-  margin-top: 16px;
+  margin-top: 12px;
   
-  &::after {
-    border: none;
-  }
+  &::after { border: none; }
+  &:active { opacity: 0.9; }
 }
 
 .login-tip {
   display: block;
   text-align: center;
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.4);
-  margin-top: 24px;
+  font-size: 22px;
+  color: $text-gray-500;
+  margin-top: 20px;
 }
 
 .login-features {
   display: flex;
   justify-content: center;
-  gap: 40px;
-  margin-top: 80px;
+  gap: 48px;
+  margin-top: 64px;
 }
 
 .feature-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.feature-icon {
-  font-size: 48px;
-}
-
-.feature-text {
-  font-size: 24px;
-  color: rgba(255, 255, 255, 0.6);
-}
+.feature-icon { font-size: 40px; }
+.feature-text { font-size: 22px; color: $text-gray-400; }
 
 // ==================== 加载状态 ====================
 .loading-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(12, 12, 30, 0.9);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba($bg-dark, 0.85);
+  backdrop-filter: blur(5px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -127,18 +163,18 @@
 }
 
 .loading-spinner {
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(139, 92, 246, 0.2);
-  border-top-color: #8b5cf6;
+  width: 56px;
+  height: 56px;
+  border: 4px solid rgba($primary, 0.2);
+  border-top-color: $primary;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 .loading-text {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 28px;
-  margin-top: 24px;
+  color: $text-gray-300;
+  font-size: 26px;
+  margin-top: 20px;
 }
 
 @keyframes spin {
@@ -148,21 +184,28 @@
 // ==================== Hero 卡片 ====================
 .hero-card {
   position: relative;
-  margin-bottom: 24px;
-  border-radius: 20px;
+  background: linear-gradient(135deg, $accent-indigo 0%, #8B5CF6 50%, $primary 100%);
+  border-radius: $radius-lg;
+  padding: 24px;
+  margin-bottom: $gap-lg;
   overflow: hidden;
-  background: linear-gradient(145deg, rgba(139, 92, 246, 0.25) 0%, rgba(99, 102, 241, 0.15) 100%);
-  border: 1px solid rgba(139, 92, 246, 0.25);
-  box-sizing: border-box;
+  box-shadow: 0 8px 32px rgba($primary, 0.3);
 }
 
 .hero-glow {
-  display: none; // 移除光晕效果，避免溢出
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  background: white;
+  opacity: 0.1;
+  border-radius: 50%;
+  filter: blur(40px);
 }
 
 .hero-content {
   position: relative;
-  padding: 24px;
   z-index: 1;
 }
 
@@ -170,403 +213,474 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  margin-bottom: $gap-lg;
 }
 
-.hero-icon {
-  font-size: 48px;
-  flex-shrink: 0;
+.hero-badge {
+  display: flex;
+  align-items: center;
+  gap: $gap-xs;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 14px;
+  border-radius: $radius-full;
+  backdrop-filter: blur(4px);
+}
+
+.badge-icon { font-size: 24px; }
+.badge-text { font-size: 22px; color: $text-white; font-weight: 500; }
+
+.hero-time-box {
+  text-align: right;
 }
 
 .hero-time {
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.time-value {
-  font-size: 32px;
+  font-size: 40px;
   font-weight: 700;
-  color: #ffffff;
+  color: $text-white;
+  font-family: 'DIN', -apple-system, monospace;
   display: block;
+  letter-spacing: 1px;
 }
 
-.time-greeting {
+.hero-user {
   font-size: 22px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 2px;
+}
+
+.hero-body {
+  margin-bottom: $gap-lg;
 }
 
 .hero-title {
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 700;
-  color: #ffffff;
+  color: $text-white;
   display: block;
   margin-bottom: 8px;
 }
 
-.hero-message {
+.hero-desc {
   font-size: 26px;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.8);
   line-height: 1.5;
   display: block;
 }
 
-.hero-tags {
+.hero-actions {
   display: flex;
+  gap: $gap-sm;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
 }
 
-.hero-tag {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 20px;
-  padding: 8px 16px;
+.hero-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: $radius-full;
+  transition: all 0.2s;
   
-  text {
-    font-size: 24px;
-    color: rgba(255, 255, 255, 0.9);
+  text { font-size: 24px; font-weight: 500; }
+  
+  &.primary {
+    background: $text-white;
+    text { color: $accent-indigo; }
+    .btn-check { color: $accent-indigo; font-weight: 700; }
+    &:active { opacity: 0.9; transform: scale(0.98); }
+  }
+  
+  &.secondary {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px);
+    text { color: $text-white; }
+    &:active { background: rgba(255, 255, 255, 0.3); }
   }
 }
 
+.btn-check { font-size: 24px; }
+
 // ==================== 通用区块 ====================
 .section {
-  margin-bottom: 24px;
+  margin-bottom: $gap-lg;
 }
 
 .section-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: $gap-xs;
+  margin-bottom: $gap-sm;
+  padding-left: 4px;
+  
+  &.yellow {
+    .section-icon, .section-title { color: $accent-yellow; }
+  }
+  &.gray {
+    .section-icon { color: $text-gray-400; }
+    .section-title { color: $text-gray-300; }
+  }
 }
 
-.section-icon {
-  font-size: 28px;
-}
+.section-icon { font-size: 26px; }
+.section-title { font-size: 26px; font-weight: 600; }
 
-.section-title {
-  font-size: 28px;
-  font-weight: 600;
-  color: #ffffff;
-}
-
-// ==================== 提醒区块 ====================
-.reminders-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
+// ==================== 当前提醒 ====================
 .reminder-card {
+  @include glass-card;
+  background: rgba($card-dark, 0.7);
+  border-color: $card-border;
+  padding: $gap-md $gap-lg;
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 14px;
-  padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  gap: $gap-md;
 }
 
-.reminder-left {
-  margin-right: 12px;
+.reminder-emoji { 
+  font-size: 40px; 
+  flex-shrink: 0;
 }
 
-.reminder-emoji {
-  font-size: 36px;
-}
-
-.reminder-center {
+.reminder-info {
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
 .reminder-title {
-  font-size: 26px;
-  font-weight: 600;
-  color: #ffffff;
+  font-size: 28px;
+  font-weight: 700;
+  color: $text-white;
   display: block;
+  margin-bottom: 4px;
 }
 
-.reminder-msg {
+.reminder-desc {
   font-size: 22px;
-  color: rgba(255, 255, 255, 0.55);
-  margin-top: 2px;
-  display: block;
+  color: $text-gray-400;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reminder-right {
-  margin-left: 12px;
-  flex-shrink: 0;
-}
-
-.reminder-time {
-  font-size: 26px;
-  font-weight: 600;
-  color: #f59e0b;
-}
-
-// ==================== 快捷功能 ====================
-.actions-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-
-.action-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 14px;
-  padding: 20px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  
-  &:active {
-    background: rgba(255, 255, 255, 0.1);
-  }
-}
-
-.action-icon {
-  font-size: 40px;
-}
-
-.action-label {
-  font-size: 22px;
-  color: rgba(255, 255, 255, 0.75);
-  text-align: center;
-}
-
-// ==================== 健康简报 ====================
-.greeting-box {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.08) 100%);
-  border-radius: 14px;
-  padding: 16px 20px;
-  margin-bottom: 14px;
-  border: 1px solid rgba(139, 92, 246, 0.15);
-}
-
-.greeting {
-  font-size: 26px;
-  color: rgba(255, 255, 255, 0.85);
-  line-height: 1.5;
-}
-
-.briefing-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.briefing-card {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 14px;
-  padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  
-  &.status-good {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.04) 100%);
-    border-color: rgba(16, 185, 129, 0.25);
-  }
-  
-  &.status-warning {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.04) 100%);
-    border-color: rgba(245, 158, 11, 0.25);
-  }
-  
-  &.status-poor {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%);
-    border-color: rgba(239, 68, 68, 0.25);
-  }
-}
-
-.card-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #ffffff;
-  display: block;
-  margin-bottom: 10px;
-}
-
-.card-items {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.card-item {
-  font-size: 22px;
-  color: rgba(255, 255, 255, 0.65);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   line-height: 1.4;
 }
 
-// ==================== 数据统计 ====================
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+.reminder-time-badge {
+  background: rgba($accent-yellow, 0.15);
+  padding: 6px 14px;
+  border-radius: $radius-sm;
+  flex-shrink: 0;
+  
+  text {
+    font-size: 26px;
+    font-weight: 700;
+    color: $accent-yellow;
+    font-family: 'DIN', -apple-system, monospace;
+  }
 }
 
-.stat-card {
+// ==================== 快捷功能 ====================
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $gap-sm;
+}
+
+.quick-item {
+  background: #FFFFFF;
+  border-radius: $radius-md;
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  padding: 16px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  justify-content: center;
+  padding: 18px 8px 14px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   
-  &:active {
-    background: rgba(255, 255, 255, 0.1);
+  &:active { 
+    background: #F5F5F5; 
+    transform: scale(0.96); 
   }
+}
+
+.quick-icon-wrap {
+  width: 60px;
+  height: 60px;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  
+  &.blue { background: #E8F4FD; }
+  &.yellow { background: #FEF9E7; }
+  &.orange { background: #FFF0E6; }
+  &.purple { background: #F3E8FF; }
+}
+
+.quick-icon { font-size: 28px; }
+.quick-icon-img { width: 40px; height: 40px; }
+.quick-label { font-size: 22px; color: #374151; font-weight: 500; text-align: center; }
+
+// ==================== 问候卡片 ====================
+.greeting-card {
+  background: rgba($accent-indigo, 0.12);
+  border: 1px solid rgba($accent-indigo, 0.25);
+  border-radius: $radius-md;
+  padding: $gap-md $gap-lg;
+  margin-bottom: $gap-sm;
+}
+
+.greeting-text {
+  font-size: 26px;
+  font-weight: 500;
+  color: lighten($accent-indigo, 30%);
+}
+
+// ==================== 健康简报网格 ====================
+.briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: $gap-sm;
+}
+
+.briefing-card {
+  @include glass-card;
+  background: rgba($card-dark, 0.7);
+  padding: $gap-md;
+}
+
+.briefing-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: $gap-sm;
+}
+
+.briefing-icon { font-size: 22px; }
+.briefing-title { font-size: 24px; font-weight: 700; color: $text-gray-200; }
+
+.briefing-content {
+  padding-left: 2px;
+}
+
+.data-row {
+  display: flex;
+  align-items: center;
+  gap: $gap-xs;
+  margin-bottom: 6px;
+  
+  &:last-child { margin-bottom: 0; }
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  
+  &.indigo { background: $accent-indigo; }
+  &.orange { background: $accent-orange; }
+  &.red { background: $accent-red; }
+  &.blue { background: $accent-blue; }
+  &.green { background: $accent-green; }
+}
+
+.data-label { font-size: 22px; color: $text-gray-400; white-space: nowrap; }
+.data-value { font-size: 22px; color: $text-gray-100; font-weight: 500; margin-left: 4px; }
+.data-text { font-size: 22px; color: $text-gray-400; }
+
+// ==================== 今日数据 ====================
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: $gap-sm;
+}
+
+.stat-card {
+  @include glass-card;
+  background: rgba($card-dark, 0.7);
+  padding: $gap-lg $gap-md;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  
+  &:active { background: rgba(255, 255, 255, 0.05); }
 }
 
 .stat-icon {
   font-size: 32px;
-  margin-bottom: 8px;
+  margin-bottom: $gap-xs;
 }
 
-.stat-info {
+.stat-value-row {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  margin-bottom: 4px;
 }
 
 .stat-value {
-  font-size: 32px;
+  font-size: 40px;
   font-weight: 700;
-  color: #ffffff;
+  color: $text-white;
+  font-family: 'DIN', -apple-system, monospace;
 }
 
 .stat-unit {
-  font-size: 20px;
-  color: rgba(255, 255, 255, 0.5);
-  margin-left: 2px;
-}
-
-.stat-empty {
-  font-size: 28px;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: 22px;
+  color: $text-gray-400;
+  margin-left: 4px;
 }
 
 .stat-label {
   font-size: 22px;
-  color: rgba(255, 255, 255, 0.6);
+  color: $text-gray-500;
+  margin-top: 4px;
 }
 
 // ==================== 今日日程 ====================
+.schedule-section {
+  padding-bottom: 24px;
+}
+
 .timeline {
   position: relative;
   padding-left: 28px;
-  
-  &::before {
-    content: '';
-    position: absolute;
-    left: 10px;
-    top: 14px;
-    bottom: 14px;
-    width: 2px;
-    background: rgba(139, 92, 246, 0.25);
-  }
+}
+
+.timeline-line {
+  position: absolute;
+  left: 7px;
+  top: 24px;
+  bottom: 24px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 0;
 }
 
 .timeline-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 12px 0;
   position: relative;
+  margin-bottom: $gap-md;
+  z-index: 1;
+  
+  &:last-child { margin-bottom: 0; }
 }
 
 .timeline-dot {
   position: absolute;
   left: -28px;
-  width: 20px;
-  height: 20px;
+  top: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: #1a1a3e;
-  border: 2px solid rgba(139, 92, 246, 0.4);
+  border: 2px solid;
+  background: $bg-dark;
+  z-index: 2;
+  
+  &.border-orange { border-color: $accent-orange; }
+  &.border-emerald { border-color: $accent-emerald; }
+  &.border-blue { border-color: $accent-blue; }
+  &.border-red { border-color: $accent-red; }
+  &.border-indigo { border-color: $accent-indigo; }
+  &.border-pink { border-color: $accent-pink; }
+  &.border-teal { border-color: $accent-teal; }
+  &.border-gray { border-color: $text-gray-500; }
+}
+
+.timeline-card {
+  @include glass-card;
+  background: rgba($card-dark, 0.5);
+  padding: $gap-md;
+  border-left: 4px solid;
+  border-radius: 0 $radius-md $radius-md 0;
+  
+  &.border-left-orange { border-left-color: $accent-orange; }
+  &.border-left-emerald { border-left-color: $accent-emerald; }
+  &.border-left-blue { border-left-color: $accent-blue; }
+  &.border-left-red { border-left-color: $accent-red; }
+  &.border-left-indigo { border-left-color: $accent-indigo; }
+  &.border-left-pink { border-left-color: $accent-pink; }
+  &.border-left-teal { border-left-color: $accent-teal; }
+  &.border-left-gray { border-left-color: $text-gray-500; }
+}
+
+.card-top {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: flex-start;
 }
 
-.dot-icon {
-  font-size: 12px;
-}
-
-.timeline-content {
+.card-left {
   flex: 1;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 12px;
-  padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.timeline-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.card-time {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'DIN', -apple-system, monospace;
+  display: block;
+  
+  &.text-orange { color: $accent-orange; }
+  &.text-emerald { color: $accent-emerald; }
+  &.text-blue { color: $accent-blue; }
+  &.text-red { color: $accent-red; }
+  &.text-indigo { color: lighten($accent-indigo, 10%); }
+  &.text-pink { color: $accent-pink; }
+  &.text-teal { color: $accent-teal; }
+  &.text-gray { color: $text-gray-400; }
 }
 
-.timeline-time {
-  font-size: 24px;
-  font-weight: 600;
-  color: #8b5cf6;
-}
-
-.timeline-activity {
-  font-size: 24px;
-  color: #ffffff;
-}
-
-.timeline-tasks {
+.card-tasks {
   font-size: 22px;
-  color: rgba(255, 255, 255, 0.45);
-  margin-top: 6px;
+  color: $text-gray-400;
+  margin-top: 4px;
   display: block;
 }
 
-// 日程分类颜色
-.cat-routine .timeline-time { color: #f59e0b; }
-.cat-meal .timeline-time { color: #10b981; }
-.cat-work .timeline-time { color: #3b82f6; }
-.cat-exercise .timeline-time { color: #ef4444; }
-.cat-rest .timeline-time { color: #8b5cf6; }
-.cat-leisure .timeline-time { color: #ec4899; }
-.cat-sleep .timeline-time { color: #6366f1; }
+.card-tag {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 4px 12px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  
+  text {
+    font-size: 24px;
+    font-weight: 600;
+    color: $text-white;
+  }
+}
 
-// ==================== 刷新区域 ====================
+// ==================== 刷新按钮 ====================
 .refresh-area {
   display: flex;
   justify-content: center;
-  padding: 20px 0;
+  padding: 28px 0;
 }
 
 .refresh-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(139, 92, 246, 0.15);
-  border-radius: 20px;
-  padding: 14px 28px;
-  border: 1px solid rgba(139, 92, 246, 0.25);
+  gap: $gap-xs;
+  background: rgba(75, 85, 99, 0.5);
+  padding: 12px 28px;
+  border-radius: $radius-full;
+  transition: all 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   
-  &:active {
-    background: rgba(139, 92, 246, 0.25);
+  &:active { 
+    background: rgba(75, 85, 99, 0.7); 
+    transform: scale(0.98);
   }
 }
 
 .refresh-icon {
-  font-size: 26px;
-  color: #8b5cf6;
+  font-size: 24px;
+  color: $text-white;
 }
 
 .refresh-text {
   font-size: 24px;
-  color: rgba(255, 255, 255, 0.75);
+  color: $text-white;
+  font-weight: 500;
 }
