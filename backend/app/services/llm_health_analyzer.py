@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.basic_health import BasicHealthData
 from app.models.user_profile import UserProfile
 from app.config import settings
-from app.utils.timezone import get_china_now
+from app.utils.timezone import get_china_now, get_china_today
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +298,7 @@ class LLMHealthAnalyzer:
         # 例如：1月18日的睡眠数据 = 1月17日晚上到1月18日早上的睡眠
         data_date = yesterday_data.record_date
         china_today = get_china_today()
+        china_yesterday = china_today - timedelta(days=1)
         
         # 判断数据是今天还是昨天的
         is_today_data = (data_date == china_today)
