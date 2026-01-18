@@ -457,7 +457,9 @@ export default function Index() {
                   <Text className="stat-value">
                     {homeData.garmin?.body_battery_current ?? homeData.garmin?.body_battery_most_charged}
                   </Text>
-                  <Text className="stat-unit">/100</Text>
+                  <Text className="stat-unit">
+                    /{homeData.garmin?.body_battery_most_charged ?? homeData.garmin?.body_battery_charged ?? 100}
+                  </Text>
                 </>
               ) : (
                 <Text className="stat-empty">--</Text>

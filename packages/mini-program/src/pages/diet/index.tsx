@@ -277,6 +277,17 @@ export default function DietPage() {
     }
 
     try {
+      // 如果有图片，读取为Base64
+      let imageBase64: string | null = null;
+      if (imagePreview) {
+        try {
+          const fs = Taro.getFileSystemManager();
+          imageBase64 = fs.readFileSync(imagePreview, 'base64') as string;
+        } catch (e) {
+          console.warn('读取图片失败:', e);
+        }
+      }
+
       await request({
         url: '/diet/records',
         method: 'POST',
@@ -289,6 +300,8 @@ export default function DietPage() {
           carbs: formData.carbs ? parseFloat(formData.carbs) : null,
           fat: formData.fat ? parseFloat(formData.fat) : null,
           notes: formData.notes || null,
+          image_base64: imageBase64,
+          image_type: 'jpeg',
         },
       });
 

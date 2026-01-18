@@ -33,6 +33,8 @@ class DietRecordBase(BaseModel):
 class DietRecordCreate(DietRecordBase):
     """创建饮食记录"""
     user_id: Optional[int] = None  # 可选，后端会使用当前登录用户ID
+    image_base64: Optional[str] = None  # 可选，Base64编码的图片数据
+    image_type: Optional[str] = "jpeg"  # 图片类型
 
 
 class DietRecordUpdate(BaseModel):

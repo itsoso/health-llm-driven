@@ -73,6 +73,42 @@
   font-size: 32px;
 }
 
+// 时间范围选择器
+.time-range-selector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 6px;
+  margin-bottom: 20px;
+}
+
+.range-item {
+  flex: 1;
+  padding: 16px 0;
+  text-align: center;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  
+  &.active {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+  
+  &:active:not(.active) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.range-text {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.6);
+  
+  .active & {
+    color: #ffffff;
+    font-weight: 600;
+  }
+}
+
 // 统计概览
 .stats-section {
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);

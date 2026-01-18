@@ -24,10 +24,10 @@ interface WorkoutRecord {
 interface WorkoutStats {
   total_workouts: number;
   total_duration_minutes?: number;
-  total_duration_seconds?: number; // 兼容字段
+  total_duration_seconds?: number;
   total_calories: number;
   total_distance_km?: number;
-  total_distance_meters?: number; // 兼容字段
+  total_distance_meters?: number;
   workout_types?: Record<string, number>;
   workouts_by_type?: Record<string, { count: number; duration_minutes: number }>;
 }
@@ -46,34 +46,35 @@ const WORKOUT_TYPE_MAP: Record<string, { name: string; icon: string }> = {
   other: { name: '其他', icon: '🏋️' },
 };
 
+// 时间范围选项
+const TIME_RANGES = [
+  { value: 7, label: '最近7天' },
+  { value: 30, label: '最近30天' },
+];
+
 export default function Workout() {
   const [loading, setLoading] = useState(true);
   const [workouts, setWorkouts] = useState<WorkoutRecord[]>([]);
   const [stats, setStats] = useState<WorkoutStats | null>(null);
+  const [selectedDays, setSelectedDays] = useState(7); // 默认7天
 
   useEffect(() => {
-    loadData();
+    loadData(selectedDays);
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (days: number) => {
     setLoading(true);
     try {
-      // 获取最近30天的运动记录
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
       const [workoutList, workoutStats] = await Promise.all([
-        get<WorkoutRecord[]>('/workout/me', { days: 30 }),
-        get<WorkoutStats>('/workout/me/stats', { days: 30 }).catch(() => null),
+        get<WorkoutRecord[]>('/workout/me', { days }),
+        get<WorkoutStats>('/workout/me/stats', { days }).catch(() => null),
       ]);
       
       setWorkouts(workoutList || []);
       
-      // 如果后端没有返回统计数据，从列表计算
       if (workoutStats) {
         setStats(workoutStats);
       } else if (workoutList && workoutList.length > 0) {
-        // 从列表计算统计数据
         const totalDurationSeconds = workoutList.reduce((sum, w) => sum + (w.duration_seconds || 0), 0);
         const totalDistanceMeters = workoutList.reduce((sum, w) => sum + (w.distance_meters || 0), 0);
         const calculatedStats: WorkoutStats = {
@@ -85,6 +86,8 @@ export default function Workout() {
           total_distance_meters: totalDistanceMeters,
         };
         setStats(calculatedStats);
+      } else {
+        setStats(null);
       }
     } catch (error) {
       console.error('加载运动数据失败:', error);
@@ -93,15 +96,22 @@ export default function Workout() {
     }
   };
 
+  const handleTimeRangeChange = (days: number) => {
+    if (days !== selectedDays) {
+      setSelectedDays(days);
+      loadData(days);
+    }
+  };
+
   const handleRefresh = () => {
     Taro.showLoading({ title: '刷新中...' });
-    loadData().finally(() => {
+    loadData(selectedDays).finally(() => {
       Taro.hideLoading();
       Taro.showToast({ title: '刷新成功', icon: 'success', duration: 1000 });
     });
   };
 
-  // 格式化时长（支持秒或分钟）
+  // 格式化时长
   const formatDuration = (secondsOrMinutes: number | null | undefined, isMinutes = false) => {
     if (secondsOrMinutes === null || secondsOrMinutes === undefined || secondsOrMinutes === 0) return '0分钟';
     const totalSeconds = isMinutes ? secondsOrMinutes * 60 : secondsOrMinutes;
@@ -113,7 +123,7 @@ export default function Workout() {
     return `${minutes}分钟`;
   };
 
-  // 格式化距离（支持米或公里）
+  // 格式化距离
   const formatDistance = (metersOrKm: number | null | undefined, isKm = false) => {
     if (metersOrKm === null || metersOrKm === undefined || metersOrKm === 0) return '0 km';
     const totalMeters = isKm ? metersOrKm * 1000 : metersOrKm;
@@ -158,11 +168,23 @@ export default function Workout() {
       <View className="header">
         <View className="header-left">
           <Text className="title">运动训练</Text>
-          <Text className="subtitle">最近30天</Text>
         </View>
         <View className="refresh-btn" onClick={handleRefresh}>
           <Text className="refresh-icon">🔄</Text>
         </View>
+      </View>
+
+      {/* 时间范围选择器 */}
+      <View className="time-range-selector">
+        {TIME_RANGES.map((range) => (
+          <View
+            key={range.value}
+            className={`range-item ${selectedDays === range.value ? 'active' : ''}`}
+            onClick={() => handleTimeRangeChange(range.value)}
+          >
+            <Text className="range-text">{range.label}</Text>
+          </View>
+        ))}
       </View>
 
       {/* 统计概览 */}
@@ -179,7 +201,6 @@ export default function Workout() {
                   const totalSeconds = stats.total_duration_seconds ?? (stats.total_duration_minutes ? stats.total_duration_minutes * 60 : 0);
                   return formatDuration(totalSeconds, false);
                 }
-                // 如果没有统计数据，从列表计算
                 const totalSeconds = workouts.reduce((sum, w) => sum + (w.duration_seconds || 0), 0);
                 return formatDuration(totalSeconds, false);
               })()}
@@ -193,7 +214,6 @@ export default function Workout() {
                   const totalMeters = stats.total_distance_meters ?? (stats.total_distance_km ? stats.total_distance_km * 1000 : 0);
                   return formatDistance(totalMeters, false);
                 }
-                // 如果没有统计数据，从列表计算
                 const totalMeters = workouts.reduce((sum, w) => sum + (w.distance_meters || 0), 0);
                 return formatDistance(totalMeters, false);
               })()}
@@ -206,7 +226,6 @@ export default function Workout() {
                 if (stats) {
                   return stats.total_calories?.toLocaleString() || '0';
                 }
-                // 如果没有统计数据，从列表计算
                 const totalCalories = workouts.reduce((sum, w) => sum + (w.calories || 0), 0);
                 return totalCalories.toLocaleString();
               })()}
@@ -260,7 +279,6 @@ export default function Workout() {
                     </View>
                   </View>
                 </View>
-                {/* 右箭头 */}
                 <View className="card-arrow">
                   <Text>›</Text>
                 </View>

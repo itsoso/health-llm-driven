@@ -41,6 +41,36 @@ def create_diet_record(
     if record_dict.get('meal_time'):
         record_dict['meal_time'] = record_dict['meal_time'].strftime('%H:%M')
     
+    # 处理图片上传
+    image_url = record_dict.get('image_url')
+    if record_dict.get('image_base64'):
+        try:
+            from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
+            import base64 as b64
+            
+            ensure_upload_dir()
+            image_type = (record_dict.get('image_type') or 'jpeg').lower()
+            if image_type == "jpg":
+                image_type = "jpeg"
+            
+            # 解码并保存图片
+            base64_data = record_dict['image_base64']
+            if "," in base64_data:
+                base64_data = base64_data.split(",", 1)[1]
+            
+            image_data = b64.b64decode(base64_data)
+            filename = generate_filename(image_type, "diet")
+            filepath = os.path.join(UPLOAD_DIR, filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            with open(filepath, "wb") as f:
+                f.write(image_data)
+            
+            image_url = f"/api/v1/upload/files/{filename}"
+            logger.info(f"保存饮食图片: {filename}")
+        except Exception as e:
+            logger.warning(f"保存图片失败: {e}")
+    
     db_record = DietRecordModel(
         user_id=current_user.id,  # 使用当前登录用户ID
         record_date=record_dict['record_date'],
@@ -52,6 +82,8 @@ def create_diet_record(
         fat=record_dict.get('fat'),
         fiber=record_dict.get('fiber'),
         notes=record_dict.get('notes'),
+        image_url=image_url,
+        health_tips=record_dict.get('health_tips'),
     )
     db.add(db_record)
     db.commit()
