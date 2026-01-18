@@ -496,17 +496,24 @@ class DailyRecommendationService:
         if reference_date is None:
             reference_date = get_china_today()
         
-        # 获取最新可用数据（优先今天，否则昨天）
-        latest_data = self.get_latest_data(db, user_id)
-        recent_data = self.get_recent_data(db, user_id, 7, include_today=True)
+        # 【重要】始终使用昨天的数据进行分析，因为今天才刚开始
+        # 运动建议应该基于昨天的运动量和本周累计，而不是今天的（今天可能才几百步）
+        china_yesterday = get_china_today() - timedelta(days=1)
+        yesterday_data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date == china_yesterday
+        ).first()
+        
+        # 获取最近7天的数据（用于趋势分析）
+        recent_data = self.get_recent_data(db, user_id, 7, include_today=False)
         
         # 获取用户信息
         user = db.query(User).filter(User.id == user_id).first()
         
-        if not latest_data:
+        if not yesterday_data or not self._has_meaningful_data(yesterday_data):
             return {
                 "status": "no_data",
-                "message": "暂无数据",
+                "message": "暂无昨日数据",
                 "date": reference_date.isoformat(),
                 "user": user.name if user else None,
                 "sleep_analysis": None,
@@ -518,8 +525,8 @@ class DailyRecommendationService:
                 "daily_goals": []
             }
         
-        # 使用最新数据进行分析（兼容旧变量名）
-        yesterday = latest_data
+        # 使用昨天的数据进行分析
+        yesterday = yesterday_data
         
         # 各项分析
         sleep_analysis = self.analyze_sleep(yesterday, recent_data)
