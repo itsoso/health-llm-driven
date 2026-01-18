@@ -105,11 +105,13 @@ export default function AIAssistantPage() {
     setError(null);
 
     try {
+      // 添加时间戳参数防止缓存
+      const timestamp = Date.now();
       const [briefingRes, recommendationRes, remindersRes, scheduleRes] = await Promise.allSettled([
-        api.get('/ai-scheduler/morning-briefing'),
-        api.get('/ai-scheduler/recommendation'),
-        api.get('/ai-scheduler/reminders'),
-        api.get('/ai-scheduler/daily-schedule'),
+        api.get(`/ai-scheduler/morning-briefing?_t=${timestamp}`),
+        api.get(`/ai-scheduler/recommendation?_t=${timestamp}`),
+        api.get(`/ai-scheduler/reminders?_t=${timestamp}`),
+        api.get(`/ai-scheduler/daily-schedule?_t=${timestamp}`),
       ]);
 
       if (briefingRes.status === 'fulfilled') {
