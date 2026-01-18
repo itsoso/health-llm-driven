@@ -590,15 +590,15 @@ class DailyRecommendationService:
             "priority_recommendations": priority_recommendations,
             "daily_goals": daily_goals,
             "raw_data": {
-                "sleep_score": yesterday.sleep_score,
-                "sleep_duration_minutes": yesterday.total_sleep_duration,
-                "steps": yesterday.steps,
-                "resting_heart_rate": yesterday.resting_heart_rate,
-                "stress_level": yesterday.stress_level,
-                "body_battery_highest": yesterday.body_battery_most_charged,
-                "body_battery_current": yesterday.body_battery_current,
-                "body_battery_lowest": yesterday.body_battery_lowest,
-                "body_battery_drained": yesterday.body_battery_drained
+                "sleep_score": sleep_data.sleep_score if sleep_data else None,
+                "sleep_duration_minutes": sleep_data.total_sleep_duration if sleep_data else None,
+                "steps": activity_data.steps if activity_data else None,
+                "resting_heart_rate": vital_data.resting_heart_rate if vital_data else None,
+                "stress_level": vital_data.stress_level if vital_data else None,
+                "body_battery_highest": vital_data.body_battery_most_charged if vital_data else None,
+                "body_battery_current": vital_data.body_battery_current if vital_data else None,
+                "body_battery_lowest": vital_data.body_battery_lowest if vital_data else None,
+                "body_battery_drained": vital_data.body_battery_drained if vital_data else None
             },
             # 保存分析上下文供LLM使用
             "_rule_analysis": rule_analysis,
