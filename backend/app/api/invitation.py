@@ -373,6 +373,33 @@ async def list_applications(
             reviewer_name=reviewer_name
         ))
     
+    # 如果查询 pending 状态，也包含 User 表中未审核的微信用户
+    if status == "pending" or status is None:
+        pending_users = db.query(User).filter(
+            User.is_approved == False,
+            User.wechat_openid != None  # 微信用户
+        ).order_by(User.created_at.desc()).all()
+        
+        for user in pending_users:
+            # 检查是否已经在 UserApplication 中
+            existing = db.query(UserApplication).filter(
+                UserApplication.user_id == user.id
+            ).first()
+            if not existing:
+                # 创建虚拟的申请记录用于显示
+                result.append(UserApplicationResponse(
+                    id=user.id * -1,  # 使用负数ID区分
+                    email=f"wechat_{user.wechat_openid[-6:] if user.wechat_openid else 'unknown'}@wechat.user",
+                    name=user.name or "微信用户",
+                    phone=None,
+                    status="pending",
+                    health_questionnaire=None,
+                    review_note=f"微信用户，邀请码: {user.invite_code or '无'}",
+                    created_at=user.created_at,
+                    reviewed_at=None,
+                    reviewer_name=None
+                ))
+    
     return result
 
 
@@ -421,13 +448,41 @@ async def review_application(
     审批用户申请（仅管理员可操作）
     
     如果通过：
-    1. 创建用户账号
+    1. 创建用户账号（或审核微信用户）
     2. 更新申请状态
     3. 发送通知（TODO）
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以审批申请")
     
+    # 处理微信用户审核（负数ID）
+    if app_id < 0:
+        user_id = abs(app_id)
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        if user.is_approved:
+            raise HTTPException(status_code=400, detail="该用户已被审核")
+        
+        if review.approved:
+            user.is_approved = True
+            db.commit()
+            return {
+                "message": "微信用户审核已通过",
+                "user_id": user.id,
+                "name": user.name
+            }
+        else:
+            # 拒绝：可以选择删除用户或标记
+            user.is_active = False
+            db.commit()
+            return {
+                "message": "微信用户申请已拒绝",
+                "reason": review.note
+            }
+    
+    # 处理普通申请
     application = db.query(UserApplication).filter(UserApplication.id == app_id).first()
     if not application:
         raise HTTPException(status_code=404, detail="申请不存在")
@@ -544,6 +599,12 @@ async def get_invitation_stats(
         UserApplication.status == ApplicationStatus.REJECTED.value
     ).scalar()
     
+    # 统计未审核的微信用户
+    pending_wechat_users = db.query(func.count(User.id)).filter(
+        User.is_approved == False,
+        User.wechat_openid != None
+    ).scalar()
+    
     return {
         "invitation_codes": {
             "total": total_codes,
@@ -551,9 +612,10 @@ async def get_invitation_stats(
             "total_uses": total_uses
         },
         "applications": {
-            "total": total_applications,
-            "pending": pending_applications,
+            "total": total_applications + pending_wechat_users,
+            "pending": pending_applications + pending_wechat_users,
             "approved": approved_applications,
-            "rejected": rejected_applications
+            "rejected": rejected_applications,
+            "pending_wechat_users": pending_wechat_users  # 单独显示微信用户数
         }
     }
