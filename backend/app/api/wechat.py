@@ -4,13 +4,15 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 from jose import jwt
 
 from app.database import get_db
 from app.models.user import User
+from app.models.notification import UserNotificationSetting
 from app.config import settings
+from app.services.auth import get_current_user_required
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -281,5 +283,163 @@ async def check_garmin_bindding(
         "garmin_email": credential.garmin_email if credential else None,
         "sync_enabled": credential.sync_enabled if credential else False,
         "credentials_valid": credential.credentials_valid if credential else False
+    }
+
+
+# ============ 订阅消息设置 API ============
+
+class SubscribeSettingsRequest(BaseModel):
+    """订阅设置请求"""
+    template_ids: Dict[str, str]  # {"reminder": "xxx", "morning_briefing": "xxx"}
+    enabled: bool = True
+
+
+class SubscribeSettingsResponse(BaseModel):
+    """订阅设置响应"""
+    enabled: bool
+    wechat_enabled: bool
+    template_ids: Optional[Dict[str, str]]
+    morning_briefing_enabled: bool
+    reminder_enabled: bool
+    health_alert_enabled: bool
+    ai_advice_enabled: bool
+    morning_briefing_time: Optional[str]
+    quiet_hours_start: Optional[str]
+    quiet_hours_end: Optional[str]
+
+
+@router.post("/subscribe/settings", summary="保存小程序订阅设置")
+async def save_subscribe_settings(
+    request: SubscribeSettingsRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    保存用户订阅的模板ID
+    
+    小程序端调用 wx.requestSubscribeMessage 获取用户授权后，
+    将授权的模板ID发送到此接口保存
+    """
+    # 查找或创建用户通知设置
+    settings_record = db.query(UserNotificationSetting).filter(
+        UserNotificationSetting.user_id == current_user.id
+    ).first()
+    
+    if not settings_record:
+        settings_record = UserNotificationSetting(
+            user_id=current_user.id,
+            enabled=request.enabled,
+            wechat_enabled=True,
+            wechat_openid=current_user.wechat_openid,
+            wechat_template_ids=request.template_ids
+        )
+        db.add(settings_record)
+    else:
+        # 更新现有设置
+        settings_record.enabled = request.enabled
+        settings_record.wechat_enabled = True
+        if current_user.wechat_openid:
+            settings_record.wechat_openid = current_user.wechat_openid
+        
+        # 合并模板ID（保留已有的，添加新的）
+        existing_templates = settings_record.wechat_template_ids or {}
+        existing_templates.update(request.template_ids)
+        settings_record.wechat_template_ids = existing_templates
+    
+    db.commit()
+    db.refresh(settings_record)
+    
+    logger.info(f"用户 {current_user.id} 保存订阅设置: {request.template_ids}")
+    
+    return {
+        "success": True,
+        "message": "订阅设置已保存",
+        "template_count": len(settings_record.wechat_template_ids or {})
+    }
+
+
+@router.get("/subscribe/settings", response_model=SubscribeSettingsResponse, summary="获取订阅设置")
+async def get_subscribe_settings(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的订阅设置"""
+    settings_record = db.query(UserNotificationSetting).filter(
+        UserNotificationSetting.user_id == current_user.id
+    ).first()
+    
+    if not settings_record:
+        # 返回默认设置
+        return SubscribeSettingsResponse(
+            enabled=False,
+            wechat_enabled=False,
+            template_ids=None,
+            morning_briefing_enabled=True,
+            reminder_enabled=True,
+            health_alert_enabled=True,
+            ai_advice_enabled=True,
+            morning_briefing_time="07:30",
+            quiet_hours_start="22:00",
+            quiet_hours_end="07:00"
+        )
+    
+    return SubscribeSettingsResponse(
+        enabled=settings_record.enabled,
+        wechat_enabled=settings_record.wechat_enabled,
+        template_ids=settings_record.wechat_template_ids,
+        morning_briefing_enabled=settings_record.morning_briefing_enabled,
+        reminder_enabled=settings_record.reminder_enabled,
+        health_alert_enabled=settings_record.health_alert_enabled,
+        ai_advice_enabled=settings_record.ai_advice_enabled,
+        morning_briefing_time=settings_record.morning_briefing_time,
+        quiet_hours_start=settings_record.quiet_hours_start,
+        quiet_hours_end=settings_record.quiet_hours_end
+    )
+
+
+class UpdateNotificationSettingsRequest(BaseModel):
+    """更新通知设置请求"""
+    enabled: Optional[bool] = None
+    morning_briefing_enabled: Optional[bool] = None
+    reminder_enabled: Optional[bool] = None
+    health_alert_enabled: Optional[bool] = None
+    ai_advice_enabled: Optional[bool] = None
+    morning_briefing_time: Optional[str] = None  # HH:MM 格式
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
+
+
+@router.put("/subscribe/settings", summary="更新通知设置")
+async def update_notification_settings(
+    request: UpdateNotificationSettingsRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """更新用户的通知设置（开关、时间等）"""
+    settings_record = db.query(UserNotificationSetting).filter(
+        UserNotificationSetting.user_id == current_user.id
+    ).first()
+    
+    if not settings_record:
+        settings_record = UserNotificationSetting(
+            user_id=current_user.id,
+            wechat_openid=current_user.wechat_openid
+        )
+        db.add(settings_record)
+    
+    # 更新非空字段
+    update_fields = request.dict(exclude_unset=True)
+    for field, value in update_fields.items():
+        if value is not None and hasattr(settings_record, field):
+            setattr(settings_record, field, value)
+    
+    db.commit()
+    db.refresh(settings_record)
+    
+    logger.info(f"用户 {current_user.id} 更新通知设置: {update_fields}")
+    
+    return {
+        "success": True,
+        "message": "设置已更新"
     }
 

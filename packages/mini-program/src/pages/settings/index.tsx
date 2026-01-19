@@ -2,9 +2,15 @@
  * 设置/我的页面
  */
 import { useState, useEffect } from 'react';
-import { View, Text, Button, Image } from '@tarojs/components';
+import { View, Text, Button, Image, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { clearToken, getToken, get } from '../../services/request';
+import { clearToken, getToken, get, put } from '../../services/request';
+import { 
+  requestAllSubscriptions, 
+  getSubscribeSettings, 
+  isSubscribeAvailable,
+  TEMPLATE_NAMES 
+} from '../../services/subscribe';
 import logoImage from '../../assets/logo.png';
 import './index.scss';
 
@@ -32,6 +38,15 @@ interface DeviceCredential {
   last_sync_at: string | null;
 }
 
+interface NotificationSettings {
+  enabled: boolean;
+  wechat_enabled: boolean;
+  template_ids: Record<string, string> | null;
+  morning_briefing_enabled: boolean;
+  reminder_enabled: boolean;
+  health_alert_enabled: boolean;
+}
+
 export default function Settings() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('自由是自律的泡沫用户');
@@ -39,6 +54,10 @@ export default function Settings() {
   const [hasGarmin, setHasGarmin] = useState(false);
   const [garminStatus, setGarminStatus] = useState<'none' | 'valid' | 'invalid'>('none');
   const [huaweiStatus, setHuaweiStatus] = useState<'none' | 'valid' | 'invalid'>('none');
+  
+  // 消息提醒设置
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [subscribeAvailable] = useState(isSubscribeAvailable());
 
   useEffect(() => {
     const token = getToken();
@@ -48,6 +67,7 @@ export default function Settings() {
       loadUserInfo();
       loadGarminStatus();
       loadHuaweiStatus();
+      loadNotificationSettings();
     }
     
     // 从本地存储获取用户名（备用）
@@ -56,6 +76,64 @@ export default function Settings() {
       setUserName(storedName);
     }
   }, []);
+
+  const loadNotificationSettings = async () => {
+    try {
+      const settings = await getSubscribeSettings();
+      if (settings) {
+        setNotificationSettings(settings as NotificationSettings);
+      }
+    } catch (error) {
+      console.error('获取通知设置失败:', error);
+    }
+  };
+
+  // 开启消息提醒
+  const handleEnableNotifications = async () => {
+    Taro.showLoading({ title: '请求授权中...' });
+    
+    try {
+      const result = await requestAllSubscriptions();
+      Taro.hideLoading();
+      
+      if (result.success) {
+        Taro.showToast({
+          title: `已开启${result.acceptedTemplates.length}项提醒`,
+          icon: 'success',
+        });
+        // 重新加载设置
+        loadNotificationSettings();
+      } else if (result.error) {
+        Taro.showToast({
+          title: result.error,
+          icon: 'none',
+        });
+      }
+    } catch (error) {
+      Taro.hideLoading();
+      Taro.showToast({
+        title: '授权失败，请重试',
+        icon: 'none',
+      });
+    }
+  };
+
+  // 切换通知总开关
+  const handleToggleNotification = async (enabled: boolean) => {
+    try {
+      await put('/wechat/subscribe/settings', { enabled });
+      setNotificationSettings(prev => prev ? { ...prev, enabled } : null);
+      Taro.showToast({
+        title: enabled ? '已开启通知' : '已关闭通知',
+        icon: 'success',
+      });
+    } catch (error) {
+      Taro.showToast({
+        title: '设置失败',
+        icon: 'none',
+      });
+    }
+  };
 
   const loadUserInfo = async () => {
     try {
@@ -180,6 +258,52 @@ export default function Settings() {
           <Text className="menu-desc">完善资料，获得更精准的AI建议</Text>
           <Text className="menu-arrow">›</Text>
         </View>
+      </View>
+
+      {/* 消息提醒设置 */}
+      <View className="menu-section">
+        <Text className="section-label">消息提醒</Text>
+        
+        {/* 未开启订阅时显示开启按钮 */}
+        {(!notificationSettings?.wechat_enabled || !notificationSettings?.template_ids) ? (
+          <View className="menu-item highlight" onClick={handleEnableNotifications}>
+            <Text className="menu-icon">🔔</Text>
+            <Text className="menu-text">开启消息提醒</Text>
+            <Text className="menu-desc">接收健康提醒、早间简报等通知</Text>
+            <Text className="menu-arrow">›</Text>
+          </View>
+        ) : (
+          <>
+            {/* 已开启订阅时显示开关 */}
+            <View className="menu-item">
+              <Text className="menu-icon">🔔</Text>
+              <Text className="menu-text">消息通知</Text>
+              <Switch 
+                checked={notificationSettings?.enabled ?? false}
+                onChange={(e) => handleToggleNotification(e.detail.value)}
+                color="#7C3AED"
+              />
+            </View>
+            
+            {/* 显示已订阅的模板 */}
+            {notificationSettings?.template_ids && Object.keys(notificationSettings.template_ids).length > 0 && (
+              <View className="menu-item sub-item">
+                <Text className="menu-icon">📋</Text>
+                <Text className="menu-text">已订阅</Text>
+                <Text className="menu-status status-success">
+                  {Object.keys(notificationSettings.template_ids).length}项
+                </Text>
+              </View>
+            )}
+            
+            {/* 重新授权按钮 */}
+            <View className="menu-item" onClick={handleEnableNotifications}>
+              <Text className="menu-icon">➕</Text>
+              <Text className="menu-text">添加更多订阅</Text>
+              <Text className="menu-arrow">›</Text>
+            </View>
+          </>
+        )}
       </View>
 
       {/* 设备绑定 */}
