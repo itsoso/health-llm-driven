@@ -129,21 +129,28 @@ class ReviewService:
         ).first()
         
         if rhinitis:
-            summary.nasal_wash_done = rhinitis.nasal_wash_done or False
-            summary.nasal_wash_count = rhinitis.nasal_wash_count or 0
+            # HealthCheckin 没有 nasal_wash_done 字段，通过 nasal_wash_count > 0 判断
+            nasal_count = rhinitis.nasal_wash_count or 0
+            summary.nasal_wash_done = nasal_count > 0
+            summary.nasal_wash_count = nasal_count
         
         # 7. 获取补剂数据
         supplements = self.db.query(SupplementRecord).filter(
             SupplementRecord.user_id == user_id,
-            SupplementRecord.taken_date == target_date
+            SupplementRecord.record_date == target_date  # 字段名是 record_date 不是 taken_date
         ).all()
         
         for s in supplements:
+            # dosage 在 SupplementDefinition 中，通过关系获取
+            supplement_name = s.supplement.name if s.supplement else "未知"
+            dosage = s.supplement.dosage if s.supplement else None
             summary.supplements.append({
                 "id": s.id,
                 "supplement_id": s.supplement_id,
-                "taken_time": s.taken_time,
-                "dosage": s.dosage,
+                "name": supplement_name,
+                "taken_time": str(s.taken_time) if s.taken_time else None,
+                "dosage": dosage,
+                "taken": s.taken,
             })
         
         return summary
