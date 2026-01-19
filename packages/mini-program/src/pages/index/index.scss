@@ -621,6 +621,16 @@ $gap-lg: 20px;
   color: #6B7280;
   display: block;
   margin-bottom: $gap-md;
+  
+  &.green-text {
+    color: $accent-green;
+    font-weight: 600;
+  }
+  
+  &.red-text {
+    color: $accent-red;
+    font-weight: 600;
+  }
 }
 
 .progress-section {
@@ -674,11 +684,33 @@ $gap-lg: 20px;
   border-radius: $radius-sm;
   padding: 10px $gap-sm;
   margin-top: $gap-sm;
+  border-left: 3px solid #E5E7EB;
+  
+  // 有能量差时的样式（成功状态）
+  &.balance-tip-success {
+    background: rgba($accent-green, 0.1);
+    border-left-color: $accent-green;
+    
+    .tip-text {
+      color: darken($accent-green, 10%);
+    }
+  }
+  
+  // 能量盈余时的样式（警告状态）
+  &.balance-tip-warning {
+    background: rgba($accent-red, 0.1);
+    border-left-color: $accent-red;
+    
+    .tip-text {
+      color: darken($accent-red, 10%);
+    }
+  }
 }
 
 .balance-tip .tip-text {
   font-size: 20px;
   color: #6B7280;
+  line-height: 1.5;
 }
 
 // ==================== 健康简报网格 ====================

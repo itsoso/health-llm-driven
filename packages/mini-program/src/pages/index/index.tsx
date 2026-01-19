@@ -502,26 +502,38 @@ export default function Index() {
               <Text className="energy-title">能量平衡</Text>
             </View>
             {(() => {
-              // 使用 Garmin 真实数据计算能量平衡
+              // 能量差计算：基础代谢消耗 + 锻炼消耗 - 饮食摄入
               // calories_total = 基础代谢 + 活动消耗（Garmin 提供的总消耗）
               const totalOut = homeData.garmin?.calories_total || 0;
               const activeCalories = homeData.garmin?.active_calories || 0;
               // 基础代谢 = 总消耗 - 活动消耗
               const bmr = totalOut - activeCalories;
               const totalIn = homeData.diet?.total_calories || 0;
-              const balance = totalIn - totalOut;
+              
+              // 能量差 = (基础代谢 + 锻炼消耗) - 饮食摄入 = 总消耗 - 总摄入
+              // 正数表示有能量差（可以减肥），负数表示能量盈余（会增重）
+              const energyDiff = totalOut - totalIn;
               const maxVal = Math.max(totalOut, totalIn, 1);
+              
+              // 判断是否在创造能量差
+              const isCreatingDeficit = energyDiff > 0;
+              const deficitAmount = Math.abs(energyDiff);
               
               return (
                 <View className="energy-content">
                   <View className="balance-value">
-                    <Text className={`balance-num ${balance >= 0 ? 'green' : 'red'}`}>
-                      {balance >= 0 ? '+' : ''}{balance}
+                    <Text className={`balance-num ${isCreatingDeficit ? 'green' : 'red'}`}>
+                      {isCreatingDeficit ? '+' : '-'}{deficitAmount.toFixed(0)}
                     </Text>
                     <Text className="balance-unit">大卡</Text>
                   </View>
-                  <Text className="balance-label">
-                    {balance > 0 ? '热量盈余' : balance < 0 ? '热量亏损' : '能量平衡'}
+                  <Text className={`balance-label ${isCreatingDeficit ? 'green-text' : 'red-text'}`}>
+                    {isCreatingDeficit 
+                      ? `✓ 正在创造能量差，减肥进行中` 
+                      : energyDiff === 0 
+                        ? '能量平衡，需要增加运动或减少摄入'
+                        : `能量盈余，需要增加运动或减少摄入`
+                    }
                   </Text>
                   
                   {/* 消耗进度条 */}
@@ -537,8 +549,8 @@ export default function Index() {
                       />
                     </View>
                     <View className="progress-detail">
-                      <Text className="detail-text">基础代谢: {bmr}</Text>
-                      <Text className="detail-text">活动: {activeCalories}</Text>
+                      <Text className="detail-text">基础代谢: {bmr.toFixed(0)} 大卡</Text>
+                      <Text className="detail-text">活动消耗: {activeCalories.toFixed(0)} 大卡</Text>
                     </View>
                   </View>
                   
@@ -560,14 +572,26 @@ export default function Index() {
                     </View>
                   </View>
                   
-                  {/* 提示 */}
-                  <View className="balance-tip">
-                    <Text className="tip-text">
-                      💡 {balance < -500 ? '热量亏损较大，注意补充' : 
-                          balance > 500 ? '热量摄入较多，建议运动' : 
-                          '能量摄入适中，继续保持！'}
-                    </Text>
-                  </View>
+                  {/* 能量差提示 */}
+                  {isCreatingDeficit ? (
+                    <View className="balance-tip balance-tip-success">
+                      <Text className="tip-text">
+                        🎯 今日已创造 {deficitAmount.toFixed(0)} 大卡能量差，继续保持！只有有能量差才能减肥成功。
+                      </Text>
+                    </View>
+                  ) : energyDiff < 0 ? (
+                    <View className="balance-tip balance-tip-warning">
+                      <Text className="tip-text">
+                        ⚠️ 当前能量盈余 {deficitAmount.toFixed(0)} 大卡，建议增加运动或减少摄入来创造能量差。
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="balance-tip">
+                      <Text className="tip-text">
+                        💡 能量平衡中，建议增加运动来创造能量差，只有有能量差才能减肥成功。
+                      </Text>
+                    </View>
+                  )}
                 </View>
               );
             })()}
