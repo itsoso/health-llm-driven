@@ -416,10 +416,12 @@ $gap-lg: 20px;
   &.yellow { background: #FEF9E7; }
   &.orange { background: #FFF0E6; }
   &.purple { background: #F3E8FF; }
+  &.green { background: #E6F9F0; }
 }
 
 .quick-icon { font-size: 28px; }
 .quick-icon-img { width: 40px; height: 40px; }
+.quick-icon-emoji { font-size: 32px; }
 .quick-label { font-size: 22px; color: #374151; font-weight: 500; text-align: center; }
 
 // ==================== 问候卡片 ====================

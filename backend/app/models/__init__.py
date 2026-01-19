@@ -33,6 +33,8 @@ from app.models.notification import (
     UserNotificationSetting, NotificationLog, ReminderConfig,
     NotificationChannel, NotificationType, NotificationStatus
 )
+# 复盘模型
+from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 
 __all__ = [
     "User",
@@ -80,5 +82,9 @@ __all__ = [
     "NotificationChannel",
     "NotificationType",
     "NotificationStatus",
+    # 复盘模型
+    "DailyReview",
+    "PeriodReview",
+    "ReviewPeriod",
 ]
 

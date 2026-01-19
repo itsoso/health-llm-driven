@@ -1,0 +1,326 @@
+// 每日复盘页面样式
+
+$bg-dark: #0B0E14;
+$card-dark: #161B28;
+$card-border: #2D3748;
+$primary: #7C3AED;
+$text-white: #FFFFFF;
+$text-gray-100: #F3F4F6;
+$text-gray-300: #D1D5DB;
+$text-gray-400: #9CA3AF;
+$text-gray-500: #6B7280;
+$accent-green: #10B981;
+$accent-yellow: #FACC15;
+$accent-orange: #F97316;
+$accent-blue: #3B82F6;
+
+$radius-sm: 12px;
+$radius-md: 16px;
+$gap-sm: 12px;
+$gap-md: 16px;
+$gap-lg: 20px;
+
+.review-page {
+  min-height: 100vh;
+  background: $bg-dark;
+  padding: $gap-md;
+  padding-bottom: 120px;
+  
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: $primary;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: $gap-md;
+  color: $text-gray-400;
+  font-size: 28px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 头部
+.header {
+  margin-bottom: $gap-lg;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $gap-sm;
+}
+
+.title {
+  font-size: 36px;
+  font-weight: 700;
+  color: $text-white;
+}
+
+.streak-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba($accent-orange, 0.2);
+  padding: 8px 16px;
+  border-radius: 100px;
+}
+
+.streak-icon { font-size: 24px; }
+.streak-num { 
+  font-size: 28px; 
+  font-weight: 700; 
+  color: $accent-orange; 
+}
+.streak-label { 
+  font-size: 22px; 
+  color: $accent-orange; 
+}
+
+.date-row {
+  display: flex;
+  align-items: center;
+  gap: $gap-sm;
+}
+
+.date-text {
+  font-size: 26px;
+  color: $text-gray-400;
+}
+
+.completed-badge {
+  background: rgba($accent-green, 0.2);
+  padding: 4px 12px;
+  border-radius: 100px;
+  
+  text {
+    font-size: 22px;
+    color: $accent-green;
+  }
+}
+
+// 区块
+.section {
+  background: rgba($card-dark, 0.7);
+  border-radius: $radius-md;
+  padding: $gap-md;
+  margin-bottom: $gap-md;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $gap-md;
+}
+
+.section-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: $text-white;
+  display: block;
+  margin-bottom: $gap-sm;
+}
+
+.refresh-btn {
+  background: rgba($primary, 0.2);
+  padding: 6px 14px;
+  border-radius: 100px;
+  
+  text {
+    font-size: 22px;
+    color: $primary;
+  }
+}
+
+// 数据网格
+.data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: $gap-sm;
+  margin-bottom: $gap-md;
+}
+
+.data-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: $radius-sm;
+  padding: $gap-sm;
+  text-align: center;
+}
+
+.card-icon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.card-title {
+  font-size: 22px;
+  color: $text-gray-400;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.card-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: $text-white;
+}
+
+// 身体状态
+.body-status {
+  display: flex;
+  justify-content: space-around;
+  padding-top: $gap-sm;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-item {
+  text-align: center;
+}
+
+.status-label {
+  font-size: 20px;
+  color: $text-gray-500;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.status-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: $text-gray-300;
+}
+
+// 评分选择器
+.score-selector {
+  margin-bottom: $gap-md;
+  
+  &:last-child { margin-bottom: 0; }
+}
+
+.score-label {
+  font-size: 24px;
+  color: $text-gray-300;
+  display: block;
+  margin-bottom: $gap-sm;
+}
+
+.score-options {
+  display: flex;
+  justify-content: space-between;
+  gap: $gap-sm;
+}
+
+.score-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: $gap-sm 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: $radius-sm;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  
+  &.active {
+    background: rgba($primary, 0.2);
+    border-color: $primary;
+  }
+}
+
+.score-emoji {
+  font-size: 32px;
+  margin-bottom: 4px;
+}
+
+.score-num {
+  font-size: 20px;
+  color: $text-gray-400;
+  
+  .active & {
+    color: $primary;
+    font-weight: 600;
+  }
+}
+
+// 输入组
+.input-group {
+  margin-bottom: $gap-md;
+  
+  &:last-child { margin-bottom: 0; }
+}
+
+.input-label {
+  font-size: 24px;
+  color: $text-gray-300;
+  display: block;
+  margin-bottom: $gap-sm;
+}
+
+.input-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: $gap-sm;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid $card-border;
+  border-radius: $radius-sm;
+  color: $text-white;
+  font-size: 26px;
+  line-height: 1.5;
+  box-sizing: border-box;
+  
+  &.large {
+    min-height: 180px;
+  }
+  
+  &::placeholder {
+    color: $text-gray-500;
+  }
+}
+
+// 操作按钮
+.action-buttons {
+  display: flex;
+  gap: $gap-sm;
+  margin-top: $gap-lg;
+}
+
+.btn {
+  flex: 1;
+  padding: $gap-md;
+  border-radius: $radius-md;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 600;
+  
+  &.btn-primary {
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    color: $text-white;
+  }
+  
+  &.btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: $text-gray-300;
+    border: 1px solid $card-border;
+  }
+  
+  &:active {
+    opacity: 0.8;
+  }
+}

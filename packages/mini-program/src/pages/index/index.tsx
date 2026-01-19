@@ -402,11 +402,11 @@ export default function Index() {
             </View>
             <Text className="quick-label">运动训练</Text>
           </View>
-          <View className="quick-item" onClick={() => handleNavToPage('garmin-data')}>
-            <View className="quick-icon-wrap purple">
-              <Image className="quick-icon-img" src={require('../../assets/icons/quick-health.png')} />
+          <View className="quick-item" onClick={() => handleNavToPage('review')}>
+            <View className="quick-icon-wrap green">
+              <Text className="quick-icon-emoji">📝</Text>
             </View>
-            <Text className="quick-label">健康数据</Text>
+            <Text className="quick-label">每日复盘</Text>
           </View>
         </View>
       </View>

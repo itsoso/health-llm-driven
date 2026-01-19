@@ -254,3 +254,61 @@ export async function getAISummary(): Promise<{
     return null;
   }
 }
+
+// ========== 每日复盘 API ==========
+
+/**
+ * 获取今日复盘
+ */
+export async function getTodayReview(): Promise<any> {
+  return await get('/review/daily/today');
+}
+
+/**
+ * 获取指定日期复盘
+ */
+export async function getDailyReview(date: string): Promise<any> {
+  return await get(`/review/daily/${date}`);
+}
+
+/**
+ * 更新每日复盘
+ */
+export async function updateDailyReview(date: string, data: any): Promise<any> {
+  return await post(`/review/daily/${date}`, data, 'PUT');
+}
+
+/**
+ * 刷新复盘健康数据
+ */
+export async function refreshDailyReview(date: string): Promise<any> {
+  return await post(`/review/daily/${date}/refresh`, {});
+}
+
+/**
+ * 获取复盘列表
+ */
+export async function getReviewList(limit: number = 30): Promise<any[]> {
+  return await get(`/review/daily?limit=${limit}`);
+}
+
+/**
+ * 获取本周复盘
+ */
+export async function getCurrentWeekReview(): Promise<any> {
+  return await get('/review/period/week/current');
+}
+
+/**
+ * 获取本月复盘
+ */
+export async function getCurrentMonthReview(): Promise<any> {
+  return await get('/review/period/month/current');
+}
+
+/**
+ * 获取复盘连续天数
+ */
+export async function getReviewStreak(): Promise<{ current_streak: number; total_reviews: number; last_30_days: number }> {
+  return await get('/review/stats/streak');
+}

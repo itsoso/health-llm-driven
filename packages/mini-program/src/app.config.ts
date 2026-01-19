@@ -17,6 +17,7 @@ export default {
     'pages/huawei/index',        // 华为手表绑定
     'pages/admin/index',         // 管理后台
     'pages/profile/index',       // 用户画像设置
+    'pages/review/index',         // 每日复盘
   ],
   window: {
     backgroundTextStyle: 'light',

@@ -38,6 +38,7 @@ from app.api import (
     ai_scheduler,  # AI 日程编排引擎
     digital_twin,  # 数字孪生
     notification,  # 推送通知
+    review,  # 每日复盘
 )
 
 api_router = APIRouter()
@@ -84,3 +85,4 @@ api_router.include_router(disease_tracking.router, tags=["disease-tracking"])  #
 api_router.include_router(ai_scheduler.router, tags=["ai-scheduler"])  # AI 日程编排引擎
 api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])  # 数字孪生
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
+api_router.include_router(review.router, tags=["review"])  # 每日复盘
