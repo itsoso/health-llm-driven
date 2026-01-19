@@ -122,7 +122,21 @@ export default function Navigation() {
               href="/"
               className="flex items-center space-x-2 text-lg font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap"
             >
-              <span className="text-xl">🏥</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src="/logo.png" 
+                alt="自由是自律的泡沫" 
+                width={36} 
+                height={36} 
+                className="rounded-lg"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const span = document.createElement('span');
+                  span.textContent = '🏥';
+                  span.className = 'text-xl';
+                  e.currentTarget.parentNode?.insertBefore(span, e.currentTarget);
+                }}
+              />
               <span className="hidden sm:inline tracking-tight">自由是自律的泡沫</span>
             </Link>
           </div>
