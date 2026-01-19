@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Navigation from '@/components/Navigation';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://health.westwetlandtech.com/api/v1';
 
@@ -327,7 +326,6 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background-dark">
-        <Navigation />
         <div className="flex items-center justify-center h-[60vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
         </div>
@@ -337,7 +335,6 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-background-dark text-gray-100">
-      <Navigation />
       
       <main className="max-w-4xl mx-auto px-4 py-6">
         {/* 头部 */}
