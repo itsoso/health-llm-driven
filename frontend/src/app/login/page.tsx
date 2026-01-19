@@ -46,7 +46,7 @@ export default function LoginPage() {
           <Link href="/" className="inline-flex items-center space-x-2">
             <span className="text-4xl">🏥</span>
             <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              健康自由是自律的泡沫
+              自由是自律的泡沫
             </span>
           </Link>
         </div>

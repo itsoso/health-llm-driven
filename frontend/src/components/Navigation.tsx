@@ -122,7 +122,7 @@ export default function Navigation() {
               className="flex items-center space-x-2 text-xl font-extrabold bg-gradient-to-r from-indigo-600 via-purple-600 to-purple-700 bg-clip-text text-transparent hover:from-indigo-700 hover:via-purple-700 hover:to-purple-800 transition-all duration-300 whitespace-nowrap"
             >
               <span className="text-2xl">🏥</span>
-              <span className="hidden sm:inline tracking-tight">健康自由是自律的泡沫</span>
+              <span className="hidden sm:inline tracking-tight">自由是自律的泡沫</span>
             </Link>
           </div>
 
