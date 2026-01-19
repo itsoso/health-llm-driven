@@ -610,11 +610,11 @@ class WorkoutSyncService:
         # 排序并去重
         if hr_points:
             hr_points.sort(key=lambda x: x['time'])
-            # 每 10 秒采样一个点
+            # 每 5 秒采样一个点（更精细的粒度）
             sampled = []
-            last_time = -10
+            last_time = -5
             for p in hr_points:
-                if p['time'] - last_time >= 10:
+                if p['time'] - last_time >= 5:
                     sampled.append(p)
                     last_time = p['time']
             hr_points = sampled
@@ -640,7 +640,7 @@ class WorkoutSyncService:
         min_hr = max(int(avg_hr * 0.7), 60)  # 热身心率
         
         hr_points = []
-        interval = 30  # 每30秒一个点
+        interval = 10  # 每10秒一个点（更精细的粒度）
         num_points = duration_seconds // interval
         
         if num_points < 3:

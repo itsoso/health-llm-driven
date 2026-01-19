@@ -255,12 +255,16 @@
 .chart-bars {
   display: flex;
   align-items: flex-end;
-  height: 120px;
-  gap: 4px;
+  height: 140px; // 增加高度
+  gap: 2px; // 减小间距，让柱子更密集
+  overflow-x: auto; // 允许横向滚动
+  padding-bottom: 4px;
 }
 
 .bar-wrapper {
-  flex: 1;
+  flex: 0 0 auto; // 不自动伸缩
+  min-width: 4px; // 最小宽度
+  width: 6px; // 固定宽度，更细的柱子
   height: 100%;
   display: flex;
   align-items: flex-end;
@@ -268,8 +272,9 @@
 
 .bar {
   width: 100%;
-  border-radius: 4px 4px 0 0;
-  min-height: 4px;
+  border-radius: 2px 2px 0 0; // 更小的圆角
+  min-height: 2px;
+  transition: height 0.2s ease; // 平滑过渡
 }
 
 // 地图容器

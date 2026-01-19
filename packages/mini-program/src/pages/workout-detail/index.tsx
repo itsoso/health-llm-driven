@@ -522,9 +522,10 @@ export default function WorkoutDetail() {
       const minVal = Math.min(...values);
       const range = maxVal - minVal || 1;
 
-      // 采样
-      const sampledData = hrData.length > 30 
-        ? hrData.filter((_: any, i: number) => i % Math.ceil(hrData.length / 30) === 0)
+      // 采样 - 增加到最多 60 个点，提高精细度
+      const maxPoints = 60;
+      const sampledData = hrData.length > maxPoints 
+        ? hrData.filter((_: any, i: number) => i % Math.ceil(hrData.length / maxPoints) === 0)
         : hrData;
 
       return (
