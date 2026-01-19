@@ -1018,12 +1018,18 @@ class DailyRecommendationService:
         user_id: int,
         use_llm: bool = True
     ) -> Dict[str, Any]:
-        """生成7天建议（基于最近7天的数据，包括今天）"""
+        """生成本周建议（基于北京时间周一到今天的数据）"""
         today = get_china_today()
-        end_date = today  # 包括今天
-        start_date = end_date - timedelta(days=6)  # 最近7天
         
-        # 获取最近7天的数据（包括今天）
+        # 计算本周周一（北京时间）
+        # weekday() 返回 0=周一, 1=周二, ..., 6=周日
+        days_since_monday = today.weekday()
+        monday = today - timedelta(days=days_since_monday)
+        
+        start_date = monday  # 从周一开始
+        end_date = today  # 到今天
+        
+        # 获取本周的数据（从周一到今天）
         recent_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date >= start_date,
@@ -1033,9 +1039,9 @@ class DailyRecommendationService:
         if not recent_data:
             return {
                 "status": "no_data",
-                "message": "暂无最近7天的数据",
+                "message": "暂无本周的数据",
                 "date": today.isoformat(),
-                "analysis_period": f"{start_date.isoformat()} 至 {end_date.isoformat()}"
+                "analysis_period": f"{start_date.isoformat()} 至 {end_date.isoformat()} (本周)"
             }
         
         # 获取用户信息
@@ -1091,7 +1097,7 @@ class DailyRecommendationService:
             "status": "success",
             "date": today.isoformat(),
             "analysis_date": end_date.isoformat(),
-            "analysis_period": f"{start_date.isoformat()} 至 {end_date.isoformat()}",
+            "analysis_period": f"{start_date.isoformat()} 至 {end_date.isoformat()} (本周)",
             "user": user.name if user else None,
             "sleep_analysis": sleep_analysis,
             "activity_analysis": activity_analysis,

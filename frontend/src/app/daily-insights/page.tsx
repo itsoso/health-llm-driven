@@ -289,7 +289,7 @@ function DailyInsightsContent() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                最近7天建议
+                本周建议
               </button>
             </div>
             <div className="flex items-center gap-2">
