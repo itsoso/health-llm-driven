@@ -106,15 +106,20 @@ class ReviewService:
         ).all()
         
         for c in checkins:
+            # 通过 template 关系获取打卡类型
+            checkin_type = c.template.name if c.template else "未知"
+            # 通过 value > 0 或 completion_rate 判断是否完成
+            is_completed = (c.value or 0) > 0 or (c.completion_rate or 0) > 0
+            
             summary.checkins.append({
                 "id": c.id,
-                "type": c.checkin_type,
-                "completed": c.completed,
+                "type": checkin_type,
+                "completed": is_completed,
                 "value": c.value,
                 "notes": c.notes,
             })
             summary.checkin_total += 1
-            if c.completed:
+            if is_completed:
                 summary.checkin_completed += 1
         
         # 6. 获取洗鼻数据（从 HealthCheckin）
