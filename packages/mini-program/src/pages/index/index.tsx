@@ -411,6 +411,168 @@ export default function Index() {
         </View>
       </View>
 
+      {/* 运动/饮食/能量平衡 三卡片 */}
+      <View className="section">
+        <View className="energy-cards">
+          {/* 今日运动 */}
+          <View className="energy-card" onClick={() => handleNavToPage('workout')}>
+            <View className="energy-header">
+              <Text className="energy-icon">🏃</Text>
+              <Text className="energy-title">今日运动</Text>
+            </View>
+            {homeData.workouts && homeData.workouts.length > 0 ? (
+              <View className="energy-content">
+                <View className="workout-list">
+                  {homeData.workouts.slice(0, 2).map((w, idx) => (
+                    <View key={idx} className="workout-item">
+                      <Text className="workout-name">{w.workout_name || w.workout_type}</Text>
+                      <Text className="workout-cal">{w.calories || 0}卡</Text>
+                    </View>
+                  ))}
+                </View>
+                <View className="workout-total">
+                  <Text className="total-label">总消耗</Text>
+                  <Text className="total-value orange">
+                    {homeData.workouts.reduce((sum, w) => sum + (w.calories || 0), 0)}卡
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View className="energy-empty">
+                <Text className="empty-icon">🏃‍♂️</Text>
+                <Text className="empty-text">今日暂无运动记录</Text>
+                <Text className="empty-hint">记录运动以追踪消耗热量</Text>
+              </View>
+            )}
+          </View>
+
+          {/* 今日饮食 */}
+          <View className="energy-card" onClick={() => handleQuickNav('diet')}>
+            <View className="energy-header">
+              <Text className="energy-icon">🍽️</Text>
+              <Text className="energy-title">今日饮食</Text>
+            </View>
+            {homeData.diet && homeData.diet.meals_count > 0 ? (
+              <View className="energy-content">
+                <View className="diet-calories">
+                  <Text className="cal-value green">{homeData.diet.total_calories}</Text>
+                  <Text className="cal-unit">大卡</Text>
+                </View>
+                <Text className="diet-label">摄入热量</Text>
+                <View className="nutrient-row">
+                  <View className="nutrient-item blue">
+                    <Text className="nutrient-value">{homeData.diet.total_protein?.toFixed(0) || 0}g</Text>
+                    <Text className="nutrient-name">蛋白质</Text>
+                  </View>
+                  <View className="nutrient-item yellow">
+                    <Text className="nutrient-value">{homeData.diet.total_carbs?.toFixed(0) || 0}g</Text>
+                    <Text className="nutrient-name">碳水</Text>
+                  </View>
+                  <View className="nutrient-item red">
+                    <Text className="nutrient-value">{homeData.diet.total_fat?.toFixed(0) || 0}g</Text>
+                    <Text className="nutrient-name">脂肪</Text>
+                  </View>
+                </View>
+                <View className="meal-list">
+                  {homeData.diet.meals.slice(0, 2).map((m, idx) => (
+                    <View key={idx} className="meal-item">
+                      <Text className="meal-type">{
+                        m.meal_type === 'breakfast' ? '早餐' :
+                        m.meal_type === 'lunch' ? '午餐' :
+                        m.meal_type === 'dinner' ? '晚餐' : '加餐'
+                      }</Text>
+                      <Text className="meal-cal">{m.calories || 0}卡</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <View className="energy-empty">
+                <Text className="empty-icon">🥗</Text>
+                <Text className="empty-text">今日暂无饮食记录</Text>
+                <Text className="empty-hint">记录饮食以追踪摄入热量</Text>
+              </View>
+            )}
+          </View>
+
+          {/* 能量平衡 */}
+          <View className="energy-card">
+            <View className="energy-header">
+              <Text className="energy-icon">⚖️</Text>
+              <Text className="energy-title">能量平衡</Text>
+            </View>
+            {(() => {
+              // 计算能量平衡
+              const bmr = 1600; // 基础代谢估算
+              const activeCalories = homeData.garmin?.active_calories || 0;
+              const totalOut = bmr + activeCalories;
+              const totalIn = homeData.diet?.total_calories || 0;
+              const balance = totalIn - totalOut;
+              const maxVal = Math.max(totalOut, totalIn, 1);
+              
+              return (
+                <View className="energy-content">
+                  <View className="balance-value">
+                    <Text className={`balance-num ${balance >= 0 ? 'green' : 'red'}`}>
+                      {balance >= 0 ? '+' : ''}{balance}
+                    </Text>
+                    <Text className="balance-unit">大卡</Text>
+                  </View>
+                  <Text className="balance-label">
+                    {balance > 0 ? '热量盈余' : balance < 0 ? '热量亏损' : '能量平衡'}
+                  </Text>
+                  
+                  {/* 消耗进度条 */}
+                  <View className="progress-section">
+                    <View className="progress-header">
+                      <Text className="progress-label">总消耗</Text>
+                      <Text className="progress-value red">{totalOut} 大卡</Text>
+                    </View>
+                    <View className="progress-bar">
+                      <View 
+                        className="progress-fill red" 
+                        style={{ width: `${Math.min((totalOut / maxVal) * 100, 100)}%` }}
+                      />
+                    </View>
+                    <View className="progress-detail">
+                      <Text className="detail-text">基础代谢: {bmr}</Text>
+                      <Text className="detail-text">活动: {activeCalories}</Text>
+                    </View>
+                  </View>
+                  
+                  {/* 摄入进度条 */}
+                  <View className="progress-section">
+                    <View className="progress-header">
+                      <Text className="progress-label">总摄入</Text>
+                      <Text className="progress-value green">{totalIn} 大卡</Text>
+                    </View>
+                    <View className="progress-bar">
+                      <View 
+                        className="progress-fill green" 
+                        style={{ width: `${Math.min((totalIn / maxVal) * 100, 100)}%` }}
+                      />
+                    </View>
+                    <View className="progress-detail">
+                      <Text className="detail-text">{homeData.diet?.meals_count || 0} 餐</Text>
+                      <Text className="detail-text">{homeData.diet?.total_protein?.toFixed(0) || 0}g 蛋白质</Text>
+                    </View>
+                  </View>
+                  
+                  {/* 提示 */}
+                  <View className="balance-tip">
+                    <Text className="tip-text">
+                      💡 {balance < -500 ? '热量亏损较大，注意补充' : 
+                          balance > 500 ? '热量摄入较多，建议运动' : 
+                          '能量摄入适中，继续保持！'}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        </View>
+      </View>
+
       {/* 健康简报 */}
       <View className="section">
         <View className="section-header gray">

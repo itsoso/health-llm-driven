@@ -437,6 +437,248 @@ $gap-lg: 20px;
   color: lighten($accent-indigo, 30%);
 }
 
+// ==================== 运动/饮食/能量平衡卡片 ====================
+.energy-cards {
+  display: flex;
+  flex-direction: column;
+  gap: $gap-sm;
+}
+
+.energy-card {
+  @include glass-card;
+  background: #FFFFFF;
+  padding: $gap-md;
+  border-radius: $radius-md;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  
+  &:active { opacity: 0.9; }
+}
+
+.energy-header {
+  display: flex;
+  align-items: center;
+  gap: $gap-xs;
+  margin-bottom: $gap-sm;
+  padding-bottom: $gap-xs;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.energy-icon { font-size: 26px; }
+.energy-title { 
+  font-size: 26px; 
+  font-weight: 600; 
+  color: #1F2937; 
+}
+
+.energy-content {
+  // 通用内容区
+  display: block;
+}
+
+.energy-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $gap-lg 0;
+  
+  .empty-icon { font-size: 48px; margin-bottom: $gap-xs; }
+  .empty-text { font-size: 24px; color: #6B7280; margin-bottom: 4px; }
+  .empty-hint { font-size: 20px; color: #9CA3AF; }
+}
+
+// 运动卡片
+.workout-list {
+  margin-bottom: $gap-sm;
+}
+
+.workout-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  
+  &:last-child { border-bottom: none; }
+}
+
+.workout-name { font-size: 24px; color: #374151; }
+.workout-cal { font-size: 24px; color: $accent-orange; font-weight: 600; }
+
+.workout-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: $gap-xs;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  
+  .total-label { font-size: 22px; color: #6B7280; }
+  .total-value { 
+    font-size: 26px; 
+    font-weight: 700;
+    &.orange { color: $accent-orange; }
+  }
+}
+
+// 饮食卡片
+.diet-calories {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.cal-value {
+  font-size: 48px;
+  font-weight: 700;
+  font-family: 'DIN', -apple-system, monospace;
+  
+  &.green { color: $accent-green; }
+}
+
+.cal-unit { font-size: 24px; color: #6B7280; }
+
+.diet-label {
+  font-size: 22px;
+  color: #6B7280;
+  display: block;
+  margin-bottom: $gap-sm;
+}
+
+.nutrient-row {
+  display: flex;
+  gap: $gap-xs;
+  margin-bottom: $gap-sm;
+}
+
+.nutrient-item {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: $radius-sm;
+  text-align: center;
+  
+  &.blue { background: rgba($accent-blue, 0.1); }
+  &.yellow { background: rgba($accent-yellow, 0.15); }
+  &.red { background: rgba($accent-red, 0.1); }
+}
+
+.nutrient-value {
+  font-size: 24px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 2px;
+  
+  .blue & { color: $accent-blue; }
+  .yellow & { color: darken($accent-yellow, 10%); }
+  .red & { color: $accent-red; }
+}
+
+.nutrient-name {
+  font-size: 20px;
+  color: #6B7280;
+}
+
+.meal-list {
+  // 餐食列表
+  margin-top: $gap-xs;
+}
+
+.meal-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  
+  &:last-child { border-bottom: none; }
+}
+
+.meal-type { font-size: 24px; color: #374151; }
+.meal-cal { font-size: 24px; color: $accent-green; font-weight: 600; }
+
+// 能量平衡卡片
+.balance-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.balance-num {
+  font-size: 48px;
+  font-weight: 700;
+  font-family: 'DIN', -apple-system, monospace;
+  
+  &.green { color: $accent-green; }
+  &.red { color: $accent-red; }
+}
+
+.balance-unit { font-size: 24px; color: #6B7280; }
+
+.balance-label {
+  font-size: 22px;
+  color: #6B7280;
+  display: block;
+  margin-bottom: $gap-md;
+}
+
+.progress-section {
+  margin-bottom: $gap-sm;
+  
+  &:last-of-type { margin-bottom: $gap-xs; }
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.progress-label { font-size: 22px; color: #6B7280; }
+.progress-value { 
+  font-size: 22px; 
+  font-weight: 600;
+  
+  &.red { color: $accent-red; }
+  &.green { color: $accent-green; }
+}
+
+.progress-bar {
+  height: 10px;
+  background: #E5E7EB;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.3s ease;
+  
+  &.red { background: $accent-red; }
+  &.green { background: $accent-green; }
+}
+
+.progress-detail {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.detail-text { font-size: 20px; color: #9CA3AF; }
+
+.balance-tip {
+  background: #F3F4F6;
+  border-radius: $radius-sm;
+  padding: 10px $gap-sm;
+  margin-top: $gap-sm;
+}
+
+.balance-tip .tip-text {
+  font-size: 20px;
+  color: #6B7280;
+}
+
 // ==================== 健康简报网格 ====================
 .briefing-grid {
   display: grid;
