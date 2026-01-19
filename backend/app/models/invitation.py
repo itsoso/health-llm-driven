@@ -61,8 +61,15 @@ class InvitationCode(Base):
             return False
         if self.used_count >= self.max_uses:
             return False
-        if self.expires_at and datetime.now(timezone.utc) > self.expires_at:
-            return False
+        if self.expires_at:
+            # 处理时区问题：如果 expires_at 没有时区信息，假设为 UTC
+            now = datetime.now(timezone.utc)
+            expires = self.expires_at
+            if expires.tzinfo is None:
+                # naive datetime，假设为 UTC
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now > expires:
+                return False
         return True
     
     @property
