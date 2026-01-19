@@ -457,6 +457,14 @@ export default function ReviewPage() {
                 <textarea
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
+                  onKeyDown={(e) => {
+                    // 确保回车键正常工作，不会意外提交
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      // Ctrl+Enter 或 Cmd+Enter 可以用于快速保存（可选功能）
+                      return;
+                    }
+                  }}
                   placeholder="用几句话总结今天..."
                   className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 min-h-[120px] resize-none"
                 />
@@ -553,12 +561,24 @@ function TextInput({
   onChange: (v: string) => void; 
   placeholder: string 
 }) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 确保回车键在 textarea 中正常工作，不会触发表单提交或其他行为
+    // Ctrl+Enter 或 Cmd+Enter 可以用于快速保存（可选功能）
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      // 可以在这里添加快速保存功能
+      return;
+    }
+    // 普通回车键应该正常工作（插入换行），不做任何处理
+  };
+
   return (
     <div className="mb-4">
       <label className="block text-sm text-gray-400 mb-2">{label}</label>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 min-h-[80px] resize-none"
       />
