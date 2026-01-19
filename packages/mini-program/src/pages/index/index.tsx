@@ -93,7 +93,7 @@ export default function Index() {
     setIsLoggedIn(!!token);
     if (token) {
       const storedName = Taro.getStorageSync('user_name');
-      setUserName(storedName || '自律靠AI用户');
+      setUserName(storedName || '自由是自律的泡沫用户');
       loadHomeData();
     }
   };
@@ -242,7 +242,7 @@ export default function Index() {
     return (
       <View className="index-page login-page">
         <View className="login-header">
-          <Text className="login-title">🏥 健康自律靠AI</Text>
+          <Text className="login-title">🏥 健康自由是自律的泡沫</Text>
           <Text className="login-subtitle">AI 驱动的个人健康管理助手</Text>
         </View>
         

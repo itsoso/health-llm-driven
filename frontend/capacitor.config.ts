@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'life.executor.health',
-  appName: '自律靠AI',
+  appName: '自由是自律的泡沫',
   webDir: 'out',
   server: {
     // 开发时连接到本地后端
@@ -28,7 +28,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'automatic',
     preferredContentMode: 'mobile',
-    scheme: '自律靠AI',
+    scheme: '自由是自律的泡沫',
   },
 };
 

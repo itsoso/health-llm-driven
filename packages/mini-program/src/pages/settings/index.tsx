@@ -34,7 +34,7 @@ interface DeviceCredential {
 
 export default function Settings() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userName, setUserName] = useState('自律靠AI用户');
+  const [userName, setUserName] = useState('自由是自律的泡沫用户');
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasGarmin, setHasGarmin] = useState(false);
   const [garminStatus, setGarminStatus] = useState<'none' | 'valid' | 'invalid'>('none');
@@ -60,7 +60,7 @@ export default function Settings() {
   const loadUserInfo = async () => {
     try {
       const userInfo = await get<UserInfo>('/auth/me');
-      setUserName(userInfo.name || userInfo.username || '自律靠AI用户');
+      setUserName(userInfo.name || userInfo.username || '自由是自律的泡沫用户');
       setIsAdmin(userInfo.is_admin);
       Taro.setStorageSync('user_name', userInfo.name || userInfo.username);
     } catch (error) {
@@ -132,7 +132,7 @@ export default function Settings() {
 
   const handleAbout = () => {
     Taro.showModal({
-      title: '关于自律靠AI',
+      title: '关于自由是自律的泡沫',
       content: 'AI驱动的个人健康管理助手\n\n功能特点：\n• Garmin 数据同步\n• AI 健康建议\n• 心率监测分析\n• 运动打卡追踪\n\n版本：v1.0.0',
       showCancel: false,
     });
@@ -292,7 +292,7 @@ export default function Settings() {
 
       {/* 版本信息 */}
       <View className="version-info">
-        <Text>自律靠AI v1.0.0 (正式版)</Text>
+        <Text>自由是自律的泡沫 v1.0.0 (正式版)</Text>
       </View>
     </View>
   );

@@ -21,7 +21,7 @@ export default {
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#4f46e5',
-    navigationBarTitleText: '自律靠AI',
+    navigationBarTitleText: '自由是自律的泡沫',
     navigationBarTextStyle: 'white',
   },
   tabBar: {
