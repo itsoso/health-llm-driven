@@ -502,10 +502,12 @@ export default function Index() {
               <Text className="energy-title">能量平衡</Text>
             </View>
             {(() => {
-              // 计算能量平衡
-              const bmr = 1600; // 基础代谢估算
+              // 使用 Garmin 真实数据计算能量平衡
+              // calories_total = 基础代谢 + 活动消耗（Garmin 提供的总消耗）
+              const totalOut = homeData.garmin?.calories_total || 0;
               const activeCalories = homeData.garmin?.active_calories || 0;
-              const totalOut = bmr + activeCalories;
+              // 基础代谢 = 总消耗 - 活动消耗
+              const bmr = totalOut - activeCalories;
               const totalIn = homeData.diet?.total_calories || 0;
               const balance = totalIn - totalOut;
               const maxVal = Math.max(totalOut, totalIn, 1);
