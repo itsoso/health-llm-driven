@@ -260,51 +260,53 @@ export default function Settings() {
         </View>
       </View>
 
-      {/* 消息提醒设置 */}
-      <View className="menu-section">
-        <Text className="section-label">消息提醒</Text>
-        
-        {/* 未开启订阅时显示开启按钮 */}
-        {(!notificationSettings?.wechat_enabled || !notificationSettings?.template_ids) ? (
-          <View className="menu-item highlight" onClick={handleEnableNotifications}>
-            <Text className="menu-icon">🔔</Text>
-            <Text className="menu-text">开启消息提醒</Text>
-            <Text className="menu-desc">接收健康提醒、早间简报等通知</Text>
-            <Text className="menu-arrow">›</Text>
-          </View>
-        ) : (
-          <>
-            {/* 已开启订阅时显示开关 */}
-            <View className="menu-item">
+      {/* 消息提醒设置 - 仅当模板已配置时显示 */}
+      {subscribeAvailable && (
+        <View className="menu-section">
+          <Text className="section-label">消息提醒</Text>
+          
+          {/* 未开启订阅时显示开启按钮 */}
+          {(!notificationSettings?.wechat_enabled || !notificationSettings?.template_ids) ? (
+            <View className="menu-item highlight" onClick={handleEnableNotifications}>
               <Text className="menu-icon">🔔</Text>
-              <Text className="menu-text">消息通知</Text>
-              <Switch 
-                checked={notificationSettings?.enabled ?? false}
-                onChange={(e) => handleToggleNotification(e.detail.value)}
-                color="#7C3AED"
-              />
-            </View>
-            
-            {/* 显示已订阅的模板 */}
-            {notificationSettings?.template_ids && Object.keys(notificationSettings.template_ids).length > 0 && (
-              <View className="menu-item sub-item">
-                <Text className="menu-icon">📋</Text>
-                <Text className="menu-text">已订阅</Text>
-                <Text className="menu-status status-success">
-                  {Object.keys(notificationSettings.template_ids).length}项
-                </Text>
-              </View>
-            )}
-            
-            {/* 重新授权按钮 */}
-            <View className="menu-item" onClick={handleEnableNotifications}>
-              <Text className="menu-icon">➕</Text>
-              <Text className="menu-text">添加更多订阅</Text>
+              <Text className="menu-text">开启消息提醒</Text>
+              <Text className="menu-desc">接收健康提醒、早间简报等通知</Text>
               <Text className="menu-arrow">›</Text>
             </View>
-          </>
-        )}
-      </View>
+          ) : (
+            <>
+              {/* 已开启订阅时显示开关 */}
+              <View className="menu-item">
+                <Text className="menu-icon">🔔</Text>
+                <Text className="menu-text">消息通知</Text>
+                <Switch 
+                  checked={notificationSettings?.enabled ?? false}
+                  onChange={(e) => handleToggleNotification(e.detail.value)}
+                  color="#7C3AED"
+                />
+              </View>
+              
+              {/* 显示已订阅的模板 */}
+              {notificationSettings?.template_ids && Object.keys(notificationSettings.template_ids).length > 0 && (
+                <View className="menu-item sub-item">
+                  <Text className="menu-icon">📋</Text>
+                  <Text className="menu-text">已订阅</Text>
+                  <Text className="menu-status status-success">
+                    {Object.keys(notificationSettings.template_ids).length}项
+                  </Text>
+                </View>
+              )}
+              
+              {/* 重新授权按钮 */}
+              <View className="menu-item" onClick={handleEnableNotifications}>
+                <Text className="menu-icon">➕</Text>
+                <Text className="menu-text">添加更多订阅</Text>
+                <Text className="menu-arrow">›</Text>
+              </View>
+            </>
+          )}
+        </View>
+      )}
 
       {/* 设备绑定 */}
       <View className="menu-section">
