@@ -536,20 +536,24 @@ export default function Index() {
               const isCreatingDeficit = energyDiff > 0;
               const deficitAmount = Math.abs(energyDiff);
               
+              // 脂肪转换：1kg脂肪 ≈ 7700大卡，1g脂肪 ≈ 7.7大卡
+              const KCAL_PER_GRAM_FAT = 7.7;
+              const fatGrams = Math.round(deficitAmount / KCAL_PER_GRAM_FAT);
+              
               return (
                 <View className="energy-content">
                   <View className="balance-value">
                     <Text className={`balance-num ${isCreatingDeficit ? 'green' : 'red'}`}>
-                      {isCreatingDeficit ? '+' : '-'}{deficitAmount.toFixed(0)}
+                      {isCreatingDeficit ? '-' : '+'}{fatGrams}
                     </Text>
-                    <Text className="balance-unit">大卡</Text>
+                    <Text className="balance-unit">克脂肪</Text>
                   </View>
                   <Text className={`balance-label ${isCreatingDeficit ? 'green-text' : 'red-text'}`}>
                     {isCreatingDeficit 
-                      ? `✓ 正在创造能量差，减肥进行中` 
+                      ? `✓ 能量差 ${deficitAmount.toFixed(0)} 大卡 ≈ 减脂 ${fatGrams}g` 
                       : energyDiff === 0 
                         ? '能量平衡，需要增加运动或减少摄入'
-                        : `能量盈余，需要增加运动或减少摄入`
+                        : `能量盈余 ${deficitAmount.toFixed(0)} 大卡 ≈ 增脂 ${fatGrams}g`
                     }
                   </Text>
                   
@@ -599,19 +603,19 @@ export default function Index() {
                   {isCreatingDeficit ? (
                     <View className="balance-tip balance-tip-success">
                       <Text className="tip-text">
-                        🎯 今日已创造 {deficitAmount.toFixed(0)} 大卡能量差，继续保持！只有有能量差才能减肥成功。
+                        🎯 今日减脂约 {fatGrams}g（{deficitAmount.toFixed(0)}大卡），坚持7天可减约 {Math.round(fatGrams * 7)}g！
                       </Text>
                     </View>
                   ) : energyDiff < 0 ? (
                     <View className="balance-tip balance-tip-warning">
                       <Text className="tip-text">
-                        ⚠️ 当前能量盈余 {deficitAmount.toFixed(0)} 大卡，建议增加运动或减少摄入来创造能量差。
+                        ⚠️ 今日可能增脂 {fatGrams}g，建议增加运动或减少摄入。
                       </Text>
                     </View>
                   ) : (
                     <View className="balance-tip">
                       <Text className="tip-text">
-                        💡 能量平衡中，建议增加运动来创造能量差，只有有能量差才能减肥成功。
+                        💡 能量平衡中，建议增加运动来创造能量差。
                       </Text>
                     </View>
                   )}
