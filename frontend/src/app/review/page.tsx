@@ -108,7 +108,7 @@ export default function ReviewPage() {
 
   const getToken = () => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('token');
+      return localStorage.getItem('auth_token');
     }
     return null;
   };
