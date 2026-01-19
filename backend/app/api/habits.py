@@ -345,12 +345,11 @@ def get_my_habit_stats(
         stats.append(HabitStats(
             habit_id=habit.id,
             habit_name=habit.name,
-            category=habit.category,
             total_days=days,
             completed_days=completed_count,
             completion_rate=round(completed_count / days * 100, 1),
             current_streak=current_streak,
-            best_streak=0  # TODO: 计算最佳连续天数
+            longest_streak=0  # TODO: 计算最佳连续天数
         ))
     
     return stats
