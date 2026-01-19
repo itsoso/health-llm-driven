@@ -39,7 +39,7 @@ export default {
       },
       {
         pagePath: 'pages/dashboard/index',
-        text: 'AI建议',
+        text: '建议',
         iconPath: 'assets/icons/ai-assistant.png',
         selectedIconPath: 'assets/icons/ai-assistant-active.png',
       },

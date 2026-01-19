@@ -255,7 +255,7 @@ export default function Settings() {
         <View className="menu-item highlight" onClick={() => Taro.navigateTo({ url: '/pages/profile/index' })}>
           <Text className="menu-icon">👤</Text>
           <Text className="menu-text">个人资料</Text>
-          <Text className="menu-desc">完善资料，获得更精准的AI建议</Text>
+          <Text className="menu-desc">完善资料，获得更精准的健康建议</Text>
           <Text className="menu-arrow">›</Text>
         </View>
       </View>

@@ -88,7 +88,7 @@ def create_icon(icon_type, color, filled=False):
             )
             
     elif icon_type == 'ai-assistant':
-        # AI建议：闪电/魔法棒（更醒目）
+        # 建议：闪电/魔法棒（更醒目）
         # 绘制一个饱满的四角星
         star_r = base_size * 0.95
         
@@ -211,7 +211,7 @@ def main():
     # 定义所有需要生成的图标
     icons = [
         ('home', '首页'),
-        ('ai-assistant', 'AI建议'),
+        ('ai-assistant', '建议'),
         ('checkin', '打卡'),
         ('user', '我的'),
     ]
