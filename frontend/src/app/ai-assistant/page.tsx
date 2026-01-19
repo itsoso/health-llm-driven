@@ -243,11 +243,18 @@ export default function AIAssistantPage() {
                   </button>
                 )}
                 
-                {recommendation.secondary.length > 0 && (
+                {recommendation.secondary && recommendation.secondary.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {recommendation.secondary.map((item, idx) => {
-                      const itemText = typeof item === 'string' ? item : item.text;
-                      const itemAction = typeof item === 'object' ? item.checkin_action : undefined;
+                      // 安全地获取文本和动作
+                      const itemText = typeof item === 'string' 
+                        ? item 
+                        : (item && typeof item === 'object' && 'text' in item) 
+                          ? item.text 
+                          : String(item);
+                      const itemAction = (item && typeof item === 'object' && 'checkin_action' in item) 
+                        ? item.checkin_action 
+                        : undefined;
                       
                       return itemAction ? (
                         <button
