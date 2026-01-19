@@ -224,11 +224,11 @@ export default function ReviewPage() {
         } else {
           setPeriodSummary(result.ai_summary);
         }
-        Taro.showToast({ title: 'AI总结已生成', icon: 'success' });
+        Taro.showToast({ title: '智能总结已生成', icon: 'success' });
       }
     } catch (e) {
       console.error('AI生成失败:', e);
-      Taro.showToast({ title: 'AI生成失败', icon: 'none' });
+      Taro.showToast({ title: '智能生成失败', icon: 'none' });
     } finally {
       setGeneratingAI(false);
     }
@@ -516,7 +516,7 @@ export default function ReviewPage() {
                   className="ai-btn" 
                   onClick={handleGenerateAISummary}
                 >
-                  <Text>{generatingAI ? '生成中...' : '✨ AI生成'}</Text>
+                  <Text>{generatingAI ? '生成中...' : '✨ 智能生成'}</Text>
                 </View>
               </View>
               <Textarea
@@ -530,7 +530,7 @@ export default function ReviewPage() {
             
             {dailyData.ai_summary && (
               <View className="ai-summary-card">
-                <Text className="ai-summary-title">🤖 AI 总结</Text>
+                <Text className="ai-summary-title">🤖 智能总结</Text>
                 <Text className="ai-summary-text">{dailyData.ai_summary}</Text>
               </View>
             )}
@@ -671,7 +671,7 @@ export default function ReviewPage() {
               <View className="input-label-row">
                 <Text className="input-label">📝 总结</Text>
                 <View className="ai-btn" onClick={handleGenerateAISummary}>
-                  <Text>{generatingAI ? '生成中...' : '✨ AI生成'}</Text>
+                  <Text>{generatingAI ? '生成中...' : '✨ 智能生成'}</Text>
                 </View>
               </View>
               <Textarea
@@ -685,7 +685,7 @@ export default function ReviewPage() {
             
             {periodData.ai_summary && (
               <View className="ai-summary-card">
-                <Text className="ai-summary-title">🤖 AI 总结</Text>
+                <Text className="ai-summary-title">🤖 智能总结</Text>
                 <Text className="ai-summary-text">{periodData.ai_summary}</Text>
               </View>
             )}

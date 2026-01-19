@@ -187,7 +187,7 @@ export default function DietPage() {
         Taro.showToast({ title: result.error || '识别失败', icon: 'none' });
       }
     } catch (error) {
-      console.error('AI识别失败:', error);
+      console.error('智能识别失败:', error);
       Taro.showToast({ title: '识别失败，请重试', icon: 'none' });
     } finally {
       setIsRecognizing(false);
@@ -415,7 +415,7 @@ export default function DietPage() {
         {showForm && (
           <View className="form-section">
             <View className="form-header">
-              <Text className="form-title">📸 AI智能识别</Text>
+              <Text className="form-title">📸 智能识别</Text>
               <Text className="form-close" onClick={resetForm}>✕</Text>
             </View>
 
@@ -463,7 +463,7 @@ export default function DietPage() {
                     className={`action-btn recognize ${isRecognizing ? 'disabled' : ''}`}
                     onClick={isRecognizing ? undefined : handleRecognize}
                   >
-                    <Text>{isRecognizing ? '🔍 识别中...' : '🔍 AI识别'}</Text>
+                    <Text>{isRecognizing ? '🔍 识别中...' : '🔍 智能识别'}</Text>
                   </View>
                   <View
                     className={`action-btn save ${isRecognizing ? 'disabled' : ''}`}
@@ -478,7 +478,7 @@ export default function DietPage() {
             {/* 识别/分析结果 */}
             {recognitionResult && recognitionResult.success && (
               <View className="recognition-result">
-                <Text className="result-title">✅ AI分析结果</Text>
+                <Text className="result-title">✅ 智能分析结果</Text>
                 {recognitionResult.foods?.map((food, idx) => (
                   <View key={idx} className="food-item">
                     <Text className="food-name">{food.name} {food.quantity && `(${food.quantity})`}</Text>
@@ -594,7 +594,7 @@ export default function DietPage() {
                       <Text className="record-calories">{meal.calories} kcal</Text>
                     )}
                     {meal.ai_recognized === 1 && (
-                      <Text className="ai-tag">🤖 AI</Text>
+                      <Text className="ai-tag">🤖 智能</Text>
                     )}
                   </View>
                   {/* 显示食物图片 */}

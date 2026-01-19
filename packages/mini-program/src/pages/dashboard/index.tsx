@@ -365,7 +365,7 @@ export default function Dashboard() {
           <View className="recommendation-section">
             <View className="section-header">
               <Text className="section-icon">💡</Text>
-              <Text className="section-title">AI 健康建议</Text>
+              <Text className="section-title">健康建议</Text>
             </View>
             {recommendations.length > 0 ? (
               <View className="recommendation-list">

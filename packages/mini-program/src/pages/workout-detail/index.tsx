@@ -138,13 +138,13 @@ export default function WorkoutDetail() {
     try {
       await post(`/workout/me/${workoutId}/analyze`);
       Taro.hideLoading();
-      Taro.showToast({ title: 'AI分析完成', icon: 'success' });
+      Taro.showToast({ title: '分析完成', icon: 'success' });
       // 重新加载详情以获取分析结果
       await loadDetail();
     } catch (error: any) {
       Taro.hideLoading();
       Taro.showToast({ 
-        title: error.message || 'AI分析失败', 
+        title: error.message || '分析失败', 
         icon: 'none',
         duration: 3000
       });
@@ -959,7 +959,7 @@ export default function WorkoutDetail() {
       {/* AI分析 */}
       <View className="section">
         <View className="section-header">
-          <Text className="section-title">🤖 AI 分析</Text>
+          <Text className="section-title">🤖 智能分析</Text>
           <Button 
             className={`analyze-btn ${analyzing ? 'loading' : ''}`}
             onClick={handleAnalyze}
@@ -975,7 +975,7 @@ export default function WorkoutDetail() {
         ) : (
           <View className="ai-card empty">
             <Text className="empty-icon">💡</Text>
-            <Text className="empty-text">点击"开始分析"获取AI专业建议</Text>
+            <Text className="empty-text">点击"开始分析"获取专业建议</Text>
           </View>
         )}
       </View>

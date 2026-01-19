@@ -211,7 +211,7 @@ export default function Settings() {
   const handleAbout = () => {
     Taro.showModal({
       title: '关于自由是自律的泡沫',
-      content: 'AI驱动的个人健康管理助手\n\n功能特点：\n• Garmin 数据同步\n• AI 健康建议\n• 心率监测分析\n• 运动打卡追踪\n\n版本：v1.0.0',
+      content: '个人健康管理助手\n\n功能特点：\n• Garmin 数据同步\n• 健康建议\n• 心率监测分析\n• 运动打卡追踪\n\n版本：v1.0.0',
       showCancel: false,
     });
   };
@@ -330,19 +330,19 @@ export default function Settings() {
         </View>
       </View>
 
-      {/* AI 功能 */}
+      {/* 智能功能 */}
       <View className="menu-section">
-        <Text className="section-label">AI 功能</Text>
+        <Text className="section-label">智能功能</Text>
         <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/index/index' })}>
           <Text className="menu-icon">🤖</Text>
-          <Text className="menu-text">AI 健康助手</Text>
+          <Text className="menu-text">健康助手</Text>
           <Text className="menu-desc">智能日程 · 实时建议</Text>
           <Text className="menu-arrow">›</Text>
         </View>
 
         <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/dashboard/index' })}>
           <Text className="menu-icon">💡</Text>
-          <Text className="menu-text">AI 健康建议</Text>
+          <Text className="menu-text">健康建议</Text>
           <Text className="menu-arrow">›</Text>
         </View>
       </View>

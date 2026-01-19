@@ -243,7 +243,7 @@ export default function Index() {
       <View className="index-page login-page">
         <View className="login-header">
           <Text className="login-title">🏥 自由是自律的泡沫</Text>
-          <Text className="login-subtitle">AI 驱动的个人健康管理助手</Text>
+          <Text className="login-subtitle">个人健康管理助手</Text>
         </View>
         
         <View className="login-card">
@@ -283,7 +283,7 @@ export default function Index() {
           </View>
           <View className="feature-item">
             <Text className="feature-icon">🤖</Text>
-            <Text className="feature-text">AI 健康分析</Text>
+            <Text className="feature-text">智能健康分析</Text>
           </View>
           <View className="feature-item">
             <Text className="feature-icon">🎯</Text>
@@ -301,7 +301,7 @@ export default function Index() {
       {homeData.loading && (
         <View className="loading-overlay">
           <View className="loading-spinner"></View>
-          <Text className="loading-text">AI 正在分析...</Text>
+          <Text className="loading-text">正在分析...</Text>
         </View>
       )}
 

@@ -104,7 +104,7 @@ export default function AIAssistant() {
       <View className="ai-assistant loading">
         <View className="loading-container">
         <View className="loading-spinner"></View>
-          <Text className="loading-text">AI 正在分析您的健康数据...</Text>
+          <Text className="loading-text">正在分析您的健康数据...</Text>
         </View>
       </View>
     );
