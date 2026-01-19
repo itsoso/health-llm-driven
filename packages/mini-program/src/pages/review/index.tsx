@@ -151,9 +151,25 @@ export default function ReviewPage() {
       }
       
       if (viewMode === 'daily') {
-        const review = await getDailyReview(selectedDate);
-        setDailyData(review);
-        fillDailyInputs(review);
+        try {
+          const review = await getDailyReview(selectedDate);
+          setDailyData(review);
+          fillDailyInputs(review);
+        } catch (e) {
+          console.warn('获取每日复盘失败，使用空数据:', e);
+          // 即使获取失败，也显示空表单让用户可以填写
+          setDailyData(null);
+          // 重置输入状态
+          setMoodScore(3);
+          setEnergyScore(3);
+          setProductivityScore(3);
+          setHighlights('');
+          setChallenges('');
+          setLearnings('');
+          setGratitude('');
+          setTomorrowPlan('');
+          setSummary('');
+        }
       } else if (viewMode === 'weekly') {
         const review = await getCurrentWeekReview();
         setPeriodData(review);
@@ -378,7 +394,7 @@ export default function ReviewPage() {
       </View>
 
       {/* 每日复盘内容 */}
-      {viewMode === 'daily' && dailyData && (
+      {viewMode === 'daily' && (
         <>
           {/* 健康数据汇总 */}
           <View className="section">
@@ -394,7 +410,7 @@ export default function ReviewPage() {
                 <Text className="card-icon">😴</Text>
                 <Text className="card-title">昨晚睡眠</Text>
                 <Text className="card-value">
-                  {dailyData.sleep_score ?? '--'}分 / {dailyData.sleep_duration_hours?.toFixed(1) ?? '--'}h
+                  {dailyData?.sleep_score ?? '--'}分 / {dailyData?.sleep_duration_hours?.toFixed(1) ?? '--'}h
                 </Text>
               </View>
               
@@ -402,21 +418,21 @@ export default function ReviewPage() {
                 <Text className="card-icon">🏃</Text>
                 <Text className="card-title">运动</Text>
                 <Text className="card-value">
-                  {dailyData.workout_count || 0}次 / {dailyData.workout_calories || 0}卡
+                  {dailyData?.workout_count || 0}次 / {dailyData?.workout_calories || 0}卡
                 </Text>
               </View>
               
               <View className="data-card">
                 <Text className="card-icon">👟</Text>
                 <Text className="card-title">步数</Text>
-                <Text className="card-value">{dailyData.steps?.toLocaleString() || 0}</Text>
+                <Text className="card-value">{dailyData?.steps?.toLocaleString() || 0}</Text>
               </View>
               
               <View className="data-card">
                 <Text className="card-icon">🍽️</Text>
                 <Text className="card-title">饮食</Text>
                 <Text className="card-value">
-                  {dailyData.meals_count || 0}餐 / {dailyData.total_calories_in || 0}卡
+                  {dailyData?.meals_count || 0}餐 / {dailyData?.total_calories_in || 0}卡
                 </Text>
               </View>
               
@@ -424,8 +440,8 @@ export default function ReviewPage() {
                 <Text className="card-icon">💧</Text>
                 <Text className="card-title">饮水</Text>
                 <Text className="card-value">
-                  {dailyData.water_intake_ml || 0}ml
-                  {dailyData.water_goal_met && ' ✓'}
+                  {dailyData?.water_intake_ml || 0}ml
+                  {dailyData?.water_goal_met && ' ✓'}
                 </Text>
               </View>
               
@@ -433,8 +449,8 @@ export default function ReviewPage() {
                 <Text className="card-icon">🫧</Text>
                 <Text className="card-title">洗鼻</Text>
                 <Text className="card-value">
-                  {dailyData.nasal_wash_count || 0}次
-                  {dailyData.nasal_wash_done && ' ✓'}
+                  {dailyData?.nasal_wash_count || 0}次
+                  {dailyData?.nasal_wash_done && ' ✓'}
                 </Text>
               </View>
               
@@ -442,14 +458,14 @@ export default function ReviewPage() {
                 <Text className="card-icon">✅</Text>
                 <Text className="card-title">打卡</Text>
                 <Text className="card-value">
-                  {dailyData.checkin_completed || 0}/{dailyData.checkin_total || 0}
+                  {dailyData?.checkin_completed || 0}/{dailyData?.checkin_total || 0}
                 </Text>
               </View>
               
               <View className="data-card">
                 <Text className="card-icon">💊</Text>
                 <Text className="card-title">补剂</Text>
-                <Text className="card-value">{dailyData.supplements_taken || 0}种</Text>
+                <Text className="card-value">{dailyData?.supplements_taken || 0}种</Text>
               </View>
             </View>
             
@@ -457,16 +473,16 @@ export default function ReviewPage() {
               <View className="status-item">
                 <Text className="status-label">身体电量</Text>
                 <Text className="status-value">
-                  {dailyData.body_battery_low ?? '--'} ~ {dailyData.body_battery_high ?? '--'}
+                  {dailyData?.body_battery_low ?? '--'} ~ {dailyData?.body_battery_high ?? '--'}
                 </Text>
               </View>
               <View className="status-item">
                 <Text className="status-label">压力指数</Text>
-                <Text className="status-value">{dailyData.stress_avg ?? '--'}</Text>
+                <Text className="status-value">{dailyData?.stress_avg ?? '--'}</Text>
               </View>
               <View className="status-item">
                 <Text className="status-label">静息心率</Text>
-                <Text className="status-value">{dailyData.resting_hr ?? '--'} bpm</Text>
+                <Text className="status-value">{dailyData?.resting_hr ?? '--'} bpm</Text>
               </View>
             </View>
           </View>
@@ -557,7 +573,7 @@ export default function ReviewPage() {
               />
             </View>
             
-            {dailyData.ai_summary && (
+            {dailyData?.ai_summary && (
               <View className="ai-summary-card">
                 <Text className="ai-summary-title">🤖 智能总结</Text>
                 <Text className="ai-summary-text">{dailyData.ai_summary}</Text>

@@ -676,8 +676,8 @@ export default function Index() {
               </View>
               <View className="data-row">
                 <View className="dot orange"></View>
-                <Text className="data-label">静息心率:</Text>
-                <Text className="data-value">{homeData.garmin?.resting_heart_rate ?? '--'} bpm</Text>
+                <Text className="data-label">HRV:</Text>
+                <Text className="data-value">{homeData.garmin?.hrv ?? '--'} ms</Text>
               </View>
             </View>
           </View>

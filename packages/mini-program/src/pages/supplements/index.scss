@@ -1,0 +1,331 @@
+/**
+ * 补剂服用页面样式
+ */
+
+// 颜色变量
+$bg-dark: #0B0E14;
+$card-dark: #161B28;
+$card-border: #2D3748;
+$text-primary: #fff;
+$text-secondary: #9CA3AF;
+$green: #10B981;
+$yellow: #FBBF24;
+$orange: #F97316;
+$purple: #8B5CF6;
+$indigo: #6366F1;
+
+.supplements-page {
+  min-height: 100vh;
+  background: $bg-dark;
+  padding: 24rpx;
+  padding-bottom: 180rpx;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+}
+
+.loading-spinner {
+  width: 60rpx;
+  height: 60rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.1);
+  border-top-color: $purple;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: 24rpx;
+  color: $text-secondary;
+  font-size: 28rpx;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 头部统计
+.header-stats {
+  display: flex;
+  justify-content: space-around;
+  background: $card-dark;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  border: 1px solid $card-border;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-value {
+  font-size: 48rpx;
+  font-weight: bold;
+  color: $text-primary;
+  
+  &.green { color: $green; }
+  &.yellow { color: $yellow; }
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: $text-secondary;
+  margin-top: 8rpx;
+}
+
+// 补剂列表
+.supplements-scroll {
+  height: calc(100vh - 300rpx);
+}
+
+// 空状态
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100rpx 40rpx;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 24rpx;
+}
+
+.empty-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: $text-primary;
+  margin-bottom: 12rpx;
+}
+
+.empty-desc {
+  font-size: 26rpx;
+  color: $text-secondary;
+}
+
+// 时间段分组
+.timing-group {
+  margin-bottom: 24rpx;
+}
+
+.timing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  border-radius: 16rpx 16rpx 0 0;
+  
+  &.orange { background: rgba($orange, 0.2); }
+  &.yellow { background: rgba($yellow, 0.2); }
+  &.purple { background: rgba($purple, 0.2); }
+  &.indigo { background: rgba($indigo, 0.2); }
+}
+
+.timing-label {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.timing-count {
+  font-size: 24rpx;
+  color: $text-secondary;
+}
+
+// 补剂卡片
+.supplement-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: $card-dark;
+  padding: 24rpx;
+  border: 1px solid $card-border;
+  border-top: none;
+  
+  &:last-child {
+    border-radius: 0 0 16rpx 16rpx;
+  }
+  
+  &.taken {
+    background: rgba($green, 0.1);
+    
+    .supplement-name {
+      color: $green;
+    }
+  }
+}
+
+.supplement-info {
+  flex: 1;
+}
+
+.supplement-name {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.supplement-dosage {
+  font-size: 24rpx;
+  color: $text-secondary;
+  margin-top: 4rpx;
+}
+
+.check-box {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  border: 2px solid $card-border;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &.checked {
+    background: $green;
+    border-color: $green;
+  }
+}
+
+.check-icon {
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+// 添加按钮
+.add-btn-container {
+  position: fixed;
+  bottom: 120rpx;
+  left: 24rpx;
+  right: 24rpx;
+}
+
+.add-btn {
+  width: 100%;
+  height: 88rpx;
+  background: linear-gradient(135deg, $indigo, $purple);
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 500;
+  border-radius: 44rpx;
+  border: none;
+  
+  &::after {
+    border: none;
+  }
+}
+
+// 弹窗
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 90%;
+  max-width: 640rpx;
+  background: $card-dark;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  border: 1px solid $card-border;
+}
+
+.modal-header {
+  margin-bottom: 32rpx;
+}
+
+.modal-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: $text-primary;
+}
+
+// 表单
+.form-group {
+  margin-bottom: 24rpx;
+}
+
+.form-label {
+  display: block;
+  font-size: 26rpx;
+  color: $text-secondary;
+  margin-bottom: 12rpx;
+}
+
+.form-input {
+  width: 100%;
+  height: 80rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $card-border;
+  border-radius: 12rpx;
+  padding: 0 24rpx;
+  color: $text-primary;
+  font-size: 28rpx;
+}
+
+.timing-options,
+.category-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.timing-option,
+.category-option {
+  padding: 12rpx 24rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $card-border;
+  border-radius: 20rpx;
+  font-size: 24rpx;
+  color: $text-secondary;
+  
+  &.active {
+    background: rgba($purple, 0.2);
+    border-color: $purple;
+    color: $purple;
+  }
+}
+
+.modal-actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 32rpx;
+}
+
+.modal-btn {
+  flex: 1;
+  height: 80rpx;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  border: none;
+  
+  &::after {
+    border: none;
+  }
+  
+  &.cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: $text-secondary;
+  }
+  
+  &.confirm {
+    background: linear-gradient(135deg, $indigo, $purple);
+    color: #fff;
+  }
+}

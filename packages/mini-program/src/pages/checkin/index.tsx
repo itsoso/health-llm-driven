@@ -265,6 +265,52 @@ export default function CheckinPage() {
       {/* 打卡 Tab */}
       {activeTab === 'checkin' && (
         <>
+          {/* 快捷功能入口 */}
+          <View className="quick-entry-section">
+            <View className="quick-entry-title">
+              <Text className="quick-entry-icon">⚡</Text>
+              <Text className="quick-entry-text">快捷打卡</Text>
+            </View>
+            <View className="quick-entry-grid">
+              <View 
+                className="quick-entry-item"
+                onClick={() => Taro.navigateTo({ url: '/pages/rhinitis/index' })}
+              >
+                <View className="quick-entry-icon-box rhinitis">
+                  <Text className="entry-icon">🤧</Text>
+                </View>
+                <Text className="entry-label">鼻炎追踪</Text>
+              </View>
+              <View 
+                className="quick-entry-item"
+                onClick={() => Taro.navigateTo({ url: '/pages/supplements/index' })}
+              >
+                <View className="quick-entry-icon-box supplement">
+                  <Text className="entry-icon">💊</Text>
+                </View>
+                <Text className="entry-label">补剂服用</Text>
+              </View>
+              <View 
+                className="quick-entry-item"
+                onClick={() => Taro.navigateTo({ url: '/pages/diet/index' })}
+              >
+                <View className="quick-entry-icon-box diet">
+                  <Text className="entry-icon">🍽️</Text>
+                </View>
+                <Text className="entry-label">饮食记录</Text>
+              </View>
+              <View 
+                className="quick-entry-item"
+                onClick={() => Taro.navigateTo({ url: '/pages/review/index' })}
+              >
+                <View className="quick-entry-icon-box review">
+                  <Text className="entry-icon">📝</Text>
+                </View>
+                <Text className="entry-label">每日复盘</Text>
+              </View>
+            </View>
+          </View>
+
           {/* 今日进度 */}
       {summary && (
         <View className="progress-card">

@@ -18,6 +18,7 @@ export default {
     'pages/admin/index',         // 管理后台
     'pages/profile/index',       // 用户画像设置
     'pages/review/index',         // 每日复盘
+    'pages/supplements/index',    // 补剂服用
   ],
   window: {
     backgroundTextStyle: 'light',
