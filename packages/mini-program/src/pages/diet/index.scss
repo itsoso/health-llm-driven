@@ -364,8 +364,9 @@
       .input-hint {
         font-size: 22px;
         color: #888;
-        margin-bottom: 16px;
+        margin-bottom: 20px;
         display: block;
+        line-height: 1.5;
       }
 
       .input-row {
@@ -386,6 +387,7 @@
         grid-template-columns: repeat(4, 1fr);
         gap: 10px;
         margin-bottom: 20px;
+        margin-top: 8px; // 增加顶部间距，避免被遮挡
 
         .input-item {
           .input-label {
@@ -394,6 +396,7 @@
             margin-bottom: 8px;
             display: block;
             text-align: center;
+            white-space: nowrap; // 防止标签换行
           }
 
           .input-field.small {
@@ -404,6 +407,7 @@
             font-size: 24px;
             text-align: center;
             box-sizing: border-box;
+            min-height: 50px; // 确保输入框有足够高度
           }
         }
       }
@@ -416,6 +420,7 @@
         text-align: center;
         font-size: 28px;
         font-weight: 500;
+        margin-top: 20px; // 增加顶部间距，避免遮挡输入框
       }
     }
   }

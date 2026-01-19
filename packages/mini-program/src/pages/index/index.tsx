@@ -312,7 +312,7 @@ export default function Index() {
           <View className="hero-content">
             <View className="hero-header">
               <View className="hero-badge">
-                <Text className="badge-icon">{homeData.aiRecommendation.primary.icon || '🌙'}</Text>
+                <Text className="badge-icon">{homeData.aiRecommendation?.primary?.icon || '🌙'}</Text>
                 <Text className="badge-text">今日建议</Text>
               </View>
               <View className="hero-time-box">
@@ -321,12 +321,12 @@ export default function Index() {
               </View>
             </View>
             <View className="hero-body">
-              <Text className="hero-title">{homeData.aiRecommendation.primary.title}</Text>
-              <Text className="hero-desc">{homeData.aiRecommendation.primary.message}</Text>
+              <Text className="hero-title">{homeData.aiRecommendation?.primary?.title}</Text>
+              <Text className="hero-desc">{homeData.aiRecommendation?.primary?.message}</Text>
             </View>
             <View className="hero-actions">
               {/* 主建议的打卡按钮 */}
-              {homeData.aiRecommendation.primary.checkin_action && (
+              {homeData.aiRecommendation?.primary?.checkin_action && (
                 <View 
                   className="hero-action-btn primary"
                   onClick={() => handleCheckinAction(homeData.aiRecommendation!.primary!.checkin_action!)}
@@ -336,7 +336,7 @@ export default function Index() {
                 </View>
               )}
               {/* 次要建议的打卡按钮 */}
-              {homeData.aiRecommendation?.secondary.slice(0, 2).map((item, idx) => {
+              {homeData.aiRecommendation?.secondary?.slice(0, 2).map((item, idx) => {
                 const itemText = typeof item === 'string' ? item : item.text;
                 const itemAction = typeof item === 'object' ? item.checkin_action : undefined;
                 const isPrimary = idx === 0 && !homeData.aiRecommendation?.primary?.checkin_action;
