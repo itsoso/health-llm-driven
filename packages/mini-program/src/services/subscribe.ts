@@ -9,7 +9,7 @@
  */
 
 import Taro from '@tarojs/taro';
-import { request } from './api';
+import { request, get, put } from './request';
 
 // ============ 订阅消息模板配置 ============
 // 注意：以下模板ID需要在微信公众平台申请后替换
