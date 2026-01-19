@@ -503,11 +503,28 @@ export default function Index() {
             </View>
             {(() => {
               // 能量差计算：基础代谢消耗 + 锻炼消耗 - 饮食摄入
-              // calories_total = 基础代谢 + 活动消耗（Garmin 提供的总消耗）
-              const totalOut = homeData.garmin?.calories_total || 0;
-              const activeCalories = homeData.garmin?.active_calories || 0;
-              // 基础代谢 = 总消耗 - 活动消耗
-              const bmr = totalOut - activeCalories;
+              const DEFAULT_BMR = 1600; // 默认基础代谢（大卡）
+              
+              // 计算运动消耗（从workouts数据）
+              const workoutCalories = homeData.workouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+              
+              // 如果有Garmin数据，使用Garmin数据；否则使用默认值+运动数据
+              let bmr: number;
+              let activeCalories: number;
+              let totalOut: number;
+              
+              if (homeData.garmin?.calories_total && homeData.garmin.calories_total > 0) {
+                // 使用Garmin真实数据
+                totalOut = homeData.garmin.calories_total;
+                activeCalories = homeData.garmin.active_calories || 0;
+                bmr = totalOut - activeCalories;
+              } else {
+                // Garmin数据为空，使用默认基础代谢 + 运动消耗
+                bmr = DEFAULT_BMR;
+                activeCalories = workoutCalories;
+                totalOut = bmr + activeCalories;
+              }
+              
               const totalIn = homeData.diet?.total_calories || 0;
               
               // 能量差 = (基础代谢 + 锻炼消耗) - 饮食摄入 = 总消耗 - 总摄入
@@ -549,8 +566,14 @@ export default function Index() {
                       />
                     </View>
                     <View className="progress-detail">
-                      <Text className="detail-text">基础代谢: {bmr.toFixed(0)} 大卡</Text>
-                      <Text className="detail-text">活动消耗: {activeCalories.toFixed(0)} 大卡</Text>
+                      <Text className="detail-text">
+                        基础代谢: {bmr.toFixed(0)} 大卡
+                        {!homeData.garmin?.calories_total && ' (默认值)'}
+                      </Text>
+                      <Text className="detail-text">
+                        活动消耗: {activeCalories.toFixed(0)} 大卡
+                        {!homeData.garmin?.calories_total && ` (${homeData.workouts.length}次运动)`}
+                      </Text>
                     </View>
                   </View>
                   
