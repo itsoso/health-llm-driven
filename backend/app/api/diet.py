@@ -79,10 +79,16 @@ def create_diet_record(
         if isinstance(meal_type_value, MealType):
             meal_type_value = meal_type_value.value
         
+        # food_name 使用 food_items 的值（数据库要求 NOT NULL）
+        food_name = record_dict['food_items']
+        if food_name and len(food_name) > 100:
+            food_name = food_name[:100]  # 截断过长的名称
+        
         db_record = DietRecordModel(
             user_id=current_user.id,
             record_date=record_dict['record_date'],
             meal_type=meal_type_value,
+            food_name=food_name,  # 必填字段
             food_items=record_dict['food_items'],
             calories=record_dict.get('calories'),
             protein=record_dict.get('protein'),
