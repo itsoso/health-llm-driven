@@ -36,60 +36,74 @@ def create_diet_record(
     db: Session = Depends(get_db)
 ):
     """创建饮食记录（需要登录）"""
-    # 转换meal_time为字符串
-    record_dict = record.model_dump()
-    if record_dict.get('meal_time'):
-        record_dict['meal_time'] = record_dict['meal_time'].strftime('%H:%M')
-    
-    # 处理图片上传
-    image_url = record_dict.get('image_url')
-    if record_dict.get('image_base64'):
-        try:
-            from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
-            import base64 as b64
-            
-            ensure_upload_dir()
-            image_type = (record_dict.get('image_type') or 'jpeg').lower()
-            if image_type == "jpg":
-                image_type = "jpeg"
-            
-            # 解码并保存图片
-            base64_data = record_dict['image_base64']
-            if "," in base64_data:
-                base64_data = base64_data.split(",", 1)[1]
-            
-            image_data = b64.b64decode(base64_data)
-            filename = generate_filename(image_type, "diet")
-            filepath = os.path.join(UPLOAD_DIR, filename)
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
-            with open(filepath, "wb") as f:
-                f.write(image_data)
-            
-            image_url = f"/api/v1/upload/files/{filename}"
-            logger.info(f"保存饮食图片: {filename}")
-        except Exception as e:
-            logger.warning(f"保存图片失败: {e}")
-    
-    db_record = DietRecordModel(
-        user_id=current_user.id,  # 使用当前登录用户ID
-        record_date=record_dict['record_date'],
-        meal_type=record_dict['meal_type'].value if isinstance(record_dict['meal_type'], MealType) else record_dict['meal_type'],
-        food_items=record_dict['food_items'],
-        calories=record_dict.get('calories'),
-        protein=record_dict.get('protein'),
-        carbs=record_dict.get('carbs'),
-        fat=record_dict.get('fat'),
-        fiber=record_dict.get('fiber'),
-        notes=record_dict.get('notes'),
-        image_url=image_url,
-        health_tips=record_dict.get('health_tips'),
-    )
-    db.add(db_record)
-    db.commit()
-    db.refresh(db_record)
-    
-    return _convert_to_response(db_record)
+    try:
+        logger.info(f"用户 {current_user.id} 创建饮食记录: {record.meal_type}, {record.food_items[:50] if record.food_items else ''}")
+        
+        # 转换meal_time为字符串
+        record_dict = record.model_dump()
+        if record_dict.get('meal_time'):
+            record_dict['meal_time'] = record_dict['meal_time'].strftime('%H:%M')
+        
+        # 处理图片上传
+        image_url = record_dict.get('image_url')
+        if record_dict.get('image_base64'):
+            try:
+                from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
+                import base64 as b64
+                
+                ensure_upload_dir()
+                image_type = (record_dict.get('image_type') or 'jpeg').lower()
+                if image_type == "jpg":
+                    image_type = "jpeg"
+                
+                # 解码并保存图片
+                base64_data = record_dict['image_base64']
+                if "," in base64_data:
+                    base64_data = base64_data.split(",", 1)[1]
+                
+                image_data = b64.b64decode(base64_data)
+                filename = generate_filename(image_type, "diet")
+                filepath = os.path.join(UPLOAD_DIR, filename)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                
+                with open(filepath, "wb") as f:
+                    f.write(image_data)
+                
+                image_url = f"/api/v1/upload/files/{filename}"
+                logger.info(f"保存饮食图片: {filename}")
+            except Exception as e:
+                logger.warning(f"保存图片失败: {e}")
+        
+        # 确保 meal_type 是字符串
+        meal_type_value = record_dict['meal_type']
+        if isinstance(meal_type_value, MealType):
+            meal_type_value = meal_type_value.value
+        
+        db_record = DietRecordModel(
+            user_id=current_user.id,
+            record_date=record_dict['record_date'],
+            meal_type=meal_type_value,
+            food_items=record_dict['food_items'],
+            calories=record_dict.get('calories'),
+            protein=record_dict.get('protein'),
+            carbs=record_dict.get('carbs'),
+            fat=record_dict.get('fat'),
+            fiber=record_dict.get('fiber'),
+            notes=record_dict.get('notes'),
+            image_url=image_url,
+            health_tips=record_dict.get('health_tips'),
+        )
+        db.add(db_record)
+        db.commit()
+        db.refresh(db_record)
+        
+        logger.info(f"饮食记录创建成功: id={db_record.id}")
+        return _convert_to_response(db_record)
+        
+    except Exception as e:
+        logger.error(f"创建饮食记录失败: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"创建记录失败: {str(e)}")
 
 
 def _convert_to_response(record) -> DietRecordResponse:

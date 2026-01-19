@@ -288,6 +288,13 @@ export default function DietPage() {
         }
       }
 
+      console.log('[饮食记录] 准备保存:', {
+        record_date: selectedDate,
+        meal_type: mealType,
+        food_items: formData.food_items.substring(0, 50),
+        has_image: !!imageBase64,
+      });
+
       await request({
         url: '/diet/records',
         method: 'POST',
@@ -295,21 +302,24 @@ export default function DietPage() {
           record_date: selectedDate,
           meal_type: mealType,
           food_items: formData.food_items,
-          calories: formData.calories ? parseInt(formData.calories) : null,
+          calories: formData.calories ? parseFloat(formData.calories) : null,
           protein: formData.protein ? parseFloat(formData.protein) : null,
           carbs: formData.carbs ? parseFloat(formData.carbs) : null,
           fat: formData.fat ? parseFloat(formData.fat) : null,
           notes: formData.notes || null,
           image_base64: imageBase64,
-          image_type: 'jpeg',
+          image_type: imageBase64 ? 'jpeg' : null,
         },
       });
 
+      console.log('[饮食记录] 保存成功');
       Taro.showToast({ title: '保存成功！', icon: 'success' });
       resetForm();
       loadDailySummary();
     } catch (error: any) {
-      Taro.showToast({ title: error.message || '保存失败', icon: 'none' });
+      console.error('[饮食记录] 保存失败:', error);
+      const errorMsg = error?.message || error?.errMsg || '保存失败';
+      Taro.showToast({ title: errorMsg.substring(0, 30), icon: 'none', duration: 3000 });
     }
   };
 

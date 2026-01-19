@@ -19,7 +19,7 @@ class DietRecordBase(BaseModel):
     meal_type: MealType
     meal_time: Optional[time] = None
     food_items: str  # 食物列表，逗号分隔
-    calories: Optional[int] = None  # 热量 (kcal)
+    calories: Optional[float] = None  # 热量 (kcal) - 使用float与数据库一致
     protein: Optional[float] = None  # 蛋白质 (g)
     carbs: Optional[float] = None  # 碳水化合物 (g)
     fat: Optional[float] = None  # 脂肪 (g)
@@ -42,7 +42,7 @@ class DietRecordUpdate(BaseModel):
     meal_type: Optional[MealType] = None
     meal_time: Optional[time] = None
     food_items: Optional[str] = None
-    calories: Optional[int] = None
+    calories: Optional[float] = None  # 使用float与数据库一致
     protein: Optional[float] = None
     carbs: Optional[float] = None
     fat: Optional[float] = None
