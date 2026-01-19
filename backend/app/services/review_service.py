@@ -94,10 +94,10 @@ class ReviewService:
         for w in water_records:
             summary.water_records.append({
                 "id": w.id,
-                "amount_ml": w.amount_ml,
+                "amount_ml": w.amount,  # WaterIntake 模型字段名是 amount
                 "time": str(w.intake_time) if w.intake_time else None,
             })
-            summary.water_intake_ml += w.amount_ml or 0
+            summary.water_intake_ml += w.amount or 0
         
         # 5. 获取打卡数据
         checkins = self.db.query(CheckinRecord).filter(
