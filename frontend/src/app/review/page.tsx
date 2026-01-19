@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://health.westwetlandtech.com/api/v1';
+// Nginx 配置 /api/ → /api/v1/，所以这里不需要 /v1
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://health.westwetlandtech.com/api';
 
 type ViewMode = 'daily' | 'weekly' | 'monthly';
 
