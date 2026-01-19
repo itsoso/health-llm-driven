@@ -131,10 +131,33 @@ async def wechat_login(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"新用户注册需要邀请码，请输入邀请码"
             )
-        if request.invite_code.upper() != settings.default_invite_code.upper():
+        
+        # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
+        from app.models.invitation import InvitationCode
+        invite_code_upper = request.invite_code.upper()
+        
+        # 查找数据库中的邀请码
+        db_invite = db.query(InvitationCode).filter(
+            InvitationCode.code == invite_code_upper
+        ).first()
+        
+        invite_valid = False
+        if db_invite and db_invite.is_valid:
+            # 数据库邀请码有效
+            invite_valid = True
+            # 增加使用次数
+            db_invite.used_count += 1
+            db.commit()
+            logger.info(f"使用数据库邀请码: {invite_code_upper}, 已使用 {db_invite.used_count}/{db_invite.max_uses}")
+        elif invite_code_upper == settings.default_invite_code.upper():
+            # 默认邀请码有效
+            invite_valid = True
+            logger.info(f"使用默认邀请码: {invite_code_upper}")
+        
+        if not invite_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"邀请码错误，请输入正确的邀请码"
+                detail=f"邀请码无效或已过期，请输入正确的邀请码"
             )
         
         # 检查是否有匹配的PC用户可以合并
