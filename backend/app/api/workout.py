@@ -474,7 +474,7 @@ def get_workout_analysis(
         raise HTTPException(status_code=404, detail="运动记录不存在")
     
     if not record.ai_analysis:
-        raise HTTPException(status_code=404, detail="该运动记录尚未进行AI分析")
+        raise HTTPException(status_code=404, detail="该运动记录尚未进行智能分析")
     
     try:
         analysis_data = json.loads(record.ai_analysis)

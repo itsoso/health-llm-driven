@@ -398,7 +398,7 @@ class HealthAnalysisService:
     ) -> str:
         """为每日打卡生成个性化建议"""
         if not self.client:
-            return "请配置OpenAI API以获取个性化建议"
+            return "个性化建议服务暂不可用"
         
         health_data = self.collect_user_health_data(db, user_id, days=7)
         

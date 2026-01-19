@@ -61,7 +61,7 @@ class FoodRecognitionService:
             logger.error("AI服务不可用")
             return {
                 "success": False,
-                "error": "AI服务不可用，请检查OpenAI配置",
+                "error": "智能识别服务不可用",
                 "foods": []
             }
         
@@ -174,7 +174,7 @@ class FoodRecognitionService:
         if not self.is_available():
             return {
                 "success": False,
-                "error": "AI服务不可用",
+                "error": "智能识别服务不可用",
                 "foods": []
             }
         
@@ -262,7 +262,7 @@ class FoodRecognitionService:
         if not self.is_available():
             return {
                 "success": False,
-                "error": "AI服务不可用",
+                "error": "智能识别服务不可用",
                 "foods": []
             }
         

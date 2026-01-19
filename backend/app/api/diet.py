@@ -386,7 +386,7 @@ async def recognize_food(
     if not food_recognition_service.is_available():
         raise HTTPException(
             status_code=503,
-            detail="AI食物识别服务不可用，请检查OpenAI配置"
+            detail="智能食物识别服务不可用"
         )
     
     try:
@@ -432,7 +432,7 @@ async def recognize_and_save_diet(
     if not food_recognition_service.is_available():
         raise HTTPException(
             status_code=503,
-            detail="AI食物识别服务不可用"
+            detail="智能食物识别服务不可用"
         )
     
     try:
@@ -445,7 +445,7 @@ async def recognize_and_save_diet(
         if not result.get("success"):
             raise HTTPException(
                 status_code=400,
-                detail=result.get("error", "AI识别失败")
+                detail=result.get("error", "智能识别失败")
             )
         
         foods = result.get("foods", [])
@@ -460,7 +460,7 @@ async def recognize_and_save_diet(
         food_items = ", ".join([f.get("name", "") + (f" ({f.get('quantity', '')})" if f.get('quantity') else "") for f in foods])
         
         # 取第一个食物名称作为主名称（兼容旧字段）
-        primary_food_name = food_names[0] if food_names else "AI识别食物"
+        primary_food_name = food_names[0] if food_names else "智能识别食物"
         
         # 计算平均置信度
         confidences = [f.get("confidence", 0) for f in foods if f.get("confidence")]
@@ -543,7 +543,7 @@ async def estimate_nutrition_from_text(
     if not food_recognition_service.is_available():
         raise HTTPException(
             status_code=503,
-            detail="AI服务不可用"
+            detail="智能服务不可用"
         )
     
     try:

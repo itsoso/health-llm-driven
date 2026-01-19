@@ -34,7 +34,7 @@ def get_llm_advice(prompt: str) -> str:
         logger.error(f"LLM调用失败: {e}")
     
     # 如果LLM不可用，返回默认建议
-    return "暂无AI建议，请确保系统已配置OpenAI API。"
+    return "暂无个性化建议，请稍后再试。"
 
 
 class PersonalizedAdviceService:

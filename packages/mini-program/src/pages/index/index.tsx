@@ -242,7 +242,7 @@ export default function Index() {
     return (
       <View className="index-page login-page">
         <View className="login-header">
-          <Text className="login-title">🏥 自由是自律的泡沫</Text>
+          <Text className="login-title">自由是自律的泡沫</Text>
           <Text className="login-subtitle">个人健康管理助手</Text>
         </View>
         
