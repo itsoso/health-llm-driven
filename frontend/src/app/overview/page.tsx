@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { format, subDays } from 'date-fns';
+import { format, subDays, startOfWeek } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -266,8 +266,12 @@ function OverviewContent() {
     hrv: r.hrv,
   }));
 
-  // 计算本周强度活动时间
-  const weeklyIntensityMinutes = weekRecords.reduce((sum, r) => {
+  // 计算本周强度活动时间（从周一开始）
+  const mondayOfThisWeek = startOfWeek(new Date(), { weekStartsOn: 1 }); // 1 = 周一
+  const thisWeekRecords = sortedRecords.filter(r => 
+    new Date(r.record_date) >= mondayOfThisWeek
+  );
+  const weeklyIntensityMinutes = thisWeekRecords.reduce((sum, r) => {
     return sum + (r.moderate_intensity_minutes || 0) + (r.vigorous_intensity_minutes || 0) * 2;
   }, 0);
   const intensityGoal = record?.intensity_minutes_goal || 150;
