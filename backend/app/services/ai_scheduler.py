@@ -522,6 +522,40 @@ class AIScheduler:
         
         return schedule
     
+    def _detect_checkin_action(self, text: str) -> Optional[str]:
+        """
+        识别文本中的可打卡事项
+        
+        返回打卡类型：water, nasal_wash, supplement, exercise, weight, diet
+        """
+        text_lower = text.lower()
+        
+        # 喝水相关
+        if any(keyword in text_lower for keyword in ['喝水', '饮水', '补充水分', '保持饮水', '喝杯']):
+            return "water"
+        
+        # 洗鼻相关
+        if any(keyword in text_lower for keyword in ['洗鼻', '鼻腔']):
+            return "nasal_wash"
+        
+        # 补剂相关
+        if any(keyword in text_lower for keyword in ['补剂', '服用', '镁补剂', '维生素', '补充剂']):
+            return "supplement"
+        
+        # 运动相关
+        if any(keyword in text_lower for keyword in ['运动', '深蹲', '跑步', '锻炼', '训练', '拉伸']):
+            return "exercise"
+        
+        # 称重相关
+        if any(keyword in text_lower for keyword in ['称重', '体重']):
+            return "weight"
+        
+        # 饮食相关
+        if any(keyword in text_lower for keyword in ['饮食', '记录饮食', '早餐', '午餐', '晚餐', '加餐']):
+            return "diet"
+        
+        return None
+    
     def get_time_aware_recommendation(
         self,
         db: Session,
@@ -555,14 +589,29 @@ class AIScheduler:
             "status": {}
         }
         
+        # 辅助函数：创建带打卡动作的次要建议项
+        def create_secondary_item(text: str) -> Dict[str, Any]:
+            checkin_action = self._detect_checkin_action(text)
+            item: Dict[str, Any] = {"text": text}
+            if checkin_action:
+                item["checkin_action"] = checkin_action
+            return item
+        
         # 早晨 (5-9点)
         if 5 <= hour < 9:
+            primary_msg = "建议：起床后喝杯温水，做简单拉伸"
+            primary_checkin = self._detect_checkin_action(primary_msg)
             recommendation["primary"] = {
                 "icon": "🌅",
                 "title": "早安！开始美好的一天",
-                "message": "建议：起床后喝杯温水，做简单拉伸"
+                "message": primary_msg
             }
-            recommendation["secondary"] = ["完成早间洗鼻", "称重记录"]
+            if primary_checkin:
+                recommendation["primary"]["checkin_action"] = primary_checkin
+            recommendation["secondary"] = [
+                create_secondary_item("完成早间洗鼻"),
+                create_secondary_item("称重记录")
+            ]
         
         # 上午 (9-12点)
         elif 9 <= hour < 12:
@@ -578,25 +627,42 @@ class AIScheduler:
                 "title": "上午工作时间",
                 "message": "保持专注，记得每小时站起来活动"
             }
-            recommendation["secondary"] = ["喝水补充水分", "适时休息眼睛"]
+            recommendation["secondary"] = [
+                create_secondary_item("喝水补充水分"),
+                create_secondary_item("适时休息眼睛")
+            ]
         
         # 中午 (12-14点)
         elif 12 <= hour < 14:
+            primary_msg = "均衡饮食，记录摄入的食物"
+            primary_checkin = self._detect_checkin_action(primary_msg)
             recommendation["primary"] = {
                 "icon": "🍱",
                 "title": "午餐时间",
-                "message": "均衡饮食，记录摄入的食物"
+                "message": primary_msg
             }
-            recommendation["secondary"] = ["饭后短暂休息", "避免立即剧烈运动"]
+            if primary_checkin:
+                recommendation["primary"]["checkin_action"] = primary_checkin
+            recommendation["secondary"] = [
+                create_secondary_item("饭后短暂休息"),
+                create_secondary_item("避免立即剧烈运动")
+            ]
         
         # 下午 (14-18点)
         elif 14 <= hour < 18:
+            primary_msg = "保持饮水，避免久坐"
+            primary_checkin = self._detect_checkin_action(primary_msg)
             recommendation["primary"] = {
                 "icon": "☀️",
                 "title": "下午继续加油",
-                "message": "保持饮水，避免久坐"
+                "message": primary_msg
             }
-            recommendation["secondary"] = ["适时喝水", "站立办公或走动"]
+            if primary_checkin:
+                recommendation["primary"]["checkin_action"] = primary_checkin
+            recommendation["secondary"] = [
+                create_secondary_item("适时喝水"),
+                create_secondary_item("站立办公或走动")
+            ]
         
         # 傍晚 (18-21点)
         elif 18 <= hour < 21:
@@ -614,12 +680,19 @@ class AIScheduler:
                     "message": f"很棒！今天已经运动，注意拉伸放松"
                 }
             else:
+                primary_msg = "现在是户外运动的好时机，完成今日运动目标"
+                primary_checkin = self._detect_checkin_action(primary_msg)
                 recommendation["primary"] = {
                     "icon": "🏃",
                     "title": "运动时间到",
-                    "message": "现在是户外运动的好时机，完成今日运动目标"
+                    "message": primary_msg
                 }
-            recommendation["secondary"] = ["清淡晚餐", "饭后散步"]
+                if primary_checkin:
+                    recommendation["primary"]["checkin_action"] = primary_checkin
+            recommendation["secondary"] = [
+                create_secondary_item("清淡晚餐"),
+                create_secondary_item("饭后散步")
+            ]
         
         # 晚间 (21-23点)
         elif 21 <= hour < 23:
@@ -628,7 +701,10 @@ class AIScheduler:
                 "title": "睡前准备",
                 "message": "减少屏幕使用，准备入睡"
             }
-            recommendation["secondary"] = ["完成睡前洗鼻", "服用镁补剂"]
+            recommendation["secondary"] = [
+                create_secondary_item("完成睡前洗鼻"),
+                create_secondary_item("服用镁补剂")
+            ]
         
         # 深夜 (23点-5点)
         else:
@@ -637,7 +713,10 @@ class AIScheduler:
                 "title": "该休息了",
                 "message": "充足的睡眠是健康的基础"
             }
-            recommendation["secondary"] = ["保持卧室黑暗凉爽", "避免使用手机"]
+            recommendation["secondary"] = [
+                create_secondary_item("保持卧室黑暗凉爽"),
+                create_secondary_item("避免使用手机")
+            ]
         
         return recommendation
 

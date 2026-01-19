@@ -22,8 +22,12 @@ interface Recommendation {
     icon: string;
     title: string;
     message: string;
+    checkin_action?: string; // 可打卡事项类型：water, nasal_wash, supplement, exercise, weight, diet
   } | null;
-  secondary: string[];
+  secondary: Array<string | {
+    text: string;
+    checkin_action?: string;
+  }>;
   status: Record<string, any>;
 }
 
@@ -53,6 +57,23 @@ export default function AIAssistantPage() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // 处理打卡跳转
+  const handleCheckinAction = (checkinAction: string) => {
+    const actionMap: Record<string, string> = {
+      'water': '/water',
+      'nasal_wash': '/checkin',
+      'supplement': '/supplements',
+      'exercise': '/workout',
+      'weight': '/weight',
+      'diet': '/diet',
+    };
+    
+    const targetPage = actionMap[checkinAction];
+    if (targetPage) {
+      router.push(targetPage);
+    }
+  };
   const [testResult, setTestResult] = useState<{
     name: string;
     path: string;
@@ -211,13 +232,37 @@ export default function AIAssistantPage() {
                 <h2 className="text-2xl font-bold mb-2">{recommendation.primary?.title || '健康建议'}</h2>
                 <p className="text-lg text-purple-200 mb-4">{recommendation.primary?.message}</p>
                 
+                {/* 主建议的打卡按钮 */}
+                {recommendation.primary?.checkin_action && (
+                  <button
+                    onClick={() => handleCheckinAction(recommendation.primary!.checkin_action!)}
+                    className="mb-3 px-4 py-2 bg-white text-purple-700 rounded-full font-semibold hover:bg-purple-100 transition-colors flex items-center gap-2"
+                  >
+                    <span>✓</span>
+                    <span>立即打卡</span>
+                  </button>
+                )}
+                
                 {recommendation.secondary.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {recommendation.secondary.map((item, idx) => (
-                      <span key={idx} className="px-3 py-1 bg-white/10 rounded-full text-sm">
-                        {item}
-                      </span>
-                    ))}
+                    {recommendation.secondary.map((item, idx) => {
+                      const itemText = typeof item === 'string' ? item : item.text;
+                      const itemAction = typeof item === 'object' ? item.checkin_action : undefined;
+                      
+                      return itemAction ? (
+                        <button
+                          key={idx}
+                          onClick={() => handleCheckinAction(itemAction)}
+                          className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-sm transition-colors cursor-pointer"
+                        >
+                          {itemText}
+                        </button>
+                      ) : (
+                        <span key={idx} className="px-3 py-1 bg-white/10 rounded-full text-sm">
+                          {itemText}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>

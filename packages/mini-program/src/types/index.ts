@@ -218,8 +218,12 @@ export interface AIRecommendation {
     icon: string;
     title: string;
     message: string;
+    checkin_action?: string; // 可打卡事项类型：water, nasal_wash, supplement, exercise, weight, diet
   } | null;
-  secondary: string[];
+  secondary: Array<string | {
+    text: string;
+    checkin_action?: string; // 可打卡事项类型
+  }>;
   status: Record<string, any>;
 }
 

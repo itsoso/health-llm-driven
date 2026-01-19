@@ -200,6 +200,34 @@ export default function Index() {
     Taro.switchTab({ url: `/pages/${page}/index` });
   };
 
+  // 处理打卡跳转
+  const handleCheckinAction = (checkinAction: string) => {
+    if (!isLoggedIn) {
+      Taro.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+    
+    const actionMap: Record<string, string> = {
+      'water': '/pages/water/index',
+      'nasal_wash': '/pages/checkin/index',
+      'supplement': '/pages/supplements/index',
+      'exercise': '/pages/workout/index',
+      'weight': '/pages/weight/index',
+      'diet': '/pages/diet/index',
+    };
+    
+    const targetPage = actionMap[checkinAction];
+    if (targetPage) {
+      if (targetPage.includes('/pages/checkin/') || targetPage.includes('/pages/workout/')) {
+        Taro.navigateTo({ url: targetPage });
+      } else {
+        Taro.switchTab({ url: targetPage });
+      }
+    } else {
+      Taro.showToast({ title: '功能开发中', icon: 'none' });
+    }
+  };
+
   // 获取日程分类颜色
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
@@ -296,16 +324,35 @@ export default function Index() {
               <Text className="hero-title">{homeData.aiRecommendation.primary.title}</Text>
               <Text className="hero-desc">{homeData.aiRecommendation.primary.message}</Text>
             </View>
-            {homeData.aiRecommendation.secondary.length > 0 && (
-              <View className="hero-actions">
-                {homeData.aiRecommendation.secondary.slice(0, 2).map((item, idx) => (
-                  <View key={idx} className={`hero-action-btn ${idx === 0 ? 'primary' : 'secondary'}`}>
-                    {idx === 0 && <Text className="btn-check">✓</Text>}
-                    <Text>{item}</Text>
+            <View className="hero-actions">
+              {/* 主建议的打卡按钮 */}
+              {homeData.aiRecommendation.primary.checkin_action && (
+                <View 
+                  className="hero-action-btn primary"
+                  onClick={() => handleCheckinAction(homeData.aiRecommendation!.primary!.checkin_action!)}
+                >
+                  <Text className="btn-check">✓</Text>
+                  <Text>立即打卡</Text>
+                </View>
+              )}
+              {/* 次要建议的打卡按钮 */}
+              {homeData.aiRecommendation?.secondary.slice(0, 2).map((item, idx) => {
+                const itemText = typeof item === 'string' ? item : item.text;
+                const itemAction = typeof item === 'object' ? item.checkin_action : undefined;
+                const isPrimary = idx === 0 && !homeData.aiRecommendation?.primary?.checkin_action;
+                
+                return (
+                  <View 
+                    key={idx} 
+                    className={`hero-action-btn ${isPrimary ? 'primary' : 'secondary'}`}
+                    onClick={itemAction ? () => handleCheckinAction(itemAction) : undefined}
+                  >
+                    {isPrimary && <Text className="btn-check">✓</Text>}
+                    <Text>{itemText}</Text>
                   </View>
-                ))}
-              </View>
-            )}
+                );
+              })}
+            </View>
           </View>
         </View>
       )}
