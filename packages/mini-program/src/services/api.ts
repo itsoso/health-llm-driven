@@ -312,3 +312,15 @@ export async function getCurrentMonthReview(): Promise<any> {
 export async function getReviewStreak(): Promise<{ current_streak: number; total_reviews: number; last_30_days: number }> {
   return await get('/review/stats/streak');
 }
+
+/**
+ * AI 生成复盘总结
+ */
+export async function generateAIReviewSummary(date: string, period: string): Promise<{ ai_summary: string } | null> {
+  try {
+    return await post(`/review/ai-summary`, { date, period });
+  } catch (e) {
+    console.error('AI生成总结失败:', e);
+    return null;
+  }
+}

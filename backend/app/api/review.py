@@ -239,3 +239,32 @@ async def get_review_streak(
         "total_reviews": total_reviews,
         "last_30_days": len(reviews)
     }
+
+
+# ========== AI 总结 ==========
+
+from pydantic import BaseModel
+
+class AIReviewRequest(BaseModel):
+    date: str
+    period: str = "daily"  # daily, weekly, monthly
+
+
+@router.post("/ai-summary", summary="AI生成复盘总结")
+async def generate_ai_summary(
+    request: AIReviewRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """使用 AI 生成复盘总结"""
+    from datetime import datetime as dt
+    
+    try:
+        target_date = dt.strptime(request.date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+    
+    service = ReviewService(db)
+    ai_summary = service.generate_ai_summary(current_user.id, target_date, request.period)
+    
+    return {"ai_summary": ai_summary}

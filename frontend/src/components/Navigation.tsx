@@ -31,6 +31,7 @@ export default function Navigation() {
     { href: '/', label: '首页', icon: '🏠' },
     { href: '/overview', label: '健康概览', icon: '📋' },
     { href: '/daily-insights', label: '今日建议', icon: '💪' },
+    { href: '/review', label: '每日复盘', icon: '📝' },
     { href: '/dashboard', label: '仪表盘', icon: '📊' },
   ];
 

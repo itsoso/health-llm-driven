@@ -387,3 +387,175 @@ class ReviewService:
             last_day = target_date.replace(month=target_date.month + 1, day=1) - timedelta(days=1)
         
         return first_day, last_day
+    
+    def generate_ai_summary(self, user_id: int, target_date: date, period: str = "daily") -> str:
+        """
+        使用 AI 生成复盘总结
+        """
+        try:
+            if period == "daily":
+                review = self.get_daily_review(user_id, target_date)
+                if not review:
+                    return "暂无数据可供总结"
+                
+                # 构建提示词
+                data_summary = []
+                
+                if review.sleep_score:
+                    data_summary.append(f"睡眠分数{review.sleep_score}分")
+                if review.sleep_duration_hours:
+                    data_summary.append(f"睡眠{review.sleep_duration_hours:.1f}小时")
+                if review.workout_count:
+                    data_summary.append(f"运动{review.workout_count}次，消耗{review.workout_calories}卡")
+                if review.steps:
+                    data_summary.append(f"步数{review.steps}")
+                if review.meals_count:
+                    data_summary.append(f"进食{review.meals_count}餐，摄入{review.total_calories_in}卡")
+                if review.water_intake_ml:
+                    status = "达标" if review.water_goal_met else "未达标"
+                    data_summary.append(f"饮水{review.water_intake_ml}ml({status})")
+                if review.nasal_wash_count:
+                    data_summary.append(f"洗鼻{review.nasal_wash_count}次")
+                if review.checkin_total:
+                    data_summary.append(f"打卡完成{review.checkin_completed}/{review.checkin_total}")
+                
+                user_inputs = []
+                if review.highlights:
+                    user_inputs.append(f"亮点：{review.highlights}")
+                if review.challenges:
+                    user_inputs.append(f"挑战：{review.challenges}")
+                if review.learnings:
+                    user_inputs.append(f"收获：{review.learnings}")
+                
+                # 生成简洁总结
+                summary_parts = []
+                
+                # 睡眠评价
+                if review.sleep_score:
+                    if review.sleep_score >= 85:
+                        summary_parts.append("昨晚睡眠质量优秀")
+                    elif review.sleep_score >= 70:
+                        summary_parts.append("昨晚睡眠质量良好")
+                    else:
+                        summary_parts.append("昨晚睡眠质量一般，需要关注")
+                
+                # 运动评价
+                if review.workout_count and review.workout_count > 0:
+                    summary_parts.append(f"今日完成{review.workout_count}次运动，消耗{review.workout_calories}卡路里")
+                elif review.steps and review.steps >= 8000:
+                    summary_parts.append(f"今日步数{review.steps}，活动量达标")
+                else:
+                    summary_parts.append("今日运动量偏少，建议增加活动")
+                
+                # 饮食评价
+                if review.meals_count:
+                    if review.total_calories_in > 2500:
+                        summary_parts.append("今日热量摄入偏高")
+                    elif review.total_calories_in < 1200:
+                        summary_parts.append("今日热量摄入偏低")
+                    else:
+                        summary_parts.append("今日饮食摄入适中")
+                
+                # 习惯完成情况
+                habits_done = []
+                if review.water_goal_met:
+                    habits_done.append("饮水达标")
+                if review.nasal_wash_done:
+                    habits_done.append("洗鼻完成")
+                if review.checkin_total and review.checkin_completed == review.checkin_total:
+                    habits_done.append("打卡全勤")
+                
+                if habits_done:
+                    summary_parts.append(f"健康习惯：{', '.join(habits_done)}")
+                
+                # 用户输入的亮点
+                if review.highlights:
+                    summary_parts.append(f"今日亮点：{review.highlights[:50]}")
+                
+                # 生成最终总结
+                ai_summary = "。".join(summary_parts) + "。"
+                
+                # 添加鼓励语
+                if review.mood_score and review.mood_score >= 4:
+                    ai_summary += " 保持好心情，继续加油！💪"
+                elif review.mood_score and review.mood_score <= 2:
+                    ai_summary += " 明天会更好，好好休息！🌙"
+                else:
+                    ai_summary += " 每一天都是新的开始！✨"
+                
+                # 保存 AI 总结
+                review.ai_summary = ai_summary
+                self.db.commit()
+                
+                return ai_summary
+            
+            elif period in ["weekly", "monthly"]:
+                # 周/月复盘总结
+                if period == "weekly":
+                    start_date, end_date = self.get_current_week_range(target_date)
+                    period_review = self.db.query(PeriodReview).filter(
+                        PeriodReview.user_id == user_id,
+                        PeriodReview.period_type == ReviewPeriod.WEEKLY,
+                        PeriodReview.start_date == start_date
+                    ).first()
+                else:
+                    start_date, end_date = self.get_current_month_range(target_date)
+                    period_review = self.db.query(PeriodReview).filter(
+                        PeriodReview.user_id == user_id,
+                        PeriodReview.period_type == ReviewPeriod.MONTHLY,
+                        PeriodReview.start_date == start_date
+                    ).first()
+                
+                if not period_review:
+                    return "暂无数据可供总结"
+                
+                summary_parts = []
+                period_name = "本周" if period == "weekly" else "本月"
+                
+                # 复盘完成情况
+                if period_review.review_days and period_review.total_days:
+                    rate = period_review.review_days / period_review.total_days * 100
+                    summary_parts.append(f"{period_name}完成{period_review.review_days}天复盘，完成率{rate:.0f}%")
+                
+                # 睡眠总结
+                if period_review.avg_sleep_score:
+                    if period_review.avg_sleep_score >= 85:
+                        summary_parts.append(f"平均睡眠分数{period_review.avg_sleep_score:.0f}分，睡眠质量优秀")
+                    elif period_review.avg_sleep_score >= 70:
+                        summary_parts.append(f"平均睡眠分数{period_review.avg_sleep_score:.0f}分，睡眠质量良好")
+                    else:
+                        summary_parts.append(f"平均睡眠分数{period_review.avg_sleep_score:.0f}分，需要改善睡眠")
+                
+                # 运动总结
+                if period_review.workout_days:
+                    summary_parts.append(f"运动{period_review.workout_days}天，总消耗{period_review.total_workout_calories}卡")
+                
+                # 步数总结
+                if period_review.avg_steps:
+                    if period_review.avg_steps >= 8000:
+                        summary_parts.append(f"日均步数{period_review.avg_steps}，活动量充足")
+                    else:
+                        summary_parts.append(f"日均步数{period_review.avg_steps}，建议增加活动")
+                
+                # 打卡总结
+                if period_review.perfect_days:
+                    summary_parts.append(f"全勤打卡{period_review.perfect_days}天")
+                
+                # 饮水总结
+                if period_review.water_goal_days:
+                    summary_parts.append(f"饮水达标{period_review.water_goal_days}天")
+                
+                ai_summary = "。".join(summary_parts) + "。"
+                ai_summary += f" {period_name}整体表现{'不错' if period_review.perfect_days > period_review.total_days / 2 else '还有提升空间'}，继续保持！💪"
+                
+                # 保存
+                period_review.ai_summary = ai_summary
+                self.db.commit()
+                
+                return ai_summary
+            
+            return "不支持的复盘类型"
+            
+        except Exception as e:
+            logger.error(f"AI生成总结失败: {e}")
+            return f"生成总结时出错: {str(e)}"
