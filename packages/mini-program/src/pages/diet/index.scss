@@ -364,9 +364,9 @@
       .input-hint {
         font-size: 22px;
         color: #888;
-        margin-bottom: 20px;
+        margin-bottom: 30px; // 增加间距，避免遮挡下方输入框
         display: block;
-        line-height: 1.5;
+        line-height: 1.6;
       }
 
       .input-row {
@@ -385,15 +385,15 @@
       .input-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-        margin-bottom: 20px;
-        margin-top: 8px; // 增加顶部间距，避免被遮挡
+        gap: 12px; // 增加网格间距
+        margin-bottom: 24px;
+        margin-top: 16px; // 增加顶部间距，避免被遮挡
 
         .input-item {
           .input-label {
             font-size: 22px;
             color: #888;
-            margin-bottom: 8px;
+            margin-bottom: 12px; // 增加标签与输入框的间距
             display: block;
             text-align: center;
             white-space: nowrap; // 防止标签换行
@@ -401,13 +401,13 @@
 
           .input-field.small {
             width: 100%;
-            padding: 14px 6px;
+            padding: 16px 8px; // 增加内边距
             background: #f5f5f5;
             border-radius: 10px;
             font-size: 24px;
             text-align: center;
             box-sizing: border-box;
-            min-height: 50px; // 确保输入框有足够高度
+            min-height: 56px; // 增加输入框高度，确保完全可见
           }
         }
       }
