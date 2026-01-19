@@ -128,6 +128,9 @@ export default function ReviewPage() {
       });
       if (streakRes.ok) {
         setStreak(await streakRes.json());
+      } else if (streakRes.status === 401) {
+        router.push('/login');
+        return;
       }
 
       if (viewMode === 'daily') {
@@ -138,6 +141,49 @@ export default function ReviewPage() {
           const data = await res.json();
           setDailyData(data);
           fillDailyInputs(data);
+        } else if (res.status === 401) {
+          router.push('/login');
+          return;
+        } else {
+          // 即使API返回错误，也设置默认数据
+          setDailyData({
+            id: 0,
+            review_date: selectedDate,
+            sleep_score: null,
+            sleep_duration_hours: null,
+            workout_count: 0,
+            workout_duration_minutes: 0,
+            workout_calories: 0,
+            steps: 0,
+            active_calories: 0,
+            meals_count: 0,
+            total_calories_in: 0,
+            total_protein: 0,
+            total_carbs: 0,
+            total_fat: 0,
+            water_intake_ml: 0,
+            water_goal_met: false,
+            nasal_wash_done: false,
+            nasal_wash_count: 0,
+            checkin_completed: 0,
+            checkin_total: 0,
+            supplements_taken: 0,
+            body_battery_high: null,
+            body_battery_low: null,
+            stress_avg: null,
+            resting_hr: null,
+            mood_score: null,
+            energy_score: null,
+            productivity_score: null,
+            highlights: null,
+            challenges: null,
+            learnings: null,
+            gratitude: null,
+            tomorrow_plan: null,
+            summary: null,
+            ai_summary: null,
+            is_completed: false,
+          });
         }
       } else if (viewMode === 'weekly') {
         const res = await fetch(`${API_BASE}/review/period/week/current`, {
@@ -145,6 +191,9 @@ export default function ReviewPage() {
         });
         if (res.ok) {
           setPeriodData(await res.json());
+        } else if (res.status === 401) {
+          router.push('/login');
+          return;
         }
       } else if (viewMode === 'monthly') {
         const res = await fetch(`${API_BASE}/review/period/month/current`, {
@@ -152,6 +201,9 @@ export default function ReviewPage() {
         });
         if (res.ok) {
           setPeriodData(await res.json());
+        } else if (res.status === 401) {
+          router.push('/login');
+          return;
         }
       }
     } catch (e) {
