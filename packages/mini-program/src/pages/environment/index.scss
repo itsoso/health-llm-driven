@@ -1,10 +1,13 @@
 .environment-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: linear-gradient(135deg, #0B0E14 0%, #161B28 50%, #1a2332 100%);
   padding: 24px;
+  padding-bottom: 120px;
   box-sizing: border-box;
 
-  &.loading {
+  &.loading,
+  &.error-state,
+  &.empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -12,11 +15,32 @@
   }
 }
 
+// 页面标题
+.page-header {
+  margin-bottom: 32px;
+  text-align: center;
+  
+  .page-title {
+    font-size: 40px;
+    font-weight: bold;
+    color: #fff;
+    display: block;
+    margin-bottom: 8px;
+  }
+  
+  .page-subtitle {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+  }
+}
+
+// 加载状态
 .loading-spinner {
   width: 48px;
   height: 48px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #3b82f6;
+  border-top-color: #7C3AED;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -31,14 +55,41 @@
   to { transform: rotate(360deg); }
 }
 
+// 错误状态
+.error-icon,
+.empty-icon {
+  font-size: 100px;
+  margin-bottom: 24px;
+}
+
+.error-text,
+.empty-text {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 32px;
+}
+
+.retry-btn {
+  padding: 20px 48px;
+  background: linear-gradient(135deg, #6366F1, #7C3AED);
+  border-radius: 40px;
+  
+  .retry-text {
+    font-size: 28px;
+    color: #fff;
+    font-weight: 500;
+  }
+}
+
 // 评分卡片
 .score-card {
   border-radius: 24px;
   padding: 32px;
   margin-bottom: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 
   &.excellent { background: linear-gradient(135deg, #10b981, #059669); }
-  &.good { background: linear-gradient(135deg, #3b82f6, #0891b2); }
+  &.good { background: linear-gradient(135deg, #6366F1, #7C3AED); }
   &.moderate { background: linear-gradient(135deg, #eab308, #f59e0b); }
   &.poor { background: linear-gradient(135deg, #f97316, #ef4444); }
   &.not_recommended { background: linear-gradient(135deg, #dc2626, #e11d48); }
@@ -108,10 +159,12 @@
 
 .data-card {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(22, 27, 40, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 20px;
   padding: 24px;
+  min-width: 0; // 防止 flex 子项溢出
 }
 
 .card-header {
@@ -225,8 +278,9 @@
 .warning-section,
 .activities-section,
 .briefing-section {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(22, 27, 40, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 20px;
   padding: 24px;
   margin-bottom: 24px;
@@ -275,7 +329,7 @@
 
 // 警告
 .warning-section {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.15);
   border-color: rgba(239, 68, 68, 0.3);
 }
 
@@ -310,8 +364,8 @@
 
 // 简报
 .briefing-section {
-  background: linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(236, 72, 153, 0.2));
-  border-color: rgba(147, 51, 234, 0.3);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(124, 58, 237, 0.2));
+  border-color: rgba(124, 58, 237, 0.3);
 }
 
 .briefing-text {
@@ -332,6 +386,43 @@
     font-size: 28px;
     color: #d8b4fe;
     font-weight: 500;
+  }
+}
+
+// 刷新按钮
+.refresh-section {
+  display: flex;
+  justify-content: center;
+  margin-top: 32px;
+  margin-bottom: 24px;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 32px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 40px;
+  
+  .refresh-icon {
+    font-size: 28px;
+  }
+  
+  .refresh-text {
+    font-size: 26px;
+    color: rgba(255, 255, 255, 0.7);
+  }
+}
+
+// 不可用状态
+.data-card.unavailable {
+  .unavailable-text {
+    font-size: 28px;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: center;
+    padding: 32px 0;
   }
 }
 

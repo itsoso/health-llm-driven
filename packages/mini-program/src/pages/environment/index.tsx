@@ -9,20 +9,21 @@ interface EnvironmentAdvice {
   location: string;
   weather: {
     available: boolean;
-    temperature: number;
-    feels_like: number;
-    humidity: number;
-    weather: string;
-    wind_direction: string;
-    wind_speed: number;
+    temperature?: number;
+    feels_like?: number;
+    humidity?: number;
+    weather?: string;
+    wind_direction?: string;
+    wind_speed?: number;
+    summary?: string;
   };
   air_quality: {
     available: boolean;
-    aqi: number;
-    level: string;
-    description: string;
-    pm25: number;
-    health_implications: string;
+    aqi?: number;
+    level?: string;
+    description?: string;
+    pm25?: number;
+    health_implications?: string;
   };
   exercise: {
     outdoor_suitable: boolean;
@@ -50,6 +51,7 @@ const statusLabels: Record<string, string> = {
 
 export default function EnvironmentPage() {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [advice, setAdvice] = useState<EnvironmentAdvice | null>(null);
   const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
 
@@ -66,18 +68,42 @@ export default function EnvironmentPage() {
 
     try {
       setLoading(true);
-      const [adviceRes, briefingRes] = await Promise.all([
-        request<EnvironmentAdvice>({ url: '/environment/advice', method: 'GET' }),
-        request<MorningBriefing>({ url: '/environment/morning-briefing', method: 'GET' }),
-      ]);
-      setAdvice(adviceRes.data);
-      setBriefing(briefingRes.data);
-    } catch (error) {
-      console.error('加载环境数据失败:', error);
-      Taro.showToast({ title: '加载失败', icon: 'none' });
+      setError(null);
+      
+      // 分开请求，避免一个失败导致全部失败
+      let adviceData: EnvironmentAdvice | null = null;
+      let briefingData: MorningBriefing | null = null;
+      
+      try {
+        const adviceRes = await request<EnvironmentAdvice>({ url: '/environment/advice', method: 'GET' });
+        adviceData = adviceRes.data;
+      } catch (e) {
+        console.error('获取环境建议失败:', e);
+      }
+      
+      try {
+        const briefingRes = await request<MorningBriefing>({ url: '/environment/morning-briefing', method: 'GET' });
+        briefingData = briefingRes.data;
+      } catch (e) {
+        console.error('获取早间简报失败:', e);
+      }
+      
+      if (!adviceData && !briefingData) {
+        setError('无法获取环境数据，请检查网络连接');
+      } else {
+        setAdvice(adviceData);
+        setBriefing(briefingData);
+      }
+    } catch (err) {
+      console.error('加载环境数据失败:', err);
+      setError('加载失败，请稍后重试');
     } finally {
       setLoading(false);
     }
+  };
+  
+  const handleRefresh = () => {
+    loadData();
   };
 
   if (loading) {
@@ -88,13 +114,45 @@ export default function EnvironmentPage() {
       </View>
     );
   }
+  
+  // 错误状态
+  if (error) {
+    return (
+      <View className="environment-page error-state">
+        <Text className="error-icon">😔</Text>
+        <Text className="error-text">{error}</Text>
+        <View className="retry-btn" onClick={handleRefresh}>
+          <Text className="retry-text">点击重试</Text>
+        </View>
+      </View>
+    );
+  }
 
   const weather = advice?.weather;
   const airQuality = advice?.air_quality;
   const exercise = advice?.exercise;
+  
+  // 空状态
+  if (!advice && !briefing) {
+    return (
+      <View className="environment-page empty-state">
+        <Text className="empty-icon">🌤️</Text>
+        <Text className="empty-text">暂无环境数据</Text>
+        <View className="retry-btn" onClick={handleRefresh}>
+          <Text className="retry-text">刷新</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView scrollY className="environment-page">
+      {/* 页面标题 */}
+      <View className="page-header">
+        <Text className="page-title">🌍 环境健康</Text>
+        <Text className="page-subtitle">实时环境数据与健康建议</Text>
+      </View>
+      
       {/* 户外运动评分 */}
       {exercise && (
         <View className={`score-card ${exercise.status}`}>
@@ -113,7 +171,7 @@ export default function EnvironmentPage() {
               <Text className="icon-emoji">
                 {exercise.score >= 80 ? '🏃' : exercise.score >= 60 ? '🚶' : exercise.score >= 40 ? '🏠' : '⚠️'}
               </Text>
-              <Text className="status-label">{statusLabels[exercise.status]}</Text>
+              <Text className="status-label">{statusLabels[exercise.status] || '未知'}</Text>
             </View>
           </View>
         </View>
@@ -122,7 +180,7 @@ export default function EnvironmentPage() {
       {/* 天气和空气质量 */}
       <View className="data-row">
         {/* 天气 */}
-        {weather?.available && (
+        {weather?.available ? (
           <View className="data-card">
             <View className="card-header">
               <Text className="card-icon">🌡️</Text>
@@ -130,20 +188,30 @@ export default function EnvironmentPage() {
             </View>
             <View className="weather-content">
               <View className="weather-main">
-                <Text className="temperature">{Math.round(weather.temperature)}°C</Text>
-                <Text className="feels-like">体感 {Math.round(weather.feels_like)}°C</Text>
+                <Text className="temperature">{Math.round(weather.temperature || 0)}°C</Text>
+                <Text className="feels-like">体感 {Math.round(weather.feels_like || 0)}°C</Text>
               </View>
               <View className="weather-detail">
-                <Text className="weather-text">{weather.weather}</Text>
-                <Text className="wind">{weather.wind_direction} {weather.wind_speed}km/h</Text>
+                <Text className="weather-text">{weather.weather || '未知'}</Text>
+                {weather.wind_direction && (
+                  <Text className="wind">{weather.wind_direction} {weather.wind_speed || 0}km/h</Text>
+                )}
               </View>
             </View>
-            <Text className="humidity">💧 湿度 {weather.humidity}%</Text>
+            <Text className="humidity">💧 湿度 {weather.humidity || 0}%</Text>
+          </View>
+        ) : (
+          <View className="data-card unavailable">
+            <View className="card-header">
+              <Text className="card-icon">🌡️</Text>
+              <Text className="card-title">实时天气</Text>
+            </View>
+            <Text className="unavailable-text">暂无数据</Text>
           </View>
         )}
 
         {/* 空气质量 */}
-        {airQuality?.available && (
+        {airQuality?.available ? (
           <View className="data-card">
             <View className="card-header">
               <Text className="card-icon">🌬️</Text>
@@ -151,12 +219,20 @@ export default function EnvironmentPage() {
             </View>
             <View className="aqi-content">
               <View className="aqi-main">
-                <Text className={`aqi-value ${airQuality.level}`}>{airQuality.aqi}</Text>
+                <Text className={`aqi-value ${airQuality.level || ''}`}>{airQuality.aqi || 0}</Text>
                 <Text className="aqi-label">AQI</Text>
               </View>
-              <Text className={`aqi-desc ${airQuality.level}`}>{airQuality.description}</Text>
+              <Text className={`aqi-desc ${airQuality.level || ''}`}>{airQuality.description || '未知'}</Text>
             </View>
-            <Text className="pm25">PM2.5: {airQuality.pm25} μg/m³</Text>
+            <Text className="pm25">PM2.5: {airQuality.pm25 || 0} μg/m³</Text>
+          </View>
+        ) : (
+          <View className="data-card unavailable">
+            <View className="card-header">
+              <Text className="card-icon">🌬️</Text>
+              <Text className="card-title">空气质量</Text>
+            </View>
+            <Text className="unavailable-text">暂无数据</Text>
           </View>
         )}
       </View>
@@ -224,6 +300,14 @@ export default function EnvironmentPage() {
           </View>
         </View>
       )}
+      
+      {/* 刷新按钮 */}
+      <View className="refresh-section">
+        <View className="refresh-btn" onClick={handleRefresh}>
+          <Text className="refresh-icon">🔄</Text>
+          <Text className="refresh-text">刷新数据</Text>
+        </View>
+      </View>
 
       <View className="bottom-spacer" />
     </ScrollView>
