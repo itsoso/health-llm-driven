@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.notification import UserNotificationSetting
 from app.config import settings
-from app.services.auth import get_current_user_required
+from app.api.deps import get_current_user_required
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
