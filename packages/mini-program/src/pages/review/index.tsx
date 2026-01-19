@@ -93,6 +93,7 @@ interface PeriodReviewData {
 export default function ReviewPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
   
@@ -126,14 +127,28 @@ export default function ReviewPage() {
   const [periodSummary, setPeriodSummary] = useState('');
 
   useEffect(() => {
+    // 检查登录状态
+    const token = Taro.getStorageSync('access_token');
+    if (!token) {
+      Taro.switchTab({ url: '/pages/index/index' });
+      return;
+    }
     loadData();
   }, [viewMode, selectedDate]);
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
+    
     try {
-      const streakData = await getReviewStreak();
-      setStreak(streakData);
+      // 先尝试获取连续天数统计
+      try {
+        const streakData = await getReviewStreak();
+        setStreak(streakData);
+      } catch (e) {
+        console.warn('获取连续天数失败:', e);
+        // 不阻塞主流程
+      }
       
       if (viewMode === 'daily') {
         const review = await getDailyReview(selectedDate);
@@ -148,9 +163,10 @@ export default function ReviewPage() {
         setPeriodData(review);
         fillPeriodInputs(review);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('加载复盘数据失败:', e);
-      Taro.showToast({ title: '加载失败', icon: 'none' });
+      const errorMsg = e?.message || '加载失败，请稍后重试';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -281,6 +297,19 @@ export default function ReviewPage() {
       <View className="review-page loading">
         <View className="loading-spinner" />
         <Text className="loading-text">加载中...</Text>
+      </View>
+    );
+  }
+  
+  // 错误状态
+  if (error) {
+    return (
+      <View className="review-page error-state">
+        <Text className="error-icon">😔</Text>
+        <Text className="error-text">{error}</Text>
+        <View className="retry-btn" onClick={loadData}>
+          <Text className="retry-text">点击重试</Text>
+        </View>
       </View>
     );
   }

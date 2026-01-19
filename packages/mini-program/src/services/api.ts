@@ -2,7 +2,7 @@
  * API 服务
  */
 import Taro from '@tarojs/taro';
-import { get, post, postNoAuth, setToken } from './request';
+import { get, post, put, postNoAuth, setToken } from './request';
 import { 
   API_ENDPOINTS,
   WechatLoginResponse, 
@@ -275,7 +275,7 @@ export async function getDailyReview(date: string): Promise<any> {
  * 更新每日复盘
  */
 export async function updateDailyReview(date: string, data: any): Promise<any> {
-  return await post(`/review/daily/${date}`, data, 'PUT');
+  return await put(`/review/daily/${date}`, data);
 }
 
 /**

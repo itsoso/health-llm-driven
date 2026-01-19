@@ -26,11 +26,40 @@ $gap-lg: 20px;
   padding: $gap-md;
   padding-bottom: 120px;
   
-  &.loading {
+  &.loading,
+  &.error-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+  }
+}
+
+// 错误状态
+.error-state {
+  .error-icon {
+    font-size: 100px;
+    margin-bottom: 24px;
+  }
+  
+  .error-text {
+    font-size: 28px;
+    color: $text-gray-400;
+    margin-bottom: 32px;
+    text-align: center;
+    padding: 0 32px;
+  }
+  
+  .retry-btn {
+    padding: 20px 48px;
+    background: linear-gradient(135deg, #6366F1, $primary);
+    border-radius: 40px;
+    
+    .retry-text {
+      font-size: 28px;
+      color: $text-white;
+      font-weight: 500;
+    }
   }
 }
 
