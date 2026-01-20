@@ -49,23 +49,37 @@ const statusLabels: Record<string, string> = {
   not_recommended: '不建议',
 };
 
+// 常用城市列表
+const COMMON_CITIES = [
+  '北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉',
+  '西安', '南京', '天津', '苏州', '郑州', '长沙', '沈阳', '青岛',
+  '宁波', '厦门', '济南', '哈尔滨', '福州', '昆明', '兰州', '石家庄'
+];
+
 export default function EnvironmentPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [advice, setAdvice] = useState<EnvironmentAdvice | null>(null);
   const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
+  const [currentCity, setCurrentCity] = useState<string>('');
+  const [showCityPicker, setShowCityPicker] = useState(false);
 
   useEffect(() => {
-    loadData();
+    // 从本地存储加载城市，如果没有则使用默认城市
+    const savedCity = Taro.getStorageSync('selected_city') || '北京';
+    setCurrentCity(savedCity);
+    loadData(savedCity);
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (city?: string) => {
     const token = Taro.getStorageSync('access_token');
     if (!token) {
       setLoading(false);
       setError('请先登录');
       return;
     }
+
+    const targetCity = city || currentCity || '北京';
 
     try {
       setLoading(true);
@@ -76,13 +90,21 @@ export default function EnvironmentPage() {
       let briefingData: MorningBriefing | null = null;
       
       try {
-        adviceData = await request<EnvironmentAdvice>({ url: '/environment/advice', method: 'GET' });
+        adviceData = await request<EnvironmentAdvice>({ 
+          url: '/environment/advice', 
+          method: 'GET',
+          params: { city: targetCity }
+        });
       } catch (e) {
         console.error('获取环境建议失败:', e);
       }
       
       try {
-        briefingData = await request<MorningBriefing>({ url: '/environment/morning-briefing', method: 'GET' });
+        briefingData = await request<MorningBriefing>({ 
+          url: '/environment/morning-briefing', 
+          method: 'GET',
+          params: { city: targetCity }
+        });
       } catch (e) {
         console.error('获取早间简报失败:', e);
       }
@@ -103,6 +125,15 @@ export default function EnvironmentPage() {
   
   const handleRefresh = () => {
     loadData();
+  };
+
+  const handleCityChange = (city: string) => {
+    setCurrentCity(city);
+    setShowCityPicker(false);
+    // 保存到本地存储
+    Taro.setStorageSync('selected_city', city);
+    // 重新加载数据
+    loadData(city);
   };
 
   if (loading) {
@@ -150,6 +181,30 @@ export default function EnvironmentPage() {
       <View className="page-header">
         <Text className="page-title">🌍 环境健康</Text>
         <Text className="page-subtitle">实时环境数据与健康建议</Text>
+      </View>
+
+      {/* 城市选择器 */}
+      <View className="city-selector">
+        <View className="current-city" onClick={() => setShowCityPicker(!showCityPicker)}>
+          <Text className="city-icon">📍</Text>
+          <Text className="city-name">{currentCity || '选择城市'}</Text>
+          <Text className="city-arrow">{showCityPicker ? '▲' : '▼'}</Text>
+        </View>
+        
+        {showCityPicker && (
+          <View className="city-list">
+            {COMMON_CITIES.map((city) => (
+              <View 
+                key={city} 
+                className={`city-item ${city === currentCity ? 'active' : ''}`}
+                onClick={() => handleCityChange(city)}
+              >
+                <Text className="city-item-text">{city}</Text>
+                {city === currentCity && <Text className="city-check">✓</Text>}
+              </View>
+            ))}
+          </View>
+        )}
       </View>
       
       {/* 户外运动评分 */}

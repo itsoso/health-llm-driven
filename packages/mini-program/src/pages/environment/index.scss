@@ -17,7 +17,7 @@
 
 // 页面标题
 .page-header {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
   text-align: center;
   
   .page-title {
@@ -32,6 +32,80 @@
     font-size: 24px;
     color: rgba(255, 255, 255, 0.5);
     display: block;
+  }
+}
+
+// 城市选择器
+.city-selector {
+  margin-bottom: 24px;
+  background: rgba(22, 27, 40, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.current-city {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  cursor: pointer;
+
+  .city-icon {
+    font-size: 32px;
+  }
+
+  .city-name {
+    font-size: 32px;
+    font-weight: 500;
+    color: #fff;
+  }
+
+  .city-arrow {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-left: 8px;
+  }
+}
+
+.city-list {
+  max-height: 600px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px 0;
+}
+
+.city-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:active {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  &.active {
+    background: rgba(99, 102, 241, 0.2);
+
+    .city-item-text {
+      color: #818cf8;
+      font-weight: 500;
+    }
+  }
+
+  .city-item-text {
+    font-size: 28px;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .city-check {
+    font-size: 32px;
+    color: #818cf8;
   }
 }
 
