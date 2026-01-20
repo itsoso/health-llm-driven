@@ -256,7 +256,7 @@ async def upload_course_files(
                     source=f"{source}_{filename}",
                     author=author,
                     difficulty=difficulty,
-                    target_audiences=target_audience_list
+                    target_audience=target_audience_list
                 )
                 
                 all_documents.extend(documents)
