@@ -1,16 +1,27 @@
 """目标管理API"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import date
+from pydantic import BaseModel
 from app.database import get_db
 from app.schemas.goal import GoalCreate, GoalResponse, GoalProgressCreate
 from app.models.goal import Goal, GoalProgress, GoalStatus, GoalType, GoalPeriod
 from app.models.user import User
 from app.services.goal_management import GoalManagementService
+from app.services.goal_guidance import goal_guidance_service
 from app.api.deps import get_current_user_required
 
 router = APIRouter()
+
+
+# ========== 新增：目标引导请求模型 ==========
+
+class GoalGuidanceRequest(BaseModel):
+    """目标引导请求"""
+    goal_type: GoalType
+    goal_description: Optional[str] = ""
+    target_value: Optional[float] = None
 
 
 @router.post("/", response_model=GoalResponse)
@@ -114,6 +125,40 @@ def generate_my_goals_from_analysis(
     service = GoalManagementService()
     goals = service.generate_goals_from_analysis(db, current_user.id)
     return goals
+
+
+@router.post("/guidance", response_model=Dict[str, Any])
+def get_goal_guidance(
+    request: GoalGuidanceRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取目标智能引导
+    
+    基于张展晖课程知识库和用户数据，生成个性化的训练建议：
+    - 心率区间计算（基于年龄和静息心率）
+    - 训练计划建议（频率、时长、强度分配）
+    - 课程知识要点
+    - 个性化建议
+    
+    需要登录
+    """
+    guidance = goal_guidance_service.generate_goal_guidance(
+        db=db,
+        user_id=current_user.id,
+        goal_type=request.goal_type,
+        goal_description=request.goal_description,
+        target_value=request.target_value
+    )
+    
+    if not guidance.get("success"):
+        raise HTTPException(
+            status_code=500,
+            detail=guidance.get("message", "生成引导失败")
+        )
+    
+    return guidance
 
 
 @router.get("/{goal_id}/completion", response_model=dict)
