@@ -19,7 +19,7 @@ router = APIRouter()
 
 class GoalGuidanceRequest(BaseModel):
     """目标引导请求"""
-    goal_type: GoalType
+    goal_type: str  # 接受字符串，如 RUNNING, WEIGHT_LOSS, CARDIO 等
     goal_description: Optional[str] = ""
     target_value: Optional[float] = None
 

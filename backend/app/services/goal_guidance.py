@@ -11,7 +11,7 @@ from datetime import datetime
 
 from app.models.user_profile import UserProfile
 from app.models.daily_health import GarminData
-from app.models.goal import GoalType
+# 不再导入 GoalType，直接使用字符串
 from app.services.digital_twin import DigitalTwinService
 from app.services.knowledge.rag_pipeline import rag_pipeline
 from app.utils.timezone import get_china_now
@@ -29,7 +29,7 @@ class GoalGuidanceService:
         self,
         db: Session,
         user_id: int,
-        goal_type: GoalType,
+        goal_type: str,
         goal_description: str = "",
         target_value: Optional[float] = None
     ) -> Dict[str, Any]:
@@ -86,7 +86,7 @@ class GoalGuidanceService:
             # 6. 组装完整的引导信息
             guidance = {
                 "success": True,
-                "goal_type": goal_type.value,
+                "goal_type": goal_type,
                 "heart_rate_zones": hr_zones,
                 "training_plan": training_plan,
                 "knowledge_points": knowledge_guidance.get("key_points", []),
@@ -133,7 +133,7 @@ class GoalGuidanceService:
     
     def _retrieve_course_knowledge(
         self,
-        goal_type: GoalType,
+        goal_type: str,
         goal_description: str,
         user_profile: UserProfile
     ) -> Dict[str, Any]:
@@ -171,25 +171,27 @@ class GoalGuidanceService:
     
     def _build_knowledge_query(
         self,
-        goal_type: GoalType,
+        goal_type: str,
         goal_description: str,
         user_profile: UserProfile
     ) -> str:
         """构建知识库查询问题"""
         queries = {
-            GoalType.WEIGHT_LOSS: f"如何科学有效地减肥？需要注意哪些训练原则和心率区间？{goal_description}",
-            GoalType.MUSCLE_GAIN: f"如何进行力量训练增肌？需要注意哪些训练原则？{goal_description}",
-            GoalType.CARDIO: f"如何提升心肺功能？应该在哪些心率区间训练？{goal_description}",
-            GoalType.FLEXIBILITY: f"如何提高柔韧度？有哪些训练方法和注意事项？{goal_description}",
-            GoalType.ENDURANCE: f"如何提升肌肉耐力？需要什么样的训练计划？{goal_description}",
-            GoalType.RUNNING: f"如何科学地进行跑步训练？应该如何分配心率区间？{goal_description}",
+            "WEIGHT_LOSS": f"如何科学有效地减肥？需要注意哪些训练原则和心率区间？{goal_description}",
+            "MUSCLE_GAIN": f"如何进行力量训练增肌？需要注意哪些训练原则？{goal_description}",
+            "CARDIO": f"如何提升心肺功能？应该在哪些心率区间训练？{goal_description}",
+            "FLEXIBILITY": f"如何提高柔韧度？有哪些训练方法和注意事项？{goal_description}",
+            "ENDURANCE": f"如何提升肌肉耐力？需要什么样的训练计划？{goal_description}",
+            "RUNNING": f"如何科学地进行跑步训练？应该如何分配心率区间？{goal_description}",
+            "EXERCISE": f"如何进行科学的运动训练？{goal_description}",
+            "WEIGHT": f"如何通过运动和饮食管理体重？{goal_description}",
         }
         
-        return queries.get(goal_type, f"关于 {goal_type.value} 训练的科学建议？{goal_description}")
+        return queries.get(goal_type.upper(), f"关于 {goal_type} 训练的科学建议？{goal_description}")
     
     def _generate_training_plan(
         self,
-        goal_type: GoalType,
+        goal_type: str,
         target_value: Optional[float],
         hr_zones: Optional[Dict[str, Any]],
         knowledge_guidance: Dict[str, Any]
@@ -205,33 +207,37 @@ class GoalGuidanceService:
         
         return plan
     
-    def _get_recommended_frequency(self, goal_type: GoalType) -> str:
+    def _get_recommended_frequency(self, goal_type: str) -> str:
         """获取推荐训练频率"""
         frequency_map = {
-            GoalType.WEIGHT_LOSS: "每周 4-5 次，有氧为主",
-            GoalType.MUSCLE_GAIN: "每周 3-4 次，力量训练",
-            GoalType.CARDIO: "每周 3-5 次，心肺训练",
-            GoalType.FLEXIBILITY: "每天 10-15 分钟拉伸",
-            GoalType.ENDURANCE: "每周 4-5 次，长时间低强度",
-            GoalType.RUNNING: "每周 3-4 次，包含长跑和间歇",
+            "WEIGHT_LOSS": "每周 4-5 次，有氧为主",
+            "MUSCLE_GAIN": "每周 3-4 次，力量训练",
+            "CARDIO": "每周 3-5 次，心肺训练",
+            "FLEXIBILITY": "每天 10-15 分钟拉伸",
+            "ENDURANCE": "每周 4-5 次，长时间低强度",
+            "RUNNING": "每周 3-4 次，包含长跑和间歇",
+            "EXERCISE": "每周 3-4 次",
+            "WEIGHT": "每周 4-5 次，有氧+力量",
         }
-        return frequency_map.get(goal_type, "每周 3-4 次")
+        return frequency_map.get(goal_type.upper(), "每周 3-4 次")
     
-    def _get_recommended_duration(self, goal_type: GoalType) -> str:
+    def _get_recommended_duration(self, goal_type: str) -> str:
         """获取推荐训练时长"""
         duration_map = {
-            GoalType.WEIGHT_LOSS: "每次 45-60 分钟",
-            GoalType.MUSCLE_GAIN: "每次 45-60 分钟",
-            GoalType.CARDIO: "每次 30-45 分钟",
-            GoalType.FLEXIBILITY: "每次 15-20 分钟",
-            GoalType.ENDURANCE: "每次 60-90 分钟",
-            GoalType.RUNNING: "每次 30-60 分钟",
+            "WEIGHT_LOSS": "每次 45-60 分钟",
+            "MUSCLE_GAIN": "每次 45-60 分钟",
+            "CARDIO": "每次 30-45 分钟",
+            "FLEXIBILITY": "每次 15-20 分钟",
+            "ENDURANCE": "每次 60-90 分钟",
+            "RUNNING": "每次 30-60 分钟",
+            "EXERCISE": "每次 30-45 分钟",
+            "WEIGHT": "每次 45-60 分钟",
         }
-        return duration_map.get(goal_type, "每次 30-45 分钟")
+        return duration_map.get(goal_type.upper(), "每次 30-45 分钟")
     
     def _get_intensity_distribution(
         self,
-        goal_type: GoalType,
+        goal_type: str,
         hr_zones: Optional[Dict[str, Any]]
     ) -> Dict[str, str]:
         """获取训练强度分配"""
@@ -239,31 +245,36 @@ class GoalGuidanceService:
             return {"note": "需要心率数据才能提供精确的强度分配"}
         
         distribution_map = {
-            GoalType.WEIGHT_LOSS: {
+            "WEIGHT_LOSS": {
                 "zone_2": "60% - 低强度有氧（燃脂区间）",
                 "zone_3": "30% - 中等强度有氧",
                 "zone_4": "10% - 高强度间歇"
             },
-            GoalType.CARDIO: {
+            "CARDIO": {
                 "zone_2": "70% - 低强度有氧（建立基础）",
                 "zone_3": "20% - 中等强度",
                 "zone_4": "10% - 高强度间歇"
             },
-            GoalType.RUNNING: {
+            "RUNNING": {
                 "zone_2": "80% - 轻松跑（建立有氧基础）",
                 "zone_3": "10% - 节奏跑",
                 "zone_4": "10% - 间歇跑"
             },
+            "EXERCISE": {
+                "zone_2": "70% - 低强度有氧",
+                "zone_3": "20% - 中等强度",
+                "zone_4": "10% - 高强度"
+            },
         }
         
-        return distribution_map.get(goal_type, {
-            "note": f"根据 {goal_type.value} 目标调整训练强度"
+        return distribution_map.get(goal_type.upper(), {
+            "note": f"根据 {goal_type} 目标调整训练强度"
         })
     
-    def _get_weekly_structure(self, goal_type: GoalType) -> List[str]:
+    def _get_weekly_structure(self, goal_type: str) -> List[str]:
         """获取周训练结构"""
         structure_map = {
-            GoalType.WEIGHT_LOSS: [
+            "WEIGHT_LOSS": [
                 "周一：有氧训练 45 分钟（心率区间 2）",
                 "周二：力量训练 + 有氧 30 分钟",
                 "周三：休息或轻度拉伸",
@@ -272,7 +283,7 @@ class GoalGuidanceService:
                 "周六：长时间有氧 60 分钟（心率区间 2）",
                 "周日：休息"
             ],
-            GoalType.RUNNING: [
+            "RUNNING": [
                 "周一：轻松跑 30-40 分钟（心率区间 2）",
                 "周二：间歇训练（心率区间 4-5）",
                 "周三：休息或交叉训练",
@@ -283,14 +294,14 @@ class GoalGuidanceService:
             ],
         }
         
-        return structure_map.get(goal_type, [
+        return structure_map.get(goal_type.upper(), [
             "根据目标类型定制训练计划",
             "建议咨询专业教练"
         ])
     
     def _get_progression_strategy(
         self,
-        goal_type: GoalType,
+        goal_type: str,
         target_value: Optional[float]
     ) -> str:
         """获取进阶策略"""
@@ -301,7 +312,7 @@ class GoalGuidanceService:
     
     def _generate_recommendations(
         self,
-        goal_type: GoalType,
+        goal_type: str,
         hr_zones: Optional[Dict[str, Any]],
         profile: UserProfile
     ) -> List[str]:
@@ -317,27 +328,32 @@ class GoalGuidanceService:
         
         # 基于目标类型的建议
         type_recommendations = {
-            GoalType.WEIGHT_LOSS: [
+            "WEIGHT_LOSS": [
                 "减肥的关键是制造热量缺口，运动 + 饮食控制",
                 "有氧运动为主，配合力量训练保持肌肉",
                 "避免过度节食，保证基础代谢"
             ],
-            GoalType.RUNNING: [
+            "RUNNING": [
                 "80% 的训练应该是轻松跑（能边跑边聊天的配速）",
                 "每周至少一次长距离跑，建立有氧基础",
                 "注意跑后拉伸和恢复"
             ],
+            "EXERCISE": [
+                "循序渐进，避免运动损伤",
+                "注意运动前热身和运动后拉伸",
+                "保证充足的休息和恢复"
+            ],
         }
         
-        recommendations.extend(type_recommendations.get(goal_type, []))
+        recommendations.extend(type_recommendations.get(goal_type.upper(), []))
         
         return recommendations
     
-    def _generate_basic_guidance(self, goal_type: GoalType) -> Dict[str, Any]:
+    def _generate_basic_guidance(self, goal_type: str) -> Dict[str, Any]:
         """生成基础引导（当用户数据不足时）"""
         return {
             "success": True,
-            "goal_type": goal_type.value,
+            "goal_type": goal_type,
             "message": "建议完善个人资料和同步 Garmin 数据，以获得更精准的训练建议",
             "basic_recommendations": [
                 "先进行基础体能评估",
