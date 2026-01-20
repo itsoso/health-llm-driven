@@ -150,7 +150,7 @@ class GoalGuidanceService:
             knowledge_results = rag_pipeline.retrieve_relevant_knowledge(
                 query=query,
                 category="exercise_science",  # 限定为运动科学分类
-                top_k=5
+                n_results=5
             )
             
             if knowledge_results:
