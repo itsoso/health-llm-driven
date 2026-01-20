@@ -121,7 +121,7 @@ export const checkinApi = {
 
 // 目标管理
 export const goalApi = {
-  create: (data: any) => api.post('/goals', data),
+  create: (data: any) => api.post('/goals/', data),
   getUserGoals: (userId: number, status?: string, goalType?: string, goalPeriod?: string) =>
     api.get(`/goals/user/${userId}`, {
       params: { status, goal_type: goalType, goal_period: goalPeriod },
