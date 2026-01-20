@@ -7,6 +7,7 @@ import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import dynamic from 'next/dynamic';
+import { workoutGuidanceApi } from '@/services/api';
 
 // 动态导入地图组件（客户端组件）
 const WorkoutMap = dynamic(() => import('@/components/WorkoutMap'), {
@@ -152,6 +153,8 @@ function WorkoutContent() {
   const [days, setDays] = useState(7);
   const [syncDays, setSyncDays] = useState(7);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showPostAnalysis, setShowPostAnalysis] = useState(false);
+  const [postAnalysis, setPostAnalysis] = useState<any>(null);
 
   // 获取运动记录列表
   const { data: workouts, isLoading: loadingWorkouts } = useQuery<WorkoutSummary[]>({
@@ -245,6 +248,21 @@ function WorkoutContent() {
     },
     onError: (error: Error) => {
       setMessage({ type: 'error', text: `✗ ${error.message}` });
+      setTimeout(() => setMessage(null), 5000);
+    },
+  });
+
+  // 运动后科学分析
+  const postAnalysisMutation = useMutation({
+    mutationFn: (workoutId: number) => workoutGuidanceApi.getPostWorkoutAnalysis(workoutId),
+    onSuccess: (response) => {
+      setPostAnalysis(response.data);
+      setShowPostAnalysis(true);
+      setMessage({ type: 'success', text: '✓ 科学分析完成' });
+      setTimeout(() => setMessage(null), 3000);
+    },
+    onError: (error: any) => {
+      setMessage({ type: 'error', text: `✗ 分析失败: ${error.message}` });
       setTimeout(() => setMessage(null), 5000);
     },
   });
@@ -571,13 +589,22 @@ function WorkoutContent() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => analyzeMutation.mutate(workoutDetail.id)}
-                      disabled={analyzeMutation.isPending}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors text-sm"
-                    >
-                      {analyzeMutation.isPending ? '分析中...' : '🤖 AI分析'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => analyzeMutation.mutate(workoutDetail.id)}
+                        disabled={analyzeMutation.isPending}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors text-sm"
+                      >
+                        {analyzeMutation.isPending ? '分析中...' : '🤖 AI分析'}
+                      </button>
+                      <button
+                        onClick={() => postAnalysisMutation.mutate(workoutDetail.id)}
+                        disabled={postAnalysisMutation.isPending}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm"
+                      >
+                        {postAnalysisMutation.isPending ? '分析中...' : '📊 科学分析'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* 核心数据 */}
@@ -1275,6 +1302,105 @@ function WorkoutContent() {
                         }
                       })()}
                     </div>
+                  </div>
+                )}
+
+                {/* 运动后科学分析 */}
+                {showPostAnalysis && postAnalysis && postAnalysis.success && (
+                  <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/20 rounded-xl p-6 border border-blue-700/50 mt-6">
+                    <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                      <span>📊</span> 运动后科学分析
+                    </h3>
+
+                    {/* 整体评分 */}
+                    {postAnalysis.overall_rating && (
+                      <div className="bg-slate-800/60 rounded-xl p-6 mb-6 text-center">
+                        <div className="text-6xl mb-2">{postAnalysis.overall_rating.emoji}</div>
+                        <div className="text-3xl font-bold text-white mb-2">{postAnalysis.overall_rating.rating}</div>
+                        <div className="text-lg text-gray-300">{postAnalysis.overall_rating.message}</div>
+                        <div className="text-sm text-gray-400 mt-2">评分: {postAnalysis.overall_rating.score}/10</div>
+                      </div>
+                    )}
+
+                    {/* 训练强度评估 */}
+                    {postAnalysis.intensity_assessment && (
+                      <div className="bg-slate-800/60 rounded-xl p-6 mb-6">
+                        <h4 className="text-xl font-bold text-white mb-4">💪 训练强度评估</h4>
+                        <div className="flex items-center gap-4 mb-4">
+                          <span className="text-4xl">{postAnalysis.intensity_assessment.emoji}</span>
+                          <div>
+                            <div className="text-2xl font-bold text-white">{postAnalysis.intensity_assessment.level}</div>
+                            <div className="text-sm text-gray-400">评分: {postAnalysis.intensity_assessment.score}/10</div>
+                          </div>
+                        </div>
+                        {postAnalysis.intensity_assessment.factors && (
+                          <ul className="space-y-2">
+                            {postAnalysis.intensity_assessment.factors.map((factor: string, idx: number) => (
+                              <li key={idx} className="text-gray-300 flex items-start gap-2">
+                                <span className="text-blue-400">•</span>
+                                <span>{factor}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 心率区间分析 */}
+                    {postAnalysis.hr_analysis && postAnalysis.hr_analysis.has_hr_data && (
+                      <div className="bg-slate-800/60 rounded-xl p-6 mb-6">
+                        <h4 className="text-xl font-bold text-white mb-4">❤️ 心率区间分析</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+                          {Object.entries(postAnalysis.hr_analysis.zones).map(([key, zone]: [string, any]) => (
+                            <div key={key} className="bg-slate-700/50 rounded-lg p-3">
+                              <div className="text-xs text-gray-400 mb-1">{zone.name}</div>
+                              <div className="text-2xl font-bold text-white">{zone.percentage}%</div>
+                              <div className="text-xs text-gray-400 mt-1">{Math.floor(zone.seconds / 60)}分钟</div>
+                            </div>
+                          ))}
+                        </div>
+                        {postAnalysis.hr_analysis.recommendations && postAnalysis.hr_analysis.recommendations.length > 0 && (
+                          <div className="space-y-2">
+                            {postAnalysis.hr_analysis.recommendations.map((rec: string, idx: number) => (
+                              <div key={idx} className="text-gray-300 flex items-start gap-2">
+                                <span>{rec.split(' ')[0]}</span>
+                                <span>{rec.substring(rec.indexOf(' ') + 1)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 恢复建议 */}
+                    {postAnalysis.recovery_tips && postAnalysis.recovery_tips.length > 0 && (
+                      <div className="bg-slate-800/60 rounded-xl p-6 mb-6">
+                        <h4 className="text-xl font-bold text-white mb-4">🛀 恢复建议</h4>
+                        <div className="space-y-3">
+                          {postAnalysis.recovery_tips.map((tip: string, idx: number) => (
+                            <div key={idx} className="flex items-start gap-3 bg-slate-700/50 rounded-lg p-3">
+                              <span className="text-xl">{tip.split(' ')[0]}</span>
+                              <span className="text-gray-200 flex-1">{tip.substring(tip.indexOf(' ') + 1)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 改进建议 */}
+                    {postAnalysis.improvement_tips && postAnalysis.improvement_tips.length > 0 && (
+                      <div className="bg-slate-800/60 rounded-xl p-6">
+                        <h4 className="text-xl font-bold text-white mb-4">📈 改进建议</h4>
+                        <ul className="space-y-2">
+                          {postAnalysis.improvement_tips.map((tip: string, idx: number) => (
+                            <li key={idx} className="text-gray-300 flex items-start gap-2">
+                              <span className="text-blue-400">→</span>
+                              <span>{tip}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </>

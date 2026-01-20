@@ -296,3 +296,13 @@ export const deviceApi = {
   // 解绑设备
   unbindDevice: (deviceType: string) => api.delete(`/devices/${deviceType}`),
 };
+
+// 运动指导
+export const workoutGuidanceApi = {
+  // 获取运动前指导
+  getPreWorkoutGuidance: (goalId?: number, workoutType?: string) =>
+    api.post('/workout/pre-workout-guidance', { goal_id: goalId, workout_type: workoutType }),
+  // 获取运动后分析
+  getPostWorkoutAnalysis: (workoutId: number) =>
+    api.post(`/workout/post-workout-analysis/${workoutId}`),
+};
