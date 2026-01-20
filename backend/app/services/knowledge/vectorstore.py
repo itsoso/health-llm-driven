@@ -170,13 +170,30 @@ class VectorStoreService:
                 if not content.strip():
                     continue
                 
+                # 基础元数据
                 metadata = {
                     "source": source,
                     "title": doc.get("title", ""),
                     "category": doc.get("category", "general"),
                     "created_at": datetime.now().isoformat(),
-                    **(doc.get("metadata", {}))
                 }
+                
+                # 合并额外的元数据，并处理不支持的类型
+                extra_metadata = doc.get("metadata", {})
+                for key, value in extra_metadata.items():
+                    # ChromaDB 只支持 str, int, float, bool, None
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        metadata[key] = value
+                    elif isinstance(value, list):
+                        # 将列表转换为逗号分隔的字符串
+                        metadata[key] = ", ".join(str(v) for v in value)
+                    elif isinstance(value, dict):
+                        # 将字典转换为 JSON 字符串
+                        import json
+                        metadata[key] = json.dumps(value, ensure_ascii=False)
+                    else:
+                        # 其他类型转换为字符串
+                        metadata[key] = str(value)
                 
                 ids.append(doc_id)
                 contents.append(content)

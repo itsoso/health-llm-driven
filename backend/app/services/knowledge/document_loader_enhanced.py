@@ -273,16 +273,16 @@ class EnhancedDocumentLoader:
         # 推断分类
         category = self._infer_category_enhanced(title, content, section_info.get("key_concepts", []))
         
-        # 构建元数据
+        # 构建元数据（ChromaDB 只支持 str, int, float, bool, None）
         metadata = {
             "source": source,
             "author": author,
             "difficulty": difficulty,
-            "target_audience": target_audience or [],
+            "target_audience": ", ".join(target_audience) if target_audience else "",
             "breadcrumb": breadcrumb,
             "section_level": section_info.get("level", 0),
-            "parent_titles": section_info.get("parent_titles", []),
-            "key_concepts": section_info.get("key_concepts", []),
+            "parent_titles": " > ".join(section_info.get("parent_titles", [])),
+            "key_concepts": ", ".join(section_info.get("key_concepts", [])),
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
             "created_at": datetime.now().isoformat()
@@ -456,7 +456,7 @@ class EnhancedDocumentLoader:
                     "source": source,
                     "author": author,
                     "difficulty": difficulty,
-                    "target_audience": target_audience or [],
+                    "target_audience": ", ".join(target_audience) if target_audience else "",
                     "chunk_index": i,
                     "total_chunks": len(chunks),
                     "fallback_mode": True,
