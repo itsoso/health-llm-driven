@@ -275,13 +275,15 @@ function OverviewContent() {
     hrv: r.hrv,
   }));
 
-  // 计算本周强度活动时间（从周一开始，使用运动记录的时长）
-  // 过滤本周的运动记录
-  const thisWeekWorkouts = workoutsData?.filter(w => w.workout_date >= mondayDateStr) || [];
-  // 计算本周运动总时长（分钟）
-  const weeklyIntensityMinutes = Math.round(
-    thisWeekWorkouts.reduce((sum, w) => sum + (w.duration_seconds || 0), 0) / 60
-  );
+  // 计算本周强度活动时间（从周一开始，使用 Garmin 的强度活动分钟数）
+  // 过滤本周的 Garmin 数据
+  const thisWeekRecords = sortedRecords.filter(r => r.record_date >= mondayDateStr);
+  // 计算本周强度活动时间：中等强度 + 高强度×2（Garmin 官方算法）
+  const weeklyIntensityMinutes = thisWeekRecords.reduce((sum, r) => {
+    const moderate = r.moderate_intensity_minutes || 0;
+    const vigorous = r.vigorous_intensity_minutes || 0;
+    return sum + moderate + vigorous * 2;
+  }, 0);
   const intensityGoal = record?.intensity_minutes_goal || 150;
   const intensityProgress = Math.min((weeklyIntensityMinutes / intensityGoal) * 100, 100);
 
