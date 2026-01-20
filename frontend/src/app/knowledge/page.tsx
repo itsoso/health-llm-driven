@@ -712,12 +712,33 @@ function KnowledgeManagement() {
                       accept=".md,.markdown"
                       onChange={(e) => {
                         const files = Array.from(e.target.files || []);
+                        console.log('文件选择变化:', files);
                         setSelectedFiles(files);
                       }}
                       className="hidden"
                     />
                     <div
-                      onClick={() => courseFileInputRef.current?.click()}
+                      onClick={(e) => {
+                        console.log('点击上传区域', courseFileInputRef.current);
+                        courseFileInputRef.current?.click();
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('拖拽文件', e.dataTransfer.files);
+                        const droppedFiles = Array.from(e.dataTransfer.files).filter(
+                          file => file.name.endsWith('.md') || file.name.endsWith('.markdown')
+                        );
+                        if (droppedFiles.length > 0) {
+                          setSelectedFiles(droppedFiles);
+                        } else {
+                          alert('请拖拽 .md 或 .markdown 文件');
+                        }
+                      }}
                       className="border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
                     >
                       <div className="text-4xl mb-2">📁</div>
