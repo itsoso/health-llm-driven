@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user_profile import UserProfile
 from app.models.goal import Goal
-from app.models.workout import Workout
+from app.models.daily_health import WorkoutRecord
 from app.services.digital_twin import DigitalTwinService
 from app.services.knowledge.rag_pipeline import RAGPipeline
 from app.utils.timezone import get_china_now
@@ -44,7 +44,7 @@ class PostWorkoutAnalysisService:
             logger.info(f"[运动后分析] 开始为用户 {user_id} 分析运动 {workout_id}")
             
             # 1. 获取运动记录
-            workout = db.query(Workout).filter_by(
+            workout = db.query(WorkoutRecord).filter_by(
                 id=workout_id,
                 user_id=user_id
             ).first()
@@ -122,7 +122,7 @@ class PostWorkoutAnalysisService:
     
     def _analyze_heart_rate_distribution(
         self,
-        workout: Workout,
+        workout: WorkoutRecord,
         hr_zones: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """分析心率区间分布"""
@@ -218,7 +218,7 @@ class PostWorkoutAnalysisService:
     
     def _assess_training_intensity(
         self,
-        workout: Workout,
+        workout: WorkoutRecord,
         hr_zones: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """评估训练强度"""
@@ -286,7 +286,7 @@ class PostWorkoutAnalysisService:
     
     def _retrieve_post_workout_knowledge(
         self,
-        workout: Workout,
+        workout: WorkoutRecord,
         hr_analysis: Dict[str, Any],
         intensity_assessment: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -330,7 +330,7 @@ class PostWorkoutAnalysisService:
     
     def _generate_recovery_tips(
         self,
-        workout: Workout,
+        workout: WorkoutRecord,
         intensity_assessment: Dict[str, Any],
         knowledge: Dict[str, Any]
     ) -> List[str]:
@@ -367,7 +367,7 @@ class PostWorkoutAnalysisService:
     
     def _generate_improvement_tips(
         self,
-        workout: Workout,
+        workout: WorkoutRecord,
         hr_analysis: Dict[str, Any],
         knowledge: Dict[str, Any]
     ) -> List[str]:
@@ -397,7 +397,7 @@ class PostWorkoutAnalysisService:
         self,
         db: Session,
         user_id: int,
-        workout: Workout
+        workout: WorkoutRecord
     ) -> Optional[Dict[str, Any]]:
         """计算与目标的对比"""
         try:
@@ -431,7 +431,7 @@ class PostWorkoutAnalysisService:
             logger.error(f"[运动后分析] 计算目标进度失败: {e}")
             return None
     
-    def _format_workout_summary(self, workout: Workout) -> Dict[str, Any]:
+    def _format_workout_summary(self, workout: WorkoutRecord) -> Dict[str, Any]:
         """格式化运动摘要"""
         return {
             "id": workout.id,
