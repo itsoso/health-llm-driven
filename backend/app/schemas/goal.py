@@ -7,7 +7,7 @@ from app.models.goal import GoalType, GoalPeriod, GoalStatus
 
 class GoalCreate(BaseModel):
     """创建目标"""
-    user_id: int
+    user_id: Optional[int] = None  # 可选，API 端点会自动设置为当前用户
     goal_type: GoalType
     goal_period: GoalPeriod
     title: str

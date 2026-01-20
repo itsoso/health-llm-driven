@@ -31,13 +31,25 @@ def create_goal(
     db: Session = Depends(get_db)
 ):
     """创建目标（需要登录）"""
-    # 强制使用当前用户ID
-    goal_data = goal.model_dump()
-    goal_data["user_id"] = current_user.id
-    from app.schemas.goal import GoalCreate as GC
-    goal = GC(**goal_data)
-    service = GoalManagementService()
-    return service.create_goal(db, goal)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"[创建目标] 用户 {current_user.id} 请求创建目标，数据: {goal.model_dump()}")
+        
+        # 强制使用当前用户ID
+        goal_data = goal.model_dump()
+        goal_data["user_id"] = current_user.id
+        from app.schemas.goal import GoalCreate as GC
+        goal = GC(**goal_data)
+        service = GoalManagementService()
+        result = service.create_goal(db, goal)
+        
+        logger.info(f"[创建目标] 目标创建成功，ID: {result.id}")
+        return result
+    except Exception as e:
+        logger.error(f"[创建目标] 创建失败: {e}", exc_info=True)
+        raise
 
 
 # ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
