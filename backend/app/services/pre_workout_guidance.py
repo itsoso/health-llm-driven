@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from app.models.user import UserProfile
+from app.models.user_profile import UserProfile
 from app.models.goal import Goal
 from app.models.daily_health import GarminData
 from app.services.digital_twin import DigitalTwinService
