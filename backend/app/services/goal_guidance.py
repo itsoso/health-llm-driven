@@ -146,22 +146,31 @@ class GoalGuidanceService:
                 logger.warning("[目标引导] RAG 服务不可用")
                 return {"key_points": [], "sources": []}
             
-            # 调用 RAG
-            result = rag_pipeline.answer_question(
-                question=query,
+            # 调用 RAG - 使用 retrieve_relevant_knowledge 检索相关知识
+            knowledge_results = rag_pipeline.retrieve_relevant_knowledge(
+                query=query,
                 category="exercise_science",  # 限定为运动科学分类
-                include_health_data=False
+                top_k=5
             )
             
-            if result.get("success"):
+            if knowledge_results:
+                # 提取关键点
+                key_points = []
+                sources = []
+                for item in knowledge_results:
+                    if item.get("content"):
+                        key_points.append(item["content"][:200])  # 截取前200字符作为要点
+                    if item.get("metadata", {}).get("source_title"):
+                        sources.append(item["metadata"]["source_title"])
+                
                 return {
-                    "key_points": result.get("key_points", []),
-                    "sources": result.get("sources", []),
-                    "answer": result.get("answer", "")
+                    "key_points": key_points[:5],  # 最多5个要点
+                    "sources": list(set(sources))[:3],  # 最多3个来源，去重
+                    "raw_knowledge": knowledge_results
                 }
             else:
-                logger.warning(f"[目标引导] RAG 查询失败: {result.get('error')}")
-                return {"key_points": [], "sources": []}
+                logger.warning(f"[目标引导] 未检索到相关知识")
+                return {"key_points": [], "sources": [], "raw_knowledge": []}
                 
         except Exception as e:
             logger.error(f"[目标引导] 检索课程知识失败: {e}")
@@ -319,9 +328,11 @@ class GoalGuidanceService:
         
         # 基于心率区间的建议
         if hr_zones:
+            max_hr = hr_zones.get('max_heart_rate', 180)
+            zone2 = hr_zones.get('zone2_fat_burn', (120, 140))
             recommendations.append(
-                f"你的最大心率约为 {hr_zones['max_hr']} bpm，"
-                f"建议大部分训练保持在 {hr_zones['zone_2']['min']}-{hr_zones['zone_2']['max']} bpm（有氧区间）"
+                f"你的最大心率约为 {max_hr} bpm，"
+                f"建议大部分训练保持在 {zone2[0]}-{zone2[1]} bpm（有氧燃脂区间）"
             )
         
         # 基于目标类型的建议
