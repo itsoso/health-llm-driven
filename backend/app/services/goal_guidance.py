@@ -62,10 +62,8 @@ class GoalGuidanceService:
             hr_zones = None
             if profile.age and resting_hr:
                 digital_twin = DigitalTwinService(db, user_id)
-                hr_zones = digital_twin.calculate_target_heart_rate_zones(
-                    age=profile.age,
-                    resting_hr=resting_hr
-                )
+                # calculate_target_heart_rate_zones() 不接受参数，从 self.profile 和内部数据获取
+                hr_zones = digital_twin.calculate_target_heart_rate_zones()
                 logger.info(f"[目标引导] 计算心率区间成功: {hr_zones}")
             
             # 4. 从知识库检索相关课程内容
