@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, subDays, startOfWeek } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { utcToZonedTime } from 'date-fns-tz';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -173,7 +173,7 @@ function OverviewContent() {
   const { token } = useAuth();
   // 使用北京时间 (UTC+8) 计算日期
   const TIMEZONE = 'Asia/Shanghai';
-  const nowInTimezone = toZonedTime(new Date(), TIMEZONE);
+  const nowInTimezone = utcToZonedTime(new Date(), TIMEZONE);
   const today = format(nowInTimezone, 'yyyy-MM-dd');
   const weekAgo = format(subDays(nowInTimezone, 7), 'yyyy-MM-dd');
   const monthAgo = format(subDays(nowInTimezone, 30), 'yyyy-MM-dd');
