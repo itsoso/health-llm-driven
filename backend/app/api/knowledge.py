@@ -18,6 +18,7 @@ from app.services.knowledge import VectorStoreService, RAGPipeline, DocumentLoad
 from app.services.knowledge.vectorstore import vector_store
 from app.services.knowledge.rag_pipeline import rag_pipeline
 from app.services.knowledge.document_loader import document_loader
+from app.services.knowledge.document_loader_enhanced import enhanced_loader, zhang_zhanhui_loader
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge-base"])
 logger = logging.getLogger(__name__)
@@ -65,6 +66,17 @@ class RAGQuery(BaseModel):
 class DeleteBySourceInput(BaseModel):
     """按来源删除"""
     source: str = Field(..., description="要删除的来源标识")
+
+
+class CourseUploadInput(BaseModel):
+    """课程上传输入（用于张展晖等专业课程）"""
+    content: str = Field(..., description="课程内容（Markdown格式）")
+    title: str = Field(..., description="课程标题")
+    author: str = Field(default="张展晖", description="作者名称")
+    source: str = Field(..., description="来源标识，如 'zhang_zhanhui_01'")
+    difficulty: str = Field(default="intermediate", description="难度：beginner/intermediate/advanced")
+    target_audience: List[str] = Field(default_factory=list, description="目标人群，如 ['跑步爱好者', '减脂人群']")
+    course_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="额外元数据")
 
 
 # ========== API Endpoints ==========
@@ -159,6 +171,86 @@ def add_text_document(
         )
     
     return result
+
+
+@router.post("/documents/course", summary="上传专业课程到知识库（增强版）")
+def upload_course(
+    input_data: CourseUploadInput,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    上传专业课程内容到知识库（使用增强版加载器）
+    
+    专为运动科学课程（如张展晖课程）优化：
+    - 保留标题层级和面包屑导航
+    - 更大的分块大小（1800-2000字符）
+    - 丰富的元数据（作者、难度、目标人群、关键概念）
+    - 智能识别课程结构
+    
+    需要管理员权限
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以添加知识库内容"
+        )
+    
+    if not vector_store.is_available():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="知识库服务不可用"
+        )
+    
+    logger.info(f"[课程上传] 用户 {current_user.id} 开始上传课程: {input_data.title}")
+    logger.info(f"[课程上传] 作者: {input_data.author}, 来源: {input_data.source}")
+    
+    try:
+        # 使用增强版加载器处理课程内容
+        documents = zhang_zhanhui_loader.load_course_markdown(
+            content=input_data.content,
+            source=input_data.source,
+            author=input_data.author,
+            difficulty=input_data.difficulty,
+            target_audience=input_data.target_audience,
+            course_metadata=input_data.course_metadata
+        )
+        
+        if not documents:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="课程内容解析失败或为空"
+            )
+        
+        logger.info(f"[课程上传] 课程解析完成，共 {len(documents)} 个文档块，开始向量化...")
+        
+        # 添加到向量库
+        result = vector_store.add_documents(documents, source=input_data.source)
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "添加文档失败")
+            )
+        
+        logger.info(f"[课程上传] 完成！结果: {result}")
+        
+        return {
+            **result,
+            "course_title": input_data.title,
+            "author": input_data.author,
+            "difficulty": input_data.difficulty,
+            "target_audience": input_data.target_audience
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[课程上传] 失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"上传课程失败: {str(e)}"
+        )
 
 
 @router.post("/documents/upload", summary="上传文件到知识库")
