@@ -60,7 +60,7 @@ export default function EnvironmentPage() {
   }, []);
 
   const loadData = async () => {
-    const token = Taro.getStorageSync('token');
+    const token = Taro.getStorageSync('access_token');
     if (!token) {
       setLoading(false);
       setError('请先登录');

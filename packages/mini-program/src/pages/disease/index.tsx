@@ -81,9 +81,9 @@ export default function DiseasePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = useCallback(async () => {
-    const token = Taro.getStorageSync('token');
+    const token = Taro.getStorageSync('access_token');
     if (!token) {
-      Taro.switchTab({ url: '/pages/index/index' });
+      setError('请先登录');
       return;
     }
 
