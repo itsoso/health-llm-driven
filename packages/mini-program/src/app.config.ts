@@ -11,6 +11,7 @@ export default {
     'pages/settings/index',      // 我的
     'pages/workout/index',       // 运动训练
     'pages/workout-detail/index',// 运动详情
+    'pages/workout-guidance/index', // 运动指导
     'pages/heart-rate/index',    // 心率追踪
     'pages/garmin/index',        // Garmin绑定
     'pages/garmin-data/index',   // Garmin数据列表

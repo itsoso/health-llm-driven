@@ -134,6 +134,27 @@ export interface DailyDietSummary {
   meals: DietRecord[];
 }
 
+// 运动前指导
+export interface PreWorkoutGuidance {
+  user_status: {
+    body_battery: number | null;
+    hrv: number | null;
+    sleep_score: number | null;
+    stress_level: number | null;
+    readiness: string;
+  };
+  training_objective: string;
+  heart_rate_zones: {
+    max_heart_rate: number;
+    zone2_fat_burn: [number, number];
+    zone3_aerobic: [number, number];
+    zone4_threshold: [number, number];
+  };
+  warm_up: string[];
+  key_reminders: string[];
+  course_insights: string[];
+}
+
 // API 端点
 export const API_ENDPOINTS = {
   AUTH: {
@@ -151,6 +172,7 @@ export const API_ENDPOINTS = {
   },
   WORKOUT: {
     MY_LIST: '/workout/me',
+    PRE_GUIDANCE: '/workout/pre-workout-guidance',
   },
   DIET: {
     MY_DAILY: '/diet/records/me/date',

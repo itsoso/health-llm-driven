@@ -1,0 +1,269 @@
+@import '../../styles/variables.scss';
+
+.workout-guidance-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #F3F4F6 0%, #FFFFFF 100%);
+  padding: $gap-md;
+  padding-bottom: 120px;
+}
+
+// 页面标题
+.page-header {
+  text-align: center;
+  margin-bottom: $gap-lg;
+  
+  .page-title {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1F2937;
+    display: block;
+    margin-bottom: $gap-xs;
+  }
+  
+  .page-subtitle {
+    font-size: 22px;
+    color: #6B7280;
+    display: block;
+  }
+}
+
+// 加载和错误状态
+.loading-container,
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  
+  .loading-text,
+  .error-text {
+    font-size: 26px;
+    color: #6B7280;
+    margin-top: $gap-md;
+  }
+  
+  .error-icon {
+    font-size: 64px;
+  }
+  
+  .retry-btn {
+    margin-top: $gap-lg;
+    background: linear-gradient(135deg, $accent-indigo, $accent-purple);
+    color: #FFFFFF;
+    border: none;
+    border-radius: $radius-md;
+    padding: $gap-sm $gap-lg;
+  }
+}
+
+// 区块
+.section {
+  margin-bottom: $gap-lg;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: $gap-xs;
+  margin-bottom: $gap-sm;
+  
+  .section-icon {
+    font-size: 28px;
+  }
+  
+  .section-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #1F2937;
+  }
+}
+
+// 状态卡片
+.status-card {
+  background: #FFFFFF;
+  border-radius: $radius-md;
+  padding: $gap-md;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: $gap-md;
+    margin-bottom: $gap-md;
+  }
+  
+  .status-item {
+    text-align: center;
+    
+    .status-label {
+      font-size: 20px;
+      color: #6B7280;
+      display: block;
+      margin-bottom: 4px;
+    }
+    
+    .status-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: $accent-indigo;
+      display: block;
+      font-family: 'DIN', -apple-system, monospace;
+    }
+  }
+  
+  .readiness-badge {
+    text-align: center;
+    padding: $gap-sm;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+    border-radius: $radius-sm;
+    
+    .readiness-text {
+      font-size: 24px;
+      font-weight: 600;
+      color: $accent-indigo;
+    }
+  }
+}
+
+// 训练目标卡片
+.objective-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+  border-radius: $radius-md;
+  padding: $gap-md;
+  
+  .objective-text {
+    font-size: 24px;
+    line-height: 1.6;
+    color: #374151;
+    font-weight: 500;
+  }
+}
+
+// 心率区间卡片
+.zones-card {
+  background: #FFFFFF;
+  border-radius: $radius-md;
+  padding: $gap-md;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  
+  .zone-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: $gap-sm;
+    margin-bottom: $gap-xs;
+    border-radius: $radius-sm;
+    
+    &.max-hr {
+      background: rgba(239, 68, 68, 0.1);
+      
+      .zone-value {
+        color: #EF4444;
+      }
+    }
+    
+    &.zone2 {
+      background: rgba(34, 197, 94, 0.1);
+      
+      .zone-value {
+        color: #22C55E;
+      }
+    }
+    
+    &.zone3 {
+      background: rgba(59, 130, 246, 0.1);
+      
+      .zone-value {
+        color: #3B82F6;
+      }
+    }
+    
+    &.zone4 {
+      background: rgba(245, 158, 11, 0.1);
+      
+      .zone-value {
+        color: #F59E0B;
+      }
+    }
+    
+    .zone-label {
+      font-size: 22px;
+      color: #374151;
+    }
+    
+    .zone-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: 'DIN', -apple-system, monospace;
+    }
+  }
+}
+
+// 提示卡片
+.tips-card {
+  background: #FFFFFF;
+  border-radius: $radius-md;
+  padding: $gap-md;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  
+  &.insights {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.05), rgba(245, 158, 11, 0.05));
+  }
+  
+  .tip-item {
+    display: flex;
+    align-items: flex-start;
+    gap: $gap-xs;
+    margin-bottom: $gap-sm;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+    
+    &.warning {
+      .tip-text {
+        color: #DC2626;
+      }
+    }
+    
+    .tip-bullet {
+      font-size: 20px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    
+    .tip-text {
+      font-size: 22px;
+      line-height: 1.6;
+      color: #374151;
+      flex: 1;
+    }
+  }
+}
+
+// 操作区域
+.action-section {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: $gap-md;
+  background: #FFFFFF;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
+  
+  .start-btn {
+    width: 100%;
+    background: linear-gradient(135deg, $accent-indigo, $accent-purple);
+    color: #FFFFFF;
+    font-size: 28px;
+    font-weight: 600;
+    border: none;
+    border-radius: $radius-md;
+    padding: $gap-md;
+    
+    &:active {
+      opacity: 0.8;
+    }
+  }
+}

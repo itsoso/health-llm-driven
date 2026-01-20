@@ -11,6 +11,7 @@ import {
   DailyRecommendation,
   WorkoutSummary,
   DailyDietSummary,
+  PreWorkoutGuidance,
 } from '../types';
 
 /**
@@ -165,6 +166,23 @@ export async function getTodayWorkouts(): Promise<WorkoutSummary[]> {
   } catch (e) {
     console.error('获取运动记录失败:', e);
     return [];
+  }
+}
+
+/**
+ * 获取运动前指导
+ * @param workoutType 运动类型（如：running, cycling等）
+ * @param goalId 可选的目标ID
+ */
+export async function getPreWorkoutGuidance(workoutType: string, goalId?: number): Promise<PreWorkoutGuidance | null> {
+  try {
+    return await post<PreWorkoutGuidance>(API_ENDPOINTS.WORKOUT.PRE_GUIDANCE, {
+      workout_type: workoutType,
+      goal_id: goalId,
+    });
+  } catch (e) {
+    console.error('获取运动指导失败:', e);
+    return null;
   }
 }
 

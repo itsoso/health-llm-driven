@@ -15,7 +15,8 @@ import {
   getMorningBriefing,
   getAIRecommendation,
   getCurrentReminders,
-  getDailySchedule
+  getDailySchedule,
+  getPreWorkoutGuidance
 } from '../../services/api';
 import { getToken } from '../../services/request';
 import { 
@@ -27,7 +28,8 @@ import {
   MorningBriefing,
   AIRecommendation,
   HealthReminder,
-  ScheduleItem
+  ScheduleItem,
+  PreWorkoutGuidance
 } from '../../types';
 import './index.scss';
 
@@ -41,6 +43,7 @@ interface HomeData {
   aiRecommendation: AIRecommendation | null;
   reminders: HealthReminder[];
   schedule: ScheduleItem[];
+  workoutGuidance: PreWorkoutGuidance | null;
   loading: boolean;
 }
 
@@ -61,6 +64,7 @@ export default function Index() {
     aiRecommendation: null,
     reminders: [],
     schedule: [],
+    workoutGuidance: null,
     loading: false,
   });
 
@@ -124,16 +128,28 @@ export default function Index() {
         getDailySchedule()
       ]);
 
+      // 如果今日没有运动记录，获取运动指导
+      let workoutGuidance: PreWorkoutGuidance | null = null;
+      const workouts = workoutsData.status === 'fulfilled' ? workoutsData.value : [];
+      if (workouts.length === 0) {
+        try {
+          workoutGuidance = await getPreWorkoutGuidance('running');
+        } catch (e) {
+          console.error('获取运动指导失败:', e);
+        }
+      }
+
       setHomeData({
         garmin: garminData.status === 'fulfilled' ? garminData.value : null,
         recommendation: recommendationData.status === 'fulfilled' ? recommendationData.value : null,
         rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
-        workouts: workoutsData.status === 'fulfilled' ? workoutsData.value : [],
+        workouts,
         diet: dietData.status === 'fulfilled' ? dietData.value : null,
         briefing: briefingData.status === 'fulfilled' ? briefingData.value : null,
         aiRecommendation: aiRecData.status === 'fulfilled' ? aiRecData.value : null,
         reminders: remindersData.status === 'fulfilled' ? (remindersData.value?.reminders || []) : [],
         schedule: scheduleData.status === 'fulfilled' ? (scheduleData.value?.schedule || []) : [],
+        workoutGuidance,
         loading: false,
       });
     } catch (error) {
@@ -396,11 +412,11 @@ export default function Index() {
             </View>
             <Text className="quick-label">饮食记录</Text>
           </View>
-          <View className="quick-item" onClick={() => handleNavToPage('workout')}>
+          <View className="quick-item" onClick={() => Taro.navigateTo({ url: '/pages/workout-guidance/index' })}>
             <View className="quick-icon-wrap orange">
               <Image className="quick-icon-img" src={require('../../assets/icons/quick-workout.png')} />
             </View>
-            <Text className="quick-label">运动训练</Text>
+            <Text className="quick-label">运动指导</Text>
           </View>
           <View className="quick-item" onClick={() => handleNavToPage('review')}>
             <View className="quick-icon-wrap green">
@@ -415,13 +431,13 @@ export default function Index() {
       <View className="section">
         <View className="energy-cards">
           {/* 今日运动 */}
-          <View className="energy-card" onClick={() => handleNavToPage('workout')}>
-            <View className="energy-header">
+          <View className="energy-card">
+            <View className="energy-header" onClick={() => handleNavToPage('workout')}>
               <Text className="energy-icon">🏃</Text>
               <Text className="energy-title">今日运动</Text>
             </View>
             {homeData.workouts && homeData.workouts.length > 0 ? (
-              <View className="energy-content">
+              <View className="energy-content" onClick={() => handleNavToPage('workout')}>
                 <View className="workout-list">
                   {homeData.workouts.slice(0, 2).map((w, idx) => (
                     <View key={idx} className="workout-item">
@@ -437,8 +453,34 @@ export default function Index() {
                   </Text>
                 </View>
               </View>
+            ) : homeData.workoutGuidance ? (
+              <View className="energy-content workout-guidance">
+                <View className="guidance-objective">
+                  <Text className="guidance-icon">🎯</Text>
+                  <Text className="guidance-text">{homeData.workoutGuidance.training_objective}</Text>
+                </View>
+                <View className="guidance-zones">
+                  <Text className="zones-label">心率区间</Text>
+                  <View className="zone-item">
+                    <Text className="zone-name">燃脂区</Text>
+                    <Text className="zone-value">
+                      {homeData.workoutGuidance.heart_rate_zones.zone2_fat_burn[0]}-
+                      {homeData.workoutGuidance.heart_rate_zones.zone2_fat_burn[1]} bpm
+                    </Text>
+                  </View>
+                </View>
+                <View 
+                  className="guidance-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    Taro.navigateTo({ url: '/pages/workout-guidance/index' });
+                  }}
+                >
+                  <Text className="btn-text">查看完整指导 →</Text>
+                </View>
+              </View>
             ) : (
-              <View className="energy-empty">
+              <View className="energy-empty" onClick={() => handleNavToPage('workout')}>
                 <Text className="empty-icon">🏃‍♂️</Text>
                 <Text className="empty-text">今日暂无运动记录</Text>
                 <Text className="empty-hint">记录运动以追踪消耗热量</Text>

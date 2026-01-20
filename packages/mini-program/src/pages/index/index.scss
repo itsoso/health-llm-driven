@@ -522,6 +522,73 @@ $gap-lg: 20px;
   }
 }
 
+// 运动指导卡片
+.workout-guidance {
+  padding-top: $gap-sm;
+  
+  .guidance-objective {
+    display: flex;
+    align-items: flex-start;
+    gap: $gap-xs;
+    margin-bottom: $gap-sm;
+    padding: $gap-sm;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+    border-radius: $radius-sm;
+    
+    .guidance-icon { font-size: 24px; flex-shrink: 0; }
+    .guidance-text { 
+      font-size: 22px; 
+      color: #374151; 
+      line-height: 1.5;
+      font-weight: 500;
+    }
+  }
+  
+  .guidance-zones {
+    margin-bottom: $gap-sm;
+    
+    .zones-label {
+      font-size: 20px;
+      color: #6B7280;
+      margin-bottom: 6px;
+      display: block;
+    }
+    
+    .zone-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      
+      .zone-name { font-size: 22px; color: #374151; }
+      .zone-value { 
+        font-size: 22px; 
+        color: $accent-orange; 
+        font-weight: 600;
+        font-family: 'DIN', -apple-system, monospace;
+      }
+    }
+  }
+  
+  .guidance-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: $gap-sm;
+    background: linear-gradient(135deg, $accent-indigo, $accent-purple);
+    border-radius: $radius-sm;
+    margin-top: $gap-sm;
+    
+    &:active { opacity: 0.8; }
+    
+    .btn-text {
+      font-size: 24px;
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+  }
+}
+
 // 饮食卡片
 .diet-calories {
   display: flex;
