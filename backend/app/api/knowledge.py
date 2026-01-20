@@ -173,6 +173,149 @@ def add_text_document(
     return result
 
 
+@router.post("/documents/course/files", summary="批量上传课程文件到知识库（增强版）")
+async def upload_course_files(
+    files: List[UploadFile] = File(...),
+    source: str = Form(...),
+    title: str = Form(...),
+    author: str = Form("张展晖"),
+    difficulty: str = Form("intermediate"),
+    target_audiences: str = Form("[]"),  # JSON string of list
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    批量上传课程 Markdown 文件到知识库（使用增强版加载器）
+    
+    支持一次上传多个 .md 文件，自动解析和分块
+    
+    专为运动科学课程（如张展晖课程）优化：
+    - 保留标题层级和面包屑导航
+    - 更大的分块大小（1800-2000字符）
+    - 丰富的元数据（作者、难度、目标人群、关键概念）
+    - 智能识别课程结构
+    
+    需要管理员权限
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以添加知识库内容"
+        )
+    
+    if not vector_store.is_available():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="知识库服务不可用"
+        )
+    
+    # 解析目标人群
+    try:
+        target_audience_list = json.loads(target_audiences)
+        if not isinstance(target_audience_list, list):
+            target_audience_list = []
+    except json.JSONDecodeError:
+        target_audience_list = []
+    
+    # 验证文件格式
+    for file in files:
+        filename = file.filename or ""
+        ext = filename.split(".")[-1].lower() if "." in filename else ""
+        if ext not in ["md", "markdown"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"文件 {filename} 格式不支持，仅支持 .md 或 .markdown 文件"
+            )
+    
+    try:
+        all_documents = []
+        file_results = []
+        
+        # 逐个处理文件
+        for file in files:
+            filename = file.filename or "未命名文件"
+            logger.info(f"[课程上传] 开始处理文件: {filename}")
+            
+            try:
+                # 读取文件内容
+                content = await file.read()
+                file_size_kb = len(content) / 1024
+                logger.info(f"[课程上传] 文件大小: {file_size_kb:.1f} KB")
+                
+                text = content.decode("utf-8")
+                
+                # 使用增强版加载器处理
+                documents = enhanced_loader.load_course_markdown(
+                    content=text,
+                    source=f"{source}_{filename}",
+                    author=author,
+                    difficulty=difficulty,
+                    target_audiences=target_audience_list
+                )
+                
+                all_documents.extend(documents)
+                
+                file_results.append({
+                    "filename": filename,
+                    "success": True,
+                    "chunks": len(documents),
+                    "size_kb": round(file_size_kb, 1)
+                })
+                
+                logger.info(f"[课程上传] 文件 {filename} 处理完成，生成 {len(documents)} 个文档块")
+                
+            except UnicodeDecodeError:
+                logger.error(f"[课程上传] 文件 {filename} 编码错误")
+                file_results.append({
+                    "filename": filename,
+                    "success": False,
+                    "error": "文件编码错误，请使用 UTF-8 编码"
+                })
+            except Exception as e:
+                logger.error(f"[课程上传] 处理文件 {filename} 失败: {e}")
+                file_results.append({
+                    "filename": filename,
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        if not all_documents:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="没有成功处理任何文件"
+            )
+        
+        # 添加到向量存储
+        logger.info(f"[课程上传] 开始添加 {len(all_documents)} 个文档块到向量存储")
+        result = vector_store.add_documents(all_documents, source=source)
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "添加文档失败")
+            )
+        
+        logger.info(f"[课程上传] 成功添加 {result.get('added_count', 0)} 个文档块")
+        
+        return {
+            "success": True,
+            "message": f"成功上传 {len([f for f in file_results if f['success']])} 个文件",
+            "files": file_results,
+            "total_chunks": len(all_documents),
+            "added_count": result.get("added_count", 0),
+            "total_in_kb": result.get("total_count", 0)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[课程上传] 批量上传失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"上传失败: {str(e)}"
+        )
+
+
 @router.post("/documents/course", summary="上传专业课程到知识库（增强版）")
 def upload_course(
     input_data: CourseUploadInput,
@@ -181,6 +324,8 @@ def upload_course(
 ):
     """
     上传专业课程内容到知识库（使用增强版加载器）
+    
+    通过文本输入方式上传单个课程内容
     
     专为运动科学课程（如张展晖课程）优化：
     - 保留标题层级和面包屑导航

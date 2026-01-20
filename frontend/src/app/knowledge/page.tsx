@@ -205,7 +205,7 @@ function KnowledgeManagement() {
     },
   });
 
-  // 上传课程（增强版）
+  // 上传课程（文本方式）
   const uploadCourseMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`${API_BASE}/knowledge/documents/course`, {
@@ -241,6 +241,82 @@ function KnowledgeManagement() {
       setCourseTitle('');
       setCourseSource('');
       setCourseTargetAudience([]);
+    },
+    onError: (error: any) => {
+      alert(`❌ 上传失败: ${error.message}`);
+    },
+  });
+
+  // 上传课程文件（多文件方式）
+  const uploadCourseFilesMutation = useMutation({
+    mutationFn: async () => {
+      if (selectedFiles.length === 0) {
+        throw new Error('请选择至少一个文件');
+      }
+
+      const formData = new FormData();
+      
+      // 添加所有文件
+      selectedFiles.forEach(file => {
+        formData.append('files', file);
+      });
+      
+      // 添加其他字段
+      formData.append('source', courseSource);
+      formData.append('title', courseTitle);
+      formData.append('author', courseAuthor);
+      formData.append('difficulty', courseDifficulty);
+      formData.append('target_audiences', JSON.stringify(courseTargetAudience));
+
+      const res = await fetch(`${API_BASE}/knowledge/documents/course/files`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || '上传失败');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledgeStats'] });
+      
+      const successFiles = data.files.filter((f: any) => f.success);
+      const failedFiles = data.files.filter((f: any) => !f.success);
+      
+      let message = `✅ 文件上传成功！\n\n`;
+      message += `成功: ${successFiles.length} 个文件\n`;
+      message += `总文档块: ${data.total_chunks}\n`;
+      message += `已添加: ${data.added_count} 个文档块\n\n`;
+      
+      if (successFiles.length > 0) {
+        message += `成功的文件:\n`;
+        successFiles.forEach((f: any) => {
+          message += `  • ${f.filename} (${f.chunks} 块, ${f.size_kb} KB)\n`;
+        });
+      }
+      
+      if (failedFiles.length > 0) {
+        message += `\n失败的文件:\n`;
+        failedFiles.forEach((f: any) => {
+          message += `  • ${f.filename}: ${f.error}\n`;
+        });
+      }
+      
+      alert(message);
+      
+      // 清空表单
+      setSelectedFiles([]);
+      setCourseTitle('');
+      setCourseSource('');
+      setCourseTargetAudience([]);
+      if (courseFileInputRef.current) {
+        courseFileInputRef.current.value = '';
+      }
     },
     onError: (error: any) => {
       alert(`❌ 上传失败: ${error.message}`);
@@ -302,6 +378,11 @@ function KnowledgeManagement() {
   const [courseDifficulty, setCourseDifficulty] = useState('intermediate');
   const [courseTargetAudience, setCourseTargetAudience] = useState<string[]>([]);
   const [audienceInput, setAudienceInput] = useState('');
+  
+  // 文件上传状态
+  const [uploadMode, setUploadMode] = useState<'text' | 'files'>('text');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const courseFileInputRef = useRef<HTMLInputElement>(null);
 
   // 分类选项
   const categories = [
@@ -567,8 +648,38 @@ function KnowledgeManagement() {
                   </p>
                 </div>
 
-                {/* 课程内容 */}
-                <div>
+                {/* 上传模式切换 */}
+                <div className="border-t-2 border-indigo-200 pt-4">
+                  <label className="block text-sm font-medium text-indigo-900 mb-3">
+                    📝 上传方式
+                  </label>
+                  <div className="flex gap-4 mb-4">
+                    <button
+                      onClick={() => setUploadMode('text')}
+                      className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
+                        uploadMode === 'text'
+                          ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg'
+                          : 'bg-white text-indigo-600 border-2 border-indigo-200 hover:border-indigo-400'
+                      }`}
+                    >
+                      📄 粘贴文本
+                    </button>
+                    <button
+                      onClick={() => setUploadMode('files')}
+                      className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
+                        uploadMode === 'files'
+                          ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg'
+                          : 'bg-white text-indigo-600 border-2 border-indigo-200 hover:border-indigo-400'
+                      }`}
+                    >
+                      📁 上传文件
+                    </button>
+                  </div>
+                </div>
+
+                {/* 文本输入模式 */}
+                {uploadMode === 'text' && (
+                  <div>
                   <label className="block text-sm font-medium text-indigo-900 mb-1">
                     课程内容 (Markdown 格式) <span className="text-red-500">*</span>
                   </label>
@@ -586,6 +697,72 @@ function KnowledgeManagement() {
                     </p>
                   </div>
                 </div>
+                )}
+
+                {/* 文件上传模式 */}
+                {uploadMode === 'files' && (
+                  <div>
+                    <label className="block text-sm font-medium text-indigo-900 mb-1">
+                      选择 Markdown 文件 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      ref={courseFileInputRef}
+                      type="file"
+                      multiple
+                      accept=".md,.markdown"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setSelectedFiles(files);
+                      }}
+                      className="hidden"
+                    />
+                    <div
+                      onClick={() => courseFileInputRef.current?.click()}
+                      className="border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
+                    >
+                      <div className="text-4xl mb-2">📁</div>
+                      <p className="text-indigo-900 font-medium mb-1">
+                        点击选择文件或拖拽文件到此处
+                      </p>
+                      <p className="text-sm text-indigo-600">
+                        支持多个 .md 或 .markdown 文件
+                      </p>
+                    </div>
+                    
+                    {selectedFiles.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-sm font-medium text-indigo-900">
+                          已选择 {selectedFiles.length} 个文件:
+                        </p>
+                        <div className="bg-white rounded-lg border-2 border-indigo-200 p-3 max-h-40 overflow-y-auto">
+                          {selectedFiles.map((file, i) => (
+                            <div key={i} className="flex items-center justify-between py-2 border-b border-indigo-100 last:border-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-indigo-600">📄</span>
+                                <span className="text-sm text-indigo-900">{file.name}</span>
+                                <span className="text-xs text-indigo-500">
+                                  ({(file.size / 1024).toFixed(1)} KB)
+                                </span>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedFiles(files => files.filter((_, idx) => idx !== i));
+                                }}
+                                className="text-red-500 hover:text-red-700 font-bold"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-indigo-600">
+                          总大小: {(selectedFiles.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 功能说明 */}
                 <div className="bg-white/50 rounded-lg p-4 border border-indigo-200">
@@ -620,31 +797,66 @@ function KnowledgeManagement() {
 
                 {/* 上传按钮 */}
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => uploadCourseMutation.mutate()}
-                    disabled={!courseContent.trim() || !courseTitle.trim() || !courseSource.trim() || uploadCourseMutation.isPending}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
-                  >
-                    {uploadCourseMutation.isPending ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
-                        上传中...
-                      </span>
-                    ) : (
-                      '🚀 上传课程'
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCourseContent('');
-                      setCourseTitle('');
-                      setCourseSource('');
-                      setCourseTargetAudience([]);
-                    }}
-                    className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all"
-                  >
-                    清空
-                  </button>
+                  {uploadMode === 'text' ? (
+                    <>
+                      <button
+                        onClick={() => uploadCourseMutation.mutate()}
+                        disabled={!courseContent.trim() || !courseTitle.trim() || !courseSource.trim() || uploadCourseMutation.isPending}
+                        className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
+                      >
+                        {uploadCourseMutation.isPending ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                            上传中...
+                          </span>
+                        ) : (
+                          '🚀 上传课程'
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCourseContent('');
+                          setCourseTitle('');
+                          setCourseSource('');
+                          setCourseTargetAudience([]);
+                        }}
+                        className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all"
+                      >
+                        清空
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => uploadCourseFilesMutation.mutate()}
+                        disabled={selectedFiles.length === 0 || !courseTitle.trim() || !courseSource.trim() || uploadCourseFilesMutation.isPending}
+                        className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
+                      >
+                        {uploadCourseFilesMutation.isPending ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                            上传中...
+                          </span>
+                        ) : (
+                          `🚀 上传 ${selectedFiles.length} 个文件`
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedFiles([]);
+                          setCourseTitle('');
+                          setCourseSource('');
+                          setCourseTargetAudience([]);
+                          if (courseFileInputRef.current) {
+                            courseFileInputRef.current.value = '';
+                          }
+                        }}
+                        className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all"
+                      >
+                        清空
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
