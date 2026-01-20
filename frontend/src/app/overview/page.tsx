@@ -272,10 +272,13 @@ function OverviewContent() {
 
   // 计算本周强度活动时间（从周一开始，使用北京时间）
   const mondayOfThisWeek = startOfWeek(nowInTimezone, { weekStartsOn: 1 }); // 1 = 周一
+  const mondayDateStr = format(mondayOfThisWeek, 'yyyy-MM-dd'); // 转换为日期字符串进行比较
   const thisWeekRecords = sortedRecords.filter(r => 
-    new Date(r.record_date) >= mondayOfThisWeek
+    r.record_date >= mondayDateStr // 使用字符串比较，避免时区问题
   );
+  console.log('[Overview] 本周周一:', mondayDateStr, '本周记录数:', thisWeekRecords.length, '记录日期:', thisWeekRecords.map(r => r.record_date));
   const weeklyIntensityMinutes = thisWeekRecords.reduce((sum, r) => {
+    console.log('[Overview] 记录:', r.record_date, 'moderate:', r.moderate_intensity_minutes, 'vigorous:', r.vigorous_intensity_minutes);
     return sum + (r.moderate_intensity_minutes || 0) + (r.vigorous_intensity_minutes || 0) * 2;
   }, 0);
   const intensityGoal = record?.intensity_minutes_goal || 150;
