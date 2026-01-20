@@ -527,3 +527,173 @@
 .bottom-space {
   height: 60px;
 }
+
+// 科学分析按钮
+.header-action {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.analysis-btn {
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  padding: 12px 24px;
+  
+  &:active {
+    opacity: 0.8;
+  }
+}
+
+.analysis-btn-text {
+  font-size: 26px;
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+// 运动后科学分析
+.post-analysis {
+  margin-top: 20px;
+}
+
+.analysis-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 16px;
+  
+  .card-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #FFFFFF;
+    margin-bottom: 16px;
+  }
+}
+
+.score-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(168, 85, 247, 0.3));
+  border: 1px solid rgba(99, 102, 241, 0.5);
+}
+
+.score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.score-label {
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.score-value {
+  font-size: 48px;
+  font-weight: 700;
+  color: #FFFFFF;
+  font-family: 'DIN', -apple-system, monospace;
+}
+
+.score-rating {
+  text-align: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.rating-text {
+  font-size: 32px;
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.intensity-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.intensity-label {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.intensity-value {
+  font-size: 26px;
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.zone-distribution-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.zone-name {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.8);
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.zone-bar-container {
+  flex: 1;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 0 12px;
+}
+
+.zone-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #6366F1, #A855F7);
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+.zone-percentage {
+  font-size: 22px;
+  color: #FFFFFF;
+  font-weight: 600;
+  width: 60px;
+  text-align: right;
+  font-family: 'DIN', -apple-system, monospace;
+}
+
+.advice-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.advice-bullet {
+  font-size: 24px;
+  color: #A855F7;
+  margin-right: 8px;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+
+.advice-text {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+  flex: 1;
+}

@@ -78,6 +78,8 @@ export default function WorkoutDetail() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<WorkoutDetail | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [postAnalysis, setPostAnalysis] = useState<any>(null);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   useEffect(() => {
     if (workoutId) {
@@ -150,6 +152,28 @@ export default function WorkoutDetail() {
       });
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  // 获取运动后科学分析
+  const handlePostAnalysis = async () => {
+    if (!workoutId) return;
+    
+    Taro.showLoading({ title: '生成分析中...' });
+    
+    try {
+      const response = await post(`/workout/post-workout-analysis/${workoutId}`);
+      setPostAnalysis(response);
+      setShowAnalysis(true);
+      Taro.hideLoading();
+      Taro.showToast({ title: '分析完成', icon: 'success' });
+    } catch (error: any) {
+      Taro.hideLoading();
+      Taro.showToast({ 
+        title: error.message || '获取分析失败', 
+        icon: 'none',
+        duration: 3000
+      });
     }
   };
 
@@ -609,6 +633,13 @@ export default function WorkoutDetail() {
           }
           return null;
         })()}
+        
+        {/* 科学分析按钮 */}
+        <View className="header-action">
+          <View className="analysis-btn" onClick={handlePostAnalysis}>
+            <Text className="analysis-btn-text">📊 科学分析</Text>
+          </View>
+        </View>
       </View>
 
       {/* 核心数据 */}
@@ -1052,6 +1083,86 @@ export default function WorkoutDetail() {
       <View className="source-info">
         <Text>数据来源: {detail.source === 'garmin' ? 'Garmin Connect' : '手动记录'}</Text>
       </View>
+
+      {/* 运动后科学分析 */}
+      {showAnalysis && postAnalysis && postAnalysis.success && (
+        <View className="section post-analysis">
+          <Text className="section-title">📊 运动后科学分析</Text>
+          
+          {/* 整体评分 */}
+          <View className="analysis-card score-card">
+            <View className="score-header">
+              <Text className="score-label">综合评分</Text>
+              <Text className="score-value">{postAnalysis.overall_score}/100</Text>
+            </View>
+            <View className="score-rating">
+              <Text className="rating-text">{postAnalysis.rating}</Text>
+            </View>
+          </View>
+
+          {/* 训练强度 */}
+          {postAnalysis.intensity_assessment && (
+            <View className="analysis-card">
+              <Text className="card-title">💪 训练强度</Text>
+              <View className="intensity-info">
+                <Text className="intensity-label">强度评估:</Text>
+                <Text className="intensity-value">{postAnalysis.intensity_assessment.intensity}</Text>
+              </View>
+              {postAnalysis.intensity_assessment.avg_hr && (
+                <View className="intensity-info">
+                  <Text className="intensity-label">平均心率:</Text>
+                  <Text className="intensity-value">{postAnalysis.intensity_assessment.avg_hr} bpm</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* 心率区间分布 */}
+          {postAnalysis.hr_zone_distribution && (
+            <View className="analysis-card">
+              <Text className="card-title">❤️ 心率区间分布</Text>
+              {Object.entries(postAnalysis.hr_zone_distribution).map(([zone, data]: [string, any]) => (
+                <View key={zone} className="zone-distribution-item">
+                  <Text className="zone-name">{zone}</Text>
+                  <View className="zone-bar-container">
+                    <View 
+                      className="zone-bar" 
+                      style={{ width: `${data.percentage}%` }}
+                    />
+                  </View>
+                  <Text className="zone-percentage">{data.percentage.toFixed(1)}%</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* 恢复建议 */}
+          {postAnalysis.recovery_advice && postAnalysis.recovery_advice.length > 0 && (
+            <View className="analysis-card">
+              <Text className="card-title">🔄 恢复建议</Text>
+              {postAnalysis.recovery_advice.map((advice: string, idx: number) => (
+                <View key={idx} className="advice-item">
+                  <Text className="advice-bullet">•</Text>
+                  <Text className="advice-text">{advice}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* 改进建议 */}
+          {postAnalysis.improvement_tips && postAnalysis.improvement_tips.length > 0 && (
+            <View className="analysis-card">
+              <Text className="card-title">💡 改进建议</Text>
+              {postAnalysis.improvement_tips.map((tip: string, idx: number) => (
+                <View key={idx} className="advice-item">
+                  <Text className="advice-bullet">•</Text>
+                  <Text className="advice-text">{tip}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       <View className="bottom-space" />
     </ScrollView>
