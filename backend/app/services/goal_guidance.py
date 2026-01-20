@@ -23,7 +23,7 @@ class GoalGuidanceService:
     """目标智能引导服务"""
     
     def __init__(self):
-        self.digital_twin = DigitalTwinService()
+        pass
     
     def generate_goal_guidance(
         self,
@@ -61,7 +61,8 @@ class GoalGuidanceService:
             # 3. 计算心率区间
             hr_zones = None
             if profile.age and resting_hr:
-                hr_zones = self.digital_twin.calculate_target_heart_rate_zones(
+                digital_twin = DigitalTwinService(db, user_id)
+                hr_zones = digital_twin.calculate_target_heart_rate_zones(
                     age=profile.age,
                     resting_hr=resting_hr
                 )
