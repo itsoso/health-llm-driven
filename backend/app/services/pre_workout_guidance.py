@@ -127,9 +127,14 @@ class PreWorkoutGuidanceService:
             
             latest = recent_records[0]
             
+            # 将睡眠时长从分钟转换为小时
+            sleep_hours = None
+            if latest.total_sleep_duration:
+                sleep_hours = round(latest.total_sleep_duration / 60, 1)
+            
             return {
                 "sleep_score": latest.sleep_score,
-                "sleep_hours": latest.sleep_duration_hours,
+                "sleep_hours": sleep_hours,
                 "stress_level": latest.avg_stress_level,
                 "resting_hr": latest.resting_heart_rate,
                 "hrv": latest.hrv_avg,
