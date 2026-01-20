@@ -12,7 +12,7 @@ from app.models.goal import Goal
 from app.models.daily_health import GarminData
 from app.services.digital_twin import DigitalTwinService
 from app.services.knowledge.rag_pipeline import RAGPipeline
-from app.utils.timezone_utils import get_china_now
+from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
 
