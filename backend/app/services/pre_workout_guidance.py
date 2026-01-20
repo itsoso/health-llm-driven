@@ -89,12 +89,12 @@ class PreWorkoutGuidanceService:
                 "success": True,
                 "workout_type": workout_type,
                 "goal_info": self._format_goal_info(goal) if goal else None,
+                "user_status": self._format_user_status(recent_data),
+                "training_objective": self._generate_training_objective(goal, workout_type, recent_data),
                 "heart_rate_zones": hr_zones,
-                "today_target": self._generate_today_target(goal, workout_type, hr_zones),
-                "warm_up_tips": self._generate_warm_up_tips(workout_type, knowledge),
+                "warm_up": self._generate_warm_up_tips(workout_type, knowledge),
                 "key_reminders": self._generate_key_reminders(workout_type, hr_zones, recent_data),
-                "knowledge_points": knowledge.get("key_points", []),
-                "current_status": self._format_current_status(recent_data),
+                "course_insights": knowledge.get("key_points", []),
                 "generated_at": get_china_now().isoformat()
             }
             
@@ -317,30 +317,36 @@ class PreWorkoutGuidanceService:
         
         return reminders
     
-    def _format_current_status(self, recent_data: Dict[str, Any]) -> Dict[str, Any]:
-        """格式化当前状态"""
-        status = {}
+    def _format_user_status(self, recent_data: Dict[str, Any]) -> Dict[str, Any]:
+        """格式化用户状态（扁平结构，供前端使用）"""
+        # 评估准备度
+        readiness = "良好"
+        if recent_data.get("sleep_score") and recent_data["sleep_score"] < 60:
+            readiness = "需要休息"
+        elif recent_data.get("stress_level") and recent_data["stress_level"] > 70:
+            readiness = "压力较大，建议轻度运动"
+        elif recent_data.get("body_battery") and recent_data["body_battery"] < 30:
+            readiness = "能量不足，建议休息"
         
-        if recent_data.get("sleep_score"):
-            status["sleep"] = {
-                "score": recent_data["sleep_score"],
-                "hours": recent_data.get("sleep_hours"),
-                "status": "良好" if recent_data["sleep_score"] >= 70 else "不足"
-            }
-        
-        if recent_data.get("stress_level"):
-            status["stress"] = {
-                "level": recent_data["stress_level"],
-                "status": "正常" if recent_data["stress_level"] < 50 else "偏高"
-            }
-        
-        if recent_data.get("resting_hr"):
-            status["resting_hr"] = recent_data["resting_hr"]
-        
-        if recent_data.get("hrv"):
-            status["hrv"] = recent_data["hrv"]
-        
-        return status
+        return {
+            "body_battery": recent_data.get("body_battery"),
+            "hrv": recent_data.get("hrv"),
+            "sleep_score": recent_data.get("sleep_score"),
+            "stress_level": recent_data.get("stress_level"),
+            "readiness": readiness
+        }
+    
+    def _generate_training_objective(
+        self, 
+        goal: Optional[Goal], 
+        workout_type: str, 
+        recent_data: Dict[str, Any]
+    ) -> str:
+        """生成训练目标描述"""
+        if goal and goal.description:
+            return f"今日目标：{goal.description}。建议进行{workout_type}训练，保持在目标心率区间。"
+        else:
+            return f"今日建议进行{workout_type}训练，保持适当强度，注意心率控制。"
     
     def _generate_basic_guidance(self, workout_type: str) -> Dict[str, Any]:
         """生成基础指导（用户数据不足时）"""
