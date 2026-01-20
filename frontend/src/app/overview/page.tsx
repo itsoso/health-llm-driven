@@ -276,10 +276,14 @@ function OverviewContent() {
   const thisWeekRecords = sortedRecords.filter(r => 
     r.record_date >= mondayDateStr // 使用字符串比较，避免时区问题
   );
-  console.log('[Overview] 本周周一:', mondayDateStr, '本周记录数:', thisWeekRecords.length, '记录日期:', thisWeekRecords.map(r => r.record_date));
+  // 计算强度活动时间：优先使用 moderate + vigorous*2，如果没有则使用 active_minutes
   const weeklyIntensityMinutes = thisWeekRecords.reduce((sum, r) => {
-    console.log('[Overview] 记录:', r.record_date, 'moderate:', r.moderate_intensity_minutes, 'vigorous:', r.vigorous_intensity_minutes);
-    return sum + (r.moderate_intensity_minutes || 0) + (r.vigorous_intensity_minutes || 0) * 2;
+    const moderate = r.moderate_intensity_minutes || 0;
+    const vigorous = r.vigorous_intensity_minutes || 0;
+    const intensityFromFields = moderate + vigorous * 2;
+    // 如果 moderate 和 vigorous 都没有值，使用 active_minutes 作为备选
+    const intensity = intensityFromFields > 0 ? intensityFromFields : (r.active_minutes || 0);
+    return sum + intensity;
   }, 0);
   const intensityGoal = record?.intensity_minutes_goal || 150;
   const intensityProgress = Math.min((weeklyIntensityMinutes / intensityGoal) * 100, 100);
