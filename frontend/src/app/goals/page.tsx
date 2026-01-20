@@ -73,6 +73,23 @@ function GoalsContent() {
     priority: 5,
   });
 
+  // 智能引导相关状态
+  const [showGuidance, setShowGuidance] = useState(false);
+  const [guidance, setGuidance] = useState<any>(null);
+
+  // 获取智能引导
+  const guidanceMutation = useMutation({
+    mutationFn: (data: { goal_type: string; goal_description: string; target_value?: number }) =>
+      goalApi.getGuidance(data),
+    onSuccess: (response) => {
+      setGuidance(response.data);
+      setShowGuidance(true);
+    },
+    onError: (error: any) => {
+      alert(`获取引导失败: ${error.response?.data?.detail || error.message}`);
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     createMutation.mutate({
@@ -325,6 +342,138 @@ function GoalsContent() {
                   />
                 </div>
               </div>
+
+              {/* 智能引导按钮 */}
+              <div className="pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    guidanceMutation.mutate({
+                      goal_type: formData.goal_type.toUpperCase(),
+                      goal_description: formData.description || formData.title,
+                      target_value: parseFloat(formData.target_value) || undefined,
+                    });
+                  }}
+                  disabled={guidanceMutation.isPending || !formData.title}
+                  className="w-full py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-teal-700 disabled:opacity-50 shadow-md transition-all flex items-center justify-center gap-2"
+                >
+                  {guidanceMutation.isPending ? (
+                    <>
+                      <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                      <span>正在生成智能引导...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🧠</span>
+                      <span>获取智能训练引导</span>
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  基于张展晖课程和你的健康数据，生成个性化训练建议
+                </p>
+              </div>
+
+              {/* 智能引导显示区域 */}
+              {showGuidance && guidance && (
+                <div className="mt-6 p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border-2 border-indigo-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-indigo-900 flex items-center gap-2">
+                      <span>🎯</span>
+                      <span>智能训练引导</span>
+                    </h3>
+                    <button
+                      onClick={() => setShowGuidance(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* 心率区间 */}
+                  {guidance.heart_rate_zones && (
+                    <div className="mb-4 p-4 bg-white rounded-lg">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span>❤️</span>
+                        <span>心率区间</span>
+                      </h4>
+                      <p className="text-sm text-gray-600 mb-2">
+                        最大心率: {guidance.heart_rate_zones.max_hr} bpm
+                      </p>
+                      <div className="space-y-1 text-sm">
+                        {Object.entries(guidance.heart_rate_zones).map(([key, value]: [string, any]) => {
+                          if (typeof value === 'object' && value.min) {
+                            return (
+                              <div key={key} className="flex justify-between text-gray-700">
+                                <span className="font-medium">{value.description}:</span>
+                                <span>{value.min}-{value.max} bpm</span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 训练计划 */}
+                  {guidance.training_plan && (
+                    <div className="mb-4 p-4 bg-white rounded-lg">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span>📅</span>
+                        <span>训练计划</span>
+                      </h4>
+                      <div className="space-y-2 text-sm text-gray-700">
+                        <p><strong>频率:</strong> {guidance.training_plan.frequency}</p>
+                        <p><strong>时长:</strong> {guidance.training_plan.duration}</p>
+                        {guidance.training_plan.weekly_structure && guidance.training_plan.weekly_structure.length > 0 && (
+                          <div>
+                            <p className="font-medium mt-2 mb-1">周训练结构:</p>
+                            <ul className="list-disc list-inside space-y-1 text-xs">
+                              {guidance.training_plan.weekly_structure.slice(0, 3).map((day: string, i: number) => (
+                                <li key={i}>{day}</li>
+                              ))}
+                              {guidance.training_plan.weekly_structure.length > 3 && (
+                                <li className="text-gray-500">... 共 {guidance.training_plan.weekly_structure.length} 天</li>
+                              )}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 知识要点 */}
+                  {guidance.knowledge_points && guidance.knowledge_points.length > 0 && (
+                    <div className="mb-4 p-4 bg-white rounded-lg">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span>💡</span>
+                        <span>课程知识要点</span>
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                        {guidance.knowledge_points.slice(0, 3).map((point: string, i: number) => (
+                          <li key={i}>{point}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 个性化建议 */}
+                  {guidance.recommendations && guidance.recommendations.length > 0 && (
+                    <div className="p-4 bg-white rounded-lg">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <span>🎯</span>
+                        <span>个性化建议</span>
+                      </h4>
+                      <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                        {guidance.recommendations.slice(0, 3).map((rec: string, i: number) => (
+                          <li key={i}>{rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <button

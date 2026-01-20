@@ -143,6 +143,9 @@ export const goalApi = {
     api.get('/goals/me', { params: { status, goal_type: goalType, goal_period: goalPeriod } }),
   generateMyGoalsFromAnalysis: () =>
     api.post('/goals/me/generate-from-analysis'),
+  // 获取目标智能引导
+  getGuidance: (data: { goal_type: string; goal_description?: string; target_value?: number }) =>
+    api.post('/goals/guidance', data),
 };
 
 // 数据收集
