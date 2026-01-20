@@ -62,7 +62,8 @@ export default function EnvironmentPage() {
   const loadData = async () => {
     const token = Taro.getStorageSync('token');
     if (!token) {
-      Taro.switchTab({ url: '/pages/index/index' });
+      setLoading(false);
+      setError('请先登录');
       return;
     }
 
