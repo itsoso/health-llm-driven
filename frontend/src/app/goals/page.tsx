@@ -92,11 +92,24 @@ function GoalsContent() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createMutation.mutate({
-      ...formData,
-      target_value: parseFloat(formData.target_value) || 0,
+    
+    // 构建提交数据，移除空字段
+    const submitData: any = {
+      goal_type: formData.goal_type,
+      goal_period: formData.goal_period,
+      title: formData.title,
+      start_date: formData.start_date,
       priority: parseInt(formData.priority as any) || 5,
-    });
+    };
+    
+    // 添加可选字段（非空时）
+    if (formData.description) submitData.description = formData.description;
+    if (formData.target_value) submitData.target_value = parseFloat(formData.target_value);
+    if (formData.target_unit) submitData.target_unit = formData.target_unit;
+    if (formData.end_date) submitData.end_date = formData.end_date;
+    if (formData.implementation_steps) submitData.implementation_steps = formData.implementation_steps;
+    
+    createMutation.mutate(submitData);
   };
 
   const handleProgressSubmit = (e: React.FormEvent) => {
