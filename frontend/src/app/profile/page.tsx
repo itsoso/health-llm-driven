@@ -281,6 +281,28 @@ export default function ProfilePage() {
                     className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-purple-500"
                   />
                 </div>
+                <div>
+                  <label className="block text-white/70 text-sm mb-2">时区</label>
+                  <select
+                    value={formData.timezone || 'Asia/Shanghai'}
+                    onChange={e => handleChange('timezone', e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="Asia/Shanghai">中国标准时间 (UTC+8)</option>
+                    <option value="Asia/Hong_Kong">香港时间 (UTC+8)</option>
+                    <option value="Asia/Taipei">台北时间 (UTC+8)</option>
+                    <option value="Asia/Singapore">新加坡时间 (UTC+8)</option>
+                    <option value="Asia/Tokyo">东京时间 (UTC+9)</option>
+                    <option value="Asia/Seoul">首尔时间 (UTC+9)</option>
+                    <option value="America/New_York">美国东部时间 (UTC-5/-4)</option>
+                    <option value="America/Los_Angeles">美国太平洋时间 (UTC-8/-7)</option>
+                    <option value="Europe/London">伦敦时间 (UTC+0/+1)</option>
+                    <option value="Europe/Paris">巴黎时间 (UTC+1/+2)</option>
+                    <option value="Australia/Sydney">悉尼时间 (UTC+10/+11)</option>
+                    <option value="UTC">协调世界时 (UTC)</option>
+                  </select>
+                  <span className="text-white/40 text-xs mt-1">系统将根据此时区计算周起始日等</span>
+                </div>
               </div>
             </div>
           )}

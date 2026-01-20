@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, subDays, startOfWeek } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -170,9 +171,12 @@ function MetricCard({
 
 function OverviewContent() {
   const { token } = useAuth();
-  const today = format(new Date(), 'yyyy-MM-dd');
-  const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
-  const monthAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+  // 使用北京时间 (UTC+8) 计算日期
+  const TIMEZONE = 'Asia/Shanghai';
+  const nowInTimezone = toZonedTime(new Date(), TIMEZONE);
+  const today = format(nowInTimezone, 'yyyy-MM-dd');
+  const weekAgo = format(subDays(nowInTimezone, 7), 'yyyy-MM-dd');
+  const monthAgo = format(subDays(nowInTimezone, 30), 'yyyy-MM-dd');
 
   // 获取最近30天数据（取最新一天显示）
   const { data: recentData, isLoading, error } = useQuery<GarminData[]>({
@@ -266,8 +270,8 @@ function OverviewContent() {
     hrv: r.hrv,
   }));
 
-  // 计算本周强度活动时间（从周一开始）
-  const mondayOfThisWeek = startOfWeek(new Date(), { weekStartsOn: 1 }); // 1 = 周一
+  // 计算本周强度活动时间（从周一开始，使用北京时间）
+  const mondayOfThisWeek = startOfWeek(nowInTimezone, { weekStartsOn: 1 }); // 1 = 周一
   const thisWeekRecords = sortedRecords.filter(r => 
     new Date(r.record_date) >= mondayOfThisWeek
   );

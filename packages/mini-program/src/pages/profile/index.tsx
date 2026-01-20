@@ -41,6 +41,35 @@ const exerciseValues = [null, 'never', 'occasionally', 'weekly', 'regularly', 'd
 const dietOptions = ['未设置', '正常饮食', '素食', '低碳水', '生酮饮食'];
 const dietValues = [null, 'normal', 'vegetarian', 'low_carb', 'keto'];
 
+const timezoneOptions = [
+  '中国标准时间 (UTC+8)',
+  '香港时间 (UTC+8)',
+  '台北时间 (UTC+8)',
+  '新加坡时间 (UTC+8)',
+  '东京时间 (UTC+9)',
+  '首尔时间 (UTC+9)',
+  '美国东部时间 (UTC-5/-4)',
+  '美国太平洋时间 (UTC-8/-7)',
+  '伦敦时间 (UTC+0/+1)',
+  '巴黎时间 (UTC+1/+2)',
+  '悉尼时间 (UTC+10/+11)',
+  '协调世界时 (UTC)',
+];
+const timezoneValues = [
+  'Asia/Shanghai',
+  'Asia/Hong_Kong',
+  'Asia/Taipei',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Paris',
+  'Australia/Sydney',
+  'UTC',
+];
+
 const commonConditions = ['鼻炎', '咽炎', '高血压', '糖尿病', '胃病', '失眠'];
 const commonAllergies = ['花粉', '海鲜', '牛奶', '花生', '青霉素', '灰尘'];
 
@@ -242,6 +271,21 @@ export default function ProfilePage() {
                 placeholder="输入城市"
                 className="form-input"
               />
+            </View>
+
+            <View className="form-item">
+              <Text className="form-label">时区</Text>
+              <Picker
+                mode="selector"
+                range={timezoneOptions}
+                value={timezoneValues.indexOf(profile.timezone) >= 0 ? timezoneValues.indexOf(profile.timezone) : 0}
+                onChange={e => updateField('timezone', timezoneValues[Number(e.detail.value)])}
+              >
+                <View className="picker-value">
+                  {timezoneOptions[timezoneValues.indexOf(profile.timezone) >= 0 ? timezoneValues.indexOf(profile.timezone) : 0]} ▼
+                </View>
+              </Picker>
+              <Text className="form-hint">系统将根据此时区计算周起始日等</Text>
             </View>
 
             <View className="form-item">
