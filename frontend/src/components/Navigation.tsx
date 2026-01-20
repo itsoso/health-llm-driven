@@ -54,6 +54,7 @@ export default function Navigation() {
       icon: '❤️',
       items: [
         { href: '/workout', label: '运动训练', icon: '🏋️' },
+        { href: '/workout-guidance', label: '运动指导', icon: '🎯' },
         { href: '/heart-rate', label: '心率监测', icon: '❤️' },
         { href: '/weight', label: '体重追踪', icon: '⚖️' },
         { href: '/blood-pressure', label: '血压追踪', icon: '🩺' },
