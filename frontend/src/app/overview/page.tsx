@@ -177,6 +177,10 @@ function OverviewContent() {
   const today = format(nowInTimezone, 'yyyy-MM-dd');
   const weekAgo = format(subDays(nowInTimezone, 7), 'yyyy-MM-dd');
   const monthAgo = format(subDays(nowInTimezone, 30), 'yyyy-MM-dd');
+  
+  // 计算本周周一（用于强度活动时间计算）
+  const mondayOfThisWeek = startOfWeek(nowInTimezone, { weekStartsOn: 1 }); // 1 = 周一
+  const mondayDateStr = format(mondayOfThisWeek, 'yyyy-MM-dd');
 
   // 获取最近30天数据（取最新一天显示）
   const { data: recentData, isLoading, error } = useQuery<GarminData[]>({
@@ -200,11 +204,12 @@ function OverviewContent() {
     enabled: !!token,
   });
 
-  // 获取今日运动记录
+  // 获取本周运动记录（用于计算强度活动时间）
   const { data: workoutsData } = useQuery<WorkoutSummary[]>({
-    queryKey: ['workouts-today', today],
+    queryKey: ['workouts-week', mondayDateStr],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/workout/me?days=1`, {
+      // 获取最近7天的运动记录，确保覆盖本周
+      const res = await fetch(`${API_BASE}/workout/me?days=7`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('获取运动数据失败');
@@ -270,21 +275,13 @@ function OverviewContent() {
     hrv: r.hrv,
   }));
 
-  // 计算本周强度活动时间（从周一开始，使用北京时间）
-  const mondayOfThisWeek = startOfWeek(nowInTimezone, { weekStartsOn: 1 }); // 1 = 周一
-  const mondayDateStr = format(mondayOfThisWeek, 'yyyy-MM-dd'); // 转换为日期字符串进行比较
-  const thisWeekRecords = sortedRecords.filter(r => 
-    r.record_date >= mondayDateStr // 使用字符串比较，避免时区问题
+  // 计算本周强度活动时间（从周一开始，使用运动记录的时长）
+  // 过滤本周的运动记录
+  const thisWeekWorkouts = workoutsData?.filter(w => w.workout_date >= mondayDateStr) || [];
+  // 计算本周运动总时长（分钟）
+  const weeklyIntensityMinutes = Math.round(
+    thisWeekWorkouts.reduce((sum, w) => sum + (w.duration_seconds || 0), 0) / 60
   );
-  // 计算强度活动时间：优先使用 moderate + vigorous*2，如果没有则使用 active_minutes
-  const weeklyIntensityMinutes = thisWeekRecords.reduce((sum, r) => {
-    const moderate = r.moderate_intensity_minutes || 0;
-    const vigorous = r.vigorous_intensity_minutes || 0;
-    const intensityFromFields = moderate + vigorous * 2;
-    // 如果 moderate 和 vigorous 都没有值，使用 active_minutes 作为备选
-    const intensity = intensityFromFields > 0 ? intensityFromFields : (r.active_minutes || 0);
-    return sum + intensity;
-  }, 0);
   const intensityGoal = record?.intensity_minutes_goal || 150;
   const intensityProgress = Math.min((weeklyIntensityMinutes / intensityGoal) * 100, 100);
 
