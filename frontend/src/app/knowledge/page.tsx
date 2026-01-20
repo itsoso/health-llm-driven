@@ -716,12 +716,10 @@ function KnowledgeManagement() {
                         setSelectedFiles(files);
                       }}
                       className="hidden"
+                      id="course-file-upload"
                     />
-                    <div
-                      onClick={(e) => {
-                        console.log('点击上传区域', courseFileInputRef.current);
-                        courseFileInputRef.current?.click();
-                      }}
+                    <label
+                      htmlFor="course-file-upload"
                       onDragOver={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -739,7 +737,7 @@ function KnowledgeManagement() {
                           alert('请拖拽 .md 或 .markdown 文件');
                         }
                       }}
-                      className="border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
+                      className="block border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
                     >
                       <div className="text-4xl mb-2">📁</div>
                       <p className="text-indigo-900 font-medium mb-1">
@@ -748,7 +746,7 @@ function KnowledgeManagement() {
                       <p className="text-sm text-indigo-600">
                         支持多个 .md 或 .markdown 文件
                       </p>
-                    </div>
+                    </label>
                     
                     {selectedFiles.length > 0 && (
                       <div className="mt-4 space-y-2">
