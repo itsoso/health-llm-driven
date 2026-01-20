@@ -47,7 +47,7 @@ class GoalGuidanceService:
             包含训练建议、心率区间、知识要点的字典
         """
         try:
-            logger.info(f"[目标引导] 开始为用户 {user_id} 生成 {goal_type.value} 目标的引导")
+            logger.info(f"[目标引导] 开始为用户 {user_id} 生成 {goal_type} 目标的引导")
             
             # 1. 获取用户基本信息
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
