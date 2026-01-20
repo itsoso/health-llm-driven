@@ -135,10 +135,10 @@ class PreWorkoutGuidanceService:
             return {
                 "sleep_score": latest.sleep_score,
                 "sleep_hours": sleep_hours,
-                "stress_level": latest.avg_stress_level,
+                "stress_level": latest.stress_level,
                 "resting_hr": latest.resting_heart_rate,
-                "hrv": latest.hrv_avg,
-                "body_battery": latest.body_battery_charged if hasattr(latest, 'body_battery_charged') else None,
+                "hrv": latest.hrv,
+                "body_battery": latest.body_battery_most_charged,  # 使用最高充电值
                 "recent_activity": len([r for r in recent_records if r.steps and r.steps > 5000])
             }
         except Exception as e:
