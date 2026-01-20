@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date, datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 import logging
 
@@ -11,6 +11,8 @@ from app.database import get_db
 from app.models.user import User
 from app.models.daily_health import WorkoutRecord
 from app.api.deps import get_current_user_required
+from app.services.pre_workout_guidance import PreWorkoutGuidanceService
+from app.services.post_workout_analysis import PostWorkoutAnalysisService
 from app.schemas.workout import (
     WorkoutRecordCreate,
     WorkoutRecordUpdate,
@@ -755,4 +757,73 @@ async def sync_garmin_activities(
     except Exception as e:
         logger.error(f"Garmin活动同步失败: {e}")
         raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
+
+
+# ========== 运动前指导 ==========
+
+@router.post("/pre-workout-guidance", response_model=Dict[str, Any])
+async def get_pre_workout_guidance(
+    goal_id: Optional[int] = None,
+    workout_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取运动前指导
+    
+    Args:
+        goal_id: 目标ID（可选）
+        workout_type: 运动类型（可选，如 RUNNING, CARDIO 等）
+    
+    Returns:
+        运动前指导信息
+    """
+    try:
+        service = PreWorkoutGuidanceService()
+        guidance = service.generate_pre_workout_guidance(
+            db=db,
+            user_id=current_user.id,
+            goal_id=goal_id,
+            workout_type=workout_type
+        )
+        return guidance
+    except Exception as e:
+        logger.error(f"生成运动前指导失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"生成运动前指导失败: {str(e)}"
+        )
+
+
+# ========== 运动后分析 ==========
+
+@router.post("/post-workout-analysis/{workout_id}", response_model=Dict[str, Any])
+async def get_post_workout_analysis(
+    workout_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取运动后分析
+    
+    Args:
+        workout_id: 运动记录ID
+    
+    Returns:
+        运动后分析结果
+    """
+    try:
+        service = PostWorkoutAnalysisService()
+        analysis = service.generate_post_workout_analysis(
+            db=db,
+            user_id=current_user.id,
+            workout_id=workout_id
+        )
+        return analysis
+    except Exception as e:
+        logger.error(f"生成运动后分析失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"生成运动后分析失败: {str(e)}"
+        )
 
