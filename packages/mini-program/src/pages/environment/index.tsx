@@ -75,15 +75,13 @@ export default function EnvironmentPage() {
       let briefingData: MorningBriefing | null = null;
       
       try {
-        const adviceRes = await request<EnvironmentAdvice>({ url: '/environment/advice', method: 'GET' });
-        adviceData = adviceRes.data;
+        adviceData = await request<EnvironmentAdvice>({ url: '/environment/advice', method: 'GET' });
       } catch (e) {
         console.error('获取环境建议失败:', e);
       }
       
       try {
-        const briefingRes = await request<MorningBriefing>({ url: '/environment/morning-briefing', method: 'GET' });
-        briefingData = briefingRes.data;
+        briefingData = await request<MorningBriefing>({ url: '/environment/morning-briefing', method: 'GET' });
       } catch (e) {
         console.error('获取早间简报失败:', e);
       }
