@@ -712,14 +712,17 @@ function KnowledgeManagement() {
                       accept=".md,.markdown"
                       onChange={(e) => {
                         const files = Array.from(e.target.files || []);
-                        console.log('文件选择变化:', files);
+                        console.log('✅ 文件选择变化:', files.length, '个文件');
+                        files.forEach((f, i) => {
+                          console.log(`  ${i+1}. ${f.name} (${(f.size/1024).toFixed(1)} KB)`);
+                        });
                         setSelectedFiles(files);
                       }}
                       className="hidden"
                       id="course-file-upload"
                     />
-                    <label
-                      htmlFor="course-file-upload"
+                    <div 
+                      className="border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
                       onDragOver={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -727,26 +730,37 @@ function KnowledgeManagement() {
                       onDrop={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        console.log('拖拽文件', e.dataTransfer.files);
+                        console.log('📥 拖拽文件', e.dataTransfer.files.length, '个');
                         const droppedFiles = Array.from(e.dataTransfer.files).filter(
                           file => file.name.endsWith('.md') || file.name.endsWith('.markdown')
                         );
                         if (droppedFiles.length > 0) {
+                          console.log('✅ 有效的 Markdown 文件:', droppedFiles.length, '个');
                           setSelectedFiles(droppedFiles);
                         } else {
+                          console.log('❌ 没有有效的 Markdown 文件');
                           alert('请拖拽 .md 或 .markdown 文件');
                         }
                       }}
-                      className="block border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
                     >
                       <div className="text-4xl mb-2">📁</div>
-                      <p className="text-indigo-900 font-medium mb-1">
-                        点击选择文件或拖拽文件到此处
+                      <p className="text-indigo-900 font-medium mb-2">
+                        点击下方按钮选择文件或拖拽文件到此处
                       </p>
-                      <p className="text-sm text-indigo-600">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          console.log('🖱️ 点击选择文件按钮');
+                          document.getElementById('course-file-upload')?.click();
+                        }}
+                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors inline-block"
+                      >
+                        📂 选择文件
+                      </button>
+                      <p className="text-sm text-indigo-600 mt-2">
                         支持多个 .md 或 .markdown 文件
                       </p>
-                    </label>
+                    </div>
                     
                     {selectedFiles.length > 0 && (
                       <div className="mt-4 space-y-2">

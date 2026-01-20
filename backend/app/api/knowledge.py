@@ -217,11 +217,17 @@ async def upload_course_files(
     except json.JSONDecodeError:
         target_audience_list = []
     
+    # 记录接收到的文件
+    logger.info(f"[课程上传] 接收到 {len(files)} 个文件")
+    for i, file in enumerate(files):
+        logger.info(f"[课程上传] 文件 {i+1}: {file.filename}, content_type: {file.content_type}")
+    
     # 验证文件格式
     for file in files:
         filename = file.filename or ""
         ext = filename.split(".")[-1].lower() if "." in filename else ""
         if ext not in ["md", "markdown"]:
+            logger.error(f"[课程上传] 文件格式不支持: {filename}, ext: {ext}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"文件 {filename} 格式不支持，仅支持 .md 或 .markdown 文件"
@@ -280,9 +286,19 @@ async def upload_course_files(
                 })
         
         if not all_documents:
+            logger.error(f"[课程上传] 没有生成任何文档块。file_results: {file_results}")
+            error_details = []
+            for fr in file_results:
+                if not fr['success']:
+                    error_details.append(f"{fr['filename']}: {fr.get('error', '未知错误')}")
+            
+            detail_msg = "没有成功处理任何文件"
+            if error_details:
+                detail_msg += "。错误详情：" + "; ".join(error_details)
+            
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="没有成功处理任何文件"
+                detail=detail_msg
             )
         
         # 添加到向量存储
