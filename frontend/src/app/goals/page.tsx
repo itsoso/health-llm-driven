@@ -398,18 +398,46 @@ function GoalsContent() {
                         <span>心率区间</span>
                       </h4>
                       <p className="text-sm text-gray-600 mb-2">
-                        最大心率: {guidance.heart_rate_zones.max_hr} bpm
+                        最大心率: {guidance.heart_rate_zones.max_heart_rate || guidance.heart_rate_zones.max_hr} bpm
                       </p>
-                      <div className="space-y-1 text-sm">
+                      <p className="text-sm text-gray-600 mb-3">
+                        静息心率: {guidance.heart_rate_zones.resting_heart_rate || guidance.heart_rate_zones.resting_hr} bpm
+                      </p>
+                      <div className="space-y-2 text-sm">
                         {Object.entries(guidance.heart_rate_zones).map(([key, value]: [string, any]) => {
-                          if (typeof value === 'object' && value.min) {
+                          // 跳过非区间字段
+                          if (key === 'max_heart_rate' || key === 'resting_heart_rate' || key === 'max_hr' || key === 'resting_hr') {
+                            return null;
+                          }
+                          
+                          // 处理 tuple 格式 [min, max]
+                          if (Array.isArray(value) && value.length === 2) {
+                            const zoneNames: Record<string, string> = {
+                              'zone1_recovery': '恢复区 (50-60%)',
+                              'zone2_fat_burn': '燃脂区 (60-70%)',
+                              'zone3_aerobic': '有氧区 (70-80%)',
+                              'zone4_threshold': '乳酸阈值区 (80-90%)',
+                              'zone5_max': '最大心率区 (90-100%)'
+                            };
+                            
                             return (
-                              <div key={key} className="flex justify-between text-gray-700">
-                                <span className="font-medium">{value.description}:</span>
-                                <span>{value.min}-{value.max} bpm</span>
+                              <div key={key} className="flex justify-between text-gray-700 py-1 border-b border-gray-100">
+                                <span className="font-medium">{zoneNames[key] || key}:</span>
+                                <span className="text-blue-600 font-semibold">{value[0]}-{value[1]} bpm</span>
                               </div>
                             );
                           }
+                          
+                          // 处理对象格式 {min, max, description}
+                          if (typeof value === 'object' && value.min) {
+                            return (
+                              <div key={key} className="flex justify-between text-gray-700 py-1 border-b border-gray-100">
+                                <span className="font-medium">{value.description || key}:</span>
+                                <span className="text-blue-600 font-semibold">{value.min}-{value.max} bpm</span>
+                              </div>
+                            );
+                          }
+                          
                           return null;
                         })}
                       </div>
