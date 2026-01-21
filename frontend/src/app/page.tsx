@@ -19,7 +19,7 @@ export default function Home() {
             href="/ai-assistant"
             className="p-6 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105 md:col-span-2 lg:col-span-1"
           >
-            <h2 className="text-xl font-bold mb-2">🤖 AI 健康助手</h2>
+            <h2 className="text-xl font-bold mb-2">🤖 健康助手</h2>
             <p className="text-purple-100 text-sm">智能日程、实时建议、健康提醒</p>
           </Link>
 
