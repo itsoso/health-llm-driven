@@ -256,12 +256,15 @@ function WorkoutContent() {
   const postAnalysisMutation = useMutation({
     mutationFn: (workoutId: number) => workoutGuidanceApi.getPostWorkoutAnalysis(workoutId),
     onSuccess: (response) => {
+      console.log('📊 科学分析响应:', response);
+      console.log('📊 response.data:', response.data);
       setPostAnalysis(response.data);
       setShowPostAnalysis(true);
       setMessage({ type: 'success', text: '✓ 科学分析完成' });
       setTimeout(() => setMessage(null), 3000);
     },
     onError: (error: any) => {
+      console.error('❌ 科学分析失败:', error);
       setMessage({ type: 'error', text: `✗ 分析失败: ${error.message}` });
       setTimeout(() => setMessage(null), 5000);
     },
@@ -1306,6 +1309,7 @@ function WorkoutContent() {
                 )}
 
                 {/* 运动后科学分析 */}
+                {console.log('🔍 showPostAnalysis:', showPostAnalysis, 'postAnalysis:', postAnalysis)}
                 {showPostAnalysis && postAnalysis && postAnalysis.success && (
                   <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/20 rounded-xl p-6 border border-blue-700/50 mt-6">
                     <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
