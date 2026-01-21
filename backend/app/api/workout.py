@@ -855,6 +855,7 @@ async def sync_garmin_activities(
 async def get_pre_workout_guidance(
     goal_id: Optional[int] = None,
     workout_type: Optional[str] = None,
+    debug: bool = Query(default=False, description="是否返回调试信息"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
@@ -864,9 +865,10 @@ async def get_pre_workout_guidance(
     Args:
         goal_id: 目标ID（可选）
         workout_type: 运动类型（可选，如 RUNNING, CARDIO 等）
+        debug: 是否返回调试信息，展示AI决策过程（默认False）
     
     Returns:
-        运动前指导信息
+        运动前指导信息（debug模式下包含决策过程）
     """
     try:
         service = PreWorkoutGuidanceService()
@@ -874,7 +876,8 @@ async def get_pre_workout_guidance(
             db=db,
             user_id=current_user.id,
             goal_id=goal_id,
-            workout_type=workout_type
+            workout_type=workout_type,
+            debug=debug
         )
         return guidance
     except Exception as e:
@@ -891,6 +894,7 @@ async def get_pre_workout_guidance(
 async def get_post_workout_analysis(
     workout_id: int,
     force_regenerate: bool = False,
+    debug: bool = Query(default=False, description="是否返回调试信息"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
@@ -900,9 +904,10 @@ async def get_post_workout_analysis(
     Args:
         workout_id: 运动记录ID
         force_regenerate: 是否强制重新生成（默认False，使用缓存）
+        debug: 是否返回调试信息，展示AI决策过程（默认False）
     
     Returns:
-        运动后分析结果
+        运动后分析结果（debug模式下包含决策过程）
     """
     try:
         # 获取运动记录
@@ -914,20 +919,21 @@ async def get_post_workout_analysis(
         if not record:
             raise HTTPException(status_code=404, detail="运动记录不存在")
         
-        # 如果已有分析结果且不强制重新生成，直接返回缓存
-        if record.post_workout_analysis and not force_regenerate:
+        # Debug模式或强制重新生成时，不使用缓存
+        if record.post_workout_analysis and not force_regenerate and not debug:
             logger.info(f"用户 {current_user.id} 使用缓存的运动后分析 (workout_id={workout_id})")
             cached_analysis = json.loads(record.post_workout_analysis)
             cached_analysis["from_cache"] = True
             return cached_analysis
         
         # 生成新的分析
-        logger.info(f"用户 {current_user.id} 生成新的运动后分析 (workout_id={workout_id}, force={force_regenerate})")
+        logger.info(f"用户 {current_user.id} 生成新的运动后分析 (workout_id={workout_id}, force={force_regenerate}, debug={debug})")
         service = PostWorkoutAnalysisService()
         analysis = service.generate_post_workout_analysis(
             db=db,
             user_id=current_user.id,
-            workout_id=workout_id
+            workout_id=workout_id,
+            debug=debug
         )
         analysis["from_cache"] = False
         return analysis

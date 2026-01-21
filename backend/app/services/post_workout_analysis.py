@@ -27,7 +27,8 @@ class PostWorkoutAnalysisService:
         self,
         db: Session,
         user_id: int,
-        workout_id: int
+        workout_id: int,
+        debug: bool = False
     ) -> Dict[str, Any]:
         """
         生成运动后分析
@@ -36,12 +37,20 @@ class PostWorkoutAnalysisService:
             db: 数据库会话
             user_id: 用户ID
             workout_id: 运动记录ID
+            debug: 是否返回调试信息（默认False）
         
         Returns:
-            运动后分析结果
+            运动后分析结果（debug模式下包含决策过程）
         """
+        # Debug模式：记录决策过程
+        debug_info = {
+            "steps": [],
+            "data_sources": {},
+            "reasoning": []
+        } if debug else None
+        
         try:
-            logger.info(f"[运动后分析] 开始为用户 {user_id} 分析运动 {workout_id}")
+            logger.info(f"[运动后分析] 开始为用户 {user_id} 分析运动 {workout_id} (debug={debug})")
             
             # 1. 获取运动记录
             workout = db.query(WorkoutRecord).filter_by(
