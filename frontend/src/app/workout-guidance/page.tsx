@@ -127,58 +127,188 @@ export default function WorkoutGuidancePage() {
               {/* Debug 信息面板 */}
               {preGuidance.debug && (
                 <div className="bg-gradient-to-br from-purple-900/50 to-purple-800/30 rounded-xl p-6 border border-purple-700/50">
-                  <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-                    <span>🔍</span> AI 决策过程
-                  </h3>
-                  <p className="text-purple-200 mb-6 text-sm">
-                    以下展示了 AI 如何分析您的数据并生成个性化建议
-                  </p>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <span>🔍</span> AI 决策过程
+                      </h3>
+                      <p className="text-purple-200 mt-1 text-sm">
+                        以下展示了 AI 如何分析您的数据并生成个性化建议
+                      </p>
+                    </div>
+                    {preGuidance.debug.performance?.total_time_ms && (
+                      <div className="text-right">
+                        <div className="text-xs text-purple-300">总耗时</div>
+                        <div className="text-lg font-bold text-purple-200">
+                          {preGuidance.debug.performance.total_time_ms}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* 决策步骤 */}
                   <div className="mb-6">
                     <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <span>📋</span> 决策步骤
+                      <span>📋</span> 决策步骤 ({preGuidance.debug.steps.length}步)
                     </h4>
                     <div className="space-y-2">
-                      {preGuidance.debug.steps.map((step: string, index: number) => (
-                        <div key={index} className="flex items-start gap-3 bg-slate-800/50 rounded-lg p-3">
-                          <span className="text-purple-400 font-bold min-w-[24px]">{index + 1}</span>
-                          <span className="text-gray-200">{step}</span>
-                        </div>
-                      ))}
+                      {preGuidance.debug.steps.map((step: string, index: number) => {
+                        const stepName = step.replace(/^\d+\.\s*/, '');
+                        const duration = preGuidance.debug.performance?.[stepName];
+                        return (
+                          <div key={index} className="flex items-start gap-3 bg-slate-800/50 rounded-lg p-3 hover:bg-slate-800/70 transition-colors">
+                            <span className="text-purple-400 font-bold min-w-[28px] text-center bg-purple-900/30 rounded px-2 py-1">
+                              {index + 1}
+                            </span>
+                            <div className="flex-1">
+                              <span className="text-gray-200">{step}</span>
+                              {duration && (
+                                <span className="ml-2 text-xs text-purple-400">({duration})</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* 推理过程 */}
                   <div className="mb-6">
                     <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <span>🧠</span> 推理过程
+                      <span>🧠</span> 推理过程 ({preGuidance.debug.reasoning.length}条)
                     </h4>
-                    <div className="space-y-2">
-                      {preGuidance.debug.reasoning.map((reason: string, index: number) => (
-                        <div key={index} className="bg-slate-800/50 rounded-lg p-3">
-                          <span className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">{reason}</span>
-                        </div>
-                      ))}
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {preGuidance.debug.reasoning.map((reason: string, index: number) => {
+                        const isError = reason.includes('❌');
+                        const isWarning = reason.includes('⚠️');
+                        const isSuccess = reason.includes('✅');
+                        const bgColor = isError 
+                          ? 'bg-red-900/20 border-red-700/50' 
+                          : isWarning 
+                          ? 'bg-yellow-900/20 border-yellow-700/50'
+                          : isSuccess
+                          ? 'bg-green-900/20 border-green-700/50'
+                          : 'bg-slate-800/50 border-slate-700/50';
+                        
+                        return (
+                          <div key={index} className={`${bgColor} rounded-lg p-3 border`}>
+                            <span className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
+                              {reason}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* 数据来源 */}
-                  <div>
+                  <div className="mb-4">
                     <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                       <span>📊</span> 数据来源
                     </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                      {preGuidance.debug.data_sources.user_profile && (
+                        <details className="bg-slate-800/50 rounded-lg">
+                          <summary className="cursor-pointer p-3 text-purple-300 hover:text-purple-200 font-medium text-sm">
+                            👤 用户资料 →
+                          </summary>
+                          <div className="p-3 pt-0">
+                            <div className="text-xs text-gray-300 space-y-1">
+                              {Object.entries(preGuidance.debug.data_sources.user_profile).map(([key, value]) => (
+                                <div key={key} className="flex justify-between">
+                                  <span className="text-gray-400">{key}:</span>
+                                  <span className="text-gray-200">{String(value || '未设置')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                      {preGuidance.debug.data_sources.goal && (
+                        <details className="bg-slate-800/50 rounded-lg">
+                          <summary className="cursor-pointer p-3 text-purple-300 hover:text-purple-200 font-medium text-sm">
+                            🎯 运动目标 →
+                          </summary>
+                          <div className="p-3 pt-0">
+                            <div className="text-xs text-gray-300 space-y-1">
+                              <div><span className="text-gray-400">标题:</span> <span className="text-gray-200">{preGuidance.debug.data_sources.goal.title}</span></div>
+                              {preGuidance.debug.data_sources.goal.description && (
+                                <div><span className="text-gray-400">描述:</span> <span className="text-gray-200">{preGuidance.debug.data_sources.goal.description}</span></div>
+                              )}
+                              {preGuidance.debug.data_sources.goal.target_value && (
+                                <div><span className="text-gray-400">目标值:</span> <span className="text-gray-200">{preGuidance.debug.data_sources.goal.target_value} {preGuidance.debug.data_sources.goal.target_unit || ''}</span></div>
+                              )}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                      {preGuidance.debug.data_sources.recent_health && (
+                        <details className="bg-slate-800/50 rounded-lg">
+                          <summary className="cursor-pointer p-3 text-purple-300 hover:text-purple-200 font-medium text-sm">
+                            📈 健康数据 →
+                          </summary>
+                          <div className="p-3 pt-0">
+                            <div className="text-xs text-gray-300 space-y-1">
+                              {Object.entries(preGuidance.debug.data_sources.recent_health).map(([key, value]) => (
+                                value !== null && value !== undefined && (
+                                  <div key={key} className="flex justify-between">
+                                    <span className="text-gray-400">{key}:</span>
+                                    <span className="text-gray-200">{String(value)}</span>
+                                  </div>
+                                )
+                              ))}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                      {preGuidance.debug.data_sources.heart_rate_zones && (
+                        <details className="bg-slate-800/50 rounded-lg">
+                          <summary className="cursor-pointer p-3 text-purple-300 hover:text-purple-200 font-medium text-sm">
+                            💓 心率区间 →
+                          </summary>
+                          <div className="p-3 pt-0">
+                            <div className="text-xs text-gray-300 space-y-1">
+                              {Object.entries(preGuidance.debug.data_sources.heart_rate_zones).map(([key, value]) => (
+                                <div key={key} className="flex justify-between">
+                                  <span className="text-gray-400">{key}:</span>
+                                  <span className="text-gray-200">
+                                    {Array.isArray(value) ? `${value[0]}-${value[1]}` : String(value)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                    
+                    {/* 完整 JSON 数据 */}
                     <details className="bg-slate-800/50 rounded-lg">
-                      <summary className="cursor-pointer p-4 text-purple-300 hover:text-purple-200 font-medium">
-                        点击查看详细数据来源 →
+                      <summary className="cursor-pointer p-3 text-purple-300 hover:text-purple-200 font-medium text-sm">
+                        📄 查看完整 JSON 数据 →
                       </summary>
-                      <div className="p-4 pt-0">
-                        <pre className="text-xs text-gray-300 overflow-x-auto bg-slate-900/50 rounded p-4 border border-slate-700">
+                      <div className="p-3 pt-0">
+                        <pre className="text-xs text-gray-300 overflow-x-auto bg-slate-900/50 rounded p-4 border border-slate-700 max-h-64 overflow-y-auto">
                           {JSON.stringify(preGuidance.debug.data_sources, null, 2)}
                         </pre>
                       </div>
                     </details>
                   </div>
+
+                  {/* 性能指标 */}
+                  {preGuidance.debug.performance && Object.keys(preGuidance.debug.performance).length > 1 && (
+                    <div className="mt-4 pt-4 border-t border-purple-700/30">
+                      <h4 className="text-sm font-semibold text-purple-300 mb-2">⚡ 性能指标</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        {Object.entries(preGuidance.debug.performance).map(([key, value]) => (
+                          <div key={key} className="bg-slate-800/50 rounded p-2">
+                            <div className="text-purple-400">{key}</div>
+                            <div className="text-white font-mono">{String(value)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

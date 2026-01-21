@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+import time
 
 from app.models.user_profile import UserProfile
 from app.models.goal import Goal
@@ -22,6 +23,52 @@ class PreWorkoutGuidanceService:
     
     def __init__(self):
         self.rag_pipeline = RAGPipeline()
+    
+    def _init_debug_info(self) -> Dict[str, Any]:
+        """初始化 debug 信息结构"""
+        return {
+            "steps": [],
+            "data_sources": {},
+            "reasoning": [],
+            "performance": {},
+            "timeline": []
+        }
+    
+    def _add_debug_step(self, debug_info: Optional[Dict[str, Any]], step_name: str, start_time: float = None):
+        """添加决策步骤"""
+        if debug_info:
+            step_num = len(debug_info["steps"]) + 1
+            debug_info["steps"].append(f"{step_num}. {step_name}")
+            if start_time:
+                elapsed = (time.time() - start_time) * 1000
+                debug_info["performance"][step_name] = f"{elapsed:.2f}ms"
+                debug_info["timeline"].append({
+                    "step": step_name,
+                    "timestamp": time.time(),
+                    "duration_ms": elapsed
+                })
+    
+    def _add_debug_reasoning(self, debug_info: Optional[Dict[str, Any]], message: str, level: str = "info"):
+        """添加推理过程"""
+        if debug_info:
+            icons = {
+                "info": "ℹ️",
+                "success": "✅",
+                "warning": "⚠️",
+                "error": "❌",
+                "goal": "🎯",
+                "data": "📊",
+                "heart": "💓",
+                "workout": "🏃",
+                "knowledge": "📚"
+            }
+            icon = icons.get(level, "•")
+            debug_info["reasoning"].append(f"{icon} {message}")
+    
+    def _add_debug_data(self, debug_info: Optional[Dict[str, Any]], key: str, value: Any):
+        """添加数据来源"""
+        if debug_info:
+            debug_info["data_sources"][key] = value
     
     def generate_pre_workout_guidance(
         self,
@@ -44,93 +91,109 @@ class PreWorkoutGuidanceService:
         Returns:
             运动前指导信息（debug模式下包含决策过程）
         """
-        # Debug模式：记录决策过程
-        debug_info = {
-            "steps": [],
-            "data_sources": {},
-            "reasoning": []
-        } if debug else None
+        overall_start = time.time()
+        debug_info = self._init_debug_info() if debug else None
         
         try:
             logger.info(f"[运动前指导] 开始为用户 {user_id} 生成指导 (debug={debug})")
             
             # 1. 获取用户信息
-            if debug_info:
-                debug_info["steps"].append("1. 获取用户基本信息")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "获取用户基本信息", step_start)
             
             profile = db.query(UserProfile).filter_by(user_id=user_id).first()
             if not profile:
                 logger.warning(f"[运动前指导] 用户 {user_id} 没有个人资料")
-                if debug_info:
-                    debug_info["reasoning"].append("❌ 用户未设置个人资料，使用基础指导模式")
-                return self._generate_basic_guidance(workout_type or "EXERCISE")
+                self._add_debug_reasoning(debug_info, "用户未设置个人资料，使用基础指导模式", "error")
+                return self._generate_basic_guidance(workout_type or "EXERCISE", debug_info)
             
-            if debug_info:
-                debug_info["data_sources"]["user_profile"] = {
-                    "age": profile.age,
-                    "gender": profile.gender,
-                    "weight": profile.current_weight_kg,
-                    "height": profile.height_cm,
-                    "exercise_frequency": profile.exercise_frequency
-                }
-                weight_str = f"{profile.current_weight_kg}kg" if profile.current_weight_kg else "未设置"
-                debug_info["reasoning"].append(f"✅ 用户资料：{profile.age}岁，{profile.gender}，体重{weight_str}")
+            # 收集用户资料数据
+            user_profile_data = {
+                "age": profile.age,
+                "gender": profile.gender,
+                "weight_kg": profile.current_weight_kg,
+                "height_cm": profile.height_cm,
+                "exercise_frequency": profile.exercise_frequency,
+                "bmi": profile.bmi
+            }
+            self._add_debug_data(debug_info, "user_profile", user_profile_data)
+            
+            # 格式化用户信息展示
+            profile_parts = []
+            if profile.age:
+                profile_parts.append(f"{profile.age}岁")
+            if profile.gender:
+                profile_parts.append(profile.gender)
+            if profile.current_weight_kg:
+                profile_parts.append(f"体重{profile.current_weight_kg}kg")
+            if profile.height_cm:
+                profile_parts.append(f"身高{profile.height_cm}cm")
+            if profile.bmi:
+                profile_parts.append(f"BMI {profile.bmi}")
+            
+            self._add_debug_reasoning(debug_info, f"用户资料：{', '.join(profile_parts) if profile_parts else '基本信息不完整'}", "success")
             
             # 2. 获取用户目标
-            if debug_info:
-                debug_info["steps"].append("2. 获取用户运动目标")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "获取用户运动目标", step_start)
             
             goal = None
             if goal_id:
                 goal = db.query(Goal).filter_by(id=goal_id, user_id=user_id).first()
-                if debug_info and goal:
-                    debug_info["reasoning"].append(f"🎯 使用指定目标：{goal.title}")
+                if goal:
+                    self._add_debug_reasoning(debug_info, f"使用指定目标：{goal.title}", "goal")
             else:
                 # 获取最近的活跃目标
                 goal = db.query(Goal).filter_by(
                     user_id=user_id,
                     status="active"
                 ).order_by(Goal.priority.desc(), Goal.created_at.desc()).first()
-                if debug_info:
-                    if goal:
-                        debug_info["reasoning"].append(f"🎯 自动选择活跃目标：{goal.title}")
-                    else:
-                        debug_info["reasoning"].append("⚠️ 用户暂无活跃目标")
+                if goal:
+                    self._add_debug_reasoning(debug_info, f"自动选择活跃目标：{goal.title}", "goal")
+                else:
+                    self._add_debug_reasoning(debug_info, "用户暂无活跃目标", "warning")
             
-            if debug_info and goal:
-                debug_info["data_sources"]["goal"] = {
+            if goal:
+                goal_data = {
+                    "id": goal.id,
                     "title": goal.title,
                     "description": goal.description,
                     "goal_type": goal.goal_type,
                     "target_value": goal.target_value,
-                    "target_unit": goal.target_unit
+                    "target_unit": goal.target_unit,
+                    "priority": goal.priority
                 }
+                self._add_debug_data(debug_info, "goal", goal_data)
             
             # 3. 获取最近的健康数据
-            if debug_info:
-                debug_info["steps"].append("3. 获取最近7天Garmin健康数据")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "获取最近7天Garmin健康数据", step_start)
             
             recent_data = self._get_recent_health_data(db, user_id)
+            self._add_debug_data(debug_info, "recent_health", recent_data)
             
-            if debug_info:
-                debug_info["data_sources"]["recent_health"] = recent_data
-                if recent_data:
-                    health_summary = []
-                    if recent_data.get("sleep_score"):
-                        health_summary.append(f"睡眠评分{recent_data['sleep_score']}")
-                    if recent_data.get("resting_hr"):
-                        health_summary.append(f"静息心率{recent_data['resting_hr']}bpm")
-                    if recent_data.get("hrv"):
-                        health_summary.append(f"HRV {recent_data['hrv']}ms")
-                    if recent_data.get("body_battery"):
-                        health_summary.append(f"身体电量{recent_data['body_battery']}")
-                    debug_info["reasoning"].append(f"📊 最近健康状态：{', '.join(health_summary)}")
-                else:
-                    debug_info["reasoning"].append("⚠️ 未获取到最近的健康数据")
+            if recent_data:
+                health_summary = []
+                if recent_data.get("sleep_score"):
+                    health_summary.append(f"睡眠评分{recent_data['sleep_score']}")
+                if recent_data.get("sleep_hours"):
+                    health_summary.append(f"睡眠{recent_data['sleep_hours']}小时")
+                if recent_data.get("resting_hr"):
+                    health_summary.append(f"静息心率{recent_data['resting_hr']}bpm")
+                if recent_data.get("hrv"):
+                    health_summary.append(f"HRV {recent_data['hrv']}ms")
+                if recent_data.get("body_battery"):
+                    health_summary.append(f"身体电量{recent_data['body_battery']}")
+                if recent_data.get("stress_level"):
+                    health_summary.append(f"压力{recent_data['stress_level']}")
+                
+                self._add_debug_reasoning(debug_info, f"最近健康状态：{', '.join(health_summary)}", "data")
+            else:
+                self._add_debug_reasoning(debug_info, "未获取到最近的健康数据", "warning")
             
             # 4. 计算心率区间
-            if debug_info:
-                debug_info["steps"].append("4. 计算个性化心率区间")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "计算个性化心率区间", step_start)
             
             hr_zones = None
             if profile.age:
@@ -138,38 +201,43 @@ class PreWorkoutGuidanceService:
                 hr_zones = digital_twin.calculate_target_heart_rate_zones()
                 logger.info(f"[运动前指导] 心率区间: {hr_zones}")
                 
-                if debug_info and hr_zones:
-                    debug_info["data_sources"]["heart_rate_zones"] = hr_zones
-                    debug_info["reasoning"].append(
-                        f"💓 基于年龄{profile.age}岁和静息心率{hr_zones.get('resting_heart_rate', 'N/A')}bpm计算5个心率区间"
+                if hr_zones:
+                    self._add_debug_data(debug_info, "heart_rate_zones", hr_zones)
+                    
+                    resting_hr = hr_zones.get('resting_heart_rate', 'N/A')
+                    max_hr = hr_zones.get('max_heart_rate', 'N/A')
+                    self._add_debug_reasoning(
+                        debug_info,
+                        f"基于年龄{profile.age}岁和静息心率{resting_hr}bpm计算5个心率区间",
+                        "heart"
                     )
-                    debug_info["reasoning"].append(
-                        f"   - 最大心率: {hr_zones.get('max_heart_rate')}bpm"
-                    )
+                    self._add_debug_reasoning(debug_info, f"最大心率: {max_hr}bpm", "info")
+                    
                     zone2 = hr_zones.get('zone2_fat_burn', [])
                     if zone2:
-                        debug_info["reasoning"].append(
-                            f"   - 建议训练区间(Zone 2): {zone2[0]}-{zone2[1]}bpm"
+                        self._add_debug_reasoning(
+                            debug_info,
+                            f"建议训练区间(Zone 2 有氧燃脂): {zone2[0]}-{zone2[1]}bpm",
+                            "heart"
                         )
-            elif debug_info:
-                debug_info["reasoning"].append("⚠️ 用户未设置年龄，无法计算心率区间")
+            else:
+                self._add_debug_reasoning(debug_info, "用户未设置年龄，无法计算心率区间", "warning")
             
             # 5. 确定运动类型
-            if debug_info:
-                debug_info["steps"].append("5. 确定运动类型")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "确定运动类型", step_start)
             
             if not workout_type and goal:
                 workout_type = self._infer_workout_type_from_goal(goal)
-                if debug_info:
-                    debug_info["reasoning"].append(f"🏃 根据目标推断运动类型：{workout_type}")
+                self._add_debug_reasoning(debug_info, f"根据目标推断运动类型：{workout_type}", "workout")
             workout_type = workout_type or "EXERCISE"
             
-            if debug_info and not goal:
-                debug_info["reasoning"].append(f"🏃 使用默认运动类型：{workout_type}")
+            if not goal:
+                self._add_debug_reasoning(debug_info, f"使用默认运动类型：{workout_type}", "info")
             
             # 6. 从知识库检索运动前建议
-            if debug_info:
-                debug_info["steps"].append("6. 从张展晖课程知识库检索相关建议")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "从张展晖课程知识库检索相关建议", step_start)
             
             knowledge = self._retrieve_pre_workout_knowledge(
                 workout_type=workout_type,
@@ -179,8 +247,8 @@ class PreWorkoutGuidanceService:
             )
             
             # 7. 生成指导内容
-            if debug_info:
-                debug_info["steps"].append("7. 生成个性化运动指导")
+            step_start = time.time()
+            self._add_debug_step(debug_info, "生成个性化运动指导", step_start)
             
             guidance = {
                 "success": True,
@@ -197,10 +265,15 @@ class PreWorkoutGuidanceService:
             
             # 添加debug信息
             if debug_info:
-                debug_info["reasoning"].append("✅ 生成完成，包含以下内容：")
-                debug_info["reasoning"].append(f"   - 热身建议：{len(guidance['warm_up'])}条")
-                debug_info["reasoning"].append(f"   - 关键提醒：{len(guidance['key_reminders'])}条")
-                debug_info["reasoning"].append(f"   - 课程要点：{len(guidance['course_insights'])}条")
+                total_time = (time.time() - overall_start) * 1000
+                debug_info["performance"]["total_time_ms"] = f"{total_time:.2f}ms"
+                debug_info["performance"]["total_time_s"] = f"{total_time/1000:.2f}s"
+                
+                self._add_debug_reasoning(debug_info, "生成完成，包含以下内容：", "success")
+                self._add_debug_reasoning(debug_info, f"热身建议：{len(guidance['warm_up'])}条", "info")
+                self._add_debug_reasoning(debug_info, f"关键提醒：{len(guidance['key_reminders'])}条", "info")
+                self._add_debug_reasoning(debug_info, f"课程要点：{len(guidance['course_insights'])}条", "info")
+                self._add_debug_reasoning(debug_info, f"总耗时：{total_time:.2f}ms", "info")
                 
                 guidance["debug"] = debug_info
             
@@ -209,10 +282,15 @@ class PreWorkoutGuidanceService:
             
         except Exception as e:
             logger.error(f"[运动前指导] 生成失败: {e}", exc_info=True)
+            if debug_info:
+                self._add_debug_reasoning(debug_info, f"生成失败：{str(e)}", "error")
+                debug_info["error"] = str(e)
+                debug_info["error_type"] = type(e).__name__
             return {
                 "success": False,
                 "error": str(e),
-                "message": "生成运动前指导失败，请稍后重试"
+                "message": "生成运动前指导失败，请稍后重试",
+                "debug": debug_info if debug else None
             }
     
     def _get_recent_health_data(self, db: Session, user_id: int) -> Dict[str, Any]:
@@ -244,8 +322,10 @@ class PreWorkoutGuidanceService:
                 "stress_level": latest.stress_level,
                 "resting_hr": latest.resting_heart_rate,
                 "hrv": latest.hrv,
-                "body_battery": latest.body_battery_most_charged,  # 使用最高充电值
-                "recent_activity": len([r for r in recent_records if r.steps and r.steps > 5000])
+                "body_battery": latest.body_battery_most_charged,
+                "recent_activity": len([r for r in recent_records if r.steps and r.steps > 5000]),
+                "data_points_count": len(recent_records),
+                "latest_date": str(latest.record_date) if latest.record_date else None
             }
         except Exception as e:
             logger.error(f"[运动前指导] 获取健康数据失败: {e}")
@@ -281,8 +361,7 @@ class PreWorkoutGuidanceService:
         """从知识库检索运动前建议"""
         try:
             if not self.rag_pipeline.is_available():
-                if debug_info:
-                    debug_info["reasoning"].append("⚠️ 知识库不可用，跳过检索")
+                self._add_debug_reasoning(debug_info, "知识库不可用，跳过检索", "warning")
                 return {"key_points": []}
             
             # 构建查询
@@ -300,9 +379,7 @@ class PreWorkoutGuidanceService:
             query = " ".join(query_parts)
             logger.info(f"[运动前指导] 知识库查询: {query}")
             
-            if debug_info:
-                debug_info["data_sources"]["knowledge_query"] = query
-                debug_info["reasoning"].append(f"📚 知识库查询：{query}")
+            self._add_debug_reasoning(debug_info, f"知识库查询：{query}", "knowledge")
             
             # 检索知识
             knowledge_results = self.rag_pipeline.retrieve_relevant_knowledge(
@@ -313,31 +390,29 @@ class PreWorkoutGuidanceService:
             
             if knowledge_results:
                 key_points = []
+                knowledge_data = []
                 for item in knowledge_results:
                     if item.get("content"):
-                        key_points.append(item["content"][:150])
-                
-                if debug_info:
-                    debug_info["data_sources"]["knowledge_results"] = [
-                        {
-                            "content": item.get("content", "")[:100] + "...",
+                        content = item["content"][:150]
+                        key_points.append(content)
+                        knowledge_data.append({
+                            "content": content + "...",
                             "source": item.get("source", "unknown"),
-                            "score": item.get("score", 0)
-                        }
-                        for item in knowledge_results[:3]
-                    ]
-                    debug_info["reasoning"].append(f"📖 从知识库检索到{len(knowledge_results)}条相关内容")
+                            "score": round(item.get("score", 0), 3)
+                        })
+                
+                self._add_debug_data(debug_info, "knowledge_query", query)
+                self._add_debug_data(debug_info, "knowledge_results", knowledge_data)
+                self._add_debug_reasoning(debug_info, f"从知识库检索到{len(knowledge_results)}条相关内容", "knowledge")
                 
                 return {"key_points": key_points[:3]}
             else:
-                if debug_info:
-                    debug_info["reasoning"].append("⚠️ 知识库未找到相关内容")
+                self._add_debug_reasoning(debug_info, "知识库未找到相关内容", "warning")
                 return {"key_points": []}
                 
         except Exception as e:
             logger.error(f"[运动前指导] 检索知识失败: {e}")
-            if debug_info:
-                debug_info["reasoning"].append(f"❌ 知识库检索失败：{str(e)}")
+            self._add_debug_reasoning(debug_info, f"知识库检索失败：{str(e)}", "error")
             return {"key_points": []}
     
     def _format_goal_info(self, goal: Goal) -> Dict[str, Any]:
@@ -476,8 +551,10 @@ class PreWorkoutGuidanceService:
         else:
             return f"今日建议进行{workout_type}训练，保持适当强度，注意心率控制。"
     
-    def _generate_basic_guidance(self, workout_type: str) -> Dict[str, Any]:
+    def _generate_basic_guidance(self, workout_type: str, debug_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """生成基础指导（用户数据不足时）"""
+        if debug_info:
+            self._add_debug_reasoning(debug_info, "使用基础指导模式（用户数据不足）", "warning")
         return {
             "success": True,
             "workout_type": workout_type,
@@ -492,5 +569,6 @@ class PreWorkoutGuidanceService:
                 "🎯 循序渐进，避免运动损伤"
             ],
             "message": "建议完善个人资料以获取更精准的指导",
-            "generated_at": get_china_now().isoformat()
+            "generated_at": get_china_now().isoformat(),
+            "debug": debug_info if debug_info else None
         }
