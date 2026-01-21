@@ -190,6 +190,7 @@ class PostWorkoutAnalysisService:
         ]
         
         # 基于分布给出建议
+        zone1_pct = zones_data["zone1"]["percentage"]
         zone2_pct = zones_data["zone2"]["percentage"]
         zone3_pct = zones_data["zone3"]["percentage"]
         zone4_pct = zones_data["zone4"]["percentage"]
