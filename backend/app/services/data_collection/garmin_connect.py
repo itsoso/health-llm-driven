@@ -1666,9 +1666,12 @@ class GarminConnectService:
                                     total_vigorous_mins += int(activity_vigorous)
                     
                     # 更新数据（如果之前没有获取到，或者值为0但活动数据中有值）
-                    if steps is None or (steps == 0 and total_steps > 0):
+                    # 修复：如果活动数据的步数大于summary的步数，应该使用活动数据（更准确）
+                    logger.info(f"步数对比 - summary步数: {steps}, 活动数据总步数: {total_steps}")
+                    if steps is None or (steps == 0 and total_steps > 0) or (total_steps > steps):
+                        old_steps = steps
                         steps = total_steps if total_steps > 0 else steps
-                        logger.info(f"从活动数据获取步数: {steps}")
+                        logger.info(f"从活动数据更新步数: {old_steps} -> {steps}")
                     if calories is None or (calories == 0 and total_calories > 0):
                         calories = total_calories if total_calories > 0 else calories
                         logger.info(f"从活动数据获取卡路里: {calories}")
