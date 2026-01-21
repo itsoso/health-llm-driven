@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine
-from app.models.daily_health import GarminDailyData
+from app.models.daily_health import GarminData
 from app.models.user import User
 
 
@@ -27,10 +27,10 @@ def check_vo2max_data(db: Session, user_id: int, days: int = 30):
     start_date = date.today() - timedelta(days=days)
     
     # 检查 Garmin 每日数据
-    records = db.query(GarminDailyData).filter(
-        GarminDailyData.user_id == user_id,
-        GarminDailyData.record_date >= start_date
-    ).order_by(GarminDailyData.record_date.desc()).all()
+    records = db.query(GarminData).filter(
+        GarminData.user_id == user_id,
+        GarminData.record_date >= start_date
+    ).order_by(GarminData.record_date.desc()).all()
     
     print(f"\n用户 {user_id} 最近 {days} 天的 Garmin 每日数据 VO2Max:")
     print("-" * 60)
@@ -113,9 +113,9 @@ def sync_vo2max_from_garmin(db: Session, user_id: int, days: int = 7):
                     print(f"  {target_date}: 获取到 VO2Max = {vo2max_run}")
                     
                     # 更新数据库
-                    record = db.query(GarminDailyData).filter(
-                        GarminDailyData.user_id == user_id,
-                        GarminDailyData.record_date == target_date
+                    record = db.query(GarminData).filter(
+                        GarminData.user_id == user_id,
+                        GarminData.record_date == target_date
                     ).first()
                     
                     if record:
