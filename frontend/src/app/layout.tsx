@@ -7,7 +7,7 @@ import Navigation from '@/components/Navigation';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: '自由是自律的泡沫 - 个人记录',
+  title: '个人助理',
   description: '基于LLM的个性化健康管理系统',
   icons: {
     icon: '/favicon.png',
