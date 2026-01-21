@@ -380,12 +380,12 @@ class PreWorkoutGuidanceService:
             for keyword in keywords[:2]:  # 取前2个关键词
                 queries.append({
                     "query": f"{keyword}训练方法",
-                    "category": "exercise_science",
+                    "category": None,  # 不限制分类，知识库中分类不统一
                     "n_results": 3
                 })
                 queries.append({
                     "query": f"{keyword}注意事项",
-                    "category": None,  # 不限制分类，提高召回
+                    "category": None,
                     "n_results": 2
                 })
             
@@ -407,7 +407,14 @@ class PreWorkoutGuidanceService:
             # 3. 心率相关查询
             queries.append({
                 "query": "心率区间训练",
-                "category": "exercise_science",
+                "category": None,
+                "n_results": 2
+            })
+            
+            # 4. 热身相关查询
+            queries.append({
+                "query": "运动前热身",
+                "category": None,
                 "n_results": 2
             })
             
