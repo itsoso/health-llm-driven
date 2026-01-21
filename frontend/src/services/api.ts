@@ -300,9 +300,18 @@ export const deviceApi = {
 // 运动指导
 export const workoutGuidanceApi = {
   // 获取运动前指导
-  getPreWorkoutGuidance: (goalId?: number, workoutType?: string) =>
-    api.post('/workout/pre-workout-guidance', { goal_id: goalId, workout_type: workoutType }),
+  getPreWorkoutGuidance: (goalId?: number, workoutType?: string, debug: boolean = false) => {
+    const params = new URLSearchParams();
+    if (goalId) params.append('goal_id', goalId.toString());
+    if (workoutType) params.append('workout_type', workoutType);
+    if (debug) params.append('debug', 'true');
+    return api.post(`/workout/pre-workout-guidance?${params.toString()}`);
+  },
   // 获取运动后分析
-  getPostWorkoutAnalysis: (workoutId: number, forceRegenerate: boolean = false) =>
-    api.post(`/workout/post-workout-analysis/${workoutId}?force_regenerate=${forceRegenerate}`),
+  getPostWorkoutAnalysis: (workoutId: number, forceRegenerate: boolean = false, debug: boolean = false) => {
+    const params = new URLSearchParams();
+    if (forceRegenerate) params.append('force_regenerate', 'true');
+    if (debug) params.append('debug', 'true');
+    return api.post(`/workout/post-workout-analysis/${workoutId}?${params.toString()}`);
+  },
 };
