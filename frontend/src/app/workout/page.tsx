@@ -1348,8 +1348,7 @@ function WorkoutContent() {
                 </div>
 
                 {/* 心率区间分布（区间用时） - 保留原有的，但只在stats tab时显示 */}
-                {activeTab === 'stats' &&
-                {hrZoneData.length > 0 && (() => {
+                {activeTab === 'stats' && hrZoneData.length > 0 && (() => {
                   const total = hrZoneData.reduce((sum, z) => sum + z.value, 0);
                   // 计算最大心率（用于计算区间范围）
                   const maxHR = workoutDetail?.max_heart_rate || 220;
