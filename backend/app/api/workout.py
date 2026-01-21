@@ -872,7 +872,7 @@ async def get_pre_workout_guidance(
     """
     try:
         service = PreWorkoutGuidanceService()
-        guidance = service.generate_pre_workout_guidance(
+        guidance = await service.generate_pre_workout_guidance(
             db=db,
             user_id=current_user.id,
             goal_id=goal_id,

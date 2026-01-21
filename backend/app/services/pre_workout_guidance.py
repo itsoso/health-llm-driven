@@ -13,6 +13,7 @@ from app.models.goal import Goal
 from app.models.daily_health import GarminData
 from app.services.digital_twin import DigitalTwinService
 from app.services.knowledge.rag_pipeline import RAGPipeline
+from app.services.environment.environment_advisor import environment_advisor
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class PreWorkoutGuidanceService:
         if debug_info:
             debug_info["data_sources"][key] = value
     
-    def generate_pre_workout_guidance(
+    async def generate_pre_workout_guidance(
         self,
         db: Session,
         user_id: int,
@@ -223,7 +224,97 @@ class PreWorkoutGuidanceService:
             else:
                 self._add_debug_reasoning(debug_info, "用户未设置年龄，无法计算心率区间", "warning")
             
-            # 5. 确定运动类型
+            # 5. 获取环境因素（天气和空气质量）
+            step_start = time.time()
+            self._add_debug_step(debug_info, "检测环境因素（天气和空气质量）", step_start)
+            
+            environment_data = None
+            environment_warnings = []
+            try:
+                # 获取用户城市（从 profile 或默认杭州）
+                user_city = profile.city if hasattr(profile, 'city') and profile.city else "杭州"
+                
+                # 获取用户慢性病列表
+                chronic_conditions = profile.chronic_conditions if profile.chronic_conditions else []
+                
+                # 获取综合环境建议
+                environment_data = await environment_advisor.get_comprehensive_advice(
+                    city=user_city,
+                    user_conditions=chronic_conditions
+                )
+                
+                self._add_debug_data(debug_info, "environment", {
+                    "city": user_city,
+                    "weather": environment_data.get("weather", {}),
+                    "air_quality": environment_data.get("air_quality", {}),
+                    "outdoor_suitable": environment_data.get("exercise", {}).get("outdoor_suitable"),
+                    "score": environment_data.get("exercise", {}).get("score")
+                })
+                
+                # 分析环境因素
+                weather = environment_data.get("weather", {})
+                aqi = environment_data.get("air_quality", {})
+                exercise_info = environment_data.get("exercise", {})
+                
+                # 天气摘要
+                if weather.get("available"):
+                    temp = weather.get("temperature")
+                    weather_desc = weather.get("weather")
+                    self._add_debug_reasoning(
+                        debug_info,
+                        f"当前天气：{weather_desc}，{temp}°C",
+                        "info"
+                    )
+                
+                # 空气质量
+                if aqi.get("available"):
+                    aqi_val = aqi.get("aqi")
+                    aqi_desc = aqi.get("description")
+                    aqi_level = aqi.get("level")
+                    
+                    self._add_debug_reasoning(
+                        debug_info,
+                        f"空气质量：{aqi_desc}（AQI {aqi_val}）",
+                        "success" if aqi_level in ["excellent", "good"] else "warning"
+                    )
+                    
+                    # AQI 警告
+                    if aqi_val > 150:
+                        environment_warnings.append(f"⚠️ 空气质量{aqi_desc}（AQI {aqi_val}），强烈建议室内运动")
+                        self._add_debug_reasoning(debug_info, "空气质量差，不适合户外运动", "warning")
+                    elif aqi_val > 100:
+                        environment_warnings.append(f"⚠️ 空气质量{aqi_desc}（AQI {aqi_val}），建议减少户外运动时间")
+                        self._add_debug_reasoning(debug_info, "空气质量一般，建议缩短户外运动时间", "warning")
+                
+                # 户外运动适宜性
+                outdoor_suitable = exercise_info.get("outdoor_suitable", True)
+                outdoor_score = exercise_info.get("score", 100)
+                
+                if not outdoor_suitable:
+                    self._add_debug_reasoning(
+                        debug_info,
+                        f"户外运动适宜度：{outdoor_score}/100（不推荐户外）",
+                        "warning"
+                    )
+                else:
+                    self._add_debug_reasoning(
+                        debug_info,
+                        f"户外运动适宜度：{outdoor_score}/100（适合户外）",
+                        "success"
+                    )
+                
+                # 添加环境相关的警告
+                env_warnings = environment_data.get("warnings", [])
+                if env_warnings:
+                    environment_warnings.extend(env_warnings)
+                    for warning in env_warnings:
+                        self._add_debug_reasoning(debug_info, warning, "warning")
+                
+            except Exception as e:
+                logger.error(f"[运动前指导] 获取环境数据失败: {e}", exc_info=True)
+                self._add_debug_reasoning(debug_info, f"环境数据获取失败：{str(e)}", "warning")
+            
+            # 6. 确定运动类型
             step_start = time.time()
             self._add_debug_step(debug_info, "确定运动类型", step_start)
             
@@ -235,7 +326,7 @@ class PreWorkoutGuidanceService:
             if not goal:
                 self._add_debug_reasoning(debug_info, f"使用默认运动类型：{workout_type}", "info")
             
-            # 6. 从知识库检索运动前建议
+            # 7. 从知识库检索运动前建议
             step_start = time.time()
             self._add_debug_step(debug_info, "从张展晖课程知识库检索相关建议", step_start)
             
@@ -246,9 +337,12 @@ class PreWorkoutGuidanceService:
                 debug_info=debug_info
             )
             
-            # 7. 生成指导内容
+            # 8. 生成指导内容
             step_start = time.time()
             self._add_debug_step(debug_info, "生成个性化运动指导", step_start)
+            
+            # 生成关键提醒（包含环境因素）
+            key_reminders = self._generate_key_reminders(workout_type, hr_zones, recent_data, environment_warnings)
             
             guidance = {
                 "success": True,
@@ -257,8 +351,9 @@ class PreWorkoutGuidanceService:
                 "user_status": self._format_user_status(recent_data),
                 "training_objective": self._generate_training_objective(goal, workout_type, recent_data),
                 "heart_rate_zones": hr_zones,
+                "environment": self._format_environment_info(environment_data) if environment_data else None,
                 "warm_up": self._generate_warm_up_tips(workout_type, knowledge),
-                "key_reminders": self._generate_key_reminders(workout_type, hr_zones, recent_data),
+                "key_reminders": key_reminders,
                 "course_insights": knowledge.get("key_points", []),
                 "generated_at": get_china_now().isoformat()
             }
@@ -557,10 +652,15 @@ class PreWorkoutGuidanceService:
         self,
         workout_type: str,
         hr_zones: Optional[Dict[str, Any]],
-        recent_data: Dict[str, Any]
+        recent_data: Dict[str, Any],
+        environment_warnings: List[str] = None
     ) -> List[str]:
-        """生成关键提醒"""
+        """生成关键提醒（包含环境因素）"""
         reminders = []
+        
+        # 环境因素警告（优先显示）
+        if environment_warnings:
+            reminders.extend(environment_warnings[:2])  # 最多显示2条环境警告
         
         # 心率提醒
         if hr_zones:
@@ -618,6 +718,36 @@ class PreWorkoutGuidanceService:
             return f"今日目标：{goal.description}。建议进行{workout_type}训练，保持在目标心率区间。"
         else:
             return f"今日建议进行{workout_type}训练，保持适当强度，注意心率控制。"
+    
+    def _format_environment_info(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """格式化环境信息"""
+        if not environment_data:
+            return None
+        
+        weather = environment_data.get("weather", {})
+        aqi = environment_data.get("air_quality", {})
+        exercise = environment_data.get("exercise", {})
+        
+        return {
+            "weather": {
+                "temperature": weather.get("temperature"),
+                "feels_like": weather.get("feels_like"),
+                "humidity": weather.get("humidity"),
+                "description": weather.get("weather"),
+                "summary": weather.get("summary")
+            },
+            "air_quality": {
+                "aqi": aqi.get("aqi"),
+                "level": aqi.get("level"),
+                "description": aqi.get("description"),
+                "pm25": aqi.get("pm25")
+            },
+            "outdoor_suitable": exercise.get("outdoor_suitable"),
+            "outdoor_score": exercise.get("score"),
+            "status": exercise.get("status"),
+            "recommended_activities": exercise.get("recommended_activities", []),
+            "advices": environment_data.get("advices", [])[:3]  # 最多3条建议
+        }
     
     def _generate_basic_guidance(self, workout_type: str, debug_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """生成基础指导（用户数据不足时）"""
