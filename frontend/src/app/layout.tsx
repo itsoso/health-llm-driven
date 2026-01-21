@@ -4,7 +4,11 @@ import './globals.css';
 import { Providers } from './providers';
 import Navigation from '@/components/Navigation';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ 
+  subsets: ['latin'],
+  display: 'swap', // 使用 swap 显示策略，避免阻塞渲染
+  adjustFontFallback: false, // 禁用字体回退调整，减少预加载
+});
 
 export const metadata: Metadata = {
   title: '自由是自律的泡沫 - 个人助理 - 个人记录',
