@@ -589,10 +589,39 @@ class WorkoutSyncService:
             except Exception as e:
                 logger.debug(f"获取GPS数据失败: {e}")
             
+            # 尝试获取计圈/分段数据
+            lap_data = None
+            try:
+                # splits 数据可能包含计圈信息
+                if splits and isinstance(splits, dict):
+                    lap_data = splits
+                    logger.debug(f"从splits获取计圈数据")
+                
+                # 也尝试从activity_details获取laps
+                if not lap_data and activity_details and isinstance(activity_details, dict):
+                    laps = activity_details.get('laps') or activity_details.get('lapDTOs')
+                    if laps:
+                        lap_data = {"laps": laps}
+                        logger.debug(f"从activity_details获取laps数据: {len(laps)} 圈")
+                
+                # 尝试直接获取laps
+                if not lap_data:
+                    try:
+                        laps = self.client.get_activity_splits(activity_id)
+                        if laps:
+                            lap_data = laps if isinstance(laps, dict) else {"laps": laps}
+                            logger.debug(f"直接获取activity_splits成功")
+                    except Exception as e:
+                        logger.debug(f"直接获取activity_splits失败: {e}")
+                        
+            except Exception as e:
+                logger.debug(f"获取计圈数据失败: {e}")
+            
             return {
                 "details": details,
                 "heart_rate_data": hr_data,
-                "gps_data": gps_data
+                "gps_data": gps_data,
+                "lap_data": lap_data
             }
         except Exception as e:
             logger.error(f"{self._log_prefix()}获取活动详情失败: {e}")
@@ -935,6 +964,98 @@ class WorkoutSyncService:
         
         return route_points
     
+    def _parse_lap_data(self, lap_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """解析计圈/分段数据"""
+        lap_list = []
+        
+        if not lap_data or not isinstance(lap_data, dict):
+            return lap_list
+        
+        try:
+            # 尝试从不同的数据结构中提取计圈数据
+            laps = lap_data.get('laps') or lap_data.get('lapDTOs') or lap_data.get('splits')
+            
+            if not laps or not isinstance(laps, list):
+                # 如果lap_data本身就是列表
+                if isinstance(lap_data, list):
+                    laps = lap_data
+                else:
+                    return lap_list
+            
+            for idx, lap in enumerate(laps):
+                if not isinstance(lap, dict):
+                    continue
+                
+                lap_info = {
+                    "lap": idx + 1
+                }
+                
+                # 距离（米）
+                distance = lap.get('distance') or lap.get('totalDistance')
+                if distance:
+                    lap_info["distance"] = float(distance)
+                
+                # 时长（秒）
+                duration = lap.get('duration') or lap.get('elapsedDuration') or lap.get('movingDuration')
+                if duration:
+                    # Garmin可能返回毫秒，需要转换
+                    if duration > 10000:  # 大于10000认为是毫秒
+                        duration = duration / 1000
+                    lap_info["duration"] = int(duration)
+                
+                # 心率
+                avg_hr = lap.get('averageHR') or lap.get('avgHR') or lap.get('averageHeartRate')
+                if avg_hr:
+                    lap_info["avg_hr"] = int(avg_hr)
+                
+                max_hr = lap.get('maxHR') or lap.get('maxHeartRate')
+                if max_hr:
+                    lap_info["max_hr"] = int(max_hr)
+                
+                # 配速（秒/公里）
+                avg_pace = lap.get('averagePace') or lap.get('avgPace')
+                if avg_pace:
+                    lap_info["avg_pace"] = int(avg_pace)
+                
+                # 速度（km/h）
+                avg_speed = lap.get('averageSpeed') or lap.get('avgSpeed')
+                if avg_speed:
+                    # Garmin返回的是m/s，转换为km/h
+                    lap_info["avg_speed"] = round(float(avg_speed) * 3.6, 2)
+                
+                # 海拔
+                elevation_gain = lap.get('elevationGain') or lap.get('totalAscent')
+                if elevation_gain:
+                    lap_info["elevation_gain"] = float(elevation_gain)
+                
+                elevation_loss = lap.get('elevationLoss') or lap.get('totalDescent')
+                if elevation_loss:
+                    lap_info["elevation_loss"] = float(elevation_loss)
+                
+                # 卡路里
+                calories = lap.get('calories')
+                if calories:
+                    lap_info["calories"] = int(calories)
+                
+                # 步频
+                avg_cadence = lap.get('averageRunningCadenceInStepsPerMinute') or lap.get('avgCadence')
+                if avg_cadence:
+                    lap_info["avg_cadence"] = int(avg_cadence)
+                
+                # 功率（骑行）
+                avg_power = lap.get('averagePower') or lap.get('avgPower')
+                if avg_power:
+                    lap_info["avg_power"] = int(avg_power)
+                
+                lap_list.append(lap_info)
+            
+            logger.debug(f"解析计圈数据得到 {len(lap_list)} 圈")
+            
+        except Exception as e:
+            logger.error(f"解析计圈数据失败: {e}")
+        
+        return lap_list
+    
     async def sync_activities(
         self,
         db: Session,
@@ -1051,6 +1172,13 @@ class WorkoutSyncService:
                                     logger.warning(f"{self._log_prefix()}活动 {activity_id} GPS数据解析失败，gps_data类型: {type(gps_data)}")
                             else:
                                 logger.debug(f"{self._log_prefix()}活动 {activity_id} 未获取到GPS数据")
+                            
+                            # 解析计圈数据
+                            if details_data.get("lap_data"):
+                                lap_points = self._parse_lap_data(details_data["lap_data"])
+                                if lap_points:
+                                    parsed["lap_data"] = json.dumps(lap_points)
+                                    logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(lap_points)} 圈数据")
                     except Exception as e:
                         logger.debug(f"获取活动详情失败: {e}")
                     
@@ -1066,6 +1194,11 @@ class WorkoutSyncService:
                         # 更新GPS数据（如果缺失）
                         if not existing.route_data and parsed.get("route_data"):
                             existing.route_data = parsed["route_data"]
+                            updated = True
+                        
+                        # 更新计圈数据（如果缺失）
+                        if not existing.lap_data and parsed.get("lap_data"):
+                            existing.lap_data = parsed["lap_data"]
                             updated = True
                         
                         # 更新其他可能缺失的字段

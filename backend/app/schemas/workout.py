@@ -64,6 +64,22 @@ class RoutePoint(BaseModel):
     distance: Optional[float] = None  # 距离（米）
 
 
+class LapData(BaseModel):
+    """计圈/分段数据"""
+    lap: int  # 圈数/分段编号
+    distance: Optional[float] = None  # 距离（米）
+    duration: Optional[int] = None  # 时长（秒）
+    avg_hr: Optional[int] = None  # 平均心率
+    max_hr: Optional[int] = None  # 最大心率
+    avg_pace: Optional[int] = None  # 平均配速（秒/公里）
+    avg_speed: Optional[float] = None  # 平均速度（km/h）
+    elevation_gain: Optional[float] = None  # 爬升（米）
+    elevation_loss: Optional[float] = None  # 下降（米）
+    calories: Optional[int] = None  # 卡路里
+    avg_cadence: Optional[int] = None  # 平均步频
+    avg_power: Optional[int] = None  # 平均功率（瓦）
+
+
 class WorkoutRecordBase(BaseModel):
     """运动记录基础字段"""
     workout_date: date
@@ -141,6 +157,7 @@ class WorkoutRecordCreate(WorkoutRecordBase):
     pace_data: Optional[List[PacePoint]] = None
     elevation_data: Optional[List[ElevationPoint]] = None
     route_data: Optional[List[RoutePoint]] = None
+    lap_data: Optional[List[LapData]] = None
 
 
 class WorkoutRecordUpdate(BaseModel):
@@ -158,10 +175,12 @@ class WorkoutRecordResponse(WorkoutRecordBase):
     source: str
     external_id: Optional[str] = None
     ai_analysis: Optional[str] = None
+    post_workout_analysis: Optional[str] = None
     heart_rate_data: Optional[str] = None
     pace_data: Optional[str] = None
     elevation_data: Optional[str] = None
     route_data: Optional[str] = None
+    lap_data: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     

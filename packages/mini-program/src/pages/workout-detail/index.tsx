@@ -7,6 +7,21 @@ import Taro, { useRouter } from '@tarojs/taro';
 import { get, post } from '../../services/request';
 import './index.scss';
 
+interface LapData {
+  lap: number;
+  distance?: number;
+  duration?: number;
+  avg_hr?: number;
+  max_hr?: number;
+  avg_pace?: number;
+  avg_speed?: number;
+  elevation_gain?: number;
+  elevation_loss?: number;
+  calories?: number;
+  avg_cadence?: number;
+  avg_power?: number;
+}
+
 interface WorkoutDetail {
   id: number;
   workout_date: string;
@@ -48,6 +63,7 @@ interface WorkoutDetail {
   pace_data: string | null;
   elevation_data: string | null;
   route_data: string | null;
+  lap_data: string | null;
   ai_analysis: string | null;
   notes: string | null;
   source: string;
@@ -80,6 +96,7 @@ export default function WorkoutDetail() {
   const [analyzing, setAnalyzing] = useState(false);
   const [postAnalysis, setPostAnalysis] = useState<any>(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [activeTab, setActiveTab] = useState<'stats' | 'laps' | 'intervals'>('stats');
 
   useEffect(() => {
     if (workoutId) {
@@ -360,6 +377,16 @@ export default function WorkoutDetail() {
         },
       ],
     };
+  };
+
+  // 解析计圈数据
+  const parseLapData = (): LapData[] => {
+    if (!detail || !detail.lap_data) return [];
+    try {
+      return JSON.parse(detail.lap_data);
+    } catch (e) {
+      return [];
+    }
   };
 
   // 渲染心率区间（改进版：区间用时）
@@ -884,9 +911,32 @@ export default function WorkoutDetail() {
         );
       })()}
 
-      {/* 详细统计信息 */}
+      {/* 详细统计信息 - 带Tab切换 */}
       <View className="section">
-        <Text className="section-title">📊 详细统计</Text>
+        <View className="stats-tabs">
+          <View 
+            className={`tab-item ${activeTab === 'stats' ? 'active' : ''}`}
+            onClick={() => setActiveTab('stats')}
+          >
+            <Text className="tab-text">统计信息</Text>
+          </View>
+          <View 
+            className={`tab-item ${activeTab === 'laps' ? 'active' : ''}`}
+            onClick={() => setActiveTab('laps')}
+          >
+            <Text className="tab-text">计圈</Text>
+          </View>
+          <View 
+            className={`tab-item ${activeTab === 'intervals' ? 'active' : ''}`}
+            onClick={() => setActiveTab('intervals')}
+          >
+            <Text className="tab-text">区间用时</Text>
+          </View>
+        </View>
+
+        {activeTab === 'stats' && (
+          <View className="tab-content">
+            <Text className="section-title">📊 详细统计</Text>
         
         {/* 距离与消耗 */}
         <View className="stats-subsection">
@@ -983,6 +1033,93 @@ export default function WorkoutDetail() {
                 </View>
               )}
             </View>
+          </View>
+        )}
+          </View>
+        )}
+
+        {/* 计圈Tab */}
+        {activeTab === 'laps' && (
+          <View className="tab-content">
+            {(() => {
+              const laps = parseLapData();
+              if (laps.length === 0) {
+                return (
+                  <View className="empty-state">
+                    <Text className="empty-icon">📊</Text>
+                    <Text className="empty-text">暂无计圈数据</Text>
+                    <Text className="empty-hint">Garmin同步的运动会自动包含计圈信息</Text>
+                  </View>
+                );
+              }
+
+              return (
+                <View className="laps-list">
+                  {laps.map((lap) => (
+                    <View key={lap.lap} className="lap-item">
+                      <View className="lap-header">
+                        <Text className="lap-number">第 {lap.lap} 圈</Text>
+                        {lap.duration && (
+                          <Text className="lap-duration">{formatDuration(lap.duration)}</Text>
+                        )}
+                      </View>
+                      <View className="lap-stats">
+                        {lap.distance && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">距离</Text>
+                            <Text className="lap-stat-value">{formatDistance(lap.distance)}</Text>
+                          </View>
+                        )}
+                        {lap.avg_pace && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">配速</Text>
+                            <Text className="lap-stat-value">{formatPace(lap.avg_pace)}</Text>
+                          </View>
+                        )}
+                        {lap.avg_speed && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">速度</Text>
+                            <Text className="lap-stat-value">{lap.avg_speed.toFixed(1)} km/h</Text>
+                          </View>
+                        )}
+                        {lap.avg_hr && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">平均心率</Text>
+                            <Text className="lap-stat-value">{lap.avg_hr} bpm</Text>
+                          </View>
+                        )}
+                        {lap.max_hr && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">最大心率</Text>
+                            <Text className="lap-stat-value">{lap.max_hr} bpm</Text>
+                          </View>
+                        )}
+                        {lap.elevation_gain && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">爬升</Text>
+                            <Text className="lap-stat-value">{Math.round(lap.elevation_gain)} m</Text>
+                          </View>
+                        )}
+                        {lap.calories && (
+                          <View className="lap-stat">
+                            <Text className="lap-stat-label">卡路里</Text>
+                            <Text className="lap-stat-value">{lap.calories} kcal</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              );
+            })()}
+          </View>
+        )}
+
+        {/* 区间用时Tab */}
+        {activeTab === 'intervals' && (
+          <View className="tab-content">
+            <Text className="section-title">⏱️ 心率区间用时</Text>
+            {renderHrZones()}
           </View>
         )}
       </View>

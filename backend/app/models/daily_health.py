@@ -309,6 +309,7 @@ class WorkoutRecord(Base):
     
     # AI分析结果（JSON格式）
     ai_analysis = Column(Text)  # AI训练分析（JSON）
+    post_workout_analysis = Column(Text)  # 运动后科学分析（JSON）
     
     # 数据来源
     source = Column(String, default="manual")  # manual, garmin, strava, apple_health
@@ -319,6 +320,7 @@ class WorkoutRecord(Base):
     pace_data = Column(Text)  # 配速数据 [{"time": 0, "pace": 360}, ...]
     elevation_data = Column(Text)  # 海拔数据 [{"distance": 0, "elevation": 100}, ...]
     route_data = Column(Text)  # GPS路线数据 [{"lat": 39.9, "lng": 116.4, "elevation": 100, "time": 0}, ...]
+    lap_data = Column(Text)  # 计圈数据 [{"lap": 1, "distance": 1000, "duration": 300, "avg_hr": 150, "avg_pace": 300}, ...]
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -697,3 +697,139 @@
   line-height: 1.6;
   flex: 1;
 }
+
+// Tab切换样式
+.stats-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 8px;
+  margin-bottom: 24px;
+}
+
+.tab-item {
+  flex: 1;
+  padding: 16px 0;
+  text-align: center;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+
+  &.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+}
+
+.tab-text {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+
+  .tab-item.active & {
+    color: #ffffff;
+    font-weight: 600;
+  }
+}
+
+.tab-content {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// 计圈列表样式
+.laps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lap-item {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lap-number {
+  font-size: 30px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.lap-duration {
+  font-size: 28px;
+  font-weight: 600;
+  color: #667eea;
+  font-family: 'DIN', -apple-system, monospace;
+}
+
+.lap-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.lap-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lap-stat-label {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.lap-stat-value {
+  font-size: 26px;
+  font-weight: 600;
+  color: #ffffff;
+  font-family: 'DIN', -apple-system, monospace;
+}
+
+// 空状态样式
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+}
+
+.empty-icon {
+  font-size: 80px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-text {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+}
+
+.empty-hint {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+}

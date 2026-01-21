@@ -303,6 +303,6 @@ export const workoutGuidanceApi = {
   getPreWorkoutGuidance: (goalId?: number, workoutType?: string) =>
     api.post('/workout/pre-workout-guidance', { goal_id: goalId, workout_type: workoutType }),
   // 获取运动后分析
-  getPostWorkoutAnalysis: (workoutId: number) =>
-    api.post(`/workout/post-workout-analysis/${workoutId}`),
+  getPostWorkoutAnalysis: (workoutId: number, forceRegenerate: boolean = false) =>
+    api.post(`/workout/post-workout-analysis/${workoutId}?force_regenerate=${forceRegenerate}`),
 };

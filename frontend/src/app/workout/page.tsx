@@ -79,6 +79,21 @@ interface WorkoutStats {
   recent_trend: string;
 }
 
+interface LapData {
+  lap: number;
+  distance?: number;
+  duration?: number;
+  avg_hr?: number;
+  max_hr?: number;
+  avg_pace?: number;
+  avg_speed?: number;
+  elevation_gain?: number;
+  elevation_loss?: number;
+  calories?: number;
+  avg_cadence?: number;
+  avg_power?: number;
+}
+
 interface WorkoutDetail {
   id: number;
   workout_date: string;
@@ -116,6 +131,7 @@ interface WorkoutDetail {
   heart_rate_data: string | null;
   pace_data: string | null;
   elevation_data: string | null;
+  lap_data: string | null; // 计圈数据 JSON
   source: string;
   external_id: string | null;
   start_time: string | null;
@@ -155,6 +171,7 @@ function WorkoutContent() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showPostAnalysis, setShowPostAnalysis] = useState(false);
   const [postAnalysis, setPostAnalysis] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'stats' | 'laps' | 'intervals'>('stats');
 
   // 获取运动记录列表
   const { data: workouts, isLoading: loadingWorkouts } = useQuery<WorkoutSummary[]>({
@@ -254,13 +271,18 @@ function WorkoutContent() {
 
   // 运动后科学分析
   const postAnalysisMutation = useMutation({
-    mutationFn: (workoutId: number) => workoutGuidanceApi.getPostWorkoutAnalysis(workoutId),
+    mutationFn: ({ workoutId, forceRegenerate = false }: { workoutId: number; forceRegenerate?: boolean }) => 
+      workoutGuidanceApi.getPostWorkoutAnalysis(workoutId, forceRegenerate),
     onSuccess: (response) => {
       console.log('📊 科学分析响应:', response);
       console.log('📊 response.data:', response.data);
       setPostAnalysis(response.data);
       setShowPostAnalysis(true);
-      setMessage({ type: 'success', text: '✓ 科学分析完成' });
+      const fromCache = response.data.from_cache;
+      setMessage({ 
+        type: 'success', 
+        text: fromCache ? '✓ 已加载分析结果' : '✓ 科学分析完成' 
+      });
       setTimeout(() => setMessage(null), 3000);
     },
     onError: (error: any) => {
@@ -601,12 +623,22 @@ function WorkoutContent() {
                         {analyzeMutation.isPending ? '分析中...' : '🤖 AI分析'}
                       </button>
                       <button
-                        onClick={() => postAnalysisMutation.mutate(workoutDetail.id)}
+                        onClick={() => postAnalysisMutation.mutate({ workoutId: workoutDetail.id, forceRegenerate: false })}
                         disabled={postAnalysisMutation.isPending}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm"
                       >
                         {postAnalysisMutation.isPending ? '分析中...' : '📊 科学分析'}
                       </button>
+                      {postAnalysis && postAnalysis.from_cache && (
+                        <button
+                          onClick={() => postAnalysisMutation.mutate({ workoutId: workoutDetail.id, forceRegenerate: true })}
+                          disabled={postAnalysisMutation.isPending}
+                          className="px-3 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors text-xs"
+                          title="重新生成分析"
+                        >
+                          {postAnalysisMutation.isPending ? '生成中...' : '🔄 重新生成'}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -889,19 +921,37 @@ function WorkoutContent() {
                 {/* 详细统计信息 */}
                 <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">📊 详细统计</h3>
+                    <h3 className="text-lg font-bold text-white">📊 详细数据</h3>
                     <div className="flex gap-2 text-xs">
-                      <button className="px-3 py-1 bg-blue-600/80 text-white rounded hover:bg-blue-600 transition-colors">
+                      <button 
+                        onClick={() => setActiveTab('stats')}
+                        className={`px-3 py-1 rounded hover:bg-blue-600 transition-colors ${
+                          activeTab === 'stats' ? 'bg-blue-600/80 text-white' : 'bg-slate-700/50 text-gray-400'
+                        }`}
+                      >
                         统计信息
                       </button>
-                      <button className="px-3 py-1 bg-slate-700/50 text-gray-400 rounded hover:bg-slate-700 transition-colors">
+                      <button 
+                        onClick={() => setActiveTab('laps')}
+                        className={`px-3 py-1 rounded hover:bg-blue-600 transition-colors ${
+                          activeTab === 'laps' ? 'bg-blue-600/80 text-white' : 'bg-slate-700/50 text-gray-400'
+                        }`}
+                      >
                         计圈
                       </button>
-                      <button className="px-3 py-1 bg-slate-700/50 text-gray-400 rounded hover:bg-slate-700 transition-colors">
+                      <button 
+                        onClick={() => setActiveTab('intervals')}
+                        className={`px-3 py-1 rounded hover:bg-blue-600 transition-colors ${
+                          activeTab === 'intervals' ? 'bg-blue-600/80 text-white' : 'bg-slate-700/50 text-gray-400'
+                        }`}
+                      >
                         区间用时
                       </button>
                     </div>
                   </div>
+                  
+                  {/* 统计信息Tab */}
+                  {activeTab === 'stats' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* 距离与消耗 */}
                     <div className="space-y-3">
@@ -1169,9 +1219,136 @@ function WorkoutContent() {
                       </div>
                     )}
                   </div>
+                  )}
+
+                  {/* 计圈Tab */}
+                  {activeTab === 'laps' && (() => {
+                    const laps: LapData[] = workoutDetail.lap_data ? JSON.parse(workoutDetail.lap_data) : [];
+                    if (laps.length === 0) {
+                      return (
+                        <div className="text-center py-12">
+                          <div className="text-6xl mb-4">📊</div>
+                          <p className="text-gray-400 text-lg mb-2">暂无计圈数据</p>
+                          <p className="text-gray-500 text-sm">Garmin同步的运动会自动包含计圈信息</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {laps.map((lap) => (
+                          <div key={lap.lap} className="bg-slate-700/30 rounded-lg p-4 border border-slate-600/50">
+                            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-600">
+                              <h4 className="text-lg font-bold text-white">第 {lap.lap} 圈</h4>
+                              {lap.duration && (
+                                <span className="text-blue-400 font-mono font-semibold">{formatDuration(lap.duration)}</span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                              {lap.distance && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">距离</div>
+                                  <div className="text-white font-medium">{formatDistance(lap.distance)} km</div>
+                                </div>
+                              )}
+                              {lap.avg_pace && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">配速</div>
+                                  <div className="text-white font-mono">{formatPace(lap.avg_pace)}</div>
+                                </div>
+                              )}
+                              {lap.avg_speed && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">速度</div>
+                                  <div className="text-white font-medium">{lap.avg_speed.toFixed(1)} km/h</div>
+                                </div>
+                              )}
+                              {lap.avg_hr && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">平均心率</div>
+                                  <div className="text-white font-medium">{lap.avg_hr} bpm</div>
+                                </div>
+                              )}
+                              {lap.max_hr && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">最大心率</div>
+                                  <div className="text-white font-medium">{lap.max_hr} bpm</div>
+                                </div>
+                              )}
+                              {lap.elevation_gain && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">爬升</div>
+                                  <div className="text-white font-medium">{Math.round(lap.elevation_gain)} m</div>
+                                </div>
+                              )}
+                              {lap.calories && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">卡路里</div>
+                                  <div className="text-white font-medium">{lap.calories} kcal</div>
+                                </div>
+                              )}
+                              {lap.avg_cadence && (
+                                <div>
+                                  <div className="text-gray-400 text-xs mb-1">步频</div>
+                                  <div className="text-white font-medium">{lap.avg_cadence} 步/分</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 区间用时Tab */}
+                  {activeTab === 'intervals' && hrZoneData.length > 0 && (() => {
+                    const total = hrZoneData.reduce((sum, z) => sum + z.value, 0);
+                    const maxHR = workoutDetail?.max_heart_rate || 220;
+                    const hrZones = [
+                      { zone: 1, name: '热身', range: `${Math.round(maxHR * 0.5)}-${Math.round(maxHR * 0.6)} bpm`, color: HR_ZONE_COLORS[0] },
+                      { zone: 2, name: '燃脂', range: `${Math.round(maxHR * 0.6)}-${Math.round(maxHR * 0.7)} bpm`, color: HR_ZONE_COLORS[1] },
+                      { zone: 3, name: '有氧', range: `${Math.round(maxHR * 0.7)}-${Math.round(maxHR * 0.8)} bpm`, color: HR_ZONE_COLORS[2] },
+                      { zone: 4, name: '临界', range: `${Math.round(maxHR * 0.8)}-${Math.round(maxHR * 0.9)} bpm`, color: HR_ZONE_COLORS[3] },
+                      { zone: 5, name: '无氧', range: `> ${Math.round(maxHR * 0.9)} bpm`, color: HR_ZONE_COLORS[4] },
+                    ];
+
+                    return (
+                      <div className="space-y-4">
+                        {hrZones.map((zone, idx) => {
+                          const zoneData = hrZoneData[idx];
+                          const percentage = total > 0 ? (zoneData.value / total) * 100 : 0;
+                          return (
+                            <div key={zone.zone} className="space-y-2">
+                              <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white font-medium">区间 {zone.zone}</span>
+                                  <span className="text-gray-400 text-xs">{zone.range}</span>
+                                  <span className="text-gray-500 text-xs">({zone.name})</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-white font-mono">{formatDuration(zoneData.value)}</span>
+                                  <span className="text-gray-400 font-medium">{percentage.toFixed(0)}%</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-slate-700/30 rounded-full h-3 overflow-hidden">
+                                <div 
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{ 
+                                    width: `${percentage}%`,
+                                    backgroundColor: zone.color
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* 心率区间分布（区间用时） */}
+                {/* 心率区间分布（区间用时） - 保留原有的，但只在stats tab时显示 */}
+                {activeTab === 'stats' &&
                 {hrZoneData.length > 0 && (() => {
                   const total = hrZoneData.reduce((sum, z) => sum + z.value, 0);
                   // 计算最大心率（用于计算区间范围）

@@ -301,6 +301,10 @@ def create_workout(
     if workout.route_data:
         route_data_json = json.dumps([p.model_dump() for p in workout.route_data])
     
+    lap_data_json = None
+    if workout.lap_data:
+        lap_data_json = json.dumps([p.model_dump() for p in workout.lap_data])
+    
     db_record = WorkoutRecord(
         user_id=current_user.id,
         workout_date=workout.workout_date,
@@ -352,7 +356,8 @@ def create_workout(
         heart_rate_data=hr_data_json,
         pace_data=pace_data_json,
         elevation_data=elevation_data_json,
-        route_data=route_data_json
+        route_data=route_data_json,
+        lap_data=lap_data_json
     )
     
     db.add(db_record)
@@ -656,6 +661,69 @@ async def refresh_workout_gps(
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
 
 
+@router.post("/me/{workout_id}/refresh-laps")
+async def refresh_workout_laps(
+    workout_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """刷新运动记录的计圈数据"""
+    record = db.query(WorkoutRecord).filter(
+        WorkoutRecord.id == workout_id,
+        WorkoutRecord.user_id == current_user.id
+    ).first()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="运动记录不存在")
+    
+    if not record.external_id or record.source != "garmin":
+        raise HTTPException(status_code=400, detail="仅支持 Garmin 同步的运动记录")
+    
+    from app.services.auth import GarminCredentialService
+    from app.services.workout_sync import WorkoutSyncService
+    
+    # 获取Garmin凭证
+    cred_service = GarminCredentialService()
+    credentials = cred_service.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(status_code=400, detail="请先配置Garmin账号")
+    
+    try:
+        sync_service = WorkoutSyncService(
+            email=credentials["email"],
+            password=credentials["password"],
+            is_cn=credentials.get("is_cn", False),
+            user_id=current_user.id
+        )
+        
+        # 获取活动详情
+        details_data = await sync_service.get_activity_details(int(record.external_id))
+        
+        if details_data and details_data.get("lap_data"):
+            lap_points = sync_service._parse_lap_data(details_data["lap_data"])
+            
+            if lap_points:
+                record.lap_data = json.dumps(lap_points)
+                db.commit()
+                logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} 计圈数据: {len(lap_points)} 圈")
+                return {
+                    "status": "success",
+                    "message": f"获取到 {len(lap_points)} 圈数据",
+                    "laps_count": len(lap_points)
+                }
+        
+        return {
+            "status": "no_data",
+            "message": "无法获取计圈数据（可能Garmin未提供分段数据）",
+            "laps_count": 0
+        }
+        
+    except Exception as e:
+        logger.error(f"刷新计圈数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
+
+
 @router.post("/me/refresh-gps-batch")
 async def refresh_workout_gps_batch(
     days: int = Query(default=30, ge=1, le=365, description="刷新最近N天的记录"),
@@ -822,6 +890,7 @@ async def get_pre_workout_guidance(
 @router.post("/post-workout-analysis/{workout_id}", response_model=Dict[str, Any])
 async def get_post_workout_analysis(
     workout_id: int,
+    force_regenerate: bool = False,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
@@ -830,18 +899,40 @@ async def get_post_workout_analysis(
     
     Args:
         workout_id: 运动记录ID
+        force_regenerate: 是否强制重新生成（默认False，使用缓存）
     
     Returns:
         运动后分析结果
     """
     try:
+        # 获取运动记录
+        record = db.query(WorkoutRecord).filter(
+            WorkoutRecord.id == workout_id,
+            WorkoutRecord.user_id == current_user.id
+        ).first()
+        
+        if not record:
+            raise HTTPException(status_code=404, detail="运动记录不存在")
+        
+        # 如果已有分析结果且不强制重新生成，直接返回缓存
+        if record.post_workout_analysis and not force_regenerate:
+            logger.info(f"用户 {current_user.id} 使用缓存的运动后分析 (workout_id={workout_id})")
+            cached_analysis = json.loads(record.post_workout_analysis)
+            cached_analysis["from_cache"] = True
+            return cached_analysis
+        
+        # 生成新的分析
+        logger.info(f"用户 {current_user.id} 生成新的运动后分析 (workout_id={workout_id}, force={force_regenerate})")
         service = PostWorkoutAnalysisService()
         analysis = service.generate_post_workout_analysis(
             db=db,
             user_id=current_user.id,
             workout_id=workout_id
         )
+        analysis["from_cache"] = False
         return analysis
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"生成运动后分析失败: {e}", exc_info=True)
         raise HTTPException(

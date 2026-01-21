@@ -96,6 +96,7 @@ class PostWorkoutAnalysisService:
             
             analysis = {
                 "success": True,
+                "generated_at": get_china_now().isoformat(),
                 "workout_summary": self._format_workout_summary(workout),
                 "hr_analysis": hr_analysis,
                 "intensity_assessment": intensity_assessment,
@@ -105,11 +106,15 @@ class PostWorkoutAnalysisService:
                 "knowledge_points": knowledge.get("key_points", []),
                 "overall_rating": self._calculate_overall_rating(
                     hr_analysis, intensity_assessment
-                ),
-                "generated_at": get_china_now().isoformat()
+                )
             }
             
-            logger.info(f"[运动后分析] 分析完成")
+            # 保存分析结果到数据库
+            import json
+            workout.post_workout_analysis = json.dumps(analysis, ensure_ascii=False)
+            db.commit()
+            logger.info(f"[运动后分析] 分析完成并已保存")
+            
             return analysis
             
         except Exception as e:
