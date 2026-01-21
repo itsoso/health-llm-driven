@@ -297,7 +297,7 @@ class PostWorkoutAnalysisService:
                 return {"key_points": []}
             
             # 构建查询
-            query_parts = [f"{workout.sport_type}运动后如何恢复？"]
+            query_parts = [f"{workout.workout_type}运动后如何恢复？"]
             
             if intensity_assessment["level"] == "高强度":
                 query_parts.append("高强度训练后的恢复策略")
@@ -380,12 +380,12 @@ class PostWorkoutAnalysisService:
             tips.extend(hr_analysis["recommendations"][:2])
         
         # 基于运动类型的建议
-        sport_type = workout.sport_type.lower() if workout.sport_type else ""
+        workout_type = workout.workout_type.lower() if workout.workout_type else ""
         
-        if "running" in sport_type or "跑步" in sport_type:
+        if "running" in workout_type or "跑步" in workout_type:
             tips.append("🏃 80% 的跑步训练应该在轻松配速（能边跑边聊天）")
             tips.append("📈 每周增加训练量不超过 10%（10% 原则）")
-        elif "cycling" in sport_type or "骑行" in sport_type:
+        elif "cycling" in workout_type or "骑行" in workout_type:
             tips.append("🚴 注意保持踏频在 80-100 rpm")
         
         # 通用改进建议
@@ -436,7 +436,7 @@ class PostWorkoutAnalysisService:
         """格式化运动摘要"""
         return {
             "id": workout.id,
-            "sport_type": workout.sport_type,
+            "workout_type": workout.workout_type,
             "start_time": workout.start_time.isoformat() if workout.start_time else None,
             "duration": f"{(workout.duration_seconds or 0) // 60} 分钟",
             "distance": f"{workout.distance_meters / 1000:.2f} km" if workout.distance_meters else None,
