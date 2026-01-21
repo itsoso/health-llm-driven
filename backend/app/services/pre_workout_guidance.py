@@ -364,54 +364,115 @@ class PreWorkoutGuidanceService:
                 self._add_debug_reasoning(debug_info, "知识库不可用，跳过检索", "warning")
                 return {"key_points": []}
             
-            # 构建查询
-            query_parts = [f"进行{workout_type}训练前需要注意什么？"]
+            # 优化查询策略：多个独立查询，提高召回率
+            queries = []
             
-            if goal_description:
-                query_parts.append(goal_description)
+            # 1. 运动类型相关查询（简化关键词）
+            workout_keywords = {
+                "RUNNING": ["跑步", "慢跑", "有氧跑", "MAF训练"],
+                "CARDIO": ["心肺训练", "有氧运动", "心率训练"],
+                "WEIGHT_LOSS": ["减脂", "燃脂", "有氧运动"],
+                "MUSCLE_GAIN": ["力量训练", "增肌", "抗阻训练"],
+                "EXERCISE": ["运动", "训练", "锻炼"]
+            }
             
+            keywords = workout_keywords.get(workout_type, ["运动"])
+            for keyword in keywords[:2]:  # 取前2个关键词
+                queries.append({
+                    "query": f"{keyword}训练方法",
+                    "category": "exercise_science",
+                    "n_results": 3
+                })
+                queries.append({
+                    "query": f"{keyword}注意事项",
+                    "category": None,  # 不限制分类，提高召回
+                    "n_results": 2
+                })
+            
+            # 2. 根据健康状态添加查询
             if recent_data.get("sleep_score") and recent_data["sleep_score"] < 70:
-                query_parts.append("睡眠不足时如何调整训练？")
+                queries.append({
+                    "query": "睡眠不足运动建议",
+                    "category": None,
+                    "n_results": 2
+                })
             
             if recent_data.get("stress_level") and recent_data["stress_level"] > 50:
-                query_parts.append("压力较大时如何训练？")
+                queries.append({
+                    "query": "压力大如何运动",
+                    "category": None,
+                    "n_results": 2
+                })
             
-            query = " ".join(query_parts)
-            logger.info(f"[运动前指导] 知识库查询: {query}")
+            # 3. 心率相关查询
+            queries.append({
+                "query": "心率区间训练",
+                "category": "exercise_science",
+                "n_results": 2
+            })
             
-            self._add_debug_reasoning(debug_info, f"知识库查询：{query}", "knowledge")
+            self._add_debug_reasoning(debug_info, f"准备执行 {len(queries)} 个知识库查询", "knowledge")
             
-            # 检索知识
-            knowledge_results = self.rag_pipeline.retrieve_relevant_knowledge(
-                query=query,
-                category="exercise_science",
-                n_results=3
-            )
+            # 执行所有查询并合并结果
+            all_results = []
+            seen_content = set()  # 去重
             
-            if knowledge_results:
+            for q in queries:
+                logger.info(f"[运动前指导] 知识库查询: {q['query']} (category={q.get('category')})")
+                
+                results = self.rag_pipeline.retrieve_relevant_knowledge(
+                    query=q["query"],
+                    category=q.get("category"),
+                    n_results=q["n_results"]
+                )
+                
+                for item in results:
+                    content = item.get("content", "")[:200]  # 取前200字符作为去重标识
+                    if content and content not in seen_content:
+                        seen_content.add(content)
+                        all_results.append(item)
+                
+                if results:
+                    self._add_debug_reasoning(
+                        debug_info,
+                        f"查询 \"{q['query']}\" 找到 {len(results)} 条结果",
+                        "info"
+                    )
+            
+            if all_results:
+                # 按相关度排序，取前5个
+                all_results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+                top_results = all_results[:5]
+                
                 key_points = []
                 knowledge_data = []
-                for item in knowledge_results:
+                for item in top_results:
                     if item.get("content"):
                         content = item["content"][:150]
                         key_points.append(content)
                         knowledge_data.append({
                             "content": content + "...",
-                            "source": item.get("source", "unknown"),
-                            "score": round(item.get("score", 0), 3)
+                            "source": item.get("metadata", {}).get("source", "unknown"),
+                            "title": item.get("metadata", {}).get("title", ""),
+                            "relevance_score": round(item.get("relevance_score", 0), 3)
                         })
                 
-                self._add_debug_data(debug_info, "knowledge_query", query)
+                self._add_debug_data(debug_info, "knowledge_queries", [q["query"] for q in queries])
                 self._add_debug_data(debug_info, "knowledge_results", knowledge_data)
-                self._add_debug_reasoning(debug_info, f"从知识库检索到{len(knowledge_results)}条相关内容", "knowledge")
+                self._add_debug_reasoning(
+                    debug_info,
+                    f"从知识库检索到 {len(all_results)} 条结果，使用前 {len(top_results)} 条",
+                    "success"
+                )
                 
-                return {"key_points": key_points[:3]}
+                return {"key_points": key_points[:3]}  # 最终返回前3条
             else:
-                self._add_debug_reasoning(debug_info, "知识库未找到相关内容", "warning")
+                self._add_debug_reasoning(debug_info, "所有查询均未找到相关内容", "warning")
+                self._add_debug_reasoning(debug_info, "可能原因：1) 知识库内容不足 2) 查询关键词不匹配 3) 相关度阈值过高", "info")
                 return {"key_points": []}
                 
         except Exception as e:
-            logger.error(f"[运动前指导] 检索知识失败: {e}")
+            logger.error(f"[运动前指导] 检索知识失败: {e}", exc_info=True)
             self._add_debug_reasoning(debug_info, f"知识库检索失败：{str(e)}", "error")
             return {"key_points": []}
     

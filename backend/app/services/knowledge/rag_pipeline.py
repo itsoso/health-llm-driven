@@ -83,13 +83,13 @@ class RAGPipeline:
             category=category
         )
         
-        # 过滤低相关度结果
+        # 过滤低相关度结果（降低阈值以提高召回率）
         filtered_results = [
             r for r in results 
-            if r.get("relevance_score", 0) > 0.3  # 相关度阈值
+            if r.get("relevance_score", 0) > 0.15  # 相关度阈值从 0.3 降低到 0.15
         ]
         
-        logger.info(f"检索到 {len(filtered_results)} 条相关知识（原始 {len(results)} 条）")
+        logger.info(f"检索到 {len(filtered_results)} 条相关知识（原始 {len(results)} 条，阈值 0.15）")
         return filtered_results
     
     def generate_with_knowledge(
