@@ -136,6 +136,7 @@ class PostWorkoutAnalysisService:
         # 检查是否有心率数据
         if not workout.avg_heart_rate or workout.avg_heart_rate == 0:
             analysis["recommendations"].append("建议佩戴心率监测设备，以获取更精准的训练指导")
+            logger.warning(f"[心率区间分析] 运动记录 {workout.id} 没有心率数据")
             return analysis
         
         analysis["has_hr_data"] = True
@@ -145,7 +146,17 @@ class PostWorkoutAnalysisService:
         # 计算各区间时间分布
         total_seconds = workout.duration_seconds or 0
         if total_seconds == 0:
+            logger.warning(f"[心率区间分析] 运动记录 {workout.id} 没有时长数据")
             return analysis
+        
+        # 记录原始心率区间数据
+        logger.info(f"[心率区间分析] 运动记录 {workout.id} 心率区间数据: "
+                   f"zone1={workout.hr_zone_1_seconds}, "
+                   f"zone2={workout.hr_zone_2_seconds}, "
+                   f"zone3={workout.hr_zone_3_seconds}, "
+                   f"zone4={workout.hr_zone_4_seconds}, "
+                   f"zone5={workout.hr_zone_5_seconds}, "
+                   f"total={total_seconds}s")
         
         zones_data = {
             "zone1": {

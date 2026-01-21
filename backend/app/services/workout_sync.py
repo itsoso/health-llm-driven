@@ -342,6 +342,62 @@ class WorkoutSyncService:
         logger.warning(f"未识别的运动类型: typeKey='{garmin_type}', 活动名称='{activity_name}'，归类为other")
         return "other"
     
+    def _calculate_hr_zones_from_samples(
+        self, 
+        hr_samples: List[Dict[str, int]], 
+        max_hr: int = 180
+    ) -> List[int]:
+        """
+        从心率采样数据计算心率区间时长
+        
+        Args:
+            hr_samples: 心率采样数据 [{"time": seconds, "hr": bpm}, ...]
+            max_hr: 最大心率（用于计算区间）
+        
+        Returns:
+            [zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds]
+        """
+        if not hr_samples:
+            return [0, 0, 0, 0, 0]
+        
+        # 心率区间定义（基于最大心率百分比）
+        # Zone 1: 50-60% (恢复区)
+        # Zone 2: 60-70% (燃脂区)
+        # Zone 3: 70-80% (有氧区)
+        # Zone 4: 80-90% (乳酸阈值区)
+        # Zone 5: 90-100% (最大心率区)
+        zone_thresholds = [
+            (0, max_hr * 0.60),      # Zone 1
+            (max_hr * 0.60, max_hr * 0.70),  # Zone 2
+            (max_hr * 0.70, max_hr * 0.80),  # Zone 3
+            (max_hr * 0.80, max_hr * 0.90),  # Zone 4
+            (max_hr * 0.90, max_hr * 1.2),   # Zone 5 (允许超过100%)
+        ]
+        
+        zone_seconds = [0, 0, 0, 0, 0]
+        
+        # 计算每个采样点所在的区间
+        for i in range(len(hr_samples)):
+            hr = hr_samples[i]["hr"]
+            
+            # 计算该采样点代表的时长（到下一个采样点的时间）
+            if i < len(hr_samples) - 1:
+                duration = hr_samples[i + 1]["time"] - hr_samples[i]["time"]
+            else:
+                # 最后一个点，使用前一个间隔
+                if i > 0:
+                    duration = hr_samples[i]["time"] - hr_samples[i - 1]["time"]
+                else:
+                    duration = 1  # 只有一个点，假设1秒
+            
+            # 确定心率所在区间
+            for zone_idx, (min_hr, max_hr_threshold) in enumerate(zone_thresholds):
+                if min_hr <= hr < max_hr_threshold:
+                    zone_seconds[zone_idx] += duration
+                    break
+        
+        return zone_seconds
+    
     def _parse_activity(self, activity: Dict[str, Any], user_id: int) -> Dict[str, Any]:
         """解析Garmin活动数据"""
         # 基本信息
@@ -400,12 +456,14 @@ class WorkoutSyncService:
         # 心率区间
         hr_zones = activity.get("hrTimeInZones", [])
         zone_seconds = [0, 0, 0, 0, 0]
+        logger.debug(f"{self._log_prefix()}活动 {activity_id} hrTimeInZones 原始数据: {hr_zones}")
         if hr_zones and isinstance(hr_zones, list):
             for i, zone in enumerate(hr_zones[:5]):
                 if isinstance(zone, dict):
                     zone_seconds[i] = int(zone.get("secsInZone", 0))
                 elif isinstance(zone, (int, float)):
                     zone_seconds[i] = int(zone)
+        logger.info(f"{self._log_prefix()}活动 {activity_id} 解析后心率区间: {zone_seconds}")
         
         # 游泳特有
         pool_length = activity.get("poolLength")
@@ -931,6 +989,26 @@ class WorkoutSyncService:
                                 if hr_points:
                                     parsed["heart_rate_data"] = json.dumps(hr_points)
                                     logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
+                                    
+                                    # 如果心率区间数据为空，从心率采样计算
+                                    total_zone_seconds = sum([
+                                        parsed.get("hr_zone_1_seconds", 0),
+                                        parsed.get("hr_zone_2_seconds", 0),
+                                        parsed.get("hr_zone_3_seconds", 0),
+                                        parsed.get("hr_zone_4_seconds", 0),
+                                        parsed.get("hr_zone_5_seconds", 0)
+                                    ])
+                                    
+                                    if total_zone_seconds == 0:
+                                        logger.info(f"{self._log_prefix()}活动 {activity_id} 心率区间数据为空，从心率采样计算")
+                                        max_hr = parsed.get("max_heart_rate") or 180
+                                        zone_seconds = self._calculate_hr_zones_from_samples(hr_points, max_hr)
+                                        parsed["hr_zone_1_seconds"] = zone_seconds[0]
+                                        parsed["hr_zone_2_seconds"] = zone_seconds[1]
+                                        parsed["hr_zone_3_seconds"] = zone_seconds[2]
+                                        parsed["hr_zone_4_seconds"] = zone_seconds[3]
+                                        parsed["hr_zone_5_seconds"] = zone_seconds[4]
+                                        logger.info(f"{self._log_prefix()}活动 {activity_id} 计算得到心率区间: {zone_seconds}")
                                 else:
                                     # 如果无法获取详细心率，使用平均心率生成简单曲线
                                     avg_hr = parsed.get("avg_heart_rate") or (existing.avg_heart_rate if existing else None)
@@ -941,6 +1019,24 @@ class WorkoutSyncService:
                                         if hr_points:
                                             parsed["heart_rate_data"] = json.dumps(hr_points)
                                             logger.info(f"{self._log_prefix()}活动 {activity_id} 使用模拟心率曲线 ({len(hr_points)} 点)")
+                                            
+                                            # 从模拟心率曲线计算心率区间
+                                            total_zone_seconds = sum([
+                                                parsed.get("hr_zone_1_seconds", 0),
+                                                parsed.get("hr_zone_2_seconds", 0),
+                                                parsed.get("hr_zone_3_seconds", 0),
+                                                parsed.get("hr_zone_4_seconds", 0),
+                                                parsed.get("hr_zone_5_seconds", 0)
+                                            ])
+                                            
+                                            if total_zone_seconds == 0:
+                                                zone_seconds = self._calculate_hr_zones_from_samples(hr_points, max_hr or 180)
+                                                parsed["hr_zone_1_seconds"] = zone_seconds[0]
+                                                parsed["hr_zone_2_seconds"] = zone_seconds[1]
+                                                parsed["hr_zone_3_seconds"] = zone_seconds[2]
+                                                parsed["hr_zone_4_seconds"] = zone_seconds[3]
+                                                parsed["hr_zone_5_seconds"] = zone_seconds[4]
+                                                logger.info(f"{self._log_prefix()}活动 {activity_id} 从模拟曲线计算心率区间: {zone_seconds}")
                             
                             # 解析GPS路线数据
                             if details_data.get("gps_data"):

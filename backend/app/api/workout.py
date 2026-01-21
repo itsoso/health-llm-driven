@@ -536,12 +536,34 @@ async def refresh_workout_heart_rate(
             
             if hr_points:
                 record.heart_rate_data = json.dumps(hr_points)
+                
+                # 如果心率区间数据为空，从心率采样计算
+                total_zone_seconds = sum([
+                    record.hr_zone_1_seconds or 0,
+                    record.hr_zone_2_seconds or 0,
+                    record.hr_zone_3_seconds or 0,
+                    record.hr_zone_4_seconds or 0,
+                    record.hr_zone_5_seconds or 0
+                ])
+                
+                if total_zone_seconds == 0:
+                    logger.info(f"运动 {workout_id} 心率区间数据为空，从心率采样计算")
+                    max_hr = record.max_heart_rate or 180
+                    zone_seconds = sync_service._calculate_hr_zones_from_samples(hr_points, max_hr)
+                    record.hr_zone_1_seconds = zone_seconds[0]
+                    record.hr_zone_2_seconds = zone_seconds[1]
+                    record.hr_zone_3_seconds = zone_seconds[2]
+                    record.hr_zone_4_seconds = zone_seconds[3]
+                    record.hr_zone_5_seconds = zone_seconds[4]
+                    logger.info(f"计算得到心率区间: {zone_seconds}")
+                
                 db.commit()
                 logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} 心率数据: {len(hr_points)} 点")
                 return {
                     "status": "success",
                     "message": f"获取到 {len(hr_points)} 个心率采样点",
-                    "points_count": len(hr_points)
+                    "points_count": len(hr_points),
+                    "zones_calculated": total_zone_seconds == 0
                 }
         
         # 如果无法获取详细心率，使用模拟曲线
