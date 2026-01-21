@@ -30,7 +30,7 @@ def _update_vo2max_from_workouts(db, user_id: int, days: int = 30):
     
     VO2Max 通常来自跑步活动，Garmin 会在每次跑步后更新这个值
     """
-    from app.models.daily_health import WorkoutRecord, GarminDailyData
+    from app.models.daily_health import WorkoutRecord, GarminData
     
     try:
         end_date = get_china_today()
@@ -48,9 +48,9 @@ def _update_vo2max_from_workouts(db, user_id: int, days: int = 30):
             logger.info(f"用户 {user_id} 从运动记录 (类型: {workout_with_vo2max.workout_type}, 日期: {workout_with_vo2max.workout_date}) 获取到 VO2Max: {latest_vo2max}")
             
             # 更新最近的 Garmin 每日数据
-            garmin_records = db.query(GarminDailyData).filter(
-                GarminDailyData.user_id == user_id,
-                GarminDailyData.record_date >= start_date
+            garmin_records = db.query(GarminData).filter(
+                GarminData.user_id == user_id,
+                GarminData.record_date >= start_date
             ).all()
             
             updated_count = 0
