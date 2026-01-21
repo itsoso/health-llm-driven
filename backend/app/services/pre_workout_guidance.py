@@ -69,11 +69,12 @@ class PreWorkoutGuidanceService:
                 debug_info["data_sources"]["user_profile"] = {
                     "age": profile.age,
                     "gender": profile.gender,
-                    "weight": profile.weight,
-                    "height": profile.height,
-                    "fitness_level": profile.fitness_level
+                    "weight": profile.current_weight_kg,
+                    "height": profile.height_cm,
+                    "exercise_frequency": profile.exercise_frequency
                 }
-                debug_info["reasoning"].append(f"✅ 用户资料：{profile.age}岁，{profile.gender}，体重{profile.weight}kg")
+                weight_str = f"{profile.current_weight_kg}kg" if profile.current_weight_kg else "未设置"
+                debug_info["reasoning"].append(f"✅ 用户资料：{profile.age}岁，{profile.gender}，体重{weight_str}")
             
             # 2. 获取用户目标
             if debug_info:

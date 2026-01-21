@@ -305,13 +305,13 @@ export const workoutGuidanceApi = {
     if (goalId) params.append('goal_id', goalId.toString());
     if (workoutType) params.append('workout_type', workoutType);
     if (debug) params.append('debug', 'true');
-    return api.post(`/v1/workout/pre-workout-guidance?${params.toString()}`);
+    return api.post(`/workout/pre-workout-guidance?${params.toString()}`);
   },
   // 获取运动后分析
   getPostWorkoutAnalysis: (workoutId: number, forceRegenerate: boolean = false, debug: boolean = false) => {
     const params = new URLSearchParams();
     if (forceRegenerate) params.append('force_regenerate', 'true');
     if (debug) params.append('debug', 'true');
-    return api.post(`/v1/workout/post-workout-analysis/${workoutId}?${params.toString()}`);
+    return api.post(`/workout/post-workout-analysis/${workoutId}?${params.toString()}`);
   },
 };
