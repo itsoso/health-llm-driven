@@ -28,6 +28,8 @@ async def get_my_profile(
     db: Session = Depends(get_db)
 ):
     """获取当前用户的画像"""
+    import json
+    
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
     
     if not profile:
@@ -37,13 +39,60 @@ async def get_my_profile(
         db.commit()
         db.refresh(profile)
     
-    # 添加计算字段
-    response = UserProfileResponse.model_validate(profile)
-    response.age = profile.age
-    response.bmi = profile.bmi
-    response.bmi_category = profile.bmi_category
+    # 处理 JSON 字段（数据库中可能是字符串）
+    def parse_json_field(field_value, default):
+        if field_value is None:
+            return default
+        if isinstance(field_value, str):
+            try:
+                return json.loads(field_value)
+            except:
+                return default
+        return field_value
     
-    return response
+    # 构建响应数据，处理所有可能为 None 的字段
+    response_data = {
+        "id": profile.id,
+        "user_id": profile.user_id,
+        "gender": profile.gender,
+        "birth_date": profile.birth_date,
+        "height_cm": profile.height_cm,
+        "blood_type": profile.blood_type,
+        "current_weight_kg": profile.current_weight_kg,
+        "target_weight_kg": profile.target_weight_kg,
+        "body_fat_percentage": profile.body_fat_percentage,
+        "muscle_mass_kg": profile.muscle_mass_kg,
+        "target_steps": profile.target_steps if profile.target_steps is not None else 8000,
+        "target_sleep_hours": profile.target_sleep_hours if profile.target_sleep_hours is not None else 7.5,
+        "target_water_ml": profile.target_water_ml if profile.target_water_ml is not None else 2000,
+        "target_calories_burn": profile.target_calories_burn,
+        "target_exercise_minutes": profile.target_exercise_minutes if profile.target_exercise_minutes is not None else 30,
+        "chronic_conditions": parse_json_field(profile.chronic_conditions, []),
+        "allergies": parse_json_field(profile.allergies, []),
+        "family_history": parse_json_field(profile.family_history, []),
+        "surgeries": parse_json_field(profile.surgeries, []),
+        "current_medications": parse_json_field(profile.current_medications, []),
+        "exercise_frequency": profile.exercise_frequency,
+        "diet_preference": profile.diet_preference,
+        "smoking_status": profile.smoking_status,
+        "alcohol_consumption": profile.alcohol_consumption,
+        "usual_sleep_time": profile.usual_sleep_time,
+        "usual_wake_time": profile.usual_wake_time,
+        "sleep_environment": parse_json_field(profile.sleep_environment, {}),
+        "work_type": profile.work_type,
+        "work_hours_per_day": profile.work_hours_per_day,
+        "sitting_hours_per_day": profile.sitting_hours_per_day,
+        "city": profile.city,
+        "timezone": profile.timezone or "Asia/Shanghai",
+        "devices": parse_json_field(profile.devices, []),
+        "age": profile.age,
+        "bmi": profile.bmi,
+        "bmi_category": profile.bmi_category,
+        "created_at": profile.created_at,
+        "updated_at": profile.updated_at
+    }
+    
+    return UserProfileResponse(**response_data)
 
 
 @router.put("/me", response_model=UserProfileResponse)
