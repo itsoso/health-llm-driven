@@ -99,23 +99,24 @@ async def get_my_devices(
     return [cred.to_response_dict() for cred in credentials]
 
 
-@router.get("/me/{device_type}", response_model=DeviceCredentialResponse, summary="获取指定设备凭证")
+@router.get("/me/{device_type}", response_model=Optional[DeviceCredentialResponse], summary="获取指定设备凭证")
 async def get_device_credential(
     device_type: str,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取指定类型设备的凭证信息"""
+    """
+    获取指定类型设备的凭证信息
+    
+    如果未绑定设备，返回 null 而不是 404 错误
+    """
     credential = db.query(DeviceCredential).filter(
         DeviceCredential.user_id == current_user.id,
         DeviceCredential.device_type == device_type
     ).first()
     
     if not credential:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"未绑定 {device_type} 设备"
-        )
+        return None
     
     return credential.to_response_dict()
 
