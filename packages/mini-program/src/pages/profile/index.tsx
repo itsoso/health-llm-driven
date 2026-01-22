@@ -106,6 +106,9 @@ export default function ProfilePage() {
         url: '/profile/me',
         method: 'GET',
       });
+      console.log('[Profile] 原始响应:', JSON.stringify(res));
+      console.log('[Profile] height_cm:', res?.height_cm, '类型:', typeof res?.height_cm);
+      console.log('[Profile] current_weight_kg:', res?.current_weight_kg, '类型:', typeof res?.current_weight_kg);
       // request 直接返回响应数据，不需要再取 .data
       setProfile(res as UserProfile);
     } catch (error) {
@@ -136,9 +139,11 @@ export default function ProfilePage() {
   };
 
   const updateField = (field: keyof UserProfile, value: any) => {
-    console.log('[Profile] 更新字段:', field, '=', value);
+    console.log('[Profile] 更新字段:', field, '=', value, '类型:', typeof value);
     if (profile) {
-      setProfile({ ...profile, [field]: value });
+      const newProfile = { ...profile, [field]: value };
+      console.log('[Profile] 更新后的profile:', JSON.stringify(newProfile));
+      setProfile(newProfile);
     }
   };
 
@@ -248,7 +253,7 @@ export default function ProfilePage() {
               <Text className="form-label">身高 (cm)</Text>
               <Input
                 type="number"
-                value={profile.height_cm?.toString() || ''}
+                value={profile.height_cm !== null && profile.height_cm !== undefined ? profile.height_cm.toString() : ''}
                 onInput={e => {
                   const value = e.detail.value;
                   if (!value) {
@@ -280,7 +285,7 @@ export default function ProfilePage() {
               <Text className="form-label">当前体重 (kg)</Text>
               <Input
                 type="digit"
-                value={profile.current_weight_kg?.toString() || ''}
+                value={profile.current_weight_kg !== null && profile.current_weight_kg !== undefined ? profile.current_weight_kg.toString() : ''}
                 onInput={e => {
                   const value = e.detail.value;
                   if (!value) {
@@ -484,7 +489,7 @@ export default function ProfilePage() {
               <Text className="form-label">目标体重 (kg)</Text>
               <Input
                 type="digit"
-                value={profile.target_weight_kg?.toString() || ''}
+                value={profile.target_weight_kg !== null && profile.target_weight_kg !== undefined ? profile.target_weight_kg.toString() : ''}
                 onInput={e => updateField('target_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
                 placeholder="设置目标体重"
                 className="form-input"
