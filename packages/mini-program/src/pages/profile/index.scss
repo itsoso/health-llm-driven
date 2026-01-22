@@ -145,14 +145,19 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 16px;
   padding: 24px;
-  color: #fff;
+  color: #fff !important;
   font-size: 32px;
   box-sizing: border-box;
   
   // 确保输入框可以交互
-  pointer-events: auto;
-  user-select: text;
-  -webkit-user-select: text;
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  
+  // 微信小程序特定样式
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
 }
 
 .picker-value {

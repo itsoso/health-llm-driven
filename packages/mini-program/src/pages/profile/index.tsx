@@ -252,8 +252,8 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">身高 (cm)</Text>
               <Input
-                type="number"
-                value={profile.height_cm !== null && profile.height_cm !== undefined ? profile.height_cm.toString() : ''}
+                type="digit"
+                value={profile.height_cm !== null && profile.height_cm !== undefined ? String(profile.height_cm) : ''}
                 onInput={e => {
                   const value = e.detail.value;
                   console.log('[Profile] 身高输入:', value);
@@ -285,9 +285,8 @@ export default function ProfilePage() {
                   }
                 }}
                 placeholder="输入身高 (50-300cm)"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
             </View>
 
@@ -295,7 +294,7 @@ export default function ProfilePage() {
               <Text className="form-label">当前体重 (kg)</Text>
               <Input
                 type="digit"
-                value={profile.current_weight_kg !== null && profile.current_weight_kg !== undefined ? profile.current_weight_kg.toString() : ''}
+                value={profile.current_weight_kg !== null && profile.current_weight_kg !== undefined ? String(profile.current_weight_kg) : ''}
                 onInput={e => {
                   const value = e.detail.value;
                   console.log('[Profile] 体重输入:', value);
@@ -327,9 +326,8 @@ export default function ProfilePage() {
                   }
                 }}
                 placeholder="输入体重 (20-300kg)"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
             </View>
 
@@ -509,12 +507,11 @@ export default function ProfilePage() {
               <Text className="form-label">目标体重 (kg)</Text>
               <Input
                 type="digit"
-                value={profile.target_weight_kg !== null && profile.target_weight_kg !== undefined ? profile.target_weight_kg.toString() : ''}
+                value={profile.target_weight_kg !== null && profile.target_weight_kg !== undefined ? String(profile.target_weight_kg) : ''}
                 onInput={e => updateField('target_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
                 placeholder="设置目标体重"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
             </View>
           </View>
