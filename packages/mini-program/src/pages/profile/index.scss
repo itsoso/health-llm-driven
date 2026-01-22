@@ -148,6 +148,11 @@
   color: #fff;
   font-size: 32px;
   box-sizing: border-box;
+  
+  // 确保输入框可以交互
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .picker-value {

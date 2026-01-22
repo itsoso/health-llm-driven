@@ -136,6 +136,7 @@ export default function ProfilePage() {
   };
 
   const updateField = (field: keyof UserProfile, value: any) => {
+    console.log('[Profile] 更新字段:', field, '=', value);
     if (profile) {
       setProfile({ ...profile, [field]: value });
     }
@@ -251,6 +252,8 @@ export default function ProfilePage() {
                 onInput={e => updateField('height_cm', e.detail.value ? Number(e.detail.value) : null)}
                 placeholder="输入身高"
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
             </View>
 
@@ -262,6 +265,8 @@ export default function ProfilePage() {
                 onInput={e => updateField('current_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
                 placeholder="输入体重"
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
             </View>
 
@@ -282,10 +287,13 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">所在城市</Text>
               <Input
+                type="text"
                 value={profile.city || ''}
                 onInput={e => updateField('city', e.detail.value || null)}
                 placeholder="输入城市"
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
             </View>
 
@@ -389,6 +397,8 @@ export default function ProfilePage() {
                 value={profile.target_steps?.toString() || '8000'}
                 onInput={e => updateField('target_steps', Number(e.detail.value) || 8000)}
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
               <Text className="form-hint">推荐: 8000-10000步</Text>
             </View>
@@ -400,6 +410,8 @@ export default function ProfilePage() {
                 value={profile.target_sleep_hours?.toString() || '7.5'}
                 onInput={e => updateField('target_sleep_hours', Number(e.detail.value) || 7.5)}
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
               <Text className="form-hint">推荐: 7-9小时</Text>
             </View>
@@ -411,6 +423,8 @@ export default function ProfilePage() {
                 value={profile.target_water_ml?.toString() || '2000'}
                 onInput={e => updateField('target_water_ml', Number(e.detail.value) || 2000)}
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
               <Text className="form-hint">推荐: 1500-2500ml</Text>
             </View>
@@ -422,6 +436,8 @@ export default function ProfilePage() {
                 value={profile.target_exercise_minutes?.toString() || '30'}
                 onInput={e => updateField('target_exercise_minutes', Number(e.detail.value) || 30)}
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
               <Text className="form-hint">推荐: 30分钟以上</Text>
             </View>
@@ -434,6 +450,8 @@ export default function ProfilePage() {
                 onInput={e => updateField('target_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
                 placeholder="设置目标体重"
                 className="form-input"
+                disabled={false}
+                focus={false}
               />
             </View>
           </View>
