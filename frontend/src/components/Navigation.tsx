@@ -31,11 +31,24 @@ export default function Navigation() {
     { href: '/', label: '首页', icon: '🏠' },
     { href: '/overview', label: '健康概览', icon: '📋' },
     { href: '/daily-insights', label: '今日建议', icon: '💪' },
-    { href: '/review', label: '每日复盘', icon: '📝' },
   ];
 
   // 分组下拉菜单
   const navGroups: NavGroup[] = [
+    {
+      label: '每日记录',
+      icon: '📝',
+      items: [
+        { href: '/habits', label: '习惯追踪', icon: '✅' },
+        { href: '/supplements', label: '补剂管理', icon: '💊' },
+        { href: '/checkin', label: '运动打卡', icon: '🏃' },
+        { href: '/rhinitis', label: '鼻炎追踪', icon: '🤧' },
+        { href: '/diet', label: '饮食记录', icon: '🍽️' },
+        { href: '/water', label: '饮水追踪', icon: '💧' },
+        { href: '/garmin', label: 'Garmin数据', icon: '⌚' },
+        { href: '/analysis', label: '健康分析', icon: '🔍' },
+      ],
+    },
     {
       label: '健康追踪',
       icon: '❤️',
@@ -51,17 +64,10 @@ export default function Navigation() {
       ],
     },
     {
-      label: '每日记录',
-      icon: '📝',
+      label: '每日复盘',
+      icon: '📖',
       items: [
-        { href: '/habits', label: '习惯追踪', icon: '✅' },
-        { href: '/supplements', label: '补剂管理', icon: '💊' },
-        { href: '/checkin', label: '运动打卡', icon: '🏃' },
-        { href: '/rhinitis', label: '鼻炎追踪', icon: '🤧' },
-        { href: '/diet', label: '饮食记录', icon: '🍽️' },
-        { href: '/water', label: '饮水追踪', icon: '💧' },
-        { href: '/garmin', label: 'Garmin数据', icon: '⌚' },
-        { href: '/analysis', label: '健康分析', icon: '🔍' },
+        { href: '/review', label: '每日复盘', icon: '📝' },
       ],
     },
     {
