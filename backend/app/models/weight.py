@@ -16,7 +16,6 @@ class WeightRecord(Base):
     weight = Column(Float, nullable=False)  # 体重 (kg)
     body_fat_percentage = Column(Float)  # 体脂率 (%)
     muscle_mass_kg = Column(Float)  # 肌肉量 (kg) - 数据库字段名
-    bmi = Column(Float)  # BMI
     source = Column(String(50))  # 数据来源
     
     notes = Column(Text)  # 备注

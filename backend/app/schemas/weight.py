@@ -10,7 +10,6 @@ class WeightRecordBase(BaseModel):
     weight: float
     body_fat_percentage: Optional[float] = None
     muscle_mass: Optional[float] = None
-    bmi: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -24,7 +23,6 @@ class WeightRecordUpdate(BaseModel):
     weight: Optional[float] = None
     body_fat_percentage: Optional[float] = None
     muscle_mass: Optional[float] = None
-    bmi: Optional[float] = None
     notes: Optional[str] = None
 
 
