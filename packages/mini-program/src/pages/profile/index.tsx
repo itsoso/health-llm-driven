@@ -352,9 +352,8 @@ export default function ProfilePage() {
                 value={profile.city || ''}
                 onInput={e => updateField('city', e.detail.value || null)}
                 placeholder="输入城市"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
             </View>
 
@@ -454,12 +453,12 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标步数 (步/天)</Text>
               <Input
-                type="number"
-                value={profile.target_steps?.toString() || '8000'}
+                type="digit"
+                value={profile.target_steps !== null && profile.target_steps !== undefined ? String(profile.target_steps) : '8000'}
                 onInput={e => updateField('target_steps', Number(e.detail.value) || 8000)}
+                placeholder="8000"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
               <Text className="form-hint">推荐: 8000-10000步</Text>
             </View>
@@ -468,11 +467,11 @@ export default function ProfilePage() {
               <Text className="form-label">目标睡眠 (小时/天)</Text>
               <Input
                 type="digit"
-                value={profile.target_sleep_hours?.toString() || '7.5'}
+                value={profile.target_sleep_hours !== null && profile.target_sleep_hours !== undefined ? String(profile.target_sleep_hours) : '7.5'}
                 onInput={e => updateField('target_sleep_hours', Number(e.detail.value) || 7.5)}
+                placeholder="7.5"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
               <Text className="form-hint">推荐: 7-9小时</Text>
             </View>
@@ -480,12 +479,12 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标饮水 (ml/天)</Text>
               <Input
-                type="number"
-                value={profile.target_water_ml?.toString() || '2000'}
+                type="digit"
+                value={profile.target_water_ml !== null && profile.target_water_ml !== undefined ? String(profile.target_water_ml) : '2000'}
                 onInput={e => updateField('target_water_ml', Number(e.detail.value) || 2000)}
+                placeholder="2000"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
               <Text className="form-hint">推荐: 1500-2500ml</Text>
             </View>
@@ -493,12 +492,12 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标运动 (分钟/天)</Text>
               <Input
-                type="number"
-                value={profile.target_exercise_minutes?.toString() || '30'}
+                type="digit"
+                value={profile.target_exercise_minutes !== null && profile.target_exercise_minutes !== undefined ? String(profile.target_exercise_minutes) : '30'}
                 onInput={e => updateField('target_exercise_minutes', Number(e.detail.value) || 30)}
+                placeholder="30"
+                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
-                disabled={false}
-                focus={false}
               />
               <Text className="form-hint">推荐: 30分钟以上</Text>
             </View>
