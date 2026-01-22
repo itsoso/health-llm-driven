@@ -13,20 +13,36 @@ interface UserProfile {
   blood_type: string | null;
   current_weight_kg: number | null;
   target_weight_kg: number | null;
+  body_fat_percentage: number | null;
+  muscle_mass_kg: number | null;
   target_steps: number;
   target_sleep_hours: number;
   target_water_ml: number;
+  target_calories_burn: number | null;
   target_exercise_minutes: number;
   chronic_conditions: string[];
   allergies: string[];
   family_history: string[];
+  surgeries: any[];
+  current_medications: any[];
   exercise_frequency: string | null;
   diet_preference: string | null;
+  smoking_status: string | null;
+  alcohol_consumption: string | null;
+  usual_sleep_time: string | null;
+  usual_wake_time: string | null;
+  sleep_environment: Record<string, any>;
+  work_type: string | null;
+  work_hours_per_day: number | null;
+  sitting_hours_per_day: number | null;
   city: string | null;
   timezone: string;
+  devices: string[];
   age: number | null;
   bmi: number | null;
   bmi_category: string | null;
+  created_at: string;
+  updated_at: string | null;
 }
 
 const genderOptions = ['未设置', '男', '女'];
