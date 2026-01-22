@@ -251,98 +251,82 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">身高 (cm)</Text>
-              <View style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 24px;">
-                <Input
-                  type="digit"
-                  value={(() => {
-                    const val = profile.height_cm;
-                    const result = val !== null && val !== undefined ? `${val}` : '';
-                    console.log('[Profile] 身高渲染 value:', result, '原始值:', val);
-                    return result;
-                  })()}
-                  onInput={e => {
-                    const value = e.detail.value;
-                    console.log('[Profile] 身高输入:', value);
-                    
-                    if (!value || value === '') {
-                      updateField('height_cm', null);
-                      return;
-                    }
-                    
-                    const numValue = Number(value);
-                    
-                    // 如果是正在输入中的部分数字（如 1, 17），允许
-                    if (value.length <= 2) {
-                      updateField('height_cm', numValue);
-                      return;
-                    }
-                    
-                    // 完整数字，验证范围 50-300
-                    if (numValue >= 50 && numValue <= 300) {
-                      updateField('height_cm', numValue);
-                    } else if (numValue > 300) {
-                      // 超过300，截断到300
-                      Taro.showToast({ title: '身高不能超过300cm', icon: 'none', duration: 1500 });
-                      updateField('height_cm', 300);
-                    } else if (numValue < 50 && value.length >= 3) {
-                      // 3位数但小于50，设为50
-                      Taro.showToast({ title: '身高不能小于50cm', icon: 'none', duration: 1500 });
-                      updateField('height_cm', 50);
-                    }
-                  }}
-                  placeholder="输入身高 (50-300cm)"
-                  placeholderStyle="color: rgba(255, 255, 255, 0.4)"
-                  style="color: #fff; font-size: 32px; background: transparent; border: none;"
-                />
-              </View>
+              <Input
+                type="text"
+                value={profile.height_cm ? profile.height_cm + '' : ''}
+                onInput={e => {
+                  const value = e.detail.value;
+                  console.log('[Profile] 身高输入:', value);
+                  
+                  if (!value || value === '') {
+                    updateField('height_cm', null);
+                    return;
+                  }
+                  
+                  const numValue = Number(value);
+                  
+                  // 如果是正在输入中的部分数字（如 1, 17），允许
+                  if (value.length <= 2) {
+                    updateField('height_cm', numValue);
+                    return;
+                  }
+                  
+                  // 完整数字，验证范围 50-300
+                  if (numValue >= 50 && numValue <= 300) {
+                    updateField('height_cm', numValue);
+                  } else if (numValue > 300) {
+                    // 超过300，截断到300
+                    Taro.showToast({ title: '身高不能超过300cm', icon: 'none', duration: 1500 });
+                    updateField('height_cm', 300);
+                  } else if (numValue < 50 && value.length >= 3) {
+                    // 3位数但小于50，设为50
+                    Taro.showToast({ title: '身高不能小于50cm', icon: 'none', duration: 1500 });
+                    updateField('height_cm', 50);
+                  }
+                }}
+                placeholder="输入身高"
+                className="form-input"
+              />
             </View>
 
             <View className="form-item">
               <Text className="form-label">当前体重 (kg)</Text>
-              <View style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 24px;">
-                <Input
-                  type="digit"
-                  value={(() => {
-                    const val = profile.current_weight_kg;
-                    const result = val !== null && val !== undefined ? `${val}` : '';
-                    console.log('[Profile] 体重渲染 value:', result, '原始值:', val);
-                    return result;
-                  })()}
-                  onInput={e => {
-                    const value = e.detail.value;
-                    console.log('[Profile] 体重输入:', value);
-                    
-                    if (!value || value === '') {
-                      updateField('current_weight_kg', null);
-                      return;
-                    }
-                    
-                    const numValue = Number(value);
-                    
-                    // 如果是正在输入中的部分数字（如 6, 65），允许
-                    if (value.length <= 2) {
-                      updateField('current_weight_kg', numValue);
-                      return;
-                    }
-                    
-                    // 完整数字，验证范围 20-300
-                    if (numValue >= 20 && numValue <= 300) {
-                      updateField('current_weight_kg', numValue);
-                    } else if (numValue > 300) {
-                      // 超过300，截断到300
-                      Taro.showToast({ title: '体重不能超过300kg', icon: 'none', duration: 1500 });
-                      updateField('current_weight_kg', 300);
-                    } else if (numValue < 20 && value.length >= 3) {
-                      // 3位数但小于20，设为20
-                      Taro.showToast({ title: '体重不能小于20kg', icon: 'none', duration: 1500 });
-                      updateField('current_weight_kg', 20);
-                    }
-                  }}
-                  placeholder="输入体重 (20-300kg)"
-                  placeholderStyle="color: rgba(255, 255, 255, 0.4)"
-                  style="color: #fff; font-size: 32px; background: transparent; border: none;"
-                />
-              </View>
+              <Input
+                type="text"
+                value={profile.current_weight_kg ? profile.current_weight_kg + '' : ''}
+                onInput={e => {
+                  const value = e.detail.value;
+                  console.log('[Profile] 体重输入:', value);
+                  
+                  if (!value || value === '') {
+                    updateField('current_weight_kg', null);
+                    return;
+                  }
+                  
+                  const numValue = Number(value);
+                  
+                  // 如果是正在输入中的部分数字（如 6, 65），允许
+                  if (value.length <= 2) {
+                    updateField('current_weight_kg', numValue);
+                    return;
+                  }
+                  
+                  // 完整数字，验证范围 20-300
+                  if (numValue >= 20 && numValue <= 300) {
+                    updateField('current_weight_kg', numValue);
+                  } else if (numValue > 300) {
+                    // 超过300，截断到300
+                    Taro.showToast({ title: '体重不能超过300kg', icon: 'none', duration: 1500 });
+                    updateField('current_weight_kg', 300);
+                  } else if (numValue < 20 && value.length >= 3) {
+                    // 3位数但小于20，设为20
+                    Taro.showToast({ title: '体重不能小于20kg', icon: 'none', duration: 1500 });
+                    updateField('current_weight_kg', 20);
+                  }
+                }}
+                placeholder="输入体重"
+                className="form-input"
+              />
             </View>
 
             <View className="form-item">
@@ -467,11 +451,10 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标步数 (步/天)</Text>
               <Input
-                type="digit"
-                value={profile.target_steps !== null && profile.target_steps !== undefined ? String(profile.target_steps) : '8000'}
+                type="text"
+                value={profile.target_steps ? profile.target_steps + '' : '8000'}
                 onInput={e => updateField('target_steps', Number(e.detail.value) || 8000)}
                 placeholder="8000"
-                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
               />
               <Text className="form-hint">推荐: 8000-10000步</Text>
@@ -480,11 +463,10 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标睡眠 (小时/天)</Text>
               <Input
-                type="digit"
-                value={profile.target_sleep_hours !== null && profile.target_sleep_hours !== undefined ? String(profile.target_sleep_hours) : '7.5'}
+                type="text"
+                value={profile.target_sleep_hours ? profile.target_sleep_hours + '' : '7.5'}
                 onInput={e => updateField('target_sleep_hours', Number(e.detail.value) || 7.5)}
                 placeholder="7.5"
-                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
               />
               <Text className="form-hint">推荐: 7-9小时</Text>
@@ -493,11 +475,10 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标饮水 (ml/天)</Text>
               <Input
-                type="digit"
-                value={profile.target_water_ml !== null && profile.target_water_ml !== undefined ? String(profile.target_water_ml) : '2000'}
+                type="text"
+                value={profile.target_water_ml ? profile.target_water_ml + '' : '2000'}
                 onInput={e => updateField('target_water_ml', Number(e.detail.value) || 2000)}
                 placeholder="2000"
-                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
               />
               <Text className="form-hint">推荐: 1500-2500ml</Text>
@@ -506,11 +487,10 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标运动 (分钟/天)</Text>
               <Input
-                type="digit"
-                value={profile.target_exercise_minutes !== null && profile.target_exercise_minutes !== undefined ? String(profile.target_exercise_minutes) : '30'}
+                type="text"
+                value={profile.target_exercise_minutes ? profile.target_exercise_minutes + '' : '30'}
                 onInput={e => updateField('target_exercise_minutes', Number(e.detail.value) || 30)}
                 placeholder="30"
-                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
               />
               <Text className="form-hint">推荐: 30分钟以上</Text>
@@ -519,11 +499,10 @@ export default function ProfilePage() {
             <View className="form-item">
               <Text className="form-label">目标体重 (kg)</Text>
               <Input
-                type="digit"
-                value={profile.target_weight_kg !== null && profile.target_weight_kg !== undefined ? String(profile.target_weight_kg) : ''}
+                type="text"
+                value={profile.target_weight_kg ? profile.target_weight_kg + '' : ''}
                 onInput={e => updateField('target_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
                 placeholder="设置目标体重"
-                placeholderStyle="color: rgba(255, 255, 255, 0.4)"
                 className="form-input"
               />
             </View>

@@ -141,23 +141,16 @@
 
 .form-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  padding: 24px;
-  color: #fff !important;
-  font-size: 32px;
-  box-sizing: border-box;
-  
-  // 确保输入框可以交互
-  pointer-events: auto !important;
-  user-select: text !important;
-  -webkit-user-select: text !important;
-  
-  // 微信小程序特定样式
-  opacity: 1 !important;
-  visibility: visible !important;
-  display: block !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 16px !important;
+  padding: 24px !important;
+  color: #ffffff !important;
+  font-size: 32px !important;
+  box-sizing: border-box !important;
+  height: auto !important;
+  line-height: 1.5 !important;
+  min-height: 80px !important;
 }
 
 .picker-value {
