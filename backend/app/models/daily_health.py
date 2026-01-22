@@ -1,5 +1,5 @@
 """日常健康记录模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
