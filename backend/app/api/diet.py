@@ -509,7 +509,7 @@ async def recognize_and_save_diet(
             fat=result.get("total_fat"),
             notes=request.notes,
             image_url=image_url,  # 保存图片URL
-            ai_recognized=1,
+            ai_recognized=True,  # 布尔类型，不是整数
             ai_confidence=avg_confidence,
             ai_raw_result=json.dumps(result, ensure_ascii=False),
             health_tips=result.get("health_tips")
