@@ -135,7 +135,7 @@ class DietRecord(Base):
     
     # 图片和AI识别
     image_url = Column(String, nullable=True)  # 食物图片URL
-    ai_recognized = Column(Integer, default=0)  # 是否AI识别: 0=否, 1=是
+    ai_recognized = Column(Boolean, default=False)  # 是否AI识别
     ai_confidence = Column(Float, nullable=True)  # AI识别置信度
     ai_raw_result = Column(Text, nullable=True)  # AI识别原始结果(JSON)
     
@@ -157,7 +157,7 @@ class WaterIntake(Base):
     
     record_date = Column(Date, nullable=False, index=True)
     intake_time = Column(DateTime(timezone=True))  # 饮水时间
-    amount = Column(Float, nullable=False)  # 饮水量 (ml)
+    amount_ml = Column(Integer, nullable=False, name="amount_ml")  # 饮水量 (ml) - 匹配数据库字段名
     drink_type = Column(String)  # 饮品类型（水、茶、咖啡等）
     notes = Column(Text)  # 备注
     
@@ -165,6 +165,15 @@ class WaterIntake(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", backref="water_intakes")
+    
+    # 为了兼容性，添加 amount 属性作为 amount_ml 的别名
+    @property
+    def amount(self):
+        return self.amount_ml
+    
+    @amount.setter
+    def amount(self, value):
+        self.amount_ml = value
 
 
 class SupplementIntake(Base):
