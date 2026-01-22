@@ -250,6 +250,17 @@ function OverviewContent() {
     r.sleep_score !== null || r.steps !== null || r.resting_heart_rate !== null
   ) || sortedRecords[0];
   
+  // 获取最新的 VO2max 数据（可能不在今天）
+  const latestVO2maxRecord = sortedRecords.find(r => r.vo2max_running !== null);
+  const vo2maxValue = latestVO2maxRecord?.vo2max_running || record?.vo2max_running;
+  
+  // 调试 VO2max 数据
+  console.log('[Overview] VO2max 调试信息:');
+  console.log('  - sortedRecords 总数:', sortedRecords.length);
+  console.log('  - latestVO2maxRecord:', latestVO2maxRecord);
+  console.log('  - vo2maxValue:', vo2maxValue);
+  console.log('  - 前5条记录的 vo2max_running:', sortedRecords.slice(0, 5).map(r => ({ date: r.record_date, vo2max: r.vo2max_running })));
+  
   // 最近7天数据用于图表
   const weekRecords = sortedRecords.slice(0, 7).reverse();
 
@@ -833,12 +844,17 @@ function OverviewContent() {
 
           {/* VO2 Max */}
           <MetricCard icon="🏃‍♂️" title="跑步最大摄氧量">
-            {record?.vo2max_running ? (
+            {vo2maxValue ? (
               <div>
                 <div className="text-4xl font-bold text-blue-500">
-                  {record.vo2max_running.toFixed(1)}
+                  {vo2maxValue.toFixed(1)}
                 </div>
                 <div className="text-sm text-gray-500 mt-1">mL/kg/min</div>
+                {latestVO2maxRecord && latestVO2maxRecord.record_date !== record?.record_date && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    {format(new Date(latestVO2maxRecord.record_date), 'MM-dd')} 数据
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-4">
