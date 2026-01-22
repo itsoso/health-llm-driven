@@ -614,7 +614,21 @@ function DietContent() {
               {dailySummary.meals.map((meal: any) => {
                 const mealInfo = getMealInfo(meal.meal_type);
                 return (
-                  <div key={meal.id} className="flex items-start justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div key={meal.id} className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                    {/* 食物图片 */}
+                    {meal.image_url && (
+                      <div className="flex-shrink-0">
+                        <img 
+                          src={meal.image_url} 
+                          alt={meal.food_items}
+                          className="w-32 h-32 object-cover rounded-lg shadow-md cursor-pointer hover:scale-105 transition-transform"
+                          onClick={() => window.open(meal.image_url, '_blank')}
+                          title="点击查看大图"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* 食物信息 */}
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${mealInfo.color}`}>
@@ -640,9 +654,11 @@ function DietContent() {
                         <p className="text-sm text-gray-500 mt-1">{meal.notes}</p>
                       )}
                     </div>
+                    
+                    {/* 删除按钮 */}
                     <button
                       onClick={() => deleteMutation.mutate(meal.id)}
-                      className="text-red-500 hover:text-red-700 text-sm"
+                      className="text-red-500 hover:text-red-700 text-sm self-start"
                     >
                       删除
                     </button>
