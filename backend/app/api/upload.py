@@ -3,6 +3,7 @@ import os
 import uuid
 import logging
 import base64
+import imghdr
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -61,6 +62,13 @@ def generate_filename(extension: str, category: str = "other") -> str:
     return f"{category}/{timestamp}_{unique_id}.{extension}"
 
 
+def validate_image_content(content: bytes) -> None:
+    """验证上传内容是否为允许的图片格式"""
+    detected = imghdr.what(None, h=content)
+    if detected not in {"jpeg", "png", "gif", "webp"}:
+        raise HTTPException(status_code=400, detail="文件内容不是有效图片")
+
+
 @router.post("/image", response_model=UploadResponse)
 async def upload_image(
     file: UploadFile = File(...),
@@ -93,6 +101,9 @@ async def upload_image(
             detail=f"文件太大，最大允许 {MAX_FILE_SIZE // 1024 // 1024}MB"
         )
     
+    # 验证图片内容
+    validate_image_content(content)
+
     # 生成文件名并保存
     filename = generate_filename(extension, category)
     filepath = os.path.join(UPLOAD_DIR, filename)
@@ -155,6 +166,9 @@ async def upload_image_base64(
                 status_code=400,
                 detail=f"图片太大，最大允许 {MAX_FILE_SIZE // 1024 // 1024}MB"
             )
+
+        # 验证图片内容
+        validate_image_content(image_data)
         
         # 生成文件名并保存
         filename = generate_filename(image_type, request.category)
@@ -183,9 +197,14 @@ async def upload_image_base64(
 
 
 @router.get("/files/{category}/{filename}")
-async def get_uploaded_file(category: str, filename: str):
+async def get_uploaded_file(
+    category: str,
+    filename: str
+):
     """
-    获取上传的文件
+    获取上传的文件（公开访问，无需认证）
+    
+    图片文件应该可以公开访问，以便在小程序和网页中显示
     """
     filepath = os.path.join(UPLOAD_DIR, category, filename)
     
