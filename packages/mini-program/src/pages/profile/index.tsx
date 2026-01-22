@@ -256,22 +256,32 @@ export default function ProfilePage() {
                 value={profile.height_cm !== null && profile.height_cm !== undefined ? profile.height_cm.toString() : ''}
                 onInput={e => {
                   const value = e.detail.value;
-                  if (!value) {
+                  console.log('[Profile] 身高输入:', value);
+                  
+                  if (!value || value === '') {
                     updateField('height_cm', null);
                     return;
                   }
+                  
                   const numValue = Number(value);
-                  // 限制输入范围：50-300cm
+                  
+                  // 如果是正在输入中的部分数字（如 1, 17），允许
+                  if (value.length <= 2) {
+                    updateField('height_cm', numValue);
+                    return;
+                  }
+                  
+                  // 完整数字，验证范围 50-300
                   if (numValue >= 50 && numValue <= 300) {
                     updateField('height_cm', numValue);
-                  } else if (numValue < 50) {
-                    // 如果小于50，允许继续输入（可能正在输入中）
-                    if (value.length <= 2) {
-                      updateField('height_cm', numValue);
-                    }
-                  } else {
-                    // 超过300，不更新
-                    console.warn('[Profile] 身高超出范围:', numValue);
+                  } else if (numValue > 300) {
+                    // 超过300，截断到300
+                    Taro.showToast({ title: '身高不能超过300cm', icon: 'none', duration: 1500 });
+                    updateField('height_cm', 300);
+                  } else if (numValue < 50 && value.length >= 3) {
+                    // 3位数但小于50，设为50
+                    Taro.showToast({ title: '身高不能小于50cm', icon: 'none', duration: 1500 });
+                    updateField('height_cm', 50);
                   }
                 }}
                 placeholder="输入身高 (50-300cm)"
@@ -288,22 +298,32 @@ export default function ProfilePage() {
                 value={profile.current_weight_kg !== null && profile.current_weight_kg !== undefined ? profile.current_weight_kg.toString() : ''}
                 onInput={e => {
                   const value = e.detail.value;
-                  if (!value) {
+                  console.log('[Profile] 体重输入:', value);
+                  
+                  if (!value || value === '') {
                     updateField('current_weight_kg', null);
                     return;
                   }
+                  
                   const numValue = Number(value);
-                  // 限制输入范围：20-300kg
+                  
+                  // 如果是正在输入中的部分数字（如 6, 65），允许
+                  if (value.length <= 2) {
+                    updateField('current_weight_kg', numValue);
+                    return;
+                  }
+                  
+                  // 完整数字，验证范围 20-300
                   if (numValue >= 20 && numValue <= 300) {
                     updateField('current_weight_kg', numValue);
-                  } else if (numValue < 20) {
-                    // 如果小于20，允许继续输入（可能正在输入中）
-                    if (value.length <= 2) {
-                      updateField('current_weight_kg', numValue);
-                    }
-                  } else {
-                    // 超过300，不更新
-                    console.warn('[Profile] 体重超出范围:', numValue);
+                  } else if (numValue > 300) {
+                    // 超过300，截断到300
+                    Taro.showToast({ title: '体重不能超过300kg', icon: 'none', duration: 1500 });
+                    updateField('current_weight_kg', 300);
+                  } else if (numValue < 20 && value.length >= 3) {
+                    // 3位数但小于20，设为20
+                    Taro.showToast({ title: '体重不能小于20kg', icon: 'none', duration: 1500 });
+                    updateField('current_weight_kg', 20);
                   }
                 }}
                 placeholder="输入体重 (20-300kg)"
