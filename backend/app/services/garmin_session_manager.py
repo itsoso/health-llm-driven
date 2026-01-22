@@ -67,10 +67,10 @@ class GarminSessionManager:
     """
     
     # 配置常量
-    SESSION_TTL_HOURS = 12          # 会话有效期（小时）
+    SESSION_TTL_HOURS = 24          # 会话有效期（小时）- 延长到24小时
     MAX_REQUESTS_PER_DAY = 50       # 每日最大请求数（保守值）
-    MIN_DELAY_SECONDS = 5           # 用户间最小延迟（秒）
-    MAX_DELAY_SECONDS = 30          # 用户间最大延迟（秒）
+    MIN_DELAY_SECONDS = 10          # 用户间最小延迟（秒）- 增加到10秒
+    MAX_DELAY_SECONDS = 60          # 用户间最大延迟（秒）- 增加到60秒
     MAX_CONSECUTIVE_ERRORS = 3      # 最大连续错误次数
     RATE_LIMIT_DURATION_HOURS = 1   # 限流暂停时间（小时）
     LOCK_DURATION_HOURS = 24        # 锁定暂停时间（小时）

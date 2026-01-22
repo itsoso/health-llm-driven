@@ -455,10 +455,10 @@ class PreWorkoutGuidanceService:
             return {
                 "sleep_score": latest.sleep_score,
                 "sleep_hours": sleep_hours,
-                "stress_level": latest.stress_level,
+                "stress_level": latest.stress_level,  # 当前压力水平
                 "resting_hr": latest.resting_heart_rate,
                 "hrv": latest.hrv,
-                "body_battery": latest.body_battery_most_charged,
+                "body_battery": latest.body_battery_current,  # 使用当前电量，不是峰值
                 "recent_activity": len([r for r in recent_records if r.steps and r.steps > 5000]),
                 "data_points_count": len(recent_records),
                 "latest_date": str(latest.record_date) if latest.record_date else None

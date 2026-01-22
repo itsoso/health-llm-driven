@@ -5,8 +5,8 @@ import logging
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.user import User
-from app.models.garmin import GarminCredential
-from app.services.garmin_connect import GarminConnectService
+from app.models.device_credential import DeviceCredential
+from app.services.data_collection.garmin_connect import GarminConnectService
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +20,22 @@ def sync_user_garmin_data(self, user_id: int):
     
     try:
         with SessionLocal() as db:
-            credential = db.query(GarminCredential).filter(
-                GarminCredential.user_id == user_id
+            credential = db.query(DeviceCredential).filter(
+                DeviceCredential.user_id == user_id,
+                DeviceCredential.device_type == "garmin"
             ).first()
             
             if not credential:
                 logger.warning(f"用户 {user_id} 没有 Garmin 凭据")
                 return {"status": "skipped", "reason": "no_credentials"}
             
+            # 获取凭证
+            creds = credential.get_credentials()
+            
             # 创建服务并同步
             service = GarminConnectService(
-                email=credential.email,
-                password=credential.get_password(),
+                email=creds.get("email"),
+                password=creds.get("password"),
                 user_id=user_id
             )
             
@@ -53,8 +57,9 @@ def sync_all_users_garmin():
     logger.info("开始批量同步所有用户 Garmin 数据")
     
     with SessionLocal() as db:
-        credentials = db.query(GarminCredential).filter(
-            GarminCredential.is_active == True
+        credentials = db.query(DeviceCredential).filter(
+            DeviceCredential.device_type == "garmin",
+            DeviceCredential.is_active == True
         ).all()
         
         user_ids = [c.user_id for c in credentials]

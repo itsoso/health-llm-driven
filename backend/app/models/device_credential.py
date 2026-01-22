@@ -13,14 +13,14 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
 import json
-import os
 from cryptography.fernet import Fernet
+from app.config import settings
 
 # 加密密钥
-ENCRYPTION_KEY = os.getenv("DEVICE_ENCRYPTION_KEY")
+ENCRYPTION_KEY = getattr(settings, 'device_encryption_key', None) or getattr(settings, 'garmin_encryption_key', None)
 if not ENCRYPTION_KEY:
     # 使用默认密钥（生产环境应该从环境变量获取）
-    SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-123456789")
+    SECRET_KEY = settings.secret_key
     import hashlib
     import base64
     key = hashlib.sha256(SECRET_KEY.encode()).digest()
@@ -49,6 +49,10 @@ class DeviceCredential(Base):
     # ===== 账号密码认证 (Garmin) =====
     # 加密存储的凭证 JSON: {"email": "...", "password": "..."}
     encrypted_credentials = Column(Text)
+    
+    # Garmin 特有字段
+    garmin_email = Column(String(255))  # Garmin 账号邮箱
+    is_cn = Column(Boolean, default=False)  # 是否中国区 (garmin.cn)
     
     # ===== OAuth 2.0 认证 (华为、Fitbit) =====
     access_token = Column(Text)

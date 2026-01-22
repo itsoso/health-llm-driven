@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.user import User
-from app.services.ai_scheduler import AISchedulerService
+from app.services.ai_scheduler import AIScheduler
 from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def generate_daily_plan_for_all():
         # 获取所有活跃用户
         users = db.query(User).filter(User.is_active == True).all()
         
-        scheduler = AISchedulerService(db)
+        scheduler = AIScheduler(db)
         success_count = 0
         
         for user in users:

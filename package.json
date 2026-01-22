@@ -1,0 +1,26 @@
+{
+  "name": "health-llm-driven",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "audit:pnpm": "pnpm audit --json | node scripts/pnpm-audit-allowlist.mjs"
+  },
+  "pnpm": {
+    "overrides": {
+      "form-data": "2.5.4",
+      "glob": "10.5.0",
+      "http-cache-semantics": "4.1.1",
+      "qs": "6.14.1",
+      "lodash": "4.17.23",
+      "webpack-dev-server": "5.2.1",
+      "esbuild": "0.25.0",
+      "postcss": "8.4.31"
+    }
+  },
+  "dependencies": {
+    "@tarojs/binding-darwin-x64": "4.1.10"
+  },
+  "devDependencies": {
+    "@tarojs/binding-darwin-arm64": "^4.1.10"
+  }
+}

@@ -120,7 +120,10 @@ function WaterContent() {
   // 删除记录
   const deleteMutation = useMutation({
     mutationFn: async (recordId: number) => {
-      const res = await fetch(`${API_BASE}/water/records/${recordId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/water/records/${recordId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return res.json();
     },
     onSuccess: () => {

@@ -1,9 +1,12 @@
 """测试配置和fixtures"""
+import os
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
+os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
+
 from main import app
 
 # 使用内存数据库进行测试
@@ -102,4 +105,3 @@ def sample_medical_exam_data():
             }
         ]
     }
-

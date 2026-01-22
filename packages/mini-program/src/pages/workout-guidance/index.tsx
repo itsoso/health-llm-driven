@@ -202,8 +202,8 @@ export default function WorkoutGuidance() {
         </View>
       )}
 
-      {/* 课程要点 */}
-      {guidance.course_insights && guidance.course_insights.length > 0 && (
+      {/* 课程要点 - 已隐藏 */}
+      {false && guidance.course_insights && guidance.course_insights.length > 0 && (
         <View className="section">
           <View className="section-header">
             <Text className="section-icon">📚</Text>

@@ -21,20 +21,47 @@ export default function WorkoutGuidancePage() {
   // 获取用户目标列表
   const { data: goalsData, error: goalsError } = useQuery({
     queryKey: ['goals', user?.id],
-    queryFn: () => goalApi.getMyGoals('active'),
+    queryFn: () => {
+      console.log('[运动指导] 获取目标列表:', { userId: user?.id, isAuthenticated });
+      return goalApi.getMyGoals('active');
+    },
     enabled: isAuthenticated && !!user,
     retry: 1,
+    onSuccess: (data) => {
+      console.log('[运动指导] 目标列表获取成功:', data);
+    },
+    onError: (error: any) => {
+      console.error('[运动指导] 目标列表获取失败:', error);
+    },
   });
 
   // 获取运动前指导
   const preGuidanceMutation = useMutation({
-    mutationFn: () => workoutGuidanceApi.getPreWorkoutGuidance(selectedGoalId, workoutType || undefined, debugMode),
+    mutationFn: () => {
+      console.log('[运动指导] 开始请求:', {
+        selectedGoalId,
+        workoutType,
+        debugMode,
+        user: user?.id,
+        isAuthenticated
+      });
+      return workoutGuidanceApi.getPreWorkoutGuidance(selectedGoalId, workoutType || undefined, debugMode);
+    },
     onSuccess: (response) => {
+      console.log('[运动指导] 请求成功:', response);
+      console.log('[运动指导] 响应数据:', response.data);
       setPreGuidance(response.data);
       setShowPreGuidance(true);
     },
     onError: (error: any) => {
-      console.error('获取运动前指导失败:', error);
+      console.error('[运动指导] 请求失败:', error);
+      console.error('[运动指导] 错误详情:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        headers: error.response?.headers
+      });
+      alert(`生成运动指导失败: ${error.response?.data?.detail || error.message}`);
     },
   });
 
@@ -118,7 +145,17 @@ export default function WorkoutGuidancePage() {
             </div>
 
             <button
-              onClick={() => preGuidanceMutation.mutate()}
+              onClick={() => {
+                console.log('[运动指导] 按钮点击:', {
+                  selectedGoalId,
+                  workoutType,
+                  debugMode,
+                  isPending: preGuidanceMutation.isPending,
+                  user: user?.id,
+                  isAuthenticated
+                });
+                preGuidanceMutation.mutate();
+              }}
               disabled={preGuidanceMutation.isPending}
               className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all font-semibold text-lg shadow-lg"
             >
@@ -427,8 +464,8 @@ export default function WorkoutGuidancePage() {
                 </div>
               )}
 
-              {/* 科学知识要点 */}
-              {preGuidance.knowledge_points && preGuidance.knowledge_points.length > 0 && (
+              {/* 科学知识要点 - 已隐藏 */}
+              {false && preGuidance.knowledge_points && preGuidance.knowledge_points.length > 0 && (
                 <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
                   <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                     <span>📚</span> 科学知识要点

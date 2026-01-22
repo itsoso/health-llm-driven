@@ -870,7 +870,24 @@ async def get_pre_workout_guidance(
     Returns:
         运动前指导信息（debug模式下包含决策过程）
     """
+    logger.info(f"[运动前指导API] 收到请求 - user_id={current_user.id}, goal_id={goal_id}, workout_type={workout_type}, debug={debug}")
+    
     try:
+        # 检查用户基本信息
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter_by(user_id=current_user.id).first()
+        logger.info(f"[运动前指导API] 用户资料: profile_exists={profile is not None}, age={profile.age if profile else None}, gender={profile.gender if profile else None}")
+        
+        # 检查健康数据
+        from app.models.daily_health import GarminData
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        recent_data = db.query(GarminData).filter(
+            GarminData.user_id == current_user.id,
+            GarminData.record_date >= today - timedelta(days=7)
+        ).order_by(GarminData.record_date.desc()).first()
+        logger.info(f"[运动前指导API] 健康数据: data_exists={recent_data is not None}, latest_date={recent_data.record_date if recent_data else None}")
+        
         service = PreWorkoutGuidanceService()
         guidance = await service.generate_pre_workout_guidance(
             db=db,
@@ -879,9 +896,11 @@ async def get_pre_workout_guidance(
             workout_type=workout_type,
             debug=debug
         )
+        
+        logger.info(f"[运动前指导API] 生成成功 - success={guidance.get('success')}, has_user_status={('user_status' in guidance)}")
         return guidance
     except Exception as e:
-        logger.error(f"生成运动前指导失败: {e}", exc_info=True)
+        logger.error(f"[运动前指导API] 生成失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"生成运动前指导失败: {str(e)}"

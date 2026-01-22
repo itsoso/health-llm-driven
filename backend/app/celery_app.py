@@ -57,10 +57,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=6, minute=0),
     },
     
-    # 每小时同步 Garmin 数据
-    "sync-garmin-hourly": {
+    # 每6小时同步 Garmin 数据（降低频率，避免被封）
+    "sync-garmin-6hourly": {
         "task": "app.tasks.garmin_sync.sync_all_users_garmin",
-        "schedule": crontab(minute=30),  # 每小时的30分执行
+        "schedule": crontab(hour="*/6", minute=0),  # 0:00, 6:00, 12:00, 18:00
     },
     
     # 每日 22:00 发送睡眠提醒

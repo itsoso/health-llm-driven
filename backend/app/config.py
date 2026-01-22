@@ -1,6 +1,6 @@
 """应用配置"""
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -61,13 +61,31 @@ class Settings(BaseSettings):
     debug: bool = True
     
     # JWT密钥（用于用户认证token签名）
-    secret_key: str = "your-super-secret-key-change-in-production"
+    secret_key: str = ""
     
     # Garmin凭证加密密钥（用于加密存储的Garmin密码）
     garmin_encryption_key: Optional[str] = None
-    
+
+    # 设备凭证加密密钥（用于统一设备凭证加密）
+    device_encryption_key: Optional[str] = None
+
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
+
+    # CORS 配置，逗号分隔的允许来源列表
+    cors_allow_origins: str = ""
+
+    @property
+    def cors_allow_origins_list(self) -> List[str]:
+        """将 CORS 允许来源解析为列表"""
+        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
+
+    def validate_required_security(self) -> None:
+        """验证生产环境必须的安全配置"""
+        if not self.secret_key or "change-in-production" in self.secret_key:
+            raise ValueError("SECRET_KEY must be set to a strong value")
+        if len(self.secret_key) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters long")
     
     class Config:
         env_file = ".env"
@@ -76,4 +94,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

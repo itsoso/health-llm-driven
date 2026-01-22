@@ -5,6 +5,7 @@ from app.database import engine, Base
 from app.api.main import api_router
 from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
+from app.config import settings
 
 # 设置日志，使用北京时间
 setup_beijing_logging()
@@ -21,13 +22,14 @@ app = FastAPI(
 # 启动后台同步调度器（每天08:01北京时间同步一次，避免频繁登录导致账户锁定）
 @app.on_event("startup")
 async def startup_event():
+    settings.validate_required_security()
     start_scheduler(app, use_daily_schedule=True)
 
 
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=settings.cors_allow_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,4 +54,3 @@ def root():
 def health_check():
     """健康检查"""
     return {"status": "healthy"}
-

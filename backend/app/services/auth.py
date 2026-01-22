@@ -1,5 +1,4 @@
 """用户认证服务"""
-import os
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -15,12 +14,12 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 # JWT配置
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-123456789")
+SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7天
 
-# Garmin密码加密密钥（从环境变量获取或生成）
-GARMIN_ENCRYPTION_KEY = os.getenv("GARMIN_ENCRYPTION_KEY")
+# Garmin密码加密密钥（从设置获取或生成）
+GARMIN_ENCRYPTION_KEY = settings.garmin_encryption_key
 if not GARMIN_ENCRYPTION_KEY:
     # 使用SECRET_KEY派生加密密钥
     key_bytes = hashlib.sha256(SECRET_KEY.encode()).digest()
@@ -280,4 +279,3 @@ class GarminCredentialService:
 # 创建服务实例
 auth_service = AuthService()
 garmin_credential_service = GarminCredentialService()
-

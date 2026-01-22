@@ -17,19 +17,19 @@ import { request, get, put } from './request';
 
 export const TEMPLATE_IDS = {
   // 健康提醒模板（用于喝水、洗鼻、运动等提醒）
-  HEALTH_REMINDER: '', // TODO: 替换为实际模板ID
+  HEALTH_REMINDER: 'rit2hRtAH4d1mjtyiUMMLVN3VYzWXEbUzqeT3iSv-SI',
   
   // 早间简报模板
-  MORNING_BRIEFING: '', // TODO: 替换为实际模板ID
+  MORNING_BRIEFING: 'A-R8QFFj1OSPPH3WHil6FupmtihH94aBikFFSnUnAPg',
   
   // 健康预警模板
-  HEALTH_ALERT: '', // TODO: 替换为实际模板ID
+  HEALTH_ALERT: 'JCSm2jb6-78Bl3UmTA1JdfFNtv5WQnetA6JfS3SoTSg',
   
   // 目标进度模板
-  GOAL_PROGRESS: '', // TODO: 替换为实际模板ID
+  GOAL_PROGRESS: 'buawjDAdCSdbILS5JbrSTPSvSlYB0_rPTMpxK4t3xaE',
   
   // 周报模板
-  WEEKLY_REPORT: '', // TODO: 替换为实际模板ID
+  WEEKLY_REPORT: 'sjiGrcujQj4FMN-iQlKEqzuAYknzOBNFMpnz15pwWPo',
 };
 
 // 模板类型映射（用于显示）
