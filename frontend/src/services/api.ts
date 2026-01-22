@@ -297,6 +297,6 @@ export const dietRecommendationApi = {
   getMyRecommendation: (mealType?: string) => {
     const params = new URLSearchParams();
     if (mealType) params.append('meal_type', mealType);
-    return api.get(`/diet-recommendation/me?${params.toString()}`);
+    return api.get(`/v1/diet-recommendation/me?${params.toString()}`);
   },
 };
