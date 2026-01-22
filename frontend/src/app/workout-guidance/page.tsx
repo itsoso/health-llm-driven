@@ -27,12 +27,6 @@ export default function WorkoutGuidancePage() {
     },
     enabled: isAuthenticated && !!user,
     retry: 1,
-    onSuccess: (data) => {
-      console.log('[运动指导] 目标列表获取成功:', data);
-    },
-    onError: (error: any) => {
-      console.error('[运动指导] 目标列表获取失败:', error);
-    },
   });
 
   // 获取运动前指导
