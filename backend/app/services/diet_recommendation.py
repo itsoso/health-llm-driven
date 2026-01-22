@@ -7,10 +7,12 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+import os
 
 from app.models.user_profile import UserProfile
 from app.models.daily_health import DietRecord, GarminData, WorkoutRecord
 from app.utils.timezone import get_china_now
+from app.services.rag_pipeline import rag_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,11 @@ class DietRecommendationService:
     """智能饮食推荐服务"""
     
     def __init__(self):
-        pass
+        self.knowledge_base_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            'knowledge',
+            'nutrition_knowledge.md'
+        )
     
     def calculate_bmr(self, gender: str, weight_kg: float, height_cm: float, age: int) -> float:
         """
@@ -612,7 +618,15 @@ class DietRecommendationService:
                 weight_goal=weight_goal
             )
             
-            # 12. 生成基础推荐结果
+            # 12. 获取科学依据和详细建议
+            scientific_insights = self._get_scientific_insights(
+                profile=profile,
+                weight_goal=weight_goal,
+                health_status=health_status,
+                warnings=warnings
+            )
+            
+            # 13. 生成基础推荐结果
             result = {
                 "success": True,
                 "user_info": {
@@ -642,7 +656,8 @@ class DietRecommendationService:
                 "health_status": health_status,
                 "warnings": warnings,
                 "tips": tips,
-                "food_recommendations": food_recommendations
+                "food_recommendations": food_recommendations,
+                "scientific_insights": scientific_insights
             }
             
             logger.info(f"[饮食推荐] ========== 饮食推荐生成完成 ==========")
@@ -654,6 +669,151 @@ class DietRecommendationService:
                 "success": False,
                 "error": f"生成推荐失败: {str(e)}"
             }
+    
+    def _get_scientific_insights(
+        self,
+        profile: UserProfile,
+        weight_goal: str,
+        health_status: Dict[str, Any],
+        warnings: List[str]
+    ) -> Dict[str, Any]:
+        """
+        使用 RAG 获取科学依据和详细营养建议
+        
+        Returns:
+            科学见解和建议
+        """
+        try:
+            # 构建查询上下文
+            query_parts = []
+            
+            # 1. 体重目标相关查询
+            if weight_goal == 'lose':
+                query_parts.append("减重期间的营养素分配比例和科学依据")
+            elif weight_goal == 'gain':
+                query_parts.append("增重增肌期间的营养素分配和科学依据")
+            else:
+                query_parts.append("维持体重的营养素分配")
+            
+            # 2. 慢性病相关查询
+            chronic_conditions = profile.chronic_conditions or []
+            if '高血压' in chronic_conditions:
+                query_parts.append("高血压患者的DASH饮食原则")
+            if '糖尿病' in chronic_conditions:
+                query_parts.append("糖尿病患者的血糖管理和低GI食物")
+            if '高血脂' in chronic_conditions:
+                query_parts.append("高血脂患者的脂肪摄入建议")
+            
+            # 3. 饮食偏好相关查询
+            diet_preference = profile.diet_preference
+            if diet_preference == 'vegetarian':
+                query_parts.append("素食者的蛋白质来源和营养补充")
+            elif diet_preference == 'keto':
+                query_parts.append("生酮饮食的原理和注意事项")
+            elif diet_preference == 'low_carb':
+                query_parts.append("低碳水饮食的科学依据")
+            
+            # 4. 睡眠相关查询
+            sleep_score = health_status.get('sleep_score')
+            if sleep_score and sleep_score < 70:
+                query_parts.append("助眠食物和睡眠营养")
+            
+            # 5. 压力相关查询
+            stress_level = health_status.get('stress_level')
+            if stress_level and stress_level > 50:
+                query_parts.append("抗压力营养素和食物")
+            
+            # 合并查询
+            combined_query = "。".join(query_parts)
+            logger.info(f"[饮食推荐] RAG 查询: {combined_query}")
+            
+            # 使用 RAG 检索知识
+            if not os.path.exists(self.knowledge_base_path):
+                logger.warning(f"[饮食推荐] 知识库文件不存在: {self.knowledge_base_path}")
+                return {
+                    "available": False,
+                    "reason": "知识库未初始化"
+                }
+            
+            # 调用 RAG pipeline
+            rag_result = rag_pipeline.query(
+                query=combined_query,
+                knowledge_base_path=self.knowledge_base_path,
+                top_k=5
+            )
+            
+            if not rag_result or 'error' in rag_result:
+                logger.warning(f"[饮食推荐] RAG 检索失败: {rag_result.get('error', 'Unknown error')}")
+                return {
+                    "available": False,
+                    "reason": "知识检索失败"
+                }
+            
+            # 提取关键信息
+            insights = {
+                "available": True,
+                "bmr_tdee_explanation": self._extract_section(rag_result, "BMR", "TDEE"),
+                "macronutrient_rationale": self._extract_section(rag_result, "营养素分配", weight_goal),
+                "diet_mode_guidance": self._extract_section(rag_result, diet_preference) if diet_preference else None,
+                "chronic_disease_guidance": [],
+                "sleep_nutrition": self._extract_section(rag_result, "睡眠", "助眠") if sleep_score and sleep_score < 70 else None,
+                "stress_nutrition": self._extract_section(rag_result, "压力", "抗压") if stress_level and stress_level > 50 else None,
+                "references": rag_result.get('sources', [])
+            }
+            
+            # 慢性病指导
+            for condition in chronic_conditions:
+                guidance = self._extract_section(rag_result, condition)
+                if guidance:
+                    insights["chronic_disease_guidance"].append({
+                        "condition": condition,
+                        "guidance": guidance
+                    })
+            
+            logger.info(f"[饮食推荐] 成功获取科学见解")
+            return insights
+            
+        except Exception as e:
+            logger.error(f"[饮食推荐] 获取科学见解失败: {str(e)}", exc_info=True)
+            return {
+                "available": False,
+                "reason": f"处理失败: {str(e)}"
+            }
+    
+    def _extract_section(self, rag_result: Dict[str, Any], *keywords: str) -> Optional[str]:
+        """
+        从 RAG 结果中提取包含关键词的段落
+        
+        Args:
+            rag_result: RAG 检索结果
+            keywords: 关键词列表
+            
+        Returns:
+            提取的文本段落
+        """
+        try:
+            contexts = rag_result.get('contexts', [])
+            if not contexts:
+                return None
+            
+            # 查找包含所有关键词的段落
+            for context in contexts:
+                text = context.get('text', '')
+                if all(keyword in text for keyword in keywords):
+                    # 提取相关部分（最多500字符）
+                    return text[:500] + "..." if len(text) > 500 else text
+            
+            # 如果没有找到包含所有关键词的，返回包含任一关键词的第一个
+            for context in contexts:
+                text = context.get('text', '')
+                if any(keyword in text for keyword in keywords):
+                    return text[:500] + "..." if len(text) > 500 else text
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"[饮食推荐] 提取段落失败: {str(e)}")
+            return None
 
 
 # 创建全局实例
