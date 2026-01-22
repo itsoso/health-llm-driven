@@ -1230,10 +1230,14 @@ export default function WorkoutDetail() {
           <View className="analysis-card score-card">
             <View className="score-header">
               <Text className="score-label">综合评分</Text>
-              <Text className="score-value">{postAnalysis.overall_score}/100</Text>
+              <Text className="score-value">
+                {postAnalysis.overall_score || (postAnalysis.overall_rating?.score ? postAnalysis.overall_rating.score * 10 : '--')}/100
+              </Text>
             </View>
             <View className="score-rating">
-              <Text className="rating-text">{postAnalysis.rating}</Text>
+              <Text className="rating-text">
+                {postAnalysis.rating || postAnalysis.overall_rating?.rating || '--'}
+              </Text>
             </View>
           </View>
 
@@ -1243,12 +1247,21 @@ export default function WorkoutDetail() {
               <Text className="card-title">💪 训练强度</Text>
               <View className="intensity-info">
                 <Text className="intensity-label">强度评估:</Text>
-                <Text className="intensity-value">{postAnalysis.intensity_assessment.intensity}</Text>
+                <Text className="intensity-value">
+                  {postAnalysis.intensity_assessment.intensity || postAnalysis.intensity_assessment.level || '--'}
+                </Text>
               </View>
               {postAnalysis.intensity_assessment.avg_hr && (
                 <View className="intensity-info">
                   <Text className="intensity-label">平均心率:</Text>
                   <Text className="intensity-value">{postAnalysis.intensity_assessment.avg_hr} bpm</Text>
+                </View>
+              )}
+              {postAnalysis.intensity_assessment.factors && postAnalysis.intensity_assessment.factors.length > 0 && (
+                <View className="intensity-factors">
+                  {postAnalysis.intensity_assessment.factors.map((factor: string, idx: number) => (
+                    <Text key={idx} className="factor-text">• {factor}</Text>
+                  ))}
                 </View>
               )}
             </View>

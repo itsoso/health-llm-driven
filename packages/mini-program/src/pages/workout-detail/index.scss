@@ -631,6 +631,24 @@
   font-weight: 600;
 }
 
+.intensity-factors {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  
+  .factor-text {
+    display: block;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.6;
+    margin-bottom: 6px;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
 .zone-distribution-item {
   display: flex;
   align-items: center;

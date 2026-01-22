@@ -103,6 +103,10 @@ class PostWorkoutAnalysisService:
             # 9. 计算与目标的对比
             goal_progress = self._calculate_goal_progress(db, user_id, workout)
             
+            overall_rating = self._calculate_overall_rating(
+                hr_analysis, intensity_assessment
+            )
+            
             analysis = {
                 "success": True,
                 "generated_at": get_china_now().isoformat(),
@@ -113,9 +117,10 @@ class PostWorkoutAnalysisService:
                 "improvement_tips": improvement_tips,
                 "goal_progress": goal_progress,
                 "knowledge_points": knowledge.get("key_points", []),
-                "overall_rating": self._calculate_overall_rating(
-                    hr_analysis, intensity_assessment
-                )
+                "overall_rating": overall_rating,
+                # 兼容小程序字段
+                "overall_score": overall_rating.get("score", 0) * 10,  # 转换为0-100分
+                "rating": overall_rating.get("rating", "一般")
             }
             
             # 保存分析结果到数据库
@@ -250,6 +255,7 @@ class PostWorkoutAnalysisService:
         """评估训练强度"""
         assessment = {
             "level": "中等",
+            "intensity": "中等",  # 兼容小程序字段
             "score": 0,
             "factors": []
         }
@@ -300,12 +306,15 @@ class PostWorkoutAnalysisService:
         
         if score < 4:
             assessment["level"] = "轻度"
+            assessment["intensity"] = "轻度"  # 兼容小程序字段
             assessment["emoji"] = "🟢"
         elif score < 7:
             assessment["level"] = "中等"
+            assessment["intensity"] = "中等"  # 兼容小程序字段
             assessment["emoji"] = "🟡"
         else:
             assessment["level"] = "高强度"
+            assessment["intensity"] = "高强度"  # 兼容小程序字段
             assessment["emoji"] = "🔴"
         
         return assessment
