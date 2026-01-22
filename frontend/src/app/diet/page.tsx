@@ -111,6 +111,7 @@ function DietContent() {
   // 创建记录
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
+      console.log('[饮食保存] 开始请求:', data);
       const res = await fetch(`${API_BASE}/diet/records`, {
         method: 'POST',
         headers: { 
@@ -119,18 +120,25 @@ function DietContent() {
         },
         body: JSON.stringify(data),
       });
+      console.log('[饮食保存] 响应状态:', res.status);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
+        console.error('[饮食保存] 错误详情:', errorData);
         throw new Error(errorData.detail || `保存失败: ${res.status}`);
       }
-      return res.json();
+      const result = await res.json();
+      console.log('[饮食保存] 成功:', result);
+      return result;
     },
     onSuccess: () => {
+      console.log('[饮食保存] 刷新数据');
       queryClient.invalidateQueries({ queryKey: ['diet-summary'] });
       queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
       resetForm();
+      alert('✅ 保存成功！');
     },
     onError: (error: Error) => {
+      console.error('[饮食保存] 失败:', error);
       alert(`保存失败: ${error.message}`);
     },
   });
@@ -287,7 +295,8 @@ function DietContent() {
       alert('请输入食物内容');
       return;
     }
-    createMutation.mutate({
+    
+    const submitData = {
       record_date: selectedDate,
       meal_type: formData.meal_type,
       food_items: formData.food_items,
@@ -296,7 +305,12 @@ function DietContent() {
       carbs: formData.carbs ? parseFloat(formData.carbs) : null,
       fat: formData.fat ? parseFloat(formData.fat) : null,
       notes: formData.notes || null,
-    });
+      image_base64: imageBase64 || undefined,
+      image_type: imageBase64 ? 'jpeg' : undefined,
+    };
+    
+    console.log('[饮食保存] 提交数据:', submitData);
+    createMutation.mutate(submitData);
   };
 
   const getMealInfo = (mealType: string) => {
