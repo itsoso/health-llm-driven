@@ -35,16 +35,76 @@ class GoalManagementService:
         goal_period: Optional[GoalPeriod] = None
     ) -> List[Goal]:
         """获取用户目标"""
+        from sqlalchemy import cast, String
+        
         query = db.query(Goal).filter(Goal.user_id == user_id)
         
+        # 使用字符串比较避免枚举类型问题
         if status:
-            query = query.filter(Goal.status == status)
+            if isinstance(status, GoalStatus):
+                query = query.filter(cast(Goal.status, String) == status.value)
+            else:
+                query = query.filter(cast(Goal.status, String) == str(status))
         if goal_type:
-            query = query.filter(Goal.goal_type == goal_type)
+            if isinstance(goal_type, GoalType):
+                query = query.filter(cast(Goal.goal_type, String) == goal_type.value)
+            else:
+                query = query.filter(cast(Goal.goal_type, String) == str(goal_type))
         if goal_period:
-            query = query.filter(Goal.goal_period == goal_period)
+            if isinstance(goal_period, GoalPeriod):
+                query = query.filter(cast(Goal.goal_period, String) == goal_period.value)
+            else:
+                query = query.filter(cast(Goal.goal_period, String) == str(goal_period))
         
-        return query.order_by(Goal.priority.desc(), Goal.created_at.desc()).all()
+        try:
+            goals = query.order_by(Goal.priority.desc(), Goal.created_at.desc()).all()
+            
+            # 手动修复枚举值
+            for goal in goals:
+                try:
+                    if isinstance(goal.goal_period, str):
+                        goal.goal_period = GoalPeriod(goal.goal_period.lower())
+                    if isinstance(goal.goal_type, str):
+                        goal.goal_type = GoalType(goal.goal_type.lower())
+                    if isinstance(goal.status, str):
+                        goal.status = GoalStatus(goal.status.lower())
+                except (ValueError, LookupError):
+                    # 如果转换失败，保持原值
+                    pass
+            
+            return goals
+        except LookupError as e:
+            # 如果查询时出现枚举错误，尝试不使用枚举过滤
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"枚举查询失败，尝试使用字符串查询: {e}")
+            
+            query = db.query(Goal).filter(Goal.user_id == user_id)
+            if status:
+                status_val = status.value if isinstance(status, GoalStatus) else str(status)
+                query = query.filter(cast(Goal.status, String) == status_val.lower())
+            if goal_type:
+                type_val = goal_type.value if isinstance(goal_type, GoalType) else str(goal_type)
+                query = query.filter(cast(Goal.goal_type, String) == type_val.lower())
+            if goal_period:
+                period_val = goal_period.value if isinstance(goal_period, GoalPeriod) else str(goal_period)
+                query = query.filter(cast(Goal.goal_period, String) == period_val.lower())
+            
+            goals = query.order_by(Goal.priority.desc(), Goal.created_at.desc()).all()
+            
+            # 手动修复枚举值
+            for goal in goals:
+                try:
+                    if isinstance(goal.goal_period, str):
+                        goal.goal_period = GoalPeriod(goal.goal_period.lower())
+                    if isinstance(goal.goal_type, str):
+                        goal.goal_type = GoalType(goal.goal_type.lower())
+                    if isinstance(goal.status, str):
+                        goal.status = GoalStatus(goal.status.lower())
+                except (ValueError, LookupError):
+                    pass
+            
+            return goals
     
     def update_goal_progress(
         self,

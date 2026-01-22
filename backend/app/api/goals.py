@@ -67,10 +67,10 @@ def get_my_goals(
     logger = logging.getLogger(__name__)
     
     try:
-        # 转换字符串参数为枚举类型
-        status_enum = GoalStatus(status) if status else None
-        goal_type_enum = GoalType(goal_type) if goal_type else None
-        goal_period_enum = GoalPeriod(goal_period) if goal_period else None
+        # 转换字符串参数为枚举类型（转换为小写以匹配数据库值）
+        status_enum = GoalStatus(status.lower()) if status and isinstance(status, str) else None
+        goal_type_enum = GoalType(goal_type.lower()) if goal_type and isinstance(goal_type, str) else None
+        goal_period_enum = GoalPeriod(goal_period.lower()) if goal_period and isinstance(goal_period, str) else None
         
         logger.info(f"[获取我的目标] 用户 {current_user.id}, status={status_enum}, type={goal_type_enum}, period={goal_period_enum}")
         
