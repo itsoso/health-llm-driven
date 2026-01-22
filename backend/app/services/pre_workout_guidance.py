@@ -96,17 +96,24 @@ class PreWorkoutGuidanceService:
         debug_info = self._init_debug_info() if debug else None
         
         try:
-            logger.info(f"[运动前指导] 开始为用户 {user_id} 生成指导 (debug={debug})")
+            logger.info(f"[运动前指导] ========== 开始为用户 {user_id} 生成指导 (debug={debug}) ==========")
+            logger.info(f"[运动前指导] 参数: goal_id={goal_id}, workout_type={workout_type}")
             
             # 1. 获取用户信息
             step_start = time.time()
             self._add_debug_step(debug_info, "获取用户基本信息", step_start)
             
             profile = db.query(UserProfile).filter_by(user_id=user_id).first()
+            logger.info(f"[运动前指导] 用户资料查询结果: found={profile is not None}")
+            
             if not profile:
-                logger.warning(f"[运动前指导] 用户 {user_id} 没有个人资料")
+                logger.warning(f"[运动前指导] 用户 {user_id} 没有个人资料，返回基础指导")
                 self._add_debug_reasoning(debug_info, "用户未设置个人资料，使用基础指导模式", "error")
-                return self._generate_basic_guidance(workout_type or "EXERCISE", debug_info)
+                basic_guidance = self._generate_basic_guidance(workout_type or "EXERCISE", debug_info)
+                logger.info(f"[运动前指导] 基础指导生成完成: {basic_guidance}")
+                return basic_guidance
+            
+            logger.info(f"[运动前指导] 用户资料: age={profile.age}, gender={profile.gender}, weight={profile.current_weight_kg}, height={profile.height_cm}")
             
             # 收集用户资料数据
             user_profile_data = {
@@ -139,20 +146,49 @@ class PreWorkoutGuidanceService:
             self._add_debug_step(debug_info, "获取用户运动目标", step_start)
             
             goal = None
-            if goal_id:
-                goal = db.query(Goal).filter_by(id=goal_id, user_id=user_id).first()
-                if goal:
-                    self._add_debug_reasoning(debug_info, f"使用指定目标：{goal.title}", "goal")
-            else:
-                # 获取最近的活跃目标
-                goal = db.query(Goal).filter_by(
-                    user_id=user_id,
-                    status="active"
-                ).order_by(Goal.priority.desc(), Goal.created_at.desc()).first()
-                if goal:
-                    self._add_debug_reasoning(debug_info, f"自动选择活跃目标：{goal.title}", "goal")
+            try:
+                if goal_id:
+                    # 使用字符串比较避免枚举问题
+                    from sqlalchemy import cast, String
+                    goal = db.query(Goal).filter(
+                        Goal.id == goal_id,
+                        Goal.user_id == user_id
+                    ).first()
+                    if goal:
+                        # 手动修复枚举值
+                        if isinstance(goal.goal_period, str):
+                            try:
+                                from app.models.goal import GoalPeriod, GoalType, GoalStatus
+                                goal.goal_period = GoalPeriod(goal.goal_period.lower())
+                                goal.goal_type = GoalType(goal.goal_type.lower()) if isinstance(goal.goal_type, str) else goal.goal_type
+                                goal.status = GoalStatus(goal.status.lower()) if isinstance(goal.status, str) else goal.status
+                            except (ValueError, LookupError):
+                                pass
+                        self._add_debug_reasoning(debug_info, f"使用指定目标：{goal.title}", "goal")
                 else:
-                    self._add_debug_reasoning(debug_info, "用户暂无活跃目标", "warning")
+                    # 获取最近的活跃目标 - 使用字符串比较
+                    from sqlalchemy import cast, String
+                    goal = db.query(Goal).filter(
+                        Goal.user_id == user_id,
+                        cast(Goal.status, String) == "active"
+                    ).order_by(Goal.priority.desc(), Goal.created_at.desc()).first()
+                    if goal:
+                        # 手动修复枚举值
+                        if isinstance(goal.goal_period, str):
+                            try:
+                                from app.models.goal import GoalPeriod, GoalType, GoalStatus
+                                goal.goal_period = GoalPeriod(goal.goal_period.lower())
+                                goal.goal_type = GoalType(goal.goal_type.lower()) if isinstance(goal.goal_type, str) else goal.goal_type
+                                goal.status = GoalStatus(goal.status.lower()) if isinstance(goal.status, str) else goal.status
+                            except (ValueError, LookupError):
+                                pass
+                        self._add_debug_reasoning(debug_info, f"自动选择活跃目标：{goal.title}", "goal")
+                    else:
+                        self._add_debug_reasoning(debug_info, "用户暂无活跃目标", "warning")
+            except LookupError as e:
+                logger.warning(f"[运动前指导] 查询目标时遇到枚举错误，跳过目标: {e}")
+                self._add_debug_reasoning(debug_info, f"查询目标失败（枚举值问题），继续生成基础指导: {str(e)}", "warning")
+                goal = None
             
             if goal:
                 goal_data = {
@@ -341,8 +377,11 @@ class PreWorkoutGuidanceService:
             step_start = time.time()
             self._add_debug_step(debug_info, "生成个性化运动指导", step_start)
             
+            logger.info(f"[运动前指导] 开始生成指导内容...")
+            
             # 生成关键提醒（包含环境因素）
             key_reminders = self._generate_key_reminders(workout_type, hr_zones, recent_data, environment_warnings)
+            logger.info(f"[运动前指导] 关键提醒生成完成: {len(key_reminders)}条")
             
             guidance = {
                 "success": True,
@@ -357,6 +396,8 @@ class PreWorkoutGuidanceService:
                 "course_insights": knowledge.get("key_points", []),
                 "generated_at": get_china_now().isoformat()
             }
+            
+            logger.info(f"[运动前指导] 指导内容生成完成: success={guidance['success']}, workout_type={guidance['workout_type']}")
             
             # 添加debug信息
             if debug_info:
