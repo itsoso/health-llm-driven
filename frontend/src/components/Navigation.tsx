@@ -115,66 +115,66 @@ export default function Navigation() {
 
   return (
     <nav className="bg-[#1a1625]/95 backdrop-blur-md border-b border-purple-900/30 shadow-lg sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-14 gap-4">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6">
+        <div className="flex justify-between items-center h-14 gap-2">
           {/* Logo和首页链接 */}
-          <div className="flex items-center flex-shrink-0">
+          <div className="flex items-center flex-shrink-0 min-w-0">
             <Link
               href="/"
-              className="flex items-center space-x-2 text-lg font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap"
+              className="flex items-center space-x-1.5 text-base font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img 
                 src="/logo.png" 
                 alt="自由是自律的泡沫" 
-                width={36} 
-                height={36} 
-                className="rounded-lg"
+                width={32} 
+                height={32} 
+                className="rounded-lg flex-shrink-0"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                   const span = document.createElement('span');
                   span.textContent = '🏥';
-                  span.className = 'text-xl';
+                  span.className = 'text-lg';
                   e.currentTarget.parentNode?.insertBefore(span, e.currentTarget);
                 }}
               />
-              <span className="hidden sm:inline tracking-tight">自由是自律的泡沫</span>
+              <span className="hidden sm:inline text-sm tracking-tight truncate">自由是自律的泡沫</span>
             </Link>
           </div>
 
           {/* 桌面导航菜单 */}
-          <div className="hidden lg:flex lg:items-center lg:space-x-0.5" ref={dropdownRef}>
+          <div className="hidden lg:flex lg:items-center lg:gap-0.5 flex-1 justify-end overflow-x-auto" ref={dropdownRef}>
             {/* 主要导航项 */}
             {mainNavItems.slice(1).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1 ${
+                className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 whitespace-nowrap flex-shrink-0 ${
                   isActive(item.href)
                     ? 'bg-purple-600 text-white'
                     : 'text-gray-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <span className="text-base">{item.icon}</span>
+                <span className="text-sm">{item.icon}</span>
                 <span>{item.label}</span>
               </Link>
             ))}
 
             {/* 分组下拉菜单 */}
             {navGroups.map((group) => (
-              <div key={group.label} className="relative">
+              <div key={group.label} className="relative flex-shrink-0">
                 <button
                   onClick={() => setOpenDropdown(openDropdown === group.label ? null : group.label)}
-                  className={`px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1 ${
+                  className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-0.5 whitespace-nowrap ${
                     isGroupActive(group)
                       ? 'bg-purple-600 text-white'
                       : 'text-gray-300 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  <span className="text-base">{group.icon}</span>
+                  <span className="text-sm">{group.icon}</span>
                   <span>{group.label}</span>
                   <svg
-                    className={`w-4 h-4 transition-transform ${openDropdown === group.label ? 'rotate-180' : ''}`}
+                    className={`w-3 h-3 transition-transform ${openDropdown === group.label ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -207,27 +207,27 @@ export default function Navigation() {
             ))}
 
             {/* 用户菜单 */}
-            <div className="relative ml-2 pl-2 border-l border-purple-900/30" ref={userMenuRef}>
+            <div className="relative ml-1 pl-1 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
               {!authLoading && (
                 isAuthenticated ? (
                   <>
                     <button
                       onClick={() => setShowUserMenu(!showUserMenu)}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+                      className="flex items-center gap-1 px-1.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all"
                     >
-                      <span className="w-7 h-7 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                      <span className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                         {user?.name?.charAt(0) || '?'}
                       </span>
-                      <span className="hidden xl:inline">{user?.name}</span>
-                      <svg className={`w-3.5 h-3.5 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <span className="hidden xl:inline truncate max-w-[80px]">{user?.name}</span>
+                      <svg className={`w-3 h-3 transition-transform flex-shrink-0 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
                     {showUserMenu && (
                       <div className="absolute top-full right-0 mt-1 w-44 bg-[#252033] rounded-xl shadow-2xl border border-purple-900/50 py-1.5 z-50">
                         <div className="px-3 py-2 border-b border-purple-900/30">
-                          <p className="text-sm font-semibold text-white">{user?.name}</p>
-                          <p className="text-xs text-gray-400">{user?.email}</p>
+                          <p className="text-sm font-semibold text-white truncate">{user?.name}</p>
+                          <p className="text-xs text-gray-400 truncate">{user?.email}</p>
                         </div>
                         <Link
                           href="/settings"
@@ -284,16 +284,16 @@ export default function Navigation() {
                     )}
                   </>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <Link
                       href="/login"
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
                     >
                       登录
                     </Link>
                     <Link
                       href="/register"
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all"
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap"
                     >
                       注册
                     </Link>
