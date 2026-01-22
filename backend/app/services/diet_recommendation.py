@@ -12,7 +12,9 @@ import os
 from app.models.user_profile import UserProfile
 from app.models.daily_health import DietRecord, GarminData, WorkoutRecord
 from app.utils.timezone import get_china_now
-from app.services.rag_pipeline import rag_pipeline
+
+# RAG pipeline 暂时禁用，等待实现
+# from app.services.rag_pipeline import rag_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -728,26 +730,34 @@ class DietRecommendationService:
             logger.info(f"[饮食推荐] RAG 查询: {combined_query}")
             
             # 使用 RAG 检索知识
-            if not os.path.exists(self.knowledge_base_path):
-                logger.warning(f"[饮食推荐] 知识库文件不存在: {self.knowledge_base_path}")
-                return {
-                    "available": False,
-                    "reason": "知识库未初始化"
-                }
+            # RAG pipeline 暂时禁用
+            logger.warning(f"[饮食推荐] RAG pipeline 暂未实现，返回空结果")
+            return {
+                "available": False,
+                "reason": "RAG pipeline 暂未实现"
+            }
             
-            # 调用 RAG pipeline
-            rag_result = rag_pipeline.query(
-                query=combined_query,
-                knowledge_base_path=self.knowledge_base_path,
-                top_k=5
-            )
-            
-            if not rag_result or 'error' in rag_result:
-                logger.warning(f"[饮食推荐] RAG 检索失败: {rag_result.get('error', 'Unknown error')}")
-                return {
-                    "available": False,
-                    "reason": "知识检索失败"
-                }
+            # TODO: 实现 RAG pipeline 后启用以下代码
+            # if not os.path.exists(self.knowledge_base_path):
+            #     logger.warning(f"[饮食推荐] 知识库文件不存在: {self.knowledge_base_path}")
+            #     return {
+            #         "available": False,
+            #         "reason": "知识库未初始化"
+            #     }
+            # 
+            # # 调用 RAG pipeline
+            # rag_result = rag_pipeline.query(
+            #     query=combined_query,
+            #     knowledge_base_path=self.knowledge_base_path,
+            #     top_k=5
+            # )
+            # 
+            # if not rag_result or 'error' in rag_result:
+            #     logger.warning(f"[饮食推荐] RAG 检索失败: {rag_result.get('error', 'Unknown error')}")
+            #     return {
+            #         "available": False,
+            #         "reason": "知识检索失败"
+            #     }
             
             # 提取关键信息
             insights = {
