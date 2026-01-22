@@ -32,7 +32,6 @@ export default function Navigation() {
     { href: '/overview', label: '健康概览', icon: '📋' },
     { href: '/daily-insights', label: '今日建议', icon: '💪' },
     { href: '/review', label: '每日复盘', icon: '📝' },
-    { href: '/dashboard', label: '仪表盘', icon: '📊' },
   ];
 
   // 分组下拉菜单
@@ -53,6 +52,7 @@ export default function Navigation() {
       label: '健康追踪',
       icon: '❤️',
       items: [
+        { href: '/dashboard', label: '仪表盘', icon: '📊' },
         { href: '/workout', label: '运动训练', icon: '🏋️' },
         { href: '/workout-guidance', label: '运动指导', icon: '🎯' },
         { href: '/heart-rate', label: '心率监测', icon: '❤️' },
@@ -149,13 +149,13 @@ export default function Navigation() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 whitespace-nowrap flex-shrink-0 ${
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 ${
                   isActive(item.href)
                     ? 'bg-purple-600 text-white'
                     : 'text-gray-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <span className="text-sm">{item.icon}</span>
+                <span className="text-base">{item.icon}</span>
                 <span>{item.label}</span>
               </Link>
             ))}
@@ -165,16 +165,16 @@ export default function Navigation() {
               <div key={group.label} className="relative flex-shrink-0">
                 <button
                   onClick={() => setOpenDropdown(openDropdown === group.label ? null : group.label)}
-                  className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-0.5 whitespace-nowrap ${
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1 whitespace-nowrap ${
                     isGroupActive(group)
                       ? 'bg-purple-600 text-white'
                       : 'text-gray-300 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  <span className="text-sm">{group.icon}</span>
+                  <span className="text-base">{group.icon}</span>
                   <span>{group.label}</span>
                   <svg
-                    className={`w-3 h-3 transition-transform ${openDropdown === group.label ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 transition-transform ${openDropdown === group.label ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -185,19 +185,19 @@ export default function Navigation() {
 
                 {/* 下拉菜单内容 */}
                 {openDropdown === group.label && (
-                  <div className="absolute top-full left-0 mt-1 w-44 bg-[#252033] rounded-xl shadow-2xl border border-purple-900/50 py-1.5 z-50">
+                  <div className="absolute top-full left-0 mt-1 w-48 bg-[#252033] rounded-xl shadow-2xl border border-purple-900/50 py-2 z-50">
                     {group.items.map((item) => (
                       <Link
                         key={item.href}
                         href={item.href}
                         onClick={() => setOpenDropdown(null)}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-all ${
+                        className={`flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition-all ${
                           isActive(item.href)
                             ? 'bg-purple-600/30 text-purple-300'
                             : 'text-gray-300 hover:bg-white/5 hover:text-white'
                         }`}
                       >
-                        <span className="text-base">{item.icon}</span>
+                        <span className="text-lg">{item.icon}</span>
                         <span>{item.label}</span>
                       </Link>
                     ))}
@@ -207,19 +207,19 @@ export default function Navigation() {
             ))}
 
             {/* 用户菜单 */}
-            <div className="relative ml-1 pl-1 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
+            <div className="relative ml-2 pl-2 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
               {!authLoading && (
                 isAuthenticated ? (
                   <>
                     <button
                       onClick={() => setShowUserMenu(!showUserMenu)}
-                      className="flex items-center gap-1 px-1.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+                      className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all"
                     >
-                      <span className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                      <span className="w-7 h-7 bg-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                         {user?.name?.charAt(0) || '?'}
                       </span>
-                      <span className="hidden xl:inline truncate max-w-[80px]">{user?.name}</span>
-                      <svg className={`w-3 h-3 transition-transform flex-shrink-0 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <span className="hidden xl:inline truncate max-w-[100px]">{user?.name}</span>
+                      <svg className={`w-4 h-4 transition-transform flex-shrink-0 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
@@ -284,16 +284,16 @@ export default function Navigation() {
                     )}
                   </>
                 ) : (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2">
                     <Link
                       href="/login"
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
+                      className="px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
                     >
                       登录
                     </Link>
                     <Link
                       href="/register"
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap"
+                      className="px-3 py-2 rounded-lg text-sm font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap"
                     >
                       注册
                     </Link>
