@@ -755,10 +755,27 @@ class PreWorkoutGuidanceService:
         recent_data: Dict[str, Any]
     ) -> str:
         """生成训练目标描述"""
+        # 运动类型中文映射
+        workout_type_map = {
+            "RUNNING": "跑步",
+            "CARDIO": "心肺训练",
+            "WEIGHT_LOSS": "减脂训练",
+            "MUSCLE_GAIN": "力量训练",
+            "EXERCISE": "有氧运动"
+        }
+        
+        workout_name = workout_type_map.get(workout_type, "运动")
+        
         if goal and goal.description:
-            return f"今日目标：{goal.description}。建议进行{workout_type}训练，保持在目标心率区间。"
+            return f"今日目标：{goal.description}。建议进行{workout_name}，保持在目标心率区间。"
         else:
-            return f"今日建议进行{workout_type}训练，保持适当强度，注意心率控制。"
+            # 根据健康状态给出更个性化的建议
+            if recent_data.get("sleep_score") and recent_data["sleep_score"] < 70:
+                return f"今日建议进行轻度{workout_name}，睡眠不足时以恢复为主，保持低强度训练。"
+            elif recent_data.get("stress_level") and recent_data["stress_level"] > 60:
+                return f"今日建议进行放松性{workout_name}，压力较大时避免高强度，注重身心恢复。"
+            else:
+                return f"今日建议进行{workout_name}，保持适当强度，注意心率控制和身体感受。"
     
     def _format_environment_info(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
         """格式化环境信息"""
@@ -794,9 +811,23 @@ class PreWorkoutGuidanceService:
         """生成基础指导（用户数据不足时）"""
         if debug_info:
             self._add_debug_reasoning(debug_info, "使用基础指导模式（用户数据不足）", "warning")
+        
+        # 运动类型中文映射
+        workout_type_map = {
+            "RUNNING": "跑步",
+            "CARDIO": "心肺训练",
+            "WEIGHT_LOSS": "减脂训练",
+            "MUSCLE_GAIN": "力量训练",
+            "EXERCISE": "有氧运动"
+        }
+        
+        workout_name = workout_type_map.get(workout_type, "运动")
+        
         return {
             "success": True,
             "workout_type": workout_type,
+            "workout_name": workout_name,
+            "training_objective": f"建议进行{workout_name}，保持适当强度，注意身体感受。",
             "today_target": {
                 "duration": "30-45 分钟",
                 "intensity": "中等强度"

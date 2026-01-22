@@ -6,6 +6,7 @@ import { View, Text, ScrollView, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { getPreWorkoutGuidance } from '../../services/api';
 import { PreWorkoutGuidance } from '../../types';
+import { getWorkoutTypeDisplay, getWorkoutTypeName } from '../../utils/workout';
 import './index.scss';
 
 export default function WorkoutGuidance() {
@@ -61,8 +62,14 @@ export default function WorkoutGuidance() {
     <ScrollView className="workout-guidance-page" scrollY>
       {/* 页面标题 */}
       <View className="page-header">
-        <Text className="page-title">🎯 智能运动指导</Text>
-        <Text className="page-subtitle">基于张展晖课程的科学训练建议</Text>
+        <Text className="page-title">
+          {guidance.workout_type ? getWorkoutTypeDisplay(guidance.workout_type) : '🎯'} 智能运动指导
+        </Text>
+        <Text className="page-subtitle">
+          {guidance.workout_type 
+            ? `${getWorkoutTypeName(guidance.workout_type)}训练 · 基于科学训练理论` 
+            : '基于张展晖课程的科学训练建议'}
+        </Text>
       </View>
 
       {/* 当前状态 */}
