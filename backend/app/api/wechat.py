@@ -343,6 +343,12 @@ async def save_subscribe_settings(
         
         # 合并模板ID（保留已有的，添加新的）
         existing_templates = settings_record.wechat_template_ids or {}
+        # 处理数据库中存储为字符串的JSON
+        if isinstance(existing_templates, str):
+            try:
+                existing_templates = json.loads(existing_templates)
+            except:
+                existing_templates = {}
         existing_templates.update(request.template_ids)
         settings_record.wechat_template_ids = existing_templates
     
