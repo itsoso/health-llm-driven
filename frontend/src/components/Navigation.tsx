@@ -172,7 +172,7 @@ export default function Navigation() {
                   e.currentTarget.parentNode?.insertBefore(span, e.currentTarget);
                 }}
               />
-              <span className="hidden sm:inline text-lg tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
+              <span className="hidden sm:inline text-xl tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
             </Link>
           </div>
 
