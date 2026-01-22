@@ -38,7 +38,11 @@ def create_weight_record(
         # 更新已有记录
         for key, value in record.model_dump(exclude={"user_id"}).items():
             if value is not None:
-                setattr(existing, key, value)
+                # 处理字段名映射：muscle_mass -> muscle_mass_kg
+                if key == "muscle_mass":
+                    setattr(existing, "muscle_mass_kg", value)
+                else:
+                    setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
         return existing
@@ -46,6 +50,11 @@ def create_weight_record(
     # 创建新记录
     record_data = record.model_dump()
     record_data["user_id"] = user_id
+    
+    # 处理字段名映射：muscle_mass -> muscle_mass_kg
+    if "muscle_mass" in record_data:
+        record_data["muscle_mass_kg"] = record_data.pop("muscle_mass")
+    
     db_record = WeightRecord(**record_data)
     db.add(db_record)
     db.commit()

@@ -42,8 +42,29 @@ def create_blood_pressure_record(
     db: Session = Depends(get_db)
 ):
     """创建血压记录（需要登录）"""
+    from datetime import datetime, time as dt_time
+    
     record_data = record.model_dump()
     record_data["user_id"] = current_user.id
+    
+    # 处理字段名映射：record_time -> measured_at
+    # 将 record_date + record_time 合并为 measured_at
+    if "record_time" in record_data and record_data["record_time"]:
+        record_date = record_data["record_date"]
+        record_time = record_data.pop("record_time")
+        # 合并日期和时间
+        record_data["measured_at"] = datetime.combine(record_date, record_time)
+    elif "record_date" in record_data:
+        # 如果没有时间，使用当前时间
+        record_data["measured_at"] = datetime.combine(
+            record_data["record_date"],
+            datetime.now().time()
+        )
+    
+    # 移除数据库中不存在的字段
+    record_data.pop("measurement_position", None)
+    record_data.pop("arm", None)
+    
     db_record = BloodPressureRecord(**record_data)
     db.add(db_record)
     db.commit()
