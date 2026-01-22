@@ -130,6 +130,16 @@ class FoodRecognitionService:
             # 解析响应
             content = response.choices[0].message.content.strip()
             
+            # 检查是否是拒绝识别的回复
+            if "无法识别" in content or "抱歉" in content or "不是食物" in content:
+                logger.warning(f"AI无法识别图片内容: {content[:100]}")
+                return {
+                    "success": False,
+                    "error": "图片中未识别到食物，请确保图片清晰且包含食物内容",
+                    "foods": [],
+                    "ai_message": content[:200]
+                }
+            
             # 尝试清理可能的markdown标记
             if content.startswith("```"):
                 content = content.split("```")[1]
@@ -145,9 +155,17 @@ class FoodRecognitionService:
             
         except json.JSONDecodeError as e:
             logger.error(f"解析AI响应失败: {e}, 原始内容: {content[:500] if 'content' in locals() else 'N/A'}")
+            # 如果解析失败，检查是否是拒绝识别的情况
+            if 'content' in locals() and ("无法识别" in content or "抱歉" in content):
+                return {
+                    "success": False,
+                    "error": "图片中未识别到食物，请重新拍照或选择包含食物的图片",
+                    "foods": [],
+                    "ai_message": content[:200]
+                }
             return {
                 "success": False,
-                "error": f"解析AI响应失败: {str(e)}",
+                "error": "AI响应格式错误，请重试",
                 "foods": [],
                 "raw_response": content[:500] if 'content' in locals() else None
             }
