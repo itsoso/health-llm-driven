@@ -172,7 +172,7 @@ export default function Navigation() {
                   e.currentTarget.parentNode?.insertBefore(span, e.currentTarget);
                 }}
               />
-              <span className="hidden sm:inline text-sm tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
+              <span className="hidden sm:inline text-base tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
             </Link>
           </div>
 
@@ -183,7 +183,7 @@ export default function Navigation() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-2 whitespace-nowrap flex-shrink-0 ${
+                className={`px-3 py-2 rounded-md text-base font-medium transition-all duration-200 flex items-center gap-2 whitespace-nowrap flex-shrink-0 ${
                   isActive(item.href)
                     ? 'bg-purple-600/90 text-white shadow-sm'
                     : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -199,7 +199,7 @@ export default function Navigation() {
               <div key={group.label} className="relative flex-shrink-0">
                 <button
                   onClick={() => setOpenDropdown(openDropdown === group.label ? null : group.label)}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap ${
+                  className={`px-3 py-2 rounded-md text-base font-medium transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap ${
                     isGroupActive(group)
                       ? 'bg-purple-600/90 text-white shadow-sm'
                       : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -220,7 +220,7 @@ export default function Navigation() {
                         key={item.href}
                         href={item.href}
                         onClick={() => setOpenDropdown(null)}
-                        className={`flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all ${
+                        className={`flex items-center gap-3 px-4 py-2.5 text-base font-medium transition-all ${
                           isActive(item.href)
                             ? 'bg-purple-600/20 text-purple-300'
                             : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -242,12 +242,12 @@ export default function Navigation() {
                   <>
                     <button
                       onClick={() => setShowUserMenu(!showUserMenu)}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-full text-sm font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all border border-transparent hover:border-purple-500/30"
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-full text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all border border-transparent hover:border-purple-500/30"
                     >
                       <span className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-inner">
                         {user?.name?.charAt(0) || '?'}
                       </span>
-                      <span className="hidden xl:inline truncate max-w-[100px] text-xs font-medium tracking-wide">{user?.name}</span>
+                      <span className="hidden xl:inline truncate max-w-[100px] text-sm font-medium tracking-wide">{user?.name}</span>
                       <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
                     </button>
                     {showUserMenu && (
@@ -260,7 +260,7 @@ export default function Navigation() {
                           <Link
                             href="/settings"
                             onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
+                            className="flex items-center gap-3 px-4 py-2 text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
                           >
                             <Settings className="w-4 h-4" />
                             <span>个人设置</span>
@@ -268,7 +268,7 @@ export default function Navigation() {
                           <Link
                             href="/profile"
                             onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
+                            className="flex items-center gap-3 px-4 py-2 text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
                           >
                             <User className="w-4 h-4" />
                             <span>个人画像</span>
@@ -279,7 +279,7 @@ export default function Navigation() {
                             <Link
                               href="/admin"
                               onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                              className="flex items-center gap-3 px-4 py-2 text-base font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
                             >
                               <Shield className="w-4 h-4" />
                               <span>管理后台</span>
@@ -287,7 +287,7 @@ export default function Navigation() {
                             <Link
                               href="/admin/applications"
                               onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                              className="flex items-center gap-3 px-4 py-2 text-base font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
                             >
                               <Ticket className="w-4 h-4" />
                               <span>邀请码审批</span>
@@ -295,7 +295,7 @@ export default function Navigation() {
                             <Link
                               href="/knowledge"
                               onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                              className="flex items-center gap-3 px-4 py-2 text-base font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
                             >
                               <Book className="w-4 h-4" />
                               <span>知识库管理</span>
@@ -305,7 +305,7 @@ export default function Navigation() {
                         <div className="border-t border-purple-900/30 py-1">
                           <button
                             onClick={() => { logout(); setShowUserMenu(false); }}
-                            className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-600/10 transition-all w-full text-left"
+                            className="flex items-center gap-3 px-4 py-2 text-base font-medium text-red-400 hover:bg-red-600/10 transition-all w-full text-left"
                           >
                             <LogOut className="w-4 h-4" />
                             <span>退出登录</span>
@@ -318,13 +318,13 @@ export default function Navigation() {
                   <div className="flex items-center gap-3">
                     <Link
                       href="/login"
-                      className="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
+                      className="px-4 py-2 rounded-md text-base font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
                     >
                       登录
                     </Link>
                     <Link
                       href="/register"
-                      className="px-4 py-2 rounded-md text-sm font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap shadow-lg shadow-purple-900/20"
+                      className="px-4 py-2 rounded-md text-base font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap shadow-lg shadow-purple-900/20"
                     >
                       注册
                     </Link>
