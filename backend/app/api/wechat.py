@@ -383,10 +383,18 @@ async def get_subscribe_settings(
             quiet_hours_end="07:00"
         )
     
+    # 处理 JSON 字段（数据库中可能是字符串）
+    template_ids = settings_record.wechat_template_ids
+    if isinstance(template_ids, str):
+        try:
+            template_ids = json.loads(template_ids)
+        except:
+            template_ids = None
+    
     return SubscribeSettingsResponse(
         enabled=settings_record.enabled,
         wechat_enabled=settings_record.wechat_enabled,
-        template_ids=settings_record.wechat_template_ids,
+        template_ids=template_ids,
         morning_briefing_enabled=settings_record.morning_briefing_enabled,
         reminder_enabled=settings_record.reminder_enabled,
         health_alert_enabled=settings_record.health_alert_enabled,
