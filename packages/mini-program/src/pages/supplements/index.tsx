@@ -72,7 +72,8 @@ export default function SupplementsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await get<{ data: SupplementWithStatus[] }>(`/supplements/me/records?date=${selectedDate}`);
+      // 使用与 Web 端一致的接口：/supplements/me/date/{date}
+      const data = await get<{ data: SupplementWithStatus[] }>(`/supplements/me/date/${selectedDate}`);
       setSupplements(data?.data || []);
     } catch (error) {
       console.error('加载补剂数据失败:', error);
@@ -84,7 +85,8 @@ export default function SupplementsPage() {
 
   const handleToggle = async (supplementId: number, currentTaken: boolean) => {
     try {
-      await post('/supplements/checkin', {
+      // 使用与 Web 端一致的批量打卡接口：/supplements/records/batch
+      await post('/supplements/records/batch', {
         record_date: selectedDate,
         checkins: [{ supplement_id: supplementId, taken: !currentTaken }],
       });
@@ -107,7 +109,8 @@ export default function SupplementsPage() {
     
     setSubmitting(true);
     try {
-      await post('/supplements/', formData);
+      // 使用与 Web 端一致的接口：/supplements/definitions
+      await post('/supplements/definitions', formData);
       Taro.showToast({ title: '添加成功', icon: 'success' });
       setShowAddForm(false);
       setFormData({

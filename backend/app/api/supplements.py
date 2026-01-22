@@ -26,10 +26,15 @@ router = APIRouter()
 @router.post("/definitions", response_model=SupplementDefinitionResponse)
 def create_supplement(
     supplement: SupplementDefinitionCreate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """创建补剂"""
-    db_supplement = SupplementDefinition(**supplement.model_dump())
+    """创建补剂（需要登录，自动使用当前用户）"""
+    # 使用当前登录用户的 ID
+    supplement_data = supplement.model_dump()
+    supplement_data['user_id'] = current_user.id
+    
+    db_supplement = SupplementDefinition(**supplement_data)
     db.add(db_supplement)
     db.commit()
     db.refresh(db_supplement)
@@ -115,9 +120,13 @@ def create_supplement_record(
 @router.post("/records/batch")
 def batch_checkin(
     batch: SupplementBatchCheckin,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """批量补剂打卡"""
+    """批量补剂打卡（需要登录，自动使用当前用户）"""
+    # 使用当前登录用户的 ID，忽略请求中的 user_id
+    user_id = current_user.id
+    
     results = []
     for checkin in batch.checkins:
         supplement_id = checkin.get("supplement_id")
@@ -135,7 +144,7 @@ def batch_checkin(
         else:
             record = SupplementRecord(
                 supplement_id=supplement_id,
-                user_id=batch.user_id,
+                user_id=user_id,  # 使用当前登录用户的 ID
                 record_date=batch.record_date,
                 taken=taken
             )

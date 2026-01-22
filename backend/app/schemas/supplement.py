@@ -16,7 +16,7 @@ class SupplementDefinitionBase(BaseModel):
 
 
 class SupplementDefinitionCreate(SupplementDefinitionBase):
-    user_id: int
+    user_id: Optional[int] = None  # 可选，如果不提供则使用当前登录用户
 
 
 class SupplementDefinitionUpdate(BaseModel):
@@ -64,7 +64,7 @@ class SupplementRecordResponse(SupplementRecordBase):
 
 # 批量打卡请求
 class SupplementBatchCheckin(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None  # 可选，如果不提供则使用当前登录用户
     record_date: date
     checkins: List[dict]  # [{"supplement_id": 1, "taken": true}, ...]
 
