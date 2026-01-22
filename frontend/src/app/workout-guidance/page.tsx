@@ -19,10 +19,11 @@ export default function WorkoutGuidancePage() {
   const [debugMode, setDebugMode] = useState(false);
 
   // 获取用户目标列表
-  const { data: goalsData } = useQuery({
+  const { data: goalsData, error: goalsError } = useQuery({
     queryKey: ['goals', user?.id],
     queryFn: () => goalApi.getMyGoals('active'),
     enabled: isAuthenticated && !!user,
+    retry: 1,
   });
 
   // 获取运动前指导
@@ -32,9 +33,13 @@ export default function WorkoutGuidancePage() {
       setPreGuidance(response.data);
       setShowPreGuidance(true);
     },
+    onError: (error: any) => {
+      console.error('获取运动前指导失败:', error);
+    },
   });
 
-  const goals = goalsData?.data || [];
+  // 修复：后端直接返回数组，axios 已解包，React Query 直接使用
+  const goals = Array.isArray(goalsData) ? goalsData : [];
 
   return (
     <ProtectedRoute>
@@ -444,6 +449,18 @@ export default function WorkoutGuidancePage() {
           {preGuidanceMutation.isError && (
             <div className="bg-red-900/50 border border-red-700 rounded-xl p-4 text-red-200">
               ❌ 获取运动前指导失败，请稍后重试
+              {preGuidanceMutation.error && (
+                <div className="text-xs mt-2 text-red-300">
+                  {String(preGuidanceMutation.error)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 目标列表加载错误提示 */}
+          {goalsError && (
+            <div className="bg-yellow-900/50 border border-yellow-700 rounded-xl p-4 text-yellow-200 mb-6">
+              ⚠️ 加载目标列表失败，您仍可以生成运动指导
             </div>
           )}
         </div>

@@ -18,13 +18,15 @@ function GoalsContent() {
   const [progressValue, setProgressValue] = useState('');
 
   // 获取用户目标
-  const { data: goalsData, isLoading } = useQuery({
+  const { data: goalsData, isLoading, error: goalsError } = useQuery({
     queryKey: ['goals'],
     queryFn: () => goalApi.getMyGoals(),
     enabled: isAuthenticated,
+    retry: 1,
   });
 
-  const goals = goalsData?.data || [];
+  // 修复：后端直接返回数组，axios 已解包，React Query 直接使用
+  const goals = Array.isArray(goalsData) ? goalsData : [];
 
   // 创建目标
   const createMutation = useMutation({
