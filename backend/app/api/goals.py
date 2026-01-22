@@ -56,31 +56,60 @@ def create_goal(
 
 @router.get("/me", response_model=List[GoalResponse])
 def get_my_goals(
-    status: Optional[GoalStatus] = None,
-    goal_type: Optional[GoalType] = None,
-    goal_period: Optional[GoalPeriod] = None,
+    status: Optional[str] = None,
+    goal_type: Optional[str] = None,
+    goal_period: Optional[str] = None,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取当前用户目标（需要登录）"""
-    service = GoalManagementService()
-    return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # 转换字符串参数为枚举类型
+        status_enum = GoalStatus(status) if status else None
+        goal_type_enum = GoalType(goal_type) if goal_type else None
+        goal_period_enum = GoalPeriod(goal_period) if goal_period else None
+        
+        logger.info(f"[获取我的目标] 用户 {current_user.id}, status={status_enum}, type={goal_type_enum}, period={goal_period_enum}")
+        
+        service = GoalManagementService()
+        goals = service.get_user_goals(db, current_user.id, status_enum, goal_type_enum, goal_period_enum)
+        
+        logger.info(f"[获取我的目标] 找到 {len(goals)} 个目标")
+        return goals
+    except ValueError as e:
+        logger.error(f"[获取我的目标] 参数错误: {e}")
+        raise HTTPException(status_code=400, detail=f"无效的参数: {str(e)}")
+    except Exception as e:
+        logger.error(f"[获取我的目标] 查询失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
 
 
 @router.get("/user/{user_id}", response_model=List[GoalResponse])
 def get_user_goals(
     user_id: int,
-    status: Optional[GoalStatus] = None,
-    goal_type: Optional[GoalType] = None,
-    goal_period: Optional[GoalPeriod] = None,
+    status: Optional[str] = None,
+    goal_type: Optional[str] = None,
+    goal_period: Optional[str] = None,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取用户目标（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    service = GoalManagementService()
-    return service.get_user_goals(db, current_user.id, status, goal_type, goal_period)
+    
+    try:
+        # 转换字符串参数为枚举类型
+        status_enum = GoalStatus(status) if status else None
+        goal_type_enum = GoalType(goal_type) if goal_type else None
+        goal_period_enum = GoalPeriod(goal_period) if goal_period else None
+        
+        service = GoalManagementService()
+        return service.get_user_goals(db, current_user.id, status_enum, goal_type_enum, goal_period_enum)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"无效的参数: {str(e)}")
 
 
 @router.post("/{goal_id}/progress", response_model=dict)
