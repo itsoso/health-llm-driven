@@ -418,6 +418,12 @@ export default function Index() {
             </View>
             <Text className="quick-label">运动指导</Text>
           </View>
+          <View className="quick-item" onClick={() => Taro.navigateTo({ url: '/pages/diet-recommendation/index' })}>
+            <View className="quick-icon-wrap purple">
+              <Text className="quick-icon-emoji">🍽️</Text>
+            </View>
+            <Text className="quick-label">饮食推荐</Text>
+          </View>
           <View className="quick-item" onClick={() => handleNavToPage('review')}>
             <View className="quick-icon-wrap green">
               <Text className="quick-icon-emoji">📝</Text>

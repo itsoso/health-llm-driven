@@ -20,6 +20,7 @@ export default {
     'pages/profile/index',       // 用户画像设置
     'pages/review/index',         // 每日复盘
     'pages/supplements/index',    // 补剂服用
+    'pages/diet-recommendation/index', // 饮食推荐
   ],
   window: {
     backgroundTextStyle: 'light',
