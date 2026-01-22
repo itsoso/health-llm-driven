@@ -555,7 +555,7 @@ export default function Index() {
               let activeCalories: number;
               let totalOut: number;
               
-              if (homeData.garmin?.calories_total && homeData.garmin.calories_total > 0) {
+              if (homeData?.garmin?.calories_total && homeData.garmin.calories_total > 0) {
                 // 使用Garmin真实数据
                 totalOut = homeData.garmin.calories_total;
                 activeCalories = homeData.garmin.active_calories || 0;
@@ -699,7 +699,7 @@ export default function Index() {
               <View className="data-row">
                 <View className="dot indigo"></View>
                 <Text className="data-label">时长:</Text>
-                <Text className="data-value">{homeData.garmin?.total_sleep_duration ? (homeData.garmin.total_sleep_duration / 60).toFixed(1) : '--'}小时</Text>
+                <Text className="data-value">{homeData?.garmin?.total_sleep_duration ? (homeData.garmin.total_sleep_duration / 60).toFixed(1) : '--'}小时</Text>
               </View>
             </View>
           </View>
@@ -714,7 +714,7 @@ export default function Index() {
               <View className="data-row">
                 <View className="dot orange"></View>
                 <Text className="data-label">电量峰值:</Text>
-                <Text className="data-value">{homeData.garmin?.body_battery_most_charged ?? '--'}</Text>
+                <Text className="data-value">{homeData?.garmin?.body_battery_most_charged ?? '--'}</Text>
               </View>
               <View className="data-row">
                 <View className="dot orange"></View>
@@ -791,7 +791,7 @@ export default function Index() {
           <View className="stat-card" onClick={() => handleNavToPage('garmin-data')}>
             <Text className="stat-icon green">🔋</Text>
             <View className="stat-value-row">
-              <Text className="stat-value">{homeData.garmin?.body_battery_current ?? '--'}</Text>
+              <Text className="stat-value">{homeData?.garmin?.body_battery_current ?? '--'}</Text>
               <Text className="stat-unit">/100</Text>
             </View>
             <Text className="stat-label">身体电量</Text>
