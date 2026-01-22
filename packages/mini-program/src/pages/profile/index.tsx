@@ -251,82 +251,78 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">身高 (cm)</Text>
-              <Input
-                type="text"
-                value={profile.height_cm ? profile.height_cm + '' : ''}
-                onInput={e => {
-                  const value = e.detail.value;
-                  console.log('[Profile] 身高输入:', value);
-                  
-                  if (!value || value === '') {
-                    updateField('height_cm', null);
-                    return;
-                  }
-                  
-                  const numValue = Number(value);
-                  
-                  // 如果是正在输入中的部分数字（如 1, 17），允许
-                  if (value.length <= 2) {
-                    updateField('height_cm', numValue);
-                    return;
-                  }
-                  
-                  // 完整数字，验证范围 50-300
-                  if (numValue >= 50 && numValue <= 300) {
-                    updateField('height_cm', numValue);
-                  } else if (numValue > 300) {
-                    // 超过300，截断到300
-                    Taro.showToast({ title: '身高不能超过300cm', icon: 'none', duration: 1500 });
-                    updateField('height_cm', 300);
-                  } else if (numValue < 50 && value.length >= 3) {
-                    // 3位数但小于50，设为50
-                    Taro.showToast({ title: '身高不能小于50cm', icon: 'none', duration: 1500 });
-                    updateField('height_cm', 50);
-                  }
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '输入身高 (cm)',
+                    editable: true,
+                    placeholderText: '50-300',
+                    content: profile.height_cm ? String(profile.height_cm) : '',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (numValue >= 50 && numValue <= 300) {
+                          updateField('height_cm', numValue);
+                        } else if (numValue > 300) {
+                          Taro.showToast({ title: '身高不能超过300cm', icon: 'none' });
+                          updateField('height_cm', 300);
+                        } else if (numValue < 50) {
+                          Taro.showToast({ title: '身高不能小于50cm', icon: 'none' });
+                          updateField('height_cm', 50);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      } else if (res.confirm && !res.content) {
+                        updateField('height_cm', null);
+                      }
+                    }
+                  });
                 }}
-                placeholder="输入身高"
-                className="form-input"
-              />
+              >
+                <Text className="form-input-text">
+                  {profile.height_cm ? `${profile.height_cm} cm` : '点击输入身高'}
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
             </View>
 
             <View className="form-item">
               <Text className="form-label">当前体重 (kg)</Text>
-              <Input
-                type="text"
-                value={profile.current_weight_kg ? profile.current_weight_kg + '' : ''}
-                onInput={e => {
-                  const value = e.detail.value;
-                  console.log('[Profile] 体重输入:', value);
-                  
-                  if (!value || value === '') {
-                    updateField('current_weight_kg', null);
-                    return;
-                  }
-                  
-                  const numValue = Number(value);
-                  
-                  // 如果是正在输入中的部分数字（如 6, 65），允许
-                  if (value.length <= 2) {
-                    updateField('current_weight_kg', numValue);
-                    return;
-                  }
-                  
-                  // 完整数字，验证范围 20-300
-                  if (numValue >= 20 && numValue <= 300) {
-                    updateField('current_weight_kg', numValue);
-                  } else if (numValue > 300) {
-                    // 超过300，截断到300
-                    Taro.showToast({ title: '体重不能超过300kg', icon: 'none', duration: 1500 });
-                    updateField('current_weight_kg', 300);
-                  } else if (numValue < 20 && value.length >= 3) {
-                    // 3位数但小于20，设为20
-                    Taro.showToast({ title: '体重不能小于20kg', icon: 'none', duration: 1500 });
-                    updateField('current_weight_kg', 20);
-                  }
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '输入体重 (kg)',
+                    editable: true,
+                    placeholderText: '20-300',
+                    content: profile.current_weight_kg ? String(profile.current_weight_kg) : '',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (numValue >= 20 && numValue <= 300) {
+                          updateField('current_weight_kg', numValue);
+                        } else if (numValue > 300) {
+                          Taro.showToast({ title: '体重不能超过300kg', icon: 'none' });
+                          updateField('current_weight_kg', 300);
+                        } else if (numValue < 20) {
+                          Taro.showToast({ title: '体重不能小于20kg', icon: 'none' });
+                          updateField('current_weight_kg', 20);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      } else if (res.confirm && !res.content) {
+                        updateField('current_weight_kg', null);
+                      }
+                    }
+                  });
                 }}
-                placeholder="输入体重"
-                className="form-input"
-              />
+              >
+                <Text className="form-input-text">
+                  {profile.current_weight_kg ? `${profile.current_weight_kg} kg` : '点击输入体重'}
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
             </View>
 
             <View className="form-item">
