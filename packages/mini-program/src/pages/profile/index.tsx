@@ -446,61 +446,158 @@ export default function ProfilePage() {
           <View className="tab-content">
             <View className="form-item">
               <Text className="form-label">目标步数 (步/天)</Text>
-              <Input
-                type="text"
-                value={profile.target_steps ? profile.target_steps + '' : '8000'}
-                onInput={e => updateField('target_steps', Number(e.detail.value) || 8000)}
-                placeholder="8000"
-                className="form-input"
-              />
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '目标步数 (步/天)',
+                    editable: true,
+                    placeholderText: '8000',
+                    content: profile.target_steps ? String(profile.target_steps) : '8000',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (!isNaN(numValue) && numValue > 0) {
+                          updateField('target_steps', numValue);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      }
+                    }
+                  });
+                }}
+              >
+                <Text className="form-input-text">
+                  {profile.target_steps || 8000} 步
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
               <Text className="form-hint">推荐: 8000-10000步</Text>
             </View>
 
             <View className="form-item">
               <Text className="form-label">目标睡眠 (小时/天)</Text>
-              <Input
-                type="text"
-                value={profile.target_sleep_hours ? profile.target_sleep_hours + '' : '7.5'}
-                onInput={e => updateField('target_sleep_hours', Number(e.detail.value) || 7.5)}
-                placeholder="7.5"
-                className="form-input"
-              />
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '目标睡眠 (小时/天)',
+                    editable: true,
+                    placeholderText: '7.5',
+                    content: profile.target_sleep_hours ? String(profile.target_sleep_hours) : '7.5',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (!isNaN(numValue) && numValue > 0) {
+                          updateField('target_sleep_hours', numValue);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      }
+                    }
+                  });
+                }}
+              >
+                <Text className="form-input-text">
+                  {profile.target_sleep_hours || 7.5} 小时
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
               <Text className="form-hint">推荐: 7-9小时</Text>
             </View>
 
             <View className="form-item">
               <Text className="form-label">目标饮水 (ml/天)</Text>
-              <Input
-                type="text"
-                value={profile.target_water_ml ? profile.target_water_ml + '' : '2000'}
-                onInput={e => updateField('target_water_ml', Number(e.detail.value) || 2000)}
-                placeholder="2000"
-                className="form-input"
-              />
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '目标饮水 (ml/天)',
+                    editable: true,
+                    placeholderText: '2000',
+                    content: profile.target_water_ml ? String(profile.target_water_ml) : '2000',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (!isNaN(numValue) && numValue > 0) {
+                          updateField('target_water_ml', numValue);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      }
+                    }
+                  });
+                }}
+              >
+                <Text className="form-input-text">
+                  {profile.target_water_ml || 2000} ml
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
               <Text className="form-hint">推荐: 1500-2500ml</Text>
             </View>
 
             <View className="form-item">
               <Text className="form-label">目标运动 (分钟/天)</Text>
-              <Input
-                type="text"
-                value={profile.target_exercise_minutes ? profile.target_exercise_minutes + '' : '30'}
-                onInput={e => updateField('target_exercise_minutes', Number(e.detail.value) || 30)}
-                placeholder="30"
-                className="form-input"
-              />
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '目标运动 (分钟/天)',
+                    editable: true,
+                    placeholderText: '30',
+                    content: profile.target_exercise_minutes ? String(profile.target_exercise_minutes) : '30',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (!isNaN(numValue) && numValue > 0) {
+                          updateField('target_exercise_minutes', numValue);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      }
+                    }
+                  });
+                }}
+              >
+                <Text className="form-input-text">
+                  {profile.target_exercise_minutes || 30} 分钟
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
               <Text className="form-hint">推荐: 30分钟以上</Text>
             </View>
 
             <View className="form-item">
               <Text className="form-label">目标体重 (kg)</Text>
-              <Input
-                type="text"
-                value={profile.target_weight_kg ? profile.target_weight_kg + '' : ''}
-                onInput={e => updateField('target_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
-                placeholder="设置目标体重"
-                className="form-input"
-              />
+              <View 
+                className="form-input-display"
+                onClick={() => {
+                  Taro.showModal({
+                    title: '目标体重 (kg)',
+                    editable: true,
+                    placeholderText: '输入目标体重',
+                    content: profile.target_weight_kg ? String(profile.target_weight_kg) : '',
+                    success: (res) => {
+                      if (res.confirm && res.content) {
+                        const numValue = Number(res.content);
+                        if (!isNaN(numValue) && numValue > 0) {
+                          updateField('target_weight_kg', numValue);
+                        } else {
+                          Taro.showToast({ title: '请输入有效数字', icon: 'none' });
+                        }
+                      } else if (res.confirm && !res.content) {
+                        updateField('target_weight_kg', null);
+                      }
+                    }
+                  });
+                }}
+              >
+                <Text className="form-input-text">
+                  {profile.target_weight_kg ? `${profile.target_weight_kg} kg` : '点击设置目标体重'}
+                </Text>
+                <Text className="form-input-arrow">›</Text>
+              </View>
             </View>
           </View>
         )}
