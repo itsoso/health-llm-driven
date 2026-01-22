@@ -143,7 +143,7 @@ export default function Navigation() {
           </div>
 
           {/* 桌面导航菜单 */}
-          <div className="hidden lg:flex lg:items-center lg:gap-0.5 flex-1 justify-end overflow-x-auto" ref={dropdownRef}>
+          <div className="hidden lg:flex lg:items-center lg:gap-0.5 flex-1 justify-end" ref={dropdownRef}>
             {/* 主要导航项 */}
             {mainNavItems.slice(1).map((item) => (
               <Link
