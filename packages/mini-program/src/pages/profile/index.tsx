@@ -249,8 +249,27 @@ export default function ProfilePage() {
               <Input
                 type="number"
                 value={profile.height_cm?.toString() || ''}
-                onInput={e => updateField('height_cm', e.detail.value ? Number(e.detail.value) : null)}
-                placeholder="输入身高"
+                onInput={e => {
+                  const value = e.detail.value;
+                  if (!value) {
+                    updateField('height_cm', null);
+                    return;
+                  }
+                  const numValue = Number(value);
+                  // 限制输入范围：50-300cm
+                  if (numValue >= 50 && numValue <= 300) {
+                    updateField('height_cm', numValue);
+                  } else if (numValue < 50) {
+                    // 如果小于50，允许继续输入（可能正在输入中）
+                    if (value.length <= 2) {
+                      updateField('height_cm', numValue);
+                    }
+                  } else {
+                    // 超过300，不更新
+                    console.warn('[Profile] 身高超出范围:', numValue);
+                  }
+                }}
+                placeholder="输入身高 (50-300cm)"
                 className="form-input"
                 disabled={false}
                 focus={false}
@@ -262,8 +281,27 @@ export default function ProfilePage() {
               <Input
                 type="digit"
                 value={profile.current_weight_kg?.toString() || ''}
-                onInput={e => updateField('current_weight_kg', e.detail.value ? Number(e.detail.value) : null)}
-                placeholder="输入体重"
+                onInput={e => {
+                  const value = e.detail.value;
+                  if (!value) {
+                    updateField('current_weight_kg', null);
+                    return;
+                  }
+                  const numValue = Number(value);
+                  // 限制输入范围：20-300kg
+                  if (numValue >= 20 && numValue <= 300) {
+                    updateField('current_weight_kg', numValue);
+                  } else if (numValue < 20) {
+                    // 如果小于20，允许继续输入（可能正在输入中）
+                    if (value.length <= 2) {
+                      updateField('current_weight_kg', numValue);
+                    }
+                  } else {
+                    // 超过300，不更新
+                    console.warn('[Profile] 体重超出范围:', numValue);
+                  }
+                }}
+                placeholder="输入体重 (20-300kg)"
                 className="form-input"
                 disabled={false}
                 focus={false}
