@@ -88,7 +88,7 @@ export default function Settings() {
     }
   };
 
-  // 开启消息提醒
+  // 开启消息提醒（首次或添加更多）
   const handleEnableNotifications = async () => {
     Taro.showLoading({ title: '请求授权中...' });
     
@@ -97,12 +97,22 @@ export default function Settings() {
       Taro.hideLoading();
       
       if (result.success) {
+        const acceptedCount = result.acceptedTemplates.length;
+        const rejectedCount = result.rejectedTemplates.length;
+        
+        let message = `已开启${acceptedCount}项提醒`;
+        if (rejectedCount > 0) {
+          message += `，${rejectedCount}项未授权`;
+        }
+        
         Taro.showToast({
-          title: `已开启${result.acceptedTemplates.length}项提醒`,
-          icon: 'success',
+          title: message,
+          icon: acceptedCount > 0 ? 'success' : 'none',
+          duration: 2000,
         });
+        
         // 重新加载设置
-        loadNotificationSettings();
+        await loadNotificationSettings();
       } else if (result.error) {
         Taro.showToast({
           title: result.error,

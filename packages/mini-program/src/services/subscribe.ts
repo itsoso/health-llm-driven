@@ -134,6 +134,9 @@ export async function requestSubscribe(templateKeys: string[]): Promise<Subscrib
 /**
  * 请求所有推荐的订阅模板
  * 用于首次使用或设置页面的"一键开启"
+ * 
+ * 注意：由于微信限制，每次只能请求3个模板，且必须由用户点击触发
+ * 因此这里只请求最重要的前3个模板
  */
 export async function requestAllSubscriptions(): Promise<SubscribeResult> {
   const allKeys = Object.keys(TEMPLATE_IDS).filter(
@@ -153,31 +156,15 @@ export async function requestAllSubscriptions(): Promise<SubscribeResult> {
     };
   }
   
-  // 分批请求（每次最多3个）
-  const results: SubscribeResult = {
-    success: false,
-    acceptedTemplates: [],
-    rejectedTemplates: [],
-  };
+  // 只请求前3个最重要的模板（微信限制每次最多3个，且必须由用户点击触发）
+  // 优先级：健康提醒 > 早间简报 > 健康预警
+  const priorityKeys = ['HEALTH_REMINDER', 'MORNING_BRIEFING', 'HEALTH_ALERT'].filter(
+    key => TEMPLATE_IDS[key as keyof typeof TEMPLATE_IDS]
+  );
   
-  for (let i = 0; i < allKeys.length; i += 3) {
-    const batch = allKeys.slice(i, i + 3);
-    const batchResult = await requestSubscribe(batch);
-    
-    results.acceptedTemplates.push(...batchResult.acceptedTemplates);
-    results.rejectedTemplates.push(...batchResult.rejectedTemplates);
-    
-    if (batchResult.success) {
-      results.success = true;
-    }
-    
-    // 如果用户取消，停止后续请求
-    if (batchResult.error?.includes('取消')) {
-      break;
-    }
-  }
+  const keysToRequest = priorityKeys.length > 0 ? priorityKeys : allKeys.slice(0, 3);
   
-  return results;
+  return await requestSubscribe(keysToRequest);
 }
 
 /**
