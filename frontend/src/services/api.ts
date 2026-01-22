@@ -290,3 +290,13 @@ export const workoutGuidanceApi = {
     return api.post(`/workout/post-workout-analysis/${workoutId}?${params.toString()}`);
   },
 };
+
+// 饮食推荐 API
+export const dietRecommendationApi = {
+  // 获取我的饮食推荐
+  getMyRecommendation: (mealType?: string) => {
+    const params = new URLSearchParams();
+    if (mealType) params.append('meal_type', mealType);
+    return api.get(`/diet-recommendation/me?${params.toString()}`);
+  },
+};

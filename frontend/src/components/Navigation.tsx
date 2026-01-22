@@ -91,6 +91,7 @@ export default function Navigation() {
         { href: '/checkin', label: '运动打卡', icon: <Flag className="w-4 h-4" /> },
         { href: '/rhinitis', label: '鼻炎追踪', icon: <Wind className="w-4 h-4" /> },
         { href: '/diet', label: '饮食记录', icon: <Utensils className="w-4 h-4" /> },
+        { href: '/diet-recommendation', label: '饮食推荐', icon: <Sparkles className="w-4 h-4" /> },
         { href: '/water', label: '饮水追踪', icon: <Droplets className="w-4 h-4" /> },
         { href: '/garmin', label: 'Garmin数据', icon: <Watch className="w-4 h-4" /> },
         { href: '/analysis', label: '健康分析', icon: <LineChart className="w-4 h-4" /> },
