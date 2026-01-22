@@ -42,14 +42,6 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/habits"
-            className="p-6 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
-          >
-            <h2 className="text-xl font-bold mb-2">✅ 习惯追踪</h2>
-            <p className="text-purple-100 text-sm">每日习惯打卡，培养好习惯</p>
-          </Link>
-
-          <Link
             href="/supplements"
             className="p-6 bg-gradient-to-r from-green-500 to-teal-600 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-white transform hover:scale-105"
           >

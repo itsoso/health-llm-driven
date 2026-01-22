@@ -16,7 +16,7 @@ from app.api import (
     garmin_connect,
     daily_recommendation,
     supplements,
-    habits,
+    # habits,  # 已废弃，模块已移除
     weight,
     blood_pressure,
     diet,
@@ -66,7 +66,7 @@ api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tag
 api_router.include_router(garmin_connect.router, prefix="/garmin-connect", tags=["garmin-connect"])
 api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
 api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
-api_router.include_router(habits.router, prefix="/habits", tags=["habits"])
+# api_router.include_router(habits.router, prefix="/habits", tags=["habits"])  # 已废弃，模块已移除
 api_router.include_router(weight.router, prefix="/weight", tags=["weight"])
 api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=["blood-pressure"])
 api_router.include_router(diet.router, prefix="/diet", tags=["diet"])

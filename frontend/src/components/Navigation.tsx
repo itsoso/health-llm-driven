@@ -87,7 +87,6 @@ export default function Navigation() {
       label: '每日记录',
       icon: <ClipboardList className="w-4 h-4" />,
       items: [
-        { href: '/habits', label: '习惯追踪', icon: <CheckSquare className="w-4 h-4" /> },
         { href: '/supplements', label: '补剂管理', icon: <Pill className="w-4 h-4" /> },
         { href: '/checkin', label: '运动打卡', icon: <Flag className="w-4 h-4" /> },
         { href: '/rhinitis', label: '鼻炎追踪', icon: <Wind className="w-4 h-4" /> },
