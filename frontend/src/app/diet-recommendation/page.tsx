@@ -99,9 +99,20 @@ export default function DietRecommendationPage() {
     try {
       setLoading(true)
       const res = await dietRecommendationApi.getMyRecommendation()
+      console.log('饮食推荐数据:', res.data)
+      
+      // 检查返回的数据是否有效
+      if (!res.data || !res.data.success) {
+        console.error('饮食推荐失败:', res.data?.error || '未知错误')
+        alert(res.data?.error || '获取饮食推荐失败，请先完善个人信息')
+        setRecommendation(null)
+        return
+      }
+      
       setRecommendation(res.data)
     } catch (error) {
       console.error('加载饮食推荐失败:', error)
+      alert('加载饮食推荐失败，请稍后重试')
     } finally {
       setLoading(false)
     }
