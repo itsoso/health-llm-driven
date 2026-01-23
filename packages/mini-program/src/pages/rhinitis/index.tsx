@@ -43,7 +43,7 @@ export default function Checkin() {
   const [squatsCount, setSquatsCount] = useState('');
 
   // 鼻炎表单
-  const [sneezeCount, setSneezeCount] = useState(0);
+  const [sneezeCount, setSneezeCount] = useState(1); // 默认值改为 1
   const [sneezeTime, setSneezeTime] = useState('');
 
   useEffect(() => {
@@ -141,6 +141,12 @@ export default function Checkin() {
       Taro.showToast({ title: '请输入次数', icon: 'none' });
       return;
     }
+    
+    // 验证时间是否为空
+    if (!sneezeTime || sneezeTime.trim() === '') {
+      Taro.showToast({ title: '请选择时间', icon: 'none' });
+      return;
+    }
 
     setSavingSneeze(true);
     try {
@@ -155,7 +161,11 @@ export default function Checkin() {
       });
 
       Taro.showToast({ title: '记录成功', icon: 'success' });
-      setSneezeCount(0);
+      // 重置为默认值 1
+      setSneezeCount(1);
+      // 重置时间为当前时间
+      const now = new Date();
+      setSneezeTime(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`);
       loadData();
     } catch (error) {
       Taro.showToast({ title: '保存失败', icon: 'none' });
