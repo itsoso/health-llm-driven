@@ -908,10 +908,33 @@ function OverviewContent() {
           </MetricCard>
 
           {/* 压力 */}
-          <MetricCard icon="😰" title="压力">
+          <MetricCard 
+            icon={(() => {
+              const stress = record?.stress_level;
+              if (!stress) return '😐';
+              if (stress <= 25) return '😊';
+              if (stress <= 50) return '😐';
+              if (stress <= 75) return '😟';
+              return '😰';
+            })()} 
+            title="压力"
+          >
             <div className="text-3xl font-bold text-gray-800">
               {record?.stress_level || '--'}
             </div>
+            {record?.stress_level && (
+              <div className={`text-sm font-medium mt-1 ${
+                record.stress_level <= 25 ? 'text-green-600' :
+                record.stress_level <= 50 ? 'text-blue-600' :
+                record.stress_level <= 75 ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {record.stress_level <= 25 ? '放松' :
+                 record.stress_level <= 50 ? '正常' :
+                 record.stress_level <= 75 ? '中等' :
+                 '偏高'}
+              </div>
+            )}
           </MetricCard>
         </div>
       </div>
