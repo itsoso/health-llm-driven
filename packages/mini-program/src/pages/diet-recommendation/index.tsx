@@ -178,9 +178,9 @@ export default function DietRecommendationPage() {
         <View className="progress-item">
           <View className="progress-header">
             <Text className="progress-label">热量</Text>
-            <Text className="progress-values">
-              {recommendation.today_intake.calories} / {recommendation.daily_target.calories} kcal
-            </Text>
+            <View className="progress-values">
+              <Text>{recommendation.today_intake.calories}</Text> / {recommendation.daily_target.calories} kcal
+            </View>
           </View>
           <View className="progress-bar">
             <View 
@@ -188,16 +188,15 @@ export default function DietRecommendationPage() {
               style={{ width: `${Math.min(recommendation.progress.calories_percent, 100)}%` }}
             />
           </View>
-          <Text className="progress-percent">{recommendation.progress.calories_percent}%</Text>
         </View>
 
         {/* 蛋白质进度 */}
         <View className="progress-item">
           <View className="progress-header">
             <Text className="progress-label">蛋白质</Text>
-            <Text className="progress-values">
-              {recommendation.today_intake.protein_g} / {recommendation.daily_target.protein_g} g
-            </Text>
+            <View className="progress-values">
+              <Text>{recommendation.today_intake.protein_g}</Text> / {recommendation.daily_target.protein_g} g
+            </View>
           </View>
           <View className="progress-bar">
             <View 
@@ -205,16 +204,15 @@ export default function DietRecommendationPage() {
               style={{ width: `${Math.min(recommendation.progress.protein_percent, 100)}%` }}
             />
           </View>
-          <Text className="progress-percent">{recommendation.progress.protein_percent}%</Text>
         </View>
 
         {/* 碳水进度 */}
         <View className="progress-item">
           <View className="progress-header">
             <Text className="progress-label">碳水化合物</Text>
-            <Text className="progress-values">
-              {recommendation.today_intake.carbs_g} / {recommendation.daily_target.carbs_g} g
-            </Text>
+            <View className="progress-values">
+              <Text>{recommendation.today_intake.carbs_g}</Text> / {recommendation.daily_target.carbs_g} g
+            </View>
           </View>
           <View className="progress-bar">
             <View 
@@ -222,16 +220,15 @@ export default function DietRecommendationPage() {
               style={{ width: `${Math.min(recommendation.progress.carbs_percent, 100)}%` }}
             />
           </View>
-          <Text className="progress-percent">{recommendation.progress.carbs_percent}%</Text>
         </View>
 
         {/* 脂肪进度 */}
         <View className="progress-item">
           <View className="progress-header">
             <Text className="progress-label">脂肪</Text>
-            <Text className="progress-values">
-              {recommendation.today_intake.fat_g} / {recommendation.daily_target.fat_g} g
-            </Text>
+            <View className="progress-values">
+              <Text>{recommendation.today_intake.fat_g}</Text> / {recommendation.daily_target.fat_g} g
+            </View>
           </View>
           <View className="progress-bar">
             <View 
@@ -239,7 +236,6 @@ export default function DietRecommendationPage() {
               style={{ width: `${Math.min(recommendation.progress.fat_percent, 100)}%` }}
             />
           </View>
-          <Text className="progress-percent">{recommendation.progress.fat_percent}%</Text>
         </View>
       </View>
 

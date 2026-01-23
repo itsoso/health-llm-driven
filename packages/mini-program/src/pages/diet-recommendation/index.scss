@@ -1,27 +1,43 @@
 .diet-recommendation-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 32px;
+  background: #f5f7fa;
+  padding: 24px;
+  padding-bottom: 48px;
 
   .loading,
   .empty {
     text-align: center;
     padding: 200px 0;
-    color: #fff;
-    font-size: 32px;
+    color: #999;
+    font-size: 28px;
+  }
+
+  .debug-toggle {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 24px;
+    
+    .toggle-text {
+      font-size: 24px;
+      color: #667eea;
+      background: rgba(102, 126, 234, 0.1);
+      padding: 8px 24px;
+      border-radius: 24px;
+    }
   }
 
   .card {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 32px;
-    padding: 40px;
-    margin-bottom: 32px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border-radius: 24px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
 
     .card-title {
       display: flex;
       align-items: center;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
       position: relative;
 
       &.clickable {
@@ -29,27 +45,244 @@
       }
 
       .title-icon {
-        font-size: 48px;
-        margin-right: 16px;
+        font-size: 40px;
+        margin-right: 12px;
       }
 
       .title-text {
-        font-size: 36px;
-        font-weight: bold;
+        font-size: 32px;
+        font-weight: 600;
         color: #333;
       }
 
       .meals-count {
-        margin-left: 16px;
-        font-size: 28px;
+        margin-left: 12px;
+        font-size: 24px;
         color: #999;
+        font-weight: normal;
       }
 
       .toggle-icon {
         position: absolute;
         right: 0;
-        font-size: 32px;
-        color: #999;
+        font-size: 28px;
+        color: #ccc;
+      }
+    }
+  }
+
+  // 营养进度卡片
+  .progress-card {
+    .progress-item {
+      margin-bottom: 28px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .progress-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 12px;
+
+        .progress-label {
+          font-size: 26px;
+          color: #555;
+          font-weight: 500;
+        }
+
+        .progress-values {
+          font-size: 24px;
+          color: #999;
+          
+          text {
+            color: #333;
+            font-weight: 600;
+            margin-right: 4px;
+          }
+        }
+      }
+
+      .progress-bar {
+        height: 12px;
+        background: #f0f2f5;
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+
+        .progress-fill {
+          height: 100%;
+          border-radius: 6px;
+          transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+
+          &.calories { background: linear-gradient(90deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%); }
+          &.protein { background: linear-gradient(90deg, #a18cd1 0%, #fbc2eb 100%); }
+          &.carbs { background: linear-gradient(90deg, #f6d365 0%, #fda085 100%); }
+          &.fat { background: linear-gradient(90deg, #84fab0 0%, #8fd3f4 100%); }
+        }
+      }
+
+      .progress-percent {
+        display: none; // 隐藏百分比，保持界面简洁
+      }
+    }
+  }
+
+  // 警告卡片
+  .warnings-card {
+    border-left: 8px solid #ff6b6b;
+    background: #fff;
+
+    .card-title .title-text {
+      color: #ff6b6b;
+    }
+
+    .warning-item {
+      padding: 20px;
+      background: #fff5f5;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: flex-start;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+      
+      &::before {
+        content: "!";
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: #ff6b6b;
+        color: #fff;
+        border-radius: 50%;
+        font-size: 20px;
+        font-weight: bold;
+        margin-right: 12px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      .warning-text {
+        font-size: 26px;
+        color: #c0392b;
+        line-height: 1.5;
+        flex: 1;
+      }
+    }
+  }
+
+  // 健康提示卡片
+  .tips-card {
+    border-left: 8px solid #4ecdc4;
+    background: #fff;
+
+    .card-title .title-text {
+      color: #4ecdc4;
+    }
+
+    .tip-item {
+      padding: 20px;
+      background: #e6fffa;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: flex-start;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+      
+      &::before {
+        content: "✓";
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: #4ecdc4;
+        color: #fff;
+        border-radius: 50%;
+        font-size: 20px;
+        font-weight: bold;
+        margin-right: 12px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      .tip-text {
+        font-size: 26px;
+        color: #009688;
+        line-height: 1.5;
+        flex: 1;
+      }
+    }
+  }
+
+  // 食物推荐卡片
+  .food-recommendations-card {
+    .food-category {
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid #f0f0f0;
+
+      &:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+
+      .category-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 12px;
+
+        .priority-badge {
+          padding: 4px 12px;
+          border-radius: 8px;
+          margin-right: 12px;
+
+          .priority-text {
+            font-size: 20px;
+            color: #fff;
+            font-weight: 500;
+          }
+        }
+
+        .category-name {
+          font-size: 30px;
+          font-weight: 600;
+          color: #333;
+        }
+      }
+
+      .category-reason {
+        font-size: 24px;
+        color: #666;
+        margin-bottom: 16px;
+        line-height: 1.5;
+        display: block;
+      }
+
+      .foods-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+
+        .food-tag {
+          padding: 8px 20px;
+          background: #f0f2f5;
+          border-radius: 20px;
+
+          .food-text {
+            font-size: 24px;
+            color: #555;
+          }
+        }
       }
     }
   }
@@ -59,22 +292,23 @@
     .info-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
+      gap: 20px;
 
       .info-item {
         text-align: center;
+        padding: 16px 0;
 
         .info-label {
           display: block;
-          font-size: 24px;
+          font-size: 22px;
           color: #999;
           margin-bottom: 8px;
         }
 
         .info-value {
           display: block;
-          font-size: 32px;
-          font-weight: bold;
+          font-size: 28px;
+          font-weight: 600;
           color: #333;
         }
       }
@@ -86,99 +320,34 @@
     .metabolism-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 32px;
+      gap: 20px;
 
       .metabolism-item {
         text-align: center;
-        padding: 32px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 24px;
+        padding: 24px;
+        background: #f8f9fa;
+        border-radius: 16px;
 
         .metabolism-label {
           display: block;
-          font-size: 24px;
-          color: rgba(255, 255, 255, 0.9);
-          margin-bottom: 16px;
+          font-size: 22px;
+          color: #666;
+          margin-bottom: 12px;
         }
 
         .metabolism-value {
           display: block;
-          font-size: 48px;
+          font-size: 40px;
           font-weight: bold;
-          color: #fff;
-          margin-bottom: 8px;
+          color: #667eea;
+          margin-bottom: 4px;
         }
 
         .metabolism-unit {
           display: block;
-          font-size: 24px;
-          color: rgba(255, 255, 255, 0.8);
+          font-size: 20px;
+          color: #999;
         }
-      }
-    }
-  }
-
-  // 营养进度卡片
-  .progress-card {
-    .progress-item {
-      margin-bottom: 32px;
-
-      &:last-child {
-        margin-bottom: 0;
-      }
-
-      .progress-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
-
-        .progress-label {
-          font-size: 28px;
-          font-weight: bold;
-          color: #333;
-        }
-
-        .progress-values {
-          font-size: 24px;
-          color: #666;
-        }
-      }
-
-      .progress-bar {
-        height: 16px;
-        background: #f0f0f0;
-        border-radius: 8px;
-        overflow: hidden;
-        margin-bottom: 8px;
-
-        .progress-fill {
-          height: 100%;
-          border-radius: 8px;
-          transition: width 0.3s ease;
-
-          &.calories {
-            background: linear-gradient(90deg, #ff6b6b 0%, #ff8e53 100%);
-          }
-
-          &.protein {
-            background: linear-gradient(90deg, #4ecdc4 0%, #44a08d 100%);
-          }
-
-          &.carbs {
-            background: linear-gradient(90deg, #ffa500 0%, #ff7f50 100%);
-          }
-
-          &.fat {
-            background: linear-gradient(90deg, #a8e6cf 0%, #7fb3d5 100%);
-          }
-        }
-      }
-
-      .progress-percent {
-        font-size: 24px;
-        color: #999;
-        text-align: right;
       }
     }
   }
@@ -188,145 +357,32 @@
     .health-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
+      gap: 20px;
 
       .health-item {
         text-align: center;
-        padding: 24px;
+        padding: 20px;
         background: #f8f9fa;
         border-radius: 16px;
 
         .health-icon {
           display: block;
-          font-size: 48px;
-          margin-bottom: 12px;
+          font-size: 40px;
+          margin-bottom: 8px;
         }
 
         .health-label {
           display: block;
-          font-size: 24px;
+          font-size: 22px;
           color: #666;
-          margin-bottom: 8px;
+          margin-bottom: 4px;
         }
 
         .health-value {
           display: block;
-          font-size: 32px;
-          font-weight: bold;
+          font-size: 28px;
+          font-weight: 600;
           color: #333;
-        }
-      }
-    }
-  }
-
-  // 警告卡片
-  .warnings-card {
-    background: rgba(255, 107, 107, 0.1);
-    border: 2px solid #ff6b6b;
-
-    .card-title .title-text {
-      color: #ff6b6b;
-    }
-
-    .warning-item {
-      padding: 24px;
-      background: rgba(255, 107, 107, 0.05);
-      border-radius: 16px;
-      margin-bottom: 16px;
-
-      &:last-child {
-        margin-bottom: 0;
-      }
-
-      .warning-text {
-        font-size: 28px;
-        color: #d63031;
-        line-height: 1.6;
-      }
-    }
-  }
-
-  // 健康提示卡片
-  .tips-card {
-    background: rgba(78, 205, 196, 0.1);
-    border: 2px solid #4ecdc4;
-
-    .card-title .title-text {
-      color: #4ecdc4;
-    }
-
-    .tip-item {
-      padding: 24px;
-      background: rgba(78, 205, 196, 0.05);
-      border-radius: 16px;
-      margin-bottom: 16px;
-
-      &:last-child {
-        margin-bottom: 0;
-      }
-
-      .tip-text {
-        font-size: 28px;
-        color: #00b894;
-        line-height: 1.6;
-      }
-    }
-  }
-
-  // 食物推荐卡片
-  .food-recommendations-card {
-    .food-category {
-      margin-bottom: 32px;
-
-      &:last-child {
-        margin-bottom: 0;
-      }
-
-      .category-header {
-        display: flex;
-        align-items: center;
-        margin-bottom: 12px;
-
-        .priority-badge {
-          padding: 8px 16px;
-          border-radius: 8px;
-          margin-right: 16px;
-
-          .priority-text {
-            font-size: 20px;
-            color: #fff;
-            font-weight: bold;
-          }
-        }
-
-        .category-name {
-          font-size: 32px;
-          font-weight: bold;
-          color: #333;
-        }
-      }
-
-      .category-reason {
-        font-size: 24px;
-        color: #666;
-        margin-bottom: 16px;
-        line-height: 1.5;
-      }
-
-      .foods-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-
-        .food-tag {
-          padding: 12px 24px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 24px;
-
-          .food-text {
-            font-size: 26px;
-            color: #fff;
-          }
         }
       }
     }
@@ -334,41 +390,49 @@
 
   // 科学见解卡片
   .scientific-card {
-    background: rgba(255, 255, 255, 0.98);
-
     .scientific-content {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #f0f0f0;
+
       .scientific-section {
-        margin-bottom: 32px;
+        margin-bottom: 24px;
 
         &:last-child {
           margin-bottom: 0;
         }
 
         .scientific-subtitle {
-          font-size: 28px;
-          font-weight: bold;
-          color: #667eea;
-          margin-bottom: 16px;
+          font-size: 26px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 12px;
+          display: block;
         }
 
         .scientific-text {
-          font-size: 26px;
-          color: #555;
-          line-height: 1.8;
+          font-size: 24px;
+          color: #666;
+          line-height: 1.6;
+          display: block;
         }
 
         .disease-guidance {
-          margin-bottom: 16px;
+          margin-bottom: 12px;
+          padding: 12px;
+          background: #f9f9f9;
+          border-radius: 8px;
 
           &:last-child {
             margin-bottom: 0;
           }
 
           .disease-name {
-            font-size: 26px;
-            font-weight: bold;
+            font-size: 24px;
+            font-weight: 600;
             color: #333;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
+            display: block;
           }
         }
       }
