@@ -103,16 +103,30 @@ export default function Index() {
   const handleReminderClick = (reminder: HealthReminder) => {
     const typeToPageMap: Record<string, string> = {
       'nasal_wash': '/pages/rhinitis/index',     // 洗鼻 → 鼻炎记录页
-      'drink_water': '/pages/water/index',        // 喝水 → 喝水记录页
-      'supplement': '/pages/supplements/index',   // 补剂 → 补剂记录页
-      'exercise': '/pages/workout/index',         // 运动 → 运动记录页
-      'weigh': '/pages/weight/index',            // 称重 → 体重记录页
-      'meal': '/pages/diet/index',               // 用餐 → 饮食记录页
+      'drink_water': '/pages/checkin/index',     // 喝水 → 通用打卡页（暂无独立页面）
+      'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
+      'exercise': '/pages/workout/index',        // 运动 → 运动记录页
+      'weigh': '/pages/checkin/index',          // 称重 → 通用打卡页（暂无独立页面）
+      'meal': '/pages/diet/index',              // 用餐 → 饮食记录页
     };
 
     const targetPage = typeToPageMap[reminder.type];
     if (targetPage) {
-      Taro.navigateTo({ url: targetPage });
+      // 检查目标页面是否在 tabBar 中
+      const tabBarPages = [
+        '/pages/index/index',
+        '/pages/dashboard/index',
+        '/pages/checkin/index',
+        '/pages/settings/index'
+      ];
+      
+      if (tabBarPages.includes(targetPage)) {
+        // 使用 switchTab 跳转到 tabBar 页面
+        Taro.switchTab({ url: targetPage });
+      } else {
+        // 使用 navigateTo 跳转到普通页面
+        Taro.navigateTo({ url: targetPage });
+      }
     } else {
       // 如果没有匹配的页面，显示提示
       Taro.showToast({
