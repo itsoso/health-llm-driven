@@ -100,18 +100,27 @@ export default function Index() {
   };
 
   // 处理提醒点击，跳转到对应打卡页面
-  const handleReminderClick = (reminder: HealthReminder) => {
-    const typeToPageMap: Record<string, string> = {
-      'nasal_wash': '/pages/rhinitis/index',     // 洗鼻 → 鼻炎记录页
-      'drink_water': '/pages/checkin/index',     // 喝水 → 通用打卡页（暂无独立页面）
-      'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
-      'exercise': '/pages/workout/index',        // 运动 → 运动记录页
-      'weigh': '/pages/checkin/index',          // 称重 → 通用打卡页（暂无独立页面）
-      'meal': '/pages/diet/index',              // 用餐 → 饮食记录页
-    };
+  const handleReminderClick = async (reminder: HealthReminder) => {
+    try {
+      const typeToPageMap: Record<string, string> = {
+        'nasal_wash': '/pages/rhinitis/index',     // 洗鼻 → 鼻炎记录页
+        'drink_water': '/pages/checkin/index',     // 喝水 → 通用打卡页（暂无独立页面）
+        'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
+        'exercise': '/pages/workout/index',        // 运动 → 运动记录页
+        'weigh': '/pages/checkin/index',          // 称重 → 通用打卡页（暂无独立页面）
+        'meal': '/pages/diet/index',              // 用餐 → 饮食记录页
+      };
 
-    const targetPage = typeToPageMap[reminder.type];
-    if (targetPage) {
+      const targetPage = typeToPageMap[reminder.type];
+      if (!targetPage) {
+        Taro.showToast({
+          title: '暂无对应打卡页面',
+          icon: 'none',
+          duration: 2000
+        });
+        return;
+      }
+
       // 检查目标页面是否在 tabBar 中
       const tabBarPages = [
         '/pages/index/index',
@@ -122,15 +131,15 @@ export default function Index() {
       
       if (tabBarPages.includes(targetPage)) {
         // 使用 switchTab 跳转到 tabBar 页面
-        Taro.switchTab({ url: targetPage });
+        await Taro.switchTab({ url: targetPage });
       } else {
         // 使用 navigateTo 跳转到普通页面
-        Taro.navigateTo({ url: targetPage });
+        await Taro.navigateTo({ url: targetPage });
       }
-    } else {
-      // 如果没有匹配的页面，显示提示
+    } catch (error) {
+      console.error('[提醒点击] 跳转失败:', error);
       Taro.showToast({
-        title: '暂无对应打卡页面',
+        title: '跳转失败，请重试',
         icon: 'none',
         duration: 2000
       });
