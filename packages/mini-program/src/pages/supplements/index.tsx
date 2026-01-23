@@ -59,8 +59,11 @@ export default function SupplementsPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [showActionSheet, setShowActionSheet] = useState(false);
+  const [selectedSupplement, setSelectedSupplement] = useState<SupplementDefinition | null>(null);
   
-  // 新增补剂表单
+  // 新增/编辑补剂表单
   const [formData, setFormData] = useState({
     name: '',
     dosage: '',
@@ -129,10 +132,18 @@ export default function SupplementsPage() {
     
     setSubmitting(true);
     try {
-      // 使用与 Web 端一致的接口：/supplements/definitions
-      await post('/supplements/definitions', formData);
-      Taro.showToast({ title: '添加成功', icon: 'success' });
+      if (editingId) {
+        // 编辑模式：使用 PUT 接口
+        await put(`/supplements/definitions/${editingId}`, formData);
+        Taro.showToast({ title: '更新成功', icon: 'success' });
+      } else {
+        // 新增模式：使用 POST 接口
+        await post('/supplements/definitions', formData);
+        Taro.showToast({ title: '添加成功', icon: 'success' });
+      }
+      
       setShowAddForm(false);
+      setEditingId(null);
       setFormData({
         name: '',
         dosage: '',
@@ -143,10 +154,66 @@ export default function SupplementsPage() {
       loadData();
       loadStats();
     } catch (error) {
-      Taro.showToast({ title: '添加失败', icon: 'none' });
+      Taro.showToast({ title: editingId ? '更新失败' : '添加失败', icon: 'none' });
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleEditSupplement = (supplement: SupplementDefinition) => {
+    setEditingId(supplement.id);
+    setFormData({
+      name: supplement.name,
+      dosage: supplement.dosage || '',
+      timing: supplement.timing,
+      category: supplement.category,
+      description: supplement.description || '',
+    });
+    setShowAddForm(true);
+    setShowActionSheet(false);
+  };
+
+  const handleDeleteSupplement = async (supplementId: number) => {
+    const res = await Taro.showModal({
+      title: '确认删除',
+      content: '删除后将无法恢复，确定要删除这个补剂吗？',
+    });
+    
+    if (!res.confirm) return;
+    
+    try {
+      await post(`/supplements/definitions/${supplementId}`, {}, 'DELETE');
+      Taro.showToast({ title: '删除成功', icon: 'success' });
+      setShowActionSheet(false);
+      loadData();
+      loadStats();
+    } catch (error) {
+      Taro.showToast({ title: '删除失败', icon: 'none' });
+    }
+  };
+
+  const handleToggleActive = async (supplement: SupplementDefinition) => {
+    try {
+      await put(`/supplements/definitions/${supplement.id}`, {
+        ...supplement,
+        is_active: !supplement.is_active,
+      });
+      Taro.showToast({ 
+        title: supplement.is_active ? '已停用' : '已启用', 
+        icon: 'success' 
+      });
+      setShowActionSheet(false);
+      loadData();
+      loadStats();
+    } catch (error) {
+      Taro.showToast({ title: '操作失败', icon: 'none' });
+    }
+  };
+
+  const handleShowActionSheet = (supplement: SupplementDefinition, e: any) => {
+    e.stopPropagation();
+    setSelectedSupplement(supplement);
+    setShowActionSheet(true);
   };
 
   // 按时间段分组
@@ -217,15 +284,35 @@ export default function SupplementsPage() {
                 {group.items.map(item => (
                   <View 
                     key={item.supplement.id} 
-                    className={`supplement-card ${item.record?.taken ? 'taken' : ''}`}
-                    onClick={() => handleToggle(item.supplement.id, item.record?.taken || false)}
+                    className={`supplement-card ${item.record?.taken ? 'taken' : ''} ${!item.supplement.is_active ? 'inactive' : ''}`}
                   >
-                    <View className="supplement-info">
-                      <Text className="supplement-name">{item.supplement.name}</Text>
-                      <Text className="supplement-dosage">{item.supplement.dosage}</Text>
+                    <View 
+                      className="supplement-main"
+                      onClick={() => handleToggle(item.supplement.id, item.record?.taken || false)}
+                    >
+                      <View className="supplement-info">
+                        <View className="supplement-name-row">
+                          <Text className="supplement-name">{item.supplement.name}</Text>
+                          {!item.supplement.is_active && (
+                            <Text className="inactive-badge">已停用</Text>
+                          )}
+                        </View>
+                        {item.supplement.dosage && (
+                          <Text className="supplement-dosage">{item.supplement.dosage}</Text>
+                        )}
+                        {item.supplement.description && (
+                          <Text className="supplement-desc">{item.supplement.description}</Text>
+                        )}
+                      </View>
+                      <View className={`check-box ${item.record?.taken ? 'checked' : ''}`}>
+                        {item.record?.taken && <Text className="check-icon">✓</Text>}
+                      </View>
                     </View>
-                    <View className={`check-box ${item.record?.taken ? 'checked' : ''}`}>
-                      {item.record?.taken && <Text className="check-icon">✓</Text>}
+                    <View 
+                      className="supplement-more"
+                      onClick={(e) => handleShowActionSheet(item.supplement, e)}
+                    >
+                      <Text className="more-icon">⋯</Text>
                     </View>
                   </View>
                 ))}
@@ -269,12 +356,22 @@ export default function SupplementsPage() {
         </Button>
       </View>
 
-      {/* 添加补剂弹窗 */}
+      {/* 添加/编辑补剂弹窗 */}
       {showAddForm && (
-        <View className="modal-mask" onClick={() => setShowAddForm(false)}>
+        <View className="modal-mask" onClick={() => {
+          setShowAddForm(false);
+          setEditingId(null);
+          setFormData({
+            name: '',
+            dosage: '',
+            timing: 'morning',
+            category: 'vitamin',
+            description: '',
+          });
+        }}>
           <View className="modal-content" onClick={e => e.stopPropagation()}>
             <View className="modal-header">
-              <Text className="modal-title">添加补剂</Text>
+              <Text className="modal-title">{editingId ? '编辑补剂' : '添加补剂'}</Text>
             </View>
             
             <View className="form-group">
@@ -327,8 +424,28 @@ export default function SupplementsPage() {
               </View>
             </View>
             
+            <View className="form-group">
+              <Text className="form-label">描述（选填）</Text>
+              <Input
+                className="form-input"
+                value={formData.description}
+                onInput={e => setFormData({ ...formData, description: e.detail.value })}
+                placeholder="如：促进钙吸收"
+              />
+            </View>
+            
             <View className="modal-actions">
-              <Button className="modal-btn cancel" onClick={() => setShowAddForm(false)}>
+              <Button className="modal-btn cancel" onClick={() => {
+                setShowAddForm(false);
+                setEditingId(null);
+                setFormData({
+                  name: '',
+                  dosage: '',
+                  timing: 'morning',
+                  category: 'vitamin',
+                  description: '',
+                });
+              }}>
                 取消
               </Button>
               <Button 
@@ -336,7 +453,49 @@ export default function SupplementsPage() {
                 onClick={handleAddSupplement}
                 loading={submitting}
               >
-                添加
+                {editingId ? '保存' : '添加'}
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 操作菜单 */}
+      {showActionSheet && selectedSupplement && (
+        <View className="modal-mask" onClick={() => setShowActionSheet(false)}>
+          <View className="action-sheet" onClick={e => e.stopPropagation()}>
+            <View className="action-sheet-header">
+              <Text className="action-sheet-title">{selectedSupplement.name}</Text>
+            </View>
+            <View className="action-sheet-body">
+              <View 
+                className="action-item"
+                onClick={() => handleEditSupplement(selectedSupplement)}
+              >
+                <Text className="action-icon">✏️</Text>
+                <Text className="action-text">编辑补剂</Text>
+              </View>
+              <View 
+                className="action-item"
+                onClick={() => handleToggleActive(selectedSupplement)}
+              >
+                <Text className="action-icon">{selectedSupplement.is_active ? '⏸️' : '▶️'}</Text>
+                <Text className="action-text">{selectedSupplement.is_active ? '停用补剂' : '启用补剂'}</Text>
+              </View>
+              <View 
+                className="action-item danger"
+                onClick={() => handleDeleteSupplement(selectedSupplement.id)}
+              >
+                <Text className="action-icon">🗑️</Text>
+                <Text className="action-text">删除补剂</Text>
+              </View>
+            </View>
+            <View className="action-sheet-footer">
+              <Button 
+                className="action-cancel"
+                onClick={() => setShowActionSheet(false)}
+              >
+                取消
               </Button>
             </View>
           </View>
