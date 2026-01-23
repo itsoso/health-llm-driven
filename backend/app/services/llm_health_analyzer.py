@@ -383,9 +383,8 @@ class LLMHealthAnalyzer:
             
             # 计算本周实际运动时长（从 workout_records 表）
             # 获取本周的起止日期（北京时间）
-            from datetime import timedelta
-            from app.utils.timezone import get_china_today
             from app.models.daily_health import WorkoutRecord
+            from sqlalchemy import func
             
             today = get_china_today()
             days_since_monday = today.weekday()
@@ -395,7 +394,6 @@ class LLMHealthAnalyzer:
             db = recent_data[0]._sa_instance_state.session if recent_data else None
             workout_minutes = 0
             if db:
-                from sqlalchemy import func
                 user_id = recent_data[0].user_id if recent_data else None
                 if user_id:
                     total_seconds = db.query(func.sum(WorkoutRecord.duration_seconds)).filter(
