@@ -131,6 +131,15 @@ export default function SupplementsPage() {
     }
     loadData();
     loadStats();
+    
+    // 检查是否需要自动显示推荐
+    const params = Taro.getCurrentInstance().router?.params;
+    if (params?.showRec === '1') {
+      // 延迟执行，确保页面已加载
+      setTimeout(() => {
+        handleGetRecommendation();
+      }, 500);
+    }
   }, [selectedDate]);
 
   const loadData = async () => {

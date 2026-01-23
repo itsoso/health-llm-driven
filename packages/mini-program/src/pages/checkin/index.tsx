@@ -291,6 +291,15 @@ export default function CheckinPage() {
                 <Text className="entry-label">补剂服用</Text>
               </View>
               <View 
+                className="quick-entry-item supplement-rec"
+                onClick={() => Taro.navigateTo({ url: '/pages/supplements/index?showRec=1' })}
+              >
+                <View className="quick-entry-icon-box supplement-recommendation">
+                  <Text className="entry-icon">🤖</Text>
+                </View>
+                <Text className="entry-label">补剂推荐</Text>
+              </View>
+              <View 
                 className="quick-entry-item"
                 onClick={() => Taro.navigateTo({ url: '/pages/diet/index' })}
               >
