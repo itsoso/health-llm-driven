@@ -90,6 +90,16 @@ const CATEGORY_OPTIONS = [
   { value: 'other', label: '其他' },
 ];
 
+// 转换中文优先级为英文类名
+const getPriorityClass = (priority: string): string => {
+  const map: Record<string, string> = {
+    '高': 'high',
+    '中': 'medium',
+    '低': 'low'
+  };
+  return map[priority] || priority;
+};
+
 export default function SupplementsPage() {
   const [loading, setLoading] = useState(true);
   const [supplements, setSupplements] = useState<SupplementWithStatus[]>([]);
@@ -637,11 +647,11 @@ export default function SupplementsPage() {
               <View className="recommendations-section">
                 <Text className="section-title">💊 推荐补剂</Text>
                 {recommendation.recommendations.map((rec, idx) => (
-                  <View key={idx} className={`rec-card priority-${rec.priority}`}>
+                  <View key={idx} className={`rec-card priority-${getPriorityClass(rec.priority)}`}>
                     <View className="rec-header">
                       <Text className="rec-icon">{rec.icon}</Text>
                       <Text className="rec-name">{rec.name}</Text>
-                      <Text className={`rec-priority ${rec.priority}`}>{rec.priority}优先</Text>
+                      <Text className={`rec-priority ${getPriorityClass(rec.priority)}`}>{rec.priority}优先</Text>
                     </View>
                     <Text className="rec-reason">{rec.reason}</Text>
                     <View className="rec-details">

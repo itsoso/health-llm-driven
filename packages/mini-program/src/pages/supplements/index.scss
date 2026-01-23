@@ -798,12 +798,12 @@ $indigo: #6366F1;
   padding: 24rpx;
   margin-bottom: 16rpx;
 
-  &.priority-高 {
+  &.priority-high {
     border-color: rgba(#EF4444, 0.5);
     background: rgba(#EF4444, 0.05);
   }
 
-  &.priority-中 {
+  &.priority-medium {
     border-color: rgba(#F59E0B, 0.5);
     background: rgba(#F59E0B, 0.05);
   }
@@ -832,17 +832,17 @@ $indigo: #6366F1;
   padding: 4rpx 12rpx;
   border-radius: 8rpx;
   
-  &.高 {
+  &.high {
     background: rgba(#EF4444, 0.2);
     color: #EF4444;
   }
 
-  &.中 {
+  &.medium {
     background: rgba(#F59E0B, 0.2);
     color: #F59E0B;
   }
 
-  &.低 {
+  &.low {
     background: rgba($text-secondary, 0.2);
     color: $text-secondary;
   }
