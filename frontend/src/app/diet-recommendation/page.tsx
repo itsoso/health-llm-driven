@@ -90,6 +90,7 @@ export default function DietRecommendationPage() {
   const [loading, setLoading] = useState(true)
   const [recommendation, setRecommendation] = useState<DietRecommendation | null>(null)
   const [showScientific, setShowScientific] = useState(false)
+  const [showDebugInfo, setShowDebugInfo] = useState(false)
 
   useEffect(() => {
     loadRecommendation()
@@ -185,75 +186,21 @@ export default function DietRecommendationPage() {
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-8">
       <div className="max-w-7xl mx-auto">
         {/* 页面标题 */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">智能饮食推荐</h1>
-          <p className="text-gray-600">基于您的健康数据和目标的个性化营养建议</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">智能饮食推荐</h1>
+            <p className="text-gray-600">基于您的健康数据和目标的个性化营养建议</p>
+          </div>
+          {/* Debug 模式开关 */}
+          <button
+            onClick={() => setShowDebugInfo(!showDebugInfo)}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-colors"
+          >
+            {showDebugInfo ? '隐藏详细数据' : '显示详细数据'}
+          </button>
         </div>
 
-        {/* 第一行：用户信息 + 代谢信息 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* 用户信息卡片 */}
-          <div className="bg-white rounded-2xl shadow-lg p-6">
-            <div className="flex items-center mb-6">
-              <HeartIcon className="h-6 w-6 text-purple-600 mr-2" />
-              <h2 className="text-2xl font-bold text-gray-900">个人信息</h2>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">年龄</p>
-                <p className="text-2xl font-bold text-gray-900">{recommendation.user_info.age}岁</p>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">性别</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {recommendation.user_info.gender === 'male' ? '男' : '女'}
-                </p>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">身高</p>
-                <p className="text-2xl font-bold text-gray-900">{recommendation.user_info.height_cm}cm</p>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">体重</p>
-                <p className="text-2xl font-bold text-gray-900">{recommendation.user_info.current_weight_kg}kg</p>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">目标</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {getWeightGoalText(recommendation.user_info.weight_goal)}
-                </p>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">活动</p>
-                <p className="text-xl font-bold text-gray-900">
-                  {getActivityLevelText(recommendation.user_info.activity_level)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* 代谢信息卡片 */}
-          <div className="bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl shadow-lg p-6 text-white">
-            <div className="flex items-center mb-6">
-              <FireIcon className="h-6 w-6 mr-2" />
-              <h2 className="text-2xl font-bold">代谢信息</h2>
-            </div>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="text-center">
-                <p className="text-sm opacity-90 mb-2">基础代谢 (BMR)</p>
-                <p className="text-5xl font-bold mb-1">{recommendation.metabolism.bmr}</p>
-                <p className="text-sm opacity-75">kcal/天</p>
-              </div>
-              <div className="text-center">
-                <p className="text-sm opacity-90 mb-2">总消耗 (TDEE)</p>
-                <p className="text-5xl font-bold mb-1">{recommendation.metabolism.tdee}</p>
-                <p className="text-sm opacity-75">kcal/天</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 第二行：营养进度 */}
+        {/* 第一行：今日营养进度 */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center">
@@ -350,55 +297,7 @@ export default function DietRecommendationPage() {
           </div>
         </div>
 
-        {/* 第三行：健康状态 */}
-        {recommendation.health_status && Object.keys(recommendation.health_status).length > 0 && (
-          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-            <div className="flex items-center mb-6">
-              <HeartIcon className="h-6 w-6 text-purple-600 mr-2" />
-              <h2 className="text-2xl font-bold text-gray-900">健康状态</h2>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {recommendation.health_status.sleep_score !== undefined && (
-                <div className="text-center p-4 bg-purple-50 rounded-lg">
-                  <p className="text-3xl mb-2">😴</p>
-                  <p className="text-sm text-gray-600 mb-1">睡眠评分</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {recommendation.health_status.sleep_score}/100
-                  </p>
-                </div>
-              )}
-              {recommendation.health_status.body_battery !== undefined && (
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <p className="text-3xl mb-2">🔋</p>
-                  <p className="text-sm text-gray-600 mb-1">身体电量</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {recommendation.health_status.body_battery}/100
-                  </p>
-                </div>
-              )}
-              {recommendation.health_status.stress_level !== undefined && (
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <p className="text-3xl mb-2">😌</p>
-                  <p className="text-sm text-gray-600 mb-1">压力水平</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {recommendation.health_status.stress_level}/100
-                  </p>
-                </div>
-              )}
-              {recommendation.health_status.resting_hr !== undefined && (
-                <div className="text-center p-4 bg-red-50 rounded-lg">
-                  <p className="text-3xl mb-2">❤️</p>
-                  <p className="text-sm text-gray-600 mb-1">静息心率</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {recommendation.health_status.resting_hr} bpm
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 第四行：警告和提示 */}
+        {/* 第二行：警告和提示 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* 警告 */}
           {recommendation.warnings && recommendation.warnings.length > 0 && (
@@ -435,7 +334,7 @@ export default function DietRecommendationPage() {
           )}
         </div>
 
-        {/* 第五行：食物推荐 */}
+        {/* 第三行：食物推荐 */}
         {recommendation.food_recommendations && recommendation.food_recommendations.length > 0 && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
             <div className="flex items-center mb-6">
@@ -468,7 +367,120 @@ export default function DietRecommendationPage() {
           </div>
         )}
 
-        {/* 第六行：科学依据 */}
+        {/* Debug 模式：详细数据 */}
+        {showDebugInfo && (
+          <div className="space-y-6 mb-6">
+            {/* 个人信息 */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <div className="flex items-center mb-6">
+                <HeartIcon className="h-6 w-6 text-purple-600 mr-2" />
+                <h2 className="text-2xl font-bold text-gray-900">个人信息</h2>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">年龄</p>
+                  <p className="text-2xl font-bold text-gray-900">{recommendation.user_info.age}岁</p>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">性别</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {recommendation.user_info.gender === 'male' ? '男' : '女'}
+                  </p>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">身高</p>
+                  <p className="text-2xl font-bold text-gray-900">{recommendation.user_info.height_cm}cm</p>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">体重</p>
+                  <p className="text-2xl font-bold text-gray-900">{recommendation.user_info.current_weight_kg}kg</p>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">目标</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {getWeightGoalText(recommendation.user_info.weight_goal)}
+                  </p>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">活动</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {getActivityLevelText(recommendation.user_info.activity_level)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 代谢信息 */}
+            <div className="bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl shadow-lg p-6 text-white">
+              <div className="flex items-center mb-6">
+                <FireIcon className="h-6 w-6 mr-2" />
+                <h2 className="text-2xl font-bold">代谢信息</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="text-center">
+                  <p className="text-sm opacity-90 mb-2">基础代谢 (BMR)</p>
+                  <p className="text-5xl font-bold mb-1">{recommendation.metabolism.bmr}</p>
+                  <p className="text-sm opacity-75">kcal/天</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm opacity-90 mb-2">总消耗 (TDEE)</p>
+                  <p className="text-5xl font-bold mb-1">{recommendation.metabolism.tdee}</p>
+                  <p className="text-sm opacity-75">kcal/天</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 健康状态 */}
+            {recommendation.health_status && Object.keys(recommendation.health_status).length > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg p-6">
+                <div className="flex items-center mb-6">
+                  <HeartIcon className="h-6 w-6 text-purple-600 mr-2" />
+                  <h2 className="text-2xl font-bold text-gray-900">健康状态</h2>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {recommendation.health_status.sleep_score !== undefined && (
+                    <div className="text-center p-4 bg-purple-50 rounded-lg">
+                      <p className="text-3xl mb-2">😴</p>
+                      <p className="text-sm text-gray-600 mb-1">睡眠评分</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {recommendation.health_status.sleep_score}/100
+                      </p>
+                    </div>
+                  )}
+                  {recommendation.health_status.body_battery !== undefined && (
+                    <div className="text-center p-4 bg-green-50 rounded-lg">
+                      <p className="text-3xl mb-2">🔋</p>
+                      <p className="text-sm text-gray-600 mb-1">身体电量</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {recommendation.health_status.body_battery}/100
+                      </p>
+                    </div>
+                  )}
+                  {recommendation.health_status.stress_level !== undefined && (
+                    <div className="text-center p-4 bg-blue-50 rounded-lg">
+                      <p className="text-3xl mb-2">😌</p>
+                      <p className="text-sm text-gray-600 mb-1">压力水平</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {recommendation.health_status.stress_level}/100
+                      </p>
+                    </div>
+                  )}
+                  {recommendation.health_status.resting_hr !== undefined && (
+                    <div className="text-center p-4 bg-red-50 rounded-lg">
+                      <p className="text-3xl mb-2">❤️</p>
+                      <p className="text-sm text-gray-600 mb-1">静息心率</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {recommendation.health_status.resting_hr} bpm
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 科学依据 */}
         {recommendation.scientific_insights?.available && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
             <button
