@@ -269,30 +269,48 @@ export default function Index() {
   };
 
   // 处理打卡跳转
-  const handleCheckinAction = (checkinAction: string) => {
+  const handleCheckinAction = async (checkinAction: string) => {
     if (!isLoggedIn) {
       Taro.showToast({ title: '请先登录', icon: 'none' });
       return;
     }
     
-    const actionMap: Record<string, string> = {
-      'water': '/pages/water/index',
-      'nasal_wash': '/pages/checkin/index',
-      'supplement': '/pages/supplements/index',
-      'exercise': '/pages/workout/index',
-      'weight': '/pages/weight/index',
-      'diet': '/pages/diet/index',
-    };
-    
-    const targetPage = actionMap[checkinAction];
-    if (targetPage) {
-      if (targetPage.includes('/pages/checkin/') || targetPage.includes('/pages/workout/')) {
-        Taro.navigateTo({ url: targetPage });
-      } else {
-        Taro.switchTab({ url: targetPage });
+    try {
+      const actionMap: Record<string, string> = {
+        'water': '/pages/checkin/index',           // 喝水 → 通用打卡页（暂无独立页面）
+        'nasal_wash': '/pages/checkin/index',      // 洗鼻 → 通用打卡页
+        'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
+        'exercise': '/pages/workout/index',        // 运动 → 运动记录页
+        'weight': '/pages/checkin/index',          // 体重 → 通用打卡页（暂无独立页面）
+        'diet': '/pages/diet/index',               // 饮食 → 饮食记录页
+      };
+      
+      const targetPage = actionMap[checkinAction];
+      if (!targetPage) {
+        Taro.showToast({ title: '功能开发中', icon: 'none' });
+        return;
       }
-    } else {
-      Taro.showToast({ title: '功能开发中', icon: 'none' });
+
+      // 检查目标页面是否在 tabBar 中
+      const tabBarPages = [
+        '/pages/index/index',
+        '/pages/dashboard/index',
+        '/pages/checkin/index',
+        '/pages/settings/index'
+      ];
+      
+      if (tabBarPages.includes(targetPage)) {
+        await Taro.switchTab({ url: targetPage });
+      } else {
+        await Taro.navigateTo({ url: targetPage });
+      }
+    } catch (error) {
+      console.error('[打卡跳转] 跳转失败:', error);
+      Taro.showToast({
+        title: '跳转失败，请重试',
+        icon: 'none',
+        duration: 2000
+      });
     }
   };
 
