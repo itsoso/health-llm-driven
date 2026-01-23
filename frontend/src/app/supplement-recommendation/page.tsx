@@ -244,6 +244,7 @@ function SupplementRecommendationContent() {
             </div>
           )}
         </div>
+        )}
 
         {/* 推荐补剂 */}
         {recommendation.recommendations && recommendation.recommendations.length > 0 && (
