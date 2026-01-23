@@ -588,3 +588,346 @@ $indigo: #6366F1;
     border: none;
   }
 }
+
+// 科学推荐按钮
+.add-btn-container {
+  display: flex;
+  gap: 16rpx;
+  padding: 24rpx 32rpx;
+}
+
+.recommendation-btn {
+  flex: 1;
+  height: 80rpx;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  border: none;
+  
+  &::after {
+    border: none;
+  }
+}
+
+// 科学推荐弹窗
+.recommendation-modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  background: $card-dark;
+  border-radius: 32rpx 32rpx 0 0;
+  border: 1px solid $card-border;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease;
+}
+
+.recommendation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 32rpx;
+  border-bottom: 1px solid $card-border;
+}
+
+.recommendation-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: $text-primary;
+}
+
+.close-btn {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $text-secondary;
+  font-size: 32rpx;
+}
+
+.recommendation-content {
+  flex: 1;
+  padding: 32rpx;
+}
+
+// 评分卡片
+.rating-card {
+  background: linear-gradient(135deg, rgba($green, 0.2), rgba(#14B8A6, 0.1));
+  border: 1px solid rgba($green, 0.3);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  text-align: center;
+  margin-bottom: 32rpx;
+}
+
+.rating-emoji {
+  font-size: 80rpx;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.rating-text {
+  font-size: 40rpx;
+  font-weight: bold;
+  color: $green;
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.rating-message {
+  font-size: 28rpx;
+  color: $text-secondary;
+  display: block;
+  margin-bottom: 24rpx;
+}
+
+.rating-score {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.score-label {
+  font-size: 24rpx;
+  color: $text-secondary;
+}
+
+.score-value {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: $green;
+}
+
+// 分析部分
+.analysis-section,
+.recommendations-section,
+.timing-section,
+.precautions-section {
+  margin-bottom: 32rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: $text-primary;
+  display: block;
+  margin-bottom: 24rpx;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.analysis-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $card-border;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  text-align: center;
+}
+
+.analysis-label {
+  font-size: 24rpx;
+  color: $text-secondary;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.analysis-value {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: $text-primary;
+  display: block;
+}
+
+.factors-list {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16rpx;
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+
+  &.positive {
+    border: 1px solid rgba($green, 0.3);
+  }
+
+  &.risk {
+    border: 1px solid rgba(#EF4444, 0.3);
+  }
+}
+
+.factors-title {
+  font-size: 26rpx;
+  font-weight: bold;
+  color: $text-primary;
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.factor-item {
+  font-size: 24rpx;
+  color: $text-secondary;
+  display: block;
+  margin-bottom: 8rpx;
+  padding-left: 24rpx;
+  position: relative;
+
+  &::before {
+    content: '•';
+    position: absolute;
+    left: 8rpx;
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// 推荐卡片
+.rec-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $card-border;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+
+  &.priority-高 {
+    border-color: rgba(#EF4444, 0.5);
+    background: rgba(#EF4444, 0.05);
+  }
+
+  &.priority-中 {
+    border-color: rgba(#F59E0B, 0.5);
+    background: rgba(#F59E0B, 0.05);
+  }
+}
+
+.rec-header {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.rec-icon {
+  font-size: 32rpx;
+}
+
+.rec-name {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: $text-primary;
+  flex: 1;
+}
+
+.rec-priority {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  
+  &.高 {
+    background: rgba(#EF4444, 0.2);
+    color: #EF4444;
+  }
+
+  &.中 {
+    background: rgba(#F59E0B, 0.2);
+    color: #F59E0B;
+  }
+
+  &.低 {
+    background: rgba($text-secondary, 0.2);
+    color: $text-secondary;
+  }
+}
+
+.rec-reason {
+  font-size: 26rpx;
+  color: $text-secondary;
+  line-height: 1.5;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.rec-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.rec-detail {
+  font-size: 24rpx;
+  color: $text-secondary;
+  display: block;
+}
+
+// 时间建议
+.timing-group {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $card-border;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  margin-bottom: 12rpx;
+}
+
+.timing-label {
+  font-size: 26rpx;
+  font-weight: bold;
+  color: $text-primary;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.timing-items {
+  font-size: 24rpx;
+  color: $text-secondary;
+  display: block;
+  line-height: 1.5;
+}
+
+// 注意事项
+.precaution-item {
+  font-size: 24rpx;
+  color: $text-secondary;
+  display: block;
+  margin-bottom: 12rpx;
+  padding-left: 24rpx;
+  position: relative;
+  line-height: 1.5;
+
+  &::before {
+    content: '•';
+    position: absolute;
+    left: 8rpx;
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.recommendation-footer {
+  padding: 24rpx 32rpx;
+  border-top: 1px solid $card-border;
+}
+
+.close-modal-btn {
+  width: 100%;
+  height: 80rpx;
+  background: $green;
+  color: white;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  border: none;
+  
+  &::after {
+    border: none;
+  }
+}

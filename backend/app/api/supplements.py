@@ -1,8 +1,8 @@
 """补剂管理 API"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import date, timedelta
 from app.database import get_db
 from app.models.supplement import SupplementDefinition, SupplementRecord
@@ -17,6 +17,10 @@ from app.schemas.supplement import (
     SupplementBatchCheckin,
     SupplementWithRecord
 )
+from app.services.supplement_recommendation import SupplementRecommendationService
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -283,4 +287,44 @@ def get_my_supplement_stats(
         })
     
     return stats
+
+
+# ========== 补剂科学推荐 ==========
+
+@router.post("/scientific-recommendation", response_model=Dict[str, Any])
+async def get_supplement_recommendation(
+    target_date: Optional[date] = None,
+    debug: bool = Query(default=False, description="是否返回调试信息"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取补剂科学推荐
+    
+    Args:
+        target_date: 目标日期（可选，默认今天）
+        debug: 是否返回调试信息，展示AI决策过程（默认False）
+    
+    Returns:
+        补剂科学推荐结果（debug模式下包含决策过程）
+    """
+    logger.info(f"[补剂科学推荐API] 收到请求 - user_id={current_user.id}, target_date={target_date}, debug={debug}")
+    
+    try:
+        service = SupplementRecommendationService()
+        recommendation = service.generate_supplement_recommendation(
+            db=db,
+            user_id=current_user.id,
+            target_date=target_date,
+            debug=debug
+        )
+        
+        logger.info(f"[补剂科学推荐API] 生成成功 - success={recommendation.get('success')}")
+        return recommendation
+    except Exception as e:
+        logger.error(f"[补剂科学推荐API] 生成失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"生成补剂科学推荐失败: {str(e)}"
+        )
 

@@ -36,6 +36,44 @@ interface SupplementStats {
   completion_rate: number;
 }
 
+interface SupplementRecommendation {
+  category: string;
+  name: string;
+  reason: string;
+  dosage: string;
+  timing: string;
+  priority: string;
+  icon: string;
+}
+
+interface ScientificRecommendation {
+  success: boolean;
+  generated_at: string;
+  health_analysis: {
+    sleep_quality: string;
+    stress_level: string;
+    exercise_intensity: string;
+    nutrition_status: string;
+    risk_factors: string[];
+    positive_factors: string[];
+  };
+  recommendations: SupplementRecommendation[];
+  timing_suggestions: {
+    morning: string[];
+    noon: string[];
+    evening: string[];
+    bedtime: string[];
+    workout: string[];
+  };
+  precautions: string[];
+  overall_rating: {
+    score: number;
+    rating: string;
+    emoji: string;
+    message: string;
+  };
+}
+
 const TIMING_OPTIONS = [
   { value: 'morning', label: '🌅 早晨', color: 'orange' },
   { value: 'noon', label: '☀️ 中午', color: 'yellow' },
@@ -62,6 +100,9 @@ export default function SupplementsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [selectedSupplement, setSelectedSupplement] = useState<SupplementDefinition | null>(null);
+  const [showRecommendation, setShowRecommendation] = useState(false);
+  const [recommendation, setRecommendation] = useState<ScientificRecommendation | null>(null);
+  const [loadingRecommendation, setLoadingRecommendation] = useState(false);
   
   // 新增/编辑补剂表单
   const [formData, setFormData] = useState({
@@ -216,6 +257,22 @@ export default function SupplementsPage() {
     setShowActionSheet(true);
   };
 
+  const handleGetRecommendation = async () => {
+    setLoadingRecommendation(true);
+    try {
+      const result = await post('/supplements/scientific-recommendation', {
+        target_date: selectedDate
+      });
+      setRecommendation(result);
+      setShowRecommendation(true);
+      Taro.showToast({ title: '✓ 科学推荐生成完成', icon: 'success' });
+    } catch (error) {
+      Taro.showToast({ title: '生成推荐失败', icon: 'none' });
+    } finally {
+      setLoadingRecommendation(false);
+    }
+  };
+
   // 按时间段分组
   const groupedSupplements = TIMING_OPTIONS.map(timing => ({
     ...timing,
@@ -353,6 +410,13 @@ export default function SupplementsPage() {
       <View className="add-btn-container">
         <Button className="add-btn" onClick={() => setShowAddForm(true)}>
           + 添加补剂
+        </Button>
+        <Button 
+          className="recommendation-btn" 
+          onClick={handleGetRecommendation}
+          loading={loadingRecommendation}
+        >
+          {loadingRecommendation ? '分析中...' : '🤖 科学推荐'}
         </Button>
       </View>
 
@@ -496,6 +560,150 @@ export default function SupplementsPage() {
                 onClick={() => setShowActionSheet(false)}
               >
                 取消
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 科学推荐弹窗 */}
+      {showRecommendation && recommendation && (
+        <View className="modal-mask" onClick={() => setShowRecommendation(false)}>
+          <View className="recommendation-modal" onClick={e => e.stopPropagation()}>
+            <View className="recommendation-header">
+              <Text className="recommendation-title">🤖 补剂科学推荐</Text>
+              <View 
+                className="close-btn"
+                onClick={() => setShowRecommendation(false)}
+              >
+                ✕
+              </View>
+            </View>
+
+            <ScrollView scrollY className="recommendation-content" enhanced showScrollbar={false}>
+              {/* 整体评分 */}
+              <View className="rating-card">
+                <Text className="rating-emoji">{recommendation.overall_rating.emoji}</Text>
+                <Text className="rating-text">{recommendation.overall_rating.rating}</Text>
+                <Text className="rating-message">{recommendation.overall_rating.message}</Text>
+                <View className="rating-score">
+                  <Text className="score-label">综合评分</Text>
+                  <Text className="score-value">{recommendation.overall_rating.score * 10}/100</Text>
+                </View>
+              </View>
+
+              {/* 健康分析 */}
+              <View className="analysis-section">
+                <Text className="section-title">📊 健康状况分析</Text>
+                <View className="analysis-grid">
+                  <View className="analysis-item">
+                    <Text className="analysis-label">睡眠质量</Text>
+                    <Text className="analysis-value">{recommendation.health_analysis.sleep_quality}</Text>
+                  </View>
+                  <View className="analysis-item">
+                    <Text className="analysis-label">压力水平</Text>
+                    <Text className="analysis-value">{recommendation.health_analysis.stress_level}</Text>
+                  </View>
+                  <View className="analysis-item">
+                    <Text className="analysis-label">运动强度</Text>
+                    <Text className="analysis-value">{recommendation.health_analysis.exercise_intensity}</Text>
+                  </View>
+                  <View className="analysis-item">
+                    <Text className="analysis-label">营养状况</Text>
+                    <Text className="analysis-value">{recommendation.health_analysis.nutrition_status}</Text>
+                  </View>
+                </View>
+
+                {recommendation.health_analysis.positive_factors.length > 0 && (
+                  <View className="factors-list positive">
+                    <Text className="factors-title">✅ 积极因素</Text>
+                    {recommendation.health_analysis.positive_factors.map((factor, idx) => (
+                      <Text key={idx} className="factor-item">{factor}</Text>
+                    ))}
+                  </View>
+                )}
+
+                {recommendation.health_analysis.risk_factors.length > 0 && (
+                  <View className="factors-list risk">
+                    <Text className="factors-title">⚠️ 风险因素</Text>
+                    {recommendation.health_analysis.risk_factors.map((factor, idx) => (
+                      <Text key={idx} className="factor-item">{factor}</Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* 推荐补剂 */}
+              <View className="recommendations-section">
+                <Text className="section-title">💊 推荐补剂</Text>
+                {recommendation.recommendations.map((rec, idx) => (
+                  <View key={idx} className={`rec-card priority-${rec.priority}`}>
+                    <View className="rec-header">
+                      <Text className="rec-icon">{rec.icon}</Text>
+                      <Text className="rec-name">{rec.name}</Text>
+                      <Text className={`rec-priority ${rec.priority}`}>{rec.priority}优先</Text>
+                    </View>
+                    <Text className="rec-reason">{rec.reason}</Text>
+                    <View className="rec-details">
+                      <Text className="rec-detail">💊 剂量：{rec.dosage}</Text>
+                      <Text className="rec-detail">⏰ 时间：{rec.timing}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* 服用时间建议 */}
+              {Object.values(recommendation.timing_suggestions).some(arr => arr.length > 0) && (
+                <View className="timing-section">
+                  <Text className="section-title">⏰ 服用时间建议</Text>
+                  {recommendation.timing_suggestions.morning.length > 0 && (
+                    <View className="timing-group">
+                      <Text className="timing-label">🌅 早晨</Text>
+                      <Text className="timing-items">{recommendation.timing_suggestions.morning.join('、')}</Text>
+                    </View>
+                  )}
+                  {recommendation.timing_suggestions.noon.length > 0 && (
+                    <View className="timing-group">
+                      <Text className="timing-label">☀️ 中午</Text>
+                      <Text className="timing-items">{recommendation.timing_suggestions.noon.join('、')}</Text>
+                    </View>
+                  )}
+                  {recommendation.timing_suggestions.evening.length > 0 && (
+                    <View className="timing-group">
+                      <Text className="timing-label">🌆 晚上</Text>
+                      <Text className="timing-items">{recommendation.timing_suggestions.evening.join('、')}</Text>
+                    </View>
+                  )}
+                  {recommendation.timing_suggestions.bedtime.length > 0 && (
+                    <View className="timing-group">
+                      <Text className="timing-label">🌙 睡前</Text>
+                      <Text className="timing-items">{recommendation.timing_suggestions.bedtime.join('、')}</Text>
+                    </View>
+                  )}
+                  {recommendation.timing_suggestions.workout.length > 0 && (
+                    <View className="timing-group">
+                      <Text className="timing-label">💪 运动</Text>
+                      <Text className="timing-items">{recommendation.timing_suggestions.workout.join('、')}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* 注意事项 */}
+              <View className="precautions-section">
+                <Text className="section-title">⚠️ 注意事项</Text>
+                {recommendation.precautions.map((precaution, idx) => (
+                  <Text key={idx} className="precaution-item">{precaution}</Text>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View className="recommendation-footer">
+              <Button 
+                className="close-modal-btn"
+                onClick={() => setShowRecommendation(false)}
+              >
+                关闭
               </Button>
             </View>
           </View>
