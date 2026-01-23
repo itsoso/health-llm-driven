@@ -9,9 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models.user_profile import UserProfile
-from app.models.daily_health import GarminData, WorkoutRecord
+from app.models.daily_health import GarminData, WorkoutRecord, DietRecord
 from app.models.supplement import SupplementDefinition, SupplementRecord
-from app.models.diet import DietRecord
 from app.services.digital_twin import DigitalTwinService
 from app.utils.timezone import get_china_now
 
