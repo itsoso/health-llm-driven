@@ -137,7 +137,8 @@ class SupplementRecommendationService:
                 return None
             
             # 计算平均值
-            avg_sleep = sum(r.sleep_duration_hours or 0 for r in records) / len(records)
+            # total_sleep_duration 是分钟，转换为小时
+            avg_sleep = sum((r.total_sleep_duration or 0) / 60 for r in records) / len(records)
             avg_stress = sum(r.stress_level or 0 for r in records) / len(records)
             avg_rhr = sum(r.resting_heart_rate or 0 for r in records if r.resting_heart_rate) / max(
                 len([r for r in records if r.resting_heart_rate]), 1
@@ -208,8 +209,8 @@ class SupplementRecommendationService:
             start_date = target_date - timedelta(days=3)
             diet_records = db.query(DietRecord).filter(
                 DietRecord.user_id == user_id,
-                DietRecord.meal_date >= start_date,
-                DietRecord.meal_date <= target_date
+                DietRecord.record_date >= start_date,
+                DietRecord.record_date <= target_date
             ).all()
             
             if not diet_records:
