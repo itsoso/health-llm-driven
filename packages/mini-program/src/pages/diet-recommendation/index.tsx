@@ -1,7 +1,7 @@
 import { View, Text, ScrollView } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
-import { request } from '../../utils/request'
+import { request } from '../../services/request'
 import './index.scss'
 
 interface DietRecommendation {
@@ -81,6 +81,7 @@ export default function DietRecommendationPage() {
   const [loading, setLoading] = useState(true)
   const [recommendation, setRecommendation] = useState<DietRecommendation | null>(null)
   const [showScientific, setShowScientific] = useState(false)
+  const [showDebugInfo, setShowDebugInfo] = useState(false)
 
   useEffect(() => {
     loadRecommendation()
@@ -160,61 +161,12 @@ export default function DietRecommendationPage() {
 
   return (
     <ScrollView className="diet-recommendation-page" scrollY>
-      {/* 用户信息卡片 */}
-      <View className="card user-info-card">
-        <View className="card-title">
-          <Text className="title-icon">👤</Text>
-          <Text className="title-text">个人信息</Text>
-        </View>
-        <View className="info-grid">
-          <View className="info-item">
-            <Text className="info-label">年龄</Text>
-            <Text className="info-value">{recommendation.user_info.age}岁</Text>
-          </View>
-          <View className="info-item">
-            <Text className="info-label">性别</Text>
-            <Text className="info-value">{recommendation.user_info.gender === 'male' ? '男' : '女'}</Text>
-          </View>
-          <View className="info-item">
-            <Text className="info-label">身高</Text>
-            <Text className="info-value">{recommendation.user_info.height_cm}cm</Text>
-          </View>
-          <View className="info-item">
-            <Text className="info-label">体重</Text>
-            <Text className="info-value">{recommendation.user_info.current_weight_kg}kg</Text>
-          </View>
-          <View className="info-item">
-            <Text className="info-label">目标</Text>
-            <Text className="info-value">{getWeightGoalText(recommendation.user_info.weight_goal)}</Text>
-          </View>
-          <View className="info-item">
-            <Text className="info-label">活动</Text>
-            <Text className="info-value">{getActivityLevelText(recommendation.user_info.activity_level)}</Text>
-          </View>
-        </View>
+      {/* Debug 模式开关 */}
+      <View className="debug-toggle" onClick={() => setShowDebugInfo(!showDebugInfo)}>
+        <Text className="toggle-text">{showDebugInfo ? '隐藏详细数据' : '显示详细数据'}</Text>
       </View>
 
-      {/* 代谢信息卡片 */}
-      <View className="card metabolism-card">
-        <View className="card-title">
-          <Text className="title-icon">🔥</Text>
-          <Text className="title-text">代谢信息</Text>
-        </View>
-        <View className="metabolism-grid">
-          <View className="metabolism-item">
-            <Text className="metabolism-label">基础代谢 (BMR)</Text>
-            <Text className="metabolism-value">{recommendation.metabolism.bmr}</Text>
-            <Text className="metabolism-unit">kcal/天</Text>
-          </View>
-          <View className="metabolism-item">
-            <Text className="metabolism-label">总消耗 (TDEE)</Text>
-            <Text className="metabolism-value">{recommendation.metabolism.tdee}</Text>
-            <Text className="metabolism-unit">kcal/天</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* 营养进度卡片 */}
+      {/* 第一优先级：营养进度卡片 */}
       <View className="card progress-card">
         <View className="card-title">
           <Text className="title-icon">📊</Text>
@@ -291,47 +243,7 @@ export default function DietRecommendationPage() {
         </View>
       </View>
 
-      {/* 健康状态卡片 */}
-      {recommendation.health_status && Object.keys(recommendation.health_status).length > 0 && (
-        <View className="card health-status-card">
-          <View className="card-title">
-            <Text className="title-icon">💪</Text>
-            <Text className="title-text">健康状态</Text>
-          </View>
-          <View className="health-grid">
-            {recommendation.health_status.sleep_score !== undefined && (
-              <View className="health-item">
-                <Text className="health-icon">😴</Text>
-                <Text className="health-label">睡眠评分</Text>
-                <Text className="health-value">{recommendation.health_status.sleep_score}/100</Text>
-              </View>
-            )}
-            {recommendation.health_status.body_battery !== undefined && (
-              <View className="health-item">
-                <Text className="health-icon">🔋</Text>
-                <Text className="health-label">身体电量</Text>
-                <Text className="health-value">{recommendation.health_status.body_battery}/100</Text>
-              </View>
-            )}
-            {recommendation.health_status.stress_level !== undefined && (
-              <View className="health-item">
-                <Text className="health-icon">😌</Text>
-                <Text className="health-label">压力水平</Text>
-                <Text className="health-value">{recommendation.health_status.stress_level}/100</Text>
-              </View>
-            )}
-            {recommendation.health_status.resting_hr !== undefined && (
-              <View className="health-item">
-                <Text className="health-icon">❤️</Text>
-                <Text className="health-label">静息心率</Text>
-                <Text className="health-value">{recommendation.health_status.resting_hr} bpm</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* 警告卡片 */}
+      {/* 第二优先级：警告卡片 */}
       {recommendation.warnings && recommendation.warnings.length > 0 && (
         <View className="card warnings-card">
           <View className="card-title">
@@ -346,7 +258,7 @@ export default function DietRecommendationPage() {
         </View>
       )}
 
-      {/* 健康提示卡片 */}
+      {/* 第三优先级：健康提示卡片 */}
       {recommendation.tips && recommendation.tips.length > 0 && (
         <View className="card tips-card">
           <View className="card-title">
@@ -361,7 +273,7 @@ export default function DietRecommendationPage() {
         </View>
       )}
 
-      {/* 食物推荐卡片 */}
+      {/* 第四优先级：食物推荐卡片 */}
       {recommendation.food_recommendations && recommendation.food_recommendations.length > 0 && (
         <View className="card food-recommendations-card">
           <View className="card-title">
@@ -392,6 +304,105 @@ export default function DietRecommendationPage() {
             </View>
           ))}
         </View>
+      )}
+
+      {/* Debug 模式：详细数据 */}
+      {showDebugInfo && (
+        <>
+          {/* 个人信息卡片 */}
+          <View className="card user-info-card">
+            <View className="card-title">
+              <Text className="title-icon">👤</Text>
+              <Text className="title-text">个人信息</Text>
+            </View>
+            <View className="info-grid">
+              <View className="info-item">
+                <Text className="info-label">年龄</Text>
+                <Text className="info-value">{recommendation.user_info.age}岁</Text>
+              </View>
+              <View className="info-item">
+                <Text className="info-label">性别</Text>
+                <Text className="info-value">{recommendation.user_info.gender === 'male' ? '男' : '女'}</Text>
+              </View>
+              <View className="info-item">
+                <Text className="info-label">身高</Text>
+                <Text className="info-value">{recommendation.user_info.height_cm}cm</Text>
+              </View>
+              <View className="info-item">
+                <Text className="info-label">体重</Text>
+                <Text className="info-value">{recommendation.user_info.current_weight_kg}kg</Text>
+              </View>
+              <View className="info-item">
+                <Text className="info-label">目标</Text>
+                <Text className="info-value">{getWeightGoalText(recommendation.user_info.weight_goal)}</Text>
+              </View>
+              <View className="info-item">
+                <Text className="info-label">活动</Text>
+                <Text className="info-value">{getActivityLevelText(recommendation.user_info.activity_level)}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* 代谢信息卡片 */}
+          <View className="card metabolism-card">
+            <View className="card-title">
+              <Text className="title-icon">🔥</Text>
+              <Text className="title-text">代谢信息</Text>
+            </View>
+            <View className="metabolism-grid">
+              <View className="metabolism-item">
+                <Text className="metabolism-label">基础代谢 (BMR)</Text>
+                <Text className="metabolism-value">{recommendation.metabolism.bmr}</Text>
+                <Text className="metabolism-unit">kcal/天</Text>
+              </View>
+              <View className="metabolism-item">
+                <Text className="metabolism-label">总消耗 (TDEE)</Text>
+                <Text className="metabolism-value">{recommendation.metabolism.tdee}</Text>
+                <Text className="metabolism-unit">kcal/天</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* 健康状态卡片 */}
+          {recommendation.health_status && Object.keys(recommendation.health_status).length > 0 && (
+            <View className="card health-status-card">
+              <View className="card-title">
+                <Text className="title-icon">💪</Text>
+                <Text className="title-text">健康状态</Text>
+              </View>
+              <View className="health-grid">
+                {recommendation.health_status.sleep_score !== undefined && (
+                  <View className="health-item">
+                    <Text className="health-icon">😴</Text>
+                    <Text className="health-label">睡眠评分</Text>
+                    <Text className="health-value">{recommendation.health_status.sleep_score}/100</Text>
+                  </View>
+                )}
+                {recommendation.health_status.body_battery !== undefined && (
+                  <View className="health-item">
+                    <Text className="health-icon">🔋</Text>
+                    <Text className="health-label">身体电量</Text>
+                    <Text className="health-value">{recommendation.health_status.body_battery}/100</Text>
+                  </View>
+                )}
+                {recommendation.health_status.stress_level !== undefined && (
+                  <View className="health-item">
+                    <Text className="health-icon">😌</Text>
+                    <Text className="health-label">压力水平</Text>
+                    <Text className="health-value">{recommendation.health_status.stress_level}/100</Text>
+                  </View>
+                )}
+                {recommendation.health_status.resting_hr !== undefined && (
+                  <View className="health-item">
+                    <Text className="health-icon">❤️</Text>
+                    <Text className="health-label">静息心率</Text>
+                    <Text className="health-value">{recommendation.health_status.resting_hr} bpm</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+        </>
       )}
 
       {/* 科学见解卡片 */}
