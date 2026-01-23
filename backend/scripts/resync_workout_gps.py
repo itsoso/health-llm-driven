@@ -46,8 +46,8 @@ async def resync_workout_gps(user_id: int, workout_ids: list):
         logger.info(f"服务器类型: {'中国版' if cred.is_cn else '国际版'}")
         
         # 解密密码
-        from app.services.auth import decrypt_garmin_password
-        password = decrypt_garmin_password(cred.encrypted_password)
+        from app.services.auth import GarminCredentialService
+        password = GarminCredentialService.decrypt_password(cred.encrypted_password)
         
         # 创建同步服务
         sync_service = WorkoutSyncService(
