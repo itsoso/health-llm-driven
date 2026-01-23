@@ -295,7 +295,7 @@ class DietRecommendationService:
             'body_battery': recent_data.body_battery_current,
             'stress_level': recent_data.stress_level,
             'resting_hr': recent_data.resting_heart_rate,
-            'hrv': recent_data.hrv_avg
+            'hrv': recent_data.hrv  # 使用当日 HRV，如果为空则使用 7 天平均
         }
         
         logger.info(f"[饮食推荐] 健康状态: 睡眠{status['sleep_score']}/100, 身体电量{status['body_battery']}, 压力{status['stress_level']}")
