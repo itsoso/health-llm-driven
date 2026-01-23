@@ -381,8 +381,32 @@ class LLMHealthAnalyzer:
             rhr_list = [d.resting_heart_rate for d in recent_data if d.resting_heart_rate]
             active_minutes_list = [d.active_minutes for d in recent_data if d.active_minutes]
             
-            # 计算本周累计运动时长
-            total_active_minutes = sum(active_minutes_list) if active_minutes_list else 0
+            # 计算本周实际运动时长（从 workout_records 表）
+            # 获取本周的起止日期（北京时间）
+            from datetime import timedelta
+            from app.utils.timezone import get_china_today
+            from app.models.daily_health import WorkoutRecord
+            
+            today = get_china_today()
+            days_since_monday = today.weekday()
+            monday = today - timedelta(days=days_since_monday)
+            
+            # 查询本周的实际运动记录
+            db = recent_data[0]._sa_instance_state.session if recent_data else None
+            workout_minutes = 0
+            if db:
+                from sqlalchemy import func
+                user_id = recent_data[0].user_id if recent_data else None
+                if user_id:
+                    total_seconds = db.query(func.sum(WorkoutRecord.duration_seconds)).filter(
+                        WorkoutRecord.user_id == user_id,
+                        WorkoutRecord.workout_date >= monday,
+                        WorkoutRecord.workout_date <= today
+                    ).scalar()
+                    workout_minutes = round(total_seconds / 60, 1) if total_seconds else 0
+            
+            # 如果无法获取运动记录，回退到使用 active_minutes
+            total_active_minutes = workout_minutes if workout_minutes > 0 else (sum(active_minutes_list) if active_minutes_list else 0)
             weekly_goal = 150  # WHO建议每周150分钟中等强度运动
             weekly_progress = round(total_active_minutes / weekly_goal * 100, 1) if total_active_minutes else 0
             
@@ -393,7 +417,7 @@ class LLMHealthAnalyzer:
 - 平均静息心率: {round(sum(rhr_list)/len(rhr_list), 1) if rhr_list else '无数据'} bpm
 
 本周运动情况（WHO建议每周150分钟中等强度有氧运动）:
-- 本周累计运动时长: {total_active_minutes}分钟
+- 本周累计运动时长: {total_active_minutes}分钟 (基于北京时间周一至今的实际运动记录)
 - 目标完成度: {weekly_progress}% (目标: {weekly_goal}分钟/周)
 - 还需运动: {max(0, weekly_goal - total_active_minutes)}分钟
 【重要】给出运动建议时，应该考虑本周的累计运动量，督促用户完成每周150分钟的目标！

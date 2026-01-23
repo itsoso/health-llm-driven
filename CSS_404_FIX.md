@@ -1,153 +1,221 @@
-# CSS 404 错误修复 ✅
+# CSS 404 错误修复报告
 
-> 修复时间: 2026-01-22 14:50
+## 🐛 问题描述
 
-## 🐛 问题
-
-浏览器控制台报错：
 ```
-GET https://health.westwetlandtech.com/_next/static/css/a86b4103c59047a9.css 
-net::ERR_ABORTED 400 (Bad Request)
+GET https://health.westwetlandtech.com/_next/static/css/1a677b9a21037a19.css 
+net::ERR_ABORTED 404 (Not Found)
 ```
 
-## 🔍 原因分析
+用户访问 `https://health.westwetlandtech.com/diet-recommendation` 时，页面返回 404 错误。
 
-### 1. 文件名不匹配
+## 🔍 问题排查过程
 
-**服务器上的实际文件**：
+### 1. 初步诊断
+- ✅ PM2 服务运行正常
+- ✅ 静态文件已生成
+- ✅ Next.js 本地访问正常（`localhost:3000` 返回 200）
+- ❌ 通过 Nginx 访问返回 404
+
+### 2. 深入排查
+
+#### 2.1 检查 Next.js 服务
+```bash
+curl -I http://localhost:3000/diet-recommendation
+# 结果: HTTP/1.1 200 OK ✅
 ```
-/opt/health-app/frontend/.next/static/css/
-├── e3d872a7299a724b.css  ✅ 存在
-└── fc1c9daac70c093b.css  ✅ 存在
+
+#### 2.2 检查 Nginx 代理
+```bash
+curl -I https://health.westwetlandtech.com/diet-recommendation
+# 结果: HTTP/2 404 ❌
 ```
 
-**浏览器请求的文件**：
+#### 2.3 检查 Nginx 配置
+```bash
+cat /etc/nginx/conf.d/health.westwetlandtech.com.conf
 ```
-a86b4103c59047a9.css  ❌ 不存在（旧版本）
+
+**发现问题**：
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:30001;  # ❌ 错误端口
+    ...
+}
+
+location /_next/static/ {
+    proxy_pass http://127.0.0.1:30001;  # ❌ 错误端口
+    ...
+}
 ```
 
-### 2. 根本原因
-
-**Next.js 构建机制**：
-- 每次构建时，CSS 文件名会根据内容生成哈希值
-- 文件名格式：`[contenthash].css`
-- 构建 ID 变化：旧版本 → 新版本 `8b1WBOS7fQXOrkkodZT9r`
-
-**浏览器缓存问题**：
-- 浏览器缓存了旧的 HTML 文件
-- HTML 中引用的是旧的 CSS 文件名
-- 服务器上只有新的 CSS 文件
+**实际情况**：
+- PM2 运行在端口 `3000`
+- Nginx 代理到端口 `30001`（不存在）
 
 ## ✅ 解决方案
 
-### 1. 服务器端修复
+### 修复 Nginx 配置
 
 ```bash
-# 完全重启前端服务（清除进程缓存）
-pm2 delete health-frontend
-pm2 start npm --name health-frontend -- start
-pm2 save
+# 1. 修改 Nginx 配置，将端口从 30001 改为 3000
+sed -i 's/127.0.0.1:30001/127.0.0.1:3000/g' /etc/nginx/conf.d/health.westwetlandtech.com.conf
 
-# 重新加载 Nginx
+# 2. 测试配置
 nginx -t
+
+# 3. 重新加载 Nginx
 systemctl reload nginx
 ```
 
-### 2. 客户端修复（用户操作）
-
-**方法 1：强制刷新（推荐）**
-- Windows/Linux: `Ctrl + Shift + R`
-- Mac: `Cmd + Shift + R`
-
-**方法 2：清除浏览器缓存**
-1. 打开开发者工具（F12）
-2. 右键点击刷新按钮
-3. 选择"清空缓存并硬性重新加载"
-
-**方法 3：隐私模式**
-- 使用浏览器的隐私/无痕模式访问
-
-**方法 4：清除站点数据**
-```
-Chrome: 设置 → 隐私和安全 → 网站设置 → 查看所有网站的权限和数据
-找到 health.westwetlandtech.com → 清除数据
-```
-
-## 🔧 预防措施
-
-### 1. 添加 Cache-Control 头
-
-建议在 Nginx 配置中为 HTML 文件禁用缓存：
+### 修复后的配置
 
 ```nginx
-location / {
-    proxy_pass http://127.0.0.1:3000;
+server {
+    listen 443 ssl;
+    server_name health.westwetlandtech.com;
     
-    # 对 HTML 文件禁用缓存
-    location ~* \.html$ {
-        proxy_pass http://127.0.0.1:3000;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-        add_header Pragma "no-cache";
-        add_header Expires "0";
+    # Next.js 静态资源
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:3000;  # ✅ 正确端口
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+        expires off;
     }
-    
-    # 静态资源长期缓存
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        proxy_pass http://127.0.0.1:3000;
-        add_header Cache-Control "public, max-age=31536000, immutable";
+
+    # 前端应用
+    location / {
+        proxy_pass http://127.0.0.1:3000;  # ✅ 正确端口
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
     }
 }
 ```
 
-### 2. 使用版本号
+## 🧪 验证结果
 
-在部署时可以添加版本参数：
-```
-https://health.westwetlandtech.com/?v=20260122
-```
-
-## 📊 验证
-
-### 检查当前 BUILD_ID
+### 1. HTTP 状态码
 ```bash
-cat /opt/health-app/frontend/.next/BUILD_ID
-# 输出: 8b1WBOS7fQXOrkkodZT9r
+curl -I https://health.westwetlandtech.com/diet-recommendation
 ```
 
-### 检查 CSS 文件
+**结果**：
+```
+HTTP/2 200 ✅
+server: nginx/1.18.0 (Ubuntu)
+content-type: text/html; charset=utf-8
+x-powered-by: Next.js
+x-nextjs-cache: HIT
+```
+
+### 2. 页面访问
+- ✅ `https://health.westwetlandtech.com/diet-recommendation` 正常访问
+- ✅ CSS 文件正常加载
+- ✅ API 请求正常（`/api/v1/diet-recommendation/me`）
+
+### 3. 功能验证
+- ✅ 个人信息卡片显示
+- ✅ 代谢信息卡片显示
+- ✅ 营养进度条显示
+- ✅ 健康状态显示
+- ✅ 智能警告显示
+- ✅ 食物推荐显示
+
+## 📊 部署状态
+
+### 服务状态
+```
+✅ Backend API (FastAPI):  http://127.0.0.1:8000
+✅ Frontend (Next.js):     http://127.0.0.1:3000
+✅ Nginx Proxy:            https://health.westwetlandtech.com
+```
+
+### PM2 进程
+```
+┌────┬──────────────────┬─────────┬────────┐
+│ id │ name             │ status  │ uptime │
+├────┼──────────────────┼─────────┼────────┤
+│ 1  │ health-frontend  │ online  │ 5m     │
+└────┴──────────────────┴─────────┴────────┘
+```
+
+## 🎯 根本原因
+
+**端口配置不一致**：
+- PM2 启动的 Next.js 服务运行在端口 `3000`
+- Nginx 配置中代理到端口 `30001`（可能是历史遗留配置）
+- 导致 Nginx 无法正确代理请求到 Next.js
+
+## 🔧 其他修复
+
+在排查过程中，还进行了以下操作：
+
+### 1. 清理构建缓存
 ```bash
-ls /opt/health-app/frontend/.next/static/css/
-# 输出:
-# e3d872a7299a724b.css
-# fc1c9daac70c093b.css
+cd /opt/health-app/frontend
+rm -rf .next node_modules/.cache
+npm run build
 ```
 
-### 验证前端服务
+### 2. 重启 PM2 服务
 ```bash
-pm2 status health-frontend
-# 应该显示 online 状态
+pm2 restart health-frontend
 ```
 
-## 🎯 用户操作指南
+### 3. 重新加载 Nginx
+```bash
+nginx -t
+systemctl reload nginx
+```
 
-如果遇到 CSS 404 错误：
+## 📝 经验教训
 
-1. **第一步：强制刷新**
-   - `Ctrl + Shift + R` (Windows/Linux)
-   - `Cmd + Shift + R` (Mac)
+1. **配置一致性**：确保 Nginx 配置中的端口与实际运行的服务端口一致
+2. **分层排查**：从内到外排查（Next.js → Nginx → 外部访问）
+3. **日志检查**：查看 PM2 和 Nginx 日志以快速定位问题
+4. **配置管理**：建议使用环境变量或配置文件管理端口，避免硬编码
 
-2. **第二步：清除缓存**
-   - 打开开发者工具（F12）
-   - 右键刷新按钮 → "清空缓存并硬性重新加载"
+## 🚀 后续建议
 
-3. **第三步：隐私模式**
-   - 如果还不行，尝试隐私/无痕模式
+### 1. 配置文档化
+创建 `NGINX_CONFIG.md` 记录所有 Nginx 配置和端口映射
 
-4. **第四步：联系管理员**
-   - 如果以上都不行，可能是服务器问题
+### 2. 健康检查
+添加定期健康检查脚本：
+```bash
+#!/bin/bash
+# health-check.sh
+curl -f https://health.westwetlandtech.com/diet-recommendation || exit 1
+curl -f https://health.westwetlandtech.com/api/health || exit 1
+```
+
+### 3. 监控告警
+配置监控系统（如 Prometheus + Grafana）监控服务可用性
+
+## ✅ 最终状态
+
+**问题已完全解决**：
+- ✅ Nginx 配置已修复（端口 30001 → 3000）
+- ✅ 页面可正常访问
+- ✅ CSS 文件正常加载
+- ✅ API 请求正常
+- ✅ 所有功能正常工作
 
 ---
 
-**修复完成！** 🎉
+**修复时间**: 2026-01-23 00:03:39 UTC+8
 
-服务器端已重启，用户需要**强制刷新浏览器**（Ctrl+Shift+R）即可解决。
+**修复人员**: AI Assistant
+
+**影响范围**: Web 前端所有页面
+
+**停机时间**: 无（配置热重载）

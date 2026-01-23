@@ -300,6 +300,8 @@ class DailyRecommendationService:
             return analysis
         
         steps = yesterday.steps
+        # 注意：这里的 active_minutes 是 Garmin 记录的全天活动分钟数
+        # 不是实际的运动训练时间（运动训练时间在 workout_records 表中）
         active_minutes = yesterday.active_minutes or 0
         calories = yesterday.calories_burned
         
