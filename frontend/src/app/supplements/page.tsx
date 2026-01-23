@@ -6,6 +6,7 @@ import { supplementApi } from '@/services/api';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import Link from 'next/link';
 
 const TIMING_OPTIONS = [
   { value: 'morning', label: '🌅 早晨', color: 'bg-orange-100 border-orange-300' },
@@ -143,12 +144,20 @@ function SupplementsContent() {
             onChange={(e) => setSelectedDate(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500"
           />
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md transition-all"
-          >
-            {showAddForm ? '取消' : '+ 添加补剂'}
-          </button>
+          <div className="flex gap-3">
+            <Link
+              href="/supplement-recommendation"
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 shadow-md transition-all"
+            >
+              🤖 科学推荐
+            </Link>
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md transition-all"
+            >
+              {showAddForm ? '取消' : '+ 添加补剂'}
+            </button>
+          </div>
         </div>
 
         {/* 添加补剂表单 */}

@@ -236,6 +236,9 @@ export const supplementApi = {
     api.get(`/supplements/me/date/${recordDate}`),
   getMyStats: (days: number = 7) =>
     api.get('/supplements/me/stats', { params: { days } }),
+  // 科学推荐
+  getScientificRecommendation: (targetDate?: string, debug: boolean = false) =>
+    api.post('/supplements/scientific-recommendation', { target_date: targetDate, debug }),
 };
 
 // 习惯追踪 API（已废弃，模块已移除）
