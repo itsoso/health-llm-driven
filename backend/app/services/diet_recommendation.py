@@ -291,7 +291,7 @@ class DietRecommendationService:
         
         status = {
             'sleep_score': recent_data.sleep_score,
-            'sleep_hours': recent_data.sleep_duration_hours,
+            'sleep_hours': round(recent_data.total_sleep_duration / 60, 1) if recent_data.total_sleep_duration else None,
             'body_battery': recent_data.body_battery_current,
             'stress_level': recent_data.stress_level,
             'resting_hr': recent_data.resting_heart_rate,
