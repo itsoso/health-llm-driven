@@ -324,6 +324,12 @@ $gap-lg: 20px;
 
 .section-icon { font-size: 26px; }
 .section-title { font-size: 26px; font-weight: 600; }
+.section-subtitle { 
+  font-size: 20px; 
+  color: $text-gray-400; 
+  margin-left: auto;
+  font-weight: 400;
+}
 
 // ==================== 当前提醒 ====================
 .reminder-card {
@@ -334,6 +340,18 @@ $gap-lg: 20px;
   display: flex;
   align-items: center;
   gap: $gap-md;
+  position: relative;
+  transition: all 0.3s ease;
+
+  &.clickable {
+    cursor: pointer;
+    
+    &:active {
+      transform: scale(0.98);
+      background: rgba($card-dark, 0.9);
+      border-color: $accent-yellow;
+    }
+  }
 }
 
 .reminder-emoji { 
@@ -381,10 +399,23 @@ $gap-lg: 20px;
   }
 }
 
+.reminder-arrow {
+  font-size: 32px;
+  color: $accent-yellow;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: all 0.3s ease;
+
+  .clickable:active & {
+    opacity: 1;
+    transform: translateX(4px);
+  }
+}
+
 // ==================== 快捷功能 ====================
 .quick-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: $gap-sm;
 }
 

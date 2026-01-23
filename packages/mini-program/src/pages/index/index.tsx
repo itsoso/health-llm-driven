@@ -69,7 +69,7 @@ export default function Index() {
   });
 
   useEffect(() => {
-    checkLoginStatus();
+    // 仅处理时间更新
     const updateTime = () => {
       const now = new Date();
       setCurrentTime(now.toLocaleTimeString('zh-CN', { 
@@ -84,12 +84,8 @@ export default function Index() {
   }, []);
 
   Taro.useDidShow(() => {
-    const token = getToken();
-    if (token) {
-      loadHomeData();
-    } else {
-      checkLoginStatus();
-    }
+    // 统一在这里处理登录检查和数据加载
+    checkLoginStatus();
   });
 
   const checkLoginStatus = async () => {
@@ -98,11 +94,42 @@ export default function Index() {
     if (token) {
       const storedName = Taro.getStorageSync('user_name');
       setUserName(storedName || '自由是自律的泡沫用户');
+      // loadHomeData 内部已经有防重复逻辑
       loadHomeData();
     }
   };
 
+  // 处理提醒点击，跳转到对应打卡页面
+  const handleReminderClick = (reminder: HealthReminder) => {
+    const typeToPageMap: Record<string, string> = {
+      'nasal_wash': '/pages/rhinitis/index',     // 洗鼻 → 鼻炎记录页
+      'drink_water': '/pages/water/index',        // 喝水 → 喝水记录页
+      'supplement': '/pages/supplements/index',   // 补剂 → 补剂记录页
+      'exercise': '/pages/workout/index',         // 运动 → 运动记录页
+      'weigh': '/pages/weight/index',            // 称重 → 体重记录页
+      'meal': '/pages/diet/index',               // 用餐 → 饮食记录页
+    };
+
+    const targetPage = typeToPageMap[reminder.type];
+    if (targetPage) {
+      Taro.navigateTo({ url: targetPage });
+    } else {
+      // 如果没有匹配的页面，显示提示
+      Taro.showToast({
+        title: '暂无对应打卡页面',
+        icon: 'none',
+        duration: 2000
+      });
+    }
+  };
+
   const loadHomeData = async () => {
+    // 使用 ref 来防止重复加载
+    if (homeData.loading) {
+      console.log('[首页] 正在加载中，跳过重复请求');
+      return;
+    }
+    
     setHomeData(prev => ({ ...prev, loading: true }));
     
     try {
@@ -139,7 +166,9 @@ export default function Index() {
         }
       }
 
-      setHomeData({
+      // 使用函数式更新，确保状态一致性
+      setHomeData(prev => ({
+        ...prev,
         garmin: garminData.status === 'fulfilled' ? garminData.value : null,
         recommendation: recommendationData.status === 'fulfilled' ? recommendationData.value : null,
         rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
@@ -151,7 +180,7 @@ export default function Index() {
         schedule: scheduleData.status === 'fulfilled' ? (scheduleData.value?.schedule || []) : [],
         workoutGuidance,
         loading: false,
-      });
+      }));
     } catch (error) {
       console.error('[首页] 加载数据异常:', error);
       setHomeData(prev => ({ ...prev, loading: false }));
@@ -379,8 +408,12 @@ export default function Index() {
           <View className="section-header yellow">
             <Text className="section-icon">🔔</Text>
             <Text className="section-title">当前提醒</Text>
+            <Text className="section-subtitle">点击立即打卡</Text>
           </View>
-          <View className="reminder-card">
+          <View 
+            className="reminder-card clickable" 
+            onClick={() => handleReminderClick(homeData.reminders[0])}
+          >
             <Text className="reminder-emoji">{homeData.reminders[0].title.split(' ')[0] || '💊'}</Text>
             <View className="reminder-info">
               <Text className="reminder-title">{homeData.reminders[0].title.replace(/^[^\s]+\s/, '')}</Text>
@@ -388,6 +421,9 @@ export default function Index() {
             </View>
             <View className="reminder-time-badge">
               <Text>{homeData.reminders[0].scheduled_time}</Text>
+            </View>
+            <View className="reminder-arrow">
+              <Text>→</Text>
             </View>
           </View>
         </View>
@@ -400,12 +436,6 @@ export default function Index() {
           <Text className="section-title">快捷功能</Text>
         </View>
         <View className="quick-grid">
-          <View className="quick-item" onClick={() => handleQuickNav('checkin')}>
-            <View className="quick-icon-wrap blue">
-              <Image className="quick-icon-img" src={require('../../assets/icons/quick-checkin.png')} />
-            </View>
-            <Text className="quick-label">每日打卡</Text>
-          </View>
           <View className="quick-item" onClick={() => handleNavToPage('diet')}>
             <View className="quick-icon-wrap yellow">
               <Image className="quick-icon-img" src={require('../../assets/icons/quick-diet.png')} />
