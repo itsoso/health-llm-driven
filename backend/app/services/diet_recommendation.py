@@ -3,6 +3,7 @@
 基于用户目标、运动状态、睡眠质量等多维数据，提供个性化饮食建议
 """
 import logging
+import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
@@ -28,6 +29,32 @@ class DietRecommendationService:
             'knowledge',
             'nutrition_knowledge.md'
         )
+    
+    @staticmethod
+    def _parse_json_field(field_value: Any) -> List:
+        """
+        解析 JSON 字段，处理可能是字符串的情况
+        
+        Args:
+            field_value: 字段值（可能是列表或 JSON 字符串）
+            
+        Returns:
+            解析后的列表
+        """
+        if not field_value:
+            return []
+        
+        if isinstance(field_value, list):
+            return field_value
+        
+        if isinstance(field_value, str):
+            try:
+                parsed = json.loads(field_value)
+                return parsed if isinstance(parsed, list) else []
+            except:
+                return []
+        
+        return []
     
     def calculate_bmr(self, gender: str, weight_kg: float, height_cm: float, age: int) -> float:
         """
@@ -351,14 +378,14 @@ class DietRecommendationService:
             tips.append("⚡ 身体电量较低，建议补充优质碳水和蛋白质恢复能量")
         
         # 5. 慢性病相关警告
-        chronic_conditions = profile.chronic_conditions or []
+        chronic_conditions = self._parse_json_field(profile.chronic_conditions)
         if '高血压' in chronic_conditions:
             warnings.append("🩺 注意控制钠摄入（<2000mg/天），少吃腌制食品")
         if '糖尿病' in chronic_conditions:
             warnings.append("🩺 注意控制碳水总量，选择低GI食物，避免血糖波动")
         
         # 6. 过敏源警告
-        allergies = profile.allergies or []
+        allergies = self._parse_json_field(profile.allergies)
         if allergies:
             warnings.append(f"🚫 过敏提醒：避免 {', '.join(allergies)}")
         
@@ -395,8 +422,8 @@ class DietRecommendationService:
         recommendations = []
         
         # 获取过敏源和慢性病
-        allergies = profile.allergies or []
-        chronic_conditions = profile.chronic_conditions or []
+        allergies = self._parse_json_field(profile.allergies)
+        chronic_conditions = self._parse_json_field(profile.chronic_conditions)
         diet_preference = profile.diet_preference
         
         # 1. 高蛋白食物推荐（如果蛋白质不足）
@@ -698,7 +725,7 @@ class DietRecommendationService:
                 query_parts.append("维持体重的营养素分配")
             
             # 2. 慢性病相关查询
-            chronic_conditions = profile.chronic_conditions or []
+            chronic_conditions = self._parse_json_field(profile.chronic_conditions)
             if '高血压' in chronic_conditions:
                 query_parts.append("高血压患者的DASH饮食原则")
             if '糖尿病' in chronic_conditions:
