@@ -53,6 +53,16 @@ async def resync_workout_gps(user_id: int, workout_ids: list):
             is_cn=cred.is_cn
         )
         
+        # 尝试认证（使用缓存的 session）
+        logger.info("正在认证 Garmin Connect...")
+        try:
+            await sync_service._authenticate(db)
+            logger.info("✅ Garmin Connect 认证成功")
+        except Exception as e:
+            logger.error(f"❌ Garmin Connect 认证失败: {e}")
+            logger.error("请确保用户的 Garmin 凭证有效且 session 未过期")
+            return
+        
         success_count = 0
         failed_count = 0
         
