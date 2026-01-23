@@ -67,7 +67,36 @@ function SupplementRecommendationContent() {
       setLoading(true)
       setError(null)
       const response = await supplementApi.getScientificRecommendation(undefined, showDebugInfo)
-      setRecommendation(response.data)
+      
+      console.log('[补剂推荐] API 返回数据:', response.data)
+      
+      // 验证并添加默认值
+      const validatedData = {
+        ...response.data,
+        rating: response.data.rating || {
+          score: 0,
+          level: '评估中',
+          emoji: '⭐',
+          message: '正在分析您的补剂方案'
+        },
+        analysis: response.data.analysis || {
+          sleep_quality: '未知',
+          stress_level: '未知',
+          exercise_intensity: '未知',
+          nutrition_status: '未知',
+          key_factors: []
+        },
+        recommendations: response.data.recommendations || [],
+        timing_suggestions: response.data.timing_suggestions || {
+          morning: [],
+          noon: [],
+          evening: [],
+          bedtime: []
+        },
+        precautions: response.data.precautions || []
+      }
+      
+      setRecommendation(validatedData)
     } catch (err: any) {
       console.error('加载补剂推荐失败:', err)
       setError(err.response?.data?.detail || '加载推荐失败，请稍后重试')
@@ -149,51 +178,54 @@ function SupplementRecommendationContent() {
         </div>
 
         {/* 评分卡片 */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl shadow-xl p-8 mb-6 text-white">
-          <div className="text-center">
-            <div className="text-7xl mb-4">{recommendation.rating.emoji}</div>
-            <div className="text-5xl font-bold mb-2">{recommendation.rating.score}</div>
-            <div className="text-2xl font-semibold mb-2">{recommendation.rating.level}</div>
-            <p className="text-purple-100 text-lg">{recommendation.rating.message}</p>
+        {recommendation.rating && (
+          <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl shadow-xl p-8 mb-6 text-white">
+            <div className="text-center">
+              <div className="text-7xl mb-4">{recommendation.rating.emoji || '⭐'}</div>
+              <div className="text-5xl font-bold mb-2">{recommendation.rating.score || 0}</div>
+              <div className="text-2xl font-semibold mb-2">{recommendation.rating.level || '评估中'}</div>
+              <p className="text-purple-100 text-lg">{recommendation.rating.message || '正在分析您的补剂方案'}</p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 健康分析 */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <ChartBarIcon className="w-6 h-6 text-purple-600" />
-            健康状态分析
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
-              <div className="flex items-center gap-2 mb-2">
-                <MoonIcon className="w-5 h-5 text-blue-600" />
-                <span className="font-semibold text-gray-800">睡眠质量</span>
+        {recommendation.analysis && (
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <ChartBarIcon className="w-6 h-6 text-purple-600" />
+              健康状态分析
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <MoonIcon className="w-5 h-5 text-blue-600" />
+                  <span className="font-semibold text-gray-800">睡眠质量</span>
+                </div>
+                <div className="text-2xl font-bold text-blue-700">{recommendation.analysis.sleep_quality || '未知'}</div>
               </div>
-              <div className="text-2xl font-bold text-blue-700">{recommendation.analysis.sleep_quality}</div>
-            </div>
-            <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
-              <div className="flex items-center gap-2 mb-2">
-                <BoltIcon className="w-5 h-5 text-orange-600" />
-                <span className="font-semibold text-gray-800">压力水平</span>
+              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <BoltIcon className="w-5 h-5 text-orange-600" />
+                  <span className="font-semibold text-gray-800">压力水平</span>
+                </div>
+                <div className="text-2xl font-bold text-orange-700">{recommendation.analysis.stress_level || '未知'}</div>
               </div>
-              <div className="text-2xl font-bold text-orange-700">{recommendation.analysis.stress_level}</div>
-            </div>
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
-              <div className="flex items-center gap-2 mb-2">
-                <FireIcon className="w-5 h-5 text-green-600" />
-                <span className="font-semibold text-gray-800">运动强度</span>
+              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <FireIcon className="w-5 h-5 text-green-600" />
+                  <span className="font-semibold text-gray-800">运动强度</span>
+                </div>
+                <div className="text-2xl font-bold text-green-700">{recommendation.analysis.exercise_intensity || '未知'}</div>
               </div>
-              <div className="text-2xl font-bold text-green-700">{recommendation.analysis.exercise_intensity}</div>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-              <div className="flex items-center gap-2 mb-2">
-                <HeartIcon className="w-5 h-5 text-purple-600" />
-                <span className="font-semibold text-gray-800">营养状态</span>
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <HeartIcon className="w-5 h-5 text-purple-600" />
+                  <span className="font-semibold text-gray-800">营养状态</span>
+                </div>
+                <div className="text-2xl font-bold text-purple-700">{recommendation.analysis.nutrition_status || '未知'}</div>
               </div>
-              <div className="text-2xl font-bold text-purple-700">{recommendation.analysis.nutrition_status}</div>
             </div>
-          </div>
 
           {/* 关键因素 */}
           {recommendation.analysis.key_factors && recommendation.analysis.key_factors.length > 0 && (
@@ -214,13 +246,14 @@ function SupplementRecommendationContent() {
         </div>
 
         {/* 推荐补剂 */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <SparklesIcon className="w-6 h-6 text-purple-600" />
-            推荐补剂清单
-          </h2>
-          <div className="space-y-4">
-            {recommendation.recommendations.map((rec, idx) => (
+        {recommendation.recommendations && recommendation.recommendations.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <SparklesIcon className="w-6 h-6 text-purple-600" />
+              推荐补剂清单
+            </h2>
+            <div className="space-y-4">
+              {recommendation.recommendations.map((rec, idx) => (
               <div
                 key={idx}
                 className={`rounded-xl p-5 border-2 transition-all hover:shadow-md ${
@@ -254,12 +287,14 @@ function SupplementRecommendationContent() {
                   </div>
                 </div>
               </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 服用时机建议 */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-200">
+        {recommendation.timing_suggestions && (
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-200">
           <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
             <ClockIcon className="w-6 h-6 text-purple-600" />
             每日服用时间表
@@ -322,7 +357,8 @@ function SupplementRecommendationContent() {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        )}
 
         {/* 注意事项 */}
         {recommendation.precautions && recommendation.precautions.length > 0 && (
