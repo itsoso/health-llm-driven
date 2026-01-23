@@ -50,34 +50,78 @@ $indigo: #6366F1;
 
 // 头部统计
 .header-stats {
-  display: flex;
-  justify-content: space-around;
-  background: $card-dark;
+  background: linear-gradient(135deg, $green, #14B8A6);
   border-radius: 24rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
-  border: 1px solid $card-border;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.stat-item {
+.stat-left {
+  flex: 1;
+}
+
+.stat-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 12rpx;
+  display: block;
+}
+
+.date-picker {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 8rpx;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 8rpx 16rpx;
+  border-radius: 12rpx;
+  width: fit-content;
+}
+
+.date-text {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.date-icon {
+  font-size: 24rpx;
+}
+
+.stat-right {
+  text-align: right;
 }
 
 .stat-value {
   font-size: 48rpx;
   font-weight: bold;
-  color: $text-primary;
-  
-  &.green { color: $green; }
-  &.yellow { color: $yellow; }
+  color: #fff;
+  display: block;
 }
 
 .stat-label {
   font-size: 24rpx;
-  color: $text-secondary;
-  margin-top: 8rpx;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4rpx;
+  display: block;
+}
+
+.progress-bar {
+  margin-top: 12rpx;
+  height: 12rpx;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6rpx;
+  overflow: hidden;
+  width: 200rpx;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #fff;
+  border-radius: 6rpx;
+  transition: width 0.3s ease;
 }
 
 // 补剂列表
@@ -328,4 +372,79 @@ $indigo: #6366F1;
     background: linear-gradient(135deg, $indigo, $purple);
     color: #fff;
   }
+}
+
+// 统计部分
+.stats-section {
+  margin-top: 32rpx;
+  background: $card-dark;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  border: 1px solid $card-border;
+}
+
+.stats-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: $text-primary;
+  margin-bottom: 24rpx;
+  display: block;
+}
+
+.stat-item-row {
+  margin-bottom: 24rpx;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.stat-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.stat-name {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.stat-days {
+  font-size: 24rpx;
+  color: $text-secondary;
+}
+
+.stat-progress {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.stat-progress-bar {
+  flex: 1;
+  height: 12rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6rpx;
+  overflow: hidden;
+}
+
+.stat-progress-fill {
+  height: 100%;
+  border-radius: 6rpx;
+  transition: width 0.3s ease;
+  
+  &.green { background: $green; }
+  &.yellow { background: $yellow; }
+  &.red { background: #EF4444; }
+}
+
+.stat-percentage {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: $text-secondary;
+  min-width: 60rpx;
+  text-align: right;
 }

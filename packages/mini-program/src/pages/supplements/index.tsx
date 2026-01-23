@@ -2,7 +2,7 @@
  * 补剂服用打卡页面
  */
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Button, Input } from '@tarojs/components';
+import { View, Text, ScrollView, Button, Input, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { get, post, put } from '../../services/request';
 import './index.scss';
@@ -28,6 +28,14 @@ interface SupplementWithStatus {
   record: SupplementRecord | null;
 }
 
+interface SupplementStats {
+  supplement_id: number;
+  supplement_name: string;
+  taken_days: number;
+  total_days: number;
+  completion_rate: number;
+}
+
 const TIMING_OPTIONS = [
   { value: 'morning', label: '🌅 早晨', color: 'orange' },
   { value: 'noon', label: '☀️ 中午', color: 'yellow' },
@@ -47,6 +55,7 @@ const CATEGORY_OPTIONS = [
 export default function SupplementsPage() {
   const [loading, setLoading] = useState(true);
   const [supplements, setSupplements] = useState<SupplementWithStatus[]>([]);
+  const [stats, setStats] = useState<SupplementStats[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +76,7 @@ export default function SupplementsPage() {
       return;
     }
     loadData();
+    loadStats();
   }, [selectedDate]);
 
   const loadData = async () => {
@@ -80,6 +90,16 @@ export default function SupplementsPage() {
       Taro.showToast({ title: '加载失败', icon: 'none' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      // 使用与 Web 端一致的接口：/supplements/me/stats?days=7
+      const data = await get<{ data: SupplementStats[] }>('/supplements/me/stats?days=7');
+      setStats(data?.data || []);
+    } catch (error) {
+      console.error('加载统计数据失败:', error);
     }
   };
 
@@ -121,6 +141,7 @@ export default function SupplementsPage() {
         description: '',
       });
       loadData();
+      loadStats();
     } catch (error) {
       Taro.showToast({ title: '添加失败', icon: 'none' });
     } finally {
@@ -152,19 +173,29 @@ export default function SupplementsPage() {
     <View className="supplements-page">
       {/* 头部统计 */}
       <View className="header-stats">
-        <View className="stat-item">
-          <Text className="stat-value">{takenCount}/{totalCount}</Text>
-          <Text className="stat-label">今日服用</Text>
+        <View className="stat-left">
+          <Text className="stat-title">💊 今日补剂打卡</Text>
+          <Picker
+            mode="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.detail.value)}
+          >
+            <View className="date-picker">
+              <Text className="date-text">{selectedDate}</Text>
+              <Text className="date-icon">📅</Text>
+            </View>
+          </Picker>
         </View>
-        <View className="stat-item">
-          <Text className={`stat-value ${completionRate >= 80 ? 'green' : completionRate >= 50 ? 'yellow' : ''}`}>
-            {completionRate}%
-          </Text>
-          <Text className="stat-label">完成率</Text>
+        <View className="stat-right">
+          <Text className="stat-value">{takenCount}/{totalCount}</Text>
+          <Text className="stat-label">完成率 {completionRate}%</Text>
+          <View className="progress-bar">
+            <View className="progress-fill" style={`width: ${completionRate}%`} />
+          </View>
         </View>
       </View>
 
-      {/* 补剂列表 */}
+      {/* 补剂列表和统计 */}
       <ScrollView scrollY className="supplements-scroll" enhanced showScrollbar={false}>
         {supplements.length === 0 ? (
           <View className="empty-state">
@@ -201,6 +232,33 @@ export default function SupplementsPage() {
               </View>
             )
           ))
+        )}
+
+        {/* 最近7天统计 */}
+        {stats.length > 0 && (
+          <View className="stats-section">
+            <Text className="stats-title">📊 最近7天统计</Text>
+            {stats.map(stat => (
+              <View key={stat.supplement_id} className="stat-item-row">
+                <View className="stat-info">
+                  <Text className="stat-name">{stat.supplement_name}</Text>
+                  <Text className="stat-days">{stat.taken_days}/7天</Text>
+                </View>
+                <View className="stat-progress">
+                  <View className="stat-progress-bar">
+                    <View 
+                      className={`stat-progress-fill ${
+                        stat.completion_rate >= 80 ? 'green' :
+                        stat.completion_rate >= 50 ? 'yellow' : 'red'
+                      }`}
+                      style={`width: ${stat.completion_rate}%`}
+                    />
+                  </View>
+                  <Text className="stat-percentage">{stat.completion_rate}%</Text>
+                </View>
+              </View>
+            ))}
+          </View>
         )}
       </ScrollView>
 
