@@ -1488,9 +1488,33 @@ function WorkoutContent() {
                 {console.log('🔍 showPostAnalysis:', showPostAnalysis, 'postAnalysis:', postAnalysis)}
                 {showPostAnalysis && postAnalysis && postAnalysis.success && (
                   <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/20 rounded-xl p-6 border border-blue-700/50 mt-6">
-                    <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                      <span>📊</span> 运动后科学分析
-                    </h3>
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <span>📊</span> 运动后科学分析
+                      </h3>
+                      {/* 保存状态提示 */}
+                      <div className="flex items-center gap-2">
+                        {postAnalysis.from_cache ? (
+                          <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-sm flex items-center gap-1">
+                            <span>✓</span> 已保存
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm flex items-center gap-1">
+                            <span>✨</span> 新生成
+                          </span>
+                        )}
+                        {postAnalysis.generated_at && (
+                          <span className="text-xs text-gray-400">
+                            {new Date(postAnalysis.generated_at).toLocaleString('zh-CN', {
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
                     {/* 整体评分 */}
                     {postAnalysis.overall_rating && (
@@ -1569,7 +1593,7 @@ function WorkoutContent() {
 
                     {/* 改进建议 */}
                     {postAnalysis.improvement_tips && postAnalysis.improvement_tips.length > 0 && (
-                      <div className="bg-slate-800/60 rounded-xl p-6">
+                      <div className="bg-slate-800/60 rounded-xl p-6 mb-6">
                         <h4 className="text-xl font-bold text-white mb-4">📈 改进建议</h4>
                         <ul className="space-y-2">
                           {postAnalysis.improvement_tips.map((tip: string, idx: number) => (
@@ -1581,6 +1605,27 @@ function WorkoutContent() {
                         </ul>
                       </div>
                     )}
+
+                    {/* 保存状态说明 */}
+                    <div className={`rounded-xl p-4 text-center ${
+                      postAnalysis.from_cache 
+                        ? 'bg-green-500/10 border border-green-500/30' 
+                        : 'bg-blue-500/10 border border-blue-500/30'
+                    }`}>
+                      <div className="flex items-center justify-center gap-2 text-sm">
+                        {postAnalysis.from_cache ? (
+                          <>
+                            <span className="text-green-400">✓</span>
+                            <span className="text-green-300">此分析结果已自动保存，下次查看将直接加载</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-blue-400">💾</span>
+                            <span className="text-blue-300">分析结果已自动保存，下次查看将直接加载</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </>
