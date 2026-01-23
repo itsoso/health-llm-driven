@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dailyHealthApi, garminAnalysisApi, basicHealthApi } from '@/services/api';
+import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi } from '@/services/api';
 import { format, subDays } from 'date-fns';
 import {
   LineChart,
@@ -26,6 +26,12 @@ function DashboardContent() {
   const [days] = useState(30);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // 下拉刷新相关状态
+  const [pullStartY, setPullStartY] = useState(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const endDate = format(new Date(), 'yyyy-MM-dd');
   const startDate = format(subDays(new Date(), days), 'yyyy-MM-dd');
@@ -60,13 +66,27 @@ function DashboardContent() {
     enabled: !!userId,
   });
 
-  // 手动刷新所有数据
+  // 手动刷新所有数据（包含 Garmin 同步）
   const handleManualRefresh = async () => {
     if (isRefreshing) return; // 防止重复点击
     
     setIsRefreshing(true);
     try {
-      // 使所有相关查询失效并重新获取
+      // 1. 先触发 Garmin 同步
+      if (userId) {
+        try {
+          await dataCollectionApi.syncGarmin(userId, today);
+          console.log('Garmin 同步已触发');
+        } catch (syncError) {
+          console.warn('Garmin 同步失败:', syncError);
+          // 同步失败不影响数据刷新
+        }
+      }
+      
+      // 2. 等待 2 秒让同步有时间完成
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 3. 使所有相关查询失效并重新获取
       await Promise.all([
         refetchToday(),
         refetchGarminData(),
@@ -87,6 +107,69 @@ function DashboardContent() {
       setLastUpdate(new Date());
     }
   }, [todayData]);
+
+  // 下拉刷新触摸事件处理
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let startY = 0;
+    let currentY = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      // 只在页面顶部时启用下拉刷新
+      if (window.scrollY === 0 && !isRefreshing) {
+        startY = e.touches[0].clientY;
+        setIsPulling(true);
+        setPullStartY(startY);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPulling || isRefreshing) return;
+      
+      currentY = e.touches[0].clientY;
+      const distance = currentY - startY;
+      
+      // 只允许向下拉
+      if (distance > 0 && window.scrollY === 0) {
+        // 限制最大拉动距离为 100px
+        const maxDistance = 100;
+        const dampedDistance = Math.min(distance * 0.5, maxDistance);
+        setPullDistance(dampedDistance);
+        
+        // 阻止默认滚动行为
+        if (distance > 10) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    const handleTouchEnd = async () => {
+      if (!isPulling) return;
+      
+      setIsPulling(false);
+      
+      // 如果拉动距离超过 60px，触发刷新
+      if (pullDistance > 60 && !isRefreshing) {
+        await handleManualRefresh();
+      }
+      
+      // 重置拉动距离
+      setPullDistance(0);
+      setPullStartY(0);
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isPulling, pullDistance, isRefreshing, handleManualRefresh]);
 
   // 今天的数据
   const todayRecord = todayData?.data?.[0];
@@ -112,7 +195,39 @@ function DashboardContent() {
   })();
 
   return (
-    <main className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4">
+    <main 
+      ref={containerRef}
+      className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4 relative"
+      style={{
+        transform: `translateY(${pullDistance}px)`,
+        transition: isPulling ? 'none' : 'transform 0.3s ease-out',
+      }}
+    >
+      {/* 下拉刷新指示器 */}
+      {(isPulling || pullDistance > 0) && (
+        <div 
+          className="fixed top-0 left-0 right-0 flex items-center justify-center bg-gradient-to-r from-indigo-600 to-purple-600 text-white z-50"
+          style={{
+            height: `${pullDistance}px`,
+            opacity: Math.min(pullDistance / 60, 1),
+          }}
+        >
+          <div className="flex items-center gap-2">
+            {pullDistance > 60 ? (
+              <>
+                <span className="text-xl">🔄</span>
+                <span className="font-semibold">释放刷新</span>
+              </>
+            ) : (
+              <>
+                <span className="text-xl">⬇️</span>
+                <span className="font-semibold">下拉刷新</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      
       <div className="max-w-7xl mx-auto">
         {/* 今日实时数据 */}
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
