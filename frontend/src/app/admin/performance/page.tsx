@@ -93,7 +93,7 @@ export default function PerformanceMonitorPage() {
       }
       
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/performance/overview?${params}`,
+        `/api/v1/performance/overview?${params}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -118,7 +118,7 @@ export default function PerformanceMonitorPage() {
       });
       
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/performance/pages?${params}`,
+        `/api/v1/performance/pages?${params}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -138,7 +138,7 @@ export default function PerformanceMonitorPage() {
       const params = new URLSearchParams({ hours: timeRange.toString() });
       
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/performance/apis?${params}`,
+        `/api/v1/performance/apis?${params}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
