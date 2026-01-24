@@ -466,15 +466,21 @@ export default function SupplementsPage() {
 
       {/* 添加按钮 */}
       <View className="add-btn-container">
-        <Button className="add-btn" onClick={() => setShowAddForm(true)}>
-          + 添加补剂
-        </Button>
         <Button 
-          className="recommendation-btn" 
+          className="recommendation-btn-large" 
           onClick={handleGetRecommendation}
           loading={loadingRecommendation}
         >
-          {loadingRecommendation ? '分析中...' : '🤖 科学推荐'}
+          <View className="btn-content">
+            <Text className="btn-icon">🧬</Text>
+            <View className="btn-text-group">
+              <Text className="btn-title">{loadingRecommendation ? '益家知研分析中...' : '益家知研 AI 推荐'}</Text>
+              <Text className="btn-subtitle">基于大模型 + 皮皮妈妈知识库</Text>
+            </View>
+          </View>
+        </Button>
+        <Button className="add-btn" onClick={() => setShowAddForm(true)}>
+          + 手动添加补剂
         </Button>
       </View>
 

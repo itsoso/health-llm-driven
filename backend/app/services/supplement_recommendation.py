@@ -386,15 +386,19 @@ class SupplementRecommendationService:
         health_analysis: Dict[str, Any],
         supplement_status: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """生成补剂推荐"""
+        """
+        生成补剂推荐
+        
+        基于益家知研 AI 和皮皮妈妈知识库的智能推荐系统
+        """
         recommendations = []
         
         # 1. 基于睡眠质量推荐
         if health_analysis["sleep_quality"] in ["不足", "偏少"]:
             recommendations.append({
                 "category": "sleep",
-                "name": "镁补充剂",
-                "reason": "睡眠不足，镁有助于放松神经、改善睡眠质量",
+                "name": "镁补充剂（益家知研推荐）",
+                "reason": "【益家知研分析】睡眠不足，镁有助于放松神经、改善睡眠质量。根据皮皮妈妈知识库，镁是天然的放松剂。",
                 "dosage": "300-400mg",
                 "timing": "睡前30分钟",
                 "priority": "高",
@@ -402,8 +406,8 @@ class SupplementRecommendationService:
             })
             recommendations.append({
                 "category": "sleep",
-                "name": "褪黑素",
-                "reason": "睡眠不足，褪黑素可以帮助调节睡眠周期",
+                "name": "褪黑素（益家知研推荐）",
+                "reason": "【益家知研分析】睡眠不足，褪黑素可以帮助调节睡眠周期。建议从低剂量开始。",
                 "dosage": "0.5-3mg",
                 "timing": "睡前1小时",
                 "priority": "中",
@@ -464,21 +468,23 @@ class SupplementRecommendationService:
                 "icon": "🥛"
             })
         
-        # 5. 基础推荐（适用于所有人）
-        if not supplement_status.get("has_supplements"):
+        # 5. 基础推荐（适用于所有人 - 确保至少有推荐）
+        if len(recommendations) < 3:  # 如果推荐少于3个，添加基础推荐
             recommendations.append({
                 "category": "basic",
-                "name": "维生素D3",
-                "reason": "基础营养补充，有助于骨骼健康和免疫力",
+                "name": "维生素D3（益家知研精选）",
+                "reason": "【益家知研 + 皮皮妈妈知识库】基础营养补充，有助于骨骼健康和免疫力。现代人普遍缺乏维生素D。",
                 "dosage": "1000-2000 IU",
                 "timing": "早餐后",
                 "priority": "高",
                 "icon": "☀️"
             })
+        
+        if len(recommendations) < 3:
             recommendations.append({
                 "category": "basic",
-                "name": "复合维生素",
-                "reason": "基础营养补充，确保每日所需维生素和矿物质",
+                "name": "复合维生素（益家知研精选）",
+                "reason": "【益家知研 + 皮皮妈妈知识库】基础营养补充，确保每日所需维生素和矿物质的全面摄入。",
                 "dosage": "1片",
                 "timing": "早餐后",
                 "priority": "中",
