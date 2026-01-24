@@ -4,7 +4,7 @@
 """
 from datetime import date, datetime, time
 from typing import Optional, List
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Time, JSON, ForeignKey, Text, Boolean
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Time, JSON, ForeignKey, Text, Boolean, Index
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -65,6 +65,12 @@ class CheckinTemplate(Base):
     # 关系
     records = relationship("CheckinRecord", back_populates="template", cascade="all, delete-orphan")
 
+    # 复合索引：优化按用户和分类查询
+    __table_args__ = (
+        Index('idx_checkin_tmpl_user_category', 'user_id', 'category', 'is_active'),
+        Index('idx_checkin_tmpl_user_active', 'user_id', 'is_active', 'sort_order'),
+    )
+
 
 class CheckinRecord(Base):
     """打卡记录 - 每次打卡的详细记录"""
@@ -112,6 +118,13 @@ class CheckinRecord(Base):
     
     # 关系
     template = relationship("CheckinTemplate", back_populates="records")
+
+    # 复合索引：优化按用户、模板和日期查询
+    __table_args__ = (
+        Index('idx_checkin_rec_user_date', 'user_id', 'checkin_date'),
+        Index('idx_checkin_rec_template_date', 'template_id', 'checkin_date'),
+        Index('idx_checkin_rec_user_template_date', 'user_id', 'template_id', 'checkin_date'),
+    )
 
 
 # 预定义的打卡模板（系统默认）

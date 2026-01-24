@@ -1,0 +1,5 @@
+
+# 生产环境配置（敏感信息）
+.env.production
+.env.staging
+.env.local

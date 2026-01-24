@@ -2,10 +2,12 @@
 from datetime import datetime, timedelta, date
 from typing import Optional, AsyncGenerator
 import json
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.database import get_db
 from app.models.user import User, GarminCredential
 from app.schemas.auth import (
@@ -15,6 +17,7 @@ from app.schemas.auth import (
     GarminTestConnectionResponse, GarminMFAVerifyRequest, GarminMFAVerifyResponse
 )
 from app.services.auth import auth_service, garmin_credential_service, AuthService
+from app.api.deps import get_current_user, get_current_user_required
 import logging
 import asyncio
 
@@ -22,51 +25,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# OAuth2 密码流配置
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
-
-
-async def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-) -> Optional[User]:
-    """获取当前登录用户"""
-    if not token:
-        return None
-    
-    payload = auth_service.decode_token(token)
-    if not payload:
-        return None
-    
-    user_id = payload.get("sub")
-    if not user_id:
-        return None
-    
-    user = auth_service.get_user_by_id(db, int(user_id))
-    return user
-
-
-async def get_current_user_required(
-    current_user: Optional[User] = Depends(get_current_user)
-) -> User:
-    """获取当前登录用户（必须登录）"""
-    if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或登录已过期",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="账户已被禁用"
-        )
-    if not current_user.is_approved:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="账户尚未通过管理员审核，请等待审核"
-        )
-    return current_user
+# 配置限流器
+limiter = Limiter(key_func=get_remote_address)
 
 
 def user_to_response(user: User, db: Session) -> UserResponse:
@@ -87,15 +47,18 @@ def user_to_response(user: User, db: Session) -> UserResponse:
 
 
 @router.post("/register", summary="用户注册")
-async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+@limiter.limit("3/hour")  # 每小时最多3次注册尝试
+async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
     """
     用户注册（需要邀请码，注册后需管理员审核）
-    
+
     - **username**: 用户名（3-50字符，唯一）
     - **email**: 邮箱（唯一）
     - **password**: 密码（至少6字符）
     - **name**: 姓名
     - **invite_code**: 邀请码（默认：LLM）
+
+    限流：每小时最多3次注册尝试
     """
     from app.config import settings
     
@@ -146,14 +109,16 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token, summary="用户登录")
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")  # 每分钟最多5次登录尝试
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
     用户登录（OAuth2密码流）
-    
+
     - **username**: 用户名或邮箱
     - **password**: 密码
-    
+
     注意：未通过管理员审核的用户无法登录
+    限流：每分钟最多5次登录尝试，防止暴力破解
     """
     user = auth_service.authenticate_user(db, form_data.username, form_data.password)
     
@@ -190,10 +155,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 
 
 @router.post("/login/json", response_model=Token, summary="用户登录（JSON格式）")
-async def login_json(login_data: UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")  # 每分钟最多5次登录尝试
+async def login_json(request: Request, login_data: UserLogin, db: Session = Depends(get_db)):
     """
     用户登录（JSON格式）
-    
+
     - **username**: 用户名或邮箱
     - **password**: 密码
     """

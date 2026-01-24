@@ -18,13 +18,16 @@ SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7天
 
-# Garmin密码加密密钥（从设置获取或生成）
+# Garmin密码加密密钥（必须独立配置，不从SECRET_KEY派生）
 GARMIN_ENCRYPTION_KEY = settings.garmin_encryption_key
 if not GARMIN_ENCRYPTION_KEY:
-    # 使用SECRET_KEY派生加密密钥
-    key_bytes = hashlib.sha256(SECRET_KEY.encode()).digest()
-    GARMIN_ENCRYPTION_KEY = base64.urlsafe_b64encode(key_bytes)
-else:
+    raise ValueError(
+        "GARMIN_ENCRYPTION_KEY must be set independently. "
+        "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+    )
+
+# 确保密钥是字节类型
+if isinstance(GARMIN_ENCRYPTION_KEY, str):
     GARMIN_ENCRYPTION_KEY = GARMIN_ENCRYPTION_KEY.encode()
 
 fernet = Fernet(GARMIN_ENCRYPTION_KEY)

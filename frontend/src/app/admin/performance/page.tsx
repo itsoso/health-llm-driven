@@ -188,14 +188,14 @@ export default function PerformanceMonitorPage() {
 
   const getDurationColor = (ms: number, type: 'page' | 'api') => {
     const threshold = type === 'page' ? 3000 : 1000;
-    if (ms > threshold) return 'text-red-600';
-    if (ms > threshold * 0.7) return 'text-yellow-600';
-    return 'text-green-600';
+    if (ms > threshold) return 'text-red-800';
+    if (ms > threshold * 0.7) return 'text-orange-700';
+    return 'text-green-800';
   };
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 pt-8 pb-6 px-6">
+      <div className="min-h-screen bg-gray-50 pt-8 pb-6 px-6 antialiased">
         <div className="max-w-7xl mx-auto">
           {/* 头部 */}
           <div className="mb-6">
@@ -324,9 +324,9 @@ export default function PerformanceMonitorPage() {
                     <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4">
                       <div className="flex items-center gap-2 text-purple-600 mb-2">
                         <Activity className="w-5 h-5" />
-                        <span className="text-sm font-medium">总指标数</span>
+                        <span className="text-sm font-semibold">总指标数</span>
                       </div>
-                      <div className="text-2xl font-bold text-purple-900">
+                      <div className="text-3xl font-extrabold text-purple-900 tabular-nums tracking-tight">
                         {platform.total_metrics.toLocaleString()}
                       </div>
                     </div>
@@ -334,9 +334,9 @@ export default function PerformanceMonitorPage() {
                     <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4">
                       <div className="flex items-center gap-2 text-blue-600 mb-2">
                         <Clock className="w-5 h-5" />
-                        <span className="text-sm font-medium">平均页面加载</span>
+                        <span className="text-sm font-semibold">平均页面加载</span>
                       </div>
-                      <div className={`text-2xl font-bold ${getDurationColor(platform.avg_page_load, 'page')}`}>
+                      <div className={`text-3xl font-extrabold tabular-nums tracking-tight ${getDurationColor(platform.avg_page_load, 'page')}`}>
                         {formatDuration(platform.avg_page_load)}
                       </div>
                     </div>
@@ -344,9 +344,9 @@ export default function PerformanceMonitorPage() {
                     <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4">
                       <div className="flex items-center gap-2 text-green-600 mb-2">
                         <Zap className="w-5 h-5" />
-                        <span className="text-sm font-medium">平均 API 响应</span>
+                        <span className="text-sm font-semibold">平均 API 响应</span>
                       </div>
-                      <div className={`text-2xl font-bold ${getDurationColor(platform.avg_api_call, 'api')}`}>
+                      <div className={`text-3xl font-extrabold tabular-nums tracking-tight ${getDurationColor(platform.avg_api_call, 'api')}`}>
                         {formatDuration(platform.avg_api_call)}
                       </div>
                     </div>
@@ -354,9 +354,9 @@ export default function PerformanceMonitorPage() {
                     <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4">
                       <div className="flex items-center gap-2 text-red-600 mb-2">
                         <AlertTriangle className="w-5 h-5" />
-                        <span className="text-sm font-medium">错误率</span>
+                        <span className="text-sm font-semibold">错误率</span>
                       </div>
-                      <div className="text-2xl font-bold text-red-900">
+                      <div className="text-3xl font-extrabold text-red-900 tabular-nums tracking-tight">
                         {platform.error_rate.toFixed(2)}%
                       </div>
                     </div>
@@ -376,10 +376,10 @@ export default function PerformanceMonitorPage() {
                           {platform.slow_pages.map((page, idx) => (
                             <div key={idx} className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
                               <div>
-                                <div className="font-medium text-sm">{page.name}</div>
-                                <div className="text-xs text-gray-600">访问 {page.count} 次</div>
+                                <div className="font-semibold text-sm text-gray-900">{page.name}</div>
+                                <div className="text-xs text-gray-600 font-medium">访问 {page.count} 次</div>
                               </div>
-                              <div className="text-orange-600 font-bold">
+                              <div className="text-orange-600 font-bold text-lg tabular-nums">
                                 {formatDuration(page.avg_duration)}
                               </div>
                             </div>
@@ -400,10 +400,10 @@ export default function PerformanceMonitorPage() {
                           {platform.slow_apis.map((api, idx) => (
                             <div key={idx} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
                               <div>
-                                <div className="font-medium text-sm">{api.name}</div>
-                                <div className="text-xs text-gray-600">调用 {api.count} 次</div>
+                                <div className="font-semibold text-sm text-gray-900">{api.name}</div>
+                                <div className="text-xs text-gray-600 font-medium">调用 {api.count} 次</div>
                               </div>
-                              <div className="text-red-600 font-bold">
+                              <div className="text-red-600 font-bold text-lg tabular-nums">
                                 {formatDuration(api.avg_duration)}
                               </div>
                             </div>
@@ -424,58 +424,58 @@ export default function PerformanceMonitorPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         页面名称
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         访问次数
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         平均耗时
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P50
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P90
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P95
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P99
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         错误率
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {pagePerformance.map((page, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                           {page.page_name}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {page.total_visits.toLocaleString()}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getDurationColor(page.avg_duration, 'page')}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold tabular-nums ${getDurationColor(page.avg_duration, 'page')}`}>
                           {formatDuration(page.avg_duration)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {formatDuration(page.p50_duration)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {formatDuration(page.p90_duration)}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getDurationColor(page.p95_duration, 'page')}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold tabular-nums ${getDurationColor(page.p95_duration, 'page')}`}>
                           {formatDuration(page.p95_duration)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {formatDuration(page.p99_duration)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold tabular-nums ${
                             page.error_rate > 5 ? 'bg-red-100 text-red-800' :
                             page.error_rate > 1 ? 'bg-yellow-100 text-yellow-800' :
                             'bg-green-100 text-green-800'
@@ -498,58 +498,58 @@ export default function PerformanceMonitorPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         API 端点
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         调用次数
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         平均耗时
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P50
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P90
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P95
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         P99
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         成功率
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {apiPerformance.map((api, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">
                           {api.api_name}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {api.total_calls.toLocaleString()}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getDurationColor(api.avg_duration, 'api')}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold tabular-nums ${getDurationColor(api.avg_duration, 'api')}`}>
                           {formatDuration(api.avg_duration)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {formatDuration(api.p50_duration)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {formatDuration(api.p90_duration)}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getDurationColor(api.p95_duration, 'api')}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold tabular-nums ${getDurationColor(api.p95_duration, 'api')}`}>
                           {formatDuration(api.p95_duration)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 tabular-nums">
                           {formatDuration(api.p99_duration)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold tabular-nums ${
                             api.success_rate < 95 ? 'bg-red-100 text-red-800' :
                             api.success_rate < 99 ? 'bg-yellow-100 text-yellow-800' :
                             'bg-green-100 text-green-800'

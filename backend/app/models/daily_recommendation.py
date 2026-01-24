@@ -1,5 +1,5 @@
 """每日建议数据模型"""
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, JSON, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -26,4 +26,10 @@ class DailyRecommendation(Base):
     
     # 关系
     user = relationship("User", back_populates="daily_recommendations")
+
+    # 复合索引：优化按用户和日期查询（最常用的查询）
+    __table_args__ = (
+        Index('idx_daily_rec_user_rec_date', 'user_id', 'recommendation_date', unique=True),
+        Index('idx_daily_rec_user_analysis_date', 'user_id', 'analysis_date'),
+    )
 

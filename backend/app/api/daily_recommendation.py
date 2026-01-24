@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.daily_recommendation import DailyRecommendation
 from app.api.deps import get_current_user_required
 from app.utils.timezone import get_china_today
+from app.utils.redis_cache import get_cached_daily_recommendation, cache_daily_recommendation, invalidate_user_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,25 +26,28 @@ def clear_my_recommendations_cache(
     db: Session = Depends(get_db)
 ):
     """
-    清除当前用户的建议缓存（需要登录）
-    
+    清除当前用户的建议缓存（Redis + 数据库，需要登录）
+
     清除后下次获取建议时会重新生成
     """
     today = get_china_today()
-    
-    # 删除今天的缓存
+
+    # 1. 清除 Redis 缓存
+    invalidate_user_cache(current_user.id)
+
+    # 2. 删除数据库缓存
     deleted = db.query(DailyRecommendation).filter(
         DailyRecommendation.user_id == current_user.id,
         DailyRecommendation.recommendation_date == today
     ).delete()
-    
+
     db.commit()
-    
-    logger.info(f"用户 {current_user.id} 清除了建议缓存，删除 {deleted} 条记录")
-    
+
+    logger.info(f"用户 {current_user.id} 清除了建议缓存（Redis + DB），删除 {deleted} 条数据库记录")
+
     return {
         "status": "success",
-        "message": "缓存已清除，下次访问时将重新生成建议",
+        "message": "缓存已清除（包括 Redis 和数据库），下次访问时将重新生成建议",
         "deleted_count": deleted
     }
 
@@ -55,27 +59,31 @@ def refresh_my_recommendations(
     db: Session = Depends(get_db)
 ):
     """
-    清除缓存并重新生成建议（需要登录）
-    
-    会先清除今天的缓存，然后立即重新生成建议
+    清除缓存并重新生成建议（Redis + 数据库，需要登录）
+
+    会先清除今天的缓存（Redis 和数据库），然后立即重新生成建议
     """
     today = get_china_today()
-    
-    # 删除今天的缓存
+
+    # 1. 清除 Redis 缓存
+    invalidate_user_cache(current_user.id)
+
+    # 2. 删除数据库缓存
     db.query(DailyRecommendation).filter(
         DailyRecommendation.user_id == current_user.id,
         DailyRecommendation.recommendation_date == today
     ).delete()
     db.commit()
+
+    logger.info(f"用户 {current_user.id} 请求刷新建议（已清除 Redis + DB 缓存）")
     
-    logger.info(f"用户 {current_user.id} 请求刷新建议")
-    
-    # 重新生成建议
+    # 3. 重新生成建议
     service = DailyRecommendationService()
-    
+    date_str = today.strftime('%Y-%m-%d')
+
     try:
         result = service.get_or_generate_recommendations(db, current_user.id, use_llm)
-        
+
         if result.get("status") == "no_data":
             raise HTTPException(
                 status_code=404,
@@ -84,8 +92,13 @@ def refresh_my_recommendations(
                     "suggestion": "请在设置页面配置并同步Garmin数据"
                 }
             )
-        
+
+        # 4. 将新结果缓存到 Redis
+        if result.get("status") != "no_data":
+            cache_daily_recommendation(current_user.id, date_str, result, ttl=3600)
+
         result["refreshed"] = True
+        result["cache_source"] = "none"  # 刚生成的，不是从缓存获取的
         return result
     except Exception as e:
         logger.error(f"刷新建议失败: {e}")
@@ -99,24 +112,40 @@ def get_my_recommendations(
     db: Session = Depends(get_db)
 ):
     """
-    获取当前用户今日健康建议（1天和7天，带缓存，需要登录）
-    
+    获取当前用户今日健康建议（1天和7天，带 Redis + 数据库双层缓存，需要登录）
+
     返回基于昨天数据的1天建议和基于最近7天数据的7天建议
-    结果会缓存到数据库，避免重复计算
-    
+    缓存策略：
+    1. 先查 Redis 缓存（1小时过期）
+    2. Redis 未命中则查数据库缓存
+    3. 数据库未命中则重新生成并缓存
+
     Args:
         use_llm: 是否使用大模型增强分析（默认True）
-    
+
     Returns:
         - one_day: 基于昨天数据的建议
         - seven_day: 基于最近7天数据的建议
         - cached: 是否使用了缓存
+        - cache_source: 缓存来源（redis/database/none）
     """
+    today = get_china_today()
+    date_str = today.strftime('%Y-%m-%d')
+
+    # 1. 尝试从 Redis 获取缓存
+    cached_result = get_cached_daily_recommendation(current_user.id, date_str)
+    if cached_result:
+        logger.info(f"✅ Redis 缓存命中：用户 {current_user.id} 日期 {date_str}")
+        cached_result["cached"] = True
+        cached_result["cache_source"] = "redis"
+        return cached_result
+
+    # 2. Redis 未命中，从数据库获取或生成
     service = DailyRecommendationService()
-    
+
     try:
         result = service.get_or_generate_recommendations(db, current_user.id, use_llm)
-        
+
         if result.get("status") == "no_data":
             raise HTTPException(
                 status_code=404,
@@ -125,7 +154,12 @@ def get_my_recommendations(
                     "suggestion": "请在设置页面配置并同步Garmin数据"
                 }
             )
-        
+
+        # 3. 将结果缓存到 Redis（1小时过期）
+        if result.get("status") != "no_data":
+            cache_daily_recommendation(current_user.id, date_str, result, ttl=3600)
+            result["cache_source"] = "database" if result.get("cached") else "none"
+
         return result
     except Exception as e:
         logger.error(f"获取建议失败: {e}")

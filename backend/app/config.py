@@ -86,6 +86,19 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be set to a strong value")
         if len(self.secret_key) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters long")
+
+        # 生产环境必须设置独立的加密密钥
+        if self.app_env == "production":
+            if not self.garmin_encryption_key:
+                raise ValueError(
+                    "GARMIN_ENCRYPTION_KEY must be set in production. "
+                    "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+                )
+            if not self.device_encryption_key:
+                raise ValueError(
+                    "DEVICE_ENCRYPTION_KEY must be set in production. "
+                    "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+                )
     
     class Config:
         env_file = ".env"

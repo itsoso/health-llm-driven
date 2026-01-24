@@ -1,5 +1,5 @@
 """基础健康数据模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -42,4 +42,9 @@ class BasicHealthData(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", backref="basic_health_records")
+
+    # 复合索引：优化按用户和日期查询
+    __table_args__ = (
+        Index('idx_basic_health_user_date', 'user_id', 'record_date'),
+    )
 

@@ -1,5 +1,5 @@
 """日常健康记录模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -88,6 +88,11 @@ class GarminData(Base):
     
     user = relationship("User", backref="garmin_records")
 
+    # 复合索引：优化按用户和日期查询
+    __table_args__ = (
+        Index('idx_garmin_user_date', 'user_id', 'record_date'),
+    )
+
 
 class ExerciseRecord(Base):
     """日常锻炼记录（Garmin未记录部分）"""
@@ -147,6 +152,12 @@ class DietRecord(Base):
     
     user = relationship("User", backref="diet_records")
 
+    # 复合索引：优化按用户、日期和餐次查询
+    __table_args__ = (
+        Index('idx_diet_user_date', 'user_id', 'record_date'),
+        Index('idx_diet_user_date_meal', 'user_id', 'record_date', 'meal_type'),
+    )
+
 
 class WaterIntake(Base):
     """日常饮水记录"""
@@ -174,6 +185,11 @@ class WaterIntake(Base):
     @amount.setter
     def amount(self, value):
         self.amount_ml = value
+
+    # 复合索引：优化按用户和日期查询
+    __table_args__ = (
+        Index('idx_water_user_date', 'user_id', 'record_date'),
+    )
 
 
 class SupplementIntake(Base):
@@ -232,11 +248,11 @@ class HeartRateSample(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     user = relationship("User", backref="heart_rate_samples")
-    
-    # 复合索引：按用户和日期快速查询
+
+    # 复合索引：按用户、日期和时间快速查询
     __table_args__ = (
-        # 确保同一用户同一天同一时间只有一条记录
-        # Index('ix_hr_user_date', 'user_id', 'record_date'),
+        Index('idx_hr_user_date', 'user_id', 'record_date'),
+        Index('idx_hr_user_date_time', 'user_id', 'record_date', 'sample_time'),
     )
 
 
@@ -335,4 +351,11 @@ class WorkoutRecord(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     user = relationship("User", backref="workout_records")
+
+    # 复合索引：优化按用户、日期和类型查询
+    __table_args__ = (
+        Index('idx_workout_user_date', 'user_id', 'workout_date'),
+        Index('idx_workout_user_type', 'user_id', 'workout_type'),
+        Index('idx_workout_source_external', 'source', 'external_id'),
+    )
 

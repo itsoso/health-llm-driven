@@ -48,7 +48,7 @@ async def get_current_user(
 async def get_current_user_required(
     current_user: Optional[User] = Depends(get_current_user)
 ) -> User:
-    """获取当前登录用户（必须登录）"""
+    """获取当前登录用户（必须登录且已审核）"""
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,6 +59,11 @@ async def get_current_user_required(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被禁用"
+        )
+    if not current_user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户尚未通过管理员审核，请等待审核"
         )
     return current_user
 

@@ -1,12 +1,14 @@
 """微信小程序认证API"""
 import logging
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 from jose import jwt
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User
@@ -16,6 +18,9 @@ from app.api.deps import get_current_user_required
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# 配置限流器
+limiter = Limiter(key_func=get_remote_address)
 
 # JWT 配置
 ALGORITHM = "HS256"
@@ -94,8 +99,10 @@ async def get_wechat_session(code: str) -> dict:
 
 
 @router.post("/login", response_model=WechatLoginResponse, summary="微信小程序登录")
+@limiter.limit("10/minute")  # 微信登录每分钟最多10次
 async def wechat_login(
-    request: WechatLoginRequest,
+    request: Request,
+    login_request: WechatLoginRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -109,7 +116,7 @@ async def wechat_login(
     5. 返回 JWT token
     """
     # 1. 用 code 换取 openid
-    wechat_data = await get_wechat_session(request.code)
+    wechat_data = await get_wechat_session(login_request.code)
     
     openid = wechat_data.get("openid")
     session_key = wechat_data.get("session_key")
@@ -128,7 +135,7 @@ async def wechat_login(
     
     if not user:
         # 新用户 - 验证邀请码
-        if not request.invite_code:
+        if not login_request.invite_code:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"新用户注册需要邀请码，请输入邀请码"
@@ -136,7 +143,7 @@ async def wechat_login(
         
         # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
         from app.models.invitation import InvitationCode
-        invite_code_upper = request.invite_code.upper()
+        invite_code_upper = login_request.invite_code.upper()
         
         # 查找数据库中的邀请码
         db_invite = db.query(InvitationCode).filter(
@@ -170,8 +177,8 @@ async def wechat_login(
             wechat_openid=openid,
             wechat_unionid=unionid,
             wechat_session_key=session_key,
-            name=request.nickname or f"微信用户_{openid[-6:]}",
-            avatar_url=request.avatar_url,
+            name=login_request.nickname or f"微信用户_{openid[-6:]}",
+            avatar_url=login_request.avatar_url,
             is_active=True
         )
         
@@ -187,10 +194,10 @@ async def wechat_login(
             pc_user.wechat_openid = openid
             pc_user.wechat_unionid = unionid
             pc_user.wechat_session_key = session_key
-            if request.nickname and (not pc_user.name or pc_user.name.startswith("微信用户")):
-                pc_user.name = request.nickname
-            if request.avatar_url and not pc_user.avatar_url:
-                pc_user.avatar_url = request.avatar_url
+            if login_request.nickname and (not pc_user.name or pc_user.name.startswith("微信用户")):
+                pc_user.name = login_request.nickname
+            if login_request.avatar_url and not pc_user.avatar_url:
+                pc_user.avatar_url = login_request.avatar_url
             
             db.commit()
             db.refresh(pc_user)
@@ -200,17 +207,17 @@ async def wechat_login(
         else:
             # 没有匹配的用户，创建新用户（未审核状态）
             is_new_user = True
-            nickname = request.nickname or f"微信用户_{openid[-6:]}"
+            nickname = login_request.nickname or f"微信用户_{openid[-6:]}"
             
             user = User(
                 wechat_openid=openid,
                 wechat_unionid=unionid,
                 wechat_session_key=session_key,
                 name=nickname,
-                avatar_url=request.avatar_url,
+                avatar_url=login_request.avatar_url,
                 is_active=True,
                 is_approved=False,  # 需要管理员审核
-                invite_code=request.invite_code.upper()
+                invite_code=login_request.invite_code.upper()
             )
             db.add(user)
             db.commit()
@@ -222,10 +229,10 @@ async def wechat_login(
         user.wechat_session_key = session_key
         if unionid:
             user.wechat_unionid = unionid
-        if request.nickname:
-            user.name = request.nickname
-        if request.avatar_url:
-            user.avatar_url = request.avatar_url
+        if login_request.nickname:
+            user.name = login_request.nickname
+        if login_request.avatar_url:
+            user.avatar_url = login_request.avatar_url
         db.commit()
         logger.info(f"微信用户登录: {user.id} ({user.name})")
     
