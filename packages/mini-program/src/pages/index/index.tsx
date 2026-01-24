@@ -6,18 +6,21 @@ import { View, Text, Button, Input, ScrollView, Image } from '@tarojs/components
 import Taro from '@tarojs/taro';
 import { 
   wechatLogin, 
-  getTodayGarminData, 
-  getDailyRecommendation, 
-  getTodayRhinitis, 
-  syncMyGarminData, 
-  getTodayWorkouts, 
-  getTodayDietSummary,
-  getMorningBriefing,
-  getAIRecommendation,
-  getCurrentReminders,
-  getDailySchedule,
-  getPreWorkoutGuidance
+  syncMyGarminData
 } from '../../services/api';
+import { 
+  getTodayGarminDataCached,
+  getDailyRecommendationCached,
+  getTodayRhinitisCached,
+  getTodayWorkoutsCached,
+  getTodayDietSummaryCached,
+  getMorningBriefingCached,
+  getAIRecommendationCached,
+  getCurrentRemindersCached,
+  getDailyScheduleCached,
+  getPreWorkoutGuidanceCached,
+  clearHomePageCache
+} from '../../services/cachedApi';
 import { getToken } from '../../services/request';
 import { 
   GarminData, 
@@ -162,76 +165,112 @@ export default function Index() {
     setHomeData(prev => ({ ...prev, loading: true }));
     
     try {
-      // 性能监控：并行 API 调用
-      performanceMonitor.start('首页-并行API调用');
+      // ========== 第一批：关键数据（立即加载）==========
+      // 用户最关心的核心健康数据
+      performanceMonitor.start('首页-第一批加载');
+      console.log('[首页] 🚀 第一批：加载关键数据（Garmin、提醒、运动）');
       
       const [
-        garminData, 
-        recommendationData, 
-        rhinitisData, 
-        workoutsData, 
-        dietData,
-        briefingData,
-        aiRecData,
+        garminData,
         remindersData,
-        scheduleData
+        workoutsData
       ] = await Promise.allSettled([
-        performanceMonitor.trackAPI('getTodayGarminData', () => getTodayGarminData()),
-        performanceMonitor.trackAPI('getDailyRecommendation', () => getDailyRecommendation()),
-        performanceMonitor.trackAPI('getTodayRhinitis', () => getTodayRhinitis()),
-        performanceMonitor.trackAPI('getTodayWorkouts', () => getTodayWorkouts()),
-        performanceMonitor.trackAPI('getTodayDietSummary', () => getTodayDietSummary()),
-        performanceMonitor.trackAPI('getMorningBriefing', () => getMorningBriefing()),
-        performanceMonitor.trackAPI('getAIRecommendation', () => getAIRecommendation()),
-        performanceMonitor.trackAPI('getCurrentReminders', () => getCurrentReminders()),
-        performanceMonitor.trackAPI('getDailySchedule', () => getDailySchedule())
+        performanceMonitor.trackAPI('getTodayGarminData', () => getTodayGarminDataCached()),
+        performanceMonitor.trackAPI('getCurrentReminders', () => getCurrentRemindersCached()),
+        performanceMonitor.trackAPI('getTodayWorkouts', () => getTodayWorkoutsCached())
       ]);
       
-      performanceMonitor.end('首页-并行API调用', {
-        成功: [garminData, recommendationData, rhinitisData, workoutsData, dietData, briefingData, aiRecData, remindersData, scheduleData].filter(r => r.status === 'fulfilled').length,
-        失败: [garminData, recommendationData, rhinitisData, workoutsData, dietData, briefingData, aiRecData, remindersData, scheduleData].filter(r => r.status === 'rejected').length
+      performanceMonitor.end('首页-第一批加载', {
+        成功: [garminData, remindersData, workoutsData].filter(r => r.status === 'fulfilled').length,
+        失败: [garminData, remindersData, workoutsData].filter(r => r.status === 'rejected').length
       });
 
-      // 如果今日没有运动记录，获取运动指导
-      let workoutGuidance: PreWorkoutGuidance | null = null;
+      // 立即更新关键数据，让用户快速看到内容
       const workouts = workoutsData.status === 'fulfilled' ? workoutsData.value : [];
-      if (workouts.length === 0) {
-        try {
-          workoutGuidance = await performanceMonitor.trackAPI('getPreWorkoutGuidance', () => getPreWorkoutGuidance('running'));
-        } catch (e) {
-          console.error('获取运动指导失败:', e);
-        }
-      }
-
-      // 性能监控：数据处理
-      performanceMonitor.start('首页-数据处理');
-      
-      // 使用函数式更新，确保状态一致性
       setHomeData(prev => ({
         ...prev,
         garmin: garminData.status === 'fulfilled' ? garminData.value : null,
-        recommendation: recommendationData.status === 'fulfilled' ? recommendationData.value : null,
-        rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
-        workouts,
-        diet: dietData.status === 'fulfilled' ? dietData.value : null,
-        briefing: briefingData.status === 'fulfilled' ? briefingData.value : null,
-        aiRecommendation: aiRecData.status === 'fulfilled' ? aiRecData.value : null,
         reminders: remindersData.status === 'fulfilled' ? (remindersData.value?.reminders || []) : [],
-        schedule: scheduleData.status === 'fulfilled' ? (scheduleData.value?.schedule || []) : [],
-        workoutGuidance,
-        loading: false,
+        workouts,
+        loading: false, // 关键数据加载完成，移除 loading 状态
       }));
       
-      performanceMonitor.end('首页-数据处理');
+      // 标记首屏数据加载完成
+      pagePerformance.dataLoaded('首页');
       performanceMonitor.end('首页-总数据加载');
       
-      // 标记数据加载完成
-      pagePerformance.dataLoaded('首页');
-      
-      // 在下一个事件循环标记页面就绪（等待渲染完成）
-      setTimeout(() => {
-        pagePerformance.pageReady('首页');
-      }, 100);
+      // 如果今日没有运动记录，获取运动指导
+      if (workouts.length === 0) {
+        performanceMonitor.trackAPI('getPreWorkoutGuidance', () => getPreWorkoutGuidanceCached('running'))
+          .then(workoutGuidance => {
+            setHomeData(prev => ({ ...prev, workoutGuidance }));
+          })
+          .catch(e => console.error('获取运动指导失败:', e));
+      }
+
+      // ========== 第二批：重要数据（延迟 300ms）==========
+      // 推荐和日程数据
+      setTimeout(async () => {
+        performanceMonitor.start('首页-第二批加载');
+        console.log('[首页] 📊 第二批：加载重要数据（推荐、饮食、日程）');
+        
+        const [
+          recommendationData,
+          dietData,
+          scheduleData
+        ] = await Promise.allSettled([
+          performanceMonitor.trackAPI('getDailyRecommendation', () => getDailyRecommendationCached()),
+          performanceMonitor.trackAPI('getTodayDietSummary', () => getTodayDietSummaryCached()),
+          performanceMonitor.trackAPI('getDailySchedule', () => getDailyScheduleCached())
+        ]);
+        
+        performanceMonitor.end('首页-第二批加载', {
+          成功: [recommendationData, dietData, scheduleData].filter(r => r.status === 'fulfilled').length,
+          失败: [recommendationData, dietData, scheduleData].filter(r => r.status === 'rejected').length
+        });
+
+        setHomeData(prev => ({
+          ...prev,
+          recommendation: recommendationData.status === 'fulfilled' ? recommendationData.value : null,
+          diet: dietData.status === 'fulfilled' ? dietData.value : null,
+          schedule: scheduleData.status === 'fulfilled' ? (scheduleData.value?.schedule || []) : [],
+        }));
+      }, 300);
+
+      // ========== 第三批：次要数据（延迟 800ms）==========
+      // AI 分析和历史记录
+      setTimeout(async () => {
+        performanceMonitor.start('首页-第三批加载');
+        console.log('[首页] 🤖 第三批：加载次要数据（简报、AI推荐、鼻炎）');
+        
+        const [
+          briefingData,
+          aiRecData,
+          rhinitisData
+        ] = await Promise.allSettled([
+          performanceMonitor.trackAPI('getMorningBriefing', () => getMorningBriefingCached()),
+          performanceMonitor.trackAPI('getAIRecommendation', () => getAIRecommendationCached()),
+          performanceMonitor.trackAPI('getTodayRhinitis', () => getTodayRhinitisCached())
+        ]);
+        
+        performanceMonitor.end('首页-第三批加载', {
+          成功: [briefingData, aiRecData, rhinitisData].filter(r => r.status === 'fulfilled').length,
+          失败: [briefingData, aiRecData, rhinitisData].filter(r => r.status === 'rejected').length
+        });
+
+        setHomeData(prev => ({
+          ...prev,
+          briefing: briefingData.status === 'fulfilled' ? briefingData.value : null,
+          aiRecommendation: aiRecData.status === 'fulfilled' ? aiRecData.value : null,
+          rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
+        }));
+        
+        // 所有数据加载完成
+        setTimeout(() => {
+          pagePerformance.pageReady('首页');
+          console.log('[首页] ✅ 所有数据加载完成');
+        }, 100);
+      }, 800);
       
     } catch (error) {
       console.error('[首页] 加载数据异常:', error);
@@ -958,8 +997,15 @@ export default function Index() {
           onClick={async () => {
             Taro.showLoading({ title: '同步中...' });
             try {
+              // 同步 Garmin 数据
               await syncMyGarminData(1).catch(() => {});
               await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // 清除所有首页缓存，确保获取最新数据
+              console.log('[刷新] 清除缓存，重新加载数据');
+              clearHomePageCache();
+              
+              // 重新加载数据
               await loadHomeData();
               Taro.showToast({ title: '刷新成功', icon: 'success', duration: 1000 });
             } finally {
