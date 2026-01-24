@@ -21,6 +21,7 @@ export default {
     'pages/review/index',         // 每日复盘
     'pages/supplements/index',    // 补剂服用
     'pages/diet-recommendation/index', // 饮食推荐
+    'pages/privacy/index',       // 隐私保护指引
   ],
   window: {
     backgroundTextStyle: 'light',
