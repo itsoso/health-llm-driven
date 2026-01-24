@@ -298,7 +298,7 @@ export default function PrivacyPage() {
 
             <View className="contact-info">
               <Text className="contact-item">📧 邮箱：support@executor.life</Text>
-              <Text className="contact-item">🌐 网站：https://health.westwetlandtech.com</Text>
+              <Text className="contact-item">🌐 网站：https://health.executor.life</Text>
             </View>
 
             <Text className="section-content">

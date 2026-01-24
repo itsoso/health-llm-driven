@@ -10,7 +10,7 @@ const isNativeApp = typeof window !== 'undefined' && (
 
 // API基础地址
 const API_BASE_URL = isNativeApp 
-  ? 'https://health.westwetlandtech.com/api'  // 原生App直接调用线上API
+  ? 'https://health.executor.life/api'  // 原生App直接调用线上API（新域名）
   : (process.env.NEXT_PUBLIC_API_BASE_URL || '/api');  // Web版本使用代理
 
 export const api = axios.create({
