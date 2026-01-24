@@ -3,7 +3,7 @@
  */
 import Taro from '@tarojs/taro';
 
-// API 基础地址 - nginx 已配置 /api/ → /api/v1/
+// API 基础地址 - Nginx 会将 /api/ 代理到 /api/v1/
 const BASE_URL = 'https://health.executor.life/api';
 
 // Token 存储 key

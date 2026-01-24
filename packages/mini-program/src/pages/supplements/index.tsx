@@ -146,8 +146,9 @@ export default function SupplementsPage() {
     setLoading(true);
     try {
       // 使用与 Web 端一致的接口：/supplements/me/date/{date}
-      const data = await get<{ data: SupplementWithStatus[] }>(`/supplements/me/date/${selectedDate}`);
-      setSupplements(data?.data || []);
+      const data = await get<SupplementWithStatus[]>(`/supplements/me/date/${selectedDate}`);
+      console.log('[补剂数据] 加载成功:', data);
+      setSupplements(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('加载补剂数据失败:', error);
       Taro.showToast({ title: '加载失败', icon: 'none' });
@@ -159,8 +160,9 @@ export default function SupplementsPage() {
   const loadStats = async () => {
     try {
       // 使用与 Web 端一致的接口：/supplements/me/stats?days=7
-      const data = await get<{ data: SupplementStats[] }>('/supplements/me/stats?days=7');
-      setStats(data?.data || []);
+      const data = await get<SupplementStats[]>('/supplements/me/stats?days=7');
+      console.log('[补剂统计] 加载成功:', data);
+      setStats(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('加载统计数据失败:', error);
     }
