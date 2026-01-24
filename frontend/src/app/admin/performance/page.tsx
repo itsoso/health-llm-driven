@@ -74,8 +74,11 @@ export default function PerformanceMonitorPage() {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [timeRange, selectedPlatform]);
+    // 等待 token 加载完成后再请求数据
+    if (token) {
+      loadData();
+    }
+  }, [timeRange, selectedPlatform, token]);
 
   const loadData = async () => {
     setLoading(true);
@@ -91,6 +94,11 @@ export default function PerformanceMonitorPage() {
   };
 
   const loadOverview = async () => {
+    if (!token) {
+      console.warn('Token 未加载，跳过请求');
+      return;
+    }
+    
     try {
       const params = new URLSearchParams({ hours: timeRange.toString() });
       if (selectedPlatform !== 'all') {
@@ -107,6 +115,8 @@ export default function PerformanceMonitorPage() {
       if (response.ok) {
         const data = await response.json();
         setOverview(data);
+      } else if (response.status === 401) {
+        console.error('未授权，请重新登录');
       }
     } catch (error) {
       console.error('加载性能概览失败:', error);
@@ -115,6 +125,10 @@ export default function PerformanceMonitorPage() {
 
   const loadPagePerformance = async () => {
     if (selectedPlatform === 'all') return;
+    if (!token) {
+      console.warn('Token 未加载，跳过请求');
+      return;
+    }
     
     try {
       const params = new URLSearchParams({
@@ -132,6 +146,8 @@ export default function PerformanceMonitorPage() {
       if (response.ok) {
         const data = await response.json();
         setPagePerformance(data);
+      } else if (response.status === 401) {
+        console.error('未授权，请重新登录');
       }
     } catch (error) {
       console.error('加载页面性能失败:', error);
@@ -139,6 +155,11 @@ export default function PerformanceMonitorPage() {
   };
 
   const loadAPIPerformance = async () => {
+    if (!token) {
+      console.warn('Token 未加载，跳过请求');
+      return;
+    }
+    
     try {
       const params = new URLSearchParams({ hours: timeRange.toString() });
       
@@ -152,6 +173,8 @@ export default function PerformanceMonitorPage() {
       if (response.ok) {
         const data = await response.json();
         setAPIPerformance(data);
+      } else if (response.status === 401) {
+        console.error('未授权，请重新登录');
       }
     } catch (error) {
       console.error('加载 API 性能失败:', error);
