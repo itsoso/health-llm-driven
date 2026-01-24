@@ -16,7 +16,7 @@ from app.models.performance import (
     PlatformType, MetricType
 )
 from app.models.user import User
-from app.api.auth import get_current_user_optional, get_current_user_required
+from app.api.auth import get_current_user, get_current_user_required
 
 router = APIRouter(prefix="/performance", tags=["性能监控"])
 
@@ -87,7 +87,7 @@ class APIPerformance(BaseModel):
 async def report_metric(
     metric: PerformanceMetricCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     上报单个性能指标
@@ -117,7 +117,7 @@ async def report_metric(
 async def report_metrics_batch(
     batch: PerformanceMetricBatch,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     批量上报性能指标
