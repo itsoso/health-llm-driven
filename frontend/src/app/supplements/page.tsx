@@ -71,6 +71,8 @@ function SupplementsContent() {
     category: 'vitamin',
     description: '',
   });
+  const [selectedSupplement, setSelectedSupplement] = useState<any>(null);
+  const [showMenu, setShowMenu] = useState(false);
 
   const supplements = supplementsData?.data || [];
   const stats = statsData?.data || [];
@@ -95,6 +97,53 @@ function SupplementsContent() {
       user_id: userId,
       ...formData,
     });
+  };
+
+  const handleShowMenu = (supplement: any) => {
+    setSelectedSupplement(supplement);
+    setShowMenu(true);
+  };
+
+  const handleEditSupplement = () => {
+    if (!selectedSupplement) return;
+    setFormData({
+      name: selectedSupplement.name,
+      dosage: selectedSupplement.dosage || '',
+      timing: selectedSupplement.timing,
+      category: selectedSupplement.category,
+      description: selectedSupplement.description || '',
+    });
+    setShowAddForm(true);
+    setShowMenu(false);
+  };
+
+  const handleToggleActive = async () => {
+    if (!selectedSupplement) return;
+    try {
+      await supplementApi.updateDefinition(selectedSupplement.id, {
+        is_active: !selectedSupplement.is_active
+      });
+      queryClient.invalidateQueries({ queryKey: ['supplements-with-records'] });
+      queryClient.invalidateQueries({ queryKey: ['supplements-stats'] });
+      setShowMenu(false);
+    } catch (error) {
+      console.error('切换状态失败:', error);
+    }
+  };
+
+  const handleDeleteSupplement = async () => {
+    if (!selectedSupplement) return;
+    if (!confirm(`确定要删除"${selectedSupplement.name}"吗？删除后将无法恢复。`)) {
+      return;
+    }
+    try {
+      await supplementApi.deleteDefinition(selectedSupplement.id);
+      queryClient.invalidateQueries({ queryKey: ['supplements-with-records'] });
+      queryClient.invalidateQueries({ queryKey: ['supplements-stats'] });
+      setShowMenu(false);
+    } catch (error) {
+      console.error('删除失败:', error);
+    }
   };
 
   // 计算今日完成率
@@ -240,30 +289,50 @@ function SupplementsContent() {
                     {group.items.map((item: any) => (
                       <div
                         key={item.supplement.id}
-                        className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${
-                          item.record?.taken
+                        className={`flex items-center justify-between p-3 rounded-lg transition-all ${
+                          !item.supplement.is_active
+                            ? 'bg-gray-100 border-2 border-gray-300 opacity-60'
+                            : item.record?.taken
                             ? 'bg-green-50 border-2 border-green-300'
                             : 'bg-gray-50 border-2 border-gray-200 hover:border-gray-300'
                         }`}
-                        onClick={() => handleToggle(item.supplement.id, item.record?.taken || false)}
                       >
-                        <div className="flex items-center gap-3">
+                        <div 
+                          className="flex items-center gap-3 flex-1 cursor-pointer"
+                          onClick={() => item.supplement.is_active && handleToggle(item.supplement.id, item.record?.taken || false)}
+                        >
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
                             item.record?.taken ? 'bg-green-500 text-white' : 'bg-gray-300'
                           }`}>
                             {item.record?.taken && '✓'}
                           </div>
                           <div>
-                            <div className="font-semibold text-gray-900">{item.supplement.name}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-gray-900">{item.supplement.name}</span>
+                              {!item.supplement.is_active && (
+                                <span className="text-xs px-2 py-0.5 bg-gray-400 text-white rounded">已停用</span>
+                              )}
+                            </div>
                             {item.supplement.dosage && (
                               <div className="text-sm text-gray-600">{item.supplement.dosage}</div>
                             )}
                           </div>
                         </div>
-                        <div className={`text-sm font-medium ${
-                          item.record?.taken ? 'text-green-600' : 'text-gray-500'
-                        }`}>
-                          {item.record?.taken ? '已服用 ✓' : '未服用'}
+                        <div className="flex items-center gap-2">
+                          <div className={`text-sm font-medium ${
+                            item.record?.taken ? 'text-green-600' : 'text-gray-500'
+                          }`}>
+                            {item.record?.taken ? '已服用 ✓' : '未服用'}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShowMenu(item.supplement);
+                            }}
+                            className="ml-2 px-2 py-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
+                          >
+                            ⋯
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -305,6 +374,52 @@ function SupplementsContent() {
           </div>
         )}
       </div>
+
+      {/* 操作菜单 */}
+      {showMenu && selectedSupplement && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50"
+          onClick={() => setShowMenu(false)}
+        >
+          <div 
+            className="bg-white rounded-t-2xl w-full max-w-md p-6 space-y-3 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center pb-3 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">{selectedSupplement.name}</h3>
+            </div>
+            <button
+              onClick={handleEditSupplement}
+              className="w-full py-3 px-4 text-left rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-3"
+            >
+              <span className="text-xl">✏️</span>
+              <span className="text-gray-800 font-medium">编辑补剂</span>
+            </button>
+            <button
+              onClick={handleToggleActive}
+              className="w-full py-3 px-4 text-left rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-3"
+            >
+              <span className="text-xl">{selectedSupplement.is_active ? '⏸️' : '▶️'}</span>
+              <span className="text-gray-800 font-medium">
+                {selectedSupplement.is_active ? '停用补剂' : '启用补剂'}
+              </span>
+            </button>
+            <button
+              onClick={handleDeleteSupplement}
+              className="w-full py-3 px-4 text-left rounded-lg hover:bg-red-50 transition-colors flex items-center gap-3"
+            >
+              <span className="text-xl">🗑️</span>
+              <span className="text-red-600 font-medium">删除补剂</span>
+            </button>
+            <button
+              onClick={() => setShowMenu(false)}
+              className="w-full py-3 px-4 text-center rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+            >
+              <span className="text-gray-700 font-medium">取消</span>
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
