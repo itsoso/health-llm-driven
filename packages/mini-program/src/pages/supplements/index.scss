@@ -614,14 +614,39 @@ $indigo: #6366F1;
   }
 }
 
+.btn-row {
+  display: flex;
+  gap: 16rpx;
+}
+
 .add-btn {
-  width: 100%;
+  flex: 1;
   height: 80rpx;
   background: rgba(139, 92, 246, 0.2);
   color: #8b5cf6;
   border: 2rpx solid #8b5cf6;
   border-radius: 40rpx;
   font-size: 28rpx;
+  
+  &::after {
+    border: none;
+  }
+}
+
+.debug-btn {
+  width: 120rpx;
+  height: 80rpx;
+  background: rgba(255, 255, 255, 0.05);
+  color: $text-secondary;
+  border: 2rpx solid $card-border;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  
+  &.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: $green;
+    border-color: $green;
+  }
   
   &::after {
     border: none;
@@ -949,4 +974,64 @@ $indigo: #6366F1;
   &::after {
     border: none;
   }
+}
+
+// Debug 信息
+.debug-section {
+  margin-top: 32rpx;
+  padding-top: 32rpx;
+  border-top: 2rpx dashed $card-border;
+}
+
+.debug-card {
+  background: rgba(16, 185, 129, 0.05);
+  border: 1rpx solid rgba(16, 185, 129, 0.2);
+  border-radius: 16rpx;
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+}
+
+.debug-subtitle {
+  font-size: 26rpx;
+  font-weight: bold;
+  color: $green;
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.debug-item {
+  font-size: 22rpx;
+  color: $text-secondary;
+  display: block;
+  margin-bottom: 8rpx;
+  font-family: monospace;
+  line-height: 1.5;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.debug-knowledge-item {
+  margin-bottom: 12rpx;
+  padding: 12rpx;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8rpx;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.debug-query {
+  font-size: 22rpx;
+  color: $text-primary;
+  display: block;
+  margin-bottom: 4rpx;
+}
+
+.debug-count {
+  font-size: 20rpx;
+  color: $text-secondary;
+  display: block;
 }

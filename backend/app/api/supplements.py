@@ -295,31 +295,47 @@ def get_my_supplement_stats(
 async def get_supplement_recommendation(
     target_date: Optional[date] = None,
     debug: bool = Query(default=False, description="是否返回调试信息"),
+    use_llm: bool = Query(default=True, description="是否使用LLM（默认True）"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
     获取补剂科学推荐
     
+    基于益家知研 AI + 皮皮妈妈知识库
+    
     Args:
         target_date: 目标日期（可选，默认今天）
         debug: 是否返回调试信息，展示AI决策过程（默认False）
+        use_llm: 是否使用LLM生成推荐（默认True，False则使用规则）
     
     Returns:
         补剂科学推荐结果（debug模式下包含决策过程）
     """
-    logger.info(f"[补剂科学推荐API] 收到请求 - user_id={current_user.id}, target_date={target_date}, debug={debug}")
+    logger.info(f"[补剂科学推荐API] 收到请求 - user_id={current_user.id}, target_date={target_date}, debug={debug}, use_llm={use_llm}")
     
     try:
-        service = SupplementRecommendationService()
-        recommendation = service.generate_supplement_recommendation(
-            db=db,
-            user_id=current_user.id,
-            target_date=target_date,
-            debug=debug
-        )
+        if use_llm:
+            # 使用 LLM + 知识库推荐
+            from app.services.supplement_recommendation_llm import SupplementRecommendationServiceLLM
+            service = SupplementRecommendationServiceLLM()
+            recommendation = await service.generate_supplement_recommendation(
+                db=db,
+                user_id=current_user.id,
+                target_date=target_date,
+                debug=debug
+            )
+        else:
+            # 使用规则推荐
+            service = SupplementRecommendationService()
+            recommendation = service.generate_supplement_recommendation(
+                db=db,
+                user_id=current_user.id,
+                target_date=target_date,
+                debug=debug
+            )
         
-        logger.info(f"[补剂科学推荐API] 生成成功 - success={recommendation.get('success')}")
+        logger.info(f"[补剂科学推荐API] 生成成功 - success={recommendation.get('success')}, use_llm={use_llm}")
         return recommendation
     except Exception as e:
         logger.error(f"[补剂科学推荐API] 生成失败: {e}", exc_info=True)

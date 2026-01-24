@@ -113,6 +113,7 @@ export default function SupplementsPage() {
   const [showRecommendation, setShowRecommendation] = useState(false);
   const [recommendation, setRecommendation] = useState<ScientificRecommendation | null>(null);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
   
   // 新增/编辑补剂表单
   const [formData, setFormData] = useState({
@@ -282,10 +283,19 @@ export default function SupplementsPage() {
     setLoadingRecommendation(true);
     try {
       const result = await post('/supplements/scientific-recommendation', {
-        target_date: selectedDate
+        target_date: selectedDate,
+        debug: debugMode,
+        use_llm: true
       });
       
       console.log('[补剂推荐] API 返回数据:', result);
+      
+      // 如果是 debug 模式，打印详细信息
+      if (debugMode && result.debug) {
+        console.log('[补剂推荐] Debug 信息:', result.debug);
+        console.log('[补剂推荐] 推理过程:', result.debug.reasoning);
+        console.log('[补剂推荐] 知识库检索:', result.debug.knowledge_retrieved);
+      }
       
       // 验证返回数据的完整性
       if (!result || !result.success) {
@@ -474,9 +484,17 @@ export default function SupplementsPage() {
               <Text className="btn-icon">🧬</Text>
               <Text className="btn-title">{loadingRecommendation ? '科学分析中...' : '科学推荐'}</Text>
             </Button>
-            <Button className="add-btn" onClick={() => setShowAddForm(true)}>
-              + 手动添加补剂
-            </Button>
+            <View className="btn-row">
+              <Button className="add-btn" onClick={() => setShowAddForm(true)}>
+                + 手动添加补剂
+              </Button>
+              <Button 
+                className={`debug-btn ${debugMode ? 'active' : ''}`}
+                onClick={() => setDebugMode(!debugMode)}
+              >
+                {debugMode ? '🔍 Debug' : '🔍'}
+              </Button>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -775,6 +793,60 @@ export default function SupplementsPage() {
                   {recommendation.precautions.map((precaution, idx) => (
                     <Text key={idx} className="precaution-item">{precaution}</Text>
                   ))}
+                </View>
+              )}
+
+              {/* Debug 信息 */}
+              {debugMode && (recommendation as any).debug && (
+                <View className="debug-section">
+                  <Text className="section-title">🔍 Debug 信息</Text>
+                  
+                  {/* 执行步骤 */}
+                  {(recommendation as any).debug.steps && (
+                    <View className="debug-card">
+                      <Text className="debug-subtitle">⏱️ 执行步骤</Text>
+                      {(recommendation as any).debug.steps.map((step: any, idx: number) => (
+                        <Text key={idx} className="debug-item">
+                          {step.name}: {step.duration}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                  
+                  {/* 推理过程 */}
+                  {(recommendation as any).debug.reasoning && (
+                    <View className="debug-card">
+                      <Text className="debug-subtitle">🧠 推理过程</Text>
+                      {(recommendation as any).debug.reasoning.map((r: any, idx: number) => (
+                        <Text key={idx} className="debug-item">
+                          {r.message}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                  
+                  {/* 知识库检索 */}
+                  {(recommendation as any).debug.knowledge_retrieved && (
+                    <View className="debug-card">
+                      <Text className="debug-subtitle">📚 知识库检索</Text>
+                      {(recommendation as any).debug.knowledge_retrieved.map((k: any, idx: number) => (
+                        <View key={idx} className="debug-knowledge-item">
+                          <Text className="debug-query">查询: {k.query}</Text>
+                          <Text className="debug-count">结果: {k.results_count} 条</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  
+                  {/* 性能指标 */}
+                  {(recommendation as any).debug.performance && (
+                    <View className="debug-card">
+                      <Text className="debug-subtitle">⚡ 性能指标</Text>
+                      <Text className="debug-item">
+                        总耗时: {(recommendation as any).debug.performance.total_time}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
             </ScrollView>
