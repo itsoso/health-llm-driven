@@ -8,7 +8,7 @@ from sqlalchemy.sql import func
 from datetime import datetime
 import enum
 
-from app.models.base import Base
+from app.database import Base
 
 
 class PlatformType(str, enum.Enum):
