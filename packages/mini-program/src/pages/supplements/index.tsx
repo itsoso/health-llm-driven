@@ -379,110 +379,112 @@ export default function SupplementsPage() {
 
       {/* 补剂列表和统计 */}
       <ScrollView scrollY className="supplements-scroll" enhanced showScrollbar={false}>
-        {supplements.length === 0 ? (
-          <View className="empty-state">
-            <Text className="empty-icon">💊</Text>
-            <Text className="empty-title">还没有添加补剂</Text>
-            <Text className="empty-desc">点击下方按钮添加你的补剂清单</Text>
-          </View>
-        ) : (
-          groupedSupplements.map(group => (
-            group.items.length > 0 && (
-              <View key={group.value} className="timing-group">
-                <View className={`timing-header ${group.color}`}>
-                  <Text className="timing-label">{group.label}</Text>
-                  <Text className="timing-count">
-                    {group.items.filter(s => s.record?.taken).length}/{group.items.length}
-                  </Text>
-                </View>
-                
-                {group.items.map(item => (
-                  <View 
-                    key={item.supplement.id} 
-                    className={`supplement-card ${item.record?.taken ? 'taken' : ''} ${!item.supplement.is_active ? 'inactive' : ''}`}
-                  >
+        <View className="scroll-content">
+          {supplements.length === 0 ? (
+            <View className="empty-state">
+              <Text className="empty-icon">💊</Text>
+              <Text className="empty-title">还没有添加补剂</Text>
+              <Text className="empty-desc">点击下方按钮添加你的补剂清单</Text>
+            </View>
+          ) : (
+            groupedSupplements.map(group => (
+              group.items.length > 0 && (
+                <View key={group.value} className="timing-group">
+                  <View className={`timing-header ${group.color}`}>
+                    <Text className="timing-label">{group.label}</Text>
+                    <Text className="timing-count">
+                      {group.items.filter(s => s.record?.taken).length}/{group.items.length}
+                    </Text>
+                  </View>
+                  
+                  {group.items.map(item => (
                     <View 
-                      className="supplement-main"
-                      onClick={() => handleToggle(item.supplement.id, item.record?.taken || false)}
+                      key={item.supplement.id} 
+                      className={`supplement-card ${item.record?.taken ? 'taken' : ''} ${!item.supplement.is_active ? 'inactive' : ''}`}
                     >
-                      <View className="supplement-info">
-                        <View className="supplement-name-row">
-                          <Text className="supplement-name">{item.supplement.name}</Text>
-                          {!item.supplement.is_active && (
-                            <Text className="inactive-badge">已停用</Text>
+                      <View 
+                        className="supplement-main"
+                        onClick={() => handleToggle(item.supplement.id, item.record?.taken || false)}
+                      >
+                        <View className="supplement-info">
+                          <View className="supplement-name-row">
+                            <Text className="supplement-name">{item.supplement.name}</Text>
+                            {!item.supplement.is_active && (
+                              <Text className="inactive-badge">已停用</Text>
+                            )}
+                          </View>
+                          {item.supplement.dosage && (
+                            <Text className="supplement-dosage">{item.supplement.dosage}</Text>
+                          )}
+                          {item.supplement.description && (
+                            <Text className="supplement-desc">{item.supplement.description}</Text>
                           )}
                         </View>
-                        {item.supplement.dosage && (
-                          <Text className="supplement-dosage">{item.supplement.dosage}</Text>
-                        )}
-                        {item.supplement.description && (
-                          <Text className="supplement-desc">{item.supplement.description}</Text>
-                        )}
+                        <View className={`check-box ${item.record?.taken ? 'checked' : ''}`}>
+                          {item.record?.taken && <Text className="check-icon">✓</Text>}
+                        </View>
                       </View>
-                      <View className={`check-box ${item.record?.taken ? 'checked' : ''}`}>
-                        {item.record?.taken && <Text className="check-icon">✓</Text>}
+                      <View 
+                        className="supplement-more"
+                        onClick={(e) => handleShowActionSheet(item.supplement, e)}
+                      >
+                        <Text className="more-icon">⋯</Text>
                       </View>
                     </View>
-                    <View 
-                      className="supplement-more"
-                      onClick={(e) => handleShowActionSheet(item.supplement, e)}
-                    >
-                      <Text className="more-icon">⋯</Text>
+                  ))}
+                </View>
+              )
+            ))
+          )}
+
+          {/* 最近7天统计 */}
+          {stats.length > 0 && (
+            <View className="stats-section">
+              <Text className="stats-title">📊 最近7天统计</Text>
+              {stats.map(stat => (
+                <View key={stat.supplement_id} className="stat-item-row">
+                  <View className="stat-info">
+                    <Text className="stat-name">{stat.supplement_name}</Text>
+                    <Text className="stat-days">{stat.taken_days}/7天</Text>
+                  </View>
+                  <View className="stat-progress">
+                    <View className="stat-progress-bar">
+                      <View 
+                        className={`stat-progress-fill ${
+                          stat.completion_rate >= 80 ? 'green' :
+                          stat.completion_rate >= 50 ? 'yellow' : 'red'
+                        }`}
+                        style={`width: ${stat.completion_rate}%`}
+                      />
                     </View>
+                    <Text className="stat-percentage">{stat.completion_rate}%</Text>
                   </View>
-                ))}
-              </View>
-            )
-          ))
-        )}
-
-        {/* 最近7天统计 */}
-        {stats.length > 0 && (
-          <View className="stats-section">
-            <Text className="stats-title">📊 最近7天统计</Text>
-            {stats.map(stat => (
-              <View key={stat.supplement_id} className="stat-item-row">
-                <View className="stat-info">
-                  <Text className="stat-name">{stat.supplement_name}</Text>
-                  <Text className="stat-days">{stat.taken_days}/7天</Text>
                 </View>
-                <View className="stat-progress">
-                  <View className="stat-progress-bar">
-                    <View 
-                      className={`stat-progress-fill ${
-                        stat.completion_rate >= 80 ? 'green' :
-                        stat.completion_rate >= 50 ? 'yellow' : 'red'
-                      }`}
-                      style={`width: ${stat.completion_rate}%`}
-                    />
-                  </View>
-                  <Text className="stat-percentage">{stat.completion_rate}%</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
-
-      {/* 添加按钮 */}
-      <View className="add-btn-container">
-        <Button 
-          className="recommendation-btn-large" 
-          onClick={handleGetRecommendation}
-          loading={loadingRecommendation}
-        >
-          <View className="btn-content">
-            <Text className="btn-icon">🧬</Text>
-            <View className="btn-text-group">
-              <Text className="btn-title">{loadingRecommendation ? '益家知研分析中...' : '益家知研 AI 推荐'}</Text>
-              <Text className="btn-subtitle">基于大模型 + 皮皮妈妈知识库</Text>
+              ))}
             </View>
+          )}
+
+          {/* 添加按钮 */}
+          <View className="add-btn-container">
+            <Button 
+              className="recommendation-btn-large" 
+              onClick={handleGetRecommendation}
+              loading={loadingRecommendation}
+            >
+              <View className="btn-content">
+                <Text className="btn-icon">🧬</Text>
+                <View className="btn-text-group">
+                  <Text className="btn-title">{loadingRecommendation ? '科学分析中...' : '科学推荐'}</Text>
+                  <Text className="btn-subtitle">基于大模型 + 皮皮妈妈知识库</Text>
+                </View>
+              </View>
+            </Button>
+            <Button className="add-btn" onClick={() => setShowAddForm(true)}>
+              + 手动添加补剂
+            </Button>
           </View>
-        </Button>
-        <Button className="add-btn" onClick={() => setShowAddForm(true)}>
-          + 手动添加补剂
-        </Button>
-      </View>
+        </View>
+      </ScrollView>
 
       {/* 添加/编辑补剂弹窗 */}
       {showAddForm && (
@@ -644,7 +646,13 @@ export default function SupplementsPage() {
               </View>
             </View>
 
-            <ScrollView scrollY className="recommendation-content" enhanced showScrollbar={false}>
+            <ScrollView 
+              scrollY 
+              className="recommendation-content" 
+              enhanced 
+              showScrollbar={false}
+              enableFlex={true}
+            >
               {/* 整体评分 */}
               {recommendation.overall_rating && (
                 <View className="rating-card">
@@ -702,23 +710,29 @@ export default function SupplementsPage() {
               )}
 
               {/* 推荐补剂 */}
-              {recommendation.recommendations && recommendation.recommendations.length > 0 && (
+              {recommendation.recommendations && (
                 <View className="recommendations-section">
                   <Text className="section-title">💊 推荐补剂</Text>
-                  {recommendation.recommendations.map((rec, idx) => (
-                    <View key={idx} className={`rec-card priority-${getPriorityClass(rec.priority || '中')}`}>
-                      <View className="rec-header">
-                        <Text className="rec-icon">{rec.icon || '💊'}</Text>
-                        <Text className="rec-name">{rec.name || '未知补剂'}</Text>
-                        <Text className={`rec-priority ${getPriorityClass(rec.priority || '中')}`}>{rec.priority || '中'}优先</Text>
+                  {recommendation.recommendations.length > 0 ? (
+                    recommendation.recommendations.map((rec, idx) => (
+                      <View key={idx} className={`rec-card priority-${getPriorityClass(rec.priority || '中')}`}>
+                        <View className="rec-header">
+                          <Text className="rec-icon">{rec.icon || '💊'}</Text>
+                          <Text className="rec-name">{rec.name || '未知补剂'}</Text>
+                          <Text className={`rec-priority ${getPriorityClass(rec.priority || '中')}`}>{rec.priority || '中'}优先</Text>
+                        </View>
+                        <Text className="rec-reason">{rec.reason || '暂无说明'}</Text>
+                        <View className="rec-details">
+                          <Text className="rec-detail">💊 剂量：{rec.dosage || '请咨询医生'}</Text>
+                          <Text className="rec-detail">⏰ 时间：{rec.timing || '随餐'}</Text>
+                        </View>
                       </View>
-                      <Text className="rec-reason">{rec.reason || '暂无说明'}</Text>
-                      <View className="rec-details">
-                        <Text className="rec-detail">💊 剂量：{rec.dosage || '请咨询医生'}</Text>
-                        <Text className="rec-detail">⏰ 时间：{rec.timing || '随餐'}</Text>
-                      </View>
+                    ))
+                  ) : (
+                    <View className="rec-card">
+                      <Text className="rec-reason">暂无特定推荐，请保持均衡饮食。</Text>
                     </View>
-                  ))}
+                  )}
                 </View>
               )}
 

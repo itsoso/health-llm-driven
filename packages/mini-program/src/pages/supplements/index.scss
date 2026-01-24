@@ -15,17 +15,18 @@ $purple: #8B5CF6;
 $indigo: #6366F1;
 
 .supplements-page {
-  min-height: 100vh;
+  height: 100vh;
   background: $bg-dark;
   padding: 24rpx;
-  padding-bottom: 180rpx;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 
   &.loading {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
   }
 }
 
@@ -126,7 +127,14 @@ $indigo: #6366F1;
 
 // 补剂列表
 .supplements-scroll {
-  height: calc(100vh - 300rpx);
+  flex: 1;
+  height: 0;
+}
+
+.scroll-content {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 // 空状态
@@ -594,13 +602,7 @@ $indigo: #6366F1;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
-  padding: 24rpx 32rpx;
-  position: fixed;
-  bottom: 120rpx;
-  left: 0;
-  right: 0;
-  background: linear-gradient(to top, rgba(17, 24, 39, 0.95), transparent);
-  padding-top: 40rpx;
+  padding: 40rpx 0 60rpx 0;
 }
 
 .recommendation-btn-large {
@@ -732,6 +734,7 @@ $indigo: #6366F1;
 .recommendation-content {
   flex: 1;
   padding: 32rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
 // 评分卡片
