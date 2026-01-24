@@ -17,6 +17,7 @@
     "@capacitor/ios": "8.0.1",
     "@capacitor/splash-screen": "8.0.0",
     "@capacitor/status-bar": "8.0.0",
+    "@heroicons/react": "^2.2.0",
     "@tanstack/react-query": "5.12.2",
     "@types/leaflet": "1.9.21",
     "axios": "1.6.2",

@@ -50,7 +50,7 @@ class PerformanceMetric(Base):
     
     # 详细信息
     details = Column(JSON, nullable=True)  # 详细信息（如分批加载时间、缓存命中等）
-    metadata = Column(JSON, nullable=True)  # 元数据（如设备信息、网络状态等）
+    meta_data = Column(JSON, nullable=True)  # 元数据（如设备信息、网络状态等）
     
     # 状态
     success = Column(Integer, default=1)  # 是否成功（1=成功，0=失败）

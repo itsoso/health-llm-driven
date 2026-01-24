@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
     start_time TIMESTAMP NOT NULL,
     end_time TIMESTAMP NOT NULL,
     details TEXT,
-    metadata TEXT,
+    meta_data TEXT,
     success INTEGER DEFAULT 1,
     error_message VARCHAR(500),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
