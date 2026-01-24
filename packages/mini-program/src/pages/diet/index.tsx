@@ -134,11 +134,43 @@ export default function DietPage() {
       sourceType: ['album', 'camera'],
       success: (res) => {
         const tempFilePath = res.tempFilePaths[0];
-        setImagePreview(tempFilePath);
-        setRecognitionResult(null);
+        console.log('[饮食上传] 选择图片成功:', tempFilePath);
+        
+        // 检查文件大小
+        Taro.getFileInfo({
+          filePath: tempFilePath,
+          success: (fileInfo) => {
+            const sizeKB = fileInfo.size / 1024;
+            const sizeMB = sizeKB / 1024;
+            console.log('[饮食上传] 图片大小:', sizeMB.toFixed(2), 'MB');
+            
+            if (fileInfo.size > 5 * 1024 * 1024) {  // 5MB
+              Taro.showToast({ 
+                title: '图片太大，请选择较小的图片', 
+                icon: 'none',
+                duration: 3000
+              });
+              return;
+            }
+            
+            setImagePreview(tempFilePath);
+            setRecognitionResult(null);
+          },
+          fail: (err) => {
+            console.error('[饮食上传] 获取文件信息失败:', err);
+            // 即使获取失败也继续
+            setImagePreview(tempFilePath);
+            setRecognitionResult(null);
+          }
+        });
       },
       fail: (err) => {
-        console.error('选择图片失败:', err);
+        console.error('[饮食上传] 选择图片失败:', err);
+        Taro.showToast({ 
+          title: `选择图片失败: ${err.errMsg || '未知错误'}`, 
+          icon: 'none',
+          duration: 3000
+        });
       },
     });
   };
@@ -197,21 +229,45 @@ export default function DietPage() {
 
   // 一键识别并保存
   const handleRecognizeAndSave = async () => {
+    console.log('[饮食上传] ===== 开始上传 =====');
+    console.log('[饮食上传] 图片路径:', imagePreview);
+    console.log('[饮食上传] 日期:', selectedDate);
+    console.log('[饮食上传] 餐食类型:', mealType);
+    
     if (!imagePreview) {
       Taro.showToast({ title: '请先选择图片', icon: 'none' });
       return;
     }
 
     if (isSaving) {
+      console.log('[饮食上传] 正在保存中，跳过重复请求');
       return; // 防止重复提交
     }
 
     setIsSaving(true);
     setIsRecognizing(true);
+    
     try {
       const fs = Taro.getFileSystemManager();
-      const base64 = fs.readFileSync(imagePreview, 'base64') as string;
+      
+      // 读取 Base64
+      let base64: string;
+      try {
+        console.log('[饮食上传] 开始读取图片...');
+        base64 = fs.readFileSync(imagePreview, 'base64') as string;
+        console.log('[饮食上传] 读取成功，Base64 长度:', base64.length);
+        
+        // 检查 Base64 是否有效
+        if (!base64 || base64.length < 100) {
+          throw new Error('图片数据无效');
+        }
+      } catch (readError: any) {
+        console.error('[饮食上传] 读取图片失败:', readError);
+        throw new Error(`读取图片失败: ${readError.message || '未知错误'}`);
+      }
 
+      console.log('[饮食上传] 发送请求到服务器...');
+      
       await request({
         url: '/diet/recognize-and-save',
         method: 'POST',
@@ -224,15 +280,32 @@ export default function DietPage() {
         },
       });
 
+      console.log('[饮食上传] 上传成功');
       Taro.showToast({ title: '保存成功！', icon: 'success' });
       resetForm();
       loadDailySummary();
     } catch (error: any) {
-      console.error('保存失败:', error);
-      Taro.showToast({ title: error.message || '保存失败', icon: 'none' });
+      console.error('[饮食上传] 保存失败，错误详情:', error);
+      console.error('[饮食上传] 错误类型:', typeof error);
+      console.error('[饮食上传] 错误消息:', error.message);
+      console.error('[饮食上传] 错误堆栈:', error.stack);
+      
+      let errorMsg = '保存失败，请重试';
+      if (error.message) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      }
+      
+      Taro.showToast({ 
+        title: errorMsg, 
+        icon: 'none',
+        duration: 3000
+      });
     } finally {
       setIsRecognizing(false);
       setIsSaving(false);
+      console.log('[饮食上传] ===== 上传流程结束 =====');
     }
   };
 

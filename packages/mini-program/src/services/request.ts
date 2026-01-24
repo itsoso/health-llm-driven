@@ -101,6 +101,7 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
       },
+      timeout: 60000,  // 60秒超时（AI识别需要时间）
     });
 
     const { statusCode, data: responseData } = response;
