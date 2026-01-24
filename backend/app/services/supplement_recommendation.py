@@ -106,7 +106,8 @@ class SupplementRecommendationService:
                 "rating": overall_rating.get("rating", "一般")
             }
             
-            logger.info(f"[补剂推荐] 推荐生成完成")
+            logger.info(f"[补剂推荐] 推荐生成完成 - 推荐数量: {len(recommendations)}")
+            logger.info(f"[补剂推荐] 推荐列表: {[r['name'] for r in recommendations]}")
             return result
             
         except Exception as e:
