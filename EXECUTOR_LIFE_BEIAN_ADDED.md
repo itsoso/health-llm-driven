@@ -387,3 +387,56 @@ BEIAN_HTML='<a class="beian-pill" href="http://www.beian.gov.cn/portal/registerS
 **显示效果**: 正常  
 **覆盖范围**: 所有静态页面  
 **记录时间**: 2026-01-24 12:00 (北京时间)
+
+---
+
+## 🔄 更新记录 (2026-01-24 12:05)
+
+### 调整备案顺序
+
+**用户要求**: 将 ICP 备案放到公安备案之后
+
+**修改前顺序**:
+1. 浙ICP备2025212705号-3
+2. 浙公网安备33010602014266号
+
+**修改后顺序**:
+1. 浙公网安备33010602014266号 ✅
+2. 浙ICP备2025212705号-3 ✅
+
+### 最终 HTML 结构
+
+```html
+<div class="beian-wrap">
+  <!-- 公安备案（在前） -->
+  <a class="beian-pill" href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=33010602014266" target="_blank" rel="noopener noreferrer">
+    <img class="icp-icon" src="https://beian.mps.gov.cn/web/assets/logo01.6189a29f.png" alt="公安备案图标"/>
+    <span class="beian-text">浙公网安备33010602014266号</span>
+  </a>
+  
+  <!-- ICP 备案（在后） -->
+  <a class="beian-pill" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+    <span class="beian-text">浙ICP备2025212705号-3</span>
+  </a>
+</div>
+```
+
+### 显示效果
+
+```
+┌─────────────────────────────────────────────────┐
+│  © 2025 个人健康记录（仅自用）                      │
+│                                                 │
+│  [图标] 浙公网安备33010602014266号  [浙ICP备2025212705号-3]  │
+│                                                 │
+│  网站说明  |  隐私说明                             │
+└─────────────────────────────────────────────────┘
+```
+
+### 验证结果
+
+- ✅ index.html - 顺序正确
+- ✅ privacy.html - 顺序正确
+- ✅ about.html - 顺序正确
+
+**更新时间**: 2026-01-24 12:05 (北京时间)
