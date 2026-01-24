@@ -1,5 +1,5 @@
 /**
- * 首页 - 整合 AI 健康助手 (V2 优化版)
+ * 首页 - 整合 AI 健康助手 (V2 优化版 + 性能监控)
  */
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Input, ScrollView, Image } from '@tarojs/components';
@@ -31,6 +31,7 @@ import {
   ScheduleItem,
   PreWorkoutGuidance
 } from '../../types';
+import { performanceMonitor, pagePerformance } from '../../utils/performance';
 import './index.scss';
 
 interface HomeData {
@@ -84,6 +85,9 @@ export default function Index() {
   }, []);
 
   Taro.useDidShow(() => {
+    // 性能监控：页面显示
+    pagePerformance.pageStart('首页');
+    
     // 统一在这里处理登录检查和数据加载
     checkLoginStatus();
   });
@@ -153,9 +157,14 @@ export default function Index() {
       return;
     }
     
+    // 性能监控：开始加载数据
+    performanceMonitor.start('首页-总数据加载');
     setHomeData(prev => ({ ...prev, loading: true }));
     
     try {
+      // 性能监控：并行 API 调用
+      performanceMonitor.start('首页-并行API调用');
+      
       const [
         garminData, 
         recommendationData, 
@@ -167,28 +176,36 @@ export default function Index() {
         remindersData,
         scheduleData
       ] = await Promise.allSettled([
-        getTodayGarminData(),
-        getDailyRecommendation(),
-        getTodayRhinitis(),
-        getTodayWorkouts(),
-        getTodayDietSummary(),
-        getMorningBriefing(),
-        getAIRecommendation(),
-        getCurrentReminders(),
-        getDailySchedule()
+        performanceMonitor.trackAPI('getTodayGarminData', () => getTodayGarminData()),
+        performanceMonitor.trackAPI('getDailyRecommendation', () => getDailyRecommendation()),
+        performanceMonitor.trackAPI('getTodayRhinitis', () => getTodayRhinitis()),
+        performanceMonitor.trackAPI('getTodayWorkouts', () => getTodayWorkouts()),
+        performanceMonitor.trackAPI('getTodayDietSummary', () => getTodayDietSummary()),
+        performanceMonitor.trackAPI('getMorningBriefing', () => getMorningBriefing()),
+        performanceMonitor.trackAPI('getAIRecommendation', () => getAIRecommendation()),
+        performanceMonitor.trackAPI('getCurrentReminders', () => getCurrentReminders()),
+        performanceMonitor.trackAPI('getDailySchedule', () => getDailySchedule())
       ]);
+      
+      performanceMonitor.end('首页-并行API调用', {
+        成功: [garminData, recommendationData, rhinitisData, workoutsData, dietData, briefingData, aiRecData, remindersData, scheduleData].filter(r => r.status === 'fulfilled').length,
+        失败: [garminData, recommendationData, rhinitisData, workoutsData, dietData, briefingData, aiRecData, remindersData, scheduleData].filter(r => r.status === 'rejected').length
+      });
 
       // 如果今日没有运动记录，获取运动指导
       let workoutGuidance: PreWorkoutGuidance | null = null;
       const workouts = workoutsData.status === 'fulfilled' ? workoutsData.value : [];
       if (workouts.length === 0) {
         try {
-          workoutGuidance = await getPreWorkoutGuidance('running');
+          workoutGuidance = await performanceMonitor.trackAPI('getPreWorkoutGuidance', () => getPreWorkoutGuidance('running'));
         } catch (e) {
           console.error('获取运动指导失败:', e);
         }
       }
 
+      // 性能监控：数据处理
+      performanceMonitor.start('首页-数据处理');
+      
       // 使用函数式更新，确保状态一致性
       setHomeData(prev => ({
         ...prev,
@@ -204,8 +221,21 @@ export default function Index() {
         workoutGuidance,
         loading: false,
       }));
+      
+      performanceMonitor.end('首页-数据处理');
+      performanceMonitor.end('首页-总数据加载');
+      
+      // 标记数据加载完成
+      pagePerformance.dataLoaded('首页');
+      
+      // 在下一个事件循环标记页面就绪（等待渲染完成）
+      setTimeout(() => {
+        pagePerformance.pageReady('首页');
+      }, 100);
+      
     } catch (error) {
       console.error('[首页] 加载数据异常:', error);
+      performanceMonitor.end('首页-总数据加载', { error: String(error) });
       setHomeData(prev => ({ ...prev, loading: false }));
     }
   };
