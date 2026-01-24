@@ -135,7 +135,7 @@ export default function AdminPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   
-  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'performance'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -483,6 +483,12 @@ export default function AdminPage() {
             }`}
           >
             🎫 邀请码管理
+          </button>
+          <button
+            onClick={() => router.push('/admin/performance')}
+            className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20"
+          >
+            📊 性能监控
           </button>
         </div>
 
