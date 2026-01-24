@@ -604,8 +604,11 @@ export default function ProfilePage() {
       </ScrollView>
 
       {/* 保存按钮 */}
-      <View className="save-btn" onClick={saveProfile}>
-        {saving ? '保存中...' : '💾 保存设置'}
+      <View 
+        className={`save-btn ${saving ? 'disabled' : ''}`} 
+        onClick={saving ? undefined : saveProfile}
+      >
+        {saving ? '⏳ 保存中...' : '💾 保存设置'}
       </View>
     </View>
   );

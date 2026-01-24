@@ -263,4 +263,12 @@
   text-align: center;
   border-radius: 24px;
   box-shadow: 0 8px 32px rgba(147, 51, 234, 0.4);
+  transition: all 0.3s ease;
+
+  &.disabled {
+    opacity: 0.6;
+    background: linear-gradient(135deg, #ccc, #999);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+  }
 }

@@ -89,6 +89,7 @@ export default function DietPage() {
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);  // 文字分析loading
+  const [isSaving, setIsSaving] = useState(false);  // 保存loading，防止重复提交
   const [formData, setFormData] = useState({
     food_items: '',
     calories: '',
@@ -201,6 +202,11 @@ export default function DietPage() {
       return;
     }
 
+    if (isSaving) {
+      return; // 防止重复提交
+    }
+
+    setIsSaving(true);
     setIsRecognizing(true);
     try {
       const fs = Taro.getFileSystemManager();
@@ -226,6 +232,7 @@ export default function DietPage() {
       Taro.showToast({ title: error.message || '保存失败', icon: 'none' });
     } finally {
       setIsRecognizing(false);
+      setIsSaving(false);
     }
   };
 
@@ -276,6 +283,11 @@ export default function DietPage() {
       return;
     }
 
+    if (isSaving) {
+      return; // 防止重复提交
+    }
+
+    setIsSaving(true);
     try {
       // 如果有图片，读取为Base64
       let imageBase64: string | null = null;
@@ -320,6 +332,8 @@ export default function DietPage() {
       console.error('[饮食记录] 保存失败:', error);
       const errorMsg = error?.message || error?.errMsg || '保存失败';
       Taro.showToast({ title: errorMsg.substring(0, 30), icon: 'none', duration: 3000 });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -460,16 +474,16 @@ export default function DietPage() {
               {imagePreview && (
                 <View className="action-buttons">
                   <View
-                    className={`action-btn recognize ${isRecognizing ? 'disabled' : ''}`}
-                    onClick={isRecognizing ? undefined : handleRecognize}
+                    className={`action-btn recognize ${isRecognizing || isSaving ? 'disabled' : ''}`}
+                    onClick={isRecognizing || isSaving ? undefined : handleRecognize}
                   >
                     <Text>{isRecognizing ? '🔍 识别中...' : '🔍 智能识别'}</Text>
                   </View>
                   <View
-                    className={`action-btn save ${isRecognizing ? 'disabled' : ''}`}
-                    onClick={isRecognizing ? undefined : handleRecognizeAndSave}
+                    className={`action-btn save ${isSaving ? 'disabled' : ''}`}
+                    onClick={isSaving ? undefined : handleRecognizeAndSave}
                   >
-                    <Text>✨ 一键保存</Text>
+                    <Text>{isSaving ? '⏳ 保存中...' : '✨ 一键保存'}</Text>
                   </View>
                 </View>
               )}
@@ -556,8 +570,11 @@ export default function DietPage() {
                   />
                 </View>
               </View>
-              <View className="save-manual-btn" onClick={handleManualSave}>
-                <Text>保存记录</Text>
+              <View 
+                className={`save-manual-btn ${isSaving ? 'disabled' : ''}`} 
+                onClick={isSaving ? undefined : handleManualSave}
+              >
+                <Text>{isSaving ? '⏳ 保存中...' : '保存记录'}</Text>
               </View>
             </View>
           </View>

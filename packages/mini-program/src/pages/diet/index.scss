@@ -428,6 +428,13 @@
         font-size: 28px;
         font-weight: 500;
         margin-top: 20px; // 增加顶部间距，避免遮挡输入框
+        transition: all 0.3s ease;
+
+        &.disabled {
+          opacity: 0.6;
+          background: linear-gradient(135deg, #ccc 0%, #999 100%);
+          pointer-events: none;
+        }
       }
     }
   }
