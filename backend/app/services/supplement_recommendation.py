@@ -149,7 +149,7 @@ class SupplementRecommendationService:
                 "avg_stress_level": round(avg_stress, 1),
                 "avg_resting_hr": round(avg_rhr, 0),
                 "latest_sleep_score": records[0].sleep_score if records[0].sleep_score else None,
-                "latest_body_battery": records[0].body_battery if records[0].body_battery else None,
+                "latest_body_battery": records[0].body_battery_current if records[0].body_battery_current else None,
                 "data_count": len(records)
             }
         except Exception as e:
@@ -363,8 +363,8 @@ class SupplementRecommendationService:
         # 4. 营养状况分析
         if diet_data:
             protein = diet_data.get("avg_daily_protein", 0)
-            if profile and profile.weight:
-                protein_per_kg = protein / profile.weight
+            if profile and profile.current_weight_kg:
+                protein_per_kg = protein / profile.current_weight_kg
                 if protein_per_kg < 0.8:
                     analysis["nutrition_status"] = "蛋白质不足"
                     analysis["risk_factors"].append("蛋白质摄入不足（{:.1f}g/kg）".format(protein_per_kg))
