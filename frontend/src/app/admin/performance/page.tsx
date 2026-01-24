@@ -68,6 +68,11 @@ export default function PerformanceMonitorPage() {
   
   const [activeTab, setActiveTab] = useState<'overview' | 'pages' | 'apis'>('overview');
 
+  // 页面加载时滚动到顶部
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [timeRange, selectedPlatform]);
@@ -167,7 +172,7 @@ export default function PerformanceMonitorPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 p-6">
+      <div className="min-h-screen bg-gray-50 pt-8 pb-6 px-6">
         <div className="max-w-7xl mx-auto">
           {/* 头部 */}
           <div className="mb-6">
