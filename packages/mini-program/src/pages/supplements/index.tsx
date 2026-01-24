@@ -471,13 +471,8 @@ export default function SupplementsPage() {
               onClick={handleGetRecommendation}
               loading={loadingRecommendation}
             >
-              <View className="btn-content">
-                <Text className="btn-icon">🧬</Text>
-                <View className="btn-text-group">
-                  <Text className="btn-title">{loadingRecommendation ? '科学分析中...' : '科学推荐'}</Text>
-                  <Text className="btn-subtitle">基于大模型 + 皮皮妈妈知识库</Text>
-                </View>
-              </View>
+              <Text className="btn-icon">🧬</Text>
+              <Text className="btn-title">{loadingRecommendation ? '科学分析中...' : '科学推荐'}</Text>
             </Button>
             <Button className="add-btn" onClick={() => setShowAddForm(true)}>
               + 手动添加补剂

@@ -303,28 +303,7 @@ $indigo: #6366F1;
   font-weight: bold;
 }
 
-// 添加按钮
-.add-btn-container {
-  position: fixed;
-  bottom: 120rpx;
-  left: 24rpx;
-  right: 24rpx;
-}
-
-.add-btn {
-  width: 100%;
-  height: 88rpx;
-  background: linear-gradient(135deg, $indigo, $purple);
-  color: #fff;
-  font-size: 32rpx;
-  font-weight: 500;
-  border-radius: 44rpx;
-  border: none;
-  
-  &::after {
-    border: none;
-  }
-}
+// 添加按钮样式已移至底部统一定义
 
 // 弹窗
 .modal-mask {
@@ -607,7 +586,7 @@ $indigo: #6366F1;
 
 .recommendation-btn-large {
   width: 100%;
-  height: 120rpx;
+  height: 96rpx;
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
   color: white;
   border-radius: 24rpx;
@@ -615,66 +594,23 @@ $indigo: #6366F1;
   font-weight: 600;
   border: none;
   box-shadow: 0 8rpx 24rpx rgba(139, 92, 246, 0.4);
-  position: relative;
-  overflow: hidden;
-  
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-  }
-  
-  &:active::before {
-    left: 100%;
-  }
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
   
   &::after {
     border: none;
   }
   
-  .btn-content {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 16rpx;
-  }
-  
   .btn-icon {
-    font-size: 48rpx;
-    animation: pulse 2s ease-in-out infinite;
-  }
-  
-  .btn-text-group {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4rpx;
+    font-size: 40rpx;
   }
   
   .btn-title {
     font-size: 32rpx;
     font-weight: 600;
     color: white;
-  }
-  
-  .btn-subtitle {
-    font-size: 22rpx;
-    color: rgba(255, 255, 255, 0.8);
-    font-weight: 400;
-  }
-}
-
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
   }
 }
 
