@@ -1,7 +1,11 @@
 /**
  * 性能监控工具
  * 用于追踪小程序页面加载和 API 调用性能
+ * 支持自动上报到后端
  */
+
+import Taro from '@tarojs/taro';
+import { post } from '../services/request';
 
 interface PerformanceMetric {
   name: string;
@@ -11,9 +15,147 @@ interface PerformanceMetric {
   metadata?: Record<string, any>;
 }
 
+interface PerformanceReport {
+  session_id: string;
+  platform: 'mini_program' | 'web';
+  metric_type: 'page_load' | 'api_call' | 'render' | 'interaction';
+  metric_name: string;
+  duration: number;
+  start_time: string;
+  end_time: string;
+  details?: Record<string, any>;
+  metadata?: Record<string, any>;
+  success: number;
+  error_message?: string;
+}
+
 class PerformanceMonitor {
   private metrics: Map<string, PerformanceMetric> = new Map();
   private enabled: boolean = true;
+  private sessionId: string = '';
+  private reportQueue: PerformanceReport[] = [];
+  private reportEnabled: boolean = true; // 是否启用上报
+  private reportBatchSize: number = 10; // 批量上报大小
+  private reportInterval: number = 30000; // 上报间隔（30秒）
+  private reportTimer: any = null;
+  
+  constructor() {
+    // 生成会话 ID
+    this.sessionId = this.generateSessionId();
+    
+    // 启动定时上报
+    this.startReportTimer();
+  }
+  
+  /**
+   * 生成会话 ID
+   */
+  private generateSessionId(): string {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    return `mp_${timestamp}_${random}`;
+  }
+  
+  /**
+   * 启动定时上报
+   */
+  private startReportTimer() {
+    if (!this.reportEnabled) return;
+    
+    this.reportTimer = setInterval(() => {
+      this.flushReports();
+    }, this.reportInterval);
+  }
+  
+  /**
+   * 停止定时上报
+   */
+  private stopReportTimer() {
+    if (this.reportTimer) {
+      clearInterval(this.reportTimer);
+      this.reportTimer = null;
+    }
+  }
+  
+  /**
+   * 上报性能数据到后端
+   */
+  private async reportToBackend(metric: PerformanceMetric, type: 'page_load' | 'api_call' = 'api_call') {
+    if (!this.reportEnabled || !metric.endTime || !metric.duration) return;
+    
+    try {
+      const report: PerformanceReport = {
+        session_id: this.sessionId,
+        platform: 'mini_program',
+        metric_type: type,
+        metric_name: metric.name,
+        duration: metric.duration,
+        start_time: new Date(metric.startTime).toISOString(),
+        end_time: new Date(metric.endTime).toISOString(),
+        details: metric.metadata,
+        metadata: {
+          system: Taro.getSystemInfoSync(),
+          network: await this.getNetworkType()
+        },
+        success: 1
+      };
+      
+      // 添加到队列
+      this.reportQueue.push(report);
+      
+      // 如果队列达到批量大小，立即上报
+      if (this.reportQueue.length >= this.reportBatchSize) {
+        await this.flushReports();
+      }
+    } catch (error) {
+      console.error('[性能上报] 失败:', error);
+    }
+  }
+  
+  /**
+   * 获取网络类型
+   */
+  private async getNetworkType(): Promise<string> {
+    try {
+      const { networkType } = await Taro.getNetworkType();
+      return networkType;
+    } catch {
+      return 'unknown';
+    }
+  }
+  
+  /**
+   * 批量上报性能数据
+   */
+  private async flushReports() {
+    if (this.reportQueue.length === 0) return;
+    
+    const reports = [...this.reportQueue];
+    this.reportQueue = [];
+    
+    try {
+      await post('/performance/metrics/batch', {
+        metrics: reports
+      });
+      console.log(`[性能上报] 已上报 ${reports.length} 条数据`);
+    } catch (error) {
+      console.error('[性能上报] 批量上报失败:', error);
+      // 失败的数据放回队列（最多保留 100 条）
+      this.reportQueue = [...reports, ...this.reportQueue].slice(0, 100);
+    }
+  }
+  
+  /**
+   * 设置是否启用上报
+   */
+  setReportEnabled(enabled: boolean) {
+    this.reportEnabled = enabled;
+    if (enabled) {
+      this.startReportTimer();
+    } else {
+      this.stopReportTimer();
+    }
+  }
   
   /**
    * 开始计时
@@ -59,6 +201,10 @@ class PerformanceMonitor {
     } else {
       console.log(`[性能] ${name} 耗时 ${duration}ms`, metric.metadata || '');
     }
+    
+    // 自动上报到后端
+    const type = name.startsWith('页面-') ? 'page_load' : 'api_call';
+    this.reportToBackend(metric, type);
     
     return duration;
   }
