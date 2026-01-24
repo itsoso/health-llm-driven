@@ -40,6 +40,7 @@ from app.api import (
     notification,  # 推送通知
     review,  # 每日复盘
     diet_recommendation,  # 智能饮食推荐
+    performance,  # 性能监控
 )
 
 api_router = APIRouter()
@@ -88,3 +89,4 @@ api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["di
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
 api_router.include_router(review.router, tags=["review"])  # 每日复盘
 api_router.include_router(diet_recommendation.router)  # 智能饮食推荐（prefix 已在 router 中定义）
+api_router.include_router(performance.router, prefix="/performance", tags=["performance"])  # 性能监控
