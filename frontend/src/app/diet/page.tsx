@@ -79,6 +79,7 @@ function DietContent() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -287,6 +288,51 @@ function DietContent() {
       meal_type: formData.meal_type,
       notes: formData.notes || null,
     });
+  };
+
+  // 文字智能分析营养
+  const handleTextAnalyze = async () => {
+    const text = formData.food_items.trim();
+    if (!text) {
+      alert('请先输入食物内容');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const res = await fetch(`${API_BASE}/diet/estimate-nutrition?food_description=${encodeURIComponent(text)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await res.json();
+
+      if (result.success && result.foods?.length > 0) {
+        // 自动填充营养数据
+        setFormData(prev => ({
+          ...prev,
+          calories: result.total_calories?.toString() || prev.calories,
+          protein: result.total_protein?.toFixed(1) || prev.protein,
+          carbs: result.total_carbs?.toFixed(1) || prev.carbs,
+          fat: result.total_fat?.toFixed(1) || prev.fat,
+          notes: result.health_tips || prev.notes,
+        }));
+
+        // 显示识别结果
+        setRecognitionResult(result);
+        alert('✅ 分析成功！营养数据已自动填充');
+      } else {
+        alert(result.error || '分析失败，请重试');
+      }
+    } catch (error: any) {
+      console.error('文字分析失败:', error);
+      alert('分析失败，请重试');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -500,7 +546,7 @@ function DietContent() {
             </div>
 
             <div className="border-t border-gray-200 pt-4 mt-4">
-              <p className="text-sm text-gray-500 mb-4">或者手动输入：</p>
+              <p className="text-sm text-gray-500 mb-4">📝 文字记录（输入食物后点击 ✨ AI分析自动计算营养）：</p>
               
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -524,14 +570,55 @@ function DietContent() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-800 mb-2">食物列表 *</label>
-                  <textarea
-                    required
-                    value={formData.food_items}
-                    onChange={(e) => setFormData({ ...formData, food_items: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
-                    rows={2}
-                    placeholder="例如: 鸡蛋2个, 全麦面包1片, 牛奶200ml"
-                  />
+                  <div className="flex gap-2">
+                    <textarea
+                      required
+                      value={formData.food_items}
+                      onChange={(e) => setFormData({ ...formData, food_items: e.target.value })}
+                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900"
+                      rows={2}
+                      placeholder="例如: 鸡蛋2个, 全麦面包1片, 牛奶200ml"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTextAnalyze}
+                      disabled={isAnalyzing || !formData.food_items.trim()}
+                      className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1 self-start"
+                      title="AI智能分析营养成分"
+                    >
+                      {isAnalyzing ? '⏳' : '✨'}
+                      <span className="text-sm">{isAnalyzing ? '分析中' : 'AI分析'}</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">💡 输入食物后点击"✨ AI分析"自动计算营养成分</p>
+
+                  {/* 文字分析结果显示 */}
+                  {recognitionResult && recognitionResult.success && !imageBase64 && (
+                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-green-700 font-semibold mb-2">✅ AI分析结果</p>
+                      <div className="space-y-1 text-sm">
+                        {recognitionResult.foods?.map((food, idx) => (
+                          <div key={idx} className="flex justify-between">
+                            <span className="text-gray-700">{food.name} {food.quantity && `(${food.quantity})`}</span>
+                            <span className="text-orange-600 font-medium">{food.calories} kcal</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-green-200 text-sm">
+                        <p className="text-gray-700">
+                          总计: <strong className="text-orange-600">{recognitionResult.total_calories}</strong> kcal |
+                          蛋白质: <strong className="text-red-600">{recognitionResult.total_protein?.toFixed(1)}</strong>g |
+                          碳水: <strong className="text-yellow-600">{recognitionResult.total_carbs?.toFixed(1)}</strong>g |
+                          脂肪: <strong className="text-purple-600">{recognitionResult.total_fat?.toFixed(1)}</strong>g
+                        </p>
+                      </div>
+                      {recognitionResult.health_tips && (
+                        <p className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                          💡 {recognitionResult.health_tips}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
