@@ -286,10 +286,11 @@ export const workoutGuidanceApi = {
     return api.post(`/workout/pre-workout-guidance?${params.toString()}`);
   },
   // 获取运动后分析
-  getPostWorkoutAnalysis: (workoutId: number, forceRegenerate: boolean = false, debug: boolean = false) => {
+  getPostWorkoutAnalysis: (workoutId: number, forceRegenerate: boolean = false, debug: boolean = false, cacheOnly: boolean = false) => {
     const params = new URLSearchParams();
     if (forceRegenerate) params.append('force_regenerate', 'true');
     if (debug) params.append('debug', 'true');
+    if (cacheOnly) params.append('cache_only', 'true');
     return api.post(`/workout/post-workout-analysis/${workoutId}?${params.toString()}`);
   },
 };

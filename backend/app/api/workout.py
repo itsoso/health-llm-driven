@@ -913,18 +913,20 @@ async def get_pre_workout_guidance(
 async def get_post_workout_analysis(
     workout_id: int,
     force_regenerate: bool = False,
+    cache_only: bool = Query(default=False, description="仅返回缓存结果，不生成新分析"),
     debug: bool = Query(default=False, description="是否返回调试信息"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
     获取运动后分析
-    
+
     Args:
         workout_id: 运动记录ID
         force_regenerate: 是否强制重新生成（默认False，使用缓存）
+        cache_only: 仅返回缓存结果，如果没有缓存则返回 success=false（默认False）
         debug: 是否返回调试信息，展示AI决策过程（默认False）
-    
+
     Returns:
         运动后分析结果（debug模式下包含决策过程）
     """
@@ -934,17 +936,26 @@ async def get_post_workout_analysis(
             WorkoutRecord.id == workout_id,
             WorkoutRecord.user_id == current_user.id
         ).first()
-        
+
         if not record:
             raise HTTPException(status_code=404, detail="运动记录不存在")
-        
-        # Debug模式或强制重新生成时，不使用缓存
+
+        # 检查是否有缓存
         if record.post_workout_analysis and not force_regenerate and not debug:
             logger.info(f"用户 {current_user.id} 使用缓存的运动后分析 (workout_id={workout_id})")
             cached_analysis = json.loads(record.post_workout_analysis)
             cached_analysis["from_cache"] = True
             return cached_analysis
-        
+
+        # 如果仅请求缓存但没有缓存，返回无缓存响应
+        if cache_only:
+            logger.info(f"用户 {current_user.id} 请求缓存的运动后分析但无缓存 (workout_id={workout_id})")
+            return {
+                "success": False,
+                "has_cache": False,
+                "message": "暂无缓存的分析结果，请点击科学分析按钮生成"
+            }
+
         # 生成新的分析
         logger.info(f"用户 {current_user.id} 生成新的运动后分析 (workout_id={workout_id}, force={force_regenerate}, debug={debug})")
         service = PostWorkoutAnalysisService()

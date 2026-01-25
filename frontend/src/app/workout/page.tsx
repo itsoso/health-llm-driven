@@ -271,24 +271,38 @@ function WorkoutContent() {
 
   // 运动后科学分析
   const postAnalysisMutation = useMutation({
-    mutationFn: ({ workoutId, forceRegenerate = false }: { workoutId: number; forceRegenerate?: boolean }) => 
-      workoutGuidanceApi.getPostWorkoutAnalysis(workoutId, forceRegenerate),
-    onSuccess: (response) => {
+    mutationFn: ({ workoutId, forceRegenerate = false, cacheOnly = false }: { workoutId: number; forceRegenerate?: boolean; cacheOnly?: boolean }) =>
+      workoutGuidanceApi.getPostWorkoutAnalysis(workoutId, forceRegenerate, false, cacheOnly),
+    onSuccess: (response, variables) => {
       console.log('📊 科学分析响应:', response);
       console.log('📊 response.data:', response.data);
+
+      // 如果是 cache_only 模式且没有缓存，不显示任何内容
+      if (variables.cacheOnly && response.data.success === false) {
+        console.log('📊 无缓存的科学分析，等待用户手动请求');
+        return;
+      }
+
       setPostAnalysis(response.data);
       setShowPostAnalysis(true);
-      const fromCache = response.data.from_cache;
-      setMessage({ 
-        type: 'success', 
-        text: fromCache ? '✓ 已加载分析结果' : '✓ 科学分析完成' 
-      });
-      setTimeout(() => setMessage(null), 3000);
+
+      // cache_only 模式下静默加载，不显示消息
+      if (!variables.cacheOnly) {
+        const fromCache = response.data.from_cache;
+        setMessage({
+          type: 'success',
+          text: fromCache ? '✓ 已加载分析结果' : '✓ 科学分析完成'
+        });
+        setTimeout(() => setMessage(null), 3000);
+      }
     },
-    onError: (error: any) => {
+    onError: (error: any, variables) => {
       console.error('❌ 科学分析失败:', error);
-      setMessage({ type: 'error', text: `✗ 分析失败: ${error.message}` });
-      setTimeout(() => setMessage(null), 5000);
+      // cache_only 模式下静默失败，不显示错误消息
+      if (!variables.cacheOnly) {
+        setMessage({ type: 'error', text: `✗ 分析失败: ${error.message}` });
+        setTimeout(() => setMessage(null), 5000);
+      }
     },
   });
 
@@ -315,6 +329,20 @@ function WorkoutContent() {
       setTimeout(() => setMessage(null), 5000);
     },
   });
+
+  // 当选择新的运动记录时，重置科学分析状态
+  useEffect(() => {
+    setShowPostAnalysis(false);
+    setPostAnalysis(null);
+  }, [selectedWorkout]);
+
+  // 当运动详情加载完成后，自动加载科学分析（仅从缓存加载）
+  useEffect(() => {
+    if (workoutDetail && workoutDetail.id && !loadingDetail) {
+      // 使用 cacheOnly: true 仅加载缓存的结果，不会触发新的分析生成
+      postAnalysisMutation.mutate({ workoutId: workoutDetail.id, forceRegenerate: false, cacheOnly: true });
+    }
+  }, [workoutDetail?.id, loadingDetail]);
 
   // 准备心率区间图表数据
   const hrZoneData = workoutDetail ? [
