@@ -203,7 +203,7 @@ export default function AIAssistantPage() {
         {/* 页面标题 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">🤖</span>
+            <span className="text-3xl">✨</span>
             <div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
                 AI 健康助手
