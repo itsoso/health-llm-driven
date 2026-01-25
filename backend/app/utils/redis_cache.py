@@ -182,10 +182,63 @@ def get_cached_daily_recommendation(user_id: int, date: str) -> Optional[dict]:
 
 def invalidate_user_cache(user_id: int):
     """清除用户的所有缓存
-    
+
     Args:
         user_id: 用户 ID
     """
     pattern = f"*:{user_id}:*"
     count = RedisCache.clear_pattern(pattern)
     logger.info(f"清除用户 {user_id} 的缓存，共 {count} 个键")
+
+
+# ========== 补剂推荐缓存 ==========
+
+# 补剂推荐缓存 TTL: 24小时
+SUPPLEMENT_RECOMMENDATION_TTL = 24 * 60 * 60  # 86400秒
+
+
+def cache_supplement_recommendation(user_id: int, date: str, recommendation: dict):
+    """缓存补剂推荐结果
+
+    Args:
+        user_id: 用户 ID
+        date: 日期（YYYY-MM-DD）
+        recommendation: 推荐结果
+    """
+    key = f"supplement_rec:{user_id}:{date}"
+    RedisCache.set(key, recommendation, SUPPLEMENT_RECOMMENDATION_TTL)
+    logger.info(f"缓存补剂推荐: user_id={user_id}, date={date}, ttl=24小时")
+
+
+def get_cached_supplement_recommendation(user_id: int, date: str) -> Optional[dict]:
+    """获取缓存的补剂推荐
+
+    Args:
+        user_id: 用户 ID
+        date: 日期（YYYY-MM-DD）
+
+    Returns:
+        缓存的推荐结果，如果不存在则返回 None
+    """
+    key = f"supplement_rec:{user_id}:{date}"
+    cached = RedisCache.get(key)
+    if cached:
+        logger.info(f"命中补剂推荐缓存: user_id={user_id}, date={date}")
+    return cached
+
+
+def invalidate_supplement_recommendation(user_id: int, date: str = None):
+    """清除补剂推荐缓存
+
+    Args:
+        user_id: 用户 ID
+        date: 日期（YYYY-MM-DD），如果为 None 则清除该用户所有补剂推荐缓存
+    """
+    if date:
+        key = f"supplement_rec:{user_id}:{date}"
+        RedisCache.delete(key)
+        logger.info(f"清除补剂推荐缓存: user_id={user_id}, date={date}")
+    else:
+        pattern = f"supplement_rec:{user_id}:*"
+        count = RedisCache.clear_pattern(pattern)
+        logger.info(f"清除用户 {user_id} 的所有补剂推荐缓存，共 {count} 个键")

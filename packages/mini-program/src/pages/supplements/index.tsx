@@ -49,13 +49,14 @@ interface SupplementRecommendation {
 interface ScientificRecommendation {
   success: boolean;
   generated_at: string;
-  health_analysis: {
+  from_cache?: boolean;  // 是否来自缓存
+  // API 返回 'analysis'（前端期望的字段名）
+  analysis: {
     sleep_quality: string;
     stress_level: string;
     exercise_intensity: string;
     nutrition_status: string;
-    risk_factors: string[];
-    positive_factors: string[];
+    key_factors: string[];  // 合并了 positive + risk factors
   };
   recommendations: SupplementRecommendation[];
   timing_suggestions: {
@@ -66,9 +67,10 @@ interface ScientificRecommendation {
     workout: string[];
   };
   precautions: string[];
-  overall_rating: {
+  // API 返回 'rating'（前端期望的字段名）
+  rating: {
     score: number;
-    rating: string;
+    level: string;  // API 返回 'level' 而不是 'rating'
     emoji: string;
     message: string;
   };
@@ -279,13 +281,14 @@ export default function SupplementsPage() {
     setShowActionSheet(true);
   };
 
-  const handleGetRecommendation = async () => {
+  const handleGetRecommendation = async (forceRefresh: boolean = false) => {
     setLoadingRecommendation(true);
     try {
       const result = await post('/supplements/scientific-recommendation', {
         target_date: selectedDate,
         debug: debugMode,
-        use_llm: true
+        use_llm: true,
+        force_refresh: forceRefresh
       });
       
       console.log('[补剂推荐] API 返回数据:', result);
@@ -302,22 +305,21 @@ export default function SupplementsPage() {
         throw new Error('推荐数据格式错误');
       }
       
-      // 确保必要字段存在
+      // 确保必要字段存在（匹配 API 返回的字段名）
       const validatedResult = {
         ...result,
-        overall_rating: result.overall_rating || {
+        rating: result.rating || {
           score: 0,
-          rating: '评估中',
+          level: '评估中',
           emoji: '⭐',
           message: '正在分析您的补剂方案'
         },
-        health_analysis: result.health_analysis || {
+        analysis: result.analysis || {
           sleep_quality: '未知',
           stress_level: '未知',
           exercise_intensity: '未知',
           nutrition_status: '未知',
-          positive_factors: [],
-          risk_factors: []
+          key_factors: []
         },
         recommendations: result.recommendations || [],
         timing_suggestions: result.timing_suggestions || {
@@ -332,7 +334,8 @@ export default function SupplementsPage() {
       
       setRecommendation(validatedResult);
       setShowRecommendation(true);
-      Taro.showToast({ title: '✓ 科学推荐生成完成', icon: 'success' });
+      const cacheHint = validatedResult.from_cache ? '(缓存)' : '';
+      Taro.showToast({ title: `✓ 科学推荐${cacheHint}`, icon: 'success' });
     } catch (error) {
       console.error('[补剂推荐] 生成失败:', error);
       Taro.showToast({ title: '生成推荐失败', icon: 'none' });
@@ -651,11 +654,24 @@ export default function SupplementsPage() {
           <View className="recommendation-modal" onClick={e => e.stopPropagation()}>
             <View className="recommendation-header">
               <Text className="recommendation-title">🤖 补剂科学推荐</Text>
-              <View 
-                className="close-btn"
-                onClick={() => setShowRecommendation(false)}
-              >
-                ✕
+              <View className="header-actions">
+                {recommendation.from_cache && (
+                  <View
+                    className="refresh-btn"
+                    onClick={() => {
+                      setShowRecommendation(false);
+                      handleGetRecommendation(true);
+                    }}
+                  >
+                    🔄
+                  </View>
+                )}
+                <View
+                  className="close-btn"
+                  onClick={() => setShowRecommendation(false)}
+                >
+                  ✕
+                </View>
               </View>
             </View>
 
@@ -667,54 +683,46 @@ export default function SupplementsPage() {
               enableFlex={true}
             >
               {/* 整体评分 */}
-              {recommendation.overall_rating && (
+              {recommendation.rating && (
                 <View className="rating-card">
-                  <Text className="rating-emoji">{recommendation.overall_rating.emoji || '⭐'}</Text>
-                  <Text className="rating-text">{recommendation.overall_rating.rating || '评估中'}</Text>
-                  <Text className="rating-message">{recommendation.overall_rating.message || '正在分析您的补剂方案'}</Text>
+                  <Text className="rating-emoji">{recommendation.rating.emoji || '⭐'}</Text>
+                  <Text className="rating-text">{recommendation.rating.level || '评估中'}</Text>
+                  <Text className="rating-message">{recommendation.rating.message || '正在分析您的补剂方案'}</Text>
                   <View className="rating-score">
                     <Text className="score-label">综合评分</Text>
-                    <Text className="score-value">{(recommendation.overall_rating.score || 0) * 10}/100</Text>
+                    <Text className="score-value">{(recommendation.rating.score || 0) * 10}/100</Text>
                   </View>
                 </View>
               )}
 
               {/* 健康分析 */}
-              {recommendation.health_analysis && (
+              {recommendation.analysis && (
                 <View className="analysis-section">
                   <Text className="section-title">📊 健康状况分析</Text>
                   <View className="analysis-grid">
                     <View className="analysis-item">
                       <Text className="analysis-label">睡眠质量</Text>
-                      <Text className="analysis-value">{recommendation.health_analysis.sleep_quality || '未知'}</Text>
+                      <Text className="analysis-value">{recommendation.analysis.sleep_quality || '未知'}</Text>
                     </View>
                     <View className="analysis-item">
                       <Text className="analysis-label">压力水平</Text>
-                      <Text className="analysis-value">{recommendation.health_analysis.stress_level || '未知'}</Text>
+                      <Text className="analysis-value">{recommendation.analysis.stress_level || '未知'}</Text>
                     </View>
                     <View className="analysis-item">
                       <Text className="analysis-label">运动强度</Text>
-                      <Text className="analysis-value">{recommendation.health_analysis.exercise_intensity || '未知'}</Text>
+                      <Text className="analysis-value">{recommendation.analysis.exercise_intensity || '未知'}</Text>
                     </View>
                     <View className="analysis-item">
                       <Text className="analysis-label">营养状况</Text>
-                      <Text className="analysis-value">{recommendation.health_analysis.nutrition_status || '未知'}</Text>
+                      <Text className="analysis-value">{recommendation.analysis.nutrition_status || '未知'}</Text>
                     </View>
                   </View>
 
-                  {recommendation.health_analysis.positive_factors && recommendation.health_analysis.positive_factors.length > 0 && (
-                    <View className="factors-list positive">
-                      <Text className="factors-title">✅ 积极因素</Text>
-                      {recommendation.health_analysis.positive_factors.map((factor, idx) => (
-                        <Text key={idx} className="factor-item">{factor}</Text>
-                      ))}
-                    </View>
-                  )}
-
-                  {recommendation.health_analysis.risk_factors && recommendation.health_analysis.risk_factors.length > 0 && (
-                    <View className="factors-list risk">
-                      <Text className="factors-title">⚠️ 风险因素</Text>
-                      {recommendation.health_analysis.risk_factors.map((factor, idx) => (
+                  {/* key_factors 包含所有因素（积极+风险） */}
+                  {recommendation.analysis.key_factors && recommendation.analysis.key_factors.length > 0 && (
+                    <View className="factors-list">
+                      <Text className="factors-title">📋 关键因素</Text>
+                      {recommendation.analysis.key_factors.map((factor, idx) => (
                         <Text key={idx} className="factor-item">{factor}</Text>
                       ))}
                     </View>

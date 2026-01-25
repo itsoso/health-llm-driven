@@ -19,6 +19,11 @@ from app.schemas.supplement import (
     SupplementWithRecord
 )
 from app.services.supplement_recommendation import SupplementRecommendationService
+from app.utils.redis_cache import (
+    cache_supplement_recommendation,
+    get_cached_supplement_recommendation,
+    invalidate_supplement_recommendation
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -297,6 +302,7 @@ class SupplementRecommendationRequest(BaseModel):
     target_date: Optional[date] = None
     debug: bool = False
     use_llm: bool = True
+    force_refresh: bool = False  # 强制刷新，忽略缓存
 
 @router.post("/scientific-recommendation", response_model=Dict[str, Any])
 async def get_supplement_recommendation(
@@ -309,19 +315,32 @@ async def get_supplement_recommendation(
 
     基于益家知研 AI + 皮皮妈妈知识库
 
+    缓存策略：结果缓存24小时，除非用户主动刷新
+
     Args:
-        request: 请求参数（target_date, debug, use_llm）
+        request: 请求参数（target_date, debug, use_llm, force_refresh）
 
     Returns:
         补剂科学推荐结果（debug模式下包含决策过程）
     """
-    target_date = request.target_date
+    target_date = request.target_date or date.today()
     debug = request.debug
     use_llm = request.use_llm
+    force_refresh = request.force_refresh
 
-    logger.info(f"[补剂科学推荐API] 收到请求 - user_id={current_user.id}, target_date={target_date}, debug={debug}, use_llm={use_llm}")
-    
+    date_str = target_date.isoformat()
+
+    logger.info(f"[补剂科学推荐API] 收到请求 - user_id={current_user.id}, target_date={date_str}, debug={debug}, use_llm={use_llm}, force_refresh={force_refresh}")
+
     try:
+        # 检查缓存（非 debug 模式且非强制刷新时使用缓存）
+        if not debug and not force_refresh:
+            cached = get_cached_supplement_recommendation(current_user.id, date_str)
+            if cached:
+                logger.info(f"[补剂科学推荐API] 返回缓存结果 - user_id={current_user.id}, date={date_str}")
+                cached['from_cache'] = True
+                return cached
+
         if use_llm:
             # 使用 LLM + 知识库推荐
             from app.services.supplement_recommendation_llm import SupplementRecommendationServiceLLM
@@ -341,7 +360,7 @@ async def get_supplement_recommendation(
                 target_date=target_date,
                 debug=debug
             )
-        
+
         logger.info(f"[补剂科学推荐API] 生成成功 - success={recommendation.get('success')}, use_llm={use_llm}")
 
         # 转换字段名以匹配前端期望的格式
@@ -375,6 +394,12 @@ async def get_supplement_recommendation(
         if debug:
             transformed_response["debug_info"] = recommendation.get('debug')
 
+        # 缓存结果（非 debug 模式时）
+        if not debug:
+            cache_supplement_recommendation(current_user.id, date_str, transformed_response)
+            logger.info(f"[补剂科学推荐API] 已缓存结果 - user_id={current_user.id}, date={date_str}")
+
+        transformed_response['from_cache'] = False
         return transformed_response
     except Exception as e:
         logger.error(f"[补剂科学推荐API] 生成失败: {e}", exc_info=True)
