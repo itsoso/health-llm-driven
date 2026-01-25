@@ -11,8 +11,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.user_profile import UserProfile
-from app.models.daily_health import GarminData
-from app.models.diet import DietRecord
+from app.models.daily_health import GarminData, DietRecord
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.utils.timezone import get_china_now
 from app.services.llm_health_analyzer import LLMHealthAnalyzer
