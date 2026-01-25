@@ -122,16 +122,13 @@ function getHrvStatusText(status: string | null | undefined): { text: string; co
   return statusMap[status || ''] || { text: status || '--', color: 'text-gray-500' };
 }
 
-// 格式化睡眠时间 (UTC时间 -> 北京时间12小时制)
+// 格式化睡眠时间 (HH:MM:SS -> 北京时间24小时制)
 function formatSleepTime(timeStr: string | null | undefined): string {
   if (!timeStr) return '--';
   try {
     const [hours, minutes] = timeStr.split(':').map(Number);
-    // UTC时间 +8 转换为北京时间
-    let beijingHours = (hours + 8) % 24;
-    const period = beijingHours >= 12 ? 'PM' : 'AM';
-    const displayHours = beijingHours % 12 || 12;
-    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+    // 数据已经是北京时间，直接显示24小时制
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   } catch {
     return '--';
   }
