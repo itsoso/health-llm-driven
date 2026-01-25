@@ -653,7 +653,7 @@ export default function SupplementsPage() {
         <View className="modal-mask" onClick={() => setShowRecommendation(false)}>
           <View className="recommendation-modal" onClick={e => e.stopPropagation()}>
             <View className="recommendation-header">
-              <Text className="recommendation-title">🤖 补剂科学推荐</Text>
+              <Text className="recommendation-title">🧬 补剂科学推荐</Text>
               <View className="header-actions">
                 {recommendation.from_cache && (
                   <View
