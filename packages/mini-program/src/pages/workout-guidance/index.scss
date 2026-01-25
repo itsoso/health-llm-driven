@@ -5,6 +5,9 @@
   background: linear-gradient(180deg, #F3F4F6 0%, #FFFFFF 100%);
   padding: $gap-md;
   padding-bottom: 120px;
+  overflow-x: hidden;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 // 页面标题

@@ -59,7 +59,7 @@ export default function WorkoutGuidance() {
   }
 
   return (
-    <ScrollView className="workout-guidance-page" scrollY>
+    <ScrollView className="workout-guidance-page" scrollY scrollX={false}>
       {/* 页面标题 */}
       <View className="page-header">
         <Text className="page-title">

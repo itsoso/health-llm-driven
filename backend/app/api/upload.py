@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.models.user import User
 from app.api.deps import get_current_user_required
+from app.utils.image_compression import compress_image, should_compress, get_image_info
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+COMPRESSION_THRESHOLD_KB = 500  # 超过500KB自动压缩
+COMPRESSION_QUALITY = 85  # 压缩质量
+MAX_IMAGE_DIMENSION = 1920  # 最大宽高
 
 
 class UploadResponse(BaseModel):
@@ -103,6 +107,40 @@ async def upload_image(
     
     # 验证图片内容
     validate_image_content(content)
+    
+    # 获取原始图片信息
+    original_size = len(content)
+    logger.info(f"原始图片大小: {original_size / 1024:.1f}KB")
+    
+    # 压缩图片 (如果需要)
+    if should_compress(content, COMPRESSION_THRESHOLD_KB):
+        logger.info(f"图片超过 {COMPRESSION_THRESHOLD_KB}KB，开始压缩...")
+        try:
+            compressed_content, detected_format = compress_image(
+                content,
+                max_width=MAX_IMAGE_DIMENSION,
+                max_height=MAX_IMAGE_DIMENSION,
+                quality=COMPRESSION_QUALITY,
+                output_format=None,  # 保持原格式
+                preserve_exif=True
+            )
+            
+            # 使用压缩后的内容
+            content = compressed_content
+            # 更新扩展名 (如果格式改变)
+            if detected_format in ALLOWED_EXTENSIONS:
+                extension = detected_format
+            
+            compressed_size = len(content)
+            compression_ratio = (1 - compressed_size / original_size) * 100
+            logger.info(
+                f"压缩完成: {original_size / 1024:.1f}KB -> {compressed_size / 1024:.1f}KB "
+                f"(节省 {compression_ratio:.1f}%)"
+            )
+        except Exception as e:
+            logger.error(f"图片压缩失败，使用原图: {e}")
+    else:
+        logger.info(f"图片大小 {original_size / 1024:.1f}KB，无需压缩")
 
     # 生成文件名并保存
     filename = generate_filename(extension, category)
@@ -117,7 +155,7 @@ async def upload_image(
     # 返回相对URL
     url = f"/api/v1/upload/files/{filename}"
     
-    logger.info(f"用户 {current_user.id} 上传图片: {filename}")
+    logger.info(f"用户 {current_user.id} 上传图片: {filename} (最终大小: {len(content) / 1024:.1f}KB)")
     
     return UploadResponse(
         success=True,
@@ -170,6 +208,40 @@ async def upload_image_base64(
         # 验证图片内容
         validate_image_content(image_data)
         
+        # 获取原始图片信息
+        original_size = len(image_data)
+        logger.info(f"Base64图片原始大小: {original_size / 1024:.1f}KB")
+        
+        # 压缩图片 (如果需要)
+        if should_compress(image_data, COMPRESSION_THRESHOLD_KB):
+            logger.info(f"图片超过 {COMPRESSION_THRESHOLD_KB}KB，开始压缩...")
+            try:
+                compressed_data, detected_format = compress_image(
+                    image_data,
+                    max_width=MAX_IMAGE_DIMENSION,
+                    max_height=MAX_IMAGE_DIMENSION,
+                    quality=COMPRESSION_QUALITY,
+                    output_format=None,
+                    preserve_exif=True
+                )
+                
+                # 使用压缩后的内容
+                image_data = compressed_data
+                # 更新格式
+                if detected_format in ALLOWED_EXTENSIONS:
+                    image_type = detected_format
+                
+                compressed_size = len(image_data)
+                compression_ratio = (1 - compressed_size / original_size) * 100
+                logger.info(
+                    f"压缩完成: {original_size / 1024:.1f}KB -> {compressed_size / 1024:.1f}KB "
+                    f"(节省 {compression_ratio:.1f}%)"
+                )
+            except Exception as e:
+                logger.error(f"图片压缩失败，使用原图: {e}")
+        else:
+            logger.info(f"图片大小 {original_size / 1024:.1f}KB，无需压缩")
+        
         # 生成文件名并保存
         filename = generate_filename(image_type, request.category)
         filepath = os.path.join(UPLOAD_DIR, filename)
@@ -183,7 +255,7 @@ async def upload_image_base64(
         # 返回相对URL
         url = f"/api/v1/upload/files/{filename}"
         
-        logger.info(f"用户 {current_user.id} 上传Base64图片: {filename}")
+        logger.info(f"用户 {current_user.id} 上传Base64图片: {filename} (最终大小: {len(image_data) / 1024:.1f}KB)")
         
         return UploadResponse(
             success=True,

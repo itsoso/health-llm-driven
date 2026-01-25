@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from typing import List, Optional, Dict, Any
 from datetime import date, timedelta
+from pydantic import BaseModel
 from app.database import get_db
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.user import User
@@ -291,27 +292,33 @@ def get_my_supplement_stats(
 
 # ========== 补剂科学推荐 ==========
 
+class SupplementRecommendationRequest(BaseModel):
+    """补剂推荐请求参数"""
+    target_date: Optional[date] = None
+    debug: bool = False
+    use_llm: bool = True
+
 @router.post("/scientific-recommendation", response_model=Dict[str, Any])
 async def get_supplement_recommendation(
-    target_date: Optional[date] = None,
-    debug: bool = Query(default=False, description="是否返回调试信息"),
-    use_llm: bool = Query(default=True, description="是否使用LLM（默认True）"),
+    request: SupplementRecommendationRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """
     获取补剂科学推荐
-    
+
     基于益家知研 AI + 皮皮妈妈知识库
-    
+
     Args:
-        target_date: 目标日期（可选，默认今天）
-        debug: 是否返回调试信息，展示AI决策过程（默认False）
-        use_llm: 是否使用LLM生成推荐（默认True，False则使用规则）
-    
+        request: 请求参数（target_date, debug, use_llm）
+
     Returns:
         补剂科学推荐结果（debug模式下包含决策过程）
     """
+    target_date = request.target_date
+    debug = request.debug
+    use_llm = request.use_llm
+
     logger.info(f"[补剂科学推荐API] 收到请求 - user_id={current_user.id}, target_date={target_date}, debug={debug}, use_llm={use_llm}")
     
     try:

@@ -18,6 +18,8 @@ pandas==2.1.3
 numpy==1.26.2
 alembic==1.12.1
 python-multipart==0.0.6
+# 图片处理
+Pillow==10.1.0
 # 用户认证
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
