@@ -7,50 +7,155 @@ import Taro, { useRouter } from '@tarojs/taro';
 import { getNewsDetail, NewsArticle } from '../../services/api';
 import './index.scss';
 
-// 简单的 Markdown 转换（仅支持基础语法）
+// Markdown 转 HTML（支持表格、粗体、列表等）
 function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
 
-  let html = markdown
-    // 转义 HTML 特殊字符
-    .replace(/&/g, '&amp;')
+  // 按段落分割处理
+  const blocks = markdown.split(/\n\n+/);
+  const htmlBlocks: string[] = [];
+
+  for (const block of blocks) {
+    const trimmedBlock = block.trim();
+    if (!trimmedBlock) continue;
+
+    // 检测表格（包含 | 且有分隔行 |---|）
+    if (trimmedBlock.includes('|') && trimmedBlock.includes('---')) {
+      const tableHtml = parseTable(trimmedBlock);
+      if (tableHtml) {
+        htmlBlocks.push(tableHtml);
+        continue;
+      }
+    }
+
+    // 按行处理
+    const lines = trimmedBlock.split('\n');
+    const processedLines: string[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+
+      // 标题
+      if (trimmedLine.startsWith('#### ')) {
+        processedLines.push(`<h4>${processInline(trimmedLine.slice(5))}</h4>`);
+      } else if (trimmedLine.startsWith('### ')) {
+        processedLines.push(`<h3>${processInline(trimmedLine.slice(4))}</h3>`);
+      } else if (trimmedLine.startsWith('## ')) {
+        processedLines.push(`<h2>${processInline(trimmedLine.slice(3))}</h2>`);
+      } else if (trimmedLine.startsWith('# ')) {
+        processedLines.push(`<h1>${processInline(trimmedLine.slice(2))}</h1>`);
+      }
+      // 水平分割线
+      else if (trimmedLine === '---' || trimmedLine === '***' || trimmedLine === '___') {
+        processedLines.push('<hr/>');
+      }
+      // 引用
+      else if (trimmedLine.startsWith('> ')) {
+        processedLines.push(`<blockquote>${processInline(trimmedLine.slice(2))}</blockquote>`);
+      }
+      // 带数字的标题行（如 "1. 核心结论"，"2. 关键论据"）- 短文本视为标题
+      else if (/^\d+\.\s+.+$/.test(trimmedLine) && trimmedLine.length < 50) {
+        processedLines.push(`<p class="numbered-header"><strong>${processInline(trimmedLine)}</strong></p>`);
+      }
+      // 无序列表项（支持 -、*、•、·）
+      else if (/^[-*•·]\s+/.test(trimmedLine)) {
+        const content = trimmedLine.replace(/^[-*•·]\s+/, '');
+        processedLines.push(`<p class="list-item">• ${processInline(content)}</p>`);
+      }
+      // 有序列表项（较长内容）
+      else if (/^\d+\.\s+/.test(trimmedLine) && trimmedLine.length >= 50) {
+        processedLines.push(`<p class="list-item">${processInline(trimmedLine)}</p>`);
+      }
+      // 代码块标记跳过
+      else if (trimmedLine.startsWith('```')) {
+        continue;
+      }
+      // 普通段落
+      else {
+        processedLines.push(`<p>${processInline(trimmedLine)}</p>`);
+      }
+    }
+
+    htmlBlocks.push(processedLines.join(''));
+  }
+
+  return htmlBlocks.join('');
+}
+
+// 处理行内元素（粗体、斜体、代码、链接）
+function processInline(text: string): string {
+  if (!text) return '';
+
+  return text
+    // 转义 HTML 特殊字符（但保留 &nbsp; 等）
+    .replace(/&(?!amp;|lt;|gt;|nbsp;|quot;)/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    // 标题 (h1-h4)
-    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // 粗体和斜体
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // 代码块
-    .replace(/```[\s\S]*?```/g, (match) => {
-      const code = match.replace(/```\w*\n?/g, '').trim();
-      return `<pre><code>${code}</code></pre>`;
-    })
+    // 粗斜体
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
+    // 粗体（支持跨越多个词）
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // 斜体
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     // 行内代码
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    // 引用
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    // 无序列表
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    // 有序列表
-    .replace(/^\d+\. (.+)$/gm, '<oli>$1</oli>')
-    .replace(/(<oli>.*<\/oli>\n?)+/g, (match) => {
-      return '<ol>' + match.replace(/<\/?oli>/g, (tag) => tag.replace('oli', 'li')) + '</ol>';
-    })
-    // 水平分割线
-    .replace(/^---$/gm, '<hr/>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
     // 链接
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>')
-    // 段落
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br/>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+}
 
-  return `<p>${html}</p>`;
+// 解析表格
+function parseTable(block: string): string | null {
+  const lines = block.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return null;
+
+  // 找到分隔行（包含 |---）
+  const separatorIndex = lines.findIndex(l => /^\|?\s*[-:]+\s*\|/.test(l) || /\|\s*[-:]+\s*\|/.test(l));
+  if (separatorIndex < 1) return null;
+
+  // 表头
+  const headerLine = lines[separatorIndex - 1];
+  const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
+
+  // 表格行
+  const rows: string[][] = [];
+  for (let i = separatorIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.includes('|')) continue;
+    const cells = line.split('|').map(c => c.trim()).filter(c => c);
+    if (cells.length > 0) {
+      rows.push(cells);
+    }
+  }
+
+  if (headers.length === 0) return null;
+
+  // 生成 HTML 表格
+  let html = '<div class="table-wrapper"><table>';
+
+  // 表头
+  html += '<thead><tr>';
+  for (const header of headers) {
+    html += `<th>${processInline(header)}</th>`;
+  }
+  html += '</tr></thead>';
+
+  // 表体
+  if (rows.length > 0) {
+    html += '<tbody>';
+    for (const row of rows) {
+      html += '<tr>';
+      for (let i = 0; i < headers.length; i++) {
+        const cell = row[i] || '';
+        html += `<td>${processInline(cell)}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+  }
+
+  html += '</table></div>';
+  return html;
 }
 
 export default function NewsDetailPage() {
