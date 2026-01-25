@@ -114,13 +114,6 @@ export default function Home() {
           </Link>
         </div>
 
-        {healthStatus && (
-          <div className="mt-8 p-4 bg-green-50 rounded-xl border border-green-200 shadow-sm">
-            <p className="text-green-700 font-medium">
-              ✅ 后端服务状态: {healthStatus.status}
-            </p>
-          </div>
-        )}
       </div>
     </main>
   );
