@@ -1377,14 +1377,40 @@ function SettingsContent() {
               </div>
 
               {/* 使用说明 */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700">
-                <p className="font-semibold mb-2">{'\u{1F4DD}'} 使用方法：</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>创建 API Key 后，复制并保存（Key 只显示一次）</li>
-                  <li>在外部 AI 系统中配置此 API Key</li>
-                  <li>外部系统将通过 <code className="bg-gray-200 px-1 rounded">X-API-Key</code> 头部访问您的数据</li>
-                  <li>外部系统写入的健康建议将显示在「外部健康建议」页面</li>
-                </ol>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 space-y-4">
+                <div>
+                  <p className="font-semibold mb-2">{'\u{1F4DD}'} 使用方法：</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>创建 API Key 后，复制并保存（Key 只显示一次）</li>
+                    <li>在外部 AI 系统中配置此 API Key</li>
+                    <li>外部系统将通过 <code className="bg-gray-200 px-1 rounded">X-API-Key</code> 头部访问您的数据</li>
+                    <li>外部系统写入的健康建议将显示在「外部健康建议」页面</li>
+                  </ol>
+                </div>
+
+                <div>
+                  <p className="font-semibold mb-2">{'\u{1F517}'} API 端点：</p>
+                  <div className="space-y-2 font-mono text-xs">
+                    <div className="bg-white p-2 rounded border">
+                      <span className="text-green-600 font-bold">GET</span>
+                      <span className="ml-2 text-gray-800">https://health.executor.life/api/external/health-data</span>
+                      <p className="text-gray-500 mt-1 font-sans">获取健康数据（支持 ?date=2024-01-25 或 ?start_date=...&end_date=...）</p>
+                    </div>
+                    <div className="bg-white p-2 rounded border">
+                      <span className="text-blue-600 font-bold">POST</span>
+                      <span className="ml-2 text-gray-800">https://health.executor.life/api/external/recommendations</span>
+                      <p className="text-gray-500 mt-1 font-sans">写入健康建议</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="font-semibold mb-2">{'\u{1F4E6}'} 请求示例：</p>
+                  <pre className="bg-gray-800 text-green-400 p-3 rounded-lg text-xs overflow-x-auto">
+{`curl -X GET "https://health.executor.life/api/external/health-data?date=2024-01-25" \\
+  -H "X-API-Key: 你的API密钥"`}
+                  </pre>
+                </div>
               </div>
 
               {/* 跳转外部建议页面 */}
