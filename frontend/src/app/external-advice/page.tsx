@@ -16,6 +16,127 @@ const CATEGORY_CONFIG: Record<string, { icon: string; label: string; color: stri
 
 const CATEGORY_ORDER = ['exercise', 'diet', 'sleep', 'supplement', 'general'];
 
+// 简单的Markdown渲染组件
+function MarkdownContent({ content }: { content: string }) {
+  // 处理换行，将连续两个换行作为段落分隔
+  const paragraphs = content.split(/\n\n+/);
+
+  return (
+    <div className="prose prose-invert prose-sm max-w-none">
+      {paragraphs.map((paragraph, index) => {
+        const trimmed = paragraph.trim();
+
+        // 检查是否是标题
+        if (trimmed.startsWith('#### ')) {
+          return (
+            <h4 key={index} className="text-base font-semibold text-white mt-4 mb-2">
+              {trimmed.replace(/^#### /, '')}
+            </h4>
+          );
+        }
+        if (trimmed.startsWith('### ')) {
+          return (
+            <h3 key={index} className="text-lg font-semibold text-white mt-5 mb-2">
+              {trimmed.replace(/^### /, '')}
+            </h3>
+          );
+        }
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h2 key={index} className="text-xl font-bold text-white mt-6 mb-3">
+              {trimmed.replace(/^## /, '')}
+            </h2>
+          );
+        }
+
+        // 检查是否是表格
+        if (trimmed.includes('|') && trimmed.split('\n').length > 1) {
+          const lines = trimmed.split('\n').filter(line => line.trim() && !line.match(/^\|[\s-|]+\|$/));
+          if (lines.length > 0) {
+            const headers = lines[0].split('|').filter(cell => cell.trim());
+            const rows = lines.slice(1).map(line => line.split('|').filter(cell => cell.trim()));
+
+            return (
+              <div key={index} className="my-4 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-600">
+                      {headers.map((header, i) => (
+                        <th key={i} className="px-3 py-2 text-left text-gray-300 font-medium">
+                          {header.trim()}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b border-gray-700/50">
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} className="px-3 py-2 text-gray-400">
+                            {cell.trim()}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+        }
+
+        // 检查是否是无序列表
+        if (trimmed.match(/^[-*]\s/m)) {
+          const items = trimmed.split(/\n/).filter(line => line.trim());
+          return (
+            <ul key={index} className="list-disc list-inside space-y-1 text-gray-300 my-3 ml-2">
+              {items.map((item, i) => (
+                <li key={i}>{renderInlineMarkdown(item.replace(/^[-*]\s+/, ''))}</li>
+              ))}
+            </ul>
+          );
+        }
+
+        // 检查是否是数字列表
+        if (trimmed.match(/^\d+\.\s/m)) {
+          const items = trimmed.split(/\n/).filter(line => line.trim());
+          return (
+            <ol key={index} className="list-decimal list-inside space-y-1 text-gray-300 my-3 ml-2">
+              {items.map((item, i) => (
+                <li key={i}>{renderInlineMarkdown(item.replace(/^\d+\.\s+/, ''))}</li>
+              ))}
+            </ol>
+          );
+        }
+
+        // 检查是否是分隔线
+        if (trimmed.match(/^[-*_]{3,}$/)) {
+          return <hr key={index} className="my-4 border-gray-600" />;
+        }
+
+        // 普通段落
+        return (
+          <p key={index} className="text-gray-300 leading-relaxed my-3">
+            {renderInlineMarkdown(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+// 渲染行内Markdown（粗体、斜体等）
+function renderInlineMarkdown(text: string): React.ReactNode {
+  // 处理粗体 **text**
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
 interface ExternalRecommendation {
   id: number;
   category: string;
@@ -124,7 +245,7 @@ export default function ExternalAdvicePage() {
             <span className="max-w-[100px] truncate">{rec.source_name}</span>
           </span>
         </div>
-        <p className="text-gray-300 whitespace-pre-wrap leading-relaxed">{rec.content}</p>
+        <MarkdownContent content={rec.content} />
         <div className="mt-3 text-right text-xs text-gray-500">
           {formatTime(rec.created_at)}
         </div>
