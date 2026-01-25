@@ -729,7 +729,11 @@ $indigo: #6366F1;
 .recommendation-content {
   flex: 1;
   padding: 32rpx;
-  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+  // 确保 ScrollView 可以滚动
+  height: calc(85vh - 180rpx);
+  max-height: calc(85vh - 180rpx);
+  overflow: hidden;
 }
 
 // 评分卡片
