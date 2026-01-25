@@ -304,3 +304,36 @@ export const dietRecommendationApi = {
     return api.get(`/v1/diet-recommendation/me?${params.toString()}`);
   },
 };
+
+// 资讯 API
+export interface NewsArticle {
+  id: number;
+  source_batch_id: string;
+  source_type: string;
+  title: string;
+  summary: string | null;
+  content?: string;
+  tags: string[] | null;
+  topics?: string[] | null;
+  key_people?: string[] | null;
+  source_group: string | null;
+  llm_models?: string[] | null;
+  aggregator_model?: string | null;
+  is_pinned: boolean;
+  view_count: number;
+  source_created_at?: string;
+  created_at: string;
+}
+
+export const newsApi = {
+  // 获取资讯列表
+  getArticles: (page: number = 1, pageSize: number = 20, sourceType?: string) => {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('page_size', pageSize.toString());
+    if (sourceType) params.append('source_type', sourceType);
+    return api.get<NewsArticle[]>(`/news/articles?${params.toString()}`);
+  },
+  // 获取资讯详情
+  getArticle: (articleId: number) => api.get<NewsArticle>(`/news/articles/${articleId}`),
+};
