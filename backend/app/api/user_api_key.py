@@ -333,7 +333,7 @@ async def get_external_health_data(
         # 补剂记录
         supplements = db.query(SupplementIntake).filter(
             SupplementIntake.user_id == api_key.user_id,
-            SupplementIntake.intake_date == current_date
+            SupplementIntake.record_date == current_date
         ).all()
 
         if supplements:
