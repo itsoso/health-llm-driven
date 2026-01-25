@@ -208,7 +208,7 @@ export default function AIAssistantPage() {
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
                 AI 健康助手
               </h1>
-              <p className="text-sm text-slate-400">executor.life · 智能健康分析</p>
+              <p className="text-sm text-slate-400">智能健康分析</p>
             </div>
           </div>
           <div className="text-right">
@@ -473,10 +473,6 @@ export default function AIAssistantPage() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="text-center py-6 text-slate-500 text-sm">
-        executor.life · AI 健康助手 · Phase 2 测试页面
-      </footer>
     </div>
   );
 }
