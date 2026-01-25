@@ -437,7 +437,7 @@ export default function Index() {
             <Text className="feature-text">Garmin 数据同步</Text>
           </View>
           <View className="feature-item">
-            <Text className="feature-icon">🤖</Text>
+            <Text className="feature-icon">✨</Text>
             <Text className="feature-text">智能健康分析</Text>
           </View>
           <View className="feature-item">

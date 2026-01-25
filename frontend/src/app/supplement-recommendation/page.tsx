@@ -131,7 +131,7 @@ function SupplementRecommendationContent() {
       <main className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50 pt-4 pb-8 px-8">
         <div className="max-w-6xl mx-auto text-center py-20">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-6"></div>
-          <p className="text-gray-700 font-medium text-lg">🤖 AI 正在分析您的健康数据...</p>
+          <p className="text-gray-700 font-medium text-lg">✨ AI 正在分析您的健康数据...</p>
           <p className="text-gray-500 text-sm mt-2">这可能需要几秒钟</p>
         </div>
       </main>
@@ -166,7 +166,7 @@ function SupplementRecommendationContent() {
         {/* 页面标题 */}
         <div className="mb-6 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">🤖 补剂科学推荐</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">✨ 补剂科学推荐</h1>
             <p className="text-gray-600">基于您的健康数据和运动状态的个性化补剂建议</p>
           </div>
           <button
