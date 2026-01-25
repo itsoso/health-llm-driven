@@ -374,3 +374,23 @@ async def update_article_admin(
     db.commit()
 
     return {"ok": True, "message": "文章已更新"}
+
+
+@router.delete("/admin/articles/{article_id}")
+async def delete_article_admin(
+    article_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """管理员删除文章"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    article = db.query(NewsArticle).filter(NewsArticle.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="文章不存在")
+
+    db.delete(article)
+    db.commit()
+
+    return {"ok": True, "message": "文章已删除"}

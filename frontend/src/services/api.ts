@@ -336,4 +336,6 @@ export const newsApi = {
   },
   // 获取资讯详情
   getArticle: (articleId: number) => api.get<NewsArticle>(`/news/articles/${articleId}`),
+  // 管理员删除文章
+  deleteArticle: (articleId: number) => api.delete(`/news/admin/articles/${articleId}`),
 };

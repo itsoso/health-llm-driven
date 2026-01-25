@@ -17,7 +17,8 @@ import {
   Pin,
   Sparkles,
   MessageSquare,
-  Calendar
+  Calendar,
+  Trash2
 } from 'lucide-react';
 
 // 来源类型映射
@@ -57,12 +58,37 @@ function formatDate(dateStr: string): string {
   }
 }
 
-function NewsCard({ article }: { article: NewsArticle }) {
+interface NewsCardProps {
+  article: NewsArticle;
+  isAdmin?: boolean;
+  onDelete?: (id: number) => void;
+}
+
+function NewsCard({ article, isAdmin, onDelete }: NewsCardProps) {
   const tags = article.tags || [];
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onDelete && confirm(`确定要删除文章「${article.title}」吗？`)) {
+      onDelete(article.id);
+    }
+  };
 
   return (
     <Link href={`/news/${article.id}`}>
-      <div className="group bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-5 hover:bg-white/10 hover:border-purple-500/30 transition-all duration-300 cursor-pointer">
+      <div className="group bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-5 hover:bg-white/10 hover:border-purple-500/30 transition-all duration-300 cursor-pointer relative">
+        {/* 管理员删除按钮 */}
+        {isAdmin && (
+          <button
+            onClick={handleDelete}
+            className="absolute top-3 right-3 p-1.5 bg-red-500/20 hover:bg-red-500/40 rounded-lg text-red-400 opacity-0 group-hover:opacity-100 transition-all z-10"
+            title="删除文章"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+
         {/* 头部：来源类型和时间 */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -81,7 +107,7 @@ function NewsCard({ article }: { article: NewsArticle }) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className={`flex items-center gap-3 text-xs text-gray-500 ${isAdmin ? 'mr-8' : ''}`}>
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {formatDate(article.created_at)}
@@ -134,9 +160,13 @@ function NewsCard({ article }: { article: NewsArticle }) {
 }
 
 function NewsPageContent() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [sourceType, setSourceType] = useState<string>('');
+  const [deleting, setDeleting] = useState<number | null>(null);
   const pageSize = 12;
+
+  const isAdmin = user?.is_admin ?? false;
 
   const { data: articles, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['news-articles', page, sourceType],
@@ -145,6 +175,18 @@ function NewsPageContent() {
       return response.data;
     },
   });
+
+  const handleDelete = async (articleId: number) => {
+    setDeleting(articleId);
+    try {
+      await newsApi.deleteArticle(articleId);
+      refetch();
+    } catch (err) {
+      alert('删除失败');
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   const sourceTypes = [
     { value: '', label: '全部' },
@@ -231,7 +273,12 @@ function NewsPageContent() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {articles.map((article) => (
-                <NewsCard key={article.id} article={article} />
+                <NewsCard
+                  key={article.id}
+                  article={article}
+                  isAdmin={isAdmin}
+                  onDelete={handleDelete}
+                />
               ))}
             </div>
 
