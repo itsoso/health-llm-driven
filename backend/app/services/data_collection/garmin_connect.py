@@ -1424,22 +1424,29 @@ class GarminConnectService:
             if hrv is None:
                 hrv = sleep_data.get('avgOvernightHrv')
             
-            # 睡眠开始和结束时间（从时间戳转换）
-            sleep_start_ts = daily_sleep_dto.get('sleepStartTimestampLocal') or daily_sleep_dto.get('sleepStartTimestampGMT')
-            sleep_end_ts = daily_sleep_dto.get('sleepEndTimestampLocal') or daily_sleep_dto.get('sleepEndTimestampGMT')
-            
-            # 将毫秒时间戳转换为时间对象
-            from datetime import datetime as dt, time as dt_time
+            # 睡眠开始和结束时间（从GMT时间戳转换为北京时间）
+            # 优先使用GMT时间戳，然后转换为北京时间（UTC+8）
+            sleep_start_ts = daily_sleep_dto.get('sleepStartTimestampGMT') or daily_sleep_dto.get('sleepStartTimestampLocal')
+            sleep_end_ts = daily_sleep_dto.get('sleepEndTimestampGMT') or daily_sleep_dto.get('sleepEndTimestampLocal')
+
+            # 将毫秒时间戳转换为北京时间
+            from datetime import datetime as dt, time as dt_time, timezone, timedelta
+            beijing_tz = timezone(timedelta(hours=8))  # 北京时间 UTC+8
+
             if sleep_start_ts:
                 try:
-                    sleep_start_dt = dt.fromtimestamp(sleep_start_ts / 1000)
-                    sleep_start_time = sleep_start_dt.time()
+                    # 从GMT时间戳转换为UTC时间，再转为北京时间
+                    sleep_start_utc = dt.fromtimestamp(sleep_start_ts / 1000, tz=timezone.utc)
+                    sleep_start_beijing = sleep_start_utc.astimezone(beijing_tz)
+                    sleep_start_time = sleep_start_beijing.time()
                 except Exception as e:
                     logger.warning(f"解析睡眠开始时间失败: {e}")
             if sleep_end_ts:
                 try:
-                    sleep_end_dt = dt.fromtimestamp(sleep_end_ts / 1000)
-                    sleep_end_time = sleep_end_dt.time()
+                    # 从GMT时间戳转换为UTC时间，再转为北京时间
+                    sleep_end_utc = dt.fromtimestamp(sleep_end_ts / 1000, tz=timezone.utc)
+                    sleep_end_beijing = sleep_end_utc.astimezone(beijing_tz)
+                    sleep_end_time = sleep_end_beijing.time()
                 except Exception as e:
                     logger.warning(f"解析睡眠结束时间失败: {e}")
             
