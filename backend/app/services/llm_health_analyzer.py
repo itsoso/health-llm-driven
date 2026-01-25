@@ -44,7 +44,51 @@ class LLMHealthAnalyzer:
     def is_available(self) -> bool:
         """检查LLM服务是否可用"""
         return self.client is not None
-    
+
+    async def analyze_with_prompt(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 2000
+    ) -> str:
+        """
+        使用自定义 prompt 进行 LLM 分析
+
+        Args:
+            system_prompt: 系统提示词
+            user_prompt: 用户提示词
+            temperature: 温度参数
+            max_tokens: 最大 token 数
+
+        Returns:
+            LLM 响应内容字符串
+        """
+        if not self.is_available():
+            raise Exception("LLM 服务不可用，请配置 OpenAI API Key")
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=60
+        )
+
+        content = response.choices[0].message.content.strip()
+
+        # 处理可能的 markdown 代码块
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+
+        return content
+
     def _build_user_context(
         self,
         db: Session,

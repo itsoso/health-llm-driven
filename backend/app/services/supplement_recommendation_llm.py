@@ -623,7 +623,7 @@ class SupplementRecommendationServiceLLM:
     ) -> Optional[Dict[str, Any]]:
         """获取最近运动数据"""
         try:
-            from app.models.workout import WorkoutRecord
+            from app.models.daily_health import WorkoutRecord
             
             records = db.query(WorkoutRecord).filter(
                 WorkoutRecord.user_id == user_id,
@@ -667,7 +667,7 @@ class SupplementRecommendationServiceLLM:
             if not records:
                 return None
             
-            total_protein = sum([r.protein_g for r in records if r.protein_g])
+            total_protein = sum([r.protein for r in records if r.protein])
             
             return {
                 "record_count": len(records),
