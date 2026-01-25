@@ -634,7 +634,7 @@ class SupplementRecommendationServiceLLM:
             if not records:
                 return None
             
-            total_duration = sum([r.duration_minutes for r in records if r.duration_minutes])
+            total_duration = sum([r.duration_seconds / 60 for r in records if r.duration_seconds])
             has_high_intensity = any([
                 r.avg_heart_rate and r.avg_heart_rate > 150 
                 for r in records
