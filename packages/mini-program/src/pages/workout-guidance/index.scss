@@ -12,9 +12,17 @@
 
 // 页面标题
 .page-header {
-  text-align: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   margin-bottom: $gap-lg;
-  
+
+  .header-content {
+    flex: 1;
+    text-align: center;
+    padding-right: 60px; // 为刷新按钮留出空间
+  }
+
   .page-title {
     font-size: 32px;
     font-weight: 700;
@@ -22,11 +30,44 @@
     display: block;
     margin-bottom: $gap-xs;
   }
-  
+
   .page-subtitle {
     font-size: 22px;
     color: #6B7280;
     display: block;
+  }
+
+  .refresh-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &:active {
+      background: #F3F4F6;
+    }
+
+    &.refreshing {
+      animation: spin 1s linear infinite;
+    }
+
+    .refresh-icon {
+      font-size: 28px;
+    }
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 

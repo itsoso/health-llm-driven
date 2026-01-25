@@ -776,10 +776,103 @@ vim .env-online
 
 ---
 
+## 9. 数据库规范 🗄️
+
+### 9.1 数据库类型
+
+**生产环境数据库: PostgreSQL**
+
+> ⚠️ **重要**: 项目统一使用 PostgreSQL 数据库，SQLite 仅用于历史兼容，**已废弃**。
+> 所有新的数据库操作、迁移、查询都必须基于 PostgreSQL。
+
+| 环境 | 数据库 | 备注 |
+|------|--------|------|
+| 生产 | PostgreSQL | **唯一正式数据库** |
+| 开发 | PostgreSQL | 推荐使用 Docker 本地运行 |
+| ~~测试~~ | ~~SQLite~~ | **已废弃，请勿使用** |
+
+### 9.2 连接配置
+
+```bash
+# .env 或 .env-online 配置
+DATABASE_URL=postgresql://user:password@host:5432/health_db
+
+# 示例（本地开发）
+DATABASE_URL=postgresql://health:health123@localhost:5432/health_dev
+
+# 示例（生产环境）
+DATABASE_URL=postgresql://health_user:xxx@localhost:5432/health_prod
+```
+
+### 9.3 迁移规范
+
+**迁移文件位置:** `backend/migrations/`
+
+**命名规范:** `YYYYMMDD_HHMMSS_description.sql` 或 `description.sql`
+
+**迁移文件示例 (PostgreSQL):**
+
+```sql
+-- 使用 PostgreSQL 语法
+CREATE TABLE IF NOT EXISTS example_table (
+    id SERIAL PRIMARY KEY,                          -- 自增主键
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_example_name ON example_table(name);
+```
+
+**执行迁移:**
+
+```bash
+# 通过 psql 执行迁移
+psql $DATABASE_URL -f migrations/create_xxx_tables.sql
+
+# 或在服务器上
+cd /opt/health-app/backend
+psql "$DATABASE_URL" -f migrations/create_xxx_tables.sql
+```
+
+### 9.4 PostgreSQL vs SQLite 语法差异
+
+| 功能 | PostgreSQL | SQLite (已废弃) |
+|------|------------|-----------------|
+| 自增主键 | `SERIAL PRIMARY KEY` | `INTEGER PRIMARY KEY AUTOINCREMENT` |
+| 时间戳默认值 | `DEFAULT NOW()` | `DEFAULT CURRENT_TIMESTAMP` |
+| 带时区时间 | `TIMESTAMP WITH TIME ZONE` | `TIMESTAMP` |
+| 布尔类型 | `BOOLEAN` | `BOOLEAN` (实际存储为 0/1) |
+| JSON 类型 | `JSONB` (推荐) | `TEXT` |
+
+### 9.5 ORM 使用
+
+项目使用 SQLAlchemy ORM，模型定义兼容 PostgreSQL：
+
+```python
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
+
+class ExampleModel(Base):
+    __tablename__ = "example_table"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    metadata = Column(JSONB, nullable=True)  # PostgreSQL JSONB
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True)
+```
+
+---
+
 ## 版本历史
 
 | 版本 | 日期 | 更新内容 |
 |------|------|---------|
+| 1.2 | 2026-01-25 | 新增数据库规范章节，明确使用 PostgreSQL，废弃 SQLite |
 | 1.1 | 2026-01-25 | 新增部署规范章节，明确 deploy.sh 和 .env-online 使用规范 |
 | 1.0 | 2026-01-17 | 初始版本，包含安全、日志、测试、性能、数据安全规范 |
 

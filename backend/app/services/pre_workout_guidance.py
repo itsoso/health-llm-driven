@@ -314,8 +314,11 @@ class PreWorkoutGuidanceService:
                         "success" if aqi_level in ["excellent", "good"] else "warning"
                     )
                     
-                    # AQI 警告
-                    if aqi_val > 150:
+                    # AQI 警告（基于空气质量指数判断户外运动安全性）
+                    if aqi_val > 200:
+                        environment_warnings.append(f"🚫 空气质量{aqi_desc}（AQI {aqi_val}），请避免户外运动！建议室内锻炼")
+                        self._add_debug_reasoning(debug_info, "空气质量严重污染，禁止户外运动", "error")
+                    elif aqi_val > 150:
                         environment_warnings.append(f"⚠️ 空气质量{aqi_desc}（AQI {aqi_val}），强烈建议室内运动")
                         self._add_debug_reasoning(debug_info, "空气质量差，不适合户外运动", "warning")
                     elif aqi_val > 100:

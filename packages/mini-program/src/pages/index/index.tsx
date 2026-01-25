@@ -4,9 +4,10 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Input, ScrollView, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { 
-  wechatLogin, 
-  syncMyGarminData
+import {
+  wechatLogin,
+  syncMyGarminData,
+  quickAddWater
 } from '../../services/api';
 import { 
   getTodayGarminDataCached,
@@ -58,6 +59,8 @@ export default function Index() {
   const [inputNickname, setInputNickname] = useState('');
   const [inputInviteCode, setInputInviteCode] = useState('');
   const [currentTime, setCurrentTime] = useState('');
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
+  const SCHEDULE_DEFAULT_COUNT = 5; // 默认显示5项日程
   const [homeData, setHomeData] = useState<HomeData>({
     garmin: null,
     recommendation: null,
@@ -109,9 +112,37 @@ export default function Index() {
   // 处理提醒点击，跳转到对应打卡页面
   const handleReminderClick = async (reminder: HealthReminder) => {
     try {
+      // 喝水提醒：直接调用 API 快速记录（与 Web 端保持一致）
+      if (reminder.type === 'drink_water') {
+        Taro.showLoading({ title: '记录中...' });
+        try {
+          await quickAddWater(250); // 默认一杯水 250ml
+          Taro.hideLoading();
+          Taro.showToast({
+            title: '已记录 250ml 💧',
+            icon: 'success',
+            duration: 2000
+          });
+          // 刷新提醒列表
+          const newReminders = await getCurrentRemindersCached();
+          setHomeData(prev => ({
+            ...prev,
+            reminders: newReminders?.reminders || []
+          }));
+        } catch (e) {
+          Taro.hideLoading();
+          console.error('[喝水打卡] 失败:', e);
+          Taro.showToast({
+            title: '记录失败，请重试',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+        return;
+      }
+
       const typeToPageMap: Record<string, string> = {
         'nasal_wash': '/pages/rhinitis/index',     // 洗鼻 → 鼻炎记录页
-        'drink_water': '/pages/checkin/index',     // 喝水 → 通用打卡页（暂无独立页面）
         'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
         'exercise': '/pages/workout/index',        // 运动 → 运动记录页
         'weigh': '/pages/checkin/index',          // 称重 → 通用打卡页（暂无独立页面）
@@ -135,7 +166,7 @@ export default function Index() {
         '/pages/checkin/index',
         '/pages/settings/index'
       ];
-      
+
       if (tabBarPages.includes(targetPage)) {
         // 使用 switchTab 跳转到 tabBar 页面
         await Taro.switchTab({ url: targetPage });
@@ -343,17 +374,45 @@ export default function Index() {
       Taro.showToast({ title: '请先登录', icon: 'none' });
       return;
     }
-    
+
     try {
+      // 喝水：直接调用 API 快速记录（与 Web 端保持一致）
+      if (checkinAction === 'water') {
+        Taro.showLoading({ title: '记录中...' });
+        try {
+          await quickAddWater(250);
+          Taro.hideLoading();
+          Taro.showToast({
+            title: '已记录 250ml 💧',
+            icon: 'success',
+            duration: 2000
+          });
+          // 刷新提醒列表
+          const newReminders = await getCurrentRemindersCached();
+          setHomeData(prev => ({
+            ...prev,
+            reminders: newReminders?.reminders || []
+          }));
+        } catch (e) {
+          Taro.hideLoading();
+          console.error('[喝水打卡] 失败:', e);
+          Taro.showToast({
+            title: '记录失败，请重试',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+        return;
+      }
+
       const actionMap: Record<string, string> = {
-        'water': '/pages/checkin/index',           // 喝水 → 通用打卡页（暂无独立页面）
         'nasal_wash': '/pages/checkin/index',      // 洗鼻 → 通用打卡页
         'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
         'exercise': '/pages/workout/index',        // 运动 → 运动记录页
         'weight': '/pages/checkin/index',          // 体重 → 通用打卡页（暂无独立页面）
         'diet': '/pages/diet/index',               // 饮食 → 饮食记录页
       };
-      
+
       const targetPage = actionMap[checkinAction];
       if (!targetPage) {
         Taro.showToast({ title: '功能开发中', icon: 'none' });
@@ -367,7 +426,7 @@ export default function Index() {
         '/pages/checkin/index',
         '/pages/settings/index'
       ];
-      
+
       if (tabBarPages.includes(targetPage)) {
         await Taro.switchTab({ url: targetPage });
       } else {
@@ -464,6 +523,7 @@ export default function Index() {
       {homeData.aiRecommendation?.primary && (
         <View className="hero-card">
           <View className="hero-glow"></View>
+          <View className="hero-glow-2"></View>
           <View className="hero-content">
             <View className="hero-header">
               <View className="hero-badge">
@@ -539,272 +599,200 @@ export default function Index() {
         </View>
       )}
 
-      {/* 快捷功能 */}
-      <View className="section">
+      {/* 快捷功能 - 横向滚动卡片 */}
+      <View className="section quick-section">
         <View className="section-header yellow">
           <Text className="section-icon">⚡</Text>
           <Text className="section-title">快捷功能</Text>
         </View>
-        <View className="quick-grid">
-          <View className="quick-item" onClick={() => handleNavToPage('diet')}>
-            <View className="quick-icon-wrap yellow">
-              <Image className="quick-icon-img" src={require('../../assets/icons/quick-diet.png')} />
+        <ScrollView className="quick-scroll" scrollX enhanced showScrollbar={false}>
+          <View className="quick-scroll-inner">
+            <View className="quick-card" onClick={() => handleNavToPage('diet')}>
+              <View className="quick-card-icon yellow">
+                <Image className="quick-card-img" src={require('../../assets/icons/quick-diet.png')} />
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">饮食记录</Text>
+                <Text className="quick-card-desc">记录每餐摄入</Text>
+              </View>
             </View>
-            <Text className="quick-label">饮食记录</Text>
-          </View>
-          <View className="quick-item" onClick={() => Taro.navigateTo({ url: '/pages/workout-guidance/index' })}>
-            <View className="quick-icon-wrap orange">
-              <Image className="quick-icon-img" src={require('../../assets/icons/quick-workout.png')} />
+            <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/workout-guidance/index' })}>
+              <View className="quick-card-icon orange">
+                <Image className="quick-card-img" src={require('../../assets/icons/quick-workout.png')} />
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">运动指导</Text>
+                <Text className="quick-card-desc">心率区间训练</Text>
+              </View>
             </View>
-            <Text className="quick-label">运动指导</Text>
-          </View>
-          <View className="quick-item" onClick={() => Taro.navigateTo({ url: '/pages/diet-recommendation/index' })}>
-            <View className="quick-icon-wrap purple">
-              <Text className="quick-icon-emoji">🍽️</Text>
+            <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/diet-recommendation/index' })}>
+              <View className="quick-card-icon purple">
+                <Text className="quick-card-emoji">🍽️</Text>
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">饮食推荐</Text>
+                <Text className="quick-card-desc">智能配餐</Text>
+              </View>
             </View>
-            <Text className="quick-label">饮食推荐</Text>
+            <View className="quick-card" onClick={() => handleQuickNav('dashboard')}>
+              <View className="quick-card-icon blue">
+                <Text className="quick-card-emoji">📊</Text>
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">数据看板</Text>
+                <Text className="quick-card-desc">健康趋势</Text>
+              </View>
+            </View>
+            <View className="quick-card" onClick={() => handleNavToPage('supplements')}>
+              <View className="quick-card-icon green">
+                <Text className="quick-card-emoji">💊</Text>
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">补剂记录</Text>
+                <Text className="quick-card-desc">追踪补充</Text>
+              </View>
+            </View>
           </View>
+        </ScrollView>
+      </View>
+
+      {/* 今日概览 - 紧凑深色玻璃风格 */}
+      <View className="section">
+        <View className="section-header yellow">
+          <Text className="section-icon">✨</Text>
+          <Text className="section-title">今日概览</Text>
+        </View>
+        <View className="overview-card" onClick={() => handleNavToPage('diet')}>
+          {(() => {
+            // 能量差计算
+            const DEFAULT_BMR = 1600;
+            const workoutCalories = homeData.workouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+
+            let totalOut: number;
+            if (homeData?.garmin?.calories_total && homeData.garmin.calories_total > 0) {
+              totalOut = homeData.garmin.calories_total;
+            } else {
+              totalOut = DEFAULT_BMR + workoutCalories;
+            }
+
+            const totalIn = homeData.diet?.total_calories || 0;
+            const energyDiff = totalOut - totalIn;
+            const maxVal = Math.max(totalOut, totalIn, 1);
+            const isCreatingDeficit = energyDiff > 0;
+            const deficitAmount = Math.abs(energyDiff);
+            const KCAL_PER_GRAM_FAT = 7.7;
+            const fatGrams = Math.round(deficitAmount / KCAL_PER_GRAM_FAT);
+
+            return (
+              <>
+                {/* 顶部：脂肪数值 + 进度条 */}
+                <View className="overview-top">
+                  <View className="overview-fat">
+                    <Text className={`fat-num ${isCreatingDeficit ? 'green' : 'red'}`}>
+                      {isCreatingDeficit ? '-' : '+'}{fatGrams}
+                    </Text>
+                    <Text className="fat-unit">克脂肪</Text>
+                    {isCreatingDeficit && <Text className="fat-check">✓</Text>}
+                  </View>
+                  <View className="overview-bars">
+                    <View className="bar-row">
+                      <Text className="bar-label">消耗</Text>
+                      <View className="bar-track">
+                        <View className="bar-fill red" style={{ width: `${Math.min((totalOut / maxVal) * 100, 100)}%` }} />
+                      </View>
+                      <Text className="bar-val red">{totalOut}</Text>
+                    </View>
+                    <View className="bar-row">
+                      <Text className="bar-label">摄入</Text>
+                      <View className="bar-track">
+                        <View className="bar-fill green" style={{ width: `${Math.min((totalIn / maxVal) * 100, 100)}%` }} />
+                      </View>
+                      <Text className="bar-val green">{totalIn}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* 底部：营养素 + 餐食 */}
+                <View className="overview-bottom">
+                  <View className="nutrient-tag">
+                    <Text className="tag-icon">🥩</Text>
+                    <Text className="tag-val">{homeData.diet?.total_protein?.toFixed(0) || 0}g</Text>
+                  </View>
+                  <View className="nutrient-tag">
+                    <Text className="tag-icon">🍚</Text>
+                    <Text className="tag-val">{homeData.diet?.total_carbs?.toFixed(0) || 0}g</Text>
+                  </View>
+                  <View className="nutrient-tag">
+                    <Text className="tag-icon">🧈</Text>
+                    <Text className="tag-val">{homeData.diet?.total_fat?.toFixed(0) || 0}g</Text>
+                  </View>
+                  {homeData.diet && homeData.diet.meals_count > 0 ? (
+                    homeData.diet.meals.slice(0, 2).map((m, idx) => (
+                      <View key={idx} className="meal-tag">
+                        <Text className="meal-name">{
+                          m.meal_type === 'breakfast' ? '早' :
+                          m.meal_type === 'lunch' ? '午' :
+                          m.meal_type === 'dinner' ? '晚' : '加'
+                        }</Text>
+                        <Text className="meal-cal">{m.calories || 0}</Text>
+                      </View>
+                    ))
+                  ) : null}
+                  <View className="add-meal-btn" onClick={(e) => { e.stopPropagation(); handleNavToPage('diet'); }}>
+                    <Text>+ 记录</Text>
+                  </View>
+                </View>
+              </>
+            );
+          })()}
         </View>
       </View>
 
-      {/* 运动/饮食/能量平衡 三卡片 */}
+      {/* 今日运动 - 独立卡片 */}
       <View className="section">
-        <View className="energy-cards">
-          {/* 今日运动 */}
-          <View className="energy-card">
-            <View className="energy-header" onClick={() => handleNavToPage('workout')}>
-              <Text className="energy-icon">🏃</Text>
-              <Text className="energy-title">今日运动</Text>
+        <View className="section-header yellow">
+          <Text className="section-icon">🏃</Text>
+          <Text className="section-title">今日运动</Text>
+          <Text className="section-subtitle" onClick={() => handleNavToPage('workout')}>查看全部 →</Text>
+        </View>
+        <View className="workout-card">
+          {homeData.workouts && homeData.workouts.length > 0 ? (
+            <View className="workout-content" onClick={() => handleNavToPage('workout')}>
+              <View className="workout-summary">
+                <Text className="workout-total-cal">{homeData.workouts.reduce((sum, w) => sum + (w.calories || 0), 0)}</Text>
+                <Text className="workout-total-unit">卡消耗</Text>
+              </View>
+              <View className="workout-items">
+                {homeData.workouts.slice(0, 3).map((w, idx) => (
+                  <View key={idx} className="workout-tag">
+                    <Text className="tag-name">{w.workout_name || w.workout_type}</Text>
+                    <Text className="tag-cal">{w.calories || 0}卡</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-            {homeData.workouts && homeData.workouts.length > 0 ? (
-              <View className="energy-content" onClick={() => handleNavToPage('workout')}>
-                <View className="workout-list">
-                  {homeData.workouts.slice(0, 2).map((w, idx) => (
-                    <View key={idx} className="workout-item">
-                      <Text className="workout-name">{w.workout_name || w.workout_type}</Text>
-                      <Text className="workout-cal">{w.calories || 0}卡</Text>
-                    </View>
-                  ))}
-                </View>
-                <View className="workout-total">
-                  <Text className="total-label">总消耗</Text>
-                  <Text className="total-value orange">
-                    {homeData.workouts.reduce((sum, w) => sum + (w.calories || 0), 0)}卡
-                  </Text>
-                </View>
+          ) : homeData.workoutGuidance ? (
+            <View className="workout-guidance-mini">
+              <View className="guidance-left">
+                <Text className="guidance-label">今日建议</Text>
+                <Text className="guidance-obj">{homeData.workoutGuidance.training_objective}</Text>
               </View>
-            ) : homeData.workoutGuidance ? (
-              <View className="energy-content workout-guidance">
-                <View className="guidance-objective">
-                  <Text className="guidance-icon">🎯</Text>
-                  <Text className="guidance-text">{homeData.workoutGuidance.training_objective}</Text>
-                </View>
-                <View className="guidance-zones">
-                  <Text className="zones-label">心率区间</Text>
-                  <View className="zone-item">
-                    <Text className="zone-name">燃脂区</Text>
-                    <Text className="zone-value">
-                      {homeData.workoutGuidance.heart_rate_zones.zone2_fat_burn[0]}-
-                      {homeData.workoutGuidance.heart_rate_zones.zone2_fat_burn[1]} bpm
-                    </Text>
-                  </View>
-                </View>
-                <View 
-                  className="guidance-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    Taro.navigateTo({ url: '/pages/workout-guidance/index' });
-                  }}
-                >
-                  <Text className="btn-text">查看完整指导 →</Text>
-                </View>
+              <View
+                className="guidance-action"
+                onClick={() => Taro.navigateTo({ url: '/pages/workout-guidance/index' })}
+              >
+                <Text>查看指导</Text>
               </View>
-            ) : (
-              <View className="energy-empty" onClick={() => handleNavToPage('workout')}>
-                <Text className="empty-icon">🏃‍♂️</Text>
-                <Text className="empty-text">今日暂无运动记录</Text>
-                <Text className="empty-hint">记录运动以追踪消耗热量</Text>
-              </View>
-            )}
-          </View>
-
-          {/* 今日饮食 */}
-          <View className="energy-card" onClick={() => handleQuickNav('diet')}>
-            <View className="energy-header">
-              <Text className="energy-icon">🍽️</Text>
-              <Text className="energy-title">今日饮食</Text>
             </View>
-            {homeData.diet && homeData.diet.meals_count > 0 ? (
-              <View className="energy-content">
-                <View className="diet-calories">
-                  <Text className="cal-value green">{homeData.diet.total_calories}</Text>
-                  <Text className="cal-unit">大卡</Text>
-                </View>
-                <Text className="diet-label">摄入热量</Text>
-                <View className="nutrient-row">
-                  <View className="nutrient-item blue">
-                    <Text className="nutrient-value">{homeData.diet.total_protein?.toFixed(0) || 0}g</Text>
-                    <Text className="nutrient-name">蛋白质</Text>
-                  </View>
-                  <View className="nutrient-item yellow">
-                    <Text className="nutrient-value">{homeData.diet.total_carbs?.toFixed(0) || 0}g</Text>
-                    <Text className="nutrient-name">碳水</Text>
-                  </View>
-                  <View className="nutrient-item red">
-                    <Text className="nutrient-value">{homeData.diet.total_fat?.toFixed(0) || 0}g</Text>
-                    <Text className="nutrient-name">脂肪</Text>
-                  </View>
-                </View>
-                <View className="meal-list">
-                  {homeData.diet.meals.slice(0, 2).map((m, idx) => (
-                    <View key={idx} className="meal-item">
-                      <Text className="meal-type">{
-                        m.meal_type === 'breakfast' ? '早餐' :
-                        m.meal_type === 'lunch' ? '午餐' :
-                        m.meal_type === 'dinner' ? '晚餐' : '加餐'
-                      }</Text>
-                      <Text className="meal-cal">{m.calories || 0}卡</Text>
-                    </View>
-                  ))}
-                </View>
+          ) : (
+            <View className="workout-empty-mini" onClick={() => handleNavToPage('workout')}>
+              <Text className="empty-icon-mini">🏃‍♂️</Text>
+              <Text className="empty-hint-mini">今日暂无运动记录</Text>
+              <View className="empty-action">
+                <Text>+ 记录运动</Text>
               </View>
-            ) : (
-              <View className="energy-empty">
-                <Text className="empty-icon">🥗</Text>
-                <Text className="empty-text">今日暂无饮食记录</Text>
-                <Text className="empty-hint">记录饮食以追踪摄入热量</Text>
-              </View>
-            )}
-          </View>
-
-          {/* 能量平衡 */}
-          <View className="energy-card">
-            <View className="energy-header">
-              <Text className="energy-icon">⚖️</Text>
-              <Text className="energy-title">能量平衡</Text>
             </View>
-            {(() => {
-              // 能量差计算：基础代谢消耗 + 锻炼消耗 - 饮食摄入
-              const DEFAULT_BMR = 1600; // 默认基础代谢（大卡）
-              
-              // 计算运动消耗（从workouts数据）
-              const workoutCalories = homeData.workouts.reduce((sum, w) => sum + (w.calories || 0), 0);
-              
-              // 如果有Garmin数据，使用Garmin数据；否则使用默认值+运动数据
-              let bmr: number;
-              let activeCalories: number;
-              let totalOut: number;
-              
-              if (homeData?.garmin?.calories_total && homeData.garmin.calories_total > 0) {
-                // 使用Garmin真实数据
-                totalOut = homeData.garmin.calories_total;
-                activeCalories = homeData.garmin.active_calories || 0;
-                bmr = totalOut - activeCalories;
-              } else {
-                // Garmin数据为空，使用默认基础代谢 + 运动消耗
-                bmr = DEFAULT_BMR;
-                activeCalories = workoutCalories;
-                totalOut = bmr + activeCalories;
-              }
-              
-              const totalIn = homeData.diet?.total_calories || 0;
-              
-              // 能量差 = (基础代谢 + 锻炼消耗) - 饮食摄入 = 总消耗 - 总摄入
-              // 正数表示有能量差（可以减肥），负数表示能量盈余（会增重）
-              const energyDiff = totalOut - totalIn;
-              const maxVal = Math.max(totalOut, totalIn, 1);
-              
-              // 判断是否在创造能量差
-              const isCreatingDeficit = energyDiff > 0;
-              const deficitAmount = Math.abs(energyDiff);
-              
-              // 脂肪转换：1kg脂肪 ≈ 7700大卡，1g脂肪 ≈ 7.7大卡
-              const KCAL_PER_GRAM_FAT = 7.7;
-              const fatGrams = Math.round(deficitAmount / KCAL_PER_GRAM_FAT);
-              
-              return (
-                <View className="energy-content">
-                  <View className="balance-value">
-                    <Text className={`balance-num ${isCreatingDeficit ? 'green' : 'red'}`}>
-                      {isCreatingDeficit ? '-' : '+'}{fatGrams}
-                    </Text>
-                    <Text className="balance-unit">克脂肪</Text>
-                  </View>
-                  <Text className={`balance-label ${isCreatingDeficit ? 'green-text' : 'red-text'}`}>
-                    {isCreatingDeficit 
-                      ? `✓ 能量差 ${deficitAmount.toFixed(0)} 大卡 ≈ 减脂 ${fatGrams}g` 
-                      : energyDiff === 0 
-                        ? '能量平衡，需要增加运动或减少摄入'
-                        : `能量盈余 ${deficitAmount.toFixed(0)} 大卡 ≈ 增脂 ${fatGrams}g`
-                    }
-                  </Text>
-                  
-                  {/* 消耗进度条 */}
-                  <View className="progress-section">
-                    <View className="progress-header">
-                      <Text className="progress-label">总消耗</Text>
-                      <Text className="progress-value red">{totalOut} 大卡</Text>
-                    </View>
-                    <View className="progress-bar">
-                      <View 
-                        className="progress-fill red" 
-                        style={{ width: `${Math.min((totalOut / maxVal) * 100, 100)}%` }}
-                      />
-                    </View>
-                    <View className="progress-detail">
-                      <Text className="detail-text">
-                        基础代谢: {bmr.toFixed(0)} 大卡
-                        {!homeData.garmin?.calories_total && ' (默认值)'}
-                      </Text>
-                      <Text className="detail-text">
-                        活动消耗: {activeCalories.toFixed(0)} 大卡
-                        {!homeData.garmin?.calories_total && ` (${homeData.workouts.length}次运动)`}
-                      </Text>
-                    </View>
-                  </View>
-                  
-                  {/* 摄入进度条 */}
-                  <View className="progress-section">
-                    <View className="progress-header">
-                      <Text className="progress-label">总摄入</Text>
-                      <Text className="progress-value green">{totalIn} 大卡</Text>
-                    </View>
-                    <View className="progress-bar">
-                      <View 
-                        className="progress-fill green" 
-                        style={{ width: `${Math.min((totalIn / maxVal) * 100, 100)}%` }}
-                      />
-                    </View>
-                    <View className="progress-detail">
-                      <Text className="detail-text">{homeData.diet?.meals_count || 0} 餐</Text>
-                      <Text className="detail-text">{homeData.diet?.total_protein?.toFixed(0) || 0}g 蛋白质</Text>
-                    </View>
-                  </View>
-                  
-                  {/* 能量差提示 */}
-                  {isCreatingDeficit ? (
-                    <View className="balance-tip balance-tip-success">
-                      <Text className="tip-text">
-                        🎯 今日减脂约 {fatGrams}g（{deficitAmount.toFixed(0)}大卡），坚持7天可减约 {Math.round(fatGrams * 7)}g！
-                      </Text>
-                    </View>
-                  ) : energyDiff < 0 ? (
-                    <View className="balance-tip balance-tip-warning">
-                      <Text className="tip-text">
-                        ⚠️ 今日可能增脂 {fatGrams}g，建议增加运动或减少摄入。
-                      </Text>
-                    </View>
-                  ) : (
-                    <View className="balance-tip">
-                      <Text className="tip-text">
-                        💡 能量平衡中，建议增加运动来创造能量差。
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })()}
-          </View>
+          )}
         </View>
       </View>
 
@@ -814,15 +802,8 @@ export default function Index() {
           <Text className="section-icon">📋</Text>
           <Text className="section-title">健康简报</Text>
         </View>
-        
-        {/* 问候语 */}
-        {homeData.briefing && (
-          <View className="greeting-card">
-            <Text className="greeting-text">{homeData.briefing.greeting} 🌙</Text>
-          </View>
-        )}
-        
-        {/* 简报网格 */}
+
+        {/* 简报网格 - 移除问候语，直接显示指标卡片 */}
         <View className="briefing-grid">
           {/* 昨晚睡眠 */}
           <View className="briefing-card">
@@ -962,15 +943,23 @@ export default function Index() {
           <View className="section-header gray">
             <Text className="section-icon">📅</Text>
             <Text className="section-title">今日日程</Text>
+            <Text className="section-count">{homeData.schedule.length}项</Text>
           </View>
           <View className="timeline">
             <View className="timeline-line"></View>
-            {homeData.schedule.map((item, idx) => {
+            {(scheduleExpanded ? homeData.schedule : homeData.schedule.slice(0, SCHEDULE_DEFAULT_COUNT)).map((item, idx) => {
               const color = getCategoryColor(item.category);
+              // 判断是否已过时间
+              const now = new Date();
+              const [hours, minutes] = item.time.split(':').map(Number);
+              const itemTime = new Date();
+              itemTime.setHours(hours, minutes, 0, 0);
+              const isPast = itemTime < now;
+
               return (
-                <View key={idx} className={`timeline-item color-${color}`}>
-                  <View className={`timeline-dot border-${color}`}></View>
-                  <View className={`timeline-card border-left-${color}`}>
+                <View key={idx} className={`timeline-item color-${color} ${isPast ? 'past' : ''}`}>
+                  <View className={`timeline-dot border-${color} ${isPast ? 'past' : ''}`}></View>
+                  <View className={`timeline-card border-left-${color} ${isPast ? 'past' : ''}`}>
                     <View className="card-top">
                       <View className="card-left">
                         <Text className={`card-time text-${color}`}>{item.time}</Text>
@@ -987,6 +976,15 @@ export default function Index() {
               );
             })}
           </View>
+          {/* 展开/收起按钮 */}
+          {homeData.schedule.length > SCHEDULE_DEFAULT_COUNT && (
+            <View className="schedule-toggle" onClick={() => setScheduleExpanded(!scheduleExpanded)}>
+              <Text className="toggle-text">
+                {scheduleExpanded ? '收起' : `展开更多 (${homeData.schedule.length - SCHEDULE_DEFAULT_COUNT}项)`}
+              </Text>
+              <Text className={`toggle-icon ${scheduleExpanded ? 'expanded' : ''}`}>▼</Text>
+            </View>
+          )}
         </View>
       )}
 

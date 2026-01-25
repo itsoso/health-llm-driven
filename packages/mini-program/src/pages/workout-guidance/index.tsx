@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { getPreWorkoutGuidance } from '../../services/api';
+import { clearWorkoutGuidanceCache } from '../../services/cachedApi';
 import { PreWorkoutGuidance } from '../../types';
 import { getWorkoutTypeDisplay, getWorkoutTypeName } from '../../utils/workout';
 import './index.scss';
@@ -12,6 +13,7 @@ import './index.scss';
 export default function WorkoutGuidance() {
   const [guidance, setGuidance] = useState<PreWorkoutGuidance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [workoutType, setWorkoutType] = useState('running');
 
   useEffect(() => {
@@ -28,6 +30,23 @@ export default function WorkoutGuidance() {
       Taro.showToast({ title: '加载失败', icon: 'none' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      // 清除首页的运动指导缓存
+      clearWorkoutGuidanceCache(workoutType);
+      // 重新加载数据
+      const data = await getPreWorkoutGuidance(workoutType);
+      setGuidance(data);
+      Taro.showToast({ title: '刷新成功', icon: 'success' });
+    } catch (e) {
+      console.error('刷新运动指导失败:', e);
+      Taro.showToast({ title: '刷新失败', icon: 'none' });
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -62,14 +81,22 @@ export default function WorkoutGuidance() {
     <ScrollView className="workout-guidance-page" scrollY scrollX={false}>
       {/* 页面标题 */}
       <View className="page-header">
-        <Text className="page-title">
-          {guidance.workout_type ? getWorkoutTypeDisplay(guidance.workout_type) : '🎯'} 智能运动指导
-        </Text>
-        <Text className="page-subtitle">
-          {guidance.workout_type 
-            ? `${getWorkoutTypeName(guidance.workout_type)}训练 · 基于科学训练理论` 
-            : '基于张展晖课程的科学训练建议'}
-        </Text>
+        <View className="header-content">
+          <Text className="page-title">
+            {guidance.workout_type ? getWorkoutTypeDisplay(guidance.workout_type) : '🎯'} 智能运动指导
+          </Text>
+          <Text className="page-subtitle">
+            {guidance.workout_type
+              ? `${getWorkoutTypeName(guidance.workout_type)}训练 · 基于科学训练理论`
+              : '基于张展晖课程的科学训练建议'}
+          </Text>
+        </View>
+        <View
+          className={`refresh-btn ${refreshing ? 'refreshing' : ''}`}
+          onClick={handleRefresh}
+        >
+          <Text className="refresh-icon">🔄</Text>
+        </View>
       </View>
 
       {/* 当前状态 */}

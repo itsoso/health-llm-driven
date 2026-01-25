@@ -44,6 +44,19 @@ $gap-lg: 20px;
   border-radius: $radius-md;
 }
 
+// 白色卡片混入
+@mixin white-card {
+  background: #FFFFFF;
+  border-radius: $radius-md;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+
+  &:active {
+    transform: scale(0.99);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  }
+}
+
 // ==================== 基础页面 ====================
 .index-page {
   min-height: 100vh;
@@ -191,6 +204,17 @@ $gap-lg: 20px;
   margin-bottom: $gap-lg;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba($primary, 0.3);
+
+  // 顶部微光装饰线
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  }
 }
 
 .hero-glow {
@@ -200,9 +224,27 @@ $gap-lg: 20px;
   width: 160px;
   height: 160px;
   background: white;
-  opacity: 0.1;
+  opacity: 0.15;
   border-radius: 50%;
   filter: blur(40px);
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+// 第二个光晕效果
+.hero-glow-2 {
+  position: absolute;
+  bottom: -30px;
+  left: -30px;
+  width: 120px;
+  height: 120px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  filter: blur(30px);
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(1.1); }
 }
 
 .hero-content {
@@ -278,25 +320,57 @@ $gap-lg: 20px;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 20px;
+  padding: 12px 22px;
   border-radius: $radius-full;
-  transition: all 0.2s;
-  
-  text { font-size: 24px; font-weight: 500; }
-  
+  transition: all 0.25s ease;
+
+  text { font-size: 24px; font-weight: 600; }
+
   &.primary {
     background: $text-white;
-    text { color: $accent-indigo; }
-    .btn-check { color: $accent-indigo; font-weight: 700; }
-    &:active { opacity: 0.9; transform: scale(0.98); }
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 0 20px rgba(255, 255, 255, 0.3);
+    position: relative;
+    overflow: hidden;
+
+    // 微光扫过效果
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+      animation: shimmer 2.5s ease-in-out infinite;
+    }
+
+    text { color: $accent-indigo; position: relative; z-index: 1; }
+    .btn-check { color: $accent-indigo; font-weight: 700; position: relative; z-index: 1; }
+
+    &:active {
+      transform: scale(0.96);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
   }
-  
+
   &.secondary {
-    background: rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(4px);
+    background: transparent;
+    border: 1.5px solid rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(8px);
+
     text { color: $text-white; }
-    &:active { background: rgba(255, 255, 255, 0.3); }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.7);
+      transform: scale(0.98);
+    }
   }
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  50%, 100% { left: 100%; }
 }
 
 .btn-check { font-size: 24px; }
@@ -324,11 +398,19 @@ $gap-lg: 20px;
 
 .section-icon { font-size: 26px; }
 .section-title { font-size: 26px; font-weight: 600; }
-.section-subtitle { 
-  font-size: 20px; 
-  color: $text-gray-400; 
+.section-subtitle {
+  font-size: 20px;
+  color: $text-gray-400;
   margin-left: auto;
   font-weight: 400;
+}
+.section-count {
+  font-size: 20px;
+  color: $text-gray-500;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 10px;
+  border-radius: $radius-full;
 }
 
 // ==================== 当前提醒 ====================
@@ -412,7 +494,81 @@ $gap-lg: 20px;
   }
 }
 
-// ==================== 快捷功能 ====================
+// ==================== 快捷功能 - 横向滚动 ====================
+.quick-section {
+  margin-left: -$gap-md;
+  margin-right: -$gap-md;
+  padding-left: $gap-md;
+  padding-right: 0;
+}
+
+.quick-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.quick-scroll-inner {
+  display: inline-flex;
+  gap: $gap-sm;
+  padding-right: $gap-md;
+}
+
+.quick-card {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  background: #FFFFFF;
+  border-radius: $radius-md;
+  padding: $gap-md;
+  min-width: 200px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+
+  &:active {
+    transform: scale(0.96);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.quick-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: $radius-sm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: $gap-sm;
+
+  &.blue { background: linear-gradient(135deg, #E0F2FE, #BAE6FD); }
+  &.yellow { background: linear-gradient(135deg, #FEF9C3, #FDE68A); }
+  &.orange { background: linear-gradient(135deg, #FFEDD5, #FED7AA); }
+  &.purple { background: linear-gradient(135deg, #F3E8FF, #E9D5FF); }
+  &.green { background: linear-gradient(135deg, #D1FAE5, #A7F3D0); }
+}
+
+.quick-card-img { width: 32px; height: 32px; }
+.quick-card-emoji { font-size: 28px; }
+
+.quick-card-info {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+}
+
+.quick-card-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: #1F2937;
+  margin-bottom: 4px;
+}
+
+.quick-card-desc {
+  font-size: 20px;
+  color: #9CA3AF;
+}
+
+// 保留旧样式兼容
 .quick-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -428,10 +584,10 @@ $gap-lg: 20px;
   justify-content: center;
   padding: 18px 8px 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  
-  &:active { 
-    background: #F5F5F5; 
-    transform: scale(0.96); 
+
+  &:active {
+    background: #F5F5F5;
+    transform: scale(0.96);
   }
 }
 
@@ -443,7 +599,7 @@ $gap-lg: 20px;
   align-items: center;
   justify-content: center;
   margin-bottom: 10px;
-  
+
   &.blue { background: #E8F4FD; }
   &.yellow { background: #FEF9E7; }
   &.orange { background: #FFF0E6; }
@@ -455,6 +611,271 @@ $gap-lg: 20px;
 .quick-icon-img { width: 40px; height: 40px; }
 .quick-icon-emoji { font-size: 32px; }
 .quick-label { font-size: 22px; color: #374151; font-weight: 500; text-align: center; }
+
+// ==================== 今日概览卡片 - 深色玻璃风格 ====================
+.overview-card {
+  @include glass-card;
+  padding: $gap-md;
+}
+
+// 顶部能量行：左侧脂肪数值 + 右侧进度条
+.overview-top {
+  display: flex;
+  align-items: center;
+  gap: $gap-md;
+  margin-bottom: $gap-sm;
+}
+
+.overview-fat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.fat-num {
+  font-size: 44px;
+  font-weight: 700;
+  font-family: 'DIN', -apple-system, monospace;
+
+  &.green { color: $accent-green; }
+  &.red { color: $accent-red; }
+}
+
+.fat-unit {
+  font-size: 20px;
+  color: $text-gray-400;
+}
+
+.fat-check {
+  font-size: 22px;
+  color: $accent-green;
+  margin-left: 4px;
+}
+
+// 右侧进度条区域
+.overview-bars {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-label {
+  font-size: 18px;
+  color: $text-gray-500;
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+
+  &.red { background: linear-gradient(90deg, $accent-red, lighten($accent-red, 10%)); }
+  &.green { background: linear-gradient(90deg, $accent-green, lighten($accent-green, 10%)); }
+}
+
+.bar-val {
+  font-size: 20px;
+  font-weight: 600;
+  font-family: 'DIN', -apple-system, monospace;
+  width: 50px;
+  text-align: right;
+
+  &.red { color: $accent-red; }
+  &.green { color: $accent-green; }
+}
+
+// 底部：营养素 + 餐食记录一行
+.overview-bottom {
+  display: flex;
+  align-items: center;
+  gap: $gap-sm;
+  flex-wrap: wrap;
+}
+
+.nutrient-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 6px 12px;
+  border-radius: $radius-full;
+
+  .tag-icon { font-size: 16px; }
+  .tag-val {
+    font-size: 22px;
+    font-weight: 600;
+    color: $text-white;
+    font-family: 'DIN', -apple-system, monospace;
+  }
+  .tag-label { font-size: 18px; color: $text-gray-500; }
+}
+
+.meal-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba($accent-green, 0.15);
+  padding: 6px 12px;
+  border-radius: $radius-full;
+
+  .meal-name { font-size: 20px; color: $text-gray-300; }
+  .meal-cal { font-size: 20px; color: $accent-green; font-weight: 600; }
+}
+
+.add-meal-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba($accent-indigo, 0.2);
+  padding: 6px 12px;
+  border-radius: $radius-full;
+  margin-left: auto;
+
+  text { font-size: 20px; color: $accent-indigo; font-weight: 500; }
+
+  &:active { background: rgba($accent-indigo, 0.3); }
+}
+
+// 空状态
+.overview-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $gap-xs 0;
+
+  .empty-hint { font-size: 22px; color: $text-gray-500; }
+  .empty-btn {
+    background: linear-gradient(135deg, $accent-indigo, $accent-purple);
+    padding: 8px 18px;
+    border-radius: $radius-full;
+
+    text { font-size: 22px; color: #FFFFFF; font-weight: 500; }
+  }
+}
+
+
+// ==================== 今日运动卡片 ====================
+.workout-card {
+  background: #FFFFFF;
+  border-radius: $radius-md;
+  padding: $gap-md;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.workout-content {
+  display: flex;
+  align-items: center;
+  gap: $gap-md;
+}
+
+.workout-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-right: $gap-md;
+  border-right: 1px solid #E5E7EB;
+}
+
+.workout-total-cal {
+  font-size: 44px;
+  font-weight: 700;
+  color: $accent-orange;
+  font-family: 'DIN', -apple-system, monospace;
+}
+
+.workout-total-unit {
+  font-size: 20px;
+  color: #6B7280;
+}
+
+.workout-items {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: $gap-xs;
+}
+
+.workout-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFF7ED;
+  padding: 8px 14px;
+  border-radius: $radius-full;
+  border: 1px solid rgba($accent-orange, 0.2);
+}
+
+.tag-name { font-size: 22px; color: #374151; }
+.tag-cal { font-size: 22px; color: $accent-orange; font-weight: 600; }
+
+.workout-guidance-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.guidance-left {
+  flex: 1;
+
+  .guidance-label {
+    font-size: 20px;
+    color: #9CA3AF;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .guidance-obj {
+    font-size: 24px;
+    color: #374151;
+    font-weight: 500;
+  }
+}
+
+.guidance-action {
+  background: linear-gradient(135deg, $accent-indigo, $accent-purple);
+  padding: 10px 20px;
+  border-radius: $radius-full;
+
+  text { font-size: 24px; color: #FFFFFF; font-weight: 500; }
+
+  &:active { opacity: 0.9; }
+}
+
+.workout-empty-mini {
+  display: flex;
+  align-items: center;
+  gap: $gap-sm;
+}
+
+.empty-icon-mini { font-size: 36px; }
+.empty-hint-mini { font-size: 24px; color: #9CA3AF; flex: 1; }
+
+.empty-action {
+  background: rgba($accent-orange, 0.1);
+  padding: 8px 16px;
+  border-radius: $radius-full;
+  border: 1px solid rgba($accent-orange, 0.2);
+
+  text { font-size: 22px; color: $accent-orange; font-weight: 500; }
+}
 
 // ==================== 问候卡片 ====================
 .greeting-card {
@@ -1018,7 +1439,7 @@ $gap-lg: 20px;
   padding: 4px 12px;
   border-radius: 6px;
   flex-shrink: 0;
-  
+
   text {
     font-size: 24px;
     font-weight: 600;
@@ -1026,36 +1447,97 @@ $gap-lg: 20px;
   }
 }
 
+// 已过时间的日程项样式
+.timeline-item.past {
+  opacity: 0.5;
+
+  .timeline-dot {
+    background: $text-gray-500;
+    border-color: $text-gray-500 !important;
+  }
+
+  .timeline-card {
+    background: rgba($card-dark, 0.3);
+  }
+
+  .card-time {
+    color: $text-gray-500 !important;
+  }
+
+  .card-tag {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+// 日程展开/收起按钮
+.schedule-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $gap-xs;
+  margin-top: $gap-md;
+  padding: $gap-sm $gap-md;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: $radius-full;
+  transition: all 0.2s ease;
+
+  &:active {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.toggle-text {
+  font-size: 24px;
+  color: $text-gray-400;
+}
+
+.toggle-icon {
+  font-size: 18px;
+  color: $text-gray-500;
+  transition: transform 0.3s ease;
+
+  &.expanded {
+    transform: rotate(180deg);
+  }
+}
+
 // ==================== 刷新按钮 ====================
 .refresh-area {
   display: flex;
   justify-content: center;
-  padding: 28px 0;
+  padding: 32px 0 24px;
 }
 
 .refresh-btn {
   display: flex;
   align-items: center;
   gap: $gap-xs;
-  background: rgba(75, 85, 99, 0.5);
-  padding: 12px 28px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+  padding: 14px 32px;
   border-radius: $radius-full;
-  transition: all 0.2s;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  
-  &:active { 
-    background: rgba(75, 85, 99, 0.7); 
-    transform: scale(0.98);
+  transition: all 0.25s ease;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+
+  &:active {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(139, 92, 246, 0.35));
+    transform: scale(0.96);
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.2);
   }
 }
 
 .refresh-icon {
-  font-size: 24px;
+  font-size: 26px;
   color: $text-white;
+  animation: none;
+
+  .refresh-btn:active & {
+    animation: spin 0.5s ease;
+  }
 }
 
 .refresh-text {
-  font-size: 24px;
+  font-size: 26px;
   color: $text-white;
   font-weight: 500;
 }

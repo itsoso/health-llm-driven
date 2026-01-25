@@ -1,8 +1,15 @@
 """系统监控和性能 API"""
 import os
 import time
-import psutil
 from datetime import datetime
+
+# psutil 可选导入，某些环境可能没有安装
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -31,15 +38,23 @@ async def system_status(
     current_user: User = Depends(get_current_user_required)
 ):
     """获取系统状态 (需要登录)"""
+    if not PSUTIL_AVAILABLE:
+        return {
+            "timestamp": datetime.now(CHINA_TIMEZONE).isoformat(),
+            "error": "psutil 模块不可用，无法获取系统状态",
+            "system": None,
+            "process": None
+        }
+
     # CPU 和内存
     cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
-    
+
     # 进程信息
     process = psutil.Process()
     process_memory = process.memory_info()
-    
+
     return {
         "timestamp": datetime.now(CHINA_TIMEZONE).isoformat(),
         "system": {
@@ -161,14 +176,21 @@ async def get_metrics(
     """获取简单性能指标"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    
+
+    if not PSUTIL_AVAILABLE:
+        return {
+            "timestamp": datetime.now(CHINA_TIMEZONE).isoformat(),
+            "error": "psutil 模块不可用，无法获取性能指标",
+            "load_avg": os.getloadavg() if hasattr(os, 'getloadavg') else None
+        }
+
     # 系统运行时间
     boot_time = datetime.fromtimestamp(psutil.boot_time())
     uptime = datetime.now() - boot_time
-    
+
     # 网络统计
     net_io = psutil.net_io_counters()
-    
+
     return {
         "timestamp": datetime.now(CHINA_TIMEZONE).isoformat(),
         "uptime_hours": round(uptime.total_seconds() / 3600, 2),

@@ -162,12 +162,27 @@ export async function getPreWorkoutGuidanceCached(
 }
 
 /**
+ * 清除运动指导缓存
+ */
+export function clearWorkoutGuidanceCache(workoutType?: string): void {
+  if (workoutType) {
+    localCache.remove(`workout_guidance_${workoutType}`);
+    console.log(`[缓存] 已清除${workoutType}运动指导缓存`);
+  } else {
+    // 清除所有运动类型的缓存
+    const types = ['running', 'cycling', 'swimming', 'strength', 'yoga'];
+    types.forEach(type => localCache.remove(`workout_guidance_${type}`));
+    console.log('[缓存] 已清除所有运动指导缓存');
+  }
+}
+
+/**
  * 清除所有首页相关缓存
  * 用于手动刷新或数据更新后
  */
 export function clearHomePageCache(): void {
   const today = getCacheKey('', new Date()).split('_')[1]; // 获取今天的日期部分
-  
+
   const cacheKeys = [
     getCacheKey('garmin_today'),
     getCacheKey('daily_recommendation'),
@@ -179,8 +194,10 @@ export function clearHomePageCache(): void {
     'current_reminders',
     getCacheKey('daily_schedule'),
   ];
-  
+
   cacheKeys.forEach(key => localCache.remove(key));
+  // 同时清除运动指导缓存
+  clearWorkoutGuidanceCache();
   console.log('[缓存] 已清除首页缓存');
 }
 
