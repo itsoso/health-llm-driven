@@ -343,7 +343,39 @@ async def get_supplement_recommendation(
             )
         
         logger.info(f"[补剂科学推荐API] 生成成功 - success={recommendation.get('success')}, use_llm={use_llm}")
-        return recommendation
+
+        # 转换字段名以匹配前端期望的格式
+        health_analysis = recommendation.get('health_analysis', {})
+        overall_rating = recommendation.get('overall_rating', {})
+
+        transformed_response = {
+            "success": recommendation.get('success', True),
+            "generated_at": recommendation.get('generated_at'),
+            "target_date": recommendation.get('target_date'),
+            # 前端期望 'rating'，后端返回 'overall_rating'
+            "rating": {
+                "score": overall_rating.get('score', 0),
+                "level": overall_rating.get('rating', '评估中'),  # rating -> level
+                "emoji": overall_rating.get('emoji', '⭐'),
+                "message": overall_rating.get('message', '')
+            },
+            # 前端期望 'analysis'，后端返回 'health_analysis'
+            "analysis": {
+                "sleep_quality": health_analysis.get('sleep_quality', '未知'),
+                "stress_level": health_analysis.get('stress_level', '未知'),
+                "exercise_intensity": health_analysis.get('exercise_intensity', '未知'),
+                "nutrition_status": health_analysis.get('nutrition_status', '未知'),
+                "key_factors": health_analysis.get('positive_factors', []) + health_analysis.get('risk_factors', [])
+            },
+            "recommendations": recommendation.get('recommendations', []),
+            "timing_suggestions": recommendation.get('timing_suggestions', {}),
+            "precautions": recommendation.get('precautions', [])
+        }
+
+        if debug:
+            transformed_response["debug_info"] = recommendation.get('debug')
+
+        return transformed_response
     except Exception as e:
         logger.error(f"[补剂科学推荐API] 生成失败: {e}", exc_info=True)
         raise HTTPException(
