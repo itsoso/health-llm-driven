@@ -312,7 +312,7 @@ async def get_external_health_data(
         if diets:
             total_calories = sum(d.calories or 0 for d in diets)
             total_protein = sum(d.protein or 0 for d in diets)
-            total_carbs = sum(d.carbohydrates or 0 for d in diets)
+            total_carbs = sum(d.carbs or 0 for d in diets)
             total_fat = sum(d.fat or 0 for d in diets)
 
             day_data["diet"] = {
