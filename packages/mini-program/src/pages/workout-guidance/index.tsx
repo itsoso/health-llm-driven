@@ -76,7 +76,7 @@ export default function WorkoutGuidance() {
       {guidance.user_status && (
         <View className="section">
           <View className="section-header">
-            <Text className="section-icon">📊</Text>
+            <Text className="section-icon">🔍</Text>
             <Text className="section-title">当前状态</Text>
           </View>
           <View className="status-card">

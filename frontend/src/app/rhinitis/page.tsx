@@ -371,7 +371,7 @@ function RhinitisContent() {
                 {/* 统计卡片 */}
                 <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-6 shadow-lg text-white">
                   <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <span>📊</span> 最近 {days} 天统计
+                    <span>📈</span> 最近 {days} 天统计
                   </h2>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-white/20 rounded-lg p-4 backdrop-blur-sm">
@@ -487,7 +487,7 @@ function RhinitisContent() {
                 {/* AI 建议 */}
                 <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl p-6 shadow-lg text-white">
                   <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
-                    <span>🤖</span> AI 健康建议
+                    <span>✨</span> AI 健康建议
                   </h2>
                   <div className="space-y-2 text-sm">
                     {stats.sneeze_stats.avg_per_day > 10 && (

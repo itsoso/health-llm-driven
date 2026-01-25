@@ -288,7 +288,7 @@ export default function HeartRate() {
       {/* 心率概览 */}
       <View className="stats-grid">
         <View className="stat-card">
-          <Text className="stat-icon">📊</Text>
+          <Text className="stat-icon">❤️</Text>
           <Text className="stat-label">平均心率</Text>
           <Text className="stat-value">{summary?.avg_heart_rate || '--'}</Text>
           <Text className="stat-unit">bpm</Text>
@@ -328,7 +328,7 @@ export default function HeartRate() {
 
       {/* 7天趋势 */}
       <View className="section">
-        <Text className="section-title">📊 最近7天趋势</Text>
+        <Text className="section-title">📈 最近7天趋势</Text>
         <View className="trend-card">
           {trendData && (
             <View className="trend-summary">

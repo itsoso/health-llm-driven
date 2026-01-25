@@ -75,7 +75,7 @@ export default function PrivacyPage() {
               <Text className="subsection-title">2. 健康数据</Text>
               
               <View className="info-item">
-                <Text className="info-label">📊 收集内容</Text>
+                <Text className="info-label">📋 收集内容</Text>
                 <Text className="info-value">
                   • 运动数据：步数、运动时长、运动类型、心率等{'\n'}
                   • 睡眠数据：睡眠时长、睡眠质量、深浅睡比例等{'\n'}
@@ -143,7 +143,7 @@ export default function PrivacyPage() {
               </View>
 
               <View className="info-item">
-                <Text className="info-label">🤖 AI 服务</Text>
+                <Text className="info-label">✨ AI 服务</Text>
                 <Text className="info-value">
                   • 我们使用第三方AI服务（如OpenAI）进行食物识别和健康分析{'\n'}
                   • 发送给AI服务的数据经过脱敏处理，不包含个人身份信息{'\n'}

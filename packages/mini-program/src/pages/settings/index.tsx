@@ -344,7 +344,7 @@ export default function Settings() {
       <View className="menu-section">
         <Text className="section-label">智能功能</Text>
         <View className="menu-item" onClick={() => Taro.switchTab({ url: '/pages/index/index' })}>
-          <Text className="menu-icon">🤖</Text>
+          <Text className="menu-icon">✨</Text>
           <Text className="menu-text">健康助手</Text>
           <Text className="menu-desc">智能日程 · 实时建议</Text>
           <Text className="menu-arrow">›</Text>
@@ -385,7 +385,7 @@ export default function Settings() {
         </View>
 
         <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/garmin-data/index' })}>
-          <Text className="menu-icon">📊</Text>
+          <Text className="menu-icon">📈</Text>
           <Text className="menu-text">历史数据</Text>
           <Text className="menu-arrow">›</Text>
         </View>

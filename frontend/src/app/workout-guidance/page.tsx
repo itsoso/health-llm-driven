@@ -240,7 +240,7 @@ export default function WorkoutGuidancePage() {
                   {/* 数据来源 */}
                   <div className="mb-4">
                     <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <span>📊</span> 数据来源
+                      <span>📋</span> 数据来源
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                       {preGuidance.debug.data_sources.user_profile && (
@@ -352,7 +352,7 @@ export default function WorkoutGuidancePage() {
               {preGuidance.current_status && Object.keys(preGuidance.current_status).length > 0 && (
                 <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
                   <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                    <span>📊</span> 当前状态
+                    <span>🔍</span> 当前状态
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {preGuidance.current_status.sleep && (

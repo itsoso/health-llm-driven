@@ -168,7 +168,7 @@ function GarminContent() {
               { id: 'heart', label: '心率分析', icon: '❤️' },
               { id: 'battery', label: '身体电量', icon: '🔋' },
               { id: 'activity', label: '活动分析', icon: '🏃' },
-              { id: 'comprehensive', label: '综合分析', icon: '📊' },
+              { id: 'comprehensive', label: '综合分析', icon: '🔍' },
             ].map((tab) => (
               <button
                 key={tab.id}

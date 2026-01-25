@@ -371,7 +371,7 @@ export default function Admin() {
           className={`tab-item ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
-          <Text>📊 概览</Text>
+          <Text>📈 概览</Text>
         </View>
         <View 
           className={`tab-item ${activeTab === 'invitation' ? 'active' : ''}`}
@@ -393,7 +393,7 @@ export default function Admin() {
         <>
       {/* 系统统计 */}
       <View className="section">
-        <Text className="section-title">📊 系统统计</Text>
+        <Text className="section-title">📈 系统统计</Text>
         <View className="stats-grid">
           <View className="stat-card">
             <Text className="stat-value">{stats?.total_users || 0}</Text>
@@ -431,7 +431,7 @@ export default function Admin() {
             <Text className="action-text">全局同步</Text>
           </Button>
               <Button className="action-card" onClick={() => { checkAdmin(); loadAllData(); }}>
-            <Text className="action-icon">📊</Text>
+            <Text className="action-icon">🔄</Text>
                 <Text className="action-text">刷新数据</Text>
           </Button>
               <Button className="action-card warning" onClick={() => handleClearCache('no-data')} loading={clearingCache}>
@@ -628,7 +628,7 @@ export default function Admin() {
                   <Text className="user-email">{user.email || '-'}</Text>
                   <View className="user-stats">
                       <Text className="user-stat">{user.has_garmin ? '⌚' : '○'} Garmin</Text>
-                      <Text className="user-stat">📊 {user.health_records_count}条</Text>
+                      <Text className="user-stat">📈 {user.health_records_count}条</Text>
                   </View>
                 </View>
               </View>

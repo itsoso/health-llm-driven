@@ -418,7 +418,7 @@ export default function CheckinPage() {
               <View className="template-stats">
                 <Text className="stat-item">🔥 {template.current_streak}天</Text>
                 <Text className="stat-item">⭐ {template.best_streak}天</Text>
-                <Text className="stat-item">📊 {template.total_checkins}次</Text>
+                <Text className="stat-item">📈 {template.total_checkins}次</Text>
               </View>
 
               <View className={`checkin-btn ${template.today_completed ? 'disabled' : ''}`}>

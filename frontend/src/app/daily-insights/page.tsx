@@ -225,7 +225,7 @@ function DailyInsightsContent() {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4 pb-8 px-8">
         <div className="max-w-7xl mx-auto">
           <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-            <div className="text-6xl mb-4">📊</div>
+            <div className="text-6xl mb-4">📈</div>
             <h2 className="text-2xl font-bold text-gray-800 mb-4">{errorMessage}</h2>
             <p className="text-gray-600 mb-6">请先同步Garmin数据后再查看每日分析</p>
             <Link
@@ -249,7 +249,7 @@ function DailyInsightsContent() {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4 pb-8 px-8">
         <div className="max-w-7xl mx-auto">
           <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-            <div className="text-6xl mb-4">📊</div>
+            <div className="text-6xl mb-4">📈</div>
             <h2 className="text-2xl font-bold text-gray-800 mb-4">暂无数据</h2>
             <p className="text-gray-600 mb-6">请先同步Garmin数据后再查看每日分析</p>
             <Link
@@ -453,7 +453,7 @@ function DailyInsightsContent() {
         {currentData?.ai_insights && (
           <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">🤖 AI 健康顾问</h2>
+              <h2 className="text-xl font-bold">✨ AI 健康顾问</h2>
               <span className="text-xs bg-white/20 px-2 py-1 rounded">由大模型生成</span>
             </div>
             

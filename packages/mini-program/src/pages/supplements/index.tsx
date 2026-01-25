@@ -453,7 +453,7 @@ export default function SupplementsPage() {
           {/* 最近7天统计 */}
           {stats.length > 0 && (
             <View className="stats-section">
-              <Text className="stats-title">📊 最近7天统计</Text>
+              <Text className="stats-title">📈 最近7天统计</Text>
               {stats.map(stat => (
                 <View key={stat.supplement_id} className="stat-item-row">
                   <View className="stat-info">
@@ -698,7 +698,7 @@ export default function SupplementsPage() {
               {/* 健康分析 */}
               {recommendation.analysis && (
                 <View className="analysis-section">
-                  <Text className="section-title">📊 健康状况分析</Text>
+                  <Text className="section-title">🔍 健康状况分析</Text>
                   <View className="analysis-grid">
                     <View className="analysis-item">
                       <Text className="analysis-label">睡眠质量</Text>

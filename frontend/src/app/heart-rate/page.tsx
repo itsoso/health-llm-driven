@@ -367,7 +367,7 @@ function HeartRateContent() {
               </ResponsiveContainer>
             ) : (
               <div className="h-64 flex flex-col items-center justify-center text-gray-400">
-                <div className="text-5xl mb-3">📊</div>
+                <div className="text-5xl mb-3">📈</div>
                 <p className="text-gray-500">暂无趋势数据</p>
               </div>
             )

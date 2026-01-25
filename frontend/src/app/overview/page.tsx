@@ -368,7 +368,7 @@ function OverviewContent() {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 pt-4">
         <div className="text-center">
-          <div className="text-6xl mb-4">📊</div>
+          <div className="text-6xl mb-4">📈</div>
           <h2 className="text-xl font-bold text-gray-700 mb-2">暂无健康数据</h2>
           <p className="text-gray-500 mb-4">请先同步 Garmin 数据</p>
           <p className="text-xs text-gray-400 mb-2">

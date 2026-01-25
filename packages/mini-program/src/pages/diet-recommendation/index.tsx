@@ -169,7 +169,7 @@ export default function DietRecommendationPage() {
       {/* 第一优先级：营养进度卡片 */}
       <View className="card progress-card">
         <View className="card-title">
-          <Text className="title-icon">📊</Text>
+          <Text className="title-icon">🍽️</Text>
           <Text className="title-text">今日营养进度</Text>
           <Text className="meals-count">({recommendation.today_intake.meals_count}餐)</Text>
         </View>

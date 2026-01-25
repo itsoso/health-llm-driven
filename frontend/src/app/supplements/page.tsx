@@ -346,7 +346,7 @@ function SupplementsContent() {
         {/* 最近7天统计 */}
         {stats.length > 0 && (
           <div className="mt-8 bg-white rounded-xl shadow-md p-6 border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">📊 最近7天统计</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">📈 最近7天统计</h3>
             <div className="space-y-3">
               {stats.map((stat: any) => (
                 <div key={stat.supplement_id} className="flex items-center justify-between">

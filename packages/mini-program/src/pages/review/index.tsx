@@ -399,7 +399,7 @@ export default function ReviewPage() {
           {/* 健康数据汇总 */}
           <View className="section">
             <View className="section-header">
-              <Text className="section-title">📊 今日数据汇总</Text>
+              <Text className="section-title">📋 今日数据汇总</Text>
               <View className="refresh-btn" onClick={handleRefresh}>
                 <Text>↻ 刷新</Text>
               </View>
@@ -575,7 +575,7 @@ export default function ReviewPage() {
             
             {dailyData?.ai_summary && (
               <View className="ai-summary-card">
-                <Text className="ai-summary-title">🤖 智能总结</Text>
+                <Text className="ai-summary-title">✨ 智能总结</Text>
                 <Text className="ai-summary-text">{dailyData.ai_summary}</Text>
               </View>
             )}
@@ -599,7 +599,7 @@ export default function ReviewPage() {
           {/* 周期统计 */}
           <View className="section">
             <View className="section-header">
-              <Text className="section-title">📊 {viewMode === 'weekly' ? '本周' : '本月'}统计</Text>
+              <Text className="section-title">📈 {viewMode === 'weekly' ? '本周' : '本月'}统计</Text>
               <View className="refresh-btn" onClick={handleRefresh}>
                 <Text>↻ 刷新</Text>
               </View>
@@ -730,7 +730,7 @@ export default function ReviewPage() {
             
             {periodData.ai_summary && (
               <View className="ai-summary-card">
-                <Text className="ai-summary-title">🤖 智能总结</Text>
+                <Text className="ai-summary-title">✨ 智能总结</Text>
                 <Text className="ai-summary-text">{periodData.ai_summary}</Text>
               </View>
             )}

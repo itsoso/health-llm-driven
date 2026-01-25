@@ -198,7 +198,7 @@ function GoalsContent() {
               {generateMutation.isPending && (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
               )}
-              <span>🤖</span>
+              <span>✨</span>
               AI 生成目标
             </button>
             <button

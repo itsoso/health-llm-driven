@@ -398,7 +398,7 @@ export default function ReviewPage() {
           <>
             {/* 数据汇总 */}
             <div className="bg-card-dark rounded-2xl p-6 mb-6 border border-card-border">
-              <h3 className="text-lg font-bold mb-4">📊 今日数据汇总</h3>
+              <h3 className="text-lg font-bold mb-4">📋 今日数据汇总</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <DataCard icon="😴" title="睡眠" value={`${dailyData.sleep_score ?? '--'}分 / ${dailyData.sleep_duration_hours?.toFixed(1) ?? '--'}h`} />
                 <DataCard icon="🏃" title="运动" value={`${dailyData.workout_count}次 / ${dailyData.workout_calories}卡`} />
@@ -473,7 +473,7 @@ export default function ReviewPage() {
 
               {dailyData.ai_summary && (
                 <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mt-4">
-                  <div className="text-purple-400 font-medium text-sm mb-2">🤖 AI 总结</div>
+                  <div className="text-purple-400 font-medium text-sm mb-2">✨ AI 总结</div>
                   <p className="text-gray-300 text-sm leading-relaxed">{dailyData.ai_summary}</p>
                 </div>
               )}
@@ -503,7 +503,7 @@ export default function ReviewPage() {
         {viewMode !== 'daily' && periodData && (
           <>
             <div className="bg-card-dark rounded-2xl p-6 mb-6 border border-card-border">
-              <h3 className="text-lg font-bold mb-4">📊 {viewMode === 'weekly' ? '本周' : '本月'}统计</h3>
+              <h3 className="text-lg font-bold mb-4">📈 {viewMode === 'weekly' ? '本周' : '本月'}统计</h3>
               <div className="space-y-3">
                 <StatRow label="复盘完成" value={`${periodData.review_days}/${periodData.total_days} 天`} />
                 <StatRow label="平均睡眠分数" value={`${periodData.avg_sleep_score?.toFixed(1) ?? '--'} 分`} />
@@ -521,7 +521,7 @@ export default function ReviewPage() {
 
             {periodData.ai_summary && (
               <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-6">
-                <div className="text-purple-400 font-medium text-sm mb-2">🤖 AI 总结</div>
+                <div className="text-purple-400 font-medium text-sm mb-2">✨ AI 总结</div>
                 <p className="text-gray-300 text-sm leading-relaxed">{periodData.ai_summary}</p>
               </div>
             )}

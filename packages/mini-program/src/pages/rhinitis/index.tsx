@@ -235,7 +235,7 @@ export default function Checkin() {
         <View className="tab-content">
           {/* 今日完成统计 */}
           <View className="today-summary">
-            <Text className="summary-title">📊 今日完成</Text>
+            <Text className="summary-title">✅ 今日完成</Text>
             <View className="summary-items">
               <View className={`summary-item ${record?.running_distance ? 'done' : ''}`}>
                 <Text className="item-icon">🏃</Text>

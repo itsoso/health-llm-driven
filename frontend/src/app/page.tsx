@@ -53,7 +53,7 @@ export default function Home() {
             href="/dashboard"
             className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-indigo-200 transform hover:scale-105"
           >
-            <h2 className="text-xl font-bold mb-2 text-gray-800">📊 健康仪表盘</h2>
+            <h2 className="text-xl font-bold mb-2 text-gray-800">📈 健康仪表盘</h2>
             <p className="text-gray-600 text-sm">查看您的整体健康状况</p>
           </Link>
 

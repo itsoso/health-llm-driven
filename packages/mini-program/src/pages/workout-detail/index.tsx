@@ -664,7 +664,7 @@ export default function WorkoutDetail() {
         {/* 科学分析按钮 */}
         <View className="header-action">
           <View className="analysis-btn" onClick={handlePostAnalysis}>
-            <Text className="analysis-btn-text">📊 科学分析</Text>
+            <Text className="analysis-btn-text">🔬 科学分析</Text>
           </View>
         </View>
       </View>
@@ -936,7 +936,7 @@ export default function WorkoutDetail() {
 
         {activeTab === 'stats' && (
           <View className="tab-content">
-            <Text className="section-title">📊 详细统计</Text>
+            <Text className="section-title">📋 详细统计</Text>
         
         {/* 距离与消耗 */}
         <View className="stats-subsection">
@@ -1046,7 +1046,7 @@ export default function WorkoutDetail() {
               if (laps.length === 0) {
                 return (
                   <View className="empty-state">
-                    <Text className="empty-icon">📊</Text>
+                    <Text className="empty-icon">📈</Text>
                     <Text className="empty-text">暂无计圈数据</Text>
                     <Text className="empty-hint">Garmin同步的运动会自动包含计圈信息</Text>
                   </View>
@@ -1127,7 +1127,7 @@ export default function WorkoutDetail() {
       {/* AI分析 */}
       <View className="section">
         <View className="section-header">
-          <Text className="section-title">🤖 智能分析</Text>
+          <Text className="section-title">✨ 智能分析</Text>
           <Button 
             className={`analyze-btn ${analyzing ? 'loading' : ''}`}
             onClick={handleAnalyze}
@@ -1224,7 +1224,7 @@ export default function WorkoutDetail() {
       {/* 运动后科学分析 */}
       {showAnalysis && postAnalysis && postAnalysis.success && (
         <View className="section post-analysis">
-          <Text className="section-title">📊 运动后科学分析</Text>
+          <Text className="section-title">🔬 运动后科学分析</Text>
           
           {/* 整体评分 */}
           <View className="analysis-card score-card">

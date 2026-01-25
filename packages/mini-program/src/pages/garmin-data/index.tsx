@@ -283,7 +283,7 @@ export default function GarminDataPage() {
     <ScrollView className="garmin-data-page" scrollY>
       {/* 页面标题 */}
       <View className="page-header">
-        <Text className="page-title">📊 Garmin 健康数据</Text>
+        <Text className="page-title">📈 Garmin 健康数据</Text>
         <Text className="page-subtitle">最近14天</Text>
       </View>
 

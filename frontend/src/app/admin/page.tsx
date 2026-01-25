@@ -488,7 +488,7 @@ export default function AdminPage() {
             onClick={() => router.push('/admin/performance')}
             className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20"
           >
-            📊 性能监控
+            📈 性能监控
           </button>
         </div>
 
@@ -834,7 +834,7 @@ export default function AdminPage() {
             <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
               <div className="p-4 border-b border-white/10">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-4">
-                  📊 用户同步状态
+                  🔄 用户同步状态
                   <span className="text-sm font-normal text-purple-200">
                     共 {garminSyncStatus?.total_configured_users || 0} 人 | 
                     <span className="text-green-400"> {garminSyncStatus?.valid_credentials || 0} 有效</span> | 

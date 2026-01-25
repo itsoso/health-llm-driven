@@ -321,7 +321,7 @@ export default function CheckinPage() {
                 : 'text-white/70 hover:text-white hover:bg-white/10'
             }`}
           >
-            📊 统计
+            📈 统计
           </button>
         </div>
 
@@ -425,7 +425,7 @@ export default function CheckinPage() {
                     <div className="flex items-center gap-4 text-sm text-white/50 mb-3">
                       <span>🔥 连续 {template.current_streak} 天</span>
                       <span>⭐ 最佳 {template.best_streak} 天</span>
-                      <span>📊 共 {template.total_checkins} 次</span>
+                      <span>📈 共 {template.total_checkins} 次</span>
                     </div>
                     
                     {/* 打卡按钮 */}
@@ -597,7 +597,7 @@ export default function CheckinPage() {
               </div>
               <div className="bg-gradient-to-br from-green-600/30 to-green-800/30 rounded-xl p-4 border border-green-500/30">
                 <div className="text-3xl font-bold text-white">{stats.total_checkins}</div>
-                <div className="text-green-300 text-sm">📊 总打卡次数</div>
+                <div className="text-green-300 text-sm">📈 总打卡次数</div>
               </div>
             </div>
 

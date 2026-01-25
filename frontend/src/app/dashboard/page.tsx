@@ -233,7 +233,7 @@ function DashboardContent() {
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h2 className="text-3xl font-bold mb-1">📊 今日实时数据</h2>
+              <h2 className="text-3xl font-bold mb-1">⚡ 今日实时数据</h2>
               <p className="text-indigo-100 text-sm">
                 最后更新: {format(lastUpdate, 'HH:mm:ss')} | 自动刷新中...
               </p>

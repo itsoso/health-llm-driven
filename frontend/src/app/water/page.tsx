@@ -322,7 +322,7 @@ function WaterContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* 7天统计 */}
           <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">📊 7天统计</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">📈 7天统计</h3>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">日均饮水</span>

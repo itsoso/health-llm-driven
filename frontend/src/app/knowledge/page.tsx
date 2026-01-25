@@ -433,7 +433,7 @@ function KnowledgeManagement() {
         {/* 标签页 */}
         <div className="flex flex-wrap gap-2 mb-6">
           {[
-            { key: 'stats', label: '📊 统计概览', icon: '📊' },
+            { key: 'stats', label: '📈 统计概览', icon: '📈' },
             { key: 'upload', label: '📤 上传内容', icon: '📤' },
             { key: 'search', label: '🔍 搜索测试', icon: '🔍' },
             { key: 'ask', label: '💬 问答测试', icon: '💬' },
@@ -1115,7 +1115,7 @@ function KnowledgeManagement() {
                     {/* 主要回答 */}
                     <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5">
                       <div className="flex items-start gap-3">
-                        <span className="text-2xl">🤖</span>
+                        <span className="text-2xl">✨</span>
                         <div className="flex-1">
                           <p className="text-gray-800 whitespace-pre-wrap">{askResponse.answer}</p>
                         </div>

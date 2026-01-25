@@ -402,7 +402,7 @@ export default function AIAssistantPage() {
               { name: '实时建议', path: '/ai-scheduler/recommendation', icon: '💡' },
               { name: '当前提醒', path: '/ai-scheduler/reminders', icon: '🔔' },
               { name: '今日日程', path: '/ai-scheduler/daily-schedule', icon: '📅' },
-              { name: '综合摘要', path: '/ai-scheduler/summary', icon: '📊' },
+              { name: '综合摘要', path: '/ai-scheduler/summary', icon: '📋' },
             ].map((apiItem) => (
               <button
                 key={apiItem.path}

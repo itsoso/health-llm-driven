@@ -597,10 +597,10 @@ export default function DietPage() {
                   className={`analyze-btn ${isAnalyzing || !formData.food_items.trim() ? 'disabled' : ''}`}
                   onClick={isAnalyzing || !formData.food_items.trim() ? undefined : handleTextAnalyze}
                 >
-                  <Text>{isAnalyzing ? '⏳' : '🤖'}</Text>
+                  <Text>{isAnalyzing ? '⏳' : '✨'}</Text>
                 </View>
               </View>
-              <Text className="input-hint">💡 输入食物后点击🤖自动分析营养成分</Text>
+              <Text className="input-hint">💡 输入食物后点击✨自动分析营养成分</Text>
               <View className="input-grid">
                 <View className="input-item">
                   <Text className="input-label">热量</Text>
@@ -684,7 +684,7 @@ export default function DietPage() {
                       <Text className="record-calories">{meal.calories} kcal</Text>
                     )}
                     {meal.ai_recognized === 1 && (
-                      <Text className="ai-tag">🤖 智能</Text>
+                      <Text className="ai-tag">✨ 智能</Text>
                     )}
                   </View>
                   {/* 显示食物图片 */}

@@ -379,7 +379,7 @@ function DietContent() {
         {/* 7天平均 */}
         {stats && stats.days_recorded > 0 && (
           <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl p-4 mb-6 border border-orange-200">
-            <h4 className="text-sm font-semibold text-gray-700 mb-2">📊 7天平均摄入</h4>
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">📈 7天平均摄入</h4>
             <div className="flex flex-wrap gap-4 text-sm">
               <span className="text-gray-700">热量: <strong className="text-orange-600">{stats.average_daily_calories?.toFixed(0)}</strong> kcal</span>
               <span className="text-gray-700">蛋白质: <strong className="text-red-600">{stats.average_daily_protein?.toFixed(1)}</strong> g</span>
@@ -638,7 +638,7 @@ function DietContent() {
                           <span className="text-sm text-orange-600 font-medium">{meal.calories} kcal</span>
                         )}
                         {meal.ai_recognized === 1 && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">🤖 AI识别</span>
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">✨ AI识别</span>
                         )}
                       </div>
                       <p className="text-gray-900 font-medium">{meal.food_items}</p>

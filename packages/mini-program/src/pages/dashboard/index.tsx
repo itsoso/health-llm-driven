@@ -200,7 +200,7 @@ export default function Dashboard() {
         {!garminData ? (
         <View className="no-data">
           <View className="no-data-icon-wrap">
-            <Text className="no-data-icon">📊</Text>
+            <Text className="no-data-icon">📈</Text>
           </View>
           <Text className="no-data-text">暂无今日数据</Text>
           <Text className="no-data-tip">请在 PC 端同步 Garmin 数据</Text>

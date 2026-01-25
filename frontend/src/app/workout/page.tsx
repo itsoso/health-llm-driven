@@ -586,7 +586,7 @@ function WorkoutContent() {
                       <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                         {w.avg_heart_rate && <span>❤️ {w.avg_heart_rate}bpm</span>}
                         {w.calories && <span>🔥 {w.calories}kcal</span>}
-                        {w.has_ai_analysis && <span className="text-green-400">🤖 已分析</span>}
+                        {w.has_ai_analysis && <span className="text-green-400">✨ 已分析</span>}
                       </div>
                     </div>
                   );
@@ -648,14 +648,14 @@ function WorkoutContent() {
                         disabled={analyzeMutation.isPending}
                         className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors text-sm"
                       >
-                        {analyzeMutation.isPending ? '分析中...' : '🤖 AI分析'}
+                        {analyzeMutation.isPending ? '分析中...' : '✨ AI分析'}
                       </button>
                       <button
                         onClick={() => postAnalysisMutation.mutate({ workoutId: workoutDetail.id, forceRegenerate: false })}
                         disabled={postAnalysisMutation.isPending}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm"
                       >
-                        {postAnalysisMutation.isPending ? '分析中...' : '📊 科学分析'}
+                        {postAnalysisMutation.isPending ? '分析中...' : '🔬 科学分析'}
                       </button>
                       {postAnalysis && postAnalysis.from_cache && (
                         <button
@@ -949,7 +949,7 @@ function WorkoutContent() {
                 {/* 详细统计信息 */}
                 <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">📊 详细数据</h3>
+                    <h3 className="text-lg font-bold text-white">📋 详细数据</h3>
                     <div className="flex gap-2 text-xs">
                       <button 
                         onClick={() => setActiveTab('stats')}
@@ -1255,7 +1255,7 @@ function WorkoutContent() {
                     if (laps.length === 0) {
                       return (
                         <div className="text-center py-12">
-                          <div className="text-6xl mb-4">📊</div>
+                          <div className="text-6xl mb-4">📈</div>
                           <p className="text-gray-400 text-lg mb-2">暂无计圈数据</p>
                           <p className="text-gray-500 text-sm">Garmin同步的运动会自动包含计圈信息</p>
                         </div>
@@ -1425,7 +1425,7 @@ function WorkoutContent() {
                   
                   return (
                     <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                      <h3 className="text-lg font-bold text-white mb-4">📊 心率区间用时</h3>
+                      <h3 className="text-lg font-bold text-white mb-4">❤️ 心率区间用时</h3>
                       <div className="space-y-4">
                         {hrZones.map((zone) => {
                           const percent = total > 0 ? ((zone.value / total) * 100).toFixed(0) : 0;
@@ -1463,7 +1463,7 @@ function WorkoutContent() {
                 {workoutDetail.ai_analysis && (
                   <div className="bg-gradient-to-br from-purple-900/40 to-slate-800/60 rounded-xl p-6 border border-purple-700/50">
                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                      🤖 AI训练分析
+                      ✨ AI训练分析
                     </h3>
                     <div className="text-gray-300 whitespace-pre-wrap leading-relaxed">
                       {(() => {
@@ -1518,7 +1518,7 @@ function WorkoutContent() {
                   <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/20 rounded-xl p-6 border border-blue-700/50 mt-6">
                     <div className="flex items-center justify-between mb-6">
                       <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <span>📊</span> 运动后科学分析
+                        <span>🔬</span> 运动后科学分析
                       </h3>
                       {/* 保存状态提示 */}
                       <div className="flex items-center gap-2">
@@ -1641,7 +1641,7 @@ function WorkoutContent() {
               /* 运动类型分布 */
               typeDistribution.length > 0 && (
                 <div className="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                  <h3 className="text-lg font-bold text-white mb-4">📊 运动类型分布</h3>
+                  <h3 className="text-lg font-bold text-white mb-4">🏃 运动类型分布</h3>
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={typeDistribution} layout="vertical" margin={{ left: 20 }}>

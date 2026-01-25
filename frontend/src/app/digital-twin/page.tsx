@@ -216,7 +216,7 @@ export default function DigitalTwinPage() {
             {/* 基础生理指标 */}
             <section className="bg-white/5 backdrop-blur rounded-2xl p-6 border border-white/10">
               <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                <span className="text-2xl">📊</span>
+                <span className="text-2xl">🫀</span>
                 基础生理指标
               </h2>
               

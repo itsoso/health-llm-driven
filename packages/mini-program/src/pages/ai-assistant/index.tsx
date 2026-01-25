@@ -168,7 +168,7 @@ export default function AIAssistant() {
       {briefing && (
         <View className="section briefing-section">
           <View className="section-header">
-            <Text className="section-icon">📊</Text>
+            <Text className="section-icon">📋</Text>
             <Text className="section-title">健康简报</Text>
           </View>
           <View className="greeting-box">
