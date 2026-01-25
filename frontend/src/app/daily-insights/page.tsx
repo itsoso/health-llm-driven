@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dailyRecommendationApi } from '@/services/api';
+import { dailyRecommendationApi, externalRecommendationApi, ExternalRecommendation } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
@@ -170,6 +170,13 @@ function DailyInsightsContent() {
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
     queryKey: ['daily-recommendations'],
     queryFn: () => dailyRecommendationApi.getMyRecommendations(true),
+    enabled: isAuthenticated,
+  });
+
+  // 获取外部建议
+  const { data: externalRecsData } = useQuery({
+    queryKey: ['external-recommendations-today'],
+    queryFn: () => externalRecommendationApi.getToday(),
     enabled: isAuthenticated,
   });
 
@@ -532,6 +539,55 @@ function DailyInsightsContent() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* 外部健康建议 */}
+        {externalRecsData?.data?.has_recommendations && (
+          <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl shadow-lg p-6 mb-6 text-white">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">📡 外部 AI 建议</h2>
+              <a
+                href="/external-advice"
+                className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full transition-colors"
+              >
+                查看全部 →
+              </a>
+            </div>
+
+            {Object.entries(externalRecsData.data.categories).map(([category, recs]) => {
+              const categoryConfig: Record<string, { icon: string; label: string }> = {
+                exercise: { icon: '🏃', label: '运动' },
+                diet: { icon: '🥗', label: '饮食' },
+                sleep: { icon: '😴', label: '睡眠' },
+                supplement: { icon: '💊', label: '补剂' },
+                general: { icon: '✨', label: '综合' },
+              };
+              const config = categoryConfig[category] || { icon: '📋', label: category };
+
+              return (
+                <div key={category} className="mb-4 last:mb-0">
+                  <div className="font-semibold mb-2 text-violet-100 flex items-center gap-2">
+                    <span>{config.icon}</span>
+                    <span>{config.label}建议</span>
+                    <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">
+                      {(recs as ExternalRecommendation[]).length}条
+                    </span>
+                  </div>
+                  {(recs as ExternalRecommendation[]).slice(0, 1).map((rec) => (
+                    <div key={rec.id} className="bg-white/10 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold">{rec.title}</span>
+                        <span className="text-xs text-violet-200">{rec.source_name}</span>
+                      </div>
+                      <p className="text-sm text-violet-100 line-clamp-3">
+                        {rec.content.replace(/[#*_]/g, '').substring(0, 200)}...
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 

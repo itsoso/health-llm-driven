@@ -339,3 +339,25 @@ export const newsApi = {
   // 管理员删除文章
   deleteArticle: (articleId: number) => api.delete(`/news/admin/articles/${articleId}`),
 };
+
+// 外部建议接口
+export interface ExternalRecommendation {
+  id: number;
+  category: string;
+  title: string;
+  content: string;
+  source_name: string;
+  recommendation_date: string;
+  created_at: string;
+}
+
+export interface TodayExternalRecommendations {
+  date: string;
+  has_recommendations: boolean;
+  categories: Record<string, ExternalRecommendation[]>;
+}
+
+export const externalRecommendationApi = {
+  // 获取今日外部建议
+  getToday: () => api.get<TodayExternalRecommendations>('/external-recommendations/today'),
+};
