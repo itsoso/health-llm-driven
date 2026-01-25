@@ -602,12 +602,14 @@ function SettingsContent() {
         {/* 消息提示 */}
         {message && (
           <div className={`mb-6 p-4 rounded-lg ${
-            message.type === 'success' 
-              ? 'bg-green-50 border border-green-200 text-green-800' 
+            message.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-800'
               : 'bg-red-50 border border-red-200 text-red-800'
           }`}>
-            {message.type === 'success' ? '✅' : '❌'} {message.text}
-            <button 
+            {/* 如果消息已经以图标开头，不再添加额外图标 */}
+            {!/^[✅❌⚠️🔐⏳]/.test(message.text) && (message.type === 'success' ? '✅ ' : '❌ ')}
+            {message.text}
+            <button
               onClick={() => setMessage(null)}
               className="float-right text-gray-500 hover:text-gray-700"
             >
