@@ -2,7 +2,7 @@
  * API 服务
  */
 import Taro from '@tarojs/taro';
-import { get, post, put, postNoAuth, setToken } from './request';
+import { get, post, put, del, postNoAuth, setToken } from './request';
 import { 
   API_ENDPOINTS,
   WechatLoginResponse, 
@@ -341,4 +341,110 @@ export async function generateAIReviewSummary(date: string, period: string): Pro
     console.error('AI生成总结失败:', e);
     return null;
   }
+}
+
+// ========== 饮水记录 API ==========
+
+/**
+ * 快速添加饮水记录
+ * @param amount 饮水量（毫升），默认250ml
+ */
+export async function quickAddWater(amount: number = 250): Promise<{
+  id: number;
+  amount: number;
+  drink_type: string;
+  record_date: string;
+  drink_time: string;
+}> {
+  return await post(`${API_ENDPOINTS.WATER.QUICK_ADD}?amount=${amount}`, {});
+}
+
+// ========== 资讯 API ==========
+
+export interface NewsArticle {
+  id: number;
+  source_batch_id: string;
+  source_type: string;
+  title: string;
+  summary: string | null;
+  content?: string;
+  tags: string[] | null;
+  topics?: string[] | null;
+  key_people?: string[] | null;
+  source_group: string | null;
+  llm_models?: string[] | null;
+  aggregator_model?: string | null;
+  is_pinned: boolean;
+  view_count: number;
+  created_at: string;
+}
+
+/**
+ * 获取资讯列表
+ */
+export async function getNewsList(page: number = 1, pageSize: number = 20, sourceType?: string): Promise<NewsArticle[]> {
+  let url = `${API_ENDPOINTS.NEWS.LIST}?page=${page}&page_size=${pageSize}`;
+  if (sourceType) {
+    url += `&source_type=${sourceType}`;
+  }
+  return await get(url);
+}
+
+/**
+ * 获取资讯详情
+ */
+export async function getNewsDetail(articleId: number): Promise<NewsArticle> {
+  return await get(`${API_ENDPOINTS.NEWS.DETAIL}/${articleId}`);
+}
+
+// ========== 用户 API Key 管理 ==========
+
+import type { UserApiKey, ApiKeyCreateRequest, ExternalRecommendation, TodayExternalRecommendations } from '../types';
+
+/**
+ * 获取用户的 API Key 列表
+ */
+export async function getUserApiKeys(): Promise<UserApiKey[]> {
+  return await get(API_ENDPOINTS.USER_API_KEY.LIST);
+}
+
+/**
+ * 创建新的 API Key
+ */
+export async function createUserApiKey(data: ApiKeyCreateRequest): Promise<UserApiKey> {
+  return await post(API_ENDPOINTS.USER_API_KEY.CREATE, data);
+}
+
+/**
+ * 删除 API Key
+ */
+export async function deleteUserApiKey(keyId: number): Promise<{ ok: boolean; message: string }> {
+  return await del(`${API_ENDPOINTS.USER_API_KEY.DELETE}/${keyId}`);
+}
+
+// ========== 外部建议 ==========
+
+/**
+ * 获取外部建议列表
+ */
+export async function getExternalRecommendations(
+  date?: string,
+  category?: string,
+  limit: number = 20
+): Promise<ExternalRecommendation[]> {
+  let url = `${API_ENDPOINTS.EXTERNAL_RECOMMENDATIONS.LIST}?limit=${limit}`;
+  if (date) {
+    url += `&date=${date}`;
+  }
+  if (category) {
+    url += `&category=${category}`;
+  }
+  return await get(url);
+}
+
+/**
+ * 获取今日外部建议（按类别分组）
+ */
+export async function getTodayExternalRecommendations(): Promise<TodayExternalRecommendations> {
+  return await get(API_ENDPOINTS.EXTERNAL_RECOMMENDATIONS.TODAY);
 }

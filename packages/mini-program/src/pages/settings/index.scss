@@ -64,6 +64,45 @@
     border: 2px solid #f59e0b;
   }
 
+  &.vip-section {
+    background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+
+    .section-label {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .menu-item.highlight {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 28px;
+
+      .menu-icon {
+        font-size: 48px;
+        margin-bottom: 12px;
+      }
+
+      .menu-text {
+        color: #ffffff;
+        font-size: 34px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .menu-desc {
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 26px;
+      }
+
+      .menu-arrow {
+        position: absolute;
+        right: 24px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(255, 255, 255, 0.8);
+      }
+    }
+  }
+
   &.profile-section {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     
@@ -200,4 +239,115 @@
   padding: 48px;
   font-size: 24px;
   color: #9ca3af;
+}
+
+// 开发者接口区域
+.developer-section {
+  .section-label {
+    color: #6366F1;
+  }
+}
+
+// API Key 管理面板
+.api-key-panel {
+  padding: 0 24px 24px;
+  background: #f8fafc;
+  border-top: 1px solid #e5e7eb;
+}
+
+.api-key-desc {
+  padding: 16px 0;
+
+  .desc-text {
+    font-size: 24px;
+    color: #6b7280;
+    line-height: 1.6;
+  }
+}
+
+.api-key-list {
+  margin-bottom: 16px;
+}
+
+.api-key-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #e5e7eb;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.key-info {
+  flex: 1;
+}
+
+.key-name {
+  font-size: 28px;
+  font-weight: 500;
+  color: #1f2937;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.key-meta {
+  font-size: 22px;
+  color: #9ca3af;
+}
+
+.key-delete {
+  padding: 8px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+
+  text {
+    font-size: 24px;
+    color: #ef4444;
+  }
+}
+
+.api-key-actions {
+  margin-bottom: 16px;
+}
+
+.create-key-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  border-radius: 12px;
+
+  text {
+    font-size: 28px;
+    color: #ffffff;
+    font-weight: 500;
+  }
+}
+
+.api-key-usage {
+  padding: 16px;
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.usage-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #4f46e5;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.usage-text {
+  font-size: 22px;
+  color: #6b7280;
+  line-height: 1.8;
 }

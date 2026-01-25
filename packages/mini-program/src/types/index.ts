@@ -177,6 +177,22 @@ export const API_ENDPOINTS = {
   DIET: {
     MY_DAILY: '/diet/records/me/date',
   },
+  WATER: {
+    QUICK_ADD: '/water/records/quick',
+  },
+  NEWS: {
+    LIST: '/news/articles',
+    DETAIL: '/news/articles',
+  },
+  USER_API_KEY: {
+    LIST: '/user-api-keys',
+    CREATE: '/user-api-keys',
+    DELETE: '/user-api-keys',
+  },
+  EXTERNAL_RECOMMENDATIONS: {
+    LIST: '/external-recommendations',
+    TODAY: '/external-recommendations/today',
+  },
 };
 
 // 工具函数
@@ -265,4 +281,41 @@ export interface ScheduleItem {
   category: string;
   duration_minutes: number;
   tasks: string[];
+}
+
+// ========== 用户 API Key 相关类型 ==========
+
+// 用户 API Key
+export interface UserApiKey {
+  id: number;
+  name: string;
+  api_key: string | null;  // 只在创建时返回
+  scopes: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+// 创建 API Key 请求
+export interface ApiKeyCreateRequest {
+  name: string;
+  scopes?: string;
+}
+
+// 外部建议
+export interface ExternalRecommendation {
+  id: number;
+  category: string;  // exercise, diet, sleep, supplement, general
+  title: string;
+  content: string;
+  source_name: string;
+  recommendation_date: string;
+  created_at: string;
+}
+
+// 今日外部建议响应（按类别分组）
+export interface TodayExternalRecommendations {
+  date: string;
+  has_recommendations: boolean;
+  categories: Record<string, ExternalRecommendation[]>;
 }

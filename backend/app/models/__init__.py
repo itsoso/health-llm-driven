@@ -35,6 +35,8 @@ from app.models.notification import (
 )
 # 复盘模型
 from app.models.review import DailyReview, PeriodReview, ReviewPeriod
+# 资讯模型
+from app.models.news import NewsArticle, NewsApiKey
 
 __all__ = [
     "User",
@@ -86,5 +88,8 @@ __all__ = [
     "DailyReview",
     "PeriodReview",
     "ReviewPeriod",
+    # 资讯模型
+    "NewsArticle",
+    "NewsApiKey",
 ]
 

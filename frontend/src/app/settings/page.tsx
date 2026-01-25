@@ -46,6 +46,20 @@ function SettingsContent() {
   
   // Apple Watch 状态
   const [appleFile, setAppleFile] = useState<File | null>(null);
+
+  // API Key 管理状态
+  interface UserApiKey {
+    id: number;
+    name: string;
+    api_key: string | null;
+    scopes: string;
+    is_active: boolean;
+    last_used_at: string | null;
+    created_at: string;
+  }
+  const [apiKeys, setApiKeys] = useState<UserApiKey[]>([]);
+  const [showApiKeySection, setShowApiKeySection] = useState(false);
+  const [newKeyName, setNewKeyName] = useState('');
   const [appleImportProgress, setAppleImportProgress] = useState<{
     isImporting: boolean;
     progress: number;
@@ -562,6 +576,78 @@ function SettingsContent() {
       setMessage({ type: 'error', text: error.message });
     },
   });
+
+  // API Key 管理函数
+  const loadApiKeys = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/user-api-keys`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setApiKeys(await res.json());
+      }
+    } catch (error) {
+      console.error('获取 API Keys 失败:', error);
+    }
+  };
+
+  const handleCreateApiKey = async () => {
+    if (!token || !newKeyName.trim()) return;
+    try {
+      const res = await fetch(`${API_BASE}/user-api-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: newKeyName.trim() }),
+      });
+      if (res.ok) {
+        const newKey = await res.json();
+        setMessage({ type: 'success', text: `API Key 已创建！请复制并妥善保存：${newKey.api_key}` });
+        setNewKeyName('');
+        loadApiKeys();
+        // 复制到剪贴板
+        if (newKey.api_key) {
+          navigator.clipboard.writeText(newKey.api_key);
+        }
+      } else {
+        const error = await res.json();
+        setMessage({ type: 'error', text: error.detail || '创建失败' });
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || '创建失败' });
+    }
+  };
+
+  const handleDeleteApiKey = async (keyId: number, keyName: string) => {
+    if (!confirm(`确定要删除 API Key "${keyName}" 吗？删除后使用此 Key 的外部系统将无法访问您的数据。`)) {
+      return;
+    }
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/user-api-keys/${keyId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'API Key 已删除' });
+        loadApiKeys();
+      } else {
+        setMessage({ type: 'error', text: '删除失败' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: '删除失败' });
+    }
+  };
+
+  // 展开 API Key 部分时加载数据
+  useEffect(() => {
+    if (showApiKeySection && token) {
+      loadApiKeys();
+    }
+  }, [showApiKeySection, token]);
 
   // 未登录跳转
   useEffect(() => {
@@ -1175,6 +1261,105 @@ function SettingsContent() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* API Key 管理 */}
+        <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowApiKeySection(!showApiKeySection)}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{'\u{1F511}'}</span>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">开发者接口</h2>
+                <p className="text-sm text-gray-600">允许外部 AI 系统访问您的健康数据</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {apiKeys.length > 0 && (
+                <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm">
+                  {apiKeys.length} 个 Key
+                </span>
+              )}
+              <span className="text-gray-400 text-2xl">
+                {showApiKeySection ? '\u{25BC}' : '\u{203A}'}
+              </span>
+            </div>
+          </div>
+
+          {showApiKeySection && (
+            <div className="mt-6 space-y-6">
+              {/* 说明 */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-2">{'\u{1F4A1}'} 什么是 API Key？</p>
+                <p>API Key 允许外部 AI 健康助手（如 Browser-LLM-Driven、GPT Health 等）访问您的健康数据并提供个性化建议。这些建议会显示在「外部健康建议」页面。</p>
+              </div>
+
+              {/* API Key 列表 */}
+              {apiKeys.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-gray-800">已创建的 API Key</h3>
+                  {apiKeys.map((key) => (
+                    <div key={key.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div>
+                        <p className="font-medium text-gray-900">{key.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {key.scopes} · {key.last_used_at ? `最后使用: ${new Date(key.last_used_at).toLocaleDateString()}` : '从未使用'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteApiKey(key.id, key.name)}
+                        className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 创建新 Key */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-800">创建新的 API Key</h3>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="输入名称（如：Browser-LLM-Driven）"
+                    className="flex-1 p-3 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={handleCreateApiKey}
+                    disabled={!newKeyName.trim()}
+                    className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 font-semibold whitespace-nowrap"
+                  >
+                    + 创建
+                  </button>
+                </div>
+              </div>
+
+              {/* 使用说明 */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700">
+                <p className="font-semibold mb-2">{'\u{1F4DD}'} 使用方法：</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>创建 API Key 后，复制并保存（Key 只显示一次）</li>
+                  <li>在外部 AI 系统中配置此 API Key</li>
+                  <li>外部系统将通过 <code className="bg-gray-200 px-1 rounded">X-API-Key</code> 头部访问您的数据</li>
+                  <li>外部系统写入的健康建议将显示在「外部健康建议」页面</li>
+                </ol>
+              </div>
+
+              {/* 跳转外部建议页面 */}
+              <a
+                href="/external-advice"
+                className="block w-full text-center px-4 py-3 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium"
+              >
+                {'\u{1F4E1}'} 查看外部健康建议 {'\u{2192}'}
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </main>

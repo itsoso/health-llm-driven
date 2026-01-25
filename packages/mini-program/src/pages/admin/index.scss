@@ -611,3 +611,120 @@
 .bottom-space {
   height: 60px;
 }
+
+// VIP 徽章
+.vip-badge {
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+  color: #ffffff;
+  font-size: 20px;
+  padding: 4px 12px;
+  border-radius: 10px;
+}
+
+// VIP 按钮样式
+.user-action-btn.vip {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.2));
+  color: #c4b5fd;
+}
+
+// API Key 列表
+.api-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.api-key-card {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 20px;
+
+  &.disabled {
+    opacity: 0.5;
+  }
+}
+
+.key-main {
+  flex: 1;
+}
+
+.key-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.key-name-text {
+  font-size: 30px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.inactive-tag {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.key-info {
+  display: flex;
+  gap: 16px;
+}
+
+.key-time {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.delete-btn {
+  padding: 12px 24px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-size: 24px;
+  border-radius: 12px;
+  border: none;
+
+  &::after {
+    border: none;
+  }
+}
+
+// 空状态
+.empty-state {
+  padding: 60px 0;
+  text-align: center;
+}
+
+.empty-text {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+// API Key 帮助说明
+.api-key-help {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.help-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #93c5fd;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.help-text {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.8;
+}

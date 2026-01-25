@@ -4,7 +4,9 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Button, Image, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { clearToken, getToken, get, put } from '../../services/request';
+import { clearToken, getToken, get, put, del } from '../../services/request';
+import { getUserApiKeys, createUserApiKey, deleteUserApiKey } from '../../services/api';
+import type { UserApiKey } from '../../types';
 import { 
   requestAllSubscriptions, 
   getSubscribeSettings, 
@@ -20,6 +22,7 @@ interface UserInfo {
   username: string;
   email: string;
   is_admin: boolean;
+  is_approved: boolean;
 }
 
 interface GarminCredential {
@@ -51,6 +54,7 @@ export default function Settings() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('自由是自律的泡沫用户');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
   const [hasGarmin, setHasGarmin] = useState(false);
   const [garminStatus, setGarminStatus] = useState<'none' | 'valid' | 'invalid'>('none');
   const [huaweiStatus, setHuaweiStatus] = useState<'none' | 'valid' | 'invalid'>('none');
@@ -59,23 +63,101 @@ export default function Settings() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [subscribeAvailable] = useState(isSubscribeAvailable());
 
+  // API Key 管理
+  const [apiKeys, setApiKeys] = useState<UserApiKey[]>([]);
+  const [showApiKeySection, setShowApiKeySection] = useState(false);
+
   useEffect(() => {
     const token = getToken();
     setIsLoggedIn(!!token);
-    
+
     if (token) {
       loadUserInfo();
       loadGarminStatus();
       loadHuaweiStatus();
       loadNotificationSettings();
     }
-    
+
     // 从本地存储获取用户名（备用）
     const storedName = Taro.getStorageSync('user_name');
     if (storedName) {
       setUserName(storedName);
     }
   }, []);
+
+  // 加载 API Keys
+  const loadApiKeys = async () => {
+    try {
+      const keys = await getUserApiKeys();
+      setApiKeys(keys);
+    } catch (error) {
+      console.error('获取 API Keys 失败:', error);
+    }
+  };
+
+  // 展开 API Key 部分时加载数据
+  useEffect(() => {
+    if (showApiKeySection && isLoggedIn) {
+      loadApiKeys();
+    }
+  }, [showApiKeySection, isLoggedIn]);
+
+  // 创建 API Key
+  const handleCreateApiKey = async () => {
+    const res = await Taro.showModal({
+      title: '创建 API Key',
+      editable: true,
+      placeholderText: '请输入名称（如：Browser-LLM-Driven）',
+    });
+
+    if (res.confirm && res.content) {
+      try {
+        Taro.showLoading({ title: '创建中...' });
+        const newKey = await createUserApiKey({ name: res.content.trim() });
+        Taro.hideLoading();
+
+        // 显示完整的 API Key（只显示一次）
+        await Taro.showModal({
+          title: 'API Key 已创建',
+          content: `请复制并妥善保存，此 Key 只显示一次：\n\n${newKey.api_key}`,
+          showCancel: false,
+          confirmText: '我已保存',
+        });
+
+        // 复制到剪贴板
+        if (newKey.api_key) {
+          await Taro.setClipboardData({ data: newKey.api_key });
+        }
+
+        loadApiKeys();
+      } catch (error: any) {
+        Taro.hideLoading();
+        Taro.showToast({
+          title: error?.message || '创建失败',
+          icon: 'none',
+        });
+      }
+    }
+  };
+
+  // 删除 API Key
+  const handleDeleteApiKey = async (keyId: number, keyName: string) => {
+    const res = await Taro.showModal({
+      title: '确认删除',
+      content: `确定要删除 API Key "${keyName}" 吗？删除后使用此 Key 的外部系统将无法访问您的数据。`,
+      confirmColor: '#EF4444',
+    });
+
+    if (res.confirm) {
+      try {
+        await deleteUserApiKey(keyId);
+        Taro.showToast({ title: '已删除', icon: 'success' });
+        loadApiKeys();
+      } catch (error) {
+        Taro.showToast({ title: '删除失败', icon: 'none' });
+      }
+    }
+  };
 
   const loadNotificationSettings = async () => {
     try {
@@ -150,6 +232,7 @@ export default function Settings() {
       const userInfo = await get<UserInfo>('/auth/me');
       setUserName(userInfo.name || userInfo.username || '自由是自律的泡沫用户');
       setIsAdmin(userInfo.is_admin);
+      setIsApproved(userInfo.is_approved);
       Taro.setStorageSync('user_name', userInfo.name || userInfo.username);
     } catch (error) {
       console.error('获取用户信息失败:', error);
@@ -355,6 +438,13 @@ export default function Settings() {
           <Text className="menu-text">健康建议</Text>
           <Text className="menu-arrow">›</Text>
         </View>
+
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/external-advice/index' })}>
+          <Text className="menu-icon">📡</Text>
+          <Text className="menu-text">外部健康建议</Text>
+          <Text className="menu-desc">AI 助手个性化建议</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
       </View>
 
       {/* 功能列表 */}
@@ -390,6 +480,81 @@ export default function Settings() {
           <Text className="menu-arrow">›</Text>
         </View>
       </View>
+
+      {/* VIP功能 - 资讯入口 */}
+      {(isAdmin || isApproved) && (
+        <View className="menu-section vip-section">
+          <Text className="section-label">专属功能</Text>
+          <View className="menu-item highlight" onClick={() => Taro.navigateTo({ url: '/pages/news/index' })}>
+            <Text className="menu-icon">📰</Text>
+            <Text className="menu-text">健康资讯</Text>
+            <Text className="menu-desc">群聊精华 · 研究洞察</Text>
+            <Text className="menu-arrow">›</Text>
+          </View>
+        </View>
+      )}
+
+      {/* 开发者接口 */}
+      {isLoggedIn && (
+        <View className="menu-section developer-section">
+          <Text className="section-label">开发者接口</Text>
+          <View className="menu-item" onClick={() => setShowApiKeySection(!showApiKeySection)}>
+            <Text className="menu-icon">🔑</Text>
+            <Text className="menu-text">API Key 管理</Text>
+            <Text className="menu-status">{apiKeys.length > 0 ? `${apiKeys.length}个` : ''}</Text>
+            <Text className="menu-arrow">{showApiKeySection ? '▼' : '›'}</Text>
+          </View>
+
+          {showApiKeySection && (
+            <View className="api-key-panel">
+              <View className="api-key-desc">
+                <Text className="desc-text">
+                  允许外部 AI 系统（如 Browser-LLM-Driven、GPT Health 等）访问您的健康数据并提供个性化建议。
+                </Text>
+              </View>
+
+              {/* API Key 列表 */}
+              {apiKeys.length > 0 && (
+                <View className="api-key-list">
+                  {apiKeys.map((key) => (
+                    <View key={key.id} className="api-key-item">
+                      <View className="key-info">
+                        <Text className="key-name">{key.name}</Text>
+                        <Text className="key-meta">
+                          {key.scopes} · {key.last_used_at ? `最后使用: ${key.last_used_at.split('T')[0]}` : '从未使用'}
+                        </Text>
+                      </View>
+                      <View
+                        className="key-delete"
+                        onClick={() => handleDeleteApiKey(key.id, key.name)}
+                      >
+                        <Text>删除</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* 创建按钮 */}
+              <View className="api-key-actions">
+                <View className="create-key-btn" onClick={handleCreateApiKey}>
+                  <Text>+ 创建新的 API Key</Text>
+                </View>
+              </View>
+
+              {/* 使用说明 */}
+              <View className="api-key-usage">
+                <Text className="usage-title">使用方法：</Text>
+                <Text className="usage-text">
+                  1. 在外部系统中配置 API Key{'\n'}
+                  2. 系统将通过 X-API-Key 头部访问您的数据{'\n'}
+                  3. 健康建议将显示在「外部健康建议」页面
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* 管理员功能 */}
       {isAdmin && (

@@ -14,11 +14,21 @@ interface AdminUser {
   gender: string | null;
   is_active: boolean;
   is_admin: boolean;
+  is_approved: boolean;
   created_at: string | null;
   last_activity: string | null;
   has_garmin: boolean;
   health_records_count: number;
   medical_exams_count: number;
+}
+
+interface NewsApiKey {
+  id: number;
+  name: string;
+  api_key: string | null;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
 }
 
 interface AdminStats {
@@ -135,7 +145,7 @@ export default function AdminPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   
-  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'performance'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'apikeys' | 'performance'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -157,6 +167,13 @@ export default function AdminPage() {
   const [newCodeMaxUses, setNewCodeMaxUses] = useState(10);
   const [newCodeExpiresDays, setNewCodeExpiresDays] = useState<number | null>(null);
   const [invitationLoading, setInvitationLoading] = useState(false);
+
+  // API Key 相关 state
+  const [apiKeys, setApiKeys] = useState<NewsApiKey[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(false);
+  const [showCreateApiKey, setShowCreateApiKey] = useState(false);
+  const [newApiKeyName, setNewApiKeyName] = useState('');
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
 
   // 权限检查
   useEffect(() => {
@@ -412,6 +429,64 @@ export default function AdminPage() {
     alert('已复制到剪贴板');
   };
 
+  // API Key 相关操作
+  const fetchApiKeys = useCallback(async () => {
+    setApiKeysLoading(true);
+    try {
+      const res = await api.get('/news/admin/api-keys');
+      setApiKeys(res.data);
+    } catch (error) {
+      console.error('Failed to fetch API keys:', error);
+    } finally {
+      setApiKeysLoading(false);
+    }
+  }, []);
+
+  // 切换到 API Keys tab 时加载数据
+  useEffect(() => {
+    if (activeTab === 'apikeys' && isAuthenticated && user?.is_admin) {
+      fetchApiKeys();
+    }
+  }, [activeTab, isAuthenticated, user, fetchApiKeys]);
+
+  const handleCreateApiKey = async () => {
+    if (!newApiKeyName.trim()) {
+      alert('请输入 API Key 名称');
+      return;
+    }
+    try {
+      const res = await api.post('/news/admin/api-keys', { name: newApiKeyName });
+      setNewApiKey(res.data.api_key);
+      setNewApiKeyName('');
+      fetchApiKeys();
+    } catch (error) {
+      console.error('Failed to create API key:', error);
+      alert('创建 API Key 失败');
+    }
+  };
+
+  const handleDeleteApiKey = async (keyId: number) => {
+    if (!confirm('确定要删除此 API Key 吗？删除后将无法恢复。')) return;
+    try {
+      await api.delete(`/news/admin/api-keys/${keyId}`);
+      fetchApiKeys();
+    } catch (error) {
+      console.error('Failed to delete API key:', error);
+      alert('删除 API Key 失败');
+    }
+  };
+
+  // 设置用户 VIP 状态
+  const setVipMutation = useMutation({
+    mutationFn: async ({ userId, isApproved }: { userId: number; isApproved: boolean }) => {
+      const res = await api.put(`/admin/users/${userId}/approve`, { is_approved: isApproved });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
   // 加载状态
   if (authLoading || !isAuthenticated || !user?.is_admin) {
     return (
@@ -483,6 +558,16 @@ export default function AdminPage() {
             }`}
           >
             🎫 邀请码管理
+          </button>
+          <button
+            onClick={() => setActiveTab('apikeys')}
+            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'apikeys'
+                ? 'bg-purple-600 text-white'
+                : 'bg-white/10 text-purple-200 hover:bg-white/20'
+            }`}
+          >
+            🔑 API Key
           </button>
           <button
             onClick={() => router.push('/admin/performance')}
@@ -630,6 +715,9 @@ export default function AdminPage() {
                               {u.is_admin && (
                                 <span className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-300 text-xs rounded">管理员</span>
                               )}
+                              {u.is_approved && (
+                                <span className="px-1.5 py-0.5 bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-200 text-xs rounded">VIP</span>
+                              )}
                             </div>
                             <div className="text-purple-300 text-sm">@{u.username || '-'}</div>
                           </div>
@@ -657,6 +745,22 @@ export default function AdminPage() {
                       <td className="px-4 py-3 text-purple-200 text-sm">{formatDate(u.last_activity)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
+                          {/* 设置/取消 VIP */}
+                          <button
+                            onClick={() => setVipMutation.mutate({ userId: u.id, isApproved: !u.is_approved })}
+                            disabled={u.id === user?.id}
+                            className={`p-1.5 rounded transition-colors ${
+                              u.id === user?.id
+                                ? 'text-gray-500 cursor-not-allowed'
+                                : u.is_approved
+                                ? 'text-purple-400 hover:bg-purple-500/20'
+                                : 'text-gray-400 hover:bg-white/10'
+                            }`}
+                            title={u.is_approved ? '取消 VIP' : '设为 VIP'}
+                          >
+                            💎
+                          </button>
+
                           {/* 设置/取消管理员 */}
                           <button
                             onClick={() => setAdminMutation.mutate({ userId: u.id, isAdmin: !u.is_admin })}
@@ -1116,6 +1220,118 @@ export default function AdminPage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* API Key 管理 Tab */}
+        {activeTab === 'apikeys' && (
+          <div className="space-y-6">
+            {/* 创建 API Key */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+              <h2 className="text-xl font-bold text-white mb-4">🔑 创建 API Key</h2>
+              <p className="text-purple-200 text-sm mb-4">
+                API Key 用于外部系统（如 browser-llm-orchestrator）向资讯系统写入内容。
+              </p>
+              <div className="flex gap-4">
+                <input
+                  type="text"
+                  value={newApiKeyName}
+                  onChange={(e) => setNewApiKeyName(e.target.value)}
+                  placeholder="输入 API Key 名称，如：browser-llm-orchestrator"
+                  className="flex-1 px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  onClick={handleCreateApiKey}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  创建
+                </button>
+              </div>
+
+              {/* 新创建的 API Key 显示 */}
+              {newApiKey && (
+                <div className="mt-4 p-4 bg-green-500/20 border border-green-500/30 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-400 font-medium mb-1">API Key 创建成功！</p>
+                      <p className="text-green-200 text-xs mb-2">请立即复制保存，此密钥只显示一次。</p>
+                      <code className="block p-2 bg-black/30 rounded text-green-300 font-mono text-sm break-all">
+                        {newApiKey}
+                      </code>
+                    </div>
+                    <button
+                      onClick={() => {
+                        copyToClipboard(newApiKey);
+                        setNewApiKey(null);
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ml-4"
+                    >
+                      复制并关闭
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* API Key 列表 */}
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-4 border-b border-white/10">
+                <h2 className="text-lg font-semibold text-white">📋 API Key 列表</h2>
+              </div>
+
+              {apiKeysLoading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
+                </div>
+              ) : apiKeys.length === 0 ? (
+                <div className="p-8 text-center text-purple-200">
+                  <p>暂无 API Key</p>
+                  <p className="text-sm text-gray-400 mt-2">点击上方按钮创建一个新的 API Key</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {apiKeys.map((key) => (
+                    <div key={key.id} className="p-4 hover:bg-white/5 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-white font-medium">{key.name}</span>
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              key.is_active
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-red-500/20 text-red-400'
+                            }`}>
+                              {key.is_active ? '有效' : '已禁用'}
+                            </span>
+                          </div>
+                          <div className="text-gray-400 text-sm mt-1">
+                            创建于 {formatDate(key.created_at)}
+                            {key.last_used_at && ` · 最后使用: ${formatDate(key.last_used_at)}`}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteApiKey(key.id)}
+                          className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-sm"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 使用说明 */}
+            <div className="bg-white/5 backdrop-blur rounded-xl p-4 border border-white/10">
+              <h3 className="text-purple-200 font-medium mb-2">📚 使用说明</h3>
+              <div className="text-gray-400 text-sm space-y-2">
+                <p>在请求头中添加 <code className="px-1 py-0.5 bg-white/10 rounded text-purple-300">X-API-Key</code> 字段：</p>
+                <code className="block p-2 bg-black/30 rounded text-green-300 font-mono text-xs">
+                  curl -X POST /api/news/external/articles -H &quot;X-API-Key: your-api-key&quot; -d &apos;...&apos;
+                </code>
+              </div>
             </div>
           </div>
         )}

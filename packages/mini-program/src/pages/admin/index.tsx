@@ -25,8 +25,18 @@ interface UserInfo {
   email: string;
   is_active: boolean;
   is_admin: boolean;
+  is_approved: boolean;
   has_garmin: boolean;
   health_records_count: number;
+  created_at: string;
+}
+
+interface NewsApiKey {
+  id: number;
+  name: string;
+  api_key: string | null;
+  is_active: boolean;
+  last_used_at: string | null;
   created_at: string;
 }
 
@@ -70,7 +80,7 @@ interface UserApplication {
   reviewer_name: string | null;
 }
 
-type TabType = 'overview' | 'invitation' | 'users';
+type TabType = 'overview' | 'invitation' | 'users' | 'apikeys';
 
 export default function Admin() {
   const [loading, setLoading] = useState(true);
@@ -91,6 +101,12 @@ export default function Admin() {
   const [newCodeNote, setNewCodeNote] = useState('');
   const [newCodeMaxUses, setNewCodeMaxUses] = useState('10');
   const [creatingCode, setCreatingCode] = useState(false);
+
+  // API Key 相关
+  const [apiKeys, setApiKeys] = useState<NewsApiKey[]>([]);
+  const [showCreateApiKey, setShowCreateApiKey] = useState(false);
+  const [newApiKeyName, setNewApiKeyName] = useState('');
+  const [creatingApiKey, setCreatingApiKey] = useState(false);
 
   useEffect(() => {
     checkAdmin();
@@ -117,7 +133,8 @@ export default function Admin() {
       loadUsers(),
       loadInvitationStats(),
       loadInvitationCodes(),
-      loadApplications()
+      loadApplications(),
+      loadApiKeys()
     ]);
   };
 
@@ -155,6 +172,87 @@ export default function Admin() {
     } catch (error) {
       console.error('加载申请列表失败:', error);
     }
+  };
+
+  const loadApiKeys = async () => {
+    try {
+      const data = await get<NewsApiKey[]>('/news/admin/api-keys');
+      setApiKeys(data);
+    } catch (error) {
+      console.error('加载 API Key 列表失败:', error);
+    }
+  };
+
+  // 创建 API Key
+  const handleCreateApiKey = async () => {
+    if (creatingApiKey || !newApiKeyName.trim()) return;
+
+    setCreatingApiKey(true);
+    try {
+      const result = await post<NewsApiKey>('/news/admin/api-keys', {
+        name: newApiKeyName.trim()
+      });
+
+      Taro.showModal({
+        title: 'API Key 创建成功',
+        content: `名称: ${result.name}\nAPI Key: ${result.api_key}\n\n请立即保存，此密钥只显示一次！`,
+        showCancel: true,
+        cancelText: '关闭',
+        confirmText: '复制',
+        success: (res) => {
+          if (res.confirm && result.api_key) {
+            Taro.setClipboardData({ data: result.api_key });
+          }
+        }
+      });
+
+      setShowCreateApiKey(false);
+      setNewApiKeyName('');
+      loadApiKeys();
+    } catch (error) {
+      Taro.showToast({ title: '创建失败', icon: 'none' });
+    } finally {
+      setCreatingApiKey(false);
+    }
+  };
+
+  // 删除 API Key
+  const handleDeleteApiKey = async (keyId: number, keyName: string) => {
+    Taro.showModal({
+      title: '确认删除',
+      content: `确定删除 API Key "${keyName}"？删除后使用此密钥的外部系统将无法访问。`,
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            await del(`/news/admin/api-keys/${keyId}`);
+            Taro.showToast({ title: '已删除', icon: 'success' });
+            loadApiKeys();
+          } catch (error) {
+            Taro.showToast({ title: '删除失败', icon: 'none' });
+          }
+        }
+      }
+    });
+  };
+
+  // 切换用户 VIP 状态
+  const toggleVip = async (userId: number, currentIsApproved: boolean, userName: string) => {
+    const action = currentIsApproved ? '取消' : '设为';
+    Taro.showModal({
+      title: '确认操作',
+      content: `确定${action}用户 "${userName}" 的 VIP 权限？`,
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            await put(`/admin/users/${userId}/approve`, { is_approved: !currentIsApproved });
+            Taro.showToast({ title: '操作成功', icon: 'success' });
+            loadUsers();
+          } catch (error) {
+            Taro.showToast({ title: '操作失败', icon: 'none' });
+          }
+        }
+      }
+    });
   };
 
   // 创建邀请码
@@ -380,11 +478,17 @@ export default function Admin() {
           <Text>🎫 邀请码</Text>
           {pendingCount > 0 && <View className="badge">{pendingCount}</View>}
         </View>
-        <View 
+        <View
           className={`tab-item ${activeTab === 'users' ? 'active' : ''}`}
           onClick={() => setActiveTab('users')}
         >
           <Text>👥 用户</Text>
+        </View>
+        <View
+          className={`tab-item ${activeTab === 'apikeys' ? 'active' : ''}`}
+          onClick={() => setActiveTab('apikeys')}
+        >
+          <Text>🔑 API</Text>
         </View>
       </View>
 
@@ -623,6 +727,7 @@ export default function Admin() {
                   <View className="user-name-row">
                     <Text className="user-name">{user.name || user.username}</Text>
                     {user.is_admin && <Text className="admin-badge">管理员</Text>}
+                    {user.is_approved && <Text className="vip-badge">VIP</Text>}
                     {!user.is_active && <Text className="disabled-badge">已禁用</Text>}
                   </View>
                   <Text className="user-email">{user.email || '-'}</Text>
@@ -633,13 +738,19 @@ export default function Admin() {
                 </View>
               </View>
               <View className="user-actions">
-                <Button 
+                <Button
+                  className={`user-action-btn ${user.is_approved ? 'vip' : ''}`}
+                  onClick={() => toggleVip(user.id, user.is_approved, user.name || user.username)}
+                >
+                  {user.is_approved ? '取消VIP' : '设为VIP'}
+                </Button>
+                <Button
                   className={`user-action-btn ${user.is_admin ? 'active' : ''}`}
                   onClick={() => toggleAdmin(user.id, user.is_admin)}
                 >
                   {user.is_admin ? '取消管理员' : '设为管理员'}
                 </Button>
-                <Button 
+                <Button
                   className={`user-action-btn ${user.is_active ? 'danger' : 'success'}`}
                   onClick={() => toggleActive(user.id, user.is_active)}
                 >
@@ -650,6 +761,89 @@ export default function Admin() {
           ))}
         </View>
       </View>
+      )}
+
+      {/* API Key 管理 Tab */}
+      {activeTab === 'apikeys' && (
+        <View className="section">
+          <View className="section-header-row">
+            <Text className="section-title">🔑 API Key 管理</Text>
+            <Button
+              className="create-btn"
+              onClick={() => setShowCreateApiKey(!showCreateApiKey)}
+            >
+              {showCreateApiKey ? '取消' : '+ 创建'}
+            </Button>
+          </View>
+
+          {showCreateApiKey && (
+            <View className="create-form">
+              <View className="form-row">
+                <Text className="form-label">名称</Text>
+                <Input
+                  className="form-input"
+                  placeholder="如：browser-llm-orch"
+                  value={newApiKeyName}
+                  onInput={(e) => setNewApiKeyName(e.detail.value)}
+                />
+              </View>
+              <Button
+                className="submit-btn"
+                onClick={handleCreateApiKey}
+                loading={creatingApiKey}
+                disabled={!newApiKeyName.trim()}
+              >
+                生成 API Key
+              </Button>
+            </View>
+          )}
+
+          <View className="api-key-list">
+            {apiKeys.length === 0 ? (
+              <View className="empty-state">
+                <Text className="empty-text">暂无 API Key</Text>
+              </View>
+            ) : (
+              apiKeys.map(key => (
+                <View key={key.id} className={`api-key-card ${!key.is_active ? 'disabled' : ''}`}>
+                  <View className="key-main">
+                    <View className="key-name">
+                      <Text className="key-name-text">{key.name}</Text>
+                      {!key.is_active && <Text className="inactive-tag">已禁用</Text>}
+                    </View>
+                    <View className="key-info">
+                      <Text className="key-time">
+                        创建: {new Date(key.created_at).toLocaleDateString('zh-CN')}
+                      </Text>
+                      {key.last_used_at && (
+                        <Text className="key-time">
+                          最后使用: {new Date(key.last_used_at).toLocaleDateString('zh-CN')}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  {key.is_active && (
+                    <Button
+                      className="delete-btn"
+                      onClick={() => handleDeleteApiKey(key.id, key.name)}
+                    >
+                      删除
+                    </Button>
+                  )}
+                </View>
+              ))
+            )}
+          </View>
+
+          <View className="api-key-help">
+            <Text className="help-title">使用说明</Text>
+            <Text className="help-text">
+              1. 创建后请立即保存 API Key，密钥只显示一次{'\n'}
+              2. 外部系统调用时在请求头添加: X-API-Key: 你的密钥{'\n'}
+              3. 接口地址: POST /news/external/articles
+            </Text>
+          </View>
+        </View>
       )}
 
       <View className="bottom-space" />

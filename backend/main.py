@@ -103,6 +103,7 @@ app.add_middleware(
         "Accept",
         "Origin",
         "X-Requested-With",
+        "X-API-Key",  # 外部系统 API Key 认证
     ],
     # 浏览器可以访问的响应头
     expose_headers=["X-Response-Time"],

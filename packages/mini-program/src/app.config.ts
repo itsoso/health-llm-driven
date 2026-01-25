@@ -22,6 +22,9 @@ export default {
     'pages/supplements/index',    // 补剂服用
     'pages/diet-recommendation/index', // 饮食推荐
     'pages/privacy/index',       // 隐私保护指引
+    'pages/news/index',          // 资讯列表（VIP/管理员）
+    'pages/news-detail/index',   // 资讯详情
+    'pages/external-advice/index', // 外部健康建议
   ],
   window: {
     backgroundTextStyle: 'light',

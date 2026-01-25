@@ -1,0 +1,349 @@
+// 外部健康建议页面样式
+
+$bg-dark: #0B0E14;
+$card-dark: #161B28;
+$card-border: #2D3748;
+$primary: #7C3AED;
+$text-white: #FFFFFF;
+$text-gray-100: #F3F4F6;
+$text-gray-300: #D1D5DB;
+$text-gray-400: #9CA3AF;
+$text-gray-500: #6B7280;
+$accent-green: #10B981;
+$accent-yellow: #FACC15;
+$accent-orange: #F97316;
+$accent-blue: #3B82F6;
+$accent-red: #EF4444;
+$accent-purple: #8B5CF6;
+$accent-pink: #EC4899;
+
+$radius-sm: 12px;
+$radius-md: 16px;
+$gap-sm: 12px;
+$gap-md: 16px;
+$gap-lg: 20px;
+
+// 类别颜色映射
+$category-colors: (
+  exercise: $accent-green,
+  diet: $accent-orange,
+  sleep: $accent-blue,
+  supplement: $accent-purple,
+  general: $accent-pink,
+);
+
+.external-advice-page {
+  min-height: 100vh;
+  background: $bg-dark;
+  padding: $gap-md;
+  padding-bottom: 120px;
+
+  &.loading,
+  &.error-state,
+  &.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+// 加载状态
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: $primary;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: $gap-md;
+  color: $text-gray-400;
+  font-size: 28px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 错误状态
+.error-state {
+  .error-icon {
+    font-size: 100px;
+    margin-bottom: 24px;
+  }
+
+  .error-text {
+    font-size: 28px;
+    color: $text-gray-400;
+    margin-bottom: 32px;
+    text-align: center;
+    padding: 0 32px;
+  }
+
+  .retry-btn {
+    padding: 20px 48px;
+    background: linear-gradient(135deg, #6366F1, $primary);
+    border-radius: 40px;
+
+    .retry-text {
+      font-size: 28px;
+      color: $text-white;
+      font-weight: 500;
+    }
+  }
+}
+
+// 空状态
+.empty-state {
+  .empty-icon {
+    font-size: 100px;
+    margin-bottom: 24px;
+  }
+
+  .empty-title {
+    font-size: 32px;
+    font-weight: 600;
+    color: $text-white;
+    margin-bottom: 12px;
+  }
+
+  .empty-text {
+    font-size: 26px;
+    color: $text-gray-400;
+    text-align: center;
+    padding: 0 32px;
+    line-height: 1.6;
+  }
+}
+
+// 头部
+.header {
+  margin-bottom: $gap-lg;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $gap-sm;
+}
+
+.title {
+  font-size: 36px;
+  font-weight: 700;
+  color: $text-white;
+}
+
+.subtitle {
+  font-size: 24px;
+  color: $text-gray-400;
+  margin-top: 8px;
+}
+
+// 日期选择
+.date-row {
+  display: flex;
+  align-items: center;
+  gap: $gap-sm;
+  margin-top: $gap-md;
+}
+
+.date-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 16px;
+  border-radius: 100px;
+}
+
+.date-text {
+  font-size: 26px;
+  color: $text-gray-300;
+}
+
+.date-arrow {
+  font-size: 18px;
+  color: $text-gray-500;
+}
+
+.refresh-btn {
+  background: rgba($primary, 0.2);
+  padding: 8px 16px;
+  border-radius: 100px;
+
+  text {
+    font-size: 24px;
+    color: $primary;
+  }
+}
+
+// 类别筛选
+.category-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: $gap-md;
+}
+
+.filter-tag {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 100px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+
+  text {
+    font-size: 24px;
+    color: $text-gray-400;
+  }
+
+  &.active {
+    background: rgba($primary, 0.2);
+    border-color: $primary;
+
+    text {
+      color: $primary;
+      font-weight: 500;
+    }
+  }
+}
+
+// 类别区块
+.category-section {
+  margin-bottom: $gap-lg;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: $gap-sm;
+}
+
+.category-icon {
+  font-size: 28px;
+}
+
+.category-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: $text-white;
+}
+
+.category-count {
+  font-size: 22px;
+  color: $text-gray-500;
+  margin-left: 4px;
+}
+
+// 建议卡片
+.advice-card {
+  background: rgba($card-dark, 0.7);
+  border-radius: $radius-md;
+  padding: $gap-md;
+  margin-bottom: $gap-sm;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.advice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: $gap-sm;
+}
+
+.advice-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: $text-white;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.advice-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba($accent-blue, 0.2);
+  padding: 4px 10px;
+  border-radius: 100px;
+  margin-left: 8px;
+  flex-shrink: 0;
+
+  .source-icon {
+    font-size: 18px;
+  }
+
+  .source-name {
+    font-size: 20px;
+    color: $accent-blue;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.advice-content {
+  font-size: 26px;
+  color: $text-gray-300;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.advice-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: $gap-sm;
+  padding-top: $gap-sm;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.advice-time {
+  font-size: 22px;
+  color: $text-gray-500;
+}
+
+// 历史记录链接
+.history-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $gap-md;
+  margin-top: $gap-md;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: $radius-md;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+
+  text {
+    font-size: 26px;
+    color: $text-gray-400;
+  }
+
+  .link-arrow {
+    margin-left: 8px;
+    font-size: 22px;
+  }
+}
+
+// 类别主题色
+@each $category, $color in $category-colors {
+  .category-#{$category} {
+    .category-icon,
+    .category-title {
+      color: $color;
+    }
+
+    .advice-card {
+      border-left: 3px solid $color;
+    }
+  }
+}
