@@ -2,8 +2,9 @@
 
 # ===========================================
 # 健康应用部署脚本
-# 服务器: 39.98.206.178
-# 项目路径: /opt/health-app
+#
+# 配置文件: .env-online (本地管理，不被 git 追踪)
+# 服务器配置从 .env-online 读取
 # ===========================================
 
 set -e  # 遇到错误立即退出
@@ -15,9 +16,30 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 服务器配置
-SERVER="root@39.98.206.178"
-REMOTE_PATH="/opt/health-app"
+# 获取脚本所在目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_ONLINE_FILE="$SCRIPT_DIR/.env-online"
+
+# 检查 .env-online 文件是否存在
+if [[ ! -f "$ENV_ONLINE_FILE" ]]; then
+    echo -e "${RED}✗${NC} 错误: .env-online 文件不存在"
+    echo "请创建 .env-online 文件并配置以下内容:"
+    echo "  DEPLOY_SERVER=root@your-server-ip"
+    echo "  DEPLOY_PATH=/opt/health-app"
+    echo "  以及其他环境变量..."
+    exit 1
+fi
+
+# 从 .env-online 读取服务器配置
+SERVER=$(grep "^DEPLOY_SERVER=" "$ENV_ONLINE_FILE" | cut -d'=' -f2)
+REMOTE_PATH=$(grep "^DEPLOY_PATH=" "$ENV_ONLINE_FILE" | cut -d'=' -f2)
+
+# 验证必要配置
+if [[ -z "$SERVER" || -z "$REMOTE_PATH" ]]; then
+    echo -e "${RED}✗${NC} 错误: .env-online 中缺少必要配置"
+    echo "请确保配置了 DEPLOY_SERVER 和 DEPLOY_PATH"
+    exit 1
+fi
 
 # 打印带颜色的消息
 print_step() {
@@ -44,16 +66,53 @@ show_help() {
     echo "  -a, --all       部署前端和后端 (默认)"
     echo "  -f, --frontend  仅部署前端"
     echo "  -b, --backend   仅部署后端"
+    echo "  -e, --env       仅同步 .env-online 到服务器"
+    echo "  -r, --restart   仅重启服务 (不拉取代码)"
     echo "  -p, --push      仅推送代码到 GitHub (不部署)"
     echo "  -s, --status    查看服务器服务状态"
     echo "  -l, --logs      查看服务器日志"
     echo "  -h, --help      显示此帮助信息"
     echo ""
+    echo "配置文件: .env-online (本地管理，不被 git 追踪)"
+    echo "  - DEPLOY_SERVER: 服务器地址 (当前: $SERVER)"
+    echo "  - DEPLOY_PATH: 部署路径 (当前: $REMOTE_PATH)"
+    echo ""
     echo "示例:"
     echo "  ./deploy.sh           # 部署全部"
     echo "  ./deploy.sh -f        # 仅部署前端"
     echo "  ./deploy.sh -b        # 仅部署后端"
+    echo "  ./deploy.sh -e        # 仅同步环境变量"
+    echo "  ./deploy.sh -r        # 仅重启服务"
     echo "  ./deploy.sh -s        # 查看服务状态"
+}
+
+# 同步环境变量到服务器
+sync_env() {
+    print_step "同步 .env-online 到服务器..."
+
+    # 创建临时文件，过滤掉部署配置
+    TEMP_ENV=$(mktemp)
+    grep -v "^DEPLOY_SERVER=" "$ENV_ONLINE_FILE" | grep -v "^DEPLOY_PATH=" | grep -v "^#.*服务器信息" | grep -v "^# -.*deploy.sh" > "$TEMP_ENV"
+
+    # 上传到服务器
+    scp "$TEMP_ENV" "$SERVER:$REMOTE_PATH/backend/.env"
+    rm "$TEMP_ENV"
+
+    print_success "环境变量已同步到 $SERVER:$REMOTE_PATH/backend/.env"
+}
+
+# 仅重启服务
+restart_services() {
+    print_step "重启服务..."
+
+    ssh $SERVER "
+        echo '重启后端服务...' && \
+        systemctl restart health-backend && \
+        echo '重启前端服务...' && \
+        systemctl restart health-frontend
+    "
+
+    print_success "服务已重启"
 }
 
 # 推送代码到 GitHub
@@ -100,7 +159,10 @@ deploy_frontend() {
 # 部署后端
 deploy_backend() {
     print_step "部署后端..."
-    
+
+    # 先同步环境变量
+    sync_env
+
     ssh $SERVER "
         cd $REMOTE_PATH && \
         git pull && \
@@ -112,7 +174,7 @@ deploy_backend() {
         echo '重启后端服务...' && \
         systemctl restart health-backend
     "
-    
+
     print_success "后端部署完成"
 }
 
@@ -186,6 +248,14 @@ main() {
                 DEPLOY_MODE="backend"
                 shift
                 ;;
+            -e|--env)
+                DEPLOY_MODE="env"
+                shift
+                ;;
+            -r|--restart)
+                DEPLOY_MODE="restart"
+                shift
+                ;;
             -p|--push)
                 DEPLOY_MODE="push"
                 shift
@@ -226,6 +296,13 @@ main() {
         "backend")
             push_code
             deploy_backend
+            ;;
+        "env")
+            sync_env
+            restart_services
+            ;;
+        "restart")
+            restart_services
             ;;
         "push")
             push_code
