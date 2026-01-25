@@ -1393,12 +1393,12 @@ function SettingsContent() {
                   <div className="space-y-2 font-mono text-xs">
                     <div className="bg-white p-2 rounded border">
                       <span className="text-green-600 font-bold">GET</span>
-                      <span className="ml-2 text-gray-800">https://health.executor.life/api/external/health-data</span>
+                      <span className="ml-2 text-gray-800">https://health.executor.life/api/v1/external/health-data</span>
                       <p className="text-gray-500 mt-1 font-sans">获取健康数据（支持 ?date=2024-01-25 或 ?start_date=...&end_date=...）</p>
                     </div>
                     <div className="bg-white p-2 rounded border">
                       <span className="text-blue-600 font-bold">POST</span>
-                      <span className="ml-2 text-gray-800">https://health.executor.life/api/external/recommendations</span>
+                      <span className="ml-2 text-gray-800">https://health.executor.life/api/v1/external/recommendations</span>
                       <p className="text-gray-500 mt-1 font-sans">写入健康建议</p>
                     </div>
                   </div>
@@ -1407,7 +1407,7 @@ function SettingsContent() {
                 <div>
                   <p className="font-semibold mb-2">{'\u{1F4E6}'} 请求示例：</p>
                   <pre className="bg-gray-800 text-green-400 p-3 rounded-lg text-xs overflow-x-auto">
-{`curl -X GET "https://health.executor.life/api/external/health-data?date=2024-01-25" \\
+{`curl -X GET "https://health.executor.life/api/v1/external/health-data?date=2024-01-25" \\
   -H "X-API-Key: 你的API密钥"`}
                   </pre>
                 </div>
