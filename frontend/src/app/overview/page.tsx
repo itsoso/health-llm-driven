@@ -402,7 +402,6 @@ function OverviewContent() {
               </p>
             )}
           </div>
-          <span className="text-blue-500 text-sm font-medium cursor-pointer hover:text-blue-600 hover:underline transition-colors">查看全部</span>
         </div>
 
         {/* 健康指标网格 - Garmin风格 */}
