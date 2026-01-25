@@ -45,7 +45,19 @@ function formatDateTime(dateStr: string): string {
   });
 }
 
-// 简单的文本内容渲染（支持换行和基本格式）
+// 渲染行内Markdown（粗体、斜体等）
+function renderInlineMarkdown(text: string): React.ReactNode {
+  // 处理粗体 **text**
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+// Markdown内容渲染组件
 function ContentRenderer({ content }: { content: string }) {
   // 处理换行，将连续两个换行作为段落分隔
   const paragraphs = content.split(/\n\n+/);
@@ -53,48 +65,98 @@ function ContentRenderer({ content }: { content: string }) {
   return (
     <div className="prose prose-invert prose-lg max-w-none">
       {paragraphs.map((paragraph, index) => {
-        // 检查是否是标题（以#开头）
-        if (paragraph.startsWith('### ')) {
+        const trimmed = paragraph.trim();
+
+        // 检查是否是标题
+        if (trimmed.startsWith('#### ')) {
+          return (
+            <h4 key={index} className="text-lg font-semibold text-white mt-5 mb-2">
+              {renderInlineMarkdown(trimmed.replace(/^#### /, ''))}
+            </h4>
+          );
+        }
+        if (trimmed.startsWith('### ')) {
           return (
             <h3 key={index} className="text-xl font-semibold text-white mt-6 mb-3">
-              {paragraph.replace(/^### /, '')}
+              {renderInlineMarkdown(trimmed.replace(/^### /, ''))}
             </h3>
           );
         }
-        if (paragraph.startsWith('## ')) {
+        if (trimmed.startsWith('## ')) {
           return (
             <h2 key={index} className="text-2xl font-bold text-white mt-8 mb-4">
-              {paragraph.replace(/^## /, '')}
+              {renderInlineMarkdown(trimmed.replace(/^## /, ''))}
             </h2>
           );
         }
-        if (paragraph.startsWith('# ')) {
+        if (trimmed.startsWith('# ')) {
           return (
             <h1 key={index} className="text-3xl font-bold text-white mt-8 mb-4">
-              {paragraph.replace(/^# /, '')}
+              {renderInlineMarkdown(trimmed.replace(/^# /, ''))}
             </h1>
           );
         }
 
-        // 检查是否是列表
-        if (paragraph.match(/^[-*]\s/m)) {
-          const items = paragraph.split(/\n/).filter(line => line.trim());
+        // 检查是否是表格
+        if (trimmed.includes('|') && trimmed.split('\n').length > 1) {
+          const lines = trimmed.split('\n').filter(line => line.trim() && !line.match(/^\|[\s-|]+\|$/));
+          if (lines.length > 0) {
+            const headers = lines[0].split('|').filter(cell => cell.trim());
+            const rows = lines.slice(1).map(line => line.split('|').filter(cell => cell.trim()));
+
+            return (
+              <div key={index} className="my-4 overflow-x-auto">
+                <table className="min-w-full text-sm border border-gray-700 rounded-lg">
+                  <thead>
+                    <tr className="bg-gray-800/50 border-b border-gray-600">
+                      {headers.map((header, i) => (
+                        <th key={i} className="px-4 py-3 text-left text-gray-200 font-medium">
+                          {header.trim()}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b border-gray-700/50 hover:bg-gray-800/30">
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} className="px-4 py-3 text-gray-300">
+                            {renderInlineMarkdown(cell.trim())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+        }
+
+        // 检查是否是分隔线
+        if (trimmed.match(/^[-*_]{3,}$/)) {
+          return <hr key={index} className="my-6 border-gray-600" />;
+        }
+
+        // 检查是否是无序列表
+        if (trimmed.match(/^[-*]\s/m)) {
+          const items = trimmed.split(/\n/).filter(line => line.trim());
           return (
-            <ul key={index} className="list-disc list-inside space-y-2 text-gray-300 my-4">
+            <ul key={index} className="list-disc list-inside space-y-2 text-gray-300 my-4 ml-2">
               {items.map((item, i) => (
-                <li key={i}>{item.replace(/^[-*]\s+/, '')}</li>
+                <li key={i}>{renderInlineMarkdown(item.replace(/^[-*]\s+/, ''))}</li>
               ))}
             </ul>
           );
         }
 
         // 检查是否是数字列表
-        if (paragraph.match(/^\d+\.\s/m)) {
-          const items = paragraph.split(/\n/).filter(line => line.trim());
+        if (trimmed.match(/^\d+\.\s/m)) {
+          const items = trimmed.split(/\n/).filter(line => line.trim());
           return (
-            <ol key={index} className="list-decimal list-inside space-y-2 text-gray-300 my-4">
+            <ol key={index} className="list-decimal list-inside space-y-2 text-gray-300 my-4 ml-2">
               {items.map((item, i) => (
-                <li key={i}>{item.replace(/^\d+\.\s+/, '')}</li>
+                <li key={i}>{renderInlineMarkdown(item.replace(/^\d+\.\s+/, ''))}</li>
               ))}
             </ol>
           );
@@ -102,8 +164,8 @@ function ContentRenderer({ content }: { content: string }) {
 
         // 普通段落
         return (
-          <p key={index} className="text-gray-300 leading-relaxed my-4 whitespace-pre-line">
-            {paragraph}
+          <p key={index} className="text-gray-300 leading-relaxed my-4">
+            {renderInlineMarkdown(trimmed)}
           </p>
         );
       })}
