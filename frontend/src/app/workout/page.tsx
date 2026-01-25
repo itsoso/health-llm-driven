@@ -1634,26 +1634,6 @@ function WorkoutContent() {
                       </div>
                     )}
 
-                    {/* 保存状态说明 */}
-                    <div className={`rounded-xl p-4 text-center ${
-                      postAnalysis.from_cache 
-                        ? 'bg-green-500/10 border border-green-500/30' 
-                        : 'bg-blue-500/10 border border-blue-500/30'
-                    }`}>
-                      <div className="flex items-center justify-center gap-2 text-sm">
-                        {postAnalysis.from_cache ? (
-                          <>
-                            <span className="text-green-400">✓</span>
-                            <span className="text-green-300">此分析结果已自动保存，下次查看将直接加载</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-blue-400">💾</span>
-                            <span className="text-blue-300">分析结果已自动保存，下次查看将直接加载</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 )}
               </>
