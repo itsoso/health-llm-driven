@@ -138,19 +138,32 @@ function ContentRenderer({ content }: { content: string }) {
           return <hr key={index} className="my-6 border-gray-600" />;
         }
 
-        // 检查是否是无序列表
-        if (trimmed.match(/^[-*]\s/m)) {
+        // 检查是否是单行数字标题（如 "1. 首要任务：适度补能"）
+        // 单行且以数字开头，当作小标题处理
+        if (trimmed.match(/^\d+\.\s/) && !trimmed.includes('\n')) {
+          return (
+            <p key={index} className="text-white font-semibold mt-5 mb-2">
+              {renderInlineMarkdown(trimmed)}
+            </p>
+          );
+        }
+
+        // 检查是否是无序列表（支持 -, *, •, ·）
+        if (trimmed.match(/^[-*•·]\s/m)) {
           const items = trimmed.split(/\n/).filter(line => line.trim());
           return (
-            <ul key={index} className="list-disc list-inside space-y-2 text-gray-300 my-4 ml-2">
+            <ul key={index} className="space-y-2 text-gray-300 my-4 ml-4">
               {items.map((item, i) => (
-                <li key={i}>{renderInlineMarkdown(item.replace(/^[-*]\s+/, ''))}</li>
+                <li key={i} className="flex">
+                  <span className="mr-2 text-gray-500">•</span>
+                  <span>{renderInlineMarkdown(item.replace(/^[-*•·]\s*/, ''))}</span>
+                </li>
               ))}
             </ul>
           );
         }
 
-        // 检查是否是数字列表
+        // 检查是否是多行数字列表
         if (trimmed.match(/^\d+\.\s/m)) {
           const items = trimmed.split(/\n/).filter(line => line.trim());
           return (
