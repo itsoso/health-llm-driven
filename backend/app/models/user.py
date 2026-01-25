@@ -65,6 +65,7 @@ class GarminCredential(Base):
     requires_mfa = Column(Boolean, default=False)  # 是否需要两步验证（MFA）
     last_error = Column(Text, nullable=True)  # 最后一次错误信息
     error_count = Column(Integer, default=0)  # 连续错误次数
+    login_locked_until = Column(DateTime(timezone=True), nullable=True)  # 登录锁定截止时间（防止频繁登录导致 Garmin 账号被锁）
     
     # OAuth Token 缓存 - 防止频繁登录导致账号锁定
     garth_session = Column(Text, nullable=True)  # 序列化的 garth session (JSON)

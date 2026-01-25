@@ -28,6 +28,18 @@ class GarminAuthenticationError(Exception):
     pass
 
 
+class GarminLoginLockedError(Exception):
+    """Garmin登录被锁定（防止频繁登录）"""
+    def __init__(self, message: str, locked_until: datetime):
+        super().__init__(message)
+        self.locked_until = locked_until
+
+
+# 登录失败阈值和锁定时间配置
+LOGIN_FAIL_THRESHOLD = 3  # 连续失败次数阈值
+LOGIN_LOCK_MINUTES = 30  # 锁定时间（分钟）
+
+
 class GarminMFARequiredError(Exception):
     """Garmin需要两步验证"""
     def __init__(self, message: str, client_state: dict):
@@ -405,14 +417,14 @@ class GarminConnectService:
         """清除数据库中缓存的 session"""
         if not self.user_id:
             return
-        
+
         try:
             from app.models.user import GarminCredential
-            
+
             cred = db.query(GarminCredential).filter(
                 GarminCredential.user_id == self.user_id
             ).first()
-            
+
             if cred:
                 cred.garth_session = None
                 cred.session_expires_at = None
@@ -420,7 +432,103 @@ class GarminConnectService:
                 logger.info(f"{self._log_prefix()} 已清除缓存的 garth session")
         except Exception as e:
             logger.warning(f"{self._log_prefix()} 清除 session 失败: {e}")
-    
+
+    def _check_login_lock(self, db: Session) -> Optional[datetime]:
+        """
+        检查是否被锁定，返回锁定截止时间（如果被锁定）
+
+        Returns:
+            Optional[datetime]: 锁定截止时间，如果未锁定返回 None
+        """
+        if not self.user_id or not db:
+            return None
+
+        try:
+            from app.models.user import GarminCredential
+
+            cred = db.query(GarminCredential).filter(
+                GarminCredential.user_id == self.user_id
+            ).first()
+
+            if cred and cred.login_locked_until:
+                now = datetime.utcnow()
+                if cred.login_locked_until > now:
+                    return cred.login_locked_until
+                else:
+                    # 锁定已过期，清除锁定状态
+                    cred.login_locked_until = None
+                    cred.error_count = 0
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"{self._log_prefix()} 检查登录锁定失败: {e}")
+
+        return None
+
+    def _record_login_failure(self, db: Session, error_msg: str):
+        """
+        记录登录失败，累加失败计数，超过阈值则锁定
+
+        Args:
+            db: 数据库会话
+            error_msg: 错误信息
+        """
+        if not self.user_id or not db:
+            return
+
+        prefix = self._log_prefix()
+
+        try:
+            from app.models.user import GarminCredential
+
+            cred = db.query(GarminCredential).filter(
+                GarminCredential.user_id == self.user_id
+            ).first()
+
+            if cred:
+                cred.error_count = (cred.error_count or 0) + 1
+                cred.last_error = error_msg[:500] if error_msg else None  # 限制错误信息长度
+                cred.credentials_valid = False
+
+                # 超过阈值，设置锁定时间
+                if cred.error_count >= LOGIN_FAIL_THRESHOLD:
+                    lock_until = datetime.utcnow() + timedelta(minutes=LOGIN_LOCK_MINUTES)
+                    cred.login_locked_until = lock_until
+                    logger.warning(f"{prefix} ⚠️ 登录失败次数达到 {cred.error_count}，锁定到 {lock_until}")
+                else:
+                    logger.info(f"{prefix} 登录失败，当前失败次数: {cred.error_count}/{LOGIN_FAIL_THRESHOLD}")
+
+                db.commit()
+        except Exception as e:
+            logger.warning(f"{prefix} 记录登录失败状态时出错: {e}")
+            db.rollback()
+
+    def _reset_login_failure(self, db: Session):
+        """
+        登录成功时重置失败计数
+
+        Args:
+            db: 数据库会话
+        """
+        if not self.user_id or not db:
+            return
+
+        try:
+            from app.models.user import GarminCredential
+
+            cred = db.query(GarminCredential).filter(
+                GarminCredential.user_id == self.user_id
+            ).first()
+
+            if cred and (cred.error_count > 0 or cred.login_locked_until):
+                cred.error_count = 0
+                cred.login_locked_until = None
+                cred.credentials_valid = True
+                cred.last_error = None
+                db.commit()
+                logger.info(f"{self._log_prefix()} ✅ 登录成功，已重置失败计数")
+        except Exception as e:
+            logger.warning(f"{self._log_prefix()} 重置登录失败状态时出错: {e}")
+
     def _ensure_display_name(self) -> bool:
         """
         确保 display_name 已设置，尝试多种方式获取
@@ -494,17 +602,27 @@ class GarminConnectService:
     def _ensure_authenticated(self, db: Session = None):
         """
         确保已认证，认证失败时抛出异常
-        
+
         优先尝试以下方式（按顺序）：
+        0. 检查是否被锁定（防止频繁登录导致 Garmin 账号被封）
         1. 从数据库加载缓存的 OAuth Token（避免频繁登录导致账号锁定）
         2. 从 MFA 会话复用已认证的 client
         3. 重新登录并缓存 Token
-        
+
         Args:
             db: 数据库会话（可选，用于 token 缓存）
         """
         prefix = self._log_prefix()
-        
+
+        # 0. 检查是否被锁定（防止频繁登录失败导致 Garmin 账号被封）
+        if db and self.user_id:
+            locked_until = self._check_login_lock(db)
+            if locked_until:
+                remaining_minutes = int((locked_until - datetime.utcnow()).total_seconds() / 60) + 1
+                error_msg = f"⏳ 登录已被暂停，请 {remaining_minutes} 分钟后再试。连续登录失败会导致 Garmin 账号被锁定，请先确认密码正确。"
+                logger.warning(f"{prefix} {error_msg}")
+                raise GarminLoginLockedError(error_msg, locked_until)
+
         # 1. 优先尝试从数据库加载缓存的 session（避免频繁登录触发账号锁定）
         if db and self.user_id and not self._authenticated:
             if self._load_session_from_db(db):
@@ -587,16 +705,17 @@ class GarminConnectService:
                     if self.client.garth.oauth2_token:
                         # 确保 display_name 已设置（使用 return_on_mfa=True 时可能未加载 profile）
                         self._ensure_display_name()
-                        
+
                         self._authenticated = True
                         server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
                         logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}, display_name={self.client.display_name}")
-                        
+
                         # 🔑 登录成功后缓存 session 到数据库，避免下次重新登录
                         if db:
                             self._save_session_to_db(db)
+                            self._reset_login_failure(db)  # 重置失败计数
                         return
-                
+
                 # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
                 if not self._authenticated:
                     # 如果没有oauth2_token，尝试重新登录
@@ -606,35 +725,43 @@ class GarminConnectService:
                     self._authenticated = True
                     server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
                     logger.info(f"{prefix} Garmin Connect登录成功 - {server_type}")
-                    
+
                     # 🔑 登录成功后缓存 session 到数据库
                     if db:
                         self._save_session_to_db(db)
-                    
+                        self._reset_login_failure(db)  # 重置失败计数
+
             except GarminMFARequiredError:
-                # MFA错误直接抛出
+                # MFA错误直接抛出（不计入失败次数）
+                raise
+            except GarminLoginLockedError:
+                # 锁定错误直接抛出
                 raise
             except Exception as e:
                 self._authenticated = False
                 error_msg = str(e).lower()
-                
-                # 检查是否需要设置密码
+
+                # 检查是否需要设置密码（不计入失败次数）
                 if 'set password' in error_msg or 'unexpected title' in error_msg:
                     logger.warning(f"{prefix} Garmin账号需要设置密码")
                     raise GarminAuthenticationError(
                         "Garmin账号需要设置密码！请先访问 https://connect.garmin.com 登录并按提示完成密码设置，然后再尝试同步。"
                     ) from e
-                
-                # 检查是否需要MFA（某些版本的库可能通过异常表示需要MFA）
+
+                # 检查是否需要MFA（不计入失败次数）
                 if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
                     logger.warning(f"{prefix} Garmin账号需要两步验证")
                     raise GarminMFARequiredError(
                         "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
                         {}
                     ) from e
-                
+
+                # 登录失败 - 记录失败次数
+                if db:
+                    self._record_login_failure(db, str(e))
+
                 # 将登录失败转换为明确的认证错误
-                if any(kw in error_msg for kw in ['login', 'auth', '401', 'unauthorized', 'credential', 'password', 'oauth']):
+                if any(kw in error_msg for kw in ['login', 'auth', '401', 'unauthorized', 'credential', 'password', 'oauth', 'ticket']):
                     logger.error(f"{prefix} Garmin登录失败: {e}")
                     raise GarminAuthenticationError(f"Garmin登录失败: {e}") from e
                 logger.error(f"{prefix} Garmin认证异常: {e}")
