@@ -60,6 +60,7 @@ function SettingsContent() {
   const [apiKeys, setApiKeys] = useState<UserApiKey[]>([]);
   const [showApiKeySection, setShowApiKeySection] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null); // 新创建的Key，用于展示
   const [appleImportProgress, setAppleImportProgress] = useState<{
     isImporting: boolean;
     progress: number;
@@ -605,13 +606,17 @@ function SettingsContent() {
       });
       if (res.ok) {
         const newKey = await res.json();
-        setMessage({ type: 'success', text: `API Key 已创建！请复制并妥善保存：${newKey.api_key}` });
+        // 保存新创建的Key用于展示
+        if (newKey.api_key) {
+          setNewlyCreatedKey(newKey.api_key);
+          // 复制到剪贴板
+          navigator.clipboard.writeText(newKey.api_key);
+          setMessage({ type: 'success', text: 'API Key 已创建并复制到剪贴板！请妥善保存，此密钥只显示一次。' });
+        } else {
+          setMessage({ type: 'error', text: '创建成功但未返回密钥，请联系管理员' });
+        }
         setNewKeyName('');
         loadApiKeys();
-        // 复制到剪贴板
-        if (newKey.api_key) {
-          navigator.clipboard.writeText(newKey.api_key);
-        }
       } else {
         const error = await res.json();
         setMessage({ type: 'error', text: error.detail || '创建失败' });
@@ -1316,6 +1321,37 @@ function SettingsContent() {
                       </button>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* 新创建的 Key 展示 */}
+              {newlyCreatedKey && (
+                <div className="bg-green-50 border-2 border-green-400 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{'\u{1F511}'}</span>
+                    <h3 className="font-bold text-green-800">API Key 创建成功！</h3>
+                  </div>
+                  <p className="text-sm text-green-700">请立即复制并妥善保存此密钥，它只会显示这一次：</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 p-3 bg-white border border-green-300 rounded-lg font-mono text-sm text-gray-900 break-all select-all">
+                      {newlyCreatedKey}
+                    </code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(newlyCreatedKey);
+                        setMessage({ type: 'success', text: '已复制到剪贴板' });
+                      }}
+                      className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium whitespace-nowrap"
+                    >
+                      复制
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setNewlyCreatedKey(null)}
+                    className="w-full px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm"
+                  >
+                    我已保存，关闭此提示
+                  </button>
                 </div>
               )}
 
