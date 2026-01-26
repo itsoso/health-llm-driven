@@ -4,120 +4,141 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, RichText } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
-import { marked } from 'marked';
 import { getNewsDetail, NewsArticle } from '../../services/api';
 import './index.scss';
 
-// 配置 marked 渲染器以适配小程序 RichText
-function setupMarkedRenderer() {
-  const renderer = new marked.Renderer();
-
-  // 标题 h1-h6
-  renderer.heading = ({ text, depth }) => {
-    const className = `md-h${depth}`;
-    return `<view class="${className}">${text}</view>`;
-  };
-
-  // 段落
-  renderer.paragraph = ({ text }) => {
-    return `<view class="md-p">${text}</view>`;
-  };
-
-  // 粗体
-  renderer.strong = ({ text }) => {
-    return `<text class="md-strong">${text}</text>`;
-  };
-
-  // 斜体
-  renderer.em = ({ text }) => {
-    return `<text class="md-em">${text}</text>`;
-  };
-
-  // 链接（小程序不支持a标签跳转，显示为文本）
-  renderer.link = ({ href, text }) => {
-    return `<text class="md-link">${text}</text>`;
-  };
-
-  // 列表
-  renderer.list = ({ body, ordered }) => {
-    const className = ordered ? 'md-ol' : 'md-ul';
-    return `<view class="${className}">${body}</view>`;
-  };
-
-  // 列表项
-  renderer.listitem = ({ text }) => {
-    return `<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">${text}</text></view>`;
-  };
-
-  // 代码块
-  renderer.code = ({ text }) => {
-    // 转义 HTML
-    const escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    return `<view class="md-codeblock"><text class="md-code-text">${escaped}</text></view>`;
-  };
-
-  // 行内代码
-  renderer.codespan = ({ text }) => {
-    return `<text class="md-code">${text}</text>`;
-  };
-
-  // 引用块
-  renderer.blockquote = ({ text }) => {
-    return `<view class="md-blockquote">${text}</view>`;
-  };
-
-  // 分隔线
-  renderer.hr = () => {
-    return `<view class="md-hr"></view>`;
-  };
-
-  // 表格
-  renderer.table = ({ header, body }) => {
-    return `<view class="md-table"><view class="md-thead">${header}</view><view class="md-tbody">${body}</view></view>`;
-  };
-
-  renderer.tablerow = ({ text }) => {
-    return `<view class="md-tr">${text}</view>`;
-  };
-
-  renderer.tablecell = ({ text, header }) => {
-    const className = header ? 'md-th' : 'md-td';
-    return `<view class="${className}"><text>${text}</text></view>`;
-  };
-
-  // 换行
-  renderer.br = () => {
-    return `<view class="md-br"></view>`;
-  };
-
-  // 图片（小程序需要特殊处理，这里简单显示占位）
-  renderer.image = ({ href, text }) => {
-    return `<image class="md-img" src="${href}" mode="widthFix"></image>`;
-  };
-
-  return renderer;
-}
-
-// Markdown 转 HTML（使用 marked 通用方案）
+/**
+ * 简单的 Markdown 转 HTML 解析器
+ * 专为小程序 RichText 组件设计，不依赖外部库
+ */
 function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
 
   try {
-    const renderer = setupMarkedRenderer();
-    marked.setOptions({
-      renderer,
-      gfm: true,       // GitHub Flavored Markdown
-      breaks: true,    // 将换行符转换为 <br>
+    let html = markdown;
+
+    // 转义 HTML 特殊字符（先处理，避免后续替换出问题）
+    // 注意：我们需要保留 markdown 语法，所以只转义内容中的 < > 但保留我们生成的标签
+
+    // 处理代码块（先处理，避免内部内容被其他规则影响）
+    html = html.replace(/```[\s\S]*?```/g, (match) => {
+      const code = match.slice(3, -3).replace(/^\w*\n?/, ''); // 移除语言标识
+      const escaped = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return `<view class="md-codeblock"><text class="md-code-text">${escaped}</text></view>`;
     });
-    return marked.parse(markdown) as string;
+
+    // 行内代码
+    html = html.replace(/`([^`]+)`/g, (_, code) => {
+      const escaped = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return `<text class="md-code">${escaped}</text>`;
+    });
+
+    // 标题 h1-h6
+    html = html.replace(/^###### (.+)$/gm, '<view class="md-h6">$1</view>');
+    html = html.replace(/^##### (.+)$/gm, '<view class="md-h5">$1</view>');
+    html = html.replace(/^#### (.+)$/gm, '<view class="md-h4">$1</view>');
+    html = html.replace(/^### (.+)$/gm, '<view class="md-h3">$1</view>');
+    html = html.replace(/^## (.+)$/gm, '<view class="md-h2">$1</view>');
+    html = html.replace(/^# (.+)$/gm, '<view class="md-h1">$1</view>');
+
+    // 粗体和斜体（先处理粗斜体组合）
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<text class="md-strong"><text class="md-em">$1</text></text>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<text class="md-strong">$1</text>');
+    html = html.replace(/\*(.+?)\*/g, '<text class="md-em">$1</text>');
+    html = html.replace(/__(.+?)__/g, '<text class="md-strong">$1</text>');
+    html = html.replace(/_(.+?)_/g, '<text class="md-em">$1</text>');
+
+    // 删除线
+    html = html.replace(/~~(.+?)~~/g, '<text class="md-del">$1</text>');
+
+    // 链接 [text](url)
+    html = html.replace(/\[([^\]]+)\]\([^)]+\)/g, '<text class="md-link">$1</text>');
+
+    // 图片 ![alt](url)
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<image class="md-img" src="$2" mode="widthFix"></image>');
+
+    // 分隔线
+    html = html.replace(/^[-*_]{3,}$/gm, '<view class="md-hr"></view>');
+
+    // 引用块（处理多行引用）
+    html = html.replace(/^> (.+)$/gm, '<view class="md-blockquote"><view class="md-p">$1</view></view>');
+
+    // 无序列表
+    html = html.replace(/^[-*+] (.+)$/gm, '<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">$1</text></view>');
+
+    // 有序列表
+    html = html.replace(/^\d+\. (.+)$/gm, (_, text) => {
+      return `<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">${text}</text></view>`;
+    });
+
+    // 处理表格
+    html = processTable(html);
+
+    // 处理段落：将连续的非标签文本包装成段落
+    // 先按行分割
+    const lines = html.split('\n');
+    const processedLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // 跳过空行
+      if (!line) {
+        processedLines.push('');
+        continue;
+      }
+
+      // 如果已经是标签包裹的内容，保持不变
+      if (line.startsWith('<view') || line.startsWith('<text') || line.startsWith('<image')) {
+        processedLines.push(line);
+        continue;
+      }
+
+      // 普通文本包装成段落
+      processedLines.push(`<view class="md-p">${line}</view>`);
+    }
+
+    html = processedLines.join('');
+
+    // 清理多余的空白
+    html = html.replace(/\n+/g, '');
+
+    return html;
   } catch (error) {
     console.error('[Markdown解析错误]', error);
     // 回退：简单转义并换行
     return `<view class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</view>`;
   }
+}
+
+/**
+ * 处理 Markdown 表格
+ */
+function processTable(html: string): string {
+  // 简单的表格正则匹配
+  const tableRegex = /\|(.+)\|\n\|[-:\| ]+\|\n((?:\|.+\|\n?)+)/g;
+
+  return html.replace(tableRegex, (match, headerRow, bodyRows) => {
+    // 解析表头
+    const headers = headerRow.split('|').map((h: string) => h.trim()).filter(Boolean);
+    const headerHtml = headers.map((h: string) => `<view class="md-th"><text>${h}</text></view>`).join('');
+
+    // 解析表体
+    const rows = bodyRows.trim().split('\n');
+    const bodyHtml = rows.map((row: string) => {
+      const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean);
+      const cellsHtml = cells.map((c: string) => `<view class="md-td"><text>${c}</text></view>`).join('');
+      return `<view class="md-tr">${cellsHtml}</view>`;
+    }).join('');
+
+    return `<view class="md-table"><view class="md-thead"><view class="md-tr">${headerHtml}</view></view><view class="md-tbody">${bodyHtml}</view></view>`;
+  });
 }
 
 export default function NewsDetailPage() {
