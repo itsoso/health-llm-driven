@@ -159,12 +159,149 @@ const trendIcons: Record<string, string> = {
   concerning: '⚠️',
 };
 
+// 类别配置
+const CATEGORY_CONFIG: Record<string, { icon: string; label: string; color: string; bgColor: string }> = {
+  exercise: { icon: '🏃', label: '运动', color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
+  diet: { icon: '🥗', label: '饮食', color: 'text-orange-600', bgColor: 'bg-orange-100' },
+  sleep: { icon: '😴', label: '睡眠', color: 'text-blue-600', bgColor: 'bg-blue-100' },
+  supplement: { icon: '💊', label: '补剂', color: 'text-purple-600', bgColor: 'bg-purple-100' },
+  general: { icon: '✨', label: '综合', color: 'text-pink-600', bgColor: 'bg-pink-100' },
+};
+
+const CATEGORY_ORDER = ['exercise', 'diet', 'sleep', 'supplement', 'general'];
+
+// 简单的Markdown渲染组件
+function MarkdownContent({ content }: { content: string }) {
+  const paragraphs = content.split(/\n\n+/);
+
+  return (
+    <div className="prose prose-sm max-w-none">
+      {paragraphs.map((paragraph, index) => {
+        const trimmed = paragraph.trim();
+
+        if (trimmed.startsWith('#### ')) {
+          return (
+            <h4 key={index} className="text-base font-semibold text-gray-800 mt-4 mb-2">
+              {trimmed.replace(/^#### /, '')}
+            </h4>
+          );
+        }
+        if (trimmed.startsWith('### ')) {
+          return (
+            <h3 key={index} className="text-lg font-semibold text-gray-800 mt-5 mb-2">
+              {trimmed.replace(/^### /, '')}
+            </h3>
+          );
+        }
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h2 key={index} className="text-xl font-bold text-gray-800 mt-6 mb-3">
+              {trimmed.replace(/^## /, '')}
+            </h2>
+          );
+        }
+
+        if (trimmed.includes('|') && trimmed.split('\n').length > 1) {
+          const lines = trimmed.split('\n').filter(line => line.trim() && !line.match(/^\|[\s-|]+\|$/));
+          if (lines.length > 0) {
+            const headers = lines[0].split('|').filter(cell => cell.trim());
+            const rows = lines.slice(1).map(line => line.split('|').filter(cell => cell.trim()));
+
+            return (
+              <div key={index} className="my-4 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-300">
+                      {headers.map((header, i) => (
+                        <th key={i} className="px-3 py-2 text-left text-gray-700 font-medium">
+                          {header.trim()}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b border-gray-200">
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} className="px-3 py-2 text-gray-600">
+                            {cell.trim()}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+        }
+
+        if (trimmed.match(/^[-*]\s/m)) {
+          const items = trimmed.split(/\n/).filter(line => line.trim());
+          return (
+            <ul key={index} className="list-disc list-inside space-y-1 text-gray-700 my-3 ml-2">
+              {items.map((item, i) => (
+                <li key={i}>{renderInlineMarkdown(item.replace(/^[-*]\s+/, ''))}</li>
+              ))}
+            </ul>
+          );
+        }
+
+        if (trimmed.match(/^\d+\.\s/m)) {
+          const items = trimmed.split(/\n/).filter(line => line.trim());
+          return (
+            <ol key={index} className="list-decimal list-inside space-y-1 text-gray-700 my-3 ml-2">
+              {items.map((item, i) => (
+                <li key={i}>{renderInlineMarkdown(item.replace(/^\d+\.\s+/, ''))}</li>
+              ))}
+            </ol>
+          );
+        }
+
+        if (trimmed.match(/^[-*_]{3,}$/)) {
+          return <hr key={index} className="my-4 border-gray-300" />;
+        }
+
+        return (
+          <p key={index} className="text-gray-700 leading-relaxed my-3">
+            {renderInlineMarkdown(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="text-gray-900 font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+interface PaginatedExternalResponse {
+  items: ExternalRecommendation[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 function DailyInsightsContent() {
   const { user, isAuthenticated, token } = useAuth();
   const userId = user?.id;
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'one-day' | 'seven-day'>('one-day');
+  const [activeTab, setActiveTab] = useState<'one-day' | 'seven-day' | 'external'>('one-day');
   const [refreshMessage, setRefreshMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // 外部建议分页状态
+  const [externalPage, setExternalPage] = useState(1);
+  const [externalCategory, setExternalCategory] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const pageSize = 10;
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
@@ -173,11 +310,33 @@ function DailyInsightsContent() {
     enabled: isAuthenticated,
   });
 
-  // 获取外部建议
+  // 获取外部建议（今日预览）
   const { data: externalRecsData } = useQuery({
     queryKey: ['external-recommendations-today'],
     queryFn: () => externalRecommendationApi.getToday(),
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && activeTab !== 'external',
+  });
+
+  // 获取外部建议（分页列表）
+  const { data: paginatedExternalData, isLoading: externalLoading } = useQuery({
+    queryKey: ['external-recommendations-paginated', externalPage, externalCategory],
+    queryFn: async () => {
+      let url = `${API_BASE}/external-recommendations?page=${externalPage}&page_size=${pageSize}`;
+      if (externalCategory) {
+        url += `&category=${externalCategory}`;
+      }
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('加载失败');
+      const result = await res.json();
+      // 处理两种可能的响应格式
+      if (Array.isArray(result)) {
+        return { items: result, total: result.length, page: 1, page_size: pageSize, total_pages: 1 };
+      }
+      return result as PaginatedExternalResponse;
+    },
+    enabled: isAuthenticated && activeTab === 'external',
   });
 
   // 刷新建议（清除缓存并重新生成）
@@ -209,6 +368,26 @@ function DailyInsightsContent() {
   const oneDayData = recommendationsData?.data?.one_day;
   const sevenDayData = recommendationsData?.data?.seven_day;
   const isCached = recommendationsData?.data?.cached;
+
+  // 外部建议辅助函数
+  const formatDateTime = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const handleCategoryChange = (cat: string | null) => {
+    setExternalCategory(cat);
+    setExternalPage(1);
+    setExpandedId(null);
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpandedId(expandedId === id ? null : id);
+  };
 
   if (isLoading) {
     return (
@@ -247,11 +426,13 @@ function DailyInsightsContent() {
     );
   }
 
-  if (!recommendationsData?.data) return null;
+  // 外部建议tab不需要检查recommendationsData
+  if (!recommendationsData?.data && activeTab !== 'external') return null;
 
   const currentData = activeTab === 'one-day' ? oneDayData : sevenDayData;
-  
-  if (!currentData || currentData.status === 'no_data') {
+
+  // 只在非外部建议tab时检查数据
+  if (activeTab !== 'external' && (!currentData || currentData.status === 'no_data')) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4 pb-8 px-8">
         <div className="max-w-7xl mx-auto">
@@ -298,6 +479,16 @@ function DailyInsightsContent() {
               >
                 本周建议
               </button>
+              <button
+                onClick={() => { setActiveTab('external'); setExternalPage(1); setExpandedId(null); }}
+                className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
+                  activeTab === 'external'
+                    ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                📡 外部建议
+              </button>
             </div>
             <div className="flex items-center gap-2">
               {isCached && (
@@ -336,29 +527,242 @@ function DailyInsightsContent() {
             </div>
           )}
           
-          {/* 头部信息 */}
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-gray-500">
-                {activeTab === 'one-day' 
-                  ? `基于 ${currentData?.date || recommendationsData?.data?.analysis_date} 的数据分析`
-                  : `基于 ${sevenDayData?.analysis_period || '最近7天'} 的数据分析`}
-              </p>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">智能分析</span>
-                {currentData?.ai_insights ? (
-                  <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded">✓ AI增强</span>
-                ) : currentData?.llm_analysis?.available === false ? (
-                  <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded">AI未启用</span>
-                ) : null}
+          {/* 头部信息 - 仅非外部建议tab显示 */}
+          {activeTab !== 'external' && (
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-gray-500">
+                  {activeTab === 'one-day'
+                    ? `基于 ${currentData?.date || recommendationsData?.data?.analysis_date} 的数据分析`
+                    : `基于 ${sevenDayData?.analysis_period || '最近7天'} 的数据分析`}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">智能分析</span>
+                  {currentData?.ai_insights ? (
+                    <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded">✓ AI增强</span>
+                  ) : currentData?.llm_analysis?.available === false ? (
+                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded">AI未启用</span>
+                  ) : null}
+                </div>
+              </div>
+              <div className={`px-4 py-2 rounded-full text-white font-semibold ${statusColors[currentData?.overall_status || 'unknown']}`}>
+                整体状态: {statusLabels[currentData?.overall_status || 'unknown']}
               </div>
             </div>
-            <div className={`px-4 py-2 rounded-full text-white font-semibold ${statusColors[currentData?.overall_status || 'unknown']}`}>
-              整体状态: {statusLabels[currentData?.overall_status || 'unknown']}
+          )}
+
+          {/* 外部建议tab的分类过滤器 */}
+          {activeTab === 'external' && (
+            <div>
+              <p className="text-gray-500 mb-4">来自 AI 助手和外部健康服务的个性化建议</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleCategoryChange(null)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    externalCategory === null
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  全部
+                </button>
+                {CATEGORY_ORDER.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => handleCategoryChange(cat)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      externalCategory === cat
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {CATEGORY_CONFIG[cat].icon} {CATEGORY_CONFIG[cat].label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
+        {/* 外部建议tab内容 */}
+        {activeTab === 'external' && (
+          <>
+            {externalLoading ? (
+              <div className="bg-white rounded-2xl shadow-lg p-8">
+                <div className="flex flex-col items-center justify-center py-10">
+                  <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin"></div>
+                  <p className="mt-4 text-gray-500 text-sm">加载中...</p>
+                </div>
+              </div>
+            ) : !paginatedExternalData?.items?.length ? (
+              <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+                <div className="text-5xl mb-4">📭</div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">暂无外部建议</h3>
+                <p className="text-gray-500 text-sm max-w-md mx-auto">
+                  外部 AI 健康助手分析您的健康数据后，会在这里展示个性化建议。
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* 统计信息 */}
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="text-sm text-gray-500">
+                    共 <span className="text-gray-800 font-semibold">{paginatedExternalData.total}</span> 条建议
+                  </span>
+                </div>
+
+                {/* 建议列表 */}
+                <div className="space-y-3 mb-6">
+                  {paginatedExternalData.items.map((rec) => {
+                    const config = CATEGORY_CONFIG[rec.category] || { icon: '📋', label: rec.category, color: 'text-gray-600', bgColor: 'bg-gray-100' };
+                    const isExpanded = expandedId === rec.id;
+
+                    return (
+                      <div
+                        key={rec.id}
+                        className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors"
+                      >
+                        {/* 列表项头部 */}
+                        <div
+                          className="px-4 py-3 cursor-pointer flex items-center gap-3"
+                          onClick={() => toggleExpand(rec.id)}
+                        >
+                          {/* 分类标签 */}
+                          <span className={`px-2 py-1 rounded-md text-xs font-medium ${config.bgColor} ${config.color} whitespace-nowrap`}>
+                            {config.icon} {config.label}
+                          </span>
+
+                          {/* 标题 */}
+                          <h4 className="flex-1 text-gray-800 font-medium truncate">{rec.title}</h4>
+
+                          {/* 来源 */}
+                          <span className="text-xs text-gray-400 hidden sm:block max-w-[80px] truncate">
+                            {rec.source_name}
+                          </span>
+
+                          {/* 日期 */}
+                          <span className="text-xs text-gray-400 whitespace-nowrap">
+                            {formatDateTime(rec.created_at)}
+                          </span>
+
+                          {/* 展开图标 */}
+                          <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                            ▼
+                          </span>
+                        </div>
+
+                        {/* 展开内容 */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 border-t border-gray-100">
+                            <div className="pt-3">
+                              <MarkdownContent content={rec.content} />
+                              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                                <span>来源: {rec.source_name}</span>
+                                <span>{formatDateTime(rec.created_at)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 分页控件 */}
+                {paginatedExternalData.total_pages > 1 && (
+                  <div className="bg-white rounded-xl shadow-sm p-4 flex items-center justify-between">
+                    <div className="text-sm text-gray-500">
+                      第 <span className="text-gray-800 font-medium">{paginatedExternalData.page}</span> / {paginatedExternalData.total_pages} 页
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* 首页 */}
+                      <button
+                        onClick={() => setExternalPage(1)}
+                        disabled={externalPage === 1}
+                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
+                      >
+                        首页
+                      </button>
+
+                      {/* 上一页 */}
+                      <button
+                        onClick={() => setExternalPage(prev => Math.max(1, prev - 1))}
+                        disabled={externalPage === 1}
+                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
+                      >
+                        上一页
+                      </button>
+
+                      {/* 页码 */}
+                      <div className="flex items-center gap-1">
+                        {(() => {
+                          const pages: (number | string)[] = [];
+                          const totalPages = paginatedExternalData.total_pages;
+
+                          if (totalPages <= 7) {
+                            for (let i = 1; i <= totalPages; i++) pages.push(i);
+                          } else {
+                            pages.push(1);
+                            if (externalPage > 3) pages.push('...');
+
+                            const start = Math.max(2, externalPage - 1);
+                            const end = Math.min(totalPages - 1, externalPage + 1);
+
+                            for (let i = start; i <= end; i++) pages.push(i);
+
+                            if (externalPage < totalPages - 2) pages.push('...');
+                            pages.push(totalPages);
+                          }
+
+                          return pages.map((page, idx) => (
+                            typeof page === 'number' ? (
+                              <button
+                                key={idx}
+                                onClick={() => setExternalPage(page)}
+                                className={`px-3 py-1.5 text-sm font-medium border rounded-lg transition-colors ${
+                                  externalPage === page
+                                    ? 'bg-violet-600 text-white border-violet-600'
+                                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            ) : (
+                              <span key={idx} className="px-2 text-gray-400">...</span>
+                            )
+                          ));
+                        })()}
+                      </div>
+
+                      {/* 下一页 */}
+                      <button
+                        onClick={() => setExternalPage(prev => Math.min(paginatedExternalData.total_pages, prev + 1))}
+                        disabled={externalPage >= paginatedExternalData.total_pages}
+                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
+                      >
+                        下一页
+                      </button>
+
+                      {/* 末页 */}
+                      <button
+                        onClick={() => setExternalPage(paginatedExternalData.total_pages)}
+                        disabled={externalPage >= paginatedExternalData.total_pages}
+                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 transition-colors"
+                      >
+                        末页
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* 以下内容仅在非外部建议tab显示 */}
+        {activeTab !== 'external' && (
+          <>
         {/* 关键指标卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow p-4">
@@ -539,55 +943,6 @@ function DailyInsightsContent() {
                 </div>
               )}
             </div>
-          </div>
-        )}
-
-        {/* 外部健康建议 */}
-        {externalRecsData?.data?.has_recommendations && (
-          <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl shadow-lg p-6 mb-6 text-white">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">📡 外部 AI 建议</h2>
-              <a
-                href="/external-advice"
-                className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full transition-colors"
-              >
-                查看全部 →
-              </a>
-            </div>
-
-            {Object.entries(externalRecsData.data.categories).map(([category, recs]) => {
-              const categoryConfig: Record<string, { icon: string; label: string }> = {
-                exercise: { icon: '🏃', label: '运动' },
-                diet: { icon: '🥗', label: '饮食' },
-                sleep: { icon: '😴', label: '睡眠' },
-                supplement: { icon: '💊', label: '补剂' },
-                general: { icon: '✨', label: '综合' },
-              };
-              const config = categoryConfig[category] || { icon: '📋', label: category };
-
-              return (
-                <div key={category} className="mb-4 last:mb-0">
-                  <div className="font-semibold mb-2 text-violet-100 flex items-center gap-2">
-                    <span>{config.icon}</span>
-                    <span>{config.label}建议</span>
-                    <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">
-                      {(recs as ExternalRecommendation[]).length}条
-                    </span>
-                  </div>
-                  {(recs as ExternalRecommendation[]).slice(0, 1).map((rec) => (
-                    <div key={rec.id} className="bg-white/10 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold">{rec.title}</span>
-                        <span className="text-xs text-violet-200">{rec.source_name}</span>
-                      </div>
-                      <p className="text-sm text-violet-100 line-clamp-3">
-                        {rec.content.replace(/[#*_]/g, '').substring(0, 200)}...
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
           </div>
         )}
 
@@ -978,6 +1333,8 @@ function DailyInsightsContent() {
             )}
           </div>
         </div>
+          </>
+        )}
 
         {/* 底部提示 */}
         <div className="mt-8">
