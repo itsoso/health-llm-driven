@@ -78,6 +78,17 @@ class ApproveUserRequest(BaseModel):
     is_approved: bool
 
 
+class ResetPasswordRequest(BaseModel):
+    """重置密码请求"""
+    new_password: str
+
+
+class ResetPasswordByEmailRequest(BaseModel):
+    """通过邮箱重置密码请求"""
+    email: str
+    new_password: str
+
+
 # ========== 权限检查 ==========
 
 async def get_admin_user(
@@ -328,13 +339,80 @@ async def approve_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     user.is_approved = request.is_approved
     db.commit()
-    
+
     logger.info(f"管理员 {admin_user.name} {'通过' if request.is_approved else '拒绝'}了用户 {user.name} (ID: {user_id}) 的审核")
-    
+
     return {"message": f"已{'通过' if request.is_approved else '拒绝'}用户{user.name}的审核"}
+
+
+@router.put("/users/{user_id}/password", summary="重置用户密码")
+async def reset_user_password(
+    user_id: int,
+    request: ResetPasswordRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """重置用户密码（仅管理员）"""
+    from app.services.auth import AuthService
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 密码长度验证
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="密码长度至少6位"
+        )
+
+    # 哈希新密码
+    hashed_password = AuthService.get_password_hash(request.new_password)
+    user.hashed_password = hashed_password
+    db.commit()
+
+    logger.info(f"管理员 {admin_user.name} 重置了用户 {user.name} (ID: {user_id}) 的密码")
+
+    return {"message": f"已重置用户 {user.name} 的密码"}
+
+
+@router.post("/users/reset-password", summary="通过邮箱重置密码")
+async def reset_password_by_email(
+    request: ResetPasswordByEmailRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """通过邮箱重置用户密码（仅管理员）"""
+    from app.services.auth import AuthService
+
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"邮箱 {request.email} 对应的用户不存在"
+        )
+
+    # 密码长度验证
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="密码长度至少6位"
+        )
+
+    # 哈希新密码
+    hashed_password = AuthService.get_password_hash(request.new_password)
+    user.hashed_password = hashed_password
+    db.commit()
+
+    logger.info(f"管理员 {admin_user.name} 通过邮箱重置了用户 {user.name} (email: {request.email}) 的密码")
+
+    return {"message": f"已重置用户 {user.name} ({request.email}) 的密码"}
 
 
 @router.delete("/users/{user_id}", summary="删除用户")
