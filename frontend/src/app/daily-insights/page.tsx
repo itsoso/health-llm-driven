@@ -6,8 +6,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dailyRecommendationApi, externalRecommendationApi, ExternalRecommendation } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
+
+// 日期范围类型
+type DateRange = 'today' | 'week' | 'month' | 'all';
 
 interface ExerciseRecommendation {
   type: string;
@@ -170,116 +175,57 @@ const CATEGORY_CONFIG: Record<string, { icon: string; label: string; color: stri
 
 const CATEGORY_ORDER = ['exercise', 'diet', 'sleep', 'supplement', 'general'];
 
-// 简单的Markdown渲染组件
+// Markdown渲染组件 - 使用 react-markdown
 function MarkdownContent({ content }: { content: string }) {
-  const paragraphs = content.split(/\n\n+/);
-
   return (
-    <div className="prose prose-sm max-w-none">
-      {paragraphs.map((paragraph, index) => {
-        const trimmed = paragraph.trim();
-
-        if (trimmed.startsWith('#### ')) {
-          return (
-            <h4 key={index} className="text-base font-semibold text-gray-800 mt-4 mb-2">
-              {trimmed.replace(/^#### /, '')}
-            </h4>
-          );
-        }
-        if (trimmed.startsWith('### ')) {
-          return (
-            <h3 key={index} className="text-lg font-semibold text-gray-800 mt-5 mb-2">
-              {trimmed.replace(/^### /, '')}
-            </h3>
-          );
-        }
-        if (trimmed.startsWith('## ')) {
-          return (
-            <h2 key={index} className="text-xl font-bold text-gray-800 mt-6 mb-3">
-              {trimmed.replace(/^## /, '')}
-            </h2>
-          );
-        }
-
-        if (trimmed.includes('|') && trimmed.split('\n').length > 1) {
-          const lines = trimmed.split('\n').filter(line => line.trim() && !line.match(/^\|[\s-|]+\|$/));
-          if (lines.length > 0) {
-            const headers = lines[0].split('|').filter(cell => cell.trim());
-            const rows = lines.slice(1).map(line => line.split('|').filter(cell => cell.trim()));
-
-            return (
-              <div key={index} className="my-4 overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-300">
-                      {headers.map((header, i) => (
-                        <th key={i} className="px-3 py-2 text-left text-gray-700 font-medium">
-                          {header.trim()}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-b border-gray-200">
-                        {row.map((cell, cellIndex) => (
-                          <td key={cellIndex} className="px-3 py-2 text-gray-600">
-                            {cell.trim()}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+    <div className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-p:leading-relaxed prose-strong:text-gray-900 prose-ul:text-gray-700 prose-ol:text-gray-700 prose-li:text-gray-700 prose-table:text-sm">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => <h1 className="text-2xl font-bold text-gray-800 mt-6 mb-3">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-xl font-bold text-gray-800 mt-5 mb-3">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-lg font-semibold text-gray-800 mt-4 mb-2">{children}</h3>,
+          h4: ({ children }) => <h4 className="text-base font-semibold text-gray-800 mt-3 mb-2">{children}</h4>,
+          h5: ({ children }) => <h5 className="text-sm font-semibold text-gray-800 mt-3 mb-2">{children}</h5>,
+          h6: ({ children }) => <h6 className="text-sm font-medium text-gray-700 mt-2 mb-1">{children}</h6>,
+          p: ({ children }) => <p className="text-gray-700 leading-relaxed my-2">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc list-inside space-y-1 text-gray-700 my-2 ml-2">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 text-gray-700 my-2 ml-2">{children}</ol>,
+          li: ({ children }) => <li className="text-gray-700">{children}</li>,
+          strong: ({ children }) => <strong className="text-gray-900 font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-4 border-indigo-400 pl-4 my-3 text-gray-600 italic">{children}</blockquote>
+          ),
+          code: ({ className, children }) => {
+            const isInline = !className;
+            return isInline ? (
+              <code className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono">{children}</code>
+            ) : (
+              <code className="block bg-gray-100 p-3 rounded-lg text-sm font-mono overflow-x-auto">{children}</code>
             );
-          }
-        }
-
-        if (trimmed.match(/^[-*]\s/m)) {
-          const items = trimmed.split(/\n/).filter(line => line.trim());
-          return (
-            <ul key={index} className="list-disc list-inside space-y-1 text-gray-700 my-3 ml-2">
-              {items.map((item, i) => (
-                <li key={i}>{renderInlineMarkdown(item.replace(/^[-*]\s+/, ''))}</li>
-              ))}
-            </ul>
-          );
-        }
-
-        if (trimmed.match(/^\d+\.\s/m)) {
-          const items = trimmed.split(/\n/).filter(line => line.trim());
-          return (
-            <ol key={index} className="list-decimal list-inside space-y-1 text-gray-700 my-3 ml-2">
-              {items.map((item, i) => (
-                <li key={i}>{renderInlineMarkdown(item.replace(/^\d+\.\s+/, ''))}</li>
-              ))}
-            </ol>
-          );
-        }
-
-        if (trimmed.match(/^[-*_]{3,}$/)) {
-          return <hr key={index} className="my-4 border-gray-300" />;
-        }
-
-        return (
-          <p key={index} className="text-gray-700 leading-relaxed my-3">
-            {renderInlineMarkdown(trimmed)}
-          </p>
-        );
-      })}
+          },
+          pre: ({ children }) => <pre className="bg-gray-100 p-3 rounded-lg overflow-x-auto my-3">{children}</pre>,
+          hr: () => <hr className="my-4 border-gray-300" />,
+          table: ({ children }) => (
+            <div className="my-4 overflow-x-auto">
+              <table className="min-w-full text-sm border-collapse">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-gray-50">{children}</thead>,
+          tbody: ({ children }) => <tbody>{children}</tbody>,
+          tr: ({ children }) => <tr className="border-b border-gray-200">{children}</tr>,
+          th: ({ children }) => <th className="px-3 py-2 text-left text-gray-700 font-semibold border-b border-gray-300">{children}</th>,
+          td: ({ children }) => <td className="px-3 py-2 text-gray-600">{children}</td>,
+          a: ({ href, children }) => (
+            <a href={href} className="text-indigo-600 hover:text-indigo-800 underline" target="_blank" rel="noopener noreferrer">{children}</a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
-}
-
-function renderInlineMarkdown(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="text-gray-900 font-semibold">{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
 }
 
 interface PaginatedExternalResponse {
@@ -300,8 +246,33 @@ function DailyInsightsContent() {
   // 外部建议分页状态
   const [externalPage, setExternalPage] = useState(1);
   const [externalCategory, setExternalCategory] = useState<string | null>(null);
+  const [externalDateRange, setExternalDateRange] = useState<DateRange>('today');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const pageSize = 10;
+
+  // 计算日期范围
+  const getDateRangeParams = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    switch (externalDateRange) {
+      case 'today':
+        return { start_date: today.toISOString().split('T')[0] };
+      case 'week': {
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return { start_date: weekAgo.toISOString().split('T')[0] };
+      }
+      case 'month': {
+        const monthAgo = new Date(today);
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        return { start_date: monthAgo.toISOString().split('T')[0] };
+      }
+      case 'all':
+      default:
+        return {};
+    }
+  };
 
   // 获取建议数据（1天和7天）
   const { data: recommendationsData, isLoading, error, refetch } = useQuery({
@@ -319,11 +290,15 @@ function DailyInsightsContent() {
 
   // 获取外部建议（分页列表）
   const { data: paginatedExternalData, isLoading: externalLoading } = useQuery({
-    queryKey: ['external-recommendations-paginated', externalPage, externalCategory],
+    queryKey: ['external-recommendations-paginated', externalPage, externalCategory, externalDateRange],
     queryFn: async () => {
+      const dateParams = getDateRangeParams();
       let url = `${API_BASE}/external-recommendations?page=${externalPage}&page_size=${pageSize}`;
       if (externalCategory) {
         url += `&category=${externalCategory}`;
+      }
+      if (dateParams.start_date) {
+        url += `&start_date=${dateParams.start_date}`;
       }
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -385,8 +360,22 @@ function DailyInsightsContent() {
     setExpandedId(null);
   };
 
+  const handleDateRangeChange = (range: DateRange) => {
+    setExternalDateRange(range);
+    setExternalPage(1);
+    setExpandedId(null);
+  };
+
   const toggleExpand = (id: number) => {
     setExpandedId(expandedId === id ? null : id);
+  };
+
+  // 日期范围标签
+  const dateRangeLabels: Record<DateRange, string> = {
+    today: '今日',
+    week: '近7天',
+    month: '近30天',
+    all: '全部',
   };
 
   if (isLoading) {
@@ -551,11 +540,32 @@ function DailyInsightsContent() {
             </div>
           )}
 
-          {/* 外部建议tab的分类过滤器 */}
+          {/* 外部建议tab的筛选器 */}
           {activeTab === 'external' && (
             <div>
               <p className="text-gray-500 mb-4">来自 AI 助手和外部健康服务的个性化建议</p>
-              <div className="flex flex-wrap gap-2">
+
+              {/* 日期范围筛选 */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-sm text-gray-600 font-medium">时间：</span>
+                {(['today', 'week', 'month', 'all'] as DateRange[]).map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => handleDateRangeChange(range)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      externalDateRange === range
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {dateRangeLabels[range]}
+                  </button>
+                ))}
+              </div>
+
+              {/* 分类筛选 */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-gray-600 font-medium">分类：</span>
                 <button
                   onClick={() => handleCategoryChange(null)}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${

@@ -424,6 +424,8 @@ async def create_external_recommendation(
 @router.get("/external-recommendations")
 async def list_external_recommendations(
     date_param: Optional[date] = Query(None, alias="date"),
+    start_date: Optional[date] = Query(None, description="开始日期（包含），用于日期范围筛选"),
+    end_date: Optional[date] = Query(None, description="结束日期（包含），用于日期范围筛选"),
     category: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -431,13 +433,20 @@ async def list_external_recommendations(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的外部建议（支持分页）"""
+    """获取当前用户的外部建议（支持分页和日期范围筛选）"""
     query = db.query(ExternalRecommendation).filter(
         ExternalRecommendation.user_id == current_user.id
     )
 
+    # 精确日期筛选（兼容旧参数）
     if date_param:
         query = query.filter(ExternalRecommendation.recommendation_date == date_param)
+    # 日期范围筛选
+    elif start_date:
+        query = query.filter(ExternalRecommendation.recommendation_date >= start_date)
+        if end_date:
+            query = query.filter(ExternalRecommendation.recommendation_date <= end_date)
+
     if category:
         query = query.filter(ExternalRecommendation.category == category)
 
