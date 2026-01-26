@@ -150,6 +150,8 @@ export default function AdminPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
   const [syncDays, setSyncDays] = useState(3);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncingUserId, setSyncingUserId] = useState<number | null>(null);
@@ -280,6 +282,25 @@ export default function AdminPage() {
       alert(`❌ ${errorMessage}`);
       setShowDeleteConfirm(false);
       setSelectedUser(null);
+    },
+  });
+
+  // 重置密码
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, newPassword }: { userId: number; newPassword: string }) => {
+      const res = await api.put(`/admin/users/${userId}/password`, { new_password: newPassword });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setShowResetPassword(false);
+      setSelectedUser(null);
+      setNewPassword('');
+      alert(data.message || '密码重置成功');
+    },
+    onError: (error: any) => {
+      console.error('重置密码失败:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || '重置密码失败，请稍后重试';
+      alert(`❌ ${errorMessage}`);
     },
   });
 
@@ -806,7 +827,19 @@ export default function AdminPage() {
                           >
                             🧹
                           </button>
-                          
+
+                          {/* 重置密码 */}
+                          <button
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setShowResetPassword(true);
+                            }}
+                            className="p-1.5 rounded transition-colors text-blue-400 hover:bg-blue-500/20"
+                            title="重置密码"
+                          >
+                            🔑
+                          </button>
+
                           {/* 删除 */}
                           <button
                             onClick={() => {
@@ -1339,7 +1372,7 @@ export default function AdminPage() {
 
       {/* 删除用户确认弹窗 */}
       {showDeleteConfirm && selectedUser && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
@@ -1348,7 +1381,7 @@ export default function AdminPage() {
             }
           }}
         >
-          <div 
+          <div
             className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-white/20"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1383,6 +1416,71 @@ export default function AdminPage() {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {deleteUserMutation.isPending ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 重置密码弹窗 */}
+      {showResetPassword && selectedUser && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowResetPassword(false);
+              setSelectedUser(null);
+              setNewPassword('');
+            }
+          }}
+        >
+          <div
+            className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-white/20"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-white mb-4">🔑 重置密码</h3>
+            <p className="text-purple-200 mb-4">
+              为用户 <span className="text-white font-semibold">{selectedUser.name}</span>
+              {selectedUser.email && <span className="text-gray-400 text-sm"> ({selectedUser.email})</span>} 设置新密码
+            </p>
+            <div className="mb-6">
+              <label className="block text-purple-200 text-sm mb-2">新密码（至少6位）</label>
+              <input
+                type="text"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="请输入新密码"
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowResetPassword(false);
+                  setSelectedUser(null);
+                  setNewPassword('');
+                }}
+                disabled={resetPasswordMutation.isPending}
+                className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                取消
+              </button>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (selectedUser && selectedUser.id && newPassword.length >= 6) {
+                    resetPasswordMutation.mutate({ userId: selectedUser.id, newPassword });
+                  } else if (newPassword.length < 6) {
+                    alert('密码长度至少6位');
+                  }
+                }}
+                disabled={resetPasswordMutation.isPending || !selectedUser || newPassword.length < 6}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resetPasswordMutation.isPending ? '重置中...' : '确认重置'}
               </button>
             </div>
           </div>
