@@ -600,3 +600,24 @@ async def get_today_external_recommendations(
         "has_recommendations": len(recs) > 0,
         "categories": grouped,
     }
+
+
+@router.delete("/external-recommendations/{recommendation_id}")
+async def delete_external_recommendation(
+    recommendation_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """删除指定的外部建议"""
+    rec = db.query(ExternalRecommendation).filter(
+        ExternalRecommendation.id == recommendation_id,
+        ExternalRecommendation.user_id == current_user.id
+    ).first()
+
+    if not rec:
+        raise HTTPException(status_code=404, detail="建议不存在")
+
+    db.delete(rec)
+    db.commit()
+
+    return {"message": "删除成功", "id": recommendation_id}

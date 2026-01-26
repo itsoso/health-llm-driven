@@ -370,6 +370,34 @@ function DailyInsightsContent() {
     setExpandedId(expandedId === id ? null : id);
   };
 
+  // 删除外部建议
+  const deleteExternalMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${API_BASE}/external-recommendations/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('删除失败');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['external-recommendations-paginated'] });
+      queryClient.invalidateQueries({ queryKey: ['external-recommendations-today'] });
+    },
+  });
+
+  const handleDelete = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('确定要删除这条建议吗？')) {
+      deleteExternalMutation.mutate(id);
+    }
+  };
+
+  // 判断是否应该展开（今日筛选时自动展开全部）
+  const shouldExpand = (id: number) => {
+    return externalDateRange === 'today' || expandedId === id;
+  };
+
   // 日期范围标签
   const dateRangeLabels: Record<DateRange, string> = {
     today: '今日',
@@ -625,7 +653,7 @@ function DailyInsightsContent() {
                 <div className="space-y-3 mb-6">
                   {paginatedExternalData.items.map((rec) => {
                     const config = CATEGORY_CONFIG[rec.category] || { icon: '📋', label: rec.category, color: 'text-gray-600', bgColor: 'bg-gray-100' };
-                    const isExpanded = expandedId === rec.id;
+                    const isExpanded = shouldExpand(rec.id);
 
                     return (
                       <div
@@ -634,8 +662,8 @@ function DailyInsightsContent() {
                       >
                         {/* 列表项头部 */}
                         <div
-                          className="px-4 py-3 cursor-pointer flex items-center gap-3"
-                          onClick={() => toggleExpand(rec.id)}
+                          className={`px-4 py-3 flex items-center gap-3 ${externalDateRange !== 'today' ? 'cursor-pointer' : ''}`}
+                          onClick={() => externalDateRange !== 'today' && toggleExpand(rec.id)}
                         >
                           {/* 分类标签 */}
                           <span className={`px-2 py-1 rounded-md text-xs font-medium ${config.bgColor} ${config.color} whitespace-nowrap`}>
@@ -655,10 +683,22 @@ function DailyInsightsContent() {
                             {formatDateTime(rec.created_at)}
                           </span>
 
-                          {/* 展开图标 */}
-                          <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-                            ▼
-                          </span>
+                          {/* 删除按钮 */}
+                          <button
+                            onClick={(e) => handleDelete(rec.id, e)}
+                            disabled={deleteExternalMutation.isPending}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50"
+                            title="删除此建议"
+                          >
+                            🗑️
+                          </button>
+
+                          {/* 展开图标 - 仅在非今日筛选时显示 */}
+                          {externalDateRange !== 'today' && (
+                            <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                              ▼
+                            </span>
+                          )}
                         </div>
 
                         {/* 展开内容 */}
