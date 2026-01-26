@@ -101,6 +101,8 @@ function GarminContent() {
       steps: item.steps,
       bodyBattery: item.body_battery_most_charged ?? item.body_battery_charged,
       stressLevel: item.stress_level,
+      respirationAwake: item.avg_respiration_awake,
+      respirationSleep: item.avg_respiration_sleep,
     })) || [];
 
   if (loadingData) {
@@ -490,6 +492,88 @@ function GarminContent() {
               </div>
             </div>
 
+            {/* 呼吸频率趋势图 */}
+            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900">呼吸频率趋势</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                  />
+                  <YAxis
+                    stroke="#6b7280"
+                    style={{ fontSize: '12px', fontWeight: 500 }}
+                    label={{ value: '次/分钟', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fontWeight: 600 } }}
+                    domain={[8, 24]}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500
+                    }}
+                    formatter={(value: any) => value ? `${value.toFixed(1)} 次/分钟` : '-'}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="respirationAwake"
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    dot={{ fill: '#3b82f6', r: 5 }}
+                    name="白天呼吸频率"
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="respirationSleep"
+                    stroke="#8b5cf6"
+                    strokeWidth={3}
+                    dot={{ fill: '#8b5cf6', r: 5 }}
+                    name="睡眠呼吸频率"
+                    connectNulls
+                  />
+                  {/* 参考线：正常呼吸范围 */}
+                  <Line
+                    type="monotone"
+                    dataKey={() => 12}
+                    stroke="#10b981"
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="正常下限 (12)"
+                    legendType="none"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey={() => 20}
+                    stroke="#f59e0b"
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="正常上限 (20)"
+                    legendType="none"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="mt-4 text-sm text-gray-600">
+                <p className="font-semibold mb-2">呼吸频率参考值（次/分钟）：</p>
+                <ul className="space-y-1">
+                  <li>• <span className="text-green-700 font-medium">12-20</span>：正常范围</li>
+                  <li>• <span className="text-blue-700 font-medium">&lt;12</span>：呼吸较慢，可能处于深度放松状态</li>
+                  <li>• <span className="text-orange-700 font-medium">&gt;20</span>：呼吸较快，可能与运动、压力或健康状况有关</li>
+                </ul>
+                <p className="mt-2 text-gray-500">注：睡眠期间呼吸频率通常比白天低，这是正常的生理现象</p>
+              </div>
+            </div>
+
             {/* 数据表格 - 分页 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
               <div className="flex justify-between items-center mb-6">
@@ -518,7 +602,9 @@ function GarminContent() {
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">步数</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">活动分钟</th>
                       <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">身体电量</th>
-                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">压力</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">压力</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">白天呼吸</th>
+                      <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">睡眠呼吸</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -622,6 +708,28 @@ function GarminContent() {
                             'text-green-700'
                           }`}>
                             {item.stress_level !== null && item.stress_level !== undefined ? item.stress_level : '-'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                          <span className={`font-semibold ${
+                            item.avg_respiration_awake === null || item.avg_respiration_awake === undefined ? 'text-gray-500' :
+                            item.avg_respiration_awake > 20 ? 'text-orange-700' :
+                            item.avg_respiration_awake < 12 ? 'text-blue-700' :
+                            'text-green-700'
+                          }`}>
+                            {item.avg_respiration_awake !== null && item.avg_respiration_awake !== undefined
+                              ? `${item.avg_respiration_awake.toFixed(1)}` : '-'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap text-sm">
+                          <span className={`font-semibold ${
+                            item.avg_respiration_sleep === null || item.avg_respiration_sleep === undefined ? 'text-gray-500' :
+                            item.avg_respiration_sleep > 18 ? 'text-orange-700' :
+                            item.avg_respiration_sleep < 10 ? 'text-blue-700' :
+                            'text-green-700'
+                          }`}>
+                            {item.avg_respiration_sleep !== null && item.avg_respiration_sleep !== undefined
+                              ? `${item.avg_respiration_sleep.toFixed(1)}` : '-'}
                           </span>
                         </td>
                       </tr>

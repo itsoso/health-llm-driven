@@ -421,15 +421,17 @@ async def create_external_recommendation(
 
 # ==================== 用户查看外部建议 ====================
 
-@router.get("/external-recommendations", response_model=List[RecommendationResponse])
+@router.get("/external-recommendations")
 async def list_external_recommendations(
     date_param: Optional[date] = Query(None, alias="date"),
     category: Optional[str] = None,
-    limit: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    limit: int = Query(None, ge=1, le=100),  # 保留兼容旧参数
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的外部建议"""
+    """获取当前用户的外部建议（支持分页）"""
     query = db.query(ExternalRecommendation).filter(
         ExternalRecommendation.user_id == current_user.id
     )
@@ -439,12 +441,44 @@ async def list_external_recommendations(
     if category:
         query = query.filter(ExternalRecommendation.category == category)
 
-    recs = query.order_by(
+    # 获取总数
+    total = query.count()
+
+    # 排序
+    query = query.order_by(
         desc(ExternalRecommendation.recommendation_date),
         desc(ExternalRecommendation.created_at)
-    ).limit(limit).all()
+    )
 
-    return recs
+    # 兼容旧的 limit 参数
+    if limit is not None:
+        recs = query.limit(limit).all()
+        return recs
+
+    # 分页
+    offset = (page - 1) * page_size
+    recs = query.offset(offset).limit(page_size).all()
+
+    total_pages = (total + page_size - 1) // page_size
+
+    return {
+        "items": [
+            {
+                "id": rec.id,
+                "category": rec.category,
+                "title": rec.title,
+                "content": rec.content,
+                "source_name": rec.source_name,
+                "recommendation_date": rec.recommendation_date.isoformat() if rec.recommendation_date else None,
+                "created_at": rec.created_at.isoformat() if rec.created_at else None,
+            }
+            for rec in recs
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/external-recommendations/today")
