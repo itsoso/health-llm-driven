@@ -142,17 +142,19 @@ push_code() {
 # 部署前端
 deploy_frontend() {
     print_step "部署前端..."
-    
+
     ssh $SERVER "
         cd $REMOTE_PATH && \
         git pull && \
         cd frontend && \
+        echo '安装依赖...' && \
+        npm install && \
         echo '正在构建前端...' && \
         npm run build && \
         echo '重启前端服务...' && \
         systemctl restart health-frontend
     "
-    
+
     print_success "前端部署完成"
 }
 
