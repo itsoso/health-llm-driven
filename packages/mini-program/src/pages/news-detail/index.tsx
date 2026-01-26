@@ -4,158 +4,120 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, RichText } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
+import { marked } from 'marked';
 import { getNewsDetail, NewsArticle } from '../../services/api';
 import './index.scss';
 
-// Markdown 转 HTML（支持表格、粗体、列表等）
+// 配置 marked 渲染器以适配小程序 RichText
+function setupMarkedRenderer() {
+  const renderer = new marked.Renderer();
+
+  // 标题 h1-h6
+  renderer.heading = ({ text, depth }) => {
+    const className = `md-h${depth}`;
+    return `<view class="${className}">${text}</view>`;
+  };
+
+  // 段落
+  renderer.paragraph = ({ text }) => {
+    return `<view class="md-p">${text}</view>`;
+  };
+
+  // 粗体
+  renderer.strong = ({ text }) => {
+    return `<text class="md-strong">${text}</text>`;
+  };
+
+  // 斜体
+  renderer.em = ({ text }) => {
+    return `<text class="md-em">${text}</text>`;
+  };
+
+  // 链接（小程序不支持a标签跳转，显示为文本）
+  renderer.link = ({ href, text }) => {
+    return `<text class="md-link">${text}</text>`;
+  };
+
+  // 列表
+  renderer.list = ({ body, ordered }) => {
+    const className = ordered ? 'md-ol' : 'md-ul';
+    return `<view class="${className}">${body}</view>`;
+  };
+
+  // 列表项
+  renderer.listitem = ({ text }) => {
+    return `<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">${text}</text></view>`;
+  };
+
+  // 代码块
+  renderer.code = ({ text }) => {
+    // 转义 HTML
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `<view class="md-codeblock"><text class="md-code-text">${escaped}</text></view>`;
+  };
+
+  // 行内代码
+  renderer.codespan = ({ text }) => {
+    return `<text class="md-code">${text}</text>`;
+  };
+
+  // 引用块
+  renderer.blockquote = ({ text }) => {
+    return `<view class="md-blockquote">${text}</view>`;
+  };
+
+  // 分隔线
+  renderer.hr = () => {
+    return `<view class="md-hr"></view>`;
+  };
+
+  // 表格
+  renderer.table = ({ header, body }) => {
+    return `<view class="md-table"><view class="md-thead">${header}</view><view class="md-tbody">${body}</view></view>`;
+  };
+
+  renderer.tablerow = ({ text }) => {
+    return `<view class="md-tr">${text}</view>`;
+  };
+
+  renderer.tablecell = ({ text, header }) => {
+    const className = header ? 'md-th' : 'md-td';
+    return `<view class="${className}"><text>${text}</text></view>`;
+  };
+
+  // 换行
+  renderer.br = () => {
+    return `<view class="md-br"></view>`;
+  };
+
+  // 图片（小程序需要特殊处理，这里简单显示占位）
+  renderer.image = ({ href, text }) => {
+    return `<image class="md-img" src="${href}" mode="widthFix"></image>`;
+  };
+
+  return renderer;
+}
+
+// Markdown 转 HTML（使用 marked 通用方案）
 function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
 
-  // 按段落分割处理
-  const blocks = markdown.split(/\n\n+/);
-  const htmlBlocks: string[] = [];
-
-  for (const block of blocks) {
-    const trimmedBlock = block.trim();
-    if (!trimmedBlock) continue;
-
-    // 检测表格（包含 | 且有分隔行 |---|）
-    if (trimmedBlock.includes('|') && trimmedBlock.includes('---')) {
-      const tableHtml = parseTable(trimmedBlock);
-      if (tableHtml) {
-        htmlBlocks.push(tableHtml);
-        continue;
-      }
-    }
-
-    // 按行处理
-    const lines = trimmedBlock.split('\n');
-    const processedLines: string[] = [];
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
-
-      // 标题
-      if (trimmedLine.startsWith('#### ')) {
-        processedLines.push(`<h4>${processInline(trimmedLine.slice(5))}</h4>`);
-      } else if (trimmedLine.startsWith('### ')) {
-        processedLines.push(`<h3>${processInline(trimmedLine.slice(4))}</h3>`);
-      } else if (trimmedLine.startsWith('## ')) {
-        processedLines.push(`<h2>${processInline(trimmedLine.slice(3))}</h2>`);
-      } else if (trimmedLine.startsWith('# ')) {
-        processedLines.push(`<h1>${processInline(trimmedLine.slice(2))}</h1>`);
-      }
-      // 水平分割线
-      else if (trimmedLine === '---' || trimmedLine === '***' || trimmedLine === '___') {
-        processedLines.push('<hr/>');
-      }
-      // 引用
-      else if (trimmedLine.startsWith('> ')) {
-        processedLines.push(`<blockquote>${processInline(trimmedLine.slice(2))}</blockquote>`);
-      }
-      // 带数字的标题行（如 "1. 核心结论"，"2. 关键论据"）- 短文本视为标题
-      else if (/^\d+\.\s+.+$/.test(trimmedLine) && trimmedLine.length < 50) {
-        processedLines.push(`<p class="numbered-header"><strong>${processInline(trimmedLine)}</strong></p>`);
-      }
-      // 无序列表项（支持 -、*、•、·）
-      else if (/^[-*•·]\s+/.test(trimmedLine)) {
-        const content = trimmedLine.replace(/^[-*•·]\s+/, '');
-        processedLines.push(`<p class="list-item">• ${processInline(content)}</p>`);
-      }
-      // 有序列表项（较长内容）
-      else if (/^\d+\.\s+/.test(trimmedLine) && trimmedLine.length >= 50) {
-        processedLines.push(`<p class="list-item">${processInline(trimmedLine)}</p>`);
-      }
-      // 代码块标记跳过
-      else if (trimmedLine.startsWith('```')) {
-        continue;
-      }
-      // 普通段落
-      else {
-        processedLines.push(`<p>${processInline(trimmedLine)}</p>`);
-      }
-    }
-
-    htmlBlocks.push(processedLines.join(''));
+  try {
+    const renderer = setupMarkedRenderer();
+    marked.setOptions({
+      renderer,
+      gfm: true,       // GitHub Flavored Markdown
+      breaks: true,    // 将换行符转换为 <br>
+    });
+    return marked.parse(markdown) as string;
+  } catch (error) {
+    console.error('[Markdown解析错误]', error);
+    // 回退：简单转义并换行
+    return `<view class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</view>`;
   }
-
-  return htmlBlocks.join('');
-}
-
-// 处理行内元素（粗体、斜体、代码、链接）
-function processInline(text: string): string {
-  if (!text) return '';
-
-  return text
-    // 转义 HTML 特殊字符（但保留 &nbsp; 等）
-    .replace(/&(?!amp;|lt;|gt;|nbsp;|quot;)/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // 粗斜体
-    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
-    // 粗体（支持跨越多个词）
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    // 斜体
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    // 行内代码
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // 链接
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-}
-
-// 解析表格
-function parseTable(block: string): string | null {
-  const lines = block.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return null;
-
-  // 找到分隔行（包含 |---）
-  const separatorIndex = lines.findIndex(l => /^\|?\s*[-:]+\s*\|/.test(l) || /\|\s*[-:]+\s*\|/.test(l));
-  if (separatorIndex < 1) return null;
-
-  // 表头
-  const headerLine = lines[separatorIndex - 1];
-  const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
-
-  // 表格行
-  const rows: string[][] = [];
-  for (let i = separatorIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.includes('|')) continue;
-    const cells = line.split('|').map(c => c.trim()).filter(c => c);
-    if (cells.length > 0) {
-      rows.push(cells);
-    }
-  }
-
-  if (headers.length === 0) return null;
-
-  // 生成 HTML 表格
-  let html = '<div class="table-wrapper"><table>';
-
-  // 表头
-  html += '<thead><tr>';
-  for (const header of headers) {
-    html += `<th>${processInline(header)}</th>`;
-  }
-  html += '</tr></thead>';
-
-  // 表体
-  if (rows.length > 0) {
-    html += '<tbody>';
-    for (const row of rows) {
-      html += '<tr>';
-      for (let i = 0; i < headers.length; i++) {
-        const cell = row[i] || '';
-        html += `<td>${processInline(cell)}</td>`;
-      }
-      html += '</tr>';
-    }
-    html += '</tbody>';
-  }
-
-  html += '</table></div>';
-  return html;
 }
 
 export default function NewsDetailPage() {

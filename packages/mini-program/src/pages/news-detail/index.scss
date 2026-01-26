@@ -102,11 +102,256 @@ $radius-full: 9999px;
 }
 
 // 文章内容 - 紧凑排版（移动端优化）
+// 使用 marked 库配合自定义 class 名称
 .article-content {
   padding: 4px 0;
   margin-bottom: $gap-sm;
 
-  // RichText 样式覆盖
+  // Markdown 标题样式 (h1-h6)
+  .md-h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-white;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    display: block;
+    line-height: 1.3;
+  }
+
+  .md-h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: $text-white;
+    margin-top: 14px;
+    margin-bottom: 7px;
+    display: block;
+    line-height: 1.35;
+  }
+
+  .md-h3 {
+    font-size: 26px;
+    font-weight: 600;
+    color: $text-white;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    display: block;
+    line-height: 1.4;
+  }
+
+  .md-h4 {
+    font-size: 24px;
+    font-weight: 600;
+    color: $text-white;
+    margin-top: 10px;
+    margin-bottom: 5px;
+    display: block;
+    line-height: 1.45;
+  }
+
+  .md-h5 {
+    font-size: 22px;
+    font-weight: 600;
+    color: rgba($accent-purple, 0.9);
+    margin-top: 8px;
+    margin-bottom: 4px;
+    display: block;
+    line-height: 1.5;
+  }
+
+  .md-h6 {
+    font-size: 20px;
+    font-weight: 600;
+    color: rgba($accent-purple, 0.8);
+    margin-top: 6px;
+    margin-bottom: 3px;
+    display: block;
+    line-height: 1.5;
+  }
+
+  // 段落
+  .md-p {
+    font-size: 24px;
+    line-height: 1.7;
+    color: $text-gray-300;
+    margin-bottom: 12px;
+    display: block;
+    text-align: justify;
+  }
+
+  // 粗体
+  .md-strong {
+    color: $text-white;
+    font-weight: 600;
+  }
+
+  // 斜体
+  .md-em {
+    font-style: italic;
+    color: $text-gray-300;
+  }
+
+  // 链接（小程序显示为特殊颜色文本）
+  .md-link {
+    color: $accent-blue;
+    font-size: 24px;
+  }
+
+  // 无序列表
+  .md-ul {
+    margin: 10px 0;
+    padding-left: 4px;
+    display: block;
+  }
+
+  // 有序列表
+  .md-ol {
+    margin: 10px 0;
+    padding-left: 4px;
+    display: block;
+  }
+
+  // 列表项
+  .md-li {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    margin-bottom: 6px;
+
+    .md-li-marker {
+      color: $text-gray-500;
+      font-size: 24px;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+
+    .md-li-text {
+      font-size: 24px;
+      line-height: 1.6;
+      color: $text-gray-300;
+      flex: 1;
+    }
+  }
+
+  // 代码块
+  .md-codeblock {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 12px;
+    border-radius: $radius-sm;
+    margin: 10px 0;
+    overflow-x: auto;
+    display: block;
+
+    .md-code-text {
+      font-family: monospace;
+      font-size: 20px;
+      line-height: 1.5;
+      color: $text-gray-300;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  }
+
+  // 行内代码
+  .md-code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 22px;
+    color: $accent-purple;
+  }
+
+  // 引用块
+  .md-blockquote {
+    border-left: 3px solid $accent-indigo;
+    padding-left: 12px;
+    margin: 12px 0;
+    display: block;
+
+    .md-p {
+      color: $text-gray-400;
+      font-style: italic;
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+  }
+
+  // 分隔线
+  .md-hr {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 16px 0;
+    display: block;
+  }
+
+  // 换行
+  .md-br {
+    height: 8px;
+    display: block;
+  }
+
+  // 图片
+  .md-img {
+    width: 100%;
+    border-radius: $radius-sm;
+    margin: 10px 0;
+  }
+
+  // 表格
+  .md-table {
+    margin: 12px 0;
+    border-radius: $radius-sm;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+    display: block;
+  }
+
+  .md-thead {
+    display: block;
+    background: rgba($accent-indigo, 0.15);
+  }
+
+  .md-tbody {
+    display: block;
+  }
+
+  .md-tr {
+    display: flex;
+    flex-direction: row;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  .md-th {
+    flex: 1;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+
+    text {
+      font-size: 20px;
+      font-weight: 600;
+      color: $text-white;
+    }
+  }
+
+  .md-td {
+    flex: 1;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+
+    text {
+      font-size: 22px;
+      color: $text-gray-300;
+      line-height: 1.4;
+    }
+  }
+
+  // ====== 兼容旧版HTML标签样式（备用） ======
   p {
     font-size: 24px;
     line-height: 1.6;
@@ -115,28 +360,19 @@ $radius-full: 9999px;
     text-align: justify;
   }
 
-  h1, h2, h3, h4 {
+  h1, h2, h3, h4, h5, h6 {
     color: $text-white;
     font-weight: 600;
     margin-top: 12px;
     margin-bottom: 6px;
   }
 
-  h1 {
-    font-size: 26px;
-  }
-
-  h2 {
-    font-size: 24px;
-  }
-
-  h3 {
-    font-size: 22px;
-  }
-
-  h4 {
-    font-size: 22px;
-  }
+  h1 { font-size: 26px; }
+  h2 { font-size: 24px; }
+  h3 { font-size: 22px; }
+  h4 { font-size: 22px; }
+  h5 { font-size: 20px; color: rgba($accent-purple, 0.9); }
+  h6 { font-size: 18px; color: rgba($accent-purple, 0.8); }
 
   strong {
     color: $text-white;
@@ -201,24 +437,6 @@ $radius-full: 9999px;
     border: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     margin: 12px 0;
-  }
-
-  // 带数字的标题（如 1. 核心结论）
-  .numbered-header {
-    margin-top: 14px;
-    margin-bottom: 6px;
-
-    strong {
-      font-size: 24px;
-      color: $text-white;
-    }
-  }
-
-  // 列表项样式
-  .list-item {
-    padding-left: 4px;
-    margin-bottom: 4px;
-    line-height: 1.55;
   }
 
   // 表格容器

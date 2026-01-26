@@ -23,6 +23,8 @@ import {
   Trash2,
   Send
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // 来源类型映射
 const sourceTypeLabels: Record<string, string> = {
@@ -50,157 +52,116 @@ function formatDateTime(dateStr: string): string {
   });
 }
 
-// 渲染行内Markdown（粗体、斜体等）
-function renderInlineMarkdown(text: string): React.ReactNode {
-  // 处理粗体 **text**
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
-}
-
-// Markdown内容渲染组件
+// Markdown内容渲染组件 - 使用 react-markdown 通用方案
 function ContentRenderer({ content }: { content: string }) {
-  // 处理换行，将连续两个换行作为段落分隔
-  const paragraphs = content.split(/\n\n+/);
-
   return (
     <div className="prose prose-invert prose-lg max-w-none">
-      {paragraphs.map((paragraph, index) => {
-        const trimmed = paragraph.trim();
-
-        // 检查是否是标题（从多到少匹配#号）
-        if (trimmed.startsWith('###### ')) {
-          return (
-            <h6 key={index} className="text-sm font-semibold text-purple-300 mt-4 mb-1">
-              {renderInlineMarkdown(trimmed.replace(/^###### /, ''))}
-            </h6>
-          );
-        }
-        if (trimmed.startsWith('##### ')) {
-          return (
-            <h5 key={index} className="text-base font-semibold text-purple-200 mt-4 mb-2">
-              {renderInlineMarkdown(trimmed.replace(/^##### /, ''))}
-            </h5>
-          );
-        }
-        if (trimmed.startsWith('#### ')) {
-          return (
-            <h4 key={index} className="text-lg font-semibold text-white mt-5 mb-2">
-              {renderInlineMarkdown(trimmed.replace(/^#### /, ''))}
-            </h4>
-          );
-        }
-        if (trimmed.startsWith('### ')) {
-          return (
-            <h3 key={index} className="text-xl font-semibold text-white mt-6 mb-3">
-              {renderInlineMarkdown(trimmed.replace(/^### /, ''))}
-            </h3>
-          );
-        }
-        if (trimmed.startsWith('## ')) {
-          return (
-            <h2 key={index} className="text-2xl font-bold text-white mt-8 mb-4">
-              {renderInlineMarkdown(trimmed.replace(/^## /, ''))}
-            </h2>
-          );
-        }
-        if (trimmed.startsWith('# ')) {
-          return (
-            <h1 key={index} className="text-3xl font-bold text-white mt-8 mb-4">
-              {renderInlineMarkdown(trimmed.replace(/^# /, ''))}
-            </h1>
-          );
-        }
-
-        // 检查是否是表格
-        if (trimmed.includes('|') && trimmed.split('\n').length > 1) {
-          const lines = trimmed.split('\n').filter(line => line.trim() && !line.match(/^\|[\s-|]+\|$/));
-          if (lines.length > 0) {
-            const headers = lines[0].split('|').filter(cell => cell.trim());
-            const rows = lines.slice(1).map(line => line.split('|').filter(cell => cell.trim()));
-
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // 标题
+          h1: ({ children }) => (
+            <h1 className="text-3xl font-bold text-white mt-8 mb-4">{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-2xl font-bold text-white mt-8 mb-4">{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-xl font-semibold text-white mt-6 mb-3">{children}</h3>
+          ),
+          h4: ({ children }) => (
+            <h4 className="text-lg font-semibold text-white mt-5 mb-2">{children}</h4>
+          ),
+          h5: ({ children }) => (
+            <h5 className="text-base font-semibold text-purple-200 mt-4 mb-2">{children}</h5>
+          ),
+          h6: ({ children }) => (
+            <h6 className="text-sm font-semibold text-purple-300 mt-4 mb-1">{children}</h6>
+          ),
+          // 段落
+          p: ({ children }) => (
+            <p className="text-gray-300 leading-relaxed my-4">{children}</p>
+          ),
+          // 强调
+          strong: ({ children }) => (
+            <strong className="text-white font-semibold">{children}</strong>
+          ),
+          em: ({ children }) => (
+            <em className="text-gray-200 italic">{children}</em>
+          ),
+          // 链接
+          a: ({ href, children }) => (
+            <a href={href} className="text-purple-400 hover:text-purple-300 underline" target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          ),
+          // 列表
+          ul: ({ children }) => (
+            <ul className="space-y-2 text-gray-300 my-4 ml-4">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal list-inside space-y-2 text-gray-300 my-4 ml-2">{children}</ol>
+          ),
+          li: ({ children }) => (
+            <li className="flex">
+              <span className="mr-2 text-gray-500">•</span>
+              <span>{children}</span>
+            </li>
+          ),
+          // 代码
+          code: ({ className, children }) => {
+            const isBlock = className?.includes('language-');
+            if (isBlock) {
+              return (
+                <code className="block bg-gray-800/50 p-4 rounded-lg text-sm text-gray-300 overflow-x-auto">
+                  {children}
+                </code>
+              );
+            }
             return (
-              <div key={index} className="my-4 overflow-x-auto">
-                <table className="min-w-full text-sm border border-gray-700 rounded-lg">
-                  <thead>
-                    <tr className="bg-gray-800/50 border-b border-gray-600">
-                      {headers.map((header, i) => (
-                        <th key={i} className="px-4 py-3 text-left text-gray-200 font-medium">
-                          {header.trim()}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-b border-gray-700/50 hover:bg-gray-800/30">
-                        {row.map((cell, cellIndex) => (
-                          <td key={cellIndex} className="px-4 py-3 text-gray-300">
-                            {renderInlineMarkdown(cell.trim())}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <code className="bg-gray-800/50 px-1.5 py-0.5 rounded text-sm text-purple-300">
+                {children}
+              </code>
             );
-          }
-        }
-
-        // 检查是否是分隔线
-        if (trimmed.match(/^[-*_]{3,}$/)) {
-          return <hr key={index} className="my-6 border-gray-600" />;
-        }
-
-        // 检查是否是单行数字标题（如 "1. 首要任务：适度补能"）
-        // 单行且以数字开头，当作小标题处理
-        if (trimmed.match(/^\d+\.\s/) && !trimmed.includes('\n')) {
-          return (
-            <p key={index} className="text-white font-semibold mt-5 mb-2">
-              {renderInlineMarkdown(trimmed)}
-            </p>
-          );
-        }
-
-        // 检查是否是无序列表（支持 -, *, •, ·）
-        if (trimmed.match(/^[-*•·]\s/m)) {
-          const items = trimmed.split(/\n/).filter(line => line.trim());
-          return (
-            <ul key={index} className="space-y-2 text-gray-300 my-4 ml-4">
-              {items.map((item, i) => (
-                <li key={i} className="flex">
-                  <span className="mr-2 text-gray-500">•</span>
-                  <span>{renderInlineMarkdown(item.replace(/^[-*•·]\s*/, ''))}</span>
-                </li>
-              ))}
-            </ul>
-          );
-        }
-
-        // 检查是否是多行数字列表
-        if (trimmed.match(/^\d+\.\s/m)) {
-          const items = trimmed.split(/\n/).filter(line => line.trim());
-          return (
-            <ol key={index} className="list-decimal list-inside space-y-2 text-gray-300 my-4 ml-2">
-              {items.map((item, i) => (
-                <li key={i}>{renderInlineMarkdown(item.replace(/^\d+\.\s+/, ''))}</li>
-              ))}
-            </ol>
-          );
-        }
-
-        // 普通段落
-        return (
-          <p key={index} className="text-gray-300 leading-relaxed my-4">
-            {renderInlineMarkdown(trimmed)}
-          </p>
-        );
-      })}
+          },
+          pre: ({ children }) => (
+            <pre className="bg-gray-800/50 rounded-lg my-4 overflow-x-auto">{children}</pre>
+          ),
+          // 引用
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-4 border-purple-500/50 pl-4 my-4 text-gray-400 italic">
+              {children}
+            </blockquote>
+          ),
+          // 分隔线
+          hr: () => <hr className="my-6 border-gray-600" />,
+          // 表格
+          table: ({ children }) => (
+            <div className="my-4 overflow-x-auto">
+              <table className="min-w-full text-sm border border-gray-700 rounded-lg">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-gray-800/50 border-b border-gray-600">{children}</thead>
+          ),
+          tbody: ({ children }) => <tbody>{children}</tbody>,
+          tr: ({ children }) => (
+            <tr className="border-b border-gray-700/50 hover:bg-gray-800/30">{children}</tr>
+          ),
+          th: ({ children }) => (
+            <th className="px-4 py-3 text-left text-gray-200 font-medium">{children}</th>
+          ),
+          td: ({ children }) => (
+            <td className="px-4 py-3 text-gray-300">{children}</td>
+          ),
+          // 图片
+          img: ({ src, alt }) => (
+            <img src={src} alt={alt || ''} className="max-w-full h-auto rounded-lg my-4" />
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
