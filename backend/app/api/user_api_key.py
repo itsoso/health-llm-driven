@@ -250,14 +250,26 @@ def _build_user_profile_for_external(profile: UserProfile) -> dict:
     if privacy.get("city", True) and profile.city:
         result["city"] = profile.city
 
-    # IP 定位信息
+    # 位置信息（根据用户设置使用手工输入或IP定位）
     if privacy.get("location", True):
-        if profile.detected_city or profile.detected_region or profile.detected_country:
-            result["detected_location"] = {
-                "city": profile.detected_city,
-                "region": profile.detected_region,
-                "country": profile.detected_country
-            }
+        if profile.use_manual_location:
+            # 使用手工输入的位置
+            if profile.manual_city or profile.manual_region or profile.manual_country:
+                result["location"] = {
+                    "city": profile.manual_city,
+                    "region": profile.manual_region,
+                    "country": profile.manual_country,
+                    "source": "manual"
+                }
+        else:
+            # 使用IP检测的位置
+            if profile.detected_city or profile.detected_region or profile.detected_country:
+                result["location"] = {
+                    "city": profile.detected_city,
+                    "region": profile.detected_region,
+                    "country": profile.detected_country,
+                    "source": "ip_detection"
+                }
 
     return result if result else None
 

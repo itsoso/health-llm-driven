@@ -85,9 +85,16 @@ function SettingsContent() {
     region: string | null;
     country: string | null;
   }
+  interface ManualLocation {
+    city: string | null;
+    region: string | null;
+    country: string | null;
+  }
   interface UserProfile {
     privacy_settings: PrivacySettings;
     detected_location: DetectedLocation | null;
+    manual_location: ManualLocation | null;
+    use_manual_location: boolean;
     location_updated_at: string | null;
     city: string | null;
   }
@@ -201,6 +208,49 @@ function SettingsContent() {
       setMessage({ type: 'error', text: error.message });
     },
   });
+
+  // 手工位置表单状态
+  const [manualLocationForm, setManualLocationForm] = useState({
+    city: '',
+    region: '',
+    country: '中国',
+  });
+
+  // 更新手工位置
+  const updateManualLocationMutation = useMutation({
+    mutationFn: async (data: { use_manual_location: boolean; city?: string; region?: string; country?: string }) => {
+      const res = await fetch(`${API_BASE}/profile/me/manual-location`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('更新失败');
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['user-profile'] });
+      if (data.success) {
+        setMessage({ type: 'success', text: data.use_manual_location ? '已切换为手工输入位置' : '已切换为IP自动定位' });
+      }
+    },
+    onError: (error: Error) => {
+      setMessage({ type: 'error', text: error.message });
+    },
+  });
+
+  // 当用户画像加载完成时，初始化手工位置表单
+  useEffect(() => {
+    if (userProfile?.manual_location) {
+      setManualLocationForm({
+        city: userProfile.manual_location.city || '',
+        region: userProfile.manual_location.region || '',
+        country: userProfile.manual_location.country || '中国',
+      });
+    }
+  }, [userProfile]);
 
   // 导入 Apple Health 文件
   const importAppleMutation = useMutation({
@@ -897,29 +947,130 @@ function SettingsContent() {
                   {/* 位置信息 */}
                   <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-blue-800">📍 当前检测位置</h3>
-                      <button
-                        onClick={() => refreshLocationMutation.mutate()}
-                        disabled={refreshLocationMutation.isPending}
-                        className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50"
-                      >
-                        {refreshLocationMutation.isPending ? '刷新中...' : '🔄 刷新'}
-                      </button>
+                      <h3 className="font-semibold text-blue-800">📍 位置设置</h3>
                     </div>
 
-                    {userProfile.detected_location ? (
-                      <div className="text-blue-700 space-y-1">
-                        <p>🏙️ 城市: {userProfile.detected_location.city || '未知'}</p>
-                        <p>📍 地区: {userProfile.detected_location.region || '未知'}</p>
-                        <p>🌍 国家: {userProfile.detected_location.country || '未知'}</p>
-                        {userProfile.location_updated_at && (
-                          <p className="text-xs text-blue-500 mt-2">
-                            最后更新: {formatDateTime(userProfile.location_updated_at)}
-                          </p>
+                    {/* 位置模式切换 */}
+                    <div className="flex items-center gap-4 mb-4 p-3 bg-white rounded-lg border border-blue-200">
+                      <span className="text-gray-700 font-medium">定位方式:</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            if (userProfile.use_manual_location) {
+                              updateManualLocationMutation.mutate({ use_manual_location: false });
+                            }
+                          }}
+                          disabled={updateManualLocationMutation.isPending}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                            !userProfile.use_manual_location
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          } ${updateManualLocationMutation.isPending ? 'opacity-50' : ''}`}
+                        >
+                          🌐 IP自动定位
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (!userProfile.use_manual_location) {
+                              updateManualLocationMutation.mutate({
+                                use_manual_location: true,
+                                ...manualLocationForm,
+                              });
+                            }
+                          }}
+                          disabled={updateManualLocationMutation.isPending}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                            userProfile.use_manual_location
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          } ${updateManualLocationMutation.isPending ? 'opacity-50' : ''}`}
+                        >
+                          ✏️ 手工输入
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* IP定位模式 */}
+                    {!userProfile.use_manual_location && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-blue-700">当前检测位置</span>
+                          <button
+                            onClick={() => refreshLocationMutation.mutate()}
+                            disabled={refreshLocationMutation.isPending}
+                            className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50"
+                          >
+                            {refreshLocationMutation.isPending ? '刷新中...' : '🔄 刷新'}
+                          </button>
+                        </div>
+                        {userProfile.detected_location ? (
+                          <div className="text-blue-700 space-y-1">
+                            <p>🏙️ 城市: {userProfile.detected_location.city || '未知'}</p>
+                            <p>📍 地区: {userProfile.detected_location.region || '未知'}</p>
+                            <p>🌍 国家: {userProfile.detected_location.country || '未知'}</p>
+                            {userProfile.location_updated_at && (
+                              <p className="text-xs text-blue-500 mt-2">
+                                最后更新: {formatDateTime(userProfile.location_updated_at)}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-blue-600">尚未检测到位置信息，点击刷新按钮获取</p>
                         )}
                       </div>
-                    ) : (
-                      <p className="text-blue-600">尚未检测到位置信息，点击刷新按钮获取</p>
+                    )}
+
+                    {/* 手工输入模式 */}
+                    {userProfile.use_manual_location && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-1">国家</label>
+                            <input
+                              type="text"
+                              value={manualLocationForm.country}
+                              onChange={(e) => setManualLocationForm({ ...manualLocationForm, country: e.target.value })}
+                              className="w-full p-2 border border-blue-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="如：中国"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-1">省份/地区</label>
+                            <input
+                              type="text"
+                              value={manualLocationForm.region}
+                              onChange={(e) => setManualLocationForm({ ...manualLocationForm, region: e.target.value })}
+                              className="w-full p-2 border border-blue-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="如：浙江省"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-1">城市</label>
+                            <input
+                              type="text"
+                              value={manualLocationForm.city}
+                              onChange={(e) => setManualLocationForm({ ...manualLocationForm, city: e.target.value })}
+                              className="w-full p-2 border border-blue-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="如：杭州市"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => updateManualLocationMutation.mutate({
+                            use_manual_location: true,
+                            ...manualLocationForm,
+                          })}
+                          disabled={updateManualLocationMutation.isPending}
+                          className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                        >
+                          {updateManualLocationMutation.isPending ? '保存中...' : '💾 保存位置'}
+                        </button>
+                        {userProfile.manual_location && (
+                          <div className="text-xs text-blue-600 mt-2">
+                            当前已保存: {userProfile.manual_location.city || ''} {userProfile.manual_location.region || ''} {userProfile.manual_location.country || ''}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -929,7 +1080,8 @@ function SettingsContent() {
                     <ul className="list-disc list-inside space-y-1">
                       <li>这些设置控制通过 API Key 访问时哪些信息可见</li>
                       <li>关闭的字段不会出现在外部 AI 系统获取的数据中</li>
-                      <li>位置信息基于您的 IP 地址检测，每小时自动更新一次</li>
+                      <li>位置信息可选择 IP 自动定位（每小时更新）或手工输入</li>
+                      <li>使用手工输入时，外部系统将获取您手工设置的位置</li>
                     </ul>
                   </div>
                 </>

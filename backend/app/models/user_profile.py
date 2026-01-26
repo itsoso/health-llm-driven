@@ -85,6 +85,12 @@ class UserProfile(Base):
     location_updated_at = Column(DateTime, nullable=True)  # IP定位最后更新时间
     last_ip = Column(String(45), nullable=True)  # 最后检测的IP地址
 
+    # === 手工输入位置 ===
+    manual_city = Column(String(100), nullable=True)  # 手工输入的城市
+    manual_region = Column(String(100), nullable=True)  # 手工输入的省份/地区
+    manual_country = Column(String(100), nullable=True)  # 手工输入的国家
+    use_manual_location = Column(Boolean, default=False)  # 是否使用手工输入的位置
+
     # === 时间戳 ===
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

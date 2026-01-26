@@ -12,7 +12,7 @@ from app.models.user_profile import UserProfile, HealthGoal
 from app.schemas.user_profile import (
     UserProfileCreate, UserProfileUpdate, UserProfileResponse,
     HealthGoalCreate, HealthGoalUpdate, HealthGoalResponse,
-    PrivacySettings, DetectedLocation
+    PrivacySettings, DetectedLocation, ManualLocation, ManualLocationUpdate
 )
 from app.api.auth import get_current_user_required
 from datetime import date
@@ -100,6 +100,12 @@ async def get_my_profile(
             country=profile.detected_country
         ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
         "location_updated_at": profile.location_updated_at,
+        "manual_location": ManualLocation(
+            city=profile.manual_city,
+            region=profile.manual_region,
+            country=profile.manual_country
+        ) if profile.manual_city or profile.manual_region or profile.manual_country else None,
+        "use_manual_location": profile.use_manual_location or False,
         "created_at": profile.created_at,
         "updated_at": profile.updated_at
     }
@@ -188,6 +194,12 @@ async def update_my_profile(
             country=profile.detected_country
         ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
         "location_updated_at": profile.location_updated_at,
+        "manual_location": ManualLocation(
+            city=profile.manual_city,
+            region=profile.manual_region,
+            country=profile.manual_country
+        ) if profile.manual_city or profile.manual_region or profile.manual_country else None,
+        "use_manual_location": profile.use_manual_location or False,
         "created_at": profile.created_at,
         "updated_at": profile.updated_at
     }
@@ -256,6 +268,54 @@ async def refresh_my_location(
             "message": "无法获取位置信息（可能是本地IP或服务不可用）",
             "ip": client_ip
         }
+
+
+@router.put("/me/manual-location")
+async def update_manual_location(
+    location_data: ManualLocationUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    更新手工输入的位置信息
+
+    Args:
+        location_data: 包含 use_manual_location 开关和位置信息
+
+    Returns:
+        更新后的位置信息
+    """
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+
+    if not profile:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+    # 更新手工位置字段
+    profile.use_manual_location = location_data.use_manual_location
+    profile.manual_city = location_data.city
+    profile.manual_region = location_data.region
+    profile.manual_country = location_data.country
+
+    db.commit()
+    db.refresh(profile)
+
+    return {
+        "success": True,
+        "use_manual_location": profile.use_manual_location,
+        "manual_location": {
+            "city": profile.manual_city,
+            "region": profile.manual_region,
+            "country": profile.manual_country
+        },
+        "detected_location": {
+            "city": profile.detected_city,
+            "region": profile.detected_region,
+            "country": profile.detected_country
+        }
+    }
 
 
 @router.post("/me/chronic-conditions", response_model=UserProfileResponse)

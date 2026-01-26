@@ -27,6 +27,21 @@ class DetectedLocation(BaseModel):
     country: Optional[str] = None
 
 
+class ManualLocation(BaseModel):
+    """手工输入的位置信息"""
+    city: Optional[str] = Field(None, description="手工输入的城市")
+    region: Optional[str] = Field(None, description="手工输入的省份/地区")
+    country: Optional[str] = Field(None, description="手工输入的国家")
+
+
+class ManualLocationUpdate(BaseModel):
+    """更新手工输入位置"""
+    use_manual_location: bool = Field(..., description="是否使用手工输入位置")
+    city: Optional[str] = Field(None, description="手工输入的城市")
+    region: Optional[str] = Field(None, description="手工输入的省份/地区")
+    country: Optional[str] = Field(None, description="手工输入的国家")
+
+
 # =====================================================
 # 用户画像 Schemas
 # =====================================================
@@ -142,6 +157,10 @@ class UserProfileResponse(UserProfileBase):
     # IP定位信息
     detected_location: Optional[DetectedLocation] = Field(None, description="IP检测的位置")
     location_updated_at: Optional[datetime] = Field(None, description="位置更新时间")
+
+    # 手工输入位置信息
+    manual_location: Optional[ManualLocation] = Field(None, description="手工输入的位置")
+    use_manual_location: bool = Field(False, description="是否使用手工输入位置")
 
     created_at: datetime
     updated_at: Optional[datetime] = None
