@@ -338,7 +338,37 @@ export const newsApi = {
   getArticle: (articleId: number) => api.get<NewsArticle>(`/news/articles/${articleId}`),
   // 管理员删除文章
   deleteArticle: (articleId: number) => api.delete(`/news/admin/articles/${articleId}`),
+  // 获取文章评论
+  getComments: (articleId: number) => api.get<CommentsResponse>(`/news/articles/${articleId}/comments`),
+  // 发表评论
+  createComment: (articleId: number, content: string, parentId?: number) =>
+    api.post<NewsComment>(`/news/articles/${articleId}/comments`, { content, parent_id: parentId }),
+  // 删除评论
+  deleteComment: (commentId: number) => api.delete(`/news/comments/${commentId}`),
 };
+
+// 评论相关类型
+export interface CommentUser {
+  id: number;
+  name: string;
+  is_admin: boolean;
+}
+
+export interface NewsComment {
+  id: number;
+  article_id: number;
+  user_id: number;
+  parent_id: number | null;
+  content: string;
+  created_at: string;
+  user: CommentUser;
+  replies: NewsComment[];
+}
+
+export interface CommentsResponse {
+  comments: NewsComment[];
+  total: number;
+}
 
 // 外部建议接口
 export interface ExternalRecommendation {

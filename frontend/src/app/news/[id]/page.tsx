@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { newsApi, NewsArticle } from '@/services/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { newsApi, NewsArticle, NewsComment } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import {
@@ -16,7 +17,11 @@ import {
   Pin,
   Share2,
   Bookmark,
-  Sparkles
+  Sparkles,
+  MessageCircle,
+  Reply,
+  Trash2,
+  Send
 } from 'lucide-react';
 
 // 来源类型映射
@@ -182,6 +187,235 @@ function ContentRenderer({ content }: { content: string }) {
           </p>
         );
       })}
+    </div>
+  );
+}
+
+// 单条评论组件
+function CommentItem({
+  comment,
+  articleId,
+  currentUserId,
+  isAdmin,
+  onReply,
+  onDelete,
+  depth = 0,
+}: {
+  comment: NewsComment;
+  articleId: number;
+  currentUserId: number | undefined;
+  isAdmin: boolean;
+  onReply: (commentId: number, userName: string) => void;
+  onDelete: (commentId: number) => void;
+  depth?: number;
+}) {
+  const canDelete = currentUserId === comment.user_id || isAdmin;
+  const maxDepth = 3; // 最大嵌套深度
+
+  return (
+    <div className={`${depth > 0 ? 'ml-6 pl-4 border-l border-white/10' : ''}`}>
+      <div className="py-3">
+        <div className="flex items-start gap-3">
+          {/* 用户头像 */}
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+            {comment.user.name?.[0] || '?'}
+          </div>
+          <div className="flex-1 min-w-0">
+            {/* 用户名和时间 */}
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-white font-medium text-sm">{comment.user.name}</span>
+              {comment.user.is_admin && (
+                <span className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-300 text-xs rounded">管理员</span>
+              )}
+              <span className="text-gray-500 text-xs">
+                {formatDateTime(comment.created_at)}
+              </span>
+            </div>
+            {/* 评论内容 */}
+            <p className="text-gray-300 text-sm whitespace-pre-wrap break-words">{comment.content}</p>
+            {/* 操作按钮 */}
+            <div className="flex items-center gap-4 mt-2">
+              <button
+                onClick={() => onReply(comment.id, comment.user.name)}
+                className="flex items-center gap-1 text-gray-500 hover:text-purple-400 text-xs transition-colors"
+              >
+                <Reply className="w-3 h-3" />
+                回复
+              </button>
+              {canDelete && (
+                <button
+                  onClick={() => onDelete(comment.id)}
+                  className="flex items-center gap-1 text-gray-500 hover:text-red-400 text-xs transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  删除
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* 嵌套回复 */}
+      {comment.replies && comment.replies.length > 0 && depth < maxDepth && (
+        <div className="mt-1">
+          {comment.replies.map((reply) => (
+            <CommentItem
+              key={reply.id}
+              comment={reply}
+              articleId={articleId}
+              currentUserId={currentUserId}
+              isAdmin={isAdmin}
+              onReply={onReply}
+              onDelete={onDelete}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 评论区组件
+function CommentSection({ articleId }: { articleId: number }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [commentText, setCommentText] = useState('');
+  const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null);
+
+  // 获取评论列表
+  const { data: commentsData, isLoading: commentsLoading } = useQuery({
+    queryKey: ['news-comments', articleId],
+    queryFn: async () => {
+      const response = await newsApi.getComments(articleId);
+      return response.data;
+    },
+    enabled: !!articleId,
+  });
+
+  // 发表评论
+  const createCommentMutation = useMutation({
+    mutationFn: async () => {
+      return newsApi.createComment(articleId, commentText, replyTo?.id);
+    },
+    onSuccess: () => {
+      setCommentText('');
+      setReplyTo(null);
+      queryClient.invalidateQueries({ queryKey: ['news-comments', articleId] });
+    },
+    onError: (error: any) => {
+      alert(error?.response?.data?.detail || '评论失败');
+    },
+  });
+
+  // 删除评论
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: number) => {
+      return newsApi.deleteComment(commentId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['news-comments', articleId] });
+    },
+    onError: (error: any) => {
+      alert(error?.response?.data?.detail || '删除失败');
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+    createCommentMutation.mutate();
+  };
+
+  const handleReply = (commentId: number, userName: string) => {
+    setReplyTo({ id: commentId, name: userName });
+    // 聚焦到输入框
+    document.getElementById('comment-input')?.focus();
+  };
+
+  const handleDelete = (commentId: number) => {
+    if (confirm('确定要删除这条评论吗？')) {
+      deleteCommentMutation.mutate(commentId);
+    }
+  };
+
+  const comments = commentsData?.comments || [];
+  const total = commentsData?.total || 0;
+
+  return (
+    <div className="mt-8 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+      {/* 评论区标题 */}
+      <div className="px-6 py-4 border-b border-white/10">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
+          <MessageCircle className="w-5 h-5" />
+          评论 ({total})
+        </h2>
+      </div>
+
+      {/* 评论输入框 */}
+      <div className="px-6 py-4 border-b border-white/10">
+        <form onSubmit={handleSubmit}>
+          {replyTo && (
+            <div className="flex items-center gap-2 mb-2 text-sm">
+              <span className="text-gray-400">回复</span>
+              <span className="text-purple-400">@{replyTo.name}</span>
+              <button
+                type="button"
+                onClick={() => setReplyTo(null)}
+                className="text-gray-500 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <textarea
+              id="comment-input"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder={replyTo ? `回复 @${replyTo.name}...` : '写下你的评论...'}
+              className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 resize-none text-sm"
+              rows={2}
+              maxLength={2000}
+            />
+            <button
+              type="submit"
+              disabled={!commentText.trim() || createCommentMutation.isPending}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2 self-end"
+            >
+              <Send className="w-4 h-4" />
+              {createCommentMutation.isPending ? '发送中...' : '发送'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* 评论列表 */}
+      <div className="px-6 py-4">
+        {commentsLoading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-400 mx-auto"></div>
+          </div>
+        ) : comments.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            暂无评论，来发表第一条评论吧~
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {comments.map((comment) => (
+              <CommentItem
+                key={comment.id}
+                comment={comment}
+                articleId={articleId}
+                currentUserId={user?.id}
+                isAdmin={user?.is_admin || false}
+                onReply={handleReply}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -369,6 +603,9 @@ function NewsDetailContent() {
             </div>
           )}
         </article>
+
+        {/* 评论区 */}
+        <CommentSection articleId={articleId} />
 
         {/* 底部导航 */}
         <div className="mt-6 flex justify-between">

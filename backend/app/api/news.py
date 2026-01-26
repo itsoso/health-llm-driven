@@ -10,7 +10,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.news import NewsArticle, NewsApiKey
+from app.models.news import NewsArticle, NewsApiKey, NewsComment
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.utils.timezone import CHINA_TIMEZONE
@@ -89,6 +89,34 @@ class ApiKeyResponse(BaseModel):
     is_active: bool
     last_used_at: Optional[datetime]
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CommentCreate(BaseModel):
+    """创建评论请求"""
+    content: str
+    parent_id: Optional[int] = None  # 回复时需要传入父评论ID
+
+
+class CommentUser(BaseModel):
+    """评论用户信息"""
+    id: int
+    name: str
+    is_admin: bool = False
+
+
+class CommentResponse(BaseModel):
+    """评论响应"""
+    id: int
+    article_id: int
+    user_id: int
+    parent_id: Optional[int]
+    content: str
+    created_at: datetime
+    user: CommentUser
+    replies: List["CommentResponse"] = []
 
     class Config:
         from_attributes = True
@@ -394,3 +422,159 @@ async def delete_article_admin(
     db.commit()
 
     return {"ok": True, "message": "文章已删除"}
+
+
+# ==================== 评论接口 ====================
+
+def build_comment_tree(comments: List[NewsComment], users_map: dict) -> List[dict]:
+    """构建评论树结构"""
+    comment_map = {}
+    root_comments = []
+
+    # 先构建所有评论的映射
+    for comment in comments:
+        user = users_map.get(comment.user_id)
+        comment_dict = {
+            "id": comment.id,
+            "article_id": comment.article_id,
+            "user_id": comment.user_id,
+            "parent_id": comment.parent_id,
+            "content": comment.content if not comment.is_deleted else "[评论已删除]",
+            "created_at": comment.created_at,
+            "user": {
+                "id": user.id if user else 0,
+                "name": user.name if user else "未知用户",
+                "is_admin": user.is_admin if user else False,
+            },
+            "replies": []
+        }
+        comment_map[comment.id] = comment_dict
+
+    # 构建树形结构
+    for comment in comments:
+        comment_dict = comment_map[comment.id]
+        if comment.parent_id and comment.parent_id in comment_map:
+            comment_map[comment.parent_id]["replies"].append(comment_dict)
+        else:
+            root_comments.append(comment_dict)
+
+    return root_comments
+
+
+@router.get("/articles/{article_id}/comments")
+async def get_article_comments(
+    article_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取文章评论"""
+    if not check_news_access(current_user):
+        raise HTTPException(status_code=403, detail="需要 VIP 或管理员权限")
+
+    # 检查文章是否存在
+    article = db.query(NewsArticle).filter(
+        NewsArticle.id == article_id,
+        NewsArticle.is_published == True
+    ).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="文章不存在")
+
+    # 获取所有评论
+    comments = db.query(NewsComment).filter(
+        NewsComment.article_id == article_id
+    ).order_by(NewsComment.created_at.asc()).all()
+
+    # 获取所有评论者的用户信息
+    user_ids = list(set(c.user_id for c in comments))
+    users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+    users_map = {u.id: u for u in users}
+
+    # 构建评论树
+    comment_tree = build_comment_tree(comments, users_map)
+
+    return {"comments": comment_tree, "total": len(comments)}
+
+
+@router.post("/articles/{article_id}/comments")
+async def create_comment(
+    article_id: int,
+    comment_data: CommentCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """发表评论"""
+    if not check_news_access(current_user):
+        raise HTTPException(status_code=403, detail="需要 VIP 或管理员权限")
+
+    # 检查文章是否存在
+    article = db.query(NewsArticle).filter(
+        NewsArticle.id == article_id,
+        NewsArticle.is_published == True
+    ).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="文章不存在")
+
+    # 检查内容
+    content = comment_data.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="评论内容不能为空")
+    if len(content) > 2000:
+        raise HTTPException(status_code=400, detail="评论内容不能超过2000字")
+
+    # 如果是回复，检查父评论是否存在
+    if comment_data.parent_id:
+        parent = db.query(NewsComment).filter(
+            NewsComment.id == comment_data.parent_id,
+            NewsComment.article_id == article_id,
+            NewsComment.is_deleted == False
+        ).first()
+        if not parent:
+            raise HTTPException(status_code=404, detail="回复的评论不存在")
+
+    # 创建评论
+    new_comment = NewsComment(
+        article_id=article_id,
+        user_id=current_user.id,
+        parent_id=comment_data.parent_id,
+        content=content,
+    )
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+
+    return {
+        "id": new_comment.id,
+        "article_id": new_comment.article_id,
+        "user_id": new_comment.user_id,
+        "parent_id": new_comment.parent_id,
+        "content": new_comment.content,
+        "created_at": new_comment.created_at,
+        "user": {
+            "id": current_user.id,
+            "name": current_user.name,
+            "is_admin": current_user.is_admin,
+        },
+        "replies": []
+    }
+
+
+@router.delete("/comments/{comment_id}")
+async def delete_comment(
+    comment_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """删除评论（仅评论者本人或管理员）"""
+    comment = db.query(NewsComment).filter(NewsComment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="评论不存在")
+
+    # 检查权限：只有评论者本人或管理员可以删除
+    if comment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权删除此评论")
+
+    # 软删除
+    comment.is_deleted = True
+    db.commit()
+
+    return {"ok": True, "message": "评论已删除"}

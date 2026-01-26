@@ -57,3 +57,24 @@ class NewsApiKey(Base):
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NewsComment(Base):
+    """资讯文章评论"""
+    __tablename__ = "news_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    article_id = Column(Integer, index=True, nullable=False)  # 文章ID
+    user_id = Column(Integer, index=True, nullable=False)  # 评论用户ID
+    parent_id = Column(Integer, index=True, nullable=True)  # 父评论ID（用于回复）
+
+    content = Column(Text, nullable=False)  # 评论内容
+    is_deleted = Column(Boolean, default=False)  # 是否已删除
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index('ix_news_comments_article', 'article_id', 'created_at'),
+    )
