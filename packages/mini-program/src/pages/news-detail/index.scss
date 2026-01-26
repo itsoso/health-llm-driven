@@ -1,4 +1,4 @@
-// 资讯详情页样式 - 紧凑阅读版
+// 资讯详情页样式 - 紧凑阅读版（优化移动端字号）
 $bg-dark: #0F172A;
 $card-dark: #1E293B;
 $text-white: #F8FAFC;
@@ -9,12 +9,12 @@ $accent-indigo: #6366F1;
 $accent-purple: #8B5CF6;
 $accent-blue: #3B82F6;
 $accent-green: #10B981;
-$gap-xs: 8px;
-$gap-sm: 12px;
-$gap-md: 16px;
-$gap-lg: 24px;
-$radius-md: 12px;
-$radius-sm: 8px;
+$gap-xs: 6px;
+$gap-sm: 10px;
+$gap-md: 14px;
+$gap-lg: 20px;
+$radius-md: 10px;
+$radius-sm: 6px;
 $radius-full: 9999px;
 
 .detail-page {
@@ -25,13 +25,13 @@ $radius-full: 9999px;
 
 .detail-scroll {
   height: 100vh;
-  padding: $gap-md;
+  padding: $gap-sm;
   box-sizing: border-box;
 }
 
 // 文章头部
 .article-header {
-  margin-bottom: $gap-md;
+  margin-bottom: $gap-sm;
 }
 
 .header-meta {
@@ -43,99 +43,99 @@ $radius-full: 9999px;
 }
 
 .source-tag {
-  padding: 2px 10px;
+  padding: 2px 8px;
   border-radius: $radius-full;
   background: rgba($accent-indigo, 0.15);
 
   text {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 500;
     color: $accent-indigo;
   }
 }
 
 .source-group {
-  font-size: 22px;
+  font-size: 20px;
   color: $text-gray-400;
 }
 
 .article-title {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
   color: $text-white;
   display: block;
-  margin-bottom: 8px;
-  line-height: 1.35;
+  margin-bottom: 6px;
+  line-height: 1.3;
 }
 
 .article-info {
   display: flex;
   align-items: center;
-  gap: $gap-md;
+  gap: $gap-sm;
 }
 
 .info-time,
 .info-views {
-  font-size: 22px;
+  font-size: 20px;
   color: $text-gray-500;
 }
 
 // 标签区域
 .tags-section {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
-  margin-bottom: $gap-sm;
-  padding-bottom: $gap-sm;
+  margin-bottom: $gap-xs;
+  padding-bottom: $gap-xs;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .tag {
   background: rgba(255, 255, 255, 0.06);
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: $radius-full;
 
   text {
-    font-size: 20px;
+    font-size: 18px;
     color: $text-gray-400;
   }
 }
 
-// 文章内容 - 紧凑排版
+// 文章内容 - 紧凑排版（移动端优化）
 .article-content {
-  padding: $gap-xs 0;
-  margin-bottom: $gap-md;
+  padding: 4px 0;
+  margin-bottom: $gap-sm;
 
   // RichText 样式覆盖
   p {
-    font-size: 26px;
-    line-height: 1.65;
+    font-size: 24px;
+    line-height: 1.6;
     color: $text-gray-300;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     text-align: justify;
   }
 
   h1, h2, h3, h4 {
     color: $text-white;
     font-weight: 600;
-    margin-top: 18px;
-    margin-bottom: 8px;
+    margin-top: 12px;
+    margin-bottom: 6px;
   }
 
   h1 {
-    font-size: 30px;
-  }
-
-  h2 {
-    font-size: 28px;
-  }
-
-  h3 {
     font-size: 26px;
   }
 
-  h4 {
+  h2 {
     font-size: 24px;
+  }
+
+  h3 {
+    font-size: 22px;
+  }
+
+  h4 {
+    font-size: 22px;
   }
 
   strong {
@@ -149,81 +149,82 @@ $radius-full: 9999px;
 
   code {
     background: rgba(255, 255, 255, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
+    padding: 1px 3px;
+    border-radius: 2px;
     font-family: monospace;
-    font-size: 22px;
+    font-size: 20px;
   }
 
   pre {
     background: rgba(0, 0, 0, 0.3);
-    padding: 12px;
+    padding: 8px;
     border-radius: $radius-sm;
     overflow-x: auto;
-    margin: 12px 0;
+    margin: 8px 0;
 
     code {
       background: transparent;
       padding: 0;
-      font-size: 20px;
-      line-height: 1.5;
+      font-size: 18px;
+      line-height: 1.4;
     }
   }
 
   blockquote {
-    border-left: 3px solid $accent-indigo;
-    padding-left: 12px;
-    margin: 12px 0;
+    border-left: 2px solid $accent-indigo;
+    padding-left: 8px;
+    margin: 8px 0;
     color: $text-gray-400;
     font-style: italic;
-    font-size: 24px;
+    font-size: 22px;
   }
 
   ul, ol {
-    padding-left: 20px;
-    margin: 12px 0;
+    padding-left: 16px;
+    margin: 8px 0;
   }
 
   li {
-    font-size: 26px;
-    line-height: 1.65;
+    font-size: 24px;
+    line-height: 1.55;
     color: $text-gray-300;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
 
   a {
     color: $accent-blue;
     text-decoration: underline;
+    font-size: 22px;
   }
 
   hr {
     border: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
-    margin: 16px 0;
+    margin: 12px 0;
   }
 
   // 带数字的标题（如 1. 核心结论）
   .numbered-header {
-    margin-top: 20px;
-    margin-bottom: 8px;
+    margin-top: 14px;
+    margin-bottom: 6px;
 
     strong {
-      font-size: 26px;
+      font-size: 24px;
       color: $text-white;
     }
   }
 
   // 列表项样式
   .list-item {
-    padding-left: 6px;
-    margin-bottom: 6px;
-    line-height: 1.6;
+    padding-left: 4px;
+    margin-bottom: 4px;
+    line-height: 1.55;
   }
 
   // 表格容器
   .table-wrapper {
     overflow-x: auto;
-    margin: 14px 0;
+    margin: 10px 0;
     border-radius: $radius-sm;
     background: rgba(255, 255, 255, 0.03);
   }
@@ -231,29 +232,29 @@ $radius-full: 9999px;
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 22px;
+    font-size: 20px;
     min-width: 100%;
   }
 
   th, td {
-    padding: 8px 10px;
+    padding: 6px 8px;
     text-align: left;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     vertical-align: top;
-    line-height: 1.5;
+    line-height: 1.4;
   }
 
   th {
     background: rgba($accent-indigo, 0.15);
     color: $text-white;
     font-weight: 600;
-    font-size: 20px;
+    font-size: 18px;
     white-space: nowrap;
   }
 
   td {
     color: $text-gray-300;
-    font-size: 22px;
+    font-size: 20px;
   }
 
   tr:nth-child(even) td {
@@ -265,30 +266,30 @@ $radius-full: 9999px;
 .llm-info {
   background: $card-dark;
   border-radius: $radius-md;
-  padding: $gap-sm;
+  padding: $gap-xs;
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .llm-title {
-  font-size: 22px;
+  font-size: 20px;
   color: $text-gray-400;
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .llm-models {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
 .llm-tag {
   background: rgba($accent-purple, 0.15);
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: $radius-full;
 
   text {
-    font-size: 20px;
+    font-size: 18px;
     color: $accent-purple;
   }
 
@@ -303,7 +304,7 @@ $radius-full: 9999px;
 
 // 底部间距
 .bottom-spacer {
-  height: 60px;
+  height: 40px;
 }
 
 // 加载状态
@@ -316,7 +317,7 @@ $radius-full: 9999px;
 }
 
 .loading-text {
-  font-size: 24px;
+  font-size: 22px;
   color: $text-gray-400;
 }
 
@@ -330,31 +331,31 @@ $radius-full: 9999px;
 }
 
 .error-icon {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   background: rgba(239, 68, 68, 0.1);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
+  font-size: 28px;
   color: #EF4444;
-  margin-bottom: $gap-md;
+  margin-bottom: $gap-sm;
 }
 
 .error-text {
-  font-size: 24px;
+  font-size: 22px;
   color: $text-gray-400;
-  margin-bottom: $gap-md;
+  margin-bottom: $gap-sm;
 }
 
 .back-btn {
   background: $accent-indigo;
-  padding: 10px 28px;
+  padding: 8px 24px;
   border-radius: $radius-full;
 
   text {
-    font-size: 24px;
+    font-size: 22px;
     color: white;
     font-weight: 500;
   }
