@@ -2,11 +2,122 @@
  * 外部健康建议页面 - 展示来自第三方系统的健康建议
  */
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Picker } from '@tarojs/components';
+import { View, Text, ScrollView, Picker, RichText } from '@tarojs/components';
 import Taro from '@tarojs/taro';
+import { marked } from 'marked';
 import { getTodayExternalRecommendations, getExternalRecommendations } from '../../services/api';
 import type { ExternalRecommendation, TodayExternalRecommendations } from '../../types';
 import './index.scss';
+
+// 配置 marked 渲染器以适配小程序 RichText
+function setupMarkedRenderer() {
+  const renderer = new marked.Renderer();
+
+  // 标题 h1-h6
+  renderer.heading = ({ text, depth }) => {
+    const className = `md-h${depth}`;
+    return `<view class="${className}">${text}</view>`;
+  };
+
+  // 段落
+  renderer.paragraph = ({ text }) => {
+    return `<view class="md-p">${text}</view>`;
+  };
+
+  // 粗体
+  renderer.strong = ({ text }) => {
+    return `<text class="md-strong">${text}</text>`;
+  };
+
+  // 斜体
+  renderer.em = ({ text }) => {
+    return `<text class="md-em">${text}</text>`;
+  };
+
+  // 链接
+  renderer.link = ({ text }) => {
+    return `<text class="md-link">${text}</text>`;
+  };
+
+  // 列表
+  renderer.list = ({ body, ordered }) => {
+    const className = ordered ? 'md-ol' : 'md-ul';
+    return `<view class="${className}">${body}</view>`;
+  };
+
+  // 列表项
+  renderer.listitem = ({ text }) => {
+    return `<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">${text}</text></view>`;
+  };
+
+  // 代码块
+  renderer.code = ({ text }) => {
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `<view class="md-codeblock"><text class="md-code-text">${escaped}</text></view>`;
+  };
+
+  // 行内代码
+  renderer.codespan = ({ text }) => {
+    return `<text class="md-code">${text}</text>`;
+  };
+
+  // 引用块
+  renderer.blockquote = ({ text }) => {
+    return `<view class="md-blockquote">${text}</view>`;
+  };
+
+  // 分隔线
+  renderer.hr = () => {
+    return `<view class="md-hr"></view>`;
+  };
+
+  // 表格
+  renderer.table = ({ header, body }) => {
+    return `<view class="md-table"><view class="md-thead">${header}</view><view class="md-tbody">${body}</view></view>`;
+  };
+
+  renderer.tablerow = ({ text }) => {
+    return `<view class="md-tr">${text}</view>`;
+  };
+
+  renderer.tablecell = ({ text, header }) => {
+    const className = header ? 'md-th' : 'md-td';
+    return `<view class="${className}"><text>${text}</text></view>`;
+  };
+
+  // 换行
+  renderer.br = () => {
+    return `<view class="md-br"></view>`;
+  };
+
+  // 图片
+  renderer.image = ({ href }) => {
+    return `<image class="md-img" src="${href}" mode="widthFix"></image>`;
+  };
+
+  return renderer;
+}
+
+// Markdown 转 HTML
+function markdownToHtml(markdown: string): string {
+  if (!markdown) return '';
+
+  try {
+    const renderer = setupMarkedRenderer();
+    marked.setOptions({
+      renderer,
+      gfm: true,
+      breaks: true,
+    });
+    return marked.parse(markdown) as string;
+  } catch (error) {
+    console.error('[Markdown解析错误]', error);
+    return `<view class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</view>`;
+  }
+}
 
 // 类别配置
 const CATEGORY_CONFIG: Record<string, { icon: string; label: string }> = {
@@ -105,7 +216,9 @@ export default function ExternalAdvicePage() {
                 <Text className="source-name">{rec.source_name}</Text>
               </View>
             </View>
-            <Text className="advice-content">{rec.content}</Text>
+            <View className="advice-content">
+              <RichText nodes={markdownToHtml(rec.content)} />
+            </View>
             <View className="advice-footer">
               <Text className="advice-time">{formatTime(rec.created_at)}</Text>
             </View>
