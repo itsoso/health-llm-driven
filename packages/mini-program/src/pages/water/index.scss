@@ -1,0 +1,289 @@
+// 饮水记录页面样式
+$bg-dark: #0F172A;
+$card-dark: #1E293B;
+$text-white: #F8FAFC;
+$text-gray-300: #CBD5E1;
+$text-gray-400: #94A3B8;
+$text-gray-500: #64748B;
+$accent-blue: #3B82F6;
+$accent-cyan: #06B6D4;
+$gap-xs: 8px;
+$gap-sm: 12px;
+$gap-md: 16px;
+$radius-md: 12px;
+$radius-sm: 8px;
+
+.water-page {
+  min-height: 100vh;
+  background: $bg-dark;
+  padding: $gap-md;
+  box-sizing: border-box;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: $accent-blue;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: $gap-sm;
+  color: $text-gray-400;
+  font-size: 24px;
+}
+
+// 进度卡片
+.progress-card {
+  background: linear-gradient(135deg, #0EA5E9 0%, #3B82F6 100%);
+  border-radius: $radius-md;
+  padding: $gap-md;
+  margin-bottom: $gap-md;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $gap-md;
+}
+
+.progress-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: white;
+}
+
+.progress-date {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.progress-circle-container {
+  display: flex;
+  justify-content: center;
+  padding: $gap-md 0;
+}
+
+.progress-circle {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.4);
+  transition: height 0.3s ease;
+}
+
+.progress-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.progress-amount {
+  font-size: 48px;
+  font-weight: 700;
+  color: white;
+  display: block;
+}
+
+.progress-unit {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-around;
+  padding-top: $gap-sm;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.info-item {
+  text-align: center;
+}
+
+.info-label {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.7);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.info-value {
+  font-size: 26px;
+  font-weight: 600;
+  color: white;
+
+  &.highlight {
+    color: #FDE047;
+  }
+}
+
+// 快速添加区域
+.quick-section {
+  margin-bottom: $gap-md;
+}
+
+.section-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: $text-white;
+  margin-bottom: $gap-sm;
+  display: block;
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $gap-sm;
+}
+
+.quick-btn {
+  background: $card-dark;
+  border-radius: $radius-sm;
+  padding: $gap-sm;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.2s;
+
+  &:active {
+    transform: scale(0.95);
+    background: lighten($card-dark, 5%);
+  }
+
+  &.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+.quick-icon {
+  font-size: 36px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.quick-label {
+  font-size: 20px;
+  color: $text-gray-300;
+  display: block;
+}
+
+.quick-amount {
+  font-size: 18px;
+  color: $text-gray-500;
+  display: block;
+}
+
+// 统计区域
+.stats-section {
+  margin-bottom: $gap-md;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $gap-xs;
+}
+
+.stat-item {
+  background: $card-dark;
+  border-radius: $radius-sm;
+  padding: $gap-sm;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: $accent-cyan;
+  display: block;
+}
+
+.stat-label {
+  font-size: 18px;
+  color: $text-gray-500;
+  display: block;
+  margin-top: 4px;
+}
+
+// 记录列表
+.records-section {
+  margin-bottom: $gap-md;
+}
+
+.records-list {
+  background: $card-dark;
+  border-radius: $radius-md;
+  overflow: hidden;
+}
+
+.record-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $gap-sm $gap-md;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.record-left {
+  display: flex;
+  align-items: center;
+  gap: $gap-sm;
+}
+
+.record-time {
+  font-size: 24px;
+  color: $text-white;
+  font-weight: 500;
+}
+
+.record-type {
+  font-size: 20px;
+  color: $text-gray-400;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.record-amount {
+  font-size: 26px;
+  font-weight: 600;
+  color: $accent-cyan;
+}
+
+// 底部间距
+.bottom-spacer {
+  height: 40px;
+}

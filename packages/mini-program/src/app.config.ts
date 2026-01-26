@@ -21,6 +21,8 @@ export default {
     'pages/review/index',         // 每日复盘
     'pages/supplements/index',    // 补剂服用
     'pages/diet-recommendation/index', // 饮食推荐
+    'pages/water/index',         // 饮水记录
+    'pages/weight/index',        // 体重记录
     'pages/privacy/index',       // 隐私保护指引
     'pages/news/index',          // 资讯列表（VIP/管理员）
     'pages/news-detail/index',   // 资讯详情

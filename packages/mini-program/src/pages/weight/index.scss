@@ -1,0 +1,374 @@
+// 体重记录页面样式
+$bg-dark: #0F172A;
+$card-dark: #1E293B;
+$text-white: #F8FAFC;
+$text-gray-300: #CBD5E1;
+$text-gray-400: #94A3B8;
+$text-gray-500: #64748B;
+$accent-indigo: #6366F1;
+$accent-green: #10B981;
+$accent-red: #EF4444;
+$gap-xs: 8px;
+$gap-sm: 12px;
+$gap-md: 16px;
+$radius-md: 12px;
+$radius-sm: 8px;
+
+.weight-page {
+  min-height: 100vh;
+  background: $bg-dark;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.weight-scroll {
+  height: 100vh;
+  padding: $gap-md;
+  box-sizing: border-box;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: $accent-indigo;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: $gap-sm;
+  color: $text-gray-400;
+  font-size: 24px;
+}
+
+// 当前体重卡片
+.current-card {
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+  border-radius: $radius-md;
+  padding: $gap-md;
+  margin-bottom: $gap-md;
+}
+
+.current-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $gap-sm;
+}
+
+.current-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: white;
+}
+
+.current-date {
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.current-body {
+  display: flex;
+  align-items: flex-end;
+  gap: $gap-md;
+  margin-bottom: $gap-md;
+}
+
+.current-weight {
+  display: flex;
+  align-items: baseline;
+}
+
+.weight-value {
+  font-size: 64px;
+  font-weight: 700;
+  color: white;
+}
+
+.weight-unit {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-left: 4px;
+}
+
+.body-fat-tag {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fat-label {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.fat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: white;
+}
+
+.add-btn {
+  background: rgba(255, 255, 255, 0.2);
+  padding: $gap-sm;
+  border-radius: $radius-sm;
+  text-align: center;
+
+  text {
+    font-size: 26px;
+    font-weight: 500;
+    color: white;
+  }
+
+  &:active {
+    background: rgba(255, 255, 255, 0.3);
+  }
+}
+
+// 统计卡片
+.stats-card {
+  background: $card-dark;
+  border-radius: $radius-md;
+  padding: $gap-md;
+  margin-bottom: $gap-md;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: $text-white;
+  margin-bottom: $gap-sm;
+  display: block;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $gap-xs;
+}
+
+.stat-item {
+  text-align: center;
+  padding: $gap-xs;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: $accent-indigo;
+  display: block;
+
+  &.green {
+    color: $accent-green;
+  }
+
+  &.red {
+    color: $accent-red;
+  }
+}
+
+.stat-label {
+  font-size: 18px;
+  color: $text-gray-500;
+  display: block;
+  margin-top: 4px;
+}
+
+// 历史记录
+.history-section {
+  margin-bottom: $gap-md;
+}
+
+.history-list {
+  background: $card-dark;
+  border-radius: $radius-md;
+  overflow: hidden;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $gap-sm $gap-md;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.history-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-date {
+  font-size: 24px;
+  color: $text-white;
+}
+
+.history-fat {
+  font-size: 18px;
+  color: $text-gray-500;
+}
+
+.history-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.history-weight {
+  font-size: 26px;
+  font-weight: 600;
+  color: $text-white;
+}
+
+.history-diff {
+  font-size: 20px;
+  color: $text-gray-400;
+
+  &.green {
+    color: $accent-green;
+  }
+
+  &.red {
+    color: $accent-red;
+  }
+}
+
+// 空状态
+.empty-state {
+  background: $card-dark;
+  border-radius: $radius-md;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: $gap-sm;
+}
+
+.empty-text {
+  font-size: 24px;
+  color: $text-gray-400;
+}
+
+// 底部间距
+.bottom-spacer {
+  height: 40px;
+}
+
+// 弹窗
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 85%;
+  max-width: 600px;
+  background: $card-dark;
+  border-radius: $radius-md;
+  padding: $gap-md;
+}
+
+.modal-title {
+  font-size: 30px;
+  font-weight: 600;
+  color: $text-white;
+  text-align: center;
+  margin-bottom: $gap-md;
+  display: block;
+}
+
+.form-group {
+  margin-bottom: $gap-md;
+}
+
+.form-label {
+  font-size: 22px;
+  color: $text-gray-400;
+  margin-bottom: $gap-xs;
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: $radius-sm;
+  padding: 0 $gap-sm;
+  font-size: 26px;
+  color: $text-white;
+  box-sizing: border-box;
+}
+
+.modal-actions {
+  display: flex;
+  gap: $gap-sm;
+  margin-top: $gap-md;
+}
+
+.modal-btn {
+  flex: 1;
+  padding: $gap-sm;
+  border-radius: $radius-sm;
+  text-align: center;
+
+  text {
+    font-size: 26px;
+    font-weight: 500;
+  }
+
+  &.cancel {
+    background: rgba(255, 255, 255, 0.1);
+
+    text {
+      color: $text-gray-300;
+    }
+  }
+
+  &.confirm {
+    background: $accent-indigo;
+
+    text {
+      color: white;
+    }
+
+    &.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+  }
+
+  &:active {
+    opacity: 0.8;
+  }
+}

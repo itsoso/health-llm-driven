@@ -122,6 +122,57 @@ export interface DietRecord {
   fiber: number | null;
 }
 
+// 饮水记录
+export interface WaterRecord {
+  id: number;
+  user_id: number;
+  record_date: string;
+  drink_time: string;
+  amount: number;
+  drink_type: string;
+  notes: string | null;
+}
+
+// 饮水统计
+export interface WaterStats {
+  total_days: number;
+  avg_daily_amount: number;
+  total_amount: number;
+  max_daily_amount: number;
+  days_meeting_goal: number;
+}
+
+// 饮水日汇总
+export interface WaterDailySummary {
+  date: string;
+  total_amount: number;
+  goal_amount: number;
+  records: WaterRecord[];
+  completion_rate: number;
+}
+
+// 体重记录
+export interface WeightRecord {
+  id: number;
+  user_id: number;
+  record_date: string;
+  weight: number;
+  body_fat_percentage: number | null;
+  muscle_mass: number | null;
+  notes: string | null;
+}
+
+// 体重统计
+export interface WeightStats {
+  current_weight: number | null;
+  initial_weight: number | null;
+  lowest_weight: number | null;
+  highest_weight: number | null;
+  weight_change: number | null;
+  avg_weight: number | null;
+  total_records: number;
+}
+
 // 每日饮食汇总
 export interface DailyDietSummary {
   record_date: string;
@@ -179,6 +230,14 @@ export const API_ENDPOINTS = {
   },
   WATER: {
     QUICK_ADD: '/water/records/quick',
+    MY_RECORDS: '/water/records/me',
+    MY_DATE: '/water/records/me/date',
+    MY_STATS: '/water/records/me/stats',
+  },
+  WEIGHT: {
+    CREATE: '/weight/records',
+    MY_RECORDS: '/weight/records/me',
+    MY_STATS: '/weight/records/me/stats',
   },
   NEWS: {
     LIST: '/news/articles',

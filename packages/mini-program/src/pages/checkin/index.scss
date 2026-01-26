@@ -139,7 +139,15 @@
   &.diet {
     background: rgba(34, 197, 94, 0.2);
   }
-  
+
+  &.water {
+    background: rgba(6, 182, 212, 0.2);
+  }
+
+  &.weight {
+    background: rgba(99, 102, 241, 0.2);
+  }
+
   &.review {
     background: rgba(59, 130, 246, 0.2);
   }

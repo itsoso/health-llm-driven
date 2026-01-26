@@ -345,6 +345,8 @@ export async function generateAIReviewSummary(date: string, period: string): Pro
 
 // ========== 饮水记录 API ==========
 
+import type { WaterRecord, WaterStats, WaterDailySummary, WeightRecord, WeightStats } from '../types';
+
 /**
  * 快速添加饮水记录
  * @param amount 饮水量（毫升），默认250ml
@@ -357,6 +359,59 @@ export async function quickAddWater(amount: number = 250): Promise<{
   drink_time: string;
 }> {
   return await post(`${API_ENDPOINTS.WATER.QUICK_ADD}?amount=${amount}`, {});
+}
+
+/**
+ * 获取某日饮水记录
+ */
+export async function getWaterRecordsByDate(date: string): Promise<WaterDailySummary> {
+  return await get(`${API_ENDPOINTS.WATER.MY_DATE}/${date}`);
+}
+
+/**
+ * 获取饮水统计
+ */
+export async function getWaterStats(days: number = 7): Promise<WaterStats> {
+  return await get(`${API_ENDPOINTS.WATER.MY_STATS}?days=${days}`);
+}
+
+/**
+ * 获取最近饮水记录
+ */
+export async function getWaterRecords(limit: number = 50): Promise<WaterRecord[]> {
+  return await get(`${API_ENDPOINTS.WATER.MY_RECORDS}?limit=${limit}`);
+}
+
+// ========== 体重记录 API ==========
+
+/**
+ * 创建体重记录
+ */
+export async function createWeightRecord(data: {
+  weight: number;
+  body_fat_percentage?: number | null;
+  muscle_mass?: number | null;
+  notes?: string | null;
+}): Promise<WeightRecord> {
+  const today = getBeijingToday();
+  return await post(API_ENDPOINTS.WEIGHT.CREATE, {
+    record_date: today,
+    ...data,
+  });
+}
+
+/**
+ * 获取体重记录列表
+ */
+export async function getWeightRecords(limit: number = 90): Promise<WeightRecord[]> {
+  return await get(`${API_ENDPOINTS.WEIGHT.MY_RECORDS}?limit=${limit}`);
+}
+
+/**
+ * 获取体重统计
+ */
+export async function getWeightStats(days: number = 30): Promise<WeightStats> {
+  return await get(`${API_ENDPOINTS.WEIGHT.MY_STATS}?days=${days}`);
 }
 
 // ========== 资讯 API ==========

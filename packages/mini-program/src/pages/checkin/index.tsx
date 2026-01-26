@@ -272,7 +272,7 @@ export default function CheckinPage() {
               <Text className="quick-entry-text">快捷打卡</Text>
             </View>
             <View className="quick-entry-grid">
-              <View 
+              <View
                 className="quick-entry-item"
                 onClick={() => Taro.navigateTo({ url: '/pages/rhinitis/index' })}
               >
@@ -281,7 +281,7 @@ export default function CheckinPage() {
                 </View>
                 <Text className="entry-label">鼻炎追踪</Text>
               </View>
-              <View 
+              <View
                 className="quick-entry-item"
                 onClick={() => Taro.navigateTo({ url: '/pages/supplements/index' })}
               >
@@ -299,7 +299,7 @@ export default function CheckinPage() {
                 </View>
                 <Text className="entry-label">补剂推荐</Text>
               </View>
-              <View 
+              <View
                 className="quick-entry-item"
                 onClick={() => Taro.navigateTo({ url: '/pages/diet/index' })}
               >
@@ -308,7 +308,25 @@ export default function CheckinPage() {
                 </View>
                 <Text className="entry-label">饮食记录</Text>
               </View>
-              <View 
+              <View
+                className="quick-entry-item"
+                onClick={() => Taro.navigateTo({ url: '/pages/water/index' })}
+              >
+                <View className="quick-entry-icon-box water">
+                  <Text className="entry-icon">💧</Text>
+                </View>
+                <Text className="entry-label">饮水记录</Text>
+              </View>
+              <View
+                className="quick-entry-item"
+                onClick={() => Taro.navigateTo({ url: '/pages/weight/index' })}
+              >
+                <View className="quick-entry-icon-box weight">
+                  <Text className="entry-icon">⚖️</Text>
+                </View>
+                <Text className="entry-label">体重记录</Text>
+              </View>
+              <View
                 className="quick-entry-item"
                 onClick={() => Taro.navigateTo({ url: '/pages/review/index' })}
               >
