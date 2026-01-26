@@ -1,8 +1,9 @@
 """
 用户画像 API - executor.life
 """
+import json
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -10,7 +11,8 @@ from app.models.user import User
 from app.models.user_profile import UserProfile, HealthGoal
 from app.schemas.user_profile import (
     UserProfileCreate, UserProfileUpdate, UserProfileResponse,
-    HealthGoalCreate, HealthGoalUpdate, HealthGoalResponse
+    HealthGoalCreate, HealthGoalUpdate, HealthGoalResponse,
+    PrivacySettings, DetectedLocation
 )
 from app.api.auth import get_current_user_required
 from datetime import date
@@ -85,13 +87,23 @@ async def get_my_profile(
         "city": profile.city,
         "timezone": profile.timezone or "Asia/Shanghai",
         "devices": parse_json_field(profile.devices, []),
+        "privacy_settings": PrivacySettings(**parse_json_field(profile.privacy_settings, {
+            "weight": True, "height": True, "age": True,
+            "gender": True, "city": True, "location": True
+        })),
         "age": profile.age,
         "bmi": profile.bmi,
         "bmi_category": profile.bmi_category,
+        "detected_location": DetectedLocation(
+            city=profile.detected_city,
+            region=profile.detected_region,
+            country=profile.detected_country
+        ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
+        "location_updated_at": profile.location_updated_at,
         "created_at": profile.created_at,
         "updated_at": profile.updated_at
     }
-    
+
     return UserProfileResponse(**response_data)
 
 
@@ -163,14 +175,87 @@ async def update_my_profile(
         "city": profile.city,
         "timezone": profile.timezone or "Asia/Shanghai",
         "devices": parse_json_field(profile.devices, []),
+        "privacy_settings": PrivacySettings(**parse_json_field(profile.privacy_settings, {
+            "weight": True, "height": True, "age": True,
+            "gender": True, "city": True, "location": True
+        })),
         "age": profile.age,
         "bmi": profile.bmi,
         "bmi_category": profile.bmi_category,
+        "detected_location": DetectedLocation(
+            city=profile.detected_city,
+            region=profile.detected_region,
+            country=profile.detected_country
+        ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
+        "location_updated_at": profile.location_updated_at,
         "created_at": profile.created_at,
         "updated_at": profile.updated_at
     }
-    
+
     return UserProfileResponse(**response_data)
+
+
+@router.post("/me/refresh-location")
+async def refresh_my_location(
+    request: Request,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    手动刷新用户位置信息（基于IP）
+
+    返回更新后的位置信息
+    """
+    from app.services.ip_geolocation import get_geolocation_service
+
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+
+    if not profile:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+    # 获取客户端 IP
+    client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = request.headers.get("X-Real-IP", "")
+    if not client_ip:
+        client_ip = request.client.host if request.client else ""
+
+    if not client_ip:
+        raise HTTPException(status_code=400, detail="无法获取客户端 IP")
+
+    # 强制获取位置（不检查时间间隔）
+    service = get_geolocation_service()
+    location = await service.get_location_from_ip(client_ip)
+
+    if location:
+        from datetime import datetime
+        profile.detected_city = location.city
+        profile.detected_region = location.region
+        profile.detected_country = location.country
+        profile.location_updated_at = datetime.utcnow()
+        profile.last_ip = client_ip
+        db.commit()
+        db.refresh(profile)
+
+        return {
+            "success": True,
+            "location": {
+                "city": location.city,
+                "region": location.region,
+                "country": location.country
+            },
+            "ip": client_ip,
+            "updated_at": profile.location_updated_at
+        }
+    else:
+        return {
+            "success": False,
+            "message": "无法获取位置信息（可能是本地IP或服务不可用）",
+            "ip": client_ip
+        }
 
 
 @router.post("/me/chronic-conditions", response_model=UserProfileResponse)

@@ -70,6 +70,28 @@ function SettingsContent() {
     progress: 0,
     message: '',
   });
+
+  // 隐私设置状态
+  interface PrivacySettings {
+    weight: boolean;
+    height: boolean;
+    age: boolean;
+    gender: boolean;
+    city: boolean;
+    location: boolean;
+  }
+  interface DetectedLocation {
+    city: string | null;
+    region: string | null;
+    country: string | null;
+  }
+  interface UserProfile {
+    privacy_settings: PrivacySettings;
+    detected_location: DetectedLocation | null;
+    location_updated_at: string | null;
+    city: string | null;
+  }
+  const [showPrivacySection, setShowPrivacySection] = useState(false);
   
   // 同步进度状态
   const [syncProgress, setSyncProgress] = useState<{
@@ -118,6 +140,66 @@ function SettingsContent() {
       }
     },
     enabled: !!token,
+  });
+
+  // 获取用户画像（隐私设置）
+  const { data: userProfile, isLoading: profileLoading, refetch: refetchProfile } = useQuery({
+    queryKey: ['user-profile'],
+    queryFn: async () => {
+      if (!token) return null;
+      const res = await fetch(`${API_BASE}/profile/me`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('获取用户画像失败');
+      return res.json() as Promise<UserProfile>;
+    },
+    enabled: !!token,
+  });
+
+  // 更新用户画像（隐私设置）
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: { privacy_settings: PrivacySettings }) => {
+      const res = await fetch(`${API_BASE}/profile/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('更新失败');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-profile'] });
+      setMessage({ type: 'success', text: '隐私设置已更新' });
+    },
+    onError: (error: Error) => {
+      setMessage({ type: 'error', text: error.message });
+    },
+  });
+
+  // 刷新位置
+  const refreshLocationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/profile/me/refresh-location`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('刷新位置失败');
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['user-profile'] });
+      if (data.success) {
+        setMessage({ type: 'success', text: `位置已更新: ${data.location?.city || '未知'}` });
+      } else {
+        setMessage({ type: 'error', text: data.message || '无法获取位置' });
+      }
+    },
+    onError: (error: Error) => {
+      setMessage({ type: 'error', text: error.message });
+    },
   });
 
   // 导入 Apple Health 文件
@@ -742,6 +824,120 @@ function SettingsContent() {
               退出登录
             </button>
           </div>
+        </div>
+
+        {/* 隐私设置卡片 */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowPrivacySection(!showPrivacySection)}
+          >
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              🔒 数据隐私设置
+            </h2>
+            <span className="text-gray-400 text-2xl">
+              {showPrivacySection ? '▼' : '›'}
+            </span>
+          </div>
+
+          {showPrivacySection && (
+            <div className="mt-4 space-y-4">
+              <p className="text-gray-600 text-sm">
+                控制哪些个人信息可以通过 API 对外公开（用于外部 AI 健康助手）
+              </p>
+
+              {profileLoading ? (
+                <div className="text-center py-4 text-gray-500">加载中...</div>
+              ) : userProfile ? (
+                <>
+                  {/* 隐私开关 */}
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-3">
+                    <h3 className="font-semibold text-gray-800 mb-2">公开字段设置</h3>
+
+                    {[
+                      { key: 'weight', label: '体重', icon: '⚖️' },
+                      { key: 'height', label: '身高', icon: '📏' },
+                      { key: 'age', label: '年龄', icon: '🎂' },
+                      { key: 'gender', label: '性别', icon: '👤' },
+                      { key: 'city', label: '所在城市', icon: '🏙️' },
+                      { key: 'location', label: 'IP定位', icon: '📍' },
+                    ].map(({ key, label, icon }) => (
+                      <div key={key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                        <span className="text-gray-700">
+                          {icon} {label}
+                        </span>
+                        <button
+                          onClick={() => {
+                            if (!userProfile.privacy_settings) return;
+                            const newSettings = {
+                              ...userProfile.privacy_settings,
+                              [key]: !userProfile.privacy_settings[key as keyof PrivacySettings],
+                            };
+                            updateProfileMutation.mutate({ privacy_settings: newSettings });
+                          }}
+                          disabled={updateProfileMutation.isPending}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            userProfile.privacy_settings?.[key as keyof PrivacySettings]
+                              ? 'bg-green-500'
+                              : 'bg-gray-300'
+                          } ${updateProfileMutation.isPending ? 'opacity-50' : ''}`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              userProfile.privacy_settings?.[key as keyof PrivacySettings]
+                                ? 'translate-x-6'
+                                : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 位置信息 */}
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-blue-800">📍 当前检测位置</h3>
+                      <button
+                        onClick={() => refreshLocationMutation.mutate()}
+                        disabled={refreshLocationMutation.isPending}
+                        className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50"
+                      >
+                        {refreshLocationMutation.isPending ? '刷新中...' : '🔄 刷新'}
+                      </button>
+                    </div>
+
+                    {userProfile.detected_location ? (
+                      <div className="text-blue-700 space-y-1">
+                        <p>🏙️ 城市: {userProfile.detected_location.city || '未知'}</p>
+                        <p>📍 地区: {userProfile.detected_location.region || '未知'}</p>
+                        <p>🌍 国家: {userProfile.detected_location.country || '未知'}</p>
+                        {userProfile.location_updated_at && (
+                          <p className="text-xs text-blue-500 mt-2">
+                            最后更新: {formatDateTime(userProfile.location_updated_at)}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-blue-600">尚未检测到位置信息，点击刷新按钮获取</p>
+                    )}
+                  </div>
+
+                  {/* 说明 */}
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                    <p className="font-semibold mb-1">⚠️ 隐私说明</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>这些设置控制通过 API Key 访问时哪些信息可见</li>
+                      <li>关闭的字段不会出现在外部 AI 系统获取的数据中</li>
+                      <li>位置信息基于您的 IP 地址检测，每小时自动更新一次</li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-4 text-gray-500">无法加载用户画像</div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Garmin设置卡片 */}

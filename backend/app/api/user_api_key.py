@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.user import User
 from app.models.user_api_key import UserApiKey
+from app.models.user_profile import UserProfile
 from app.models.external_recommendation import ExternalRecommendation
 from app.models.daily_health import GarminData, WorkoutRecord, DietRecord, SupplementIntake
 from app.api.deps import get_current_user_required
@@ -207,6 +208,60 @@ async def delete_user_api_key(
 
 # ==================== 外部系统接口 (通过 X-API-Key 认证) ====================
 
+def _build_user_profile_for_external(profile: UserProfile) -> dict:
+    """
+    根据隐私设置构建对外公开的用户画像信息
+
+    Args:
+        profile: UserProfile 对象
+
+    Returns:
+        符合隐私设置的用户画像字典
+    """
+    if not profile:
+        return None
+
+    # 获取隐私设置，默认全部公开
+    privacy = profile.privacy_settings or {
+        "weight": True, "height": True, "age": True,
+        "gender": True, "city": True, "location": True
+    }
+
+    result = {}
+
+    # 根据隐私设置决定返回哪些字段
+    if privacy.get("weight", True) and profile.current_weight_kg:
+        result["weight_kg"] = profile.current_weight_kg
+
+    if privacy.get("height", True) and profile.height_cm:
+        result["height_cm"] = profile.height_cm
+
+    if privacy.get("age", True) and profile.age:
+        result["age"] = profile.age
+
+    if privacy.get("gender", True) and profile.gender:
+        result["gender"] = profile.gender
+
+    # BMI 需要身高和体重都公开
+    if privacy.get("weight", True) and privacy.get("height", True) and profile.bmi:
+        result["bmi"] = profile.bmi
+        result["bmi_category"] = profile.bmi_category
+
+    if privacy.get("city", True) and profile.city:
+        result["city"] = profile.city
+
+    # IP 定位信息
+    if privacy.get("location", True):
+        if profile.detected_city or profile.detected_region or profile.detected_country:
+            result["detected_location"] = {
+                "city": profile.detected_city,
+                "region": profile.detected_region,
+                "country": profile.detected_country
+            }
+
+    return result if result else None
+
+
 @router.get("/external/health-data")
 async def get_external_health_data(
     date_param: Optional[date] = Query(None, alias="date"),
@@ -221,6 +276,7 @@ async def get_external_health_data(
     - 使用 X-API-Key 头部认证
     - 支持单日查询 (?date=2024-01-25) 或日期范围 (?start_date=...&end_date=...)
     - 最多只能查询最近 30 天的数据
+    - 返回用户画像信息（根据用户隐私设置）
     """
     if not check_scope(api_key, "read"):
         raise HTTPException(status_code=403, detail="API Key 没有读取权限")
@@ -228,6 +284,9 @@ async def get_external_health_data(
     user = db.query(User).filter(User.id == api_key.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 获取用户画像
+    profile = db.query(UserProfile).filter(UserProfile.user_id == api_key.user_id).first()
 
     # 处理日期参数
     today = date.today()
@@ -349,7 +408,8 @@ async def get_external_health_data(
         result_data.append(day_data)
         current_date += timedelta(days=1)
 
-    return {
+    # 构建响应
+    response = {
         "user_name": user.name,
         "date_range": {
             "start": start_date.isoformat(),
@@ -357,6 +417,13 @@ async def get_external_health_data(
         },
         "data": result_data,
     }
+
+    # 添加用户画像（如果有且有公开字段）
+    user_profile_data = _build_user_profile_for_external(profile)
+    if user_profile_data:
+        response["user_profile"] = user_profile_data
+
+    return response
 
 
 @router.post("/external/recommendations")

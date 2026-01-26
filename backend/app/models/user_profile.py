@@ -66,7 +66,25 @@ class UserProfile(Base):
     
     # === 设备信息 ===
     devices = Column(JSON, default=list)  # ["Garmin Fenix 7", "Apple Watch", "小米体重秤"]
-    
+
+    # === 隐私设置 ===
+    # 控制哪些字段对外部API可见
+    privacy_settings = Column(JSON, default=lambda: {
+        "weight": True,
+        "height": True,
+        "age": True,
+        "gender": True,
+        "city": True,
+        "location": True
+    })
+
+    # === IP定位信息 ===
+    detected_city = Column(String(100), nullable=True)  # 基于IP检测的城市
+    detected_region = Column(String(100), nullable=True)  # 基于IP检测的省份/地区
+    detected_country = Column(String(100), nullable=True)  # 基于IP检测的国家
+    location_updated_at = Column(DateTime, nullable=True)  # IP定位最后更新时间
+    last_ip = Column(String(45), nullable=True)  # 最后检测的IP地址
+
     # === 时间戳 ===
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

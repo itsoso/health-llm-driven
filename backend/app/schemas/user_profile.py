@@ -7,6 +7,27 @@ from pydantic import BaseModel, Field
 
 
 # =====================================================
+# 隐私设置 Schema
+# =====================================================
+
+class PrivacySettings(BaseModel):
+    """隐私设置 - 控制哪些字段对外部API可见"""
+    weight: bool = Field(True, description="体重是否公开")
+    height: bool = Field(True, description="身高是否公开")
+    age: bool = Field(True, description="年龄是否公开")
+    gender: bool = Field(True, description="性别是否公开")
+    city: bool = Field(True, description="城市是否公开")
+    location: bool = Field(True, description="IP定位是否公开")
+
+
+class DetectedLocation(BaseModel):
+    """IP检测的位置信息"""
+    city: Optional[str] = None
+    region: Optional[str] = None
+    country: Optional[str] = None
+
+
+# =====================================================
 # 用户画像 Schemas
 # =====================================================
 
@@ -62,6 +83,12 @@ class UserProfileBase(BaseModel):
     # 设备信息
     devices: List[str] = Field(default_factory=list, description="设备列表")
 
+    # 隐私设置
+    privacy_settings: Optional[PrivacySettings] = Field(
+        default_factory=lambda: PrivacySettings(),
+        description="隐私设置"
+    )
+
 
 class UserProfileCreate(UserProfileBase):
     """创建用户画像"""
@@ -101,6 +128,7 @@ class UserProfileUpdate(BaseModel):
     city: Optional[str] = None
     timezone: Optional[str] = None
     devices: Optional[List[str]] = None
+    privacy_settings: Optional[PrivacySettings] = None
 
 
 class UserProfileResponse(UserProfileBase):
@@ -110,9 +138,14 @@ class UserProfileResponse(UserProfileBase):
     age: Optional[int] = Field(None, description="年龄（计算值）")
     bmi: Optional[float] = Field(None, description="BMI（计算值）")
     bmi_category: Optional[str] = Field(None, description="BMI分类（计算值）")
+
+    # IP定位信息
+    detected_location: Optional[DetectedLocation] = Field(None, description="IP检测的位置")
+    location_updated_at: Optional[datetime] = Field(None, description="位置更新时间")
+
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
     class Config:
         from_attributes = True
 
