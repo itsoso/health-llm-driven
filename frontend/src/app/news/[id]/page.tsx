@@ -72,7 +72,21 @@ function ContentRenderer({ content }: { content: string }) {
       {paragraphs.map((paragraph, index) => {
         const trimmed = paragraph.trim();
 
-        // 检查是否是标题
+        // 检查是否是标题（从多到少匹配#号）
+        if (trimmed.startsWith('###### ')) {
+          return (
+            <h6 key={index} className="text-sm font-semibold text-purple-300 mt-4 mb-1">
+              {renderInlineMarkdown(trimmed.replace(/^###### /, ''))}
+            </h6>
+          );
+        }
+        if (trimmed.startsWith('##### ')) {
+          return (
+            <h5 key={index} className="text-base font-semibold text-purple-200 mt-4 mb-2">
+              {renderInlineMarkdown(trimmed.replace(/^##### /, ''))}
+            </h5>
+          );
+        }
         if (trimmed.startsWith('#### ')) {
           return (
             <h4 key={index} className="text-lg font-semibold text-white mt-5 mb-2">
