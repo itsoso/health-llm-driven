@@ -5,10 +5,49 @@ AI 食物识别服务
 import base64
 import json
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def extract_json_from_text(text: str) -> str:
+    """
+    从文本中提取JSON内容，处理各种可能的格式
+
+    支持的格式：
+    - 纯JSON: {"key": "value"}
+    - Markdown代码块: ```json\n{...}\n```
+    - 带前缀的JSON: Some text {"key": "value"}
+    """
+    if not text:
+        return text
+
+    text = text.strip()
+
+    # 1. 首先尝试提取markdown代码块中的JSON
+    # 匹配 ```json ... ``` 或 ``` ... ```
+    code_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+    match = re.search(code_block_pattern, text)
+    if match:
+        extracted = match.group(1).strip()
+        logger.info(f"从markdown代码块中提取JSON, 长度: {len(extracted)}")
+        return extracted
+
+    # 2. 如果没有代码块，尝试找到JSON对象的开始和结束
+    # 找第一个 { 和最后一个 }
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        extracted = text[first_brace:last_brace + 1]
+        logger.info(f"从文本中提取JSON对象, 长度: {len(extracted)}")
+        return extracted
+
+    # 3. 如果都找不到，返回原文
+    logger.warning(f"无法提取JSON，返回原文, 长度: {len(text)}")
+    return text
 
 # 尝试导入 OpenAI
 try:
@@ -128,54 +167,99 @@ class FoodRecognitionService:
             )
             
             # 解析响应
-            content = response.choices[0].message.content.strip()
-            
+            raw_content = response.choices[0].message.content
+            if not raw_content:
+                logger.error("AI返回空内容")
+                return {
+                    "success": False,
+                    "error": "AI返回空内容，请重试",
+                    "foods": []
+                }
+
+            content = raw_content.strip()
+            logger.info(f"AI原始响应长度: {len(content)}, 前100字符: {content[:100]}")
+
             # 检查是否是拒绝识别的回复
-            if "无法识别" in content or "抱歉" in content or "不是食物" in content:
-                logger.warning(f"AI无法识别图片内容: {content[:100]}")
+            refuse_keywords = ["无法识别", "抱歉", "不是食物", "cannot identify", "sorry", "not food", "看不清", "无法分析"]
+            if any(keyword in content.lower() for keyword in refuse_keywords):
+                logger.warning(f"AI无法识别图片内容: {content[:200]}")
                 return {
                     "success": False,
                     "error": "图片中未识别到食物，请确保图片清晰且包含食物内容",
                     "foods": [],
                     "ai_message": content[:200]
                 }
-            
-            # 尝试清理可能的markdown标记
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
-            
-            result = json.loads(content)
-            result["success"] = True
-            
-            logger.info(f"食物识别成功: {len(result.get('foods', []))} 种食物")
-            return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"解析AI响应失败: {e}, 原始内容: {content[:500] if 'content' in locals() else 'N/A'}")
-            # 如果解析失败，检查是否是拒绝识别的情况
-            if 'content' in locals() and ("无法识别" in content or "抱歉" in content):
+
+            # 使用改进的JSON提取函数
+            json_content = extract_json_from_text(content)
+            logger.info(f"提取的JSON内容长度: {len(json_content)}, 前100字符: {json_content[:100]}")
+
+            try:
+                result = json.loads(json_content)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON解析失败: {e}")
+                logger.error(f"尝试解析的内容: {json_content[:500]}")
+                logger.error(f"原始AI响应: {content[:500]}")
+
+                # 检查是否是拒绝识别的情况
+                if any(keyword in content.lower() for keyword in refuse_keywords):
+                    return {
+                        "success": False,
+                        "error": "图片中未识别到食物，请重新拍照或选择包含食物的图片",
+                        "foods": [],
+                        "ai_message": content[:200]
+                    }
                 return {
                     "success": False,
-                    "error": "图片中未识别到食物，请重新拍照或选择包含食物的图片",
+                    "error": "AI响应格式错误，请重试",
                     "foods": [],
-                    "ai_message": content[:200]
+                    "raw_response": content[:500]
                 }
-            return {
-                "success": False,
-                "error": "AI响应格式错误，请重试",
-                "foods": [],
-                "raw_response": content[:500] if 'content' in locals() else None
-            }
+
+            result["success"] = True
+
+            # 验证返回的数据结构
+            if "foods" not in result:
+                result["foods"] = []
+
+            foods_count = len(result.get('foods', []))
+            logger.info(f"食物识别成功: {foods_count} 种食物")
+
+            if foods_count > 0:
+                food_names = [f.get('name', '未知') for f in result['foods']]
+                logger.info(f"识别到的食物: {', '.join(food_names)}")
+
+            return result
+
         except Exception as e:
             import traceback
-            logger.error(f"食物识别失败: {e}")
+            error_msg = str(e)
+            logger.error(f"食物识别失败: {error_msg}")
             logger.error(f"详细错误: {traceback.format_exc()}")
+
+            # 检查是否是OpenAI API相关错误
+            if "rate limit" in error_msg.lower():
+                return {
+                    "success": False,
+                    "error": "服务繁忙，请稍后重试",
+                    "foods": []
+                }
+            elif "invalid_api_key" in error_msg.lower() or "authentication" in error_msg.lower():
+                return {
+                    "success": False,
+                    "error": "AI服务配置错误，请联系管理员",
+                    "foods": []
+                }
+            elif "timeout" in error_msg.lower():
+                return {
+                    "success": False,
+                    "error": "识别超时，请重试",
+                    "foods": []
+                }
+
             return {
                 "success": False,
-                "error": f"识别失败: {str(e)}",
+                "error": f"识别失败: {error_msg[:100]}",
                 "foods": []
             }
     
@@ -247,23 +331,39 @@ class FoodRecognitionService:
                 temperature=0.3
             )
             
-            content = response.choices[0].message.content.strip()
-            
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
-            
-            result = json.loads(content)
-            result["success"] = True
-            return result
-            
+            raw_content = response.choices[0].message.content
+            if not raw_content:
+                logger.error("AI返回空内容")
+                return {
+                    "success": False,
+                    "error": "AI返回空内容，请重试",
+                    "foods": []
+                }
+
+            content = raw_content.strip()
+            logger.info(f"从URL识别 - AI响应长度: {len(content)}")
+
+            # 使用改进的JSON提取函数
+            json_content = extract_json_from_text(content)
+
+            try:
+                result = json.loads(json_content)
+                result["success"] = True
+                return result
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON解析失败: {e}, 内容: {json_content[:500]}")
+                return {
+                    "success": False,
+                    "error": "AI响应格式错误，请重试",
+                    "foods": [],
+                    "raw_response": content[:500]
+                }
+
         except Exception as e:
             logger.error(f"从URL识别食物失败: {e}")
             return {
                 "success": False,
-                "error": str(e),
+                "error": str(e)[:100],
                 "foods": []
             }
     
