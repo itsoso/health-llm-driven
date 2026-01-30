@@ -13,8 +13,13 @@ class WeightRecordBase(BaseModel):
     notes: Optional[str] = None
 
 
+class WeightRecordInput(WeightRecordBase):
+    """API输入 - 创建体重记录（不含user_id，由认证获取）"""
+    pass
+
+
 class WeightRecordCreate(WeightRecordBase):
-    """创建体重记录"""
+    """内部使用 - 创建体重记录（含user_id）"""
     user_id: int
 
 

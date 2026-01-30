@@ -8,7 +8,9 @@ from datetime import date, timedelta
 from app.database import get_db
 from app.models.weight import WeightRecord
 from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.schemas.weight import (
+    WeightRecordInput,
     WeightRecordCreate,
     WeightRecordUpdate,
     WeightRecordResponse,
@@ -19,21 +21,42 @@ from app.api.deps import get_current_user_required
 router = APIRouter()
 
 
+def _sync_weight_to_profile(db: Session, user_id: int, weight_record: WeightRecord):
+    """同步体重数据到用户画像"""
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile:
+        # 如果用户画像不存在，创建一个
+        profile = UserProfile(user_id=user_id)
+        db.add(profile)
+
+    # 更新体重
+    if weight_record.weight:
+        profile.current_weight_kg = weight_record.weight
+
+    # 更新体脂率
+    if weight_record.body_fat_percentage:
+        profile.body_fat_percentage = weight_record.body_fat_percentage
+
+    # 更新肌肉量
+    if weight_record.muscle_mass_kg:
+        profile.muscle_mass_kg = weight_record.muscle_mass_kg
+
+
 @router.post("/records", response_model=WeightRecordResponse)
 def create_weight_record(
-    record: WeightRecordCreate,
+    record: WeightRecordInput,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """创建体重记录（需要登录）"""
     user_id = current_user.id
-    
+
     # 检查是否已有当天记录
     existing = db.query(WeightRecord).filter(
         WeightRecord.user_id == user_id,
         WeightRecord.record_date == record.record_date
     ).first()
-    
+
     if existing:
         # 更新已有记录
         for key, value in record.model_dump(exclude={"user_id"}).items():
@@ -43,20 +66,28 @@ def create_weight_record(
                     setattr(existing, "muscle_mass_kg", value)
                 else:
                     setattr(existing, key, value)
+
+        # 同步到用户画像
+        _sync_weight_to_profile(db, user_id, existing)
+
         db.commit()
         db.refresh(existing)
         return existing
-    
+
     # 创建新记录
     record_data = record.model_dump()
     record_data["user_id"] = user_id
-    
+
     # 处理字段名映射：muscle_mass -> muscle_mass_kg
     if "muscle_mass" in record_data:
         record_data["muscle_mass_kg"] = record_data.pop("muscle_mass")
-    
+
     db_record = WeightRecord(**record_data)
     db.add(db_record)
+
+    # 同步到用户画像
+    _sync_weight_to_profile(db, user_id, db_record)
+
     db.commit()
     db.refresh(db_record)
     return db_record
@@ -209,13 +240,21 @@ def update_weight_record(
     record = db.query(WeightRecord).filter(WeightRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权修改其他用户的数据")
-    
+
     for key, value in update_data.model_dump(exclude_unset=True).items():
         setattr(record, key, value)
-    
+
+    # 如果更新的是最新记录，同步到用户画像
+    latest_record = db.query(WeightRecord).filter(
+        WeightRecord.user_id == current_user.id
+    ).order_by(desc(WeightRecord.record_date)).first()
+
+    if latest_record and latest_record.id == record_id:
+        _sync_weight_to_profile(db, current_user.id, record)
+
     db.commit()
     db.refresh(record)
     return record
@@ -231,11 +270,29 @@ def delete_weight_record(
     record = db.query(WeightRecord).filter(WeightRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权删除其他用户的数据")
-    
+
+    # 检查是否删除的是最新记录
+    latest_record = db.query(WeightRecord).filter(
+        WeightRecord.user_id == current_user.id
+    ).order_by(desc(WeightRecord.record_date)).first()
+
+    is_latest = latest_record and latest_record.id == record_id
+
     db.delete(record)
     db.commit()
+
+    # 如果删除的是最新记录，用次新记录更新画像
+    if is_latest:
+        new_latest = db.query(WeightRecord).filter(
+            WeightRecord.user_id == current_user.id
+        ).order_by(desc(WeightRecord.record_date)).first()
+
+        if new_latest:
+            _sync_weight_to_profile(db, current_user.id, new_latest)
+            db.commit()
+
     return {"message": "Record deleted successfully"}
 
