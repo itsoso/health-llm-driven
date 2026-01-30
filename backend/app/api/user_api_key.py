@@ -15,6 +15,7 @@ from app.models.user_api_key import UserApiKey
 from app.models.user_profile import UserProfile
 from app.models.external_recommendation import ExternalRecommendation
 from app.models.daily_health import GarminData, WorkoutRecord, DietRecord, SupplementIntake
+from app.models.weight import WeightRecord
 from app.api.deps import get_current_user_required
 from app.utils.timezone import CHINA_TIMEZONE
 
@@ -208,12 +209,14 @@ async def delete_user_api_key(
 
 # ==================== 外部系统接口 (通过 X-API-Key 认证) ====================
 
-def _build_user_profile_for_external(profile: UserProfile) -> dict:
+def _build_user_profile_for_external(profile: UserProfile, db: Session = None, user_id: int = None) -> dict:
     """
     根据隐私设置构建对外公开的用户画像信息
 
     Args:
         profile: UserProfile 对象
+        db: 数据库会话（用于查询最新体重记录）
+        user_id: 用户ID
 
     Returns:
         符合隐私设置的用户画像字典
@@ -230,8 +233,22 @@ def _build_user_profile_for_external(profile: UserProfile) -> dict:
     result = {}
 
     # 根据隐私设置决定返回哪些字段
-    if privacy.get("weight", True) and profile.current_weight_kg:
-        result["weight_kg"] = profile.current_weight_kg
+    # 体重：优先使用体重记录表中的最新数据
+    if privacy.get("weight", True):
+        latest_weight = None
+        if db and user_id:
+            latest_weight_record = db.query(WeightRecord).filter(
+                WeightRecord.user_id == user_id
+            ).order_by(desc(WeightRecord.record_date)).first()
+            if latest_weight_record:
+                latest_weight = latest_weight_record.weight
+
+        # 如果没有体重记录，回退到 profile 中的数据
+        if not latest_weight:
+            latest_weight = profile.current_weight_kg
+
+        if latest_weight:
+            result["weight_kg"] = latest_weight
 
     if privacy.get("height", True) and profile.height_cm:
         result["height_cm"] = profile.height_cm
@@ -417,6 +434,19 @@ async def get_external_health_data(
                 for s in supplements
             ]
 
+        # 体重记录
+        weight_record = db.query(WeightRecord).filter(
+            WeightRecord.user_id == api_key.user_id,
+            WeightRecord.record_date == current_date
+        ).first()
+
+        if weight_record:
+            day_data["weight"] = {
+                "weight_kg": weight_record.weight,
+                "body_fat_percentage": weight_record.body_fat_percentage,
+                "muscle_mass_kg": weight_record.muscle_mass_kg,
+            }
+
         result_data.append(day_data)
         current_date += timedelta(days=1)
 
@@ -431,7 +461,7 @@ async def get_external_health_data(
     }
 
     # 添加用户画像（如果有且有公开字段）
-    user_profile_data = _build_user_profile_for_external(profile)
+    user_profile_data = _build_user_profile_for_external(profile, db, api_key.user_id)
     if user_profile_data:
         response["user_profile"] = user_profile_data
 
