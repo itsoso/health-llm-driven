@@ -41,20 +41,20 @@ async def get_templates(
         query = query.filter(CheckinTemplate.category == category)
     
     templates = query.order_by(CheckinTemplate.sort_order, CheckinTemplate.created_at).all()
-    
-    # 检查今日是否已完成
+
+    # 检查今日是否已完成 - 批量加载今日记录避免 N+1 查询
     today = date.today()
+    template_ids = [t.id for t in templates]
+    today_records = db.query(CheckinRecord.template_id).filter(
+        CheckinRecord.template_id.in_(template_ids),
+        CheckinRecord.checkin_date == today
+    ).all()
+    completed_template_ids = {r.template_id for r in today_records}
+
     result = []
     for template in templates:
         response = CheckinTemplateResponse.model_validate(template)
-        
-        # 检查今日是否已打卡
-        today_record = db.query(CheckinRecord).filter(
-            CheckinRecord.template_id == template.id,
-            CheckinRecord.checkin_date == today
-        ).first()
-        response.today_completed = today_record is not None
-        
+        response.today_completed = template.id in completed_template_ids
         result.append(response)
     
     # 统计各分类数量
@@ -433,18 +433,26 @@ async def get_stats(
     current_streak = 0
     best_streak = max((t.best_streak for t in templates), default=0)
     
-    # 统计最近7天趋势
+    # 统计最近7天趋势 - 批量查询避免 N+1
+    week_ago = today - timedelta(days=6)
+    trend_records = db.query(
+        CheckinRecord.checkin_date,
+        func.count(CheckinRecord.id).label('count')
+    ).filter(
+        CheckinRecord.user_id == current_user.id,
+        CheckinRecord.checkin_date >= week_ago,
+        CheckinRecord.checkin_date <= today
+    ).group_by(CheckinRecord.checkin_date).all()
+
+    trend_map = {r.checkin_date: r.count for r in trend_records}
     daily_trend = []
     for i in range(6, -1, -1):
         day = today - timedelta(days=i)
-        day_records = db.query(CheckinRecord).filter(
-            CheckinRecord.user_id == current_user.id,
-            CheckinRecord.checkin_date == day
-        ).count()
+        day_count = trend_map.get(day, 0)
         daily_trend.append({
             "date": day.isoformat(),
-            "count": day_records,
-            "rate": round(day_records / len(active_templates) * 100, 1) if active_templates else 0
+            "count": day_count,
+            "rate": round(day_count / len(active_templates) * 100, 1) if active_templates else 0
         })
     
     # 分类统计

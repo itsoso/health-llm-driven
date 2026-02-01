@@ -195,20 +195,25 @@ class WaterIntake(Base):
 class SupplementIntake(Base):
     """补剂摄入记录"""
     __tablename__ = "supplement_intakes"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
     record_date = Column(Date, nullable=False, index=True)
     supplement_name = Column(String, nullable=False)  # 补剂名称
     intake_time = Column(Time)  # 摄入时间
     dosage = Column(Float)  # 剂量
     unit = Column(String)  # 单位（mg/g/片/粒）
     notes = Column(Text)  # 备注
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     user = relationship("User", backref="supplement_intakes")
+
+    # 复合索引：优化按用户和日期查询
+    __table_args__ = (
+        Index('idx_supplement_user_date', 'user_id', 'record_date'),
+    )
 
 
 class OutdoorActivity(Base):

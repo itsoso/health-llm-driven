@@ -130,23 +130,29 @@ class RedisCache:
     
     @staticmethod
     def clear_pattern(pattern: str) -> int:
-        """清除匹配模式的所有键
-        
+        """清除匹配模式的所有键（使用 SCAN 避免阻塞 Redis）
+
         Args:
             pattern: 键的模式，如 "user:123:*"
-            
+
         Returns:
             删除的键数量
         """
         client = get_redis_client()
         if not client:
             return 0
-        
+
         try:
-            keys = client.keys(pattern)
-            if keys:
-                return client.delete(*keys)
-            return 0
+            # 使用 SCAN 替代 KEYS，避免 O(N) 阻塞操作
+            count = 0
+            cursor = 0
+            while True:
+                cursor, keys = client.scan(cursor, match=pattern, count=100)
+                if keys:
+                    count += client.delete(*keys)
+                if cursor == 0:
+                    break
+            return count
         except Exception as e:
             logger.error(f"Redis CLEAR_PATTERN 失败 (pattern={pattern}): {e}")
             return 0

@@ -1,33 +1,41 @@
 """测试配置和fixtures"""
 import os
+import uuid
+import tempfile
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
 os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
 
 from main import app
 
-# 使用内存数据库进行测试
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 @pytest.fixture(scope="function")
 def db():
-    """创建测试数据库"""
+    """创建测试数据库 - 每个测试使用独立的内存数据库"""
+    # 使用 StaticPool 确保所有连接使用同一个内存数据库
+    # 使用 check_same_thread=False 允许多线程访问
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+
+    # 清除可能存在的元数据缓存
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()
 
 
 @pytest.fixture(scope="function")

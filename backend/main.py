@@ -1,6 +1,9 @@
 """主应用入口"""
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger(__name__)
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -148,7 +151,8 @@ def health_check():
             client.ping()
         else:
             redis_status = "disconnected"
-    except:
+    except Exception as e:
+        logger.warning(f"Redis health check failed: {e}")
         redis_status = "error"
 
     return {

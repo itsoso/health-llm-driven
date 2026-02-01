@@ -10,7 +10,7 @@ class UserApiKey(Base):
     __tablename__ = "user_api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Index defined in __table_args__
 
     name = Column(String(100), nullable=False)  # 密钥名称 (如: browser-llm-driven)
     api_key = Column(String(64), unique=True, index=True, nullable=False)  # API Key (SHA256 hash)

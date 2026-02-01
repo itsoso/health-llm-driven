@@ -23,24 +23,69 @@ router = APIRouter()
 
 
 def calculate_streak(db: Session, habit_id: int, end_date: date) -> int:
-    """计算连续打卡天数"""
+    """计算连续打卡天数（优化版：单次查询获取最近记录）"""
+    # 查询最近 90 天的完成记录（按日期降序）
+    max_days = 90
+    start_date = end_date - timedelta(days=max_days)
+    records = db.query(HabitRecord.record_date).filter(
+        HabitRecord.habit_id == habit_id,
+        HabitRecord.record_date >= start_date,
+        HabitRecord.record_date <= end_date,
+        HabitRecord.completed == True
+    ).order_by(HabitRecord.record_date.desc()).all()
+
+    completed_dates = {r.record_date for r in records}
+
     streak = 0
     current_date = end_date
-    
-    while True:
-        record = db.query(HabitRecord).filter(
-            HabitRecord.habit_id == habit_id,
-            HabitRecord.record_date == current_date,
-            HabitRecord.completed == True
-        ).first()
-        
-        if not record:
+    while current_date >= start_date:
+        if current_date in completed_dates:
+            streak += 1
+            current_date = current_date - timedelta(days=1)
+        else:
             break
-        
-        streak += 1
-        current_date = current_date - timedelta(days=1)
-    
+
     return streak
+
+
+def calculate_streaks_batch(db: Session, habit_ids: List[int], end_date: date) -> dict:
+    """批量计算多个习惯的连续打卡天数"""
+    if not habit_ids:
+        return {}
+
+    max_days = 90
+    start_date = end_date - timedelta(days=max_days)
+
+    # 单次查询获取所有习惯的记录
+    records = db.query(HabitRecord.habit_id, HabitRecord.record_date).filter(
+        HabitRecord.habit_id.in_(habit_ids),
+        HabitRecord.record_date >= start_date,
+        HabitRecord.record_date <= end_date,
+        HabitRecord.completed == True
+    ).all()
+
+    # 按习惯分组
+    habit_dates = {}
+    for r in records:
+        if r.habit_id not in habit_dates:
+            habit_dates[r.habit_id] = set()
+        habit_dates[r.habit_id].add(r.record_date)
+
+    # 计算每个习惯的连续天数
+    streaks = {}
+    for habit_id in habit_ids:
+        completed_dates = habit_dates.get(habit_id, set())
+        streak = 0
+        current_date = end_date
+        while current_date >= start_date:
+            if current_date in completed_dates:
+                streak += 1
+                current_date = current_date - timedelta(days=1)
+            else:
+                break
+        streaks[habit_id] = streak
+
+    return streaks
 
 
 # ========== 习惯定义 ==========
@@ -180,22 +225,34 @@ def get_user_habits_with_records(
         HabitDefinition.user_id == user_id,
         HabitDefinition.is_active == True
     ).order_by(HabitDefinition.category, HabitDefinition.sort_order).all()
-    
+
+    if not habits:
+        return []
+
+    habit_ids = [h.id for h in habits]
+
+    # 批量加载当天的记录
+    records = db.query(HabitRecord).filter(
+        HabitRecord.habit_id.in_(habit_ids),
+        HabitRecord.record_date == record_date
+    ).all()
+    records_map = {r.habit_id: r for r in records}
+
+    # 找出已完成的习惯 ID，批量计算连续天数
+    completed_habit_ids = [h_id for h_id, r in records_map.items() if r.completed]
+    streaks = calculate_streaks_batch(db, completed_habit_ids, record_date) if completed_habit_ids else {}
+
     result = []
     for habit in habits:
-        record = db.query(HabitRecord).filter(
-            HabitRecord.habit_id == habit.id,
-            HabitRecord.record_date == record_date
-        ).first()
-        
-        streak = calculate_streak(db, habit.id, record_date) if record and record.completed else 0
-        
+        record = records_map.get(habit.id)
+        streak = streaks.get(habit.id, 0) if record and record.completed else 0
+
         result.append(HabitWithRecord(
             habit=HabitDefinitionResponse.model_validate(habit),
             record=HabitRecordResponse.model_validate(record) if record else None,
             streak=streak
         ))
-    
+
     return result
 
 
@@ -257,30 +314,36 @@ def get_today_summary(
 ):
     """获取今日习惯打卡汇总"""
     today = date.today()
-    
+
     habits = db.query(HabitDefinition).filter(
         HabitDefinition.user_id == user_id,
         HabitDefinition.is_active == True
     ).all()
-    
+
     total = len(habits)
-    completed = 0
-    
-    for habit in habits:
-        record = db.query(HabitRecord).filter(
-            HabitRecord.habit_id == habit.id,
-            HabitRecord.record_date == today,
-            HabitRecord.completed == True
-        ).first()
-        if record:
-            completed += 1
-    
+    if total == 0:
+        return {
+            "date": today.isoformat(),
+            "total_habits": 0,
+            "completed": 0,
+            "pending": 0,
+            "completion_rate": 0
+        }
+
+    # 批量查询今日完成的记录数
+    habit_ids = [h.id for h in habits]
+    completed = db.query(HabitRecord).filter(
+        HabitRecord.habit_id.in_(habit_ids),
+        HabitRecord.record_date == today,
+        HabitRecord.completed == True
+    ).count()
+
     return {
         "date": today.isoformat(),
         "total_habits": total,
         "completed": completed,
         "pending": total - completed,
-        "completion_rate": round(completed / total * 100, 1) if total > 0 else 0
+        "completion_rate": round(completed / total * 100, 1)
     }
 
 
@@ -297,22 +360,34 @@ def get_my_habits_with_records(
         HabitDefinition.user_id == current_user.id,
         HabitDefinition.is_active == True
     ).order_by(HabitDefinition.category, HabitDefinition.sort_order).all()
-    
+
+    if not habits:
+        return []
+
+    habit_ids = [h.id for h in habits]
+
+    # 批量加载当天的记录
+    records = db.query(HabitRecord).filter(
+        HabitRecord.habit_id.in_(habit_ids),
+        HabitRecord.record_date == record_date
+    ).all()
+    records_map = {r.habit_id: r for r in records}
+
+    # 找出已完成的习惯 ID，批量计算连续天数
+    completed_habit_ids = [h_id for h_id, r in records_map.items() if r.completed]
+    streaks = calculate_streaks_batch(db, completed_habit_ids, record_date) if completed_habit_ids else {}
+
     result = []
     for habit in habits:
-        record = db.query(HabitRecord).filter(
-            HabitRecord.habit_id == habit.id,
-            HabitRecord.record_date == record_date
-        ).first()
-        
-        streak = calculate_streak(db, habit.id, record_date) if record and record.completed else 0
-        
+        record = records_map.get(habit.id)
+        streak = streaks.get(habit.id, 0) if record and record.completed else 0
+
         result.append(HabitWithRecord(
             habit=HabitDefinitionResponse.model_validate(habit),
             record=HabitRecordResponse.model_validate(record) if record else None,
             current_streak=streak
         ))
-    
+
     return result
 
 
@@ -362,29 +437,35 @@ def get_my_today_summary(
 ):
     """获取当前用户今日习惯打卡汇总（需要登录）"""
     today = date.today()
-    
+
     habits = db.query(HabitDefinition).filter(
         HabitDefinition.user_id == current_user.id,
         HabitDefinition.is_active == True
     ).all()
-    
+
     total = len(habits)
-    completed = 0
-    
-    for habit in habits:
-        record = db.query(HabitRecord).filter(
-            HabitRecord.habit_id == habit.id,
-            HabitRecord.record_date == today,
-            HabitRecord.completed == True
-        ).first()
-        if record:
-            completed += 1
-    
+    if total == 0:
+        return {
+            "date": today.isoformat(),
+            "total_habits": 0,
+            "completed": 0,
+            "pending": 0,
+            "completion_rate": 0
+        }
+
+    # 批量查询今日完成的记录数
+    habit_ids = [h.id for h in habits]
+    completed = db.query(HabitRecord).filter(
+        HabitRecord.habit_id.in_(habit_ids),
+        HabitRecord.record_date == today,
+        HabitRecord.completed == True
+    ).count()
+
     return {
         "date": today.isoformat(),
         "total_habits": total,
         "completed": completed,
         "pending": total - completed,
-        "completion_rate": round(completed / total * 100, 1) if total > 0 else 0
+        "completion_rate": round(completed / total * 100, 1)
     }
 
