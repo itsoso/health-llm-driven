@@ -186,7 +186,16 @@ DEFAULT_CHECKIN_TEMPLATES = [
         "default_target": 10,
         "description": "运动前后拉伸，预防受伤",
     },
-    
+    {
+        "name": "王川踢腿法",
+        "category": "exercise",
+        "icon": "🦵",
+        "unit": "回",
+        "default_target": 2,
+        "step_value": 1,
+        "description": "源自太极热身的极简锻炼：双臂张开呈T字，正踢→顺时针踢→逆时针踢，每向8次共48次为1回。保持上身中正，踢高过头。每日2回约100次，耗时<4分钟。核心心法：微量高频，能坚持到明天就够了。",
+    },
+
     # 健康类
     {
         "name": "洗鼻",
