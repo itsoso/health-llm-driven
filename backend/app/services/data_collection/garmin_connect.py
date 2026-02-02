@@ -1595,18 +1595,50 @@ class GarminConnectService:
         if isinstance(battery_data_raw, list) and battery_data_raw:
             # Garmin返回的是一个时间序列列表，每个元素包含 bodyBatteryLevel 等
             # 需要遍历找到 charged/drained 或计算 most_charged/lowest
+            # 重要：过滤掉不属于目标日期的数据点
             battery_levels = []
+            battery_with_timestamps = []  # 记录电量和时间戳用于调试
+
+            # 计算目标日期的时间范围（使用本地时区）
+            target_date_start = datetime.combine(record_date, datetime.min.time())
+            target_date_end = datetime.combine(record_date + timedelta(days=1), datetime.min.time())
+
             for item in battery_data_raw:
                 if isinstance(item, dict):
                     level = item.get('bodyBatteryLevel') or item.get('level') or item.get('value')
                     if level is not None:
-                        battery_levels.append(level)
+                        # 获取时间戳并过滤
+                        timestamp = item.get('startTimestampGMT') or item.get('timestampGMT') or item.get('timestamp')
+
+                        # 检查时间戳是否属于目标日期
+                        is_valid_date = True
+                        if timestamp:
+                            try:
+                                if isinstance(timestamp, (int, float)):
+                                    # 毫秒时间戳
+                                    if timestamp > 1000000000000:
+                                        ts_datetime = datetime.fromtimestamp(timestamp / 1000)
+                                    else:
+                                        ts_datetime = datetime.fromtimestamp(timestamp)
+                                    is_valid_date = target_date_start <= ts_datetime < target_date_end
+                            except Exception:
+                                pass  # 如果解析失败，保留数据点
+
+                        if is_valid_date:
+                            battery_levels.append(level)
+                            battery_with_timestamps.append((level, timestamp))
                     # 有些格式直接包含统计数据
                     if item.get('charged') is not None:
                         charged = item.get('charged')
                     if item.get('drained') is not None:
                         drained = item.get('drained')
-            
+
+            # 记录过滤情况
+            original_count = len(battery_data_raw)
+            filtered_count = len(battery_levels)
+            if original_count != filtered_count:
+                logger.info(f"电量数据过滤: 原始{original_count}条 -> 目标日期({record_date}){filtered_count}条")
+
             if battery_levels:
                 most_charged = max(battery_levels)
                 lowest = min(battery_levels)
@@ -1624,7 +1656,31 @@ class GarminConnectService:
                             total_drained += abs(diff)
                     charged = total_charged if total_charged > 0 else None
                     drained = total_drained if total_drained > 0 else None
-            
+
+            # 调试：打印时间范围和最高值的时间点
+            if battery_with_timestamps:
+                first_ts = battery_with_timestamps[0][1]
+                last_ts = battery_with_timestamps[-1][1]
+                max_entry = max(battery_with_timestamps, key=lambda x: x[0] if x[0] else 0)
+                min_entry = min(battery_with_timestamps, key=lambda x: x[0] if x[0] else 999)
+
+                # 转换时间戳为可读格式
+                def ts_to_str(ts):
+                    if ts:
+                        try:
+                            if isinstance(ts, (int, float)) and ts > 1000000000000:
+                                return datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                            elif isinstance(ts, (int, float)):
+                                return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+                            return str(ts)
+                        except Exception:
+                            return str(ts)
+                    return 'N/A'
+
+                logger.info(f"电量列表时间范围: {ts_to_str(first_ts)} - {ts_to_str(last_ts)}, "
+                           f"最高值={max_entry[0]}@{ts_to_str(max_entry[1])}, "
+                           f"最低值={min_entry[0]}@{ts_to_str(min_entry[1])}")
+
             logger.info(f"从列表计算: most_charged={most_charged}, lowest={lowest}, current={current_battery}, charged={charged}, drained={drained}")
             
         elif isinstance(battery_data_raw, dict):
@@ -1637,19 +1693,40 @@ class GarminConnectService:
             # 当前实时电量
             current_battery = battery_data.get('bodyBatteryMostRecentValue') or battery_data.get('currentValue') or battery_data.get('current')
         
-        # 如果还没有获取到，尝试从 summary 获取
-        if most_charged is None and isinstance(summary, dict):
+        # 从 summary 获取补充数据
+        if isinstance(summary, dict):
+            # 充电/消耗量
             charged = charged or summary.get('bodyBatteryChargedValue') or summary.get('bodyBatteryCharged')
             drained = drained or summary.get('bodyBatteryDrainedValue') or summary.get('bodyBatteryDrained')
-            # 优先使用最高值，而不是最近值（MostRecentValue是当前值，不是最高值）
-            most_charged = summary.get('bodyBatteryHighestValue') or summary.get('bodyBatteryMostCharged') or summary.get('bodyBatteryChargedValue')
-            lowest = summary.get('bodyBatteryLowestValue') or summary.get('bodyBatteryLowest')
-        
+
+            # 最高值：使用所有来源中的最大值（修复：之前只在most_charged为None时才从summary获取）
+            summary_highest = summary.get('bodyBatteryHighestValue') or summary.get('bodyBatteryMostCharged')
+            if summary_highest is not None:
+                if most_charged is None:
+                    most_charged = summary_highest
+                else:
+                    most_charged = max(most_charged, summary_highest)
+                logger.debug(f"从summary获取bodyBatteryHighestValue: {summary_highest}, 更新后most_charged: {most_charged}")
+
+            # 最低值
+            summary_lowest = summary.get('bodyBatteryLowestValue') or summary.get('bodyBatteryLowest')
+            if summary_lowest is not None:
+                if lowest is None:
+                    lowest = summary_lowest
+                else:
+                    lowest = min(lowest, summary_lowest)
+
         # 如果还没有当前电量，从 summary 获取
         if current_battery is None and isinstance(summary, dict):
             current_battery = summary.get('bodyBatteryMostRecentValue') or summary.get('bodyBatteryCurrentValue')
-        
+
         logger.info(f"最终身体电量: charged={charged}, drained={drained}, most_charged={most_charged}, lowest={lowest}, current={current_battery}")
+
+        # 调试：打印 summary 中所有 bodyBattery 相关字段
+        if isinstance(summary, dict):
+            bb_fields = {k: v for k, v in summary.items() if 'bodyBattery' in k or 'battery' in k.lower()}
+            if bb_fields:
+                logger.debug(f"Summary中的电量相关字段: {bb_fields}")
         
         # 压力数据（可能来自get_all_day_stress或summary）
         stress_data_raw = None
@@ -1786,13 +1863,36 @@ class GarminConnectService:
                                     activity_type = activity.get('activityType', {}).get('typeKey', '').lower() if isinstance(activity.get('activityType'), dict) else str(activity.get('activityType', '')).lower()
                                     
                                     # 根据活动类型判断强度
-                                    vigorous_types = ['running', 'cycling', 'swimming', 'rowing', 'elliptical', 'strength_training']
-                                    moderate_types = ['walking', 'hiking', 'yoga', 'pilates']
-                                    
+                                    # 高强度活动类型（扩展列表）
+                                    vigorous_types = [
+                                        'running', 'cycling', 'swimming', 'rowing', 'elliptical', 'strength_training',
+                                        'hiit', 'interval_training', 'cardio', 'indoor_cardio', 'treadmill',
+                                        'stair_climbing', 'jump_rope', 'boxing', 'kickboxing', 'martial_arts',
+                                        'cross_training', 'crossfit', 'aerobics', 'spinning', 'circuit_training',
+                                        'boot_camp', 'fitness_equipment', 'gym', 'workout', 'sport', 'basketball',
+                                        'soccer', 'tennis', 'badminton', 'squash', 'racquet', 'football',
+                                        'hockey', 'lacrosse', 'rugby', 'volleyball', 'handball',
+                                        'ski', 'snowboard', 'mountaineering', 'climb', 'bouldering',
+                                        'surfing', 'water_ski', 'wakeboard', 'paddl', 'kayak', 'canoe'
+                                    ]
+                                    # 中等强度活动类型（扩展列表）
+                                    moderate_types = [
+                                        'walking', 'hiking', 'yoga', 'pilates', 'stretching',
+                                        'golf', 'bowling', 'fishing', 'hunting', 'sailing',
+                                        'horseback', 'dancing', 'tai_chi', 'qigong', 'meditation',
+                                        'gardening', 'cleaning', 'other'
+                                    ]
+
                                     if any(vt in activity_type for vt in vigorous_types):
                                         total_vigorous_mins += duration_minutes
+                                        logger.debug(f"活动类型 '{activity_type}' 归类为高强度，时长: {duration_minutes}分钟")
                                     elif any(mt in activity_type for mt in moderate_types):
                                         total_moderate_mins += duration_minutes
+                                        logger.debug(f"活动类型 '{activity_type}' 归类为中等强度，时长: {duration_minutes}分钟")
+                                    elif duration_minutes >= 10:
+                                        # 未知活动类型但有足够时长，默认归类为中等强度
+                                        total_moderate_mins += duration_minutes
+                                        logger.info(f"未识别的活动类型 '{activity_type}'，默认归类为中等强度，时长: {duration_minutes}分钟")
                             else:
                                 if activity_moderate:
                                     total_moderate_mins += int(activity_moderate)

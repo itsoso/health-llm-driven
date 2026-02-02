@@ -361,12 +361,15 @@ async def get_external_health_data(
                 "heart_rate_resting": garmin.resting_heart_rate,
                 "heart_rate_max": garmin.max_heart_rate,
                 "hrv": garmin.hrv_7day_avg,
-                "body_battery_high": garmin.body_battery_charged,
-                "body_battery_low": garmin.body_battery_drained,
+                "body_battery_high": garmin.body_battery_most_charged,  # 最高电量值
+                "body_battery_low": garmin.body_battery_lowest,  # 最低电量值
+                "body_battery_current": garmin.body_battery_current,  # 当前电量
+                "body_battery_charged": garmin.body_battery_charged,  # 今日充电量
+                "body_battery_drained": garmin.body_battery_drained,  # 今日消耗量
                 "stress_avg": garmin.stress_level,
                 "calories_total": garmin.calories_burned,
                 "calories_active": garmin.active_calories,
-                "active_minutes": garmin.moderate_intensity_minutes,
+                "active_minutes": garmin.active_minutes or ((garmin.moderate_intensity_minutes or 0) + (garmin.vigorous_intensity_minutes or 0)),
                 "floors_climbed": garmin.floors_climbed,
                 "spo2_avg": garmin.spo2_avg,
             }
