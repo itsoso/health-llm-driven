@@ -92,6 +92,23 @@ export default function CheckinPage() {
     return grid;
   }, [calendarYear, calendarMonth]);
 
+  // 同步新增的默认模板（静默执行）
+  const syncDefaultTemplates = useCallback(async () => {
+    try {
+      const res = await request<{ created: number; new_templates: string[] }>({
+        url: '/checkin/templates/sync-defaults',
+        method: 'POST',
+      });
+      if (res?.created > 0) {
+        console.log(`同步了 ${res.created} 个新模板:`, res.new_templates);
+        return true;
+      }
+    } catch (error) {
+      console.error('同步默认模板失败:', error);
+    }
+    return false;
+  }, []);
+
   // 加载数据
   const loadData = useCallback(async () => {
     const token = Taro.getStorageSync('access_token');
@@ -102,6 +119,9 @@ export default function CheckinPage() {
 
     try {
       setLoading(true);
+
+      // 先尝试同步新增的默认模板
+      await syncDefaultTemplates();
 
       // 并行请求
       const [templatesRes, summaryRes, statsRes] = await Promise.all([
@@ -130,7 +150,7 @@ export default function CheckinPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedCategory]);
+  }, [selectedCategory, syncDefaultTemplates]);
 
   useEffect(() => {
     loadData();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -156,7 +156,7 @@ export default function CheckinPage() {
     const lastDay = new Date(calendarYear, calendarMonth, 0);
     const daysInMonth = lastDay.getDate();
     const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
-    
+
     const grid: (number | null)[] = [];
     // 填充月初空白
     for (let i = 0; i < startDayOfWeek; i++) {
@@ -168,6 +168,26 @@ export default function CheckinPage() {
     }
     return grid;
   }, [calendarYear, calendarMonth]);
+
+  // 同步新增的默认模板（静默执行）
+  useEffect(() => {
+    if (!user) return;
+
+    const syncDefaultTemplates = async () => {
+      try {
+        const response = await api.post('/checkin/templates/sync-defaults');
+        if (response.data?.created > 0) {
+          console.log(`同步了 ${response.data.created} 个新模板:`, response.data.new_templates);
+          // 刷新模板列表
+          queryClient.invalidateQueries({ queryKey: ['checkinTemplates'] });
+        }
+      } catch (error) {
+        console.error('同步默认模板失败:', error);
+      }
+    };
+
+    syncDefaultTemplates();
+  }, [user, queryClient]);
 
   // 初始化默认模板
   const initMutation = useMutation({

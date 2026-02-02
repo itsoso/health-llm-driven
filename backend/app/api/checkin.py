@@ -97,10 +97,10 @@ async def init_default_templates(
     existing = db.query(CheckinTemplate).filter(
         CheckinTemplate.user_id == current_user.id
     ).count()
-    
+
     if existing > 0:
         return {"message": f"已有 {existing} 个模板，跳过初始化", "created": 0}
-    
+
     # 创建默认模板
     created = 0
     for tmpl_data in DEFAULT_CHECKIN_TEMPLATES:
@@ -110,10 +110,45 @@ async def init_default_templates(
         )
         db.add(template)
         created += 1
-    
+
     db.commit()
-    
+
     return {"message": f"已创建 {created} 个默认模板", "created": created}
+
+
+@router.post("/templates/sync-defaults")
+async def sync_default_templates(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """同步默认打卡模板（添加新增的默认模板）"""
+    # 获取用户现有模板的名称
+    existing_templates = db.query(CheckinTemplate).filter(
+        CheckinTemplate.user_id == current_user.id
+    ).all()
+    existing_names = {t.name for t in existing_templates}
+
+    # 添加缺失的默认模板
+    created = 0
+    new_templates = []
+    for tmpl_data in DEFAULT_CHECKIN_TEMPLATES:
+        if tmpl_data["name"] not in existing_names:
+            template = CheckinTemplate(
+                user_id=current_user.id,
+                **tmpl_data
+            )
+            db.add(template)
+            new_templates.append(tmpl_data["name"])
+            created += 1
+
+    if created > 0:
+        db.commit()
+
+    return {
+        "message": f"已同步 {created} 个新模板" if created > 0 else "所有默认模板已存在",
+        "created": created,
+        "new_templates": new_templates
+    }
 
 
 @router.get("/templates/{template_id}", response_model=CheckinTemplateResponse)
