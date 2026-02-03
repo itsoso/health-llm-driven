@@ -37,7 +37,7 @@ function RhinitisContent() {
   const today = format(new Date(), 'yyyy-MM-dd');
 
   // 表单状态
-  const [sneezeCount, setSneezeCount] = useState<number>(0);
+  const [sneezeCount, setSneezeCount] = useState<number>(1);
   const [sneezeTime, setSneezeTime] = useState<string>(format(new Date(), 'HH:mm'));
   const [nasalWashCount, setNasalWashCount] = useState<number>(0);
   const [nasalWashTime, setNasalWashTime] = useState<string>(format(new Date(), 'HH:mm'));
