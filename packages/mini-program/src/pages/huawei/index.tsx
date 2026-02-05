@@ -65,7 +65,7 @@ export default function HuaweiBinding() {
       // 注意：小程序中需要使用 web-view 跳转到 H5 页面完成授权
       // 这里先获取授权 URL
       const result = await get<{ auth_url: string; state: string }>('/devices/huawei/oauth/authorize', {
-        redirect_uri: 'https://health.executor.life/api/devices/huawei/oauth/callback'
+        redirect_uri: 'https://health.executor.life/api/v1/devices/huawei/oauth/callback'
       });
       
       // 显示提示

@@ -14,10 +14,14 @@ class Settings(BaseSettings):
     # Garmin 凭据 (用于后台自动同步)
     garmin_email: Optional[str] = None
     garmin_password: Optional[str] = None
-    
+
     # Garmin API配置 (OAuth遗留)
     garmin_api_key: Optional[str] = None
     garmin_api_secret: Optional[str] = None
+
+    # 华为 Health Kit 配置
+    huawei_client_id: Optional[str] = None
+    huawei_client_secret: Optional[str] = None
     
     # 微信小程序配置
     wechat_appid: Optional[str] = None  # 小程序 AppID

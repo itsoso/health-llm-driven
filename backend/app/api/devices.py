@@ -171,6 +171,127 @@ async def get_huawei_oauth_url(
     }
 
 
+@router.get("/huawei/oauth/callback", summary="华为OAuth回调（GET重定向）")
+async def huawei_oauth_callback_get(
+    code: str = Query(..., description="授权码"),
+    state: str = Query(..., description="状态参数"),
+    db: Session = Depends(get_db)
+):
+    """
+    处理华为 OAuth GET 重定向回调
+
+    华为授权完成后会重定向到此接口，带上 code 和 state 参数。
+    处理完成后返回 HTML 页面提示用户返回小程序。
+    """
+    from app.services.device_adapters.huawei import HuaweiHealthAdapter
+    from fastapi.responses import HTMLResponse
+
+    # 从 state 中解析用户 ID
+    try:
+        user_id_str, _ = state.split(":", 1)
+        user_id = int(user_id_str)
+    except Exception:
+        return HTMLResponse(content="""
+        <html>
+        <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center;">
+            <h2 style="color: #ef4444;">❌ 授权失败</h2>
+            <p>无效的授权参数，请返回小程序重试</p>
+        </body>
+        </html>
+        """, status_code=400)
+
+    # 查找凭证记录
+    credential = db.query(DeviceCredential).filter(
+        DeviceCredential.user_id == user_id,
+        DeviceCredential.device_type == "huawei"
+    ).first()
+
+    if not credential:
+        return HTMLResponse(content="""
+        <html>
+        <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center;">
+            <h2 style="color: #ef4444;">❌ 授权失败</h2>
+            <p>未找到对应的授权请求，请返回小程序重试</p>
+        </body>
+        </html>
+        """, status_code=404)
+
+    # 验证 state
+    config = credential.get_config()
+    if config.get("oauth_state") != state:
+        return HTMLResponse(content="""
+        <html>
+        <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center;">
+            <h2 style="color: #ef4444;">❌ 授权失败</h2>
+            <p>授权验证失败，请返回小程序重试</p>
+        </body>
+        </html>
+        """, status_code=400)
+
+    # 用 code 换取 token
+    try:
+        adapter = HuaweiHealthAdapter()
+        token_result = await adapter.exchange_code_for_token(
+            code,
+            config.get("redirect_uri", "")
+        )
+
+        # 保存 token
+        expires_at = datetime.now() + timedelta(seconds=token_result.get("expires_in", 3600))
+        credential.set_oauth_tokens(
+            access_token=token_result["access_token"],
+            refresh_token=token_result.get("refresh_token"),
+            expires_at=expires_at,
+            scope=token_result.get("scope")
+        )
+        credential.mark_valid()
+        credential.update_sync_time()
+
+        # 清理临时 state
+        config.pop("oauth_state", None)
+        credential.set_config(config)
+
+        db.commit()
+
+        return HTMLResponse(content="""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>授权成功</title>
+        </head>
+        <body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; margin: 0;">
+            <div style="background: white; border-radius: 16px; padding: 40px; max-width: 320px; margin: 0 auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+                <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
+                <h2 style="color: #10b981; margin: 0 0 16px 0;">华为手表绑定成功！</h2>
+                <p style="color: #6b7280; margin: 0 0 24px 0;">您现在可以关闭此页面，返回小程序刷新查看</p>
+                <div style="background: #f3f4f6; border-radius: 8px; padding: 16px;">
+                    <p style="color: #374151; margin: 0; font-size: 14px;">💡 小提示：返回小程序后下拉刷新页面即可看到绑定状态</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """)
+
+    except Exception as e:
+        logger.error(f"华为 OAuth 回调处理失败: {e}")
+        credential.mark_invalid(str(e))
+        db.commit()
+        return HTMLResponse(content=f"""
+        <html>
+        <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center;">
+            <h2 style="color: #ef4444;">❌ 授权失败</h2>
+            <p>{str(e)}</p>
+            <p>请返回小程序重试</p>
+        </body>
+        </html>
+        """, status_code=400)
+
+
 @router.post("/huawei/oauth/callback", summary="华为OAuth回调处理")
 async def huawei_oauth_callback(
     request: OAuthCallbackRequest,

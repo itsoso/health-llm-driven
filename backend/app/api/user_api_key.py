@@ -300,11 +300,11 @@ async def get_external_health_data(
     db: Session = Depends(get_db)
 ):
     """
-    外部系统读取用户健康数据（最近 30 天）
+    外部系统读取用户健康数据
 
     - 使用 X-API-Key 头部认证
     - 支持单日查询 (?date=2024-01-25) 或日期范围 (?start_date=...&end_date=...)
-    - 最多只能查询最近 30 天的数据
+    - 最多可查询最近 365 天的数据
     - 返回用户画像信息（根据用户隐私设置）
     """
     if not check_scope(api_key, "read"):
@@ -319,7 +319,7 @@ async def get_external_health_data(
 
     # 处理日期参数
     today = date.today()
-    min_date = today - timedelta(days=30)
+    min_date = today - timedelta(days=365)
 
     if date_param:
         start_date = date_param
@@ -333,9 +333,9 @@ async def get_external_health_data(
 
     # 验证日期范围
     if start_date < min_date:
-        raise HTTPException(status_code=400, detail="只能查询最近 30 天的数据")
-    if (end_date - start_date).days > 30:
-        raise HTTPException(status_code=400, detail="日期范围不能超过 30 天")
+        raise HTTPException(status_code=400, detail="只能查询最近 365 天的数据")
+    if (end_date - start_date).days > 365:
+        raise HTTPException(status_code=400, detail="日期范围不能超过 365 天")
 
     # 查询数据
     result_data = []
