@@ -58,7 +58,7 @@ export default function Settings() {
   const [hasGarmin, setHasGarmin] = useState(false);
   const [garminStatus, setGarminStatus] = useState<'none' | 'valid' | 'invalid'>('none');
   const [huaweiStatus, setHuaweiStatus] = useState<'none' | 'valid' | 'invalid'>('none');
-  
+
   // 消息提醒设置
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [subscribeAvailable] = useState(isSubscribeAvailable());
@@ -67,7 +67,8 @@ export default function Settings() {
   const [apiKeys, setApiKeys] = useState<UserApiKey[]>([]);
   const [showApiKeySection, setShowApiKeySection] = useState(false);
 
-  useEffect(() => {
+  // 检查登录状态并加载数据
+  const checkLoginAndLoadData = () => {
     const token = getToken();
     setIsLoggedIn(!!token);
 
@@ -83,7 +84,17 @@ export default function Settings() {
     if (storedName) {
       setUserName(storedName);
     }
+  };
+
+  // 首次挂载时检查
+  useEffect(() => {
+    checkLoginAndLoadData();
   }, []);
+
+  // 每次页面显示时重新检查登录状态（解决Tab页面缓存问题）
+  Taro.useDidShow(() => {
+    checkLoginAndLoadData();
+  });
 
   // 加载 API Keys
   const loadApiKeys = async () => {

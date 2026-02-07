@@ -154,6 +154,20 @@ export default function ExternalAdvicePage() {
   const [historyData, setHistoryData] = useState<ExternalRecommendation[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'today' | 'history'>('today');
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set()); // 已展开的建议ID
+
+  // 切换展开/收起状态
+  const toggleExpand = (id: number) => {
+    setExpandedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
 
   useEffect(() => {
     // 检查登录状态
@@ -210,6 +224,31 @@ export default function ExternalAdvicePage() {
     }
   };
 
+  // 清理标题中的 Markdown 标记
+  const cleanTitle = (title: string) => {
+    if (!title) return '';
+    return title
+      .replace(/^#{1,6}\s*/, '')  // 移除开头的标题标记
+      .replace(/\*\*([^*]+)\*\*/g, '$1')  // 移除粗体
+      .replace(/\*([^*]+)\*/g, '$1')  // 移除斜体
+      .trim();
+  };
+
+  // 截取内容摘要（前100个字符）
+  const getContentPreview = (content: string) => {
+    if (!content) return '';
+    // 移除 Markdown 标记，获取纯文本摘要
+    const plainText = content
+      .replace(/#{1,6}\s/g, '')  // 移除标题标记
+      .replace(/\*\*([^*]+)\*\*/g, '$1')  // 移除粗体
+      .replace(/\*([^*]+)\*/g, '$1')  // 移除斜体
+      .replace(/`([^`]+)`/g, '$1')  // 移除代码
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // 移除链接
+      .replace(/\n+/g, ' ')  // 换行转空格
+      .trim();
+    return plainText.length > 100 ? plainText.slice(0, 100) + '...' : plainText;
+  };
+
   // 渲染类别区块
   const renderCategorySection = (category: string, recommendations: ExternalRecommendation[]) => {
     const config = CATEGORY_CONFIG[category] || { icon: '\u{1F4CB}', label: category };
@@ -222,23 +261,42 @@ export default function ExternalAdvicePage() {
           <Text className="category-count">({recommendations.length})</Text>
         </View>
 
-        {recommendations.map((rec) => (
-          <View key={rec.id} className="advice-card">
-            <View className="advice-header">
-              <Text className="advice-title">{rec.title}</Text>
-              <View className="advice-source">
-                <Text className="source-icon">{'\u{1F517}'}</Text>
-                <Text className="source-name">{rec.source_name}</Text>
+        {recommendations.map((rec) => {
+          const isExpanded = expandedIds.has(rec.id);
+
+          return (
+            <View key={rec.id} className={`advice-card ${isExpanded ? 'expanded' : ''}`} onClick={() => toggleExpand(rec.id)}>
+              <View className="advice-header">
+                <Text className="advice-title">{cleanTitle(rec.title)}</Text>
+              </View>
+              <View className="advice-meta">
+                <View className="advice-source">
+                  <Text className="source-name">{rec.source_name}</Text>
+                </View>
+                <Text className="advice-time">{formatTime(rec.created_at)}</Text>
+              </View>
+
+              {/* 收起状态：显示摘要 */}
+              {!isExpanded && (
+                <View className="advice-preview">
+                  <Text className="preview-text">{getContentPreview(rec.content)}</Text>
+                </View>
+              )}
+
+              {/* 展开状态：显示完整内容 */}
+              {isExpanded && (
+                <View className="advice-content">
+                  <RichText nodes={markdownToHtml(rec.content)} />
+                </View>
+              )}
+
+              {/* 展开/收起提示 */}
+              <View className="advice-action">
+                <Text className="action-text">{isExpanded ? '点击收起 ▲' : '点击展开 ▼'}</Text>
               </View>
             </View>
-            <View className="advice-content">
-              <RichText nodes={markdownToHtml(rec.content)} />
-            </View>
-            <View className="advice-footer">
-              <Text className="advice-time">{formatTime(rec.created_at)}</Text>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     );
   };

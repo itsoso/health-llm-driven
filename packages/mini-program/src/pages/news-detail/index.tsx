@@ -9,16 +9,14 @@ import './index.scss';
 
 /**
  * 简单的 Markdown 转 HTML 解析器
- * 专为小程序 RichText 组件设计，不依赖外部库
+ * 专为小程序 RichText 组件设计，使用标准 HTML 标签
+ * 注意：RichText 组件需要 HTML 标签（div/span），而非 WXML 标签（view/text）
  */
 function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
 
   try {
     let html = markdown;
-
-    // 转义 HTML 特殊字符（先处理，避免后续替换出问题）
-    // 注意：我们需要保留 markdown 语法，所以只转义内容中的 < > 但保留我们生成的标签
 
     // 处理代码块（先处理，避免内部内容被其他规则影响）
     html = html.replace(/```[\s\S]*?```/g, (match) => {
@@ -27,7 +25,7 @@ function markdownToHtml(markdown: string): string {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-      return `<view class="md-codeblock"><text class="md-code-text">${escaped}</text></view>`;
+      return `<div class="md-codeblock"><span class="md-code-text">${escaped}</span></div>`;
     });
 
     // 行内代码
@@ -36,52 +34,51 @@ function markdownToHtml(markdown: string): string {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-      return `<text class="md-code">${escaped}</text>`;
+      return `<span class="md-code">${escaped}</span>`;
     });
 
     // 标题 h1-h6
-    html = html.replace(/^###### (.+)$/gm, '<view class="md-h6">$1</view>');
-    html = html.replace(/^##### (.+)$/gm, '<view class="md-h5">$1</view>');
-    html = html.replace(/^#### (.+)$/gm, '<view class="md-h4">$1</view>');
-    html = html.replace(/^### (.+)$/gm, '<view class="md-h3">$1</view>');
-    html = html.replace(/^## (.+)$/gm, '<view class="md-h2">$1</view>');
-    html = html.replace(/^# (.+)$/gm, '<view class="md-h1">$1</view>');
+    html = html.replace(/^###### (.+)$/gm, '<h6 class="md-h6">$1</h6>');
+    html = html.replace(/^##### (.+)$/gm, '<h5 class="md-h5">$1</h5>');
+    html = html.replace(/^#### (.+)$/gm, '<h4 class="md-h4">$1</h4>');
+    html = html.replace(/^### (.+)$/gm, '<h3 class="md-h3">$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2 class="md-h2">$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1 class="md-h1">$1</h1>');
 
     // 粗体和斜体（先处理粗斜体组合）
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<text class="md-strong"><text class="md-em">$1</text></text>');
-    html = html.replace(/\*\*(.+?)\*\*/g, '<text class="md-strong">$1</text>');
-    html = html.replace(/\*(.+?)\*/g, '<text class="md-em">$1</text>');
-    html = html.replace(/__(.+?)__/g, '<text class="md-strong">$1</text>');
-    html = html.replace(/_(.+?)_/g, '<text class="md-em">$1</text>');
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="md-strong"><em class="md-em">$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong class="md-strong">$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em class="md-em">$1</em>');
+    html = html.replace(/__(.+?)__/g, '<strong class="md-strong">$1</strong>');
+    html = html.replace(/_(.+?)_/g, '<em class="md-em">$1</em>');
 
     // 删除线
-    html = html.replace(/~~(.+?)~~/g, '<text class="md-del">$1</text>');
+    html = html.replace(/~~(.+?)~~/g, '<del class="md-del">$1</del>');
 
     // 链接 [text](url)
-    html = html.replace(/\[([^\]]+)\]\([^)]+\)/g, '<text class="md-link">$1</text>');
+    html = html.replace(/\[([^\]]+)\]\([^)]+\)/g, '<span class="md-link">$1</span>');
 
     // 图片 ![alt](url)
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<image class="md-img" src="$2" mode="widthFix"></image>');
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img class="md-img" src="$2" />');
 
     // 分隔线
-    html = html.replace(/^[-*_]{3,}$/gm, '<view class="md-hr"></view>');
+    html = html.replace(/^[-*_]{3,}$/gm, '<hr class="md-hr" />');
 
     // 引用块（处理多行引用）
-    html = html.replace(/^> (.+)$/gm, '<view class="md-blockquote"><view class="md-p">$1</view></view>');
+    html = html.replace(/^> (.+)$/gm, '<blockquote class="md-blockquote"><p class="md-p">$1</p></blockquote>');
 
     // 无序列表
-    html = html.replace(/^[-*+] (.+)$/gm, '<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">$1</text></view>');
+    html = html.replace(/^[-*+] (.+)$/gm, '<div class="md-li"><span class="md-li-marker">•</span><span class="md-li-text">$1</span></div>');
 
     // 有序列表
     html = html.replace(/^\d+\. (.+)$/gm, (_, text) => {
-      return `<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">${text}</text></view>`;
+      return `<div class="md-li"><span class="md-li-marker">•</span><span class="md-li-text">${text}</span></div>`;
     });
 
     // 处理表格
     html = processTable(html);
 
     // 处理段落：将连续的非标签文本包装成段落
-    // 先按行分割
     const lines = html.split('\n');
     const processedLines: string[] = [];
 
@@ -95,13 +92,13 @@ function markdownToHtml(markdown: string): string {
       }
 
       // 如果已经是标签包裹的内容，保持不变
-      if (line.startsWith('<view') || line.startsWith('<text') || line.startsWith('<image')) {
+      if (line.startsWith('<')) {
         processedLines.push(line);
         continue;
       }
 
       // 普通文本包装成段落
-      processedLines.push(`<view class="md-p">${line}</view>`);
+      processedLines.push(`<p class="md-p">${line}</p>`);
     }
 
     html = processedLines.join('');
@@ -113,7 +110,7 @@ function markdownToHtml(markdown: string): string {
   } catch (error) {
     console.error('[Markdown解析错误]', error);
     // 回退：简单转义并换行
-    return `<view class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</view>`;
+    return `<p class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`;
   }
 }
 
@@ -125,19 +122,19 @@ function processTable(html: string): string {
   const tableRegex = /\|(.+)\|\n\|[-:\| ]+\|\n((?:\|.+\|\n?)+)/g;
 
   return html.replace(tableRegex, (match, headerRow, bodyRows) => {
-    // 解析表头
+    // 解析表头 - 用 span 包裹确保样式生效
     const headers = headerRow.split('|').map((h: string) => h.trim()).filter(Boolean);
-    const headerHtml = headers.map((h: string) => `<view class="md-th"><text>${h}</text></view>`).join('');
+    const headerHtml = headers.map((h: string) => `<th class="md-th"><span class="md-th-text">${h}</span></th>`).join('');
 
-    // 解析表体
+    // 解析表体 - 用 span 包裹确保样式生效
     const rows = bodyRows.trim().split('\n');
     const bodyHtml = rows.map((row: string) => {
       const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean);
-      const cellsHtml = cells.map((c: string) => `<view class="md-td"><text>${c}</text></view>`).join('');
-      return `<view class="md-tr">${cellsHtml}</view>`;
+      const cellsHtml = cells.map((c: string) => `<td class="md-td"><span class="md-td-text">${c}</span></td>`).join('');
+      return `<tr class="md-tr">${cellsHtml}</tr>`;
     }).join('');
 
-    return `<view class="md-table"><view class="md-thead"><view class="md-tr">${headerHtml}</view></view><view class="md-tbody">${bodyHtml}</view></view>`;
+    return `<table class="md-table"><thead class="md-thead"><tr class="md-tr">${headerHtml}</tr></thead><tbody class="md-tbody">${bodyHtml}</tbody></table>`;
   });
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,10 +21,16 @@ import {
   MessageCircle,
   Reply,
   Trash2,
-  Send
+  Send,
+  Camera,
+  Download,
+  X,
+  Copy,
+  Check
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import html2canvas from 'html2canvas';
 
 // 来源类型映射
 const sourceTypeLabels: Record<string, string> = {
@@ -162,6 +168,252 @@ function ContentRenderer({ content }: { content: string }) {
       >
         {content}
       </ReactMarkdown>
+    </div>
+  );
+}
+
+// 分享平台配置
+const sharePlatforms = [
+  {
+    id: 'x',
+    name: 'X (Twitter)',
+    icon: '𝕏',
+    color: 'bg-black hover:bg-gray-900',
+    getUrl: (url: string, title: string) =>
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`,
+  },
+  {
+    id: 'weibo',
+    name: '微博',
+    icon: '微',
+    color: 'bg-red-500 hover:bg-red-600',
+    getUrl: (url: string, title: string) =>
+      `https://service.weibo.com/share/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
+  },
+  {
+    id: 'xiaohongshu',
+    name: '小红书',
+    icon: '📕',
+    color: 'bg-red-400 hover:bg-red-500',
+    getUrl: () => '', // 小红书不支持直接分享链接，需要截图后手动分享
+    copyOnly: true,
+  },
+  {
+    id: 'zhihu',
+    name: '知乎',
+    icon: '知',
+    color: 'bg-blue-600 hover:bg-blue-700',
+    getUrl: (url: string, title: string) =>
+      `https://www.zhihu.com/share?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
+  },
+  {
+    id: 'douyin',
+    name: '抖音',
+    icon: '🎵',
+    color: 'bg-black hover:bg-gray-900',
+    getUrl: () => '',
+    copyOnly: true,
+  },
+  {
+    id: 'kuaishou',
+    name: '快手',
+    icon: '快',
+    color: 'bg-orange-500 hover:bg-orange-600',
+    getUrl: () => '',
+    copyOnly: true,
+  },
+];
+
+// 分享弹窗组件
+function ShareModal({
+  isOpen,
+  onClose,
+  article,
+  contentRef,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  article: NewsArticle;
+  contentRef: React.RefObject<HTMLElement>;
+}) {
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  if (!isOpen) return null;
+
+  const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+  // 截图功能
+  const handleCapture = async () => {
+    if (!contentRef.current) return;
+
+    setIsCapturing(true);
+    try {
+      const canvas = await html2canvas(contentRef.current, {
+        backgroundColor: '#1e293b',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      setCapturedImage(dataUrl);
+    } catch (error) {
+      console.error('截图失败:', error);
+      alert('截图失败，请重试');
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  // 下载截图
+  const handleDownload = () => {
+    if (!capturedImage) return;
+    const link = document.createElement('a');
+    link.download = `${article.title.slice(0, 30)}-health.executor.life.png`;
+    link.href = capturedImage;
+    link.click();
+  };
+
+  // 复制链接
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(currentUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      // fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = currentUrl;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // 分享到平台
+  const handleShare = (platform: typeof sharePlatforms[0]) => {
+    if (platform.copyOnly) {
+      handleCopyLink();
+      alert(`链接已复制！请打开${platform.name}App，粘贴链接或上传截图进行分享。`);
+      return;
+    }
+    const shareUrl = platform.getUrl(currentUrl, article.title);
+    if (shareUrl) {
+      window.open(shareUrl, '_blank', 'width=600,height=500');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* 背景遮罩 */}
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* 弹窗内容 */}
+      <div className="relative bg-slate-800 border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-auto">
+        {/* 头部 */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Share2 className="w-5 h-5" />
+            分享文章
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* 内容 */}
+        <div className="p-4 space-y-4">
+          {/* 截图区域 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-300">一键截图</h4>
+            {capturedImage ? (
+              <div className="space-y-3">
+                <div className="relative rounded-lg overflow-hidden border border-white/10">
+                  <img
+                    src={capturedImage}
+                    alt="截图预览"
+                    className="w-full h-auto"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleDownload}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    保存图片
+                  </button>
+                  <button
+                    onClick={() => setCapturedImage(null)}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg transition-colors"
+                  >
+                    重新截图
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleCapture}
+                disabled={isCapturing}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 text-white rounded-lg transition-colors"
+              >
+                <Camera className="w-5 h-5" />
+                {isCapturing ? '正在生成截图...' : '生成文章截图'}
+              </button>
+            )}
+          </div>
+
+          {/* 复制链接 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-300">复制链接</h4>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={currentUrl}
+                className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-gray-300 text-sm"
+              />
+              <button
+                onClick={handleCopyLink}
+                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied ? '已复制' : '复制'}
+              </button>
+            </div>
+          </div>
+
+          {/* 分享到平台 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-300">分享到社交媒体</h4>
+            <div className="grid grid-cols-3 gap-2">
+              {sharePlatforms.map((platform) => (
+                <button
+                  key={platform.id}
+                  onClick={() => handleShare(platform)}
+                  className={`flex flex-col items-center gap-1.5 px-3 py-3 ${platform.color} text-white rounded-lg transition-colors`}
+                >
+                  <span className="text-lg">{platform.icon}</span>
+                  <span className="text-xs">{platform.name}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              💡 小红书、抖音、快手需要复制链接后在App内分享，或保存截图后上传
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -399,6 +651,8 @@ function NewsDetailContent() {
   const params = useParams();
   const router = useRouter();
   const articleId = Number(params.id);
+  const articleRef = useRef<HTMLElement>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const { data: article, isLoading, error } = useQuery({
     queryKey: ['news-article', articleId],
@@ -468,11 +722,12 @@ function NewsDetailContent() {
         </Link>
 
         {/* 文章头部 */}
-        <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+        <article ref={articleRef} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
           {/* 头部信息 */}
           <div className="p-6 md:p-8 border-b border-white/10">
-            {/* 标签和状态 */}
-            <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* 标签和状态 + 分享按钮 */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div className="flex flex-wrap items-center gap-2">
               {article.is_pinned && (
                 <span className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/20 text-amber-300 text-xs rounded-full border border-amber-500/30">
                   <Pin className="w-3 h-3" />
@@ -487,6 +742,16 @@ function NewsDetailContent() {
                   {article.source_group}
                 </span>
               )}
+              </div>
+
+              {/* 分享按钮 */}
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
+              >
+                <Camera className="w-4 h-4" />
+                截图分享
+              </button>
             </div>
 
             {/* 标题 */}
@@ -593,6 +858,14 @@ function NewsDetailContent() {
           </Link>
         </div>
       </div>
+
+      {/* 分享弹窗 */}
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        article={article}
+        contentRef={articleRef}
+      />
     </div>
   );
 }

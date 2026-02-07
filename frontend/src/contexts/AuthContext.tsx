@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -115,8 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 登录
-  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  // 登录 (使用 useCallback 优化)
+  const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const res = await fetch(`${API_BASE}/auth/login/json`, {
         method: 'POST',
@@ -148,10 +148,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('登录失败:', error);
       return { success: false, error: '网络错误，请稍后重试' };
     }
-  };
+  }, []);
 
-  // 注册
-  const register = async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {
+  // 注册 (使用 useCallback 优化)
+  const register = useCallback(async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {
     try {
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
@@ -186,35 +186,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('注册失败:', error);
       return { success: false, error: '网络错误，请稍后重试' };
     }
-  };
+  }, []);
 
-  // 登出
-  const logout = () => {
+  // 登出 (使用 useCallback 优化)
+  const logout = useCallback(() => {
     setToken(null);
     setUser(null);
     localStorage.removeItem('auth_token');
-  };
+  }, []);
 
-  // 刷新用户信息
-  const refreshUser = async () => {
+  // 刷新用户信息 (使用 useCallback 优化)
+  const refreshUser = useCallback(async () => {
     if (token) {
       await fetchUser(token);
     }
-  };
+  }, [token]);
+
+  // 使用 useMemo 优化 context value，防止不必要的重渲染
+  const contextValue = useMemo(() => ({
+    user,
+    token,
+    isLoading,
+    isAuthenticated: !!user,
+    login,
+    register,
+    logout,
+    refreshUser,
+  }), [user, token, isLoading, login, register, logout, refreshUser]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        isLoading,
-        isAuthenticated: !!user,
-        login,
-        register,
-        logout,
-        refreshUser,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

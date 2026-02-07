@@ -37,6 +37,8 @@ from app.models.notification import (
 from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 # 资讯模型
 from app.models.news import NewsArticle, NewsApiKey
+# 外部建议模型
+from app.models.external_recommendation import ExternalRecommendation
 
 __all__ = [
     "User",
@@ -91,5 +93,7 @@ __all__ = [
     # 资讯模型
     "NewsArticle",
     "NewsApiKey",
+    # 外部建议模型
+    "ExternalRecommendation",
 ]
 

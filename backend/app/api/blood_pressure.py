@@ -15,6 +15,13 @@ from app.schemas.blood_pressure import (
     BloodPressureRecordResponse,
     BloodPressureStats,
 )
+from app.utils.health_record import (
+    verify_user_access,
+    verify_record_ownership,
+    get_record_or_404,
+    apply_date_filter,
+    get_records_in_days,
+)
 
 router = APIRouter()
 
@@ -82,9 +89,13 @@ def get_user_blood_pressure_records(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(default=30, le=365),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取用户血压记录"""
+    """获取用户血压记录（需要登录，只能访问自己的数据）"""
+    # 使用通用工具进行权限验证
+    verify_user_access(user_id, current_user)
+
     query = db.query(BloodPressureRecord).filter(BloodPressureRecord.user_id == user_id)
     
     if start_date:
@@ -183,8 +194,15 @@ def get_my_blood_pressure_stats(
 
 
 @router.get("/records/user/{user_id}/latest", response_model=Optional[BloodPressureRecordResponse])
-def get_latest_blood_pressure(user_id: int, db: Session = Depends(get_db)):
-    """获取最新血压记录"""
+def get_latest_blood_pressure(
+    user_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取最新血压记录（需要登录，只能访问自己的数据）"""
+    # 使用通用工具进行权限验证
+    verify_user_access(user_id, current_user)
+
     record = db.query(BloodPressureRecord).filter(
         BloodPressureRecord.user_id == user_id
     ).order_by(desc(BloodPressureRecord.record_date)).first()
@@ -200,9 +218,13 @@ def get_latest_blood_pressure(user_id: int, db: Session = Depends(get_db)):
 def get_blood_pressure_stats(
     user_id: int,
     days: int = Query(default=30, le=365),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取血压统计"""
+    """获取血压统计（需要登录，只能访问自己的数据）"""
+    # 使用通用工具进行权限验证
+    verify_user_access(user_id, current_user)
+
     start_date = date.today() - timedelta(days=days)
     
     records = db.query(BloodPressureRecord).filter(
@@ -250,12 +272,13 @@ def get_blood_pressure_stats(
 def update_blood_pressure_record(
     record_id: int,
     update_data: BloodPressureRecordUpdate,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """更新血压记录"""
-    record = db.query(BloodPressureRecord).filter(BloodPressureRecord.id == record_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
+    """更新血压记录（需要登录，只能修改自己的记录）"""
+    # 使用通用工具获取记录并验证权限
+    record = get_record_or_404(db, BloodPressureRecord, record_id)
+    verify_record_ownership(record, current_user, "修改")
     
     for key, value in update_data.model_dump(exclude_unset=True).items():
         setattr(record, key, value)
@@ -269,11 +292,15 @@ def update_blood_pressure_record(
 
 
 @router.delete("/records/{record_id}")
-def delete_blood_pressure_record(record_id: int, db: Session = Depends(get_db)):
-    """删除血压记录"""
-    record = db.query(BloodPressureRecord).filter(BloodPressureRecord.id == record_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
+def delete_blood_pressure_record(
+    record_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """删除血压记录（需要登录，只能删除自己的记录）"""
+    # 使用通用工具获取记录并验证权限
+    record = get_record_or_404(db, BloodPressureRecord, record_id)
+    verify_record_ownership(record, current_user, "删除")
     
     db.delete(record)
     db.commit()

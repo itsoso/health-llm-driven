@@ -4,15 +4,239 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { getTodayGarminData, getDailyRecommendation, syncMyGarminData } from '../../services/api';
+import { getTodayGarminData, getDailyRecommendation, syncMyGarminData, getTodayExternalRecommendations } from '../../services/api';
 import { formatSleepDuration, getSleepScoreLevel, getStressLevel } from '../../types';
-import type { GarminData, DailyRecommendation } from '../../types';
+import type { GarminData, DailyRecommendation, TodayExternalRecommendations, ExternalRecommendation } from '../../types';
 import './index.scss';
+
+// Markdown 渲染组件 - 使用原生 View/Text 组件
+interface MarkdownNode {
+  type: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'ul' | 'ol' | 'hr' | 'table' | 'blockquote' | 'code';
+  content?: string;
+  items?: string[];
+  rows?: string[][];
+}
+
+function parseMarkdown(markdown: string): MarkdownNode[] {
+  if (!markdown) return [];
+  const nodes: MarkdownNode[] = [];
+
+  // 按行处理，更精确地解析
+  const lines = markdown.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+
+    // 标题 (支持 1-6 级)
+    if (line.startsWith('###### ')) {
+      nodes.push({ type: 'h6', content: line.replace(/^###### /, '') });
+      i++; continue;
+    }
+    if (line.startsWith('##### ')) {
+      nodes.push({ type: 'h5', content: line.replace(/^##### /, '') });
+      i++; continue;
+    }
+    if (line.startsWith('#### ')) {
+      nodes.push({ type: 'h4', content: line.replace(/^#### /, '') });
+      i++; continue;
+    }
+    if (line.startsWith('### ')) {
+      nodes.push({ type: 'h3', content: line.replace(/^### /, '') });
+      i++; continue;
+    }
+    if (line.startsWith('## ')) {
+      nodes.push({ type: 'h2', content: line.replace(/^## /, '') });
+      i++; continue;
+    }
+    if (line.startsWith('# ')) {
+      nodes.push({ type: 'h1', content: line.replace(/^# /, '') });
+      i++; continue;
+    }
+
+    // 引用块
+    if (line.startsWith('> ')) {
+      const quoteLines: string[] = [line.replace(/^> ?/, '')];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim().startsWith('>')) {
+        quoteLines.push(lines[j].trim().replace(/^> ?/, ''));
+        j++;
+      }
+      nodes.push({ type: 'blockquote', content: quoteLines.join('\n') });
+      i = j; continue;
+    }
+
+    // 代码块
+    if (line.startsWith('```')) {
+      const codeLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim().startsWith('```')) {
+        codeLines.push(lines[j]);
+        j++;
+      }
+      nodes.push({ type: 'code', content: codeLines.join('\n') });
+      i = j + 1; continue;
+    }
+
+    // 分隔线
+    if (/^[-*_]{3,}$/.test(line)) {
+      nodes.push({ type: 'hr' });
+      i++; continue;
+    }
+
+    // 表格 - 检测连续的表格行
+    if (line.includes('|')) {
+      const tableLines: string[] = [line];
+      let j = i + 1;
+      while (j < lines.length && lines[j].includes('|')) {
+        tableLines.push(lines[j]);
+        j++;
+      }
+      if (tableLines.length > 1) {
+        const rows = tableLines
+          .filter(l => l.trim() && !l.match(/^\|?[\s-|]+\|?$/))
+          .map(l => l.split('|').filter(cell => cell.trim()).map(cell => cell.trim()));
+        if (rows.length > 0) {
+          nodes.push({ type: 'table', rows });
+          i = j; continue;
+        }
+      }
+    }
+
+    // 无序列表 - 收集连续的列表项
+    if (/^[-*+•]\s/.test(line)) {
+      const items: string[] = [line.replace(/^[-*+•]\s+/, '')];
+      let j = i + 1;
+      while (j < lines.length && /^[-*+•]\s/.test(lines[j].trim())) {
+        items.push(lines[j].trim().replace(/^[-*+•]\s+/, ''));
+        j++;
+      }
+      nodes.push({ type: 'ul', items });
+      i = j; continue;
+    }
+
+    // 有序列表
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = [line.replace(/^\d+\.\s+/, '')];
+      let j = i + 1;
+      while (j < lines.length && /^\d+\.\s/.test(lines[j].trim())) {
+        items.push(lines[j].trim().replace(/^\d+\.\s+/, ''));
+        j++;
+      }
+      nodes.push({ type: 'ol', items });
+      i = j; continue;
+    }
+
+    // 普通段落
+    nodes.push({ type: 'p', content: line });
+    i++;
+  }
+
+  return nodes;
+}
+
+// 处理行内格式（粗体）
+function formatText(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
+}
+
+// Markdown 渲染组件
+function MarkdownRenderer({ content }: { content: string }) {
+  const nodes = parseMarkdown(content);
+
+  return (
+    <View className="md-content">
+      {nodes.map((node, index) => {
+        switch (node.type) {
+          case 'h1':
+            return <Text key={index} className="md-h1">{formatText(node.content || '')}</Text>;
+          case 'h2':
+            return <Text key={index} className="md-h2">{formatText(node.content || '')}</Text>;
+          case 'h3':
+            return <Text key={index} className="md-h3">{formatText(node.content || '')}</Text>;
+          case 'h4':
+            return <Text key={index} className="md-h4">{formatText(node.content || '')}</Text>;
+          case 'h5':
+            return <Text key={index} className="md-h5">{formatText(node.content || '')}</Text>;
+          case 'h6':
+            return <Text key={index} className="md-h6">{formatText(node.content || '')}</Text>;
+          case 'blockquote':
+            return (
+              <View key={index} className="md-blockquote">
+                <Text className="md-blockquote-text">{formatText(node.content || '')}</Text>
+              </View>
+            );
+          case 'code':
+            return (
+              <View key={index} className="md-code">
+                <Text className="md-code-text">{node.content || ''}</Text>
+              </View>
+            );
+          case 'hr':
+            return <View key={index} className="md-hr" />;
+          case 'ul':
+            return (
+              <View key={index} className="md-ul">
+                {node.items?.map((item, i) => (
+                  <View key={i} className="md-li">
+                    <Text className="md-li-marker">•</Text>
+                    <Text className="md-li-text">{formatText(item)}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          case 'ol':
+            return (
+              <View key={index} className="md-ol">
+                {node.items?.map((item, i) => (
+                  <View key={i} className="md-li">
+                    <Text className="md-li-marker">{i + 1}.</Text>
+                    <Text className="md-li-text">{formatText(item)}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          case 'table':
+            return (
+              <View key={index} className="md-table">
+                {node.rows?.map((row, rowIndex) => (
+                  <View key={rowIndex} className={`md-tr ${rowIndex === 0 ? 'md-thead' : ''}`}>
+                    {row.map((cell, cellIndex) => (
+                      <Text key={cellIndex} className="md-td">{formatText(cell)}</Text>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            );
+          case 'p':
+          default:
+            return <Text key={index} className="md-p">{formatText(node.content || '')}</Text>;
+        }
+      })}
+    </View>
+  );
+}
+
+// 类别配置
+const CATEGORY_CONFIG: Record<string, { icon: string; label: string }> = {
+  exercise: { icon: '🏃', label: '运动' },
+  diet: { icon: '🥗', label: '饮食' },
+  sleep: { icon: '😴', label: '睡眠' },
+  supplement: { icon: '💊', label: '补剂' },
+  general: { icon: '✨', label: '综合' },
+};
+const CATEGORY_ORDER = ['exercise', 'diet', 'sleep', 'supplement', 'general'];
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [garminData, setGarminData] = useState<GarminData | null>(null);
   const [recommendation, setRecommendation] = useState<DailyRecommendation | null>(null);
+  // 新增：Tab 切换和外部建议
+  const [activeTab, setActiveTab] = useState<'ai' | 'external'>('ai');
+  const [externalData, setExternalData] = useState<TodayExternalRecommendations | null>(null);
+  const [externalLoading, setExternalLoading] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     // 检查是否已登录
@@ -23,6 +247,57 @@ export default function Dashboard() {
     }
     loadData();
   }, []);
+
+  // 切换到外部建议时加载数据
+  useEffect(() => {
+    if (activeTab === 'external' && !externalData) {
+      loadExternalData();
+    }
+  }, [activeTab]);
+
+  const loadExternalData = async () => {
+    setExternalLoading(true);
+    try {
+      const data = await getTodayExternalRecommendations();
+      setExternalData(data);
+    } catch (e) {
+      console.error('加载外部建议失败:', e);
+    } finally {
+      setExternalLoading(false);
+    }
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const cleanTitle = (title: string) => {
+    if (!title) return '';
+    return title.replace(/^#{1,6}\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').trim();
+  };
+
+  const getContentPreview = (content: string) => {
+    if (!content) return '';
+    const plainText = content
+      .replace(/#{1,6}\s/g, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/\n+/g, ' ')
+      .trim();
+    return plainText.length > 80 ? plainText.slice(0, 80) + '...' : plainText;
+  };
+
+  const formatTime = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    } catch { return ''; }
+  };
 
   // 页面显示时刷新
   Taro.useDidShow(() => {
@@ -41,7 +316,7 @@ export default function Dashboard() {
           return null;
         }),
         getDailyRecommendation().catch((err) => {
-          console.error('获取AI建议失败:', err);
+          console.error('获取建议失败:', err);
           console.error('错误详情:', err);
           return null;
         }),
@@ -181,24 +456,98 @@ export default function Dashboard() {
 
   const recommendations = getRecommendations();
 
+  // 渲染外部建议内容
+  const renderExternalAdvice = () => {
+    if (externalLoading) {
+      return (
+        <View className="external-loading">
+          <View className="loading-spinner" />
+          <Text className="loading-text">加载中...</Text>
+        </View>
+      );
+    }
+
+    if (!externalData?.has_recommendations) {
+      return (
+        <View className="external-empty">
+          <Text className="empty-icon">📭</Text>
+          <Text className="empty-title">暂无外部建议</Text>
+          <Text className="empty-text">外部健康助手分析您的数据后，会在这里展示个性化建议</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View className="external-content">
+        {CATEGORY_ORDER.map((category) => {
+          const recs = externalData.categories[category];
+          if (!recs || recs.length === 0) return null;
+          const config = CATEGORY_CONFIG[category] || { icon: '📋', label: category };
+
+          return (
+            <View key={category} className={`ext-category category-${category}`}>
+              <View className="ext-category-header">
+                <Text className="ext-category-icon">{config.icon}</Text>
+                <Text className="ext-category-title">{config.label}</Text>
+                <Text className="ext-category-count">({recs.length})</Text>
+              </View>
+
+              {recs.map((rec: ExternalRecommendation) => (
+                <View key={rec.id} className="ext-advice-card expanded">
+                  <View className="ext-advice-header">
+                    <Text className="ext-advice-title">{cleanTitle(rec.title)}</Text>
+                  </View>
+                  <View className="ext-advice-meta">
+                    <Text className="ext-source-name">{rec.source_name}</Text>
+                    <Text className="ext-advice-time">{formatTime(rec.created_at)}</Text>
+                  </View>
+                  {/* 直接显示完整内容 */}
+                  <View className="ext-advice-content">
+                    <MarkdownRenderer content={rec.content} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <ScrollView className="dashboard-scroll" scrollY>
       <View className="dashboard-page">
         {/* 头部 */}
         <View className="header">
           <View className="header-left">
-            <Text className="title">健康数据</Text>
+            <Text className="title">健康建议</Text>
             <Text className="subtitle">
               {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })}
             </Text>
           </View>
-          <View className={`refresh-btn ${syncing ? 'syncing' : ''}`} onClick={syncing ? undefined : handleRefresh}>
-            <Text className="refresh-icon">{syncing ? '⏳' : '🔄'}</Text>
+          <View className={`refresh-btn ${syncing ? 'syncing' : ''}`} onClick={syncing ? undefined : (activeTab === 'ai' ? handleRefresh : loadExternalData)}>
+            <Text className="refresh-icon">{syncing || externalLoading ? '⏳' : '🔄'}</Text>
           </View>
         </View>
 
-        {!garminData ? (
-        <View className="no-data">
+        {/* Tab 切换 */}
+        <View className="tab-bar">
+          <View className={`tab-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => setActiveTab('ai')}>
+            <Text className="tab-text">💡 智能建议</Text>
+          </View>
+          <View className={`tab-item ${activeTab === 'external' ? 'active' : ''}`} onClick={() => setActiveTab('external')}>
+            <Text className="tab-text">📡 多源建议</Text>
+          </View>
+        </View>
+
+        {/* 外部建议 Tab */}
+        {activeTab === 'external' && renderExternalAdvice()}
+
+        {/* 智能建议 Tab */}
+        {activeTab === 'ai' && (
+          <>
+            {!garminData ? (
+              <View className="no-data">
           <View className="no-data-icon-wrap">
             <Text className="no-data-icon">📈</Text>
           </View>
@@ -361,7 +710,7 @@ export default function Dashboard() {
             </View>
           </View>
 
-          {/* AI 建议 */}
+          {/* 健康建议 */}
           <View className="recommendation-section">
             <View className="section-header">
               <Text className="section-icon">💡</Text>
@@ -394,6 +743,8 @@ export default function Dashboard() {
           <View className="bottom-space" />
         </>
       )}
+          </>
+        )}
       </View>
     </ScrollView>
   );

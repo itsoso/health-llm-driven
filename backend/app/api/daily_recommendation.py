@@ -166,6 +166,112 @@ def get_my_recommendations(
         raise HTTPException(status_code=500, detail=f"获取建议失败: {str(e)}")
 
 
+@router.get("/me/history")
+def get_my_recommendations_history(
+    start_date: Optional[date] = Query(None, description="开始日期（包含）"),
+    end_date: Optional[date] = Query(None, description="结束日期（包含）"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(10, ge=1, le=50, description="每页数量"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取当前用户的每日建议历史记录（需要登录）
+
+    支持按日期范围筛选和分页
+
+    Args:
+        start_date: 开始日期（包含）
+        end_date: 结束日期（包含）
+        page: 页码，从1开始
+        page_size: 每页数量，最大50
+
+    Returns:
+        - items: 建议列表
+        - total: 总数
+        - page: 当前页码
+        - page_size: 每页数量
+        - total_pages: 总页数
+    """
+    query = db.query(DailyRecommendation).filter(
+        DailyRecommendation.user_id == current_user.id
+    )
+
+    # 日期范围筛选
+    if start_date:
+        query = query.filter(DailyRecommendation.recommendation_date >= start_date)
+    if end_date:
+        query = query.filter(DailyRecommendation.recommendation_date <= end_date)
+
+    # 获取总数
+    total = query.count()
+
+    # 按日期倒序排序
+    query = query.order_by(DailyRecommendation.recommendation_date.desc())
+
+    # 分页
+    offset = (page - 1) * page_size
+    records = query.offset(offset).limit(page_size).all()
+
+    total_pages = (total + page_size - 1) // page_size
+
+    return {
+        "items": [
+            {
+                "id": rec.id,
+                "recommendation_date": rec.recommendation_date.isoformat() if rec.recommendation_date else None,
+                "analysis_date": rec.analysis_date.isoformat() if rec.analysis_date else None,
+                "one_day": rec.one_day_recommendation,
+                "seven_day": rec.seven_day_recommendation,
+                "created_at": rec.created_at.isoformat() if rec.created_at else None,
+                "updated_at": rec.updated_at.isoformat() if rec.updated_at else None,
+            }
+            for rec in records
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
+
+
+@router.get("/me/history/{target_date}")
+def get_my_recommendation_by_date(
+    target_date: date,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取当前用户指定日期的每日建议（需要登录）
+
+    Args:
+        target_date: 目标日期
+
+    Returns:
+        该日期的建议记录，如果不存在则返回404
+    """
+    record = db.query(DailyRecommendation).filter(
+        DailyRecommendation.user_id == current_user.id,
+        DailyRecommendation.recommendation_date == target_date
+    ).first()
+
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail=f"未找到 {target_date} 的建议记录"
+        )
+
+    return {
+        "id": record.id,
+        "recommendation_date": record.recommendation_date.isoformat() if record.recommendation_date else None,
+        "analysis_date": record.analysis_date.isoformat() if record.analysis_date else None,
+        "one_day": record.one_day_recommendation,
+        "seven_day": record.seven_day_recommendation,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+    }
+
+
 @router.get("/user/{user_id}/recommendations")
 def get_recommendations(
     user_id: int,

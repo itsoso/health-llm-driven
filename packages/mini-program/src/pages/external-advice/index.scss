@@ -242,53 +242,93 @@ $category-colors: (
 
 // 建议卡片
 .advice-card {
-  background: rgba($card-dark, 0.7);
+  background: linear-gradient(135deg, rgba($card-dark, 0.8) 0%, rgba($card-dark, 0.6) 100%);
   border-radius: $radius-md;
   padding: $gap-md;
   margin-bottom: $gap-sm;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 
   &:last-child {
     margin-bottom: 0;
   }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &.expanded {
+    border-color: rgba($primary, 0.4);
+    background: linear-gradient(135deg, rgba($card-dark, 0.9) 0%, rgba($primary, 0.1) 100%);
+    box-shadow: 0 4px 16px rgba($primary, 0.15);
+  }
 }
 
+// 卡片头部
 .advice-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: $gap-sm;
+  margin-bottom: 8px;
 }
 
 .advice-title {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 600;
   color: $text-white;
-  flex: 1;
   line-height: 1.4;
+  display: block;
+}
+
+// 元信息行
+.advice-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $gap-sm;
+  padding-bottom: $gap-sm;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .advice-source {
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: rgba($accent-blue, 0.2);
-  padding: 4px 10px;
+  background: rgba($accent-blue, 0.15);
+  padding: 4px 12px;
   border-radius: 100px;
-  margin-left: 8px;
-  flex-shrink: 0;
-
-  .source-icon {
-    font-size: 18px;
-  }
 
   .source-name {
-    font-size: 20px;
+    font-size: 22px;
     color: $accent-blue;
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-weight: 500;
+  }
+}
+
+.advice-time {
+  font-size: 22px;
+  color: $text-gray-500;
+}
+
+// 收起状态的预览
+.advice-preview {
+  .preview-text {
+    font-size: 26px;
+    color: $text-gray-400;
+    line-height: 1.7;
+    display: block;
+  }
+}
+
+// 展开/收起操作
+.advice-action {
+  display: flex;
+  justify-content: center;
+  margin-top: $gap-sm;
+  padding-top: $gap-sm;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+
+  .action-text {
+    font-size: 24px;
+    color: $primary;
+    font-weight: 500;
   }
 }
 

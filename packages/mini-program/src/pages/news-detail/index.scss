@@ -106,6 +106,11 @@ $radius-full: 9999px;
 .article-content {
   padding: 4px 0;
   margin-bottom: $gap-sm;
+  // 统一字体设置，确保所有文本样式一致
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-size: 24px;
+  line-height: 1.7;
+  color: $text-gray-300;
 
   // Markdown 标题样式 (h1-h6)
   .md-h1 {
@@ -170,6 +175,7 @@ $radius-full: 9999px;
 
   // 段落
   .md-p {
+    font-family: inherit;
     font-size: 24px;
     line-height: 1.7;
     color: $text-gray-300;
@@ -180,18 +186,21 @@ $radius-full: 9999px;
 
   // 粗体
   .md-strong {
+    font-family: inherit;
     color: $text-white;
     font-weight: 600;
   }
 
   // 斜体
   .md-em {
+    font-family: inherit;
     font-style: italic;
     color: $text-gray-300;
   }
 
   // 链接（小程序显示为特殊颜色文本）
   .md-link {
+    font-family: inherit;
     color: $accent-blue;
     font-size: 24px;
   }
@@ -218,6 +227,7 @@ $radius-full: 9999px;
     margin-bottom: 6px;
 
     .md-li-marker {
+      font-family: inherit;
       color: $text-gray-500;
       font-size: 24px;
       margin-right: 8px;
@@ -225,6 +235,7 @@ $radius-full: 9999px;
     }
 
     .md-li-text {
+      font-family: inherit;
       font-size: 24px;
       line-height: 1.6;
       color: $text-gray-300;
@@ -330,119 +341,131 @@ $radius-full: 9999px;
     padding: 8px 10px;
     display: flex;
     align-items: center;
+  }
 
-    text {
-      font-size: 20px;
-      font-weight: 600;
-      color: $text-white;
-    }
+  .md-th-text {
+    font-family: inherit;
+    font-size: 24px;
+    font-weight: 600;
+    color: $text-white;
+    line-height: 1.5;
   }
 
   .md-td {
     flex: 1;
     padding: 8px 10px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+  }
 
-    text {
-      font-size: 22px;
-      color: $text-gray-300;
-      line-height: 1.4;
-    }
+  .md-td-text {
+    font-family: inherit;
+    font-size: 24px;
+    color: $text-gray-300;
+    line-height: 1.6;
   }
 
   // ====== 兼容旧版HTML标签样式（备用） ======
   p {
+    font-family: inherit;
     font-size: 24px;
-    line-height: 1.6;
+    line-height: 1.7;
     color: $text-gray-300;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     text-align: justify;
   }
 
   h1, h2, h3, h4, h5, h6 {
+    font-family: inherit;
     color: $text-white;
     font-weight: 600;
     margin-top: 12px;
     margin-bottom: 6px;
   }
 
-  h1 { font-size: 26px; }
-  h2 { font-size: 24px; }
-  h3 { font-size: 22px; }
-  h4 { font-size: 22px; }
-  h5 { font-size: 20px; color: rgba($accent-purple, 0.9); }
-  h6 { font-size: 18px; color: rgba($accent-purple, 0.8); }
+  h1 { font-size: 32px; }
+  h2 { font-size: 28px; }
+  h3 { font-size: 26px; }
+  h4 { font-size: 24px; }
+  h5 { font-size: 22px; color: rgba($accent-purple, 0.9); }
+  h6 { font-size: 20px; color: rgba($accent-purple, 0.8); }
 
   strong {
+    font-family: inherit;
     color: $text-white;
     font-weight: 600;
   }
 
   em {
+    font-family: inherit;
     font-style: italic;
   }
 
   code {
     background: rgba(255, 255, 255, 0.1);
-    padding: 1px 3px;
-    border-radius: 2px;
+    padding: 2px 6px;
+    border-radius: 4px;
     font-family: monospace;
-    font-size: 20px;
+    font-size: 22px;
   }
 
   pre {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 12px;
     border-radius: $radius-sm;
     overflow-x: auto;
-    margin: 8px 0;
+    margin: 10px 0;
 
     code {
       background: transparent;
       padding: 0;
-      font-size: 18px;
-      line-height: 1.4;
+      font-size: 20px;
+      line-height: 1.5;
     }
   }
 
   blockquote {
-    border-left: 2px solid $accent-indigo;
-    padding-left: 8px;
-    margin: 8px 0;
+    font-family: inherit;
+    border-left: 3px solid $accent-indigo;
+    padding-left: 12px;
+    margin: 12px 0;
     color: $text-gray-400;
     font-style: italic;
     font-size: 22px;
   }
 
   ul, ol {
+    font-family: inherit;
     padding-left: 16px;
-    margin: 8px 0;
+    margin: 10px 0;
   }
 
   li {
+    font-family: inherit;
     font-size: 24px;
-    line-height: 1.55;
+    line-height: 1.6;
     color: $text-gray-300;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
 
   a {
+    font-family: inherit;
     color: $accent-blue;
     text-decoration: underline;
-    font-size: 22px;
+    font-size: 24px;
   }
 
   hr {
     border: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    margin: 12px 0;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 16px 0;
   }
 
   // 表格容器
   .table-wrapper {
     overflow-x: auto;
-    margin: 10px 0;
+    margin: 12px 0;
     border-radius: $radius-sm;
     background: rgba(255, 255, 255, 0.03);
   }
@@ -450,29 +473,30 @@ $radius-full: 9999px;
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 20px;
+    font-family: inherit;
+    font-size: 24px;
     min-width: 100%;
   }
 
   th, td {
-    padding: 6px 8px;
+    font-family: inherit;
+    padding: 8px 10px;
     text-align: left;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     vertical-align: top;
-    line-height: 1.4;
+    line-height: 1.6;
   }
 
   th {
     background: rgba($accent-indigo, 0.15);
     color: $text-white;
     font-weight: 600;
-    font-size: 18px;
-    white-space: nowrap;
+    font-size: 24px;
   }
 
   td {
     color: $text-gray-300;
-    font-size: 20px;
+    font-size: 24px;
   }
 
   tr:nth-child(even) td {

@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "mini": "cd packages/mini-program && npm run deploy",
+    "mini:dev": "cd packages/mini-program && npm run dev:weapp",
     "audit:pnpm": "pnpm audit --json | node scripts/pnpm-audit-allowlist.mjs"
   },
   "pnpm": {
