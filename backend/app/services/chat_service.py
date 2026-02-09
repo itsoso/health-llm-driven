@@ -94,19 +94,19 @@ class ChatService:
         # 最近 Garmin 数据
         garmin = self.db.query(GarminData).filter(
             GarminData.user_id == user_id
-        ).order_by(GarminData.date.desc()).first()
+        ).order_by(GarminData.record_date.desc()).first()
         if garmin:
-            g_parts = [f"Garmin数据({garmin.date})"]
+            g_parts = [f"Garmin数据({garmin.record_date})"]
             if garmin.steps:
                 g_parts.append(f"步数:{garmin.steps}")
             if garmin.resting_heart_rate:
                 g_parts.append(f"静息心率:{garmin.resting_heart_rate}")
             if garmin.sleep_score:
                 g_parts.append(f"睡眠分数:{garmin.sleep_score}")
-            if garmin.stress_avg:
-                g_parts.append(f"压力均值:{garmin.stress_avg}")
-            if garmin.body_battery_max:
-                g_parts.append(f"身体电量:{garmin.body_battery_max}")
+            if garmin.stress_level:
+                g_parts.append(f"压力水平:{garmin.stress_level}")
+            if garmin.body_battery_most_charged:
+                g_parts.append(f"身体电量峰值:{garmin.body_battery_most_charged}")
             parts.append(", ".join(g_parts))
 
         # 今日打卡记录
