@@ -1,5 +1,5 @@
 /**
- * AI 健康对话页面 - OpenClaw 集成
+ * 健康问答对话页面 - OpenClaw 集成
  */
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -183,7 +183,7 @@ export default function Chat() {
         <View className="header-left" onClick={toggleHistory}>
           <Text className="header-icon">{showHistory ? '✕' : '☰'}</Text>
         </View>
-        <Text className="header-title">健康助手</Text>
+        <Text className="header-title">健康顾问</Text>
         <View className="header-right" onClick={handleNewChat}>
           <Text className="header-icon">+</Text>
         </View>
@@ -239,9 +239,9 @@ export default function Chat() {
         {messages.length === 0 && !loading && (
           <View className="welcome-area">
             <View className="welcome-icon-wrap">
-              <Text className="welcome-icon">🤖</Text>
+              <Text className="welcome-icon">💬</Text>
             </View>
-            <Text className="welcome-title">你好，我是你的健康助手</Text>
+            <Text className="welcome-title">你好，我是你的健康顾问</Text>
             <Text className="welcome-desc">
               我了解你的健康数据，可以为你提供个性化的健康建议
             </Text>
@@ -263,7 +263,7 @@ export default function Chat() {
           <View key={msg.id} className={`msg-row ${msg.role}`}>
             {msg.role === 'assistant' && (
               <View className="msg-avatar ai">
-                <Text>🤖</Text>
+                <Text>💬</Text>
               </View>
             )}
             <View className={`msg-bubble ${msg.role}`}>
@@ -275,7 +275,7 @@ export default function Chat() {
         {loading && (
           <View className="msg-row assistant">
             <View className="msg-avatar ai">
-              <Text>🤖</Text>
+              <Text>💬</Text>
             </View>
             <View className="msg-bubble assistant typing">
               <View className="typing-dots">

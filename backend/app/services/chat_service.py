@@ -129,7 +129,7 @@ class ChatService:
     def _get_system_prompt(self, user_id: int) -> str:
         """组装完整的 system prompt"""
         base = (
-            "你是一个专业的私人健康顾问AI助手。你的名字叫「健康助手」。\n"
+            "你是一个专业的私人健康顾问。你的名字叫「健康顾问」。\n"
             "请基于用户的健康数据，提供个性化、科学、实用的健康建议。\n"
             "回答要简洁友好，避免过度医学化。如涉及严重健康问题请建议就医。\n"
             "使用中文回答。"
@@ -184,7 +184,7 @@ class ChatService:
             reply_content = await self._call_openclaw(messages)
         except Exception as e:
             logger.error(f"OpenClaw 调用失败: {e}")
-            reply_content = "抱歉，AI 助手暂时无法响应，请稍后再试。"
+            reply_content = "抱歉，健康顾问暂时无法响应，请稍后再试。"
 
         # 保存 AI 回复
         ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=reply_content)
