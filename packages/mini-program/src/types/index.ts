@@ -252,6 +252,10 @@ export const API_ENDPOINTS = {
     LIST: '/external-recommendations',
     TODAY: '/external-recommendations/today',
   },
+  CHAT: {
+    SEND: '/chat/send',
+    CONVERSATIONS: '/chat/conversations',
+  },
 };
 
 // 工具函数

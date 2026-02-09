@@ -39,6 +39,8 @@ from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 from app.models.news import NewsArticle, NewsApiKey
 # 外部建议模型
 from app.models.external_recommendation import ExternalRecommendation
+# 聊天模型
+from app.models.chat import ChatConversation, ChatMessage
 
 __all__ = [
     "User",
@@ -95,5 +97,8 @@ __all__ = [
     "NewsApiKey",
     # 外部建议模型
     "ExternalRecommendation",
+    # 聊天模型
+    "ChatConversation",
+    "ChatMessage",
 ]
 

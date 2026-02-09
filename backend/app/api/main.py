@@ -43,6 +43,7 @@ from app.api import (
     performance,  # 性能监控
     news,  # 资讯系统
     user_api_key,  # 用户 API Key 管理 & 外部系统接口
+    chat,  # OpenClaw AI 对话
 )
 
 api_router = APIRouter()
@@ -94,3 +95,4 @@ api_router.include_router(diet_recommendation.router)  # 智能饮食推荐（pr
 api_router.include_router(performance.router)  # 性能监控（prefix 已在 router 中定义）
 api_router.include_router(news.router)  # 资讯系统（prefix 已在 router 中定义）
 api_router.include_router(user_api_key.router, tags=["user-api-key"])  # 用户 API Key & 外部接口
+api_router.include_router(chat.router)  # OpenClaw AI 对话

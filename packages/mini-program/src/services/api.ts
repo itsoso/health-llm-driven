@@ -503,3 +503,24 @@ export async function getExternalRecommendations(
 export async function getTodayExternalRecommendations(): Promise<TodayExternalRecommendations> {
   return await get(API_ENDPOINTS.EXTERNAL_RECOMMENDATIONS.TODAY);
 }
+
+// ===== OpenClaw AI 对话 =====
+
+export async function chatSend(message: string, conversationId?: number): Promise<any> {
+  return await post(API_ENDPOINTS.CHAT.SEND, {
+    message,
+    conversation_id: conversationId || undefined,
+  });
+}
+
+export async function getChatConversations(limit: number = 20): Promise<any[]> {
+  return await get(`${API_ENDPOINTS.CHAT.CONVERSATIONS}?limit=${limit}`);
+}
+
+export async function getChatMessages(conversationId: number): Promise<any> {
+  return await get(`${API_ENDPOINTS.CHAT.CONVERSATIONS}/${conversationId}`);
+}
+
+export async function deleteChatConversation(conversationId: number): Promise<void> {
+  return await del(`${API_ENDPOINTS.CHAT.CONVERSATIONS}/${conversationId}`);
+}

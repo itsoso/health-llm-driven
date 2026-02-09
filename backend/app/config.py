@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     wechat_appid: Optional[str] = None  # 小程序 AppID
     wechat_secret: Optional[str] = None  # 小程序 AppSecret
     
+    # OpenClaw 配置 (AI 对话服务)
+    openclaw_base_url: str = "https://bot.executor.life/v1"
+    openclaw_api_key: Optional[str] = None
+    openclaw_model: str = "openclaw:main"
+
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token
     

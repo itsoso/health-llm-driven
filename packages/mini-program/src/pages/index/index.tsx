@@ -652,6 +652,15 @@ export default function Index() {
                 <Text className="quick-card-desc">追踪补充</Text>
               </View>
             </View>
+            <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/chat/index' })}>
+              <View className="quick-card-icon purple">
+                <Text className="quick-card-emoji">🤖</Text>
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">AI 对话</Text>
+                <Text className="quick-card-desc">健康问答</Text>
+              </View>
+            </View>
           </View>
         </ScrollView>
       </View>

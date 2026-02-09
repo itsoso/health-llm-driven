@@ -27,6 +27,7 @@ export default {
     'pages/news/index',          // 资讯列表（VIP/管理员）
     'pages/news-detail/index',   // 资讯详情
     'pages/external-advice/index', // 外部健康建议
+    'pages/chat/index',            // AI 对话（OpenClaw）
   ],
   window: {
     backgroundTextStyle: 'light',
