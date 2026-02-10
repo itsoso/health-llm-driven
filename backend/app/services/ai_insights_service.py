@@ -129,7 +129,7 @@ class AIInsightsService:
         """获取用户健康目标"""
         goals = self.db.query(HealthGoal).filter(
             HealthGoal.user_id == user_id,
-            HealthGoal.is_active == True
+            HealthGoal.status == "active"
         ).all()
 
         return [
