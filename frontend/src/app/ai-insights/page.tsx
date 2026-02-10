@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_BASE = '/api';
 
@@ -33,6 +34,7 @@ interface RealtimeRecommendation {
 
 function AIInsightsContent() {
   const router = useRouter();
+  const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [currentRecommendation, setCurrentRecommendation] = useState<RealtimeRecommendation | null>(null);
@@ -56,10 +58,7 @@ function AIInsightsContent() {
 
   const loadInsights = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        return;
-      }
+      if (!token) return;
 
       const response = await fetch(`${API_BASE}/ai-insights/insights/daily?days=7`, {
         headers: {
@@ -80,7 +79,6 @@ function AIInsightsContent() {
 
   const loadLatestRecommendation = async () => {
     try {
-      const token = localStorage.getItem('token');
       if (!token) return;
 
       const response = await fetch(`${API_BASE}/ai-insights/recommendations/latest`, {
@@ -99,14 +97,10 @@ function AIInsightsContent() {
   };
 
   const handleGenerateInsight = async () => {
+    if (!token) return;
+
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        alert('请先登录');
-        return;
-      }
-
       const response = await fetch(`${API_BASE}/ai-insights/insights/daily/generate`, {
         method: 'POST',
         headers: {
@@ -129,14 +123,10 @@ function AIInsightsContent() {
   };
 
   const handleGenerateRecommendation = async () => {
+    if (!token) return;
+
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        alert('请先登录');
-        return;
-      }
-
       // 获取用户位置（简化版，实际应该使用地理位置API）
       const response = await fetch(`${API_BASE}/ai-insights/recommendations/realtime`, {
         method: 'POST',
