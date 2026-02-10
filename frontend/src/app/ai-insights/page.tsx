@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const API_BASE = '/api';
 
@@ -340,10 +342,18 @@ function AIInsightsContent() {
                 </div>
 
                 <div className="p-6">
-                  <div className="prose max-w-none mb-6">
-                    <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+                  <div className="prose prose-slate max-w-none mb-6
+                    prose-headings:text-gray-900 prose-headings:font-bold
+                    prose-p:text-gray-800 prose-p:leading-relaxed
+                    prose-strong:text-gray-900 prose-strong:font-semibold
+                    prose-ul:list-disc prose-ul:pl-6
+                    prose-ol:list-decimal prose-ol:pl-6
+                    prose-li:text-gray-800 prose-li:my-1
+                    prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+                  ">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {currentRecommendation.content}
-                    </div>
+                    </ReactMarkdown>
                   </div>
 
                   {/* 上下文信息 */}
@@ -428,10 +438,19 @@ function AIInsightsContent() {
                 </button>
               </div>
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-                <div className="prose max-w-none">
-                  <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+                <div className="prose prose-slate max-w-none
+                  prose-headings:text-gray-900 prose-headings:font-bold
+                  prose-p:text-gray-800 prose-p:leading-relaxed
+                  prose-strong:text-gray-900 prose-strong:font-semibold
+                  prose-ul:list-disc prose-ul:pl-6
+                  prose-ol:list-decimal prose-ol:pl-6
+                  prose-li:text-gray-800 prose-li:my-1
+                  prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+                  prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
+                ">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {selectedInsight.content}
-                  </div>
+                  </ReactMarkdown>
                 </div>
                 <div className="mt-6 pt-6 border-t border-gray-100">
                   <p className="text-sm text-gray-500">
