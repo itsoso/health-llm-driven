@@ -34,7 +34,11 @@ class Settings(BaseSettings):
 
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token
-    
+
+    # 和风天气 API 配置 (https://dev.qweather.com/)
+    qweather_api_key: Optional[str] = None  # 和风天气 API Key
+    qweather_api_type: str = "free"  # free 或 premium
+
     # 数据库配置
     database_url: str = "sqlite:///./health.db"
     

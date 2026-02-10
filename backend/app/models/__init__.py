@@ -41,6 +41,8 @@ from app.models.news import NewsArticle, NewsApiKey
 from app.models.external_recommendation import ExternalRecommendation
 # 聊天模型
 from app.models.chat import ChatConversation, ChatMessage
+# AI 洞察模型
+from app.models.ai_insights import AIInsight, RealtimeRecommendation
 
 __all__ = [
     "User",
@@ -100,5 +102,8 @@ __all__ = [
     # 聊天模型
     "ChatConversation",
     "ChatMessage",
+    # AI 洞察模型
+    "AIInsight",
+    "RealtimeRecommendation",
 ]
 
