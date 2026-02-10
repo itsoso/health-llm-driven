@@ -37,7 +37,8 @@ import {
   X,
   Stethoscope,
   Thermometer,
-  Newspaper
+  Newspaper,
+  Brain
 } from 'lucide-react';
 
 interface NavItem {
@@ -105,6 +106,7 @@ export default function Navigation() {
       icon: <BookOpen className="w-4 h-4" />,
       items: [
         { href: '/review', label: '每日复盘', icon: <BookOpen className="w-4 h-4" /> },
+        { href: '/ai-insights', label: 'AI洞察', icon: <Brain className="w-4 h-4" /> },
       ],
     },
     {
