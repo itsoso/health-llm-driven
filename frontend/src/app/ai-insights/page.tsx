@@ -40,7 +40,6 @@ function AIInsightsContent() {
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [currentRecommendation, setCurrentRecommendation] = useState<RealtimeRecommendation | null>(null);
-  const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
   const [activeTab, setActiveTab] = useState<'insights' | 'recommendations'>('insights');
 
   useEffect(() => {
@@ -253,21 +252,23 @@ function AIInsightsContent() {
 
             {/* 洞察列表 */}
             {insights.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <h3 className="text-lg font-semibold text-gray-700 px-2">
                   最近洞察（{insights.length}条）
                 </h3>
-                {insights.map((insight) => (
+                {insights.map((insight, index) => (
                   <div
                     key={insight.id}
-                    className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all p-6 cursor-pointer"
-                    onClick={() => setSelectedInsight(insight)}
+                    className="bg-white rounded-xl shadow-lg p-6"
                   >
-                    <div className="flex items-center justify-between mb-4">
+                    {/* 标题栏 */}
+                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
                       <div className="flex items-center space-x-3">
-                        <span className="text-2xl">📅</span>
+                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-sm">
+                          {insights.length - index}
+                        </span>
                         <div>
-                          <h3 className="font-bold text-gray-900">
+                          <h3 className="font-bold text-gray-900 text-lg">
                             {formatDate(insight.review_date)}
                           </h3>
                           <p className="text-sm text-gray-500">
@@ -275,15 +276,23 @@ function AIInsightsContent() {
                           </p>
                         </div>
                       </div>
-                      <span className="text-indigo-600 text-sm font-medium">
-                        查看详情 →
-                      </span>
                     </div>
-                    {insight.summary && (
-                      <p className="text-gray-700 line-clamp-2">
-                        {insight.summary}
-                      </p>
-                    )}
+
+                    {/* 完整内容 - Markdown渲染 */}
+                    <div className="prose prose-slate max-w-none
+                      prose-headings:text-gray-900 prose-headings:font-bold
+                      prose-p:text-gray-800 prose-p:leading-relaxed
+                      prose-strong:text-gray-900 prose-strong:font-semibold
+                      prose-ul:list-disc prose-ul:pl-6
+                      prose-ol:list-decimal prose-ol:pl-6
+                      prose-li:text-gray-800 prose-li:my-1
+                      prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+                      prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
+                    ">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {insight.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -413,52 +422,6 @@ function AIInsightsContent() {
                 </p>
               </div>
             )}
-          </div>
-        )}
-
-        {/* 洞察详情模态框 */}
-        {selectedInsight && (
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-            onClick={() => setSelectedInsight(null)}
-          >
-            <div
-              className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white">
-                  {formatDate(selectedInsight.review_date)}
-                </h3>
-                <button
-                  onClick={() => setSelectedInsight(null)}
-                  className="text-white hover:text-gray-200 text-2xl"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-                <div className="prose prose-slate max-w-none
-                  prose-headings:text-gray-900 prose-headings:font-bold
-                  prose-p:text-gray-800 prose-p:leading-relaxed
-                  prose-strong:text-gray-900 prose-strong:font-semibold
-                  prose-ul:list-disc prose-ul:pl-6
-                  prose-ol:list-decimal prose-ol:pl-6
-                  prose-li:text-gray-800 prose-li:my-1
-                  prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-                  prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
-                ">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {selectedInsight.content}
-                  </ReactMarkdown>
-                </div>
-                <div className="mt-6 pt-6 border-t border-gray-100">
-                  <p className="text-sm text-gray-500">
-                    生成时间: {formatDateTime(selectedInsight.generated_at)}
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
