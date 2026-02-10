@@ -86,18 +86,18 @@ class AIInsightsService:
         # 体重记录
         weight = self.db.query(WeightRecord).filter(
             WeightRecord.user_id == user_id,
-            func.date(WeightRecord.measured_at) == target_date
+            WeightRecord.record_date == target_date
         ).first()
         if weight:
             snapshot["weight"] = {
-                "weight_kg": float(weight.weight_kg),
-                "bmi": float(weight.bmi) if weight.bmi else None
+                "weight_kg": float(weight.weight),
+                "body_fat_percentage": float(weight.body_fat_percentage) if weight.body_fat_percentage else None
             }
 
         # 血压记录
         bp = self.db.query(BloodPressureRecord).filter(
             BloodPressureRecord.user_id == user_id,
-            func.date(BloodPressureRecord.measured_at) == target_date
+            BloodPressureRecord.record_date == target_date
         ).first()
         if bp:
             snapshot["blood_pressure"] = {
