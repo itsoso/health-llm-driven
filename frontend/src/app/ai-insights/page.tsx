@@ -58,7 +58,6 @@ function AIInsightsContent() {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        router.push('/login');
         return;
       }
 
@@ -104,7 +103,7 @@ function AIInsightsContent() {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        router.push('/login');
+        alert('请先登录');
         return;
       }
 
@@ -134,7 +133,7 @@ function AIInsightsContent() {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        router.push('/login');
+        alert('请先登录');
         return;
       }
 
