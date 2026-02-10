@@ -120,7 +120,7 @@ class AIInsightsService:
             "height_cm": float(profile.height_cm) if profile.height_cm else None,
             "current_weight_kg": float(profile.current_weight_kg) if profile.current_weight_kg else None,
             "target_weight_kg": float(profile.target_weight_kg) if profile.target_weight_kg else None,
-            "health_conditions": profile.health_conditions or [],
+            "chronic_conditions": profile.chronic_conditions or [],
             "allergies": profile.allergies or [],
             "medications": profile.medications or [],
         }
