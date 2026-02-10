@@ -97,4 +97,4 @@ api_router.include_router(performance.router)  # 性能监控（prefix 已在 ro
 api_router.include_router(news.router)  # 资讯系统（prefix 已在 router 中定义）
 api_router.include_router(user_api_key.router, tags=["user-api-key"])  # 用户 API Key & 外部接口
 api_router.include_router(chat.router)  # OpenClaw AI 对话
-api_router.include_router(ai_insights.router, tags=["ai-insights"])  # AI 健康洞察
+api_router.include_router(ai_insights.router, prefix="/ai-insights", tags=["ai-insights"])  # AI 健康洞察
