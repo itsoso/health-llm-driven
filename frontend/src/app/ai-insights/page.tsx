@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 const API_BASE = '/api';
 
@@ -30,7 +31,7 @@ interface RealtimeRecommendation {
   is_active: number;
 }
 
-export default function AIInsightsPage() {
+function AIInsightsContent() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState<AIInsight[]>([]);
@@ -492,5 +493,13 @@ export default function AIInsightsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AIInsightsPage() {
+  return (
+    <ProtectedRoute>
+      <AIInsightsContent />
+    </ProtectedRoute>
   );
 }
