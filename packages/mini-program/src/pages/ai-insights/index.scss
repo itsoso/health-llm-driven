@@ -1,0 +1,313 @@
+.ai-insights-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40rpx 30rpx 80rpx;
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 60rpx;
+    padding-top: 40rpx;
+
+    .page-title {
+      display: block;
+      font-size: 56rpx;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 16rpx;
+      text-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
+    }
+
+    .page-subtitle {
+      display: block;
+      font-size: 28rpx;
+      color: rgba(255, 255, 255, 0.9);
+    }
+  }
+
+  .section {
+    margin-bottom: 50rpx;
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 24rpx;
+      padding: 0 8rpx;
+
+      .section-icon {
+        font-size: 40rpx;
+        margin-right: 16rpx;
+      }
+
+      .section-title {
+        font-size: 34rpx;
+        font-weight: 600;
+        color: #fff;
+        text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+      }
+    }
+
+    .action-card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 24rpx;
+      padding: 40rpx 32rpx;
+      box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32rpx;
+
+      .action-info {
+        flex: 1;
+        margin-right: 24rpx;
+
+        .action-title {
+          display: block;
+          font-size: 32rpx;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 12rpx;
+        }
+
+        .action-desc {
+          display: block;
+          font-size: 26rpx;
+          color: #666;
+          line-height: 1.5;
+        }
+      }
+
+      .action-btn {
+        padding: 20rpx 36rpx;
+        border-radius: 16rpx;
+        font-size: 28rpx;
+        font-weight: 500;
+        border: none;
+        white-space: nowrap;
+
+        &.primary {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: #fff;
+        }
+
+        &.secondary {
+          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+          color: #fff;
+        }
+
+        &:active {
+          opacity: 0.9;
+          transform: scale(0.98);
+        }
+      }
+    }
+
+    .insights-list {
+      .list-title {
+        display: block;
+        font-size: 28rpx;
+        color: rgba(255, 255, 255, 0.9);
+        margin-bottom: 20rpx;
+        padding: 0 8rpx;
+      }
+
+      .insight-item {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20rpx;
+        padding: 32rpx;
+        margin-bottom: 20rpx;
+        box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.1);
+
+        .insight-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 20rpx;
+
+          .insight-date {
+            font-size: 30rpx;
+            font-weight: 600;
+            color: #333;
+          }
+
+          .insight-time {
+            font-size: 24rpx;
+            color: #999;
+          }
+        }
+
+        .insight-summary {
+          display: block;
+          font-size: 28rpx;
+          color: #666;
+          line-height: 1.6;
+          margin-bottom: 20rpx;
+        }
+
+        .insight-footer {
+          display: flex;
+          justify-content: flex-end;
+
+          .insight-action {
+            font-size: 26rpx;
+            color: #667eea;
+            font-weight: 500;
+          }
+        }
+
+        &:active {
+          opacity: 0.9;
+          transform: scale(0.99);
+        }
+      }
+    }
+
+    .recommendation-card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 24rpx;
+      padding: 36rpx;
+      box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.12);
+
+      .rec-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24rpx;
+
+        .rec-badge {
+          .badge {
+            display: inline-block;
+            padding: 8rpx 20rpx;
+            border-radius: 12rpx;
+            font-size: 24rpx;
+            font-weight: 500;
+
+            &.urgent {
+              background: rgba(239, 68, 68, 0.1);
+              color: #ef4444;
+            }
+
+            &.important {
+              background: rgba(245, 158, 11, 0.1);
+              color: #f59e0b;
+            }
+
+            &.normal {
+              background: rgba(34, 197, 94, 0.1);
+              color: #22c55e;
+            }
+          }
+        }
+
+        .rec-time {
+          font-size: 24rpx;
+          color: #999;
+        }
+      }
+
+      .rec-content {
+        margin-bottom: 28rpx;
+
+        .rec-text {
+          display: block;
+          font-size: 30rpx;
+          color: #333;
+          line-height: 1.7;
+          white-space: pre-wrap;
+        }
+      }
+
+      .rec-context {
+        background: rgba(102, 126, 234, 0.05);
+        border-radius: 16rpx;
+        padding: 24rpx;
+        margin-bottom: 20rpx;
+
+        .context-title {
+          display: block;
+          font-size: 26rpx;
+          font-weight: 600;
+          color: #667eea;
+          margin-bottom: 16rpx;
+        }
+
+        .context-row {
+          display: flex;
+          align-items: center;
+          margin-bottom: 12rpx;
+
+          &:last-child {
+            margin-bottom: 0;
+          }
+
+          .context-label {
+            font-size: 26rpx;
+            color: #666;
+            margin-right: 12rpx;
+            min-width: 100rpx;
+          }
+
+          .context-value {
+            font-size: 26rpx;
+            color: #333;
+          }
+        }
+      }
+
+      .rec-footer {
+        padding-top: 20rpx;
+        border-top: 1rpx solid rgba(0, 0, 0, 0.06);
+
+        .rec-expires {
+          font-size: 24rpx;
+          color: #999;
+        }
+      }
+    }
+  }
+
+  .api-docs {
+    .api-list {
+      .api-item {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 16rpx;
+        padding: 28rpx;
+        margin-bottom: 16rpx;
+        box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+
+        .api-method {
+          display: inline-block;
+          padding: 6rpx 16rpx;
+          border-radius: 8rpx;
+          font-size: 22rpx;
+          font-weight: 600;
+          margin-bottom: 12rpx;
+
+          &.get {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+          }
+
+          &.post {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+          }
+        }
+
+        .api-path {
+          display: block;
+          font-size: 24rpx;
+          font-family: 'Monaco', 'Courier New', monospace;
+          color: #333;
+          margin-bottom: 12rpx;
+          word-break: break-all;
+        }
+
+        .api-desc {
+          display: block;
+          font-size: 24rpx;
+          color: #666;
+        }
+      }
+    }
+  }
+}

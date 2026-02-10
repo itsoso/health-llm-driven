@@ -28,6 +28,7 @@ export default {
     'pages/news-detail/index',   // 资讯详情
     'pages/external-advice/index', // 外部健康建议
     'pages/chat/index',            // AI 对话（OpenClaw）
+    'pages/ai-insights/index',     // AI 健康洞察（测试）
   ],
   window: {
     backgroundTextStyle: 'light',

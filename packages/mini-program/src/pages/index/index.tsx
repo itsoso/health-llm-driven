@@ -634,6 +634,15 @@ export default function Index() {
                 <Text className="quick-card-desc">私人顾问</Text>
               </View>
             </View>
+            <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/ai-insights/index' })}>
+              <View className="quick-card-icon indigo">
+                <Text className="quick-card-emoji">🧠</Text>
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">AI洞察</Text>
+                <Text className="quick-card-desc">智能复盘</Text>
+              </View>
+            </View>
             <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/diet-recommendation/index' })}>
               <View className="quick-card-icon purple">
                 <Text className="quick-card-emoji">🍽️</Text>
