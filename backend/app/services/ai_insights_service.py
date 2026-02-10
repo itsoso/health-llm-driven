@@ -9,7 +9,7 @@ from app.config import settings
 from app.models import (
     AIInsight, RealtimeRecommendation,
     GarminData, CheckinRecord, WeightRecord, BloodPressureRecord,
-    UserProfile, HealthGoal
+    UserProfile, HealthGoal, DietRecord
 )
 from app.schemas.ai_insights import (
     AIInsightCreate, RealtimeRecommendationCreate
@@ -142,20 +142,21 @@ class AIInsightsService:
 
     async def _get_recent_meals(self, user_id: int, days: int = 1) -> List[Dict[str, Any]]:
         """获取近期饮食记录"""
-        cutoff_date = datetime.now() - timedelta(days=days)
-        checkins = self.db.query(CheckinRecord).filter(
-            CheckinRecord.user_id == user_id,
-            CheckinRecord.checkin_type.in_(["breakfast", "lunch", "dinner", "snack"]),
-            CheckinRecord.checkin_time >= cutoff_date
-        ).order_by(CheckinRecord.checkin_time.desc()).all()
+        cutoff_date = date.today() - timedelta(days=days)
+        diet_records = self.db.query(DietRecord).filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date >= cutoff_date
+        ).order_by(DietRecord.record_date.desc(), DietRecord.meal_time.desc()).all()
 
         return [
             {
-                "type": c.checkin_type,
-                "time": c.checkin_time.isoformat() if c.checkin_time else None,
-                "note": c.note
+                "type": d.meal_type,
+                "time": d.meal_time.isoformat() if d.meal_time else None,
+                "food_items": d.food_items,
+                "calories": d.calories,
+                "note": d.notes
             }
-            for c in checkins
+            for d in diet_records
         ]
 
     # ========== OpenClaw 调用方法 ==========
