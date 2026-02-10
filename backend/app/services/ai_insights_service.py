@@ -70,13 +70,15 @@ class AIInsightsService:
         # 打卡记录
         checkins = self.db.query(CheckinRecord).filter(
             CheckinRecord.user_id == user_id,
-            func.date(CheckinRecord.checkin_time) == target_date
+            CheckinRecord.checkin_date == target_date
         ).all()
         snapshot["checkins"] = [
             {
-                "type": c.checkin_type,
+                "template_name": c.template.name if c.template else "Unknown",
+                "category": c.template.category if c.template else None,
+                "value": c.value,
                 "time": c.checkin_time.isoformat() if c.checkin_time else None,
-                "note": c.note
+                "note": c.notes
             }
             for c in checkins
         ]
