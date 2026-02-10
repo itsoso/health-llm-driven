@@ -139,41 +139,114 @@ export default function Chat() {
     setShowHistory(!showHistory);
   };
 
-  // 渲染消息内容（简单的 markdown 支持）
+  // 渲染行内样式（加粗）
+  const renderInline = (text: string) => {
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    const parts: (string | { bold: string })[] = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = boldRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      parts.push({ bold: match[1] });
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return parts.map((p, j) =>
+      typeof p === 'string' ? <Text key={j}>{p}</Text> : <Text key={j} className="msg-bold">{p.bold}</Text>
+    );
+  };
+
+  // 渲染消息内容（markdown 支持：标题、列表、表格、加粗）
   const renderContent = (content: string) => {
-    // 按段落分割
-    return content.split('\n').map((line, i) => {
-      const trimmed = line.trim();
-      if (!trimmed) return <View key={i} className="msg-line-empty" />;
+    const lines = content.split('\n');
+    const elements: any[] = [];
+    let i = 0;
 
-      // 加粗 **text**
-      const boldRegex = /\*\*(.*?)\*\*/g;
-      let parts: (string | { bold: string })[] = [];
-      let lastIndex = 0;
-      let match;
-      while ((match = boldRegex.exec(trimmed)) !== null) {
-        if (match.index > lastIndex) {
-          parts.push(trimmed.slice(lastIndex, match.index));
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+
+      // 空行
+      if (!trimmed) { elements.push(<View key={i} className="msg-line-empty" />); i++; continue; }
+
+      // 表格
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        const tableRows: string[][] = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          const row = lines[i].trim();
+          if (/^\|[\s\-:|]+\|$/.test(row)) { i++; continue; }
+          const cells = row.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1).map(c => c.trim());
+          tableRows.push(cells);
+          i++;
         }
-        parts.push({ bold: match[1] });
-        lastIndex = match.index + match[0].length;
-      }
-      if (lastIndex < trimmed.length) {
-        parts.push(trimmed.slice(lastIndex));
+        if (tableRows.length > 0) {
+          elements.push(
+            <View key={`t${i}`} className="md-table">
+              {tableRows.map((row, ri) => (
+                <View key={ri} className={`md-table-row ${ri === 0 ? 'header' : ''}`}>
+                  {row.map((cell, ci) => (
+                    <View key={ci} className="md-table-cell"><Text>{cell}</Text></View>
+                  ))}
+                </View>
+              ))}
+            </View>
+          );
+        }
+        continue;
       }
 
-      return (
-        <View key={i} className="msg-line">
-          {parts.map((p, j) =>
-            typeof p === 'string' ? (
-              <Text key={j}>{p}</Text>
-            ) : (
-              <Text key={j} className="msg-bold">{p.bold}</Text>
-            )
-          )}
-        </View>
-      );
-    });
+      // 标题
+      const hMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
+      if (hMatch) {
+        elements.push(<View key={i} className={`md-h${hMatch[1].length}`}>{renderInline(hMatch[2])}</View>);
+        i++; continue;
+      }
+
+      // 无序列表
+      if (/^[-•]\s+/.test(trimmed)) {
+        const items: string[] = [];
+        while (i < lines.length && /^[-•]\s+/.test(lines[i].trim())) {
+          items.push(lines[i].trim().replace(/^[-•]\s+/, ''));
+          i++;
+        }
+        elements.push(
+          <View key={`ul${i}`} className="md-list">
+            {items.map((item, li) => (
+              <View key={li} className="md-list-item">
+                <Text className="md-list-dot">·</Text>
+                <View className="md-list-text">{renderInline(item)}</View>
+              </View>
+            ))}
+          </View>
+        );
+        continue;
+      }
+
+      // 有序列表
+      if (/^\d+[.)]\s+/.test(trimmed)) {
+        const items: string[] = [];
+        while (i < lines.length && /^\d+[.)]\s+/.test(lines[i].trim())) {
+          items.push(lines[i].trim().replace(/^\d+[.)]\s+/, ''));
+          i++;
+        }
+        elements.push(
+          <View key={`ol${i}`} className="md-list">
+            {items.map((item, li) => (
+              <View key={li} className="md-list-item">
+                <Text className="md-list-num">{li + 1}.</Text>
+                <View className="md-list-text">{renderInline(item)}</View>
+              </View>
+            ))}
+          </View>
+        );
+        continue;
+      }
+
+      // 普通段落
+      elements.push(<View key={i} className="msg-line">{renderInline(trimmed)}</View>);
+      i++;
+    }
+
+    return elements;
   };
 
   return (

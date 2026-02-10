@@ -625,6 +625,15 @@ export default function Index() {
                 <Text className="quick-card-desc">心率区间训练</Text>
               </View>
             </View>
+            <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/chat/index' })}>
+              <View className="quick-card-icon purple">
+                <Text className="quick-card-emoji">💬</Text>
+              </View>
+              <View className="quick-card-info">
+                <Text className="quick-card-title">健康问答</Text>
+                <Text className="quick-card-desc">私人顾问</Text>
+              </View>
+            </View>
             <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/diet-recommendation/index' })}>
               <View className="quick-card-icon purple">
                 <Text className="quick-card-emoji">🍽️</Text>
@@ -650,15 +659,6 @@ export default function Index() {
               <View className="quick-card-info">
                 <Text className="quick-card-title">补剂记录</Text>
                 <Text className="quick-card-desc">追踪补充</Text>
-              </View>
-            </View>
-            <View className="quick-card" onClick={() => Taro.navigateTo({ url: '/pages/chat/index' })}>
-              <View className="quick-card-icon purple">
-                <Text className="quick-card-emoji">💬</Text>
-              </View>
-              <View className="quick-card-info">
-                <Text className="quick-card-title">健康问答</Text>
-                <Text className="quick-card-desc">私人顾问</Text>
               </View>
             </View>
           </View>

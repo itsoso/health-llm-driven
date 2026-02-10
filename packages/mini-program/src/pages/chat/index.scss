@@ -1,3 +1,8 @@
+// 覆盖全局页面背景
+page {
+  background-color: #0c0c1e;
+}
+
 // AI 聊天页面样式
 .chat-page {
   display: flex;
@@ -208,28 +213,28 @@
 }
 
 .msg-avatar {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-right: 12px;
-  font-size: 28px;
+  margin-right: 10px;
+  font-size: 26px;
 
   &.ai {
-    background: linear-gradient(145deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.2));
+    background: linear-gradient(145deg, rgba(139, 92, 246, 0.35), rgba(59, 130, 246, 0.25));
   }
 }
 
 .msg-bubble {
-  max-width: 75%;
-  padding: 18px 24px;
+  max-width: 80%;
+  padding: 20px 24px;
   border-radius: 24px;
   font-size: 28px;
   line-height: 1.6;
-  word-break: break-all;
+  word-break: break-word;
 
   &.user {
     background: linear-gradient(145deg, #6d28d9, #4f46e5);
@@ -238,24 +243,143 @@
   }
 
   &.assistant {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.88);
+    background: #2d2960;
+    border: none;
+    color: rgba(255, 255, 255, 0.92);
     border-bottom-left-radius: 6px;
   }
 }
 
 .msg-line {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
 }
 
 .msg-line-empty {
-  height: 16px;
+  height: 10px;
 }
 
 .msg-bold {
   font-weight: 600;
-  color: rgba(139, 92, 246, 0.9);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+// Markdown 标题
+.md-h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #fff;
+  margin: 16px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+
+  &:first-child {
+    margin-top: 2px;
+  }
+}
+
+.md-h2 {
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+  margin: 14px 0 8px;
+
+  &:first-child {
+    margin-top: 2px;
+  }
+}
+
+.md-h3 {
+  font-size: 28px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 12px 0 6px;
+
+  &:first-child {
+    margin-top: 2px;
+  }
+}
+
+// Markdown 列表
+.md-list {
+  margin: 6px 0;
+  padding-left: 4px;
+}
+
+.md-list-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.md-list-dot {
+  color: rgba(167, 139, 250, 1);
+  font-size: 28px;
+  line-height: 1.6;
+  margin-right: 8px;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.md-list-num {
+  color: rgba(167, 139, 250, 1);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.6;
+  margin-right: 10px;
+  flex-shrink: 0;
+  min-width: 36px;
+}
+
+.md-list-text {
+  flex: 1;
+  line-height: 1.6;
+}
+
+// Markdown 表格
+.md-table {
+  margin: 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.md-table-row {
+  display: flex;
+
+  &.header {
+    background: rgba(139, 92, 246, 0.25);
+
+    .md-table-cell {
+      font-weight: 700;
+      color: #fff;
+    }
+  }
+
+  &:not(.header) {
+    background: rgba(255, 255, 255, 0.03);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+    &:nth-child(even) {
+      background: rgba(255, 255, 255, 0.06);
+    }
+  }
+}
+
+.md-table-cell {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.88);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+
+  &:last-child {
+    border-right: none;
+  }
 }
 
 // 打字动画
