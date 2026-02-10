@@ -122,7 +122,7 @@ class AIInsightsService:
             "target_weight_kg": float(profile.target_weight_kg) if profile.target_weight_kg else None,
             "chronic_conditions": profile.chronic_conditions or [],
             "allergies": profile.allergies or [],
-            "medications": profile.medications or [],
+            "current_medications": profile.current_medications or [],
         }
 
     async def _get_health_goals(self, user_id: int) -> List[Dict[str, Any]]:
