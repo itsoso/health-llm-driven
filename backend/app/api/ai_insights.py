@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import date, timedelta
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.api.deps import get_current_user
 from app.models import User, AIInsight, RealtimeRecommendation
 from app.schemas.ai_insights import (
     AIInsightResponse, AIInsightListResponse,
