@@ -93,6 +93,9 @@ class ChatService:
                 if (today.month, today.day) < (user.birth_date.month, user.birth_date.day):
                     age -= 1
                 info += f", 年龄: {age}岁"
+                # 计算最大心率 (220 - 年龄)，用于运动强度分析
+                max_heart_rate = 220 - age
+                info += f", 最大心率: {max_heart_rate}bpm (220-年龄)"
             parts.append(info)
 
         if profile:
@@ -316,7 +319,18 @@ class ChatService:
         ).order_by(WorkoutRecord.workout_date.desc()).limit(20).all()
 
         if workout_30days:
-            workout_summary = [f"最近30天运动训练记录({len(workout_30days)}次):"]
+            # 添加心率分析提示
+            if user and user.birth_date:
+                age = today.year - user.birth_date.year
+                if (today.month, today.day) < (user.birth_date.month, user.birth_date.day):
+                    age -= 1
+                max_hr = 220 - age
+                workout_summary = [
+                    f"最近30天运动训练记录({len(workout_30days)}次):",
+                    f"[心率分析参考: 最大心率{max_hr}bpm, 轻度<60%, 中度60-75%, 高强度75-85%, 极限>85%]"
+                ]
+            else:
+                workout_summary = [f"最近30天运动训练记录({len(workout_30days)}次):"]
             for workout in workout_30days[:10]:  # 只显示最近10次
                 workout_info = [f"{workout.workout_date}"]
 
