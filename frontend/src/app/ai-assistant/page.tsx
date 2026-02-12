@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { chatApi, ChatMessage, Conversation } from '@/services/api';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const QUICK_QUESTIONS = [
   { label: '分析打卡', text: '请分析一下我今天的打卡完成情况，给出建议' },
@@ -271,6 +272,7 @@ export default function AIAssistantPage() {
   {msg.role === 'assistant' ? (
                     <div className="text-white text-sm leading-relaxed">
                       <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
                         components={{
                           p: ({ children }) => <p className="mb-3 last:mb-0 whitespace-pre-wrap">{children}</p>,
                           ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1.5">{children}</ul>,
