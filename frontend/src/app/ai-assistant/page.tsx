@@ -230,7 +230,8 @@ export default function AIAssistantPage() {
         {/* 主聊天区域 */}
         <div className="flex-1 flex flex-col">
           {/* 消息列表 */}
-          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            <div className="max-w-4xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
                 <div className="text-6xl">💬</div>
@@ -343,21 +344,24 @@ export default function AIAssistantPage() {
             )}
 
             <div ref={messagesEndRef} />
+            </div>
           </div>
 
           {/* 快捷提问栏 (对话进行中也显示) */}
           {messages.length > 0 && !loading && (
-            <div className="px-4 py-2 border-t border-white/10 overflow-x-auto">
-              <div className="flex gap-2">
-                {QUICK_QUESTIONS.map((q, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSend(q.text)}
-                    className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-full text-sm whitespace-nowrap transition-colors border border-white/10"
-                  >
-                    {q.label}
-                  </button>
-                ))}
+            <div className="px-4 py-2 border-t border-white/10">
+              <div className="max-w-4xl mx-auto overflow-x-auto">
+                <div className="flex gap-2">
+                  {QUICK_QUESTIONS.map((q, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSend(q.text)}
+                      className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-full text-sm whitespace-nowrap transition-colors border border-white/10"
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
