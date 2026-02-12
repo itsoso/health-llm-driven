@@ -28,17 +28,19 @@ class WeatherService:
     # 和风天气 API
     # 免费版: https://devapi.qweather.com/v7
     # 商用版: https://api.qweather.com/v7
+    # 自定义Host: https://your-host.qweatherapi.com/v7
     QWEATHER_BASE_URL = "https://api.qweather.com/v7"
     # 备用：Open-Meteo 免费 API（无需 key）
     OPENMETEO_BASE_URL = "https://api.open-meteo.com/v1"
 
-    def __init__(self, api_key: Optional[str] = None, api_type: str = "free"):
+    def __init__(self, api_key: Optional[str] = None, api_type: str = "free", api_host: Optional[str] = None):
         """
         初始化天气服务
 
         Args:
             api_key: 和风天气 API Key（可选，不提供则使用 Open-Meteo）
             api_type: API类型，"free" 或 "premium"（商用版）
+            api_host: 自定义API Host（如：abc.qweatherapi.com）
         """
         self.api_key = api_key
         self.api_type = api_type
@@ -46,15 +48,19 @@ class WeatherService:
         self._cache_time: Dict[str, datetime] = {}
         self._cache_duration = timedelta(minutes=30)  # 缓存30分钟
 
-        # 根据API类型选择URL
-        if api_type == "premium":
+        # 根据API Host或类型选择URL
+        if api_host:
+            # 使用自定义API Host（推荐方式）
+            self.QWEATHER_BASE_URL = f"https://{api_host}/v7"
+            logger.info(f"天气服务初始化完成 (使用自定义API Host: {api_host})")
+        elif api_type == "premium":
             self.QWEATHER_BASE_URL = "https://api.qweather.com/v7"
+            logger.info(f"天气服务初始化完成 (使用和风天气 PREMIUM API)")
         else:
             self.QWEATHER_BASE_URL = "https://devapi.qweather.com/v7"
+            logger.info(f"天气服务初始化完成 (使用和风天气 FREE API)")
 
-        if api_key:
-            logger.info(f"天气服务初始化完成 (使用和风天气 {api_type.upper()} API)")
-        else:
+        if not api_key:
             logger.info("天气服务初始化完成 (使用 Open-Meteo 免费 API)")
     
     def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
@@ -389,8 +395,9 @@ class WeatherService:
         }
 
 
-# 单例实例 - 从环境变量读取API key和类型
+# 单例实例 - 从环境变量读取API配置
 weather_service = WeatherService(
     api_key=os.getenv("QWEATHER_API_KEY"),
-    api_type=os.getenv("QWEATHER_API_TYPE", "free")
+    api_type=os.getenv("QWEATHER_API_TYPE", "free"),
+    api_host=os.getenv("QWEATHER_API_HOST")
 )
