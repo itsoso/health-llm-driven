@@ -34,6 +34,21 @@ interface RealtimeRecommendation {
   is_active: number;
 }
 
+interface UserProfile {
+  detected_location: {
+    city: string | null;
+    region: string | null;
+    country: string | null;
+  } | null;
+  manual_location: {
+    city: string | null;
+    region: string | null;
+    country: string | null;
+  } | null;
+  use_manual_location: boolean;
+  city: string | null;
+}
+
 function AIInsightsContent() {
   const router = useRouter();
   const { token } = useAuth();
@@ -41,6 +56,7 @@ function AIInsightsContent() {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [currentRecommendation, setCurrentRecommendation] = useState<RealtimeRecommendation | null>(null);
   const [activeTab, setActiveTab] = useState<'insights' | 'recommendations'>('insights');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     loadData();
@@ -51,9 +67,29 @@ function AIInsightsContent() {
       await Promise.all([
         loadInsights(),
         loadLatestRecommendation(),
+        loadUserProfile(),
       ]);
     } catch (error) {
       console.error('Failed to load data:', error);
+    }
+  };
+
+  const loadUserProfile = async () => {
+    try {
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/users/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUserProfile(data);
+      }
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
     }
   };
 
@@ -154,7 +190,20 @@ function AIInsightsContent() {
 
     setLoading(true);
     try {
-      // 获取用户位置（简化版，实际应该使用地理位置API）
+      // 从用户profile获取城市信息
+      // 优先使用手动设置的位置，否则使用IP检测的位置
+      let userCity = '北京'; // 默认值
+
+      if (userProfile) {
+        if (userProfile.use_manual_location && userProfile.manual_location?.city) {
+          userCity = userProfile.manual_location.city;
+        } else if (userProfile.detected_location?.city) {
+          userCity = userProfile.detected_location.city;
+        } else if (userProfile.city) {
+          userCity = userProfile.city;
+        }
+      }
+
       const response = await fetch(`${API_BASE}/ai-insights/recommendations/realtime`, {
         method: 'POST',
         headers: {
@@ -162,9 +211,7 @@ function AIInsightsContent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          city: '北京', // 默认城市，可以后续改进
-          latitude: 39.9,
-          longitude: 116.4,
+          city: userCity,
         }),
       });
 
@@ -174,7 +221,7 @@ function AIInsightsContent() {
 
       const data = await response.json();
       setCurrentRecommendation(data);
-      alert('✅ 实时建议生成成功！');
+      alert(`✅ 实时建议生成成功！（基于城市: ${userCity}）`);
     } catch (error) {
       console.error('Failed to generate recommendation:', error);
       alert('❌ 生成失败，请稍后重试');
