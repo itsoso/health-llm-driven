@@ -51,7 +51,7 @@ export default function AIAssistantPage() {
       const response = await chatApi.getConversation(convId);
       setMessages(response.data.messages || []);
       setConversationId(convId);
-      setShowHistory(false);
+      // 保持历史记录面板打开，不自动关闭
     } catch (e) {
       console.error('加载对话失败:', e);
       alert('加载失败');
