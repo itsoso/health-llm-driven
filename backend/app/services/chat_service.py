@@ -14,7 +14,7 @@ from app.config import settings
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.basic_health import BasicHealthData
-from app.models.daily_health import GarminData, DietRecord
+from app.models.daily_health import GarminData, DietRecord, ExerciseRecord, WorkoutRecord
 from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
@@ -304,6 +304,86 @@ class ChatService:
                 avg_active = sum(active_mins) / len(active_mins)
                 exercise_stats_30d.append(f"平均活动{avg_active:.0f}分钟")
             parts.append(": ".join(exercise_stats_30d))
+
+        # 详细运动训练记录（最近30天）
+        # 查询 WorkoutRecord（跑步、游泳、骑车等专项训练）
+        workout_30days = self.db.query(WorkoutRecord).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= thirty_days_ago
+        ).order_by(WorkoutRecord.workout_date.desc()).limit(20).all()
+
+        if workout_30days:
+            workout_summary = [f"最近30天运动训练记录({len(workout_30days)}次):"]
+            for workout in workout_30days[:10]:  # 只显示最近10次
+                workout_info = [f"{workout.workout_date}"]
+
+                # 运动类型和名称
+                workout_type_map = {
+                    'running': '跑步', 'swimming': '游泳', 'cycling': '骑车',
+                    'hiit': 'HIIT', 'cardio': '有氧', 'strength': '力量训练',
+                    'yoga': '瑜伽', 'walking': '走路', 'hiking': '徒步'
+                }
+                type_name = workout_type_map.get(workout.workout_type, workout.workout_type)
+                if workout.workout_name:
+                    workout_info.append(f"{workout.workout_name}({type_name})")
+                else:
+                    workout_info.append(type_name)
+
+                # 时长
+                if workout.duration_seconds:
+                    mins = workout.duration_seconds // 60
+                    workout_info.append(f"{mins}分钟")
+
+                # 距离
+                if workout.distance_meters:
+                    km = workout.distance_meters / 1000
+                    workout_info.append(f"{km:.2f}公里")
+
+                # 配速（跑步）
+                if workout.avg_pace_seconds_per_km and workout.workout_type in ['running', 'walking']:
+                    pace_min = workout.avg_pace_seconds_per_km // 60
+                    pace_sec = workout.avg_pace_seconds_per_km % 60
+                    workout_info.append(f"配速{pace_min}'{pace_sec}\"")
+
+                # 心率
+                if workout.avg_heart_rate:
+                    workout_info.append(f"心率{workout.avg_heart_rate}bpm")
+
+                # 卡路里
+                if workout.calories:
+                    workout_info.append(f"{workout.calories}卡")
+
+                workout_summary.append(" ".join(workout_info))
+
+            if len(workout_30days) > 10:
+                workout_summary.append(f"...还有{len(workout_30days) - 10}次训练记录")
+            parts.append("\n  ".join(workout_summary))
+
+        # 查询 ExerciseRecord（日常锻炼记录）
+        exercise_30days_detailed = self.db.query(ExerciseRecord).filter(
+            ExerciseRecord.user_id == user_id,
+            ExerciseRecord.record_date >= thirty_days_ago
+        ).order_by(ExerciseRecord.record_date.desc()).limit(15).all()
+
+        if exercise_30days_detailed:
+            exercise_summary = [f"最近30天日常锻炼记录({len(exercise_30days_detailed)}次):"]
+            for ex in exercise_30days_detailed[:10]:  # 只显示最近10次
+                ex_info = [f"{ex.record_date} {ex.exercise_type}"]
+                if ex.duration:
+                    ex_info.append(f"{ex.duration}分钟")
+                if ex.intensity:
+                    ex_info.append(f"强度:{ex.intensity}")
+                if ex.calories_burned:
+                    ex_info.append(f"{ex.calories_burned}卡")
+                if ex.distance:
+                    ex_info.append(f"{ex.distance}km")
+                if ex.notes:
+                    ex_info.append(f"备注:{ex.notes}")
+                exercise_summary.append(" ".join(ex_info))
+
+            if len(exercise_30days_detailed) > 10:
+                exercise_summary.append(f"...还有{len(exercise_30days_detailed) - 10}次锻炼记录")
+            parts.append("\n  ".join(exercise_summary))
 
         # 饮食数据分析（最近3天、7天）
         # 最近3天详细饮食记录
