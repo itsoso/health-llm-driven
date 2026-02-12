@@ -47,21 +47,15 @@ class ChatService:
         user_city = None
         if profile:
             # 优先使用手动设置的位置
-            if profile.use_manual_location and profile.manual_location:
-                manual_loc = profile.manual_location
-                if isinstance(manual_loc, dict):
-                    user_city = manual_loc.get('city')
-                    if user_city:
-                        location_info = f"位置: {manual_loc.get('province', '')}{user_city}"
-                        parts.append(location_info)
+            if profile.use_manual_location and profile.manual_city:
+                user_city = profile.manual_city
+                location_info = f"位置: {profile.manual_region or ''}{user_city}"
+                parts.append(location_info)
             # 其次使用IP检测的位置
-            elif profile.detected_location:
-                detected_loc = profile.detected_location
-                if isinstance(detected_loc, dict):
-                    user_city = detected_loc.get('city')
-                    if user_city:
-                        location_info = f"位置: {detected_loc.get('province', '')}{user_city}"
-                        parts.append(location_info)
+            elif profile.detected_city:
+                user_city = profile.detected_city
+                location_info = f"位置: {profile.detected_region or ''}{user_city}"
+                parts.append(location_info)
             # 兜底使用city字段
             elif profile.city:
                 user_city = profile.city
