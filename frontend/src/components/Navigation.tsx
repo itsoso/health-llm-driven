@@ -38,7 +38,8 @@ import {
   Stethoscope,
   Thermometer,
   Newspaper,
-  Brain
+  Brain,
+  MessageCircle
 } from 'lucide-react';
 
 interface NavItem {
@@ -67,6 +68,7 @@ export default function Navigation() {
     { href: '/', label: '首页', icon: <Home className="w-4 h-4" /> },
     { href: '/overview', label: '健康概览', icon: <LayoutDashboard className="w-4 h-4" /> },
     { href: '/daily-insights', label: '今日建议', icon: <Sparkles className="w-4 h-4" /> },
+    { href: '/ai-assistant', label: '健康顾问', icon: <MessageCircle className="w-4 h-4" /> },
     { href: '/news', label: '资讯', icon: <Newspaper className="w-4 h-4" /> },
   ];
 
