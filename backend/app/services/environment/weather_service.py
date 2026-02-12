@@ -124,12 +124,12 @@ class WeatherService:
     ) -> Dict[str, Any]:
         """
         获取天气预报
-        
+
         Args:
             city: 城市名称
             lat, lon: 经纬度
             days: 预报天数
-            
+
         Returns:
             天气预报数据
         """
@@ -137,15 +137,20 @@ class WeatherService:
         cached = self._get_cache(cache_key)
         if cached:
             return cached
-        
+
         try:
-            if lat is None or lon is None:
-                lat, lon = self._city_to_coords(city)
-            
-            result = await self._get_openmeteo_forecast(lat, lon, days)
+            if self.api_key:
+                # 使用和风天气API
+                result = await self._get_qweather_forecast(city, lat, lon, days)
+            else:
+                # 使用Open-Meteo作为备用
+                if lat is None or lon is None:
+                    lat, lon = self._city_to_coords(city)
+                result = await self._get_openmeteo_forecast(lat, lon, days)
+
             self._set_cache(cache_key, result)
             return result
-            
+
         except Exception as e:
             logger.error(f"获取天气预报失败: {e}")
             return {"available": False, "error": str(e)}
@@ -191,7 +196,56 @@ class WeatherService:
                 }
             else:
                 raise Exception(f"API 返回错误: {data.get('code')}")
-    
+
+    async def _get_qweather_forecast(
+        self,
+        city: str = None,
+        lat: float = None,
+        lon: float = None,
+        days: int = 3
+    ) -> Dict[str, Any]:
+        """使用和风天气API获取天气预报"""
+        async with httpx.AsyncClient() as client:
+            # 和风天气API需要Location ID或经纬度
+            if city:
+                location = self._city_to_location_id(city)
+            else:
+                location = f"{lon},{lat}"
+
+            url = f"{self.QWEATHER_BASE_URL}/weather/{days}d"
+            params = {
+                "location": location,
+                "key": self.api_key
+            }
+
+            response = await client.get(url, params=params, timeout=10)
+            data = response.json()
+
+            if data.get("code") == "200":
+                daily = data.get("daily", [])
+                forecasts = []
+
+                for day in daily[:days]:
+                    forecasts.append({
+                        "date": day.get("fxDate", ""),
+                        "weather": day.get("textDay", ""),
+                        "weather_code": day.get("iconDay", ""),
+                        "temp_max": float(day.get("tempMax", 0)),
+                        "temp_min": float(day.get("tempMin", 0)),
+                        "feels_like_max": float(day.get("tempMax", 0)),  # 和风天气预报没有体感温度
+                        "feels_like_min": float(day.get("tempMin", 0)),
+                        "precipitation_probability": int(day.get("precip", 0)),
+                        "uv_index": int(day.get("uvIndex", 0))
+                    })
+
+                return {
+                    "available": True,
+                    "source": "qweather",
+                    "forecasts": forecasts
+                }
+            else:
+                raise Exception(f"API 返回错误: {data.get('code')}")
+
     async def _get_openmeteo_current(self, lat: float, lon: float) -> Dict[str, Any]:
         """使用 Open-Meteo API 获取当前天气（免费，无需 API Key）"""
         async with httpx.AsyncClient() as client:

@@ -14,7 +14,7 @@ from app.models import (
 from app.schemas.ai_insights import (
     AIInsightCreate, RealtimeRecommendationCreate
 )
-from app.services.weather_service import weather_service
+from app.services.environment import weather_service
 import logging
 
 logger = logging.getLogger(__name__)
