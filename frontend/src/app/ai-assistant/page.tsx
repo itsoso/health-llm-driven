@@ -174,28 +174,37 @@ export default function AIAssistantPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* 历史对话侧栏 */}
         {showHistory && (
-          <div className="w-80 bg-slate-800/50 border-r border-white/10 flex flex-col">
-            <div className="p-4 border-b border-white/10">
-              <h2 className="text-lg font-bold text-white">对话记录</h2>
+          <div className="w-80 bg-slate-800/80 border-r border-purple-500/30 flex flex-col shadow-lg">
+            <div className="p-4 border-b border-purple-500/30 bg-slate-900/50">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>💬</span>
+                <span>对话记录</span>
+              </h2>
             </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
                 <div className="p-8 text-center text-slate-400">
-                  暂无对话记录
+                  <div className="text-4xl mb-3">📝</div>
+                  <div>暂无对话记录</div>
                 </div>
               ) : (
                 conversations.map(conv => (
                   <div
                     key={conv.id}
-                    className={`flex items-start justify-between p-4 border-b border-white/5 hover:bg-slate-700/30 cursor-pointer transition-colors ${
-                      conv.id === conversationId ? 'bg-purple-900/20' : ''
+                    className={`group flex items-start gap-3 p-4 border-b border-white/5 hover:bg-purple-900/20 cursor-pointer transition-all ${
+                      conv.id === conversationId ? 'bg-purple-900/30 border-l-4 border-l-purple-500' : 'border-l-4 border-l-transparent'
                     }`}
                     onClick={() => loadConversation(conv.id)}
                   >
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600/30 flex items-center justify-center text-sm">
+                      💬
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-white truncate">{conv.title}</div>
+                      <div className="font-medium text-white line-clamp-2 mb-1 leading-snug">
+                        {conv.title}
+                      </div>
                       {conv.last_message && (
-                        <div className="text-sm text-slate-400 truncate mt-1">
+                        <div className="text-xs text-slate-400 line-clamp-1">
                           {conv.last_message}
                         </div>
                       )}
@@ -205,7 +214,8 @@ export default function AIAssistantPage() {
                         e.stopPropagation();
                         handleDeleteConversation(conv.id);
                       }}
-                      className="ml-2 text-slate-400 hover:text-red-400 text-xl"
+                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 ml-2 text-slate-400 hover:text-red-400 text-xl transition-opacity"
+                      title="删除对话"
                     >
                       ×
                     </button>
