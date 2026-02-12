@@ -247,8 +247,8 @@ class WeatherService:
                         "temp_min": float(day.get("tempMin", 0)),
                         "feels_like_max": float(day.get("tempMax", 0)),  # 和风天气预报没有体感温度
                         "feels_like_min": float(day.get("tempMin", 0)),
-                        "precipitation_probability": int(day.get("precip", 0)),
-                        "uv_index": int(day.get("uvIndex", 0))
+                        "precipitation_probability": int(float(day.get("precip", 0))),
+                        "uv_index": int(float(day.get("uvIndex", 0)))
                     })
 
                 return {
