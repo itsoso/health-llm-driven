@@ -7,7 +7,8 @@ import Taro from '@tarojs/taro';
 import {
   wechatLogin,
   syncMyGarminData,
-  quickAddWater
+  quickAddWater,
+  getWaterRecordsByDate
 } from '../../services/api';
 import { 
   getTodayGarminDataCached,
@@ -38,6 +39,12 @@ import {
 import { performanceMonitor, pagePerformance } from '../../utils/performance';
 import './index.scss';
 
+interface WaterSummary {
+  total_amount: number;
+  goal_amount: number;
+  completion_rate: number;
+}
+
 interface HomeData {
   garmin: GarminData | null;
   recommendation: DailyRecommendation | null;
@@ -49,6 +56,7 @@ interface HomeData {
   reminders: HealthReminder[];
   schedule: ScheduleItem[];
   workoutGuidance: PreWorkoutGuidance | null;
+  waterSummary: WaterSummary | null;
   loading: boolean;
 }
 
@@ -72,6 +80,7 @@ export default function Index() {
     reminders: [],
     schedule: [],
     workoutGuidance: null,
+    waterSummary: null,
     loading: false,
   });
 
@@ -201,28 +210,38 @@ export default function Index() {
       performanceMonitor.start('首页-第一批加载');
       console.log('[首页] 🚀 第一批：加载关键数据（Garmin、提醒、运动）');
       
+      const today = new Date().toISOString().split('T')[0];
       const [
         garminData,
         remindersData,
-        workoutsData
+        workoutsData,
+        waterData
       ] = await Promise.allSettled([
         performanceMonitor.trackAPI('getTodayGarminData', () => getTodayGarminDataCached()),
         performanceMonitor.trackAPI('getCurrentReminders', () => getCurrentRemindersCached()),
-        performanceMonitor.trackAPI('getTodayWorkouts', () => getTodayWorkoutsCached())
+        performanceMonitor.trackAPI('getTodayWorkouts', () => getTodayWorkoutsCached()),
+        performanceMonitor.trackAPI('getTodayWater', () => getWaterRecordsByDate(today))
       ]);
       
       performanceMonitor.end('首页-第一批加载', {
-        成功: [garminData, remindersData, workoutsData].filter(r => r.status === 'fulfilled').length,
-        失败: [garminData, remindersData, workoutsData].filter(r => r.status === 'rejected').length
+        成功: [garminData, remindersData, workoutsData, waterData].filter(r => r.status === 'fulfilled').length,
+        失败: [garminData, remindersData, workoutsData, waterData].filter(r => r.status === 'rejected').length
       });
 
       // 立即更新关键数据，让用户快速看到内容
       const workouts = workoutsData.status === 'fulfilled' ? workoutsData.value : [];
+      const waterSummary = waterData.status === 'fulfilled' ? {
+        total_amount: waterData.value.total_amount,
+        goal_amount: waterData.value.goal_amount,
+        completion_rate: waterData.value.completion_rate
+      } : null;
+
       setHomeData(prev => ({
         ...prev,
         garmin: garminData.status === 'fulfilled' ? garminData.value : null,
         reminders: remindersData.status === 'fulfilled' ? (remindersData.value?.reminders || []) : [],
         workouts,
+        waterSummary,
         loading: false, // 关键数据加载完成，移除 loading 状态
       }));
       
@@ -873,12 +892,16 @@ export default function Index() {
               <View className="data-row">
                 <View className="dot red"></View>
                 <Text className="data-label">步数:</Text>
-                <Text className="data-value">8000 步</Text>
+                <Text className="data-value">
+                  {homeData.garmin?.steps?.toLocaleString() || 0}/8000 步
+                </Text>
               </View>
               <View className="data-row">
                 <View className="dot red"></View>
                 <Text className="data-label">饮水:</Text>
-                <Text className="data-value">2000 ml</Text>
+                <Text className="data-value">
+                  {homeData.waterSummary?.total_amount || 0}/{homeData.waterSummary?.goal_amount || 2000} ml
+                </Text>
               </View>
             </View>
           </View>
@@ -892,7 +915,9 @@ export default function Index() {
             <View className="briefing-content">
               <View className="data-row">
                 <View className="dot blue"></View>
-                <Text className="data-text">🫧 记得早晚洗鼻</Text>
+                <Text className="data-text">
+                  🫧 洗鼻 {homeData.rhinitis?.nasal_wash_count || 0}/2 次
+                </Text>
               </View>
               <View className="data-row">
                 <View className="dot blue"></View>
