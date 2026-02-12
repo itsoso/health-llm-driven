@@ -89,6 +89,9 @@ class ChatService:
                 info += f", 性别: {user.gender}"
             if user.birth_date:
                 age = today.year - user.birth_date.year
+                # Adjust if birthday hasn't occurred yet this year
+                if (today.month, today.day) < (user.birth_date.month, user.birth_date.day):
+                    age -= 1
                 info += f", 年龄: {age}岁"
             parts.append(info)
 
