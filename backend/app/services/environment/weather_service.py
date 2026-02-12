@@ -474,6 +474,48 @@ class WeatherService:
             "weather_summary": f"{weather_text}，{temp}°C，湿度{humidity}%"
         }
 
+    async def get_comprehensive_context(
+        self,
+        city: str = None,
+        latitude: float = None,
+        longitude: float = None
+    ) -> Dict[str, Any]:
+        """
+        获取完整的天气和空气质量上下文
+
+        用于 AI 生成建议时提供环境信息
+
+        Args:
+            city: 城市名称
+            latitude: 纬度
+            longitude: 经度
+
+        Returns:
+            {
+                "weather": {...},
+                "air_quality": {...},
+                "location": {"city": "北京", "latitude": 39.9, "longitude": 116.4}
+            }
+        """
+        # 导入 air_quality_service（避免循环导入）
+        from .air_quality_service import air_quality_service
+
+        # 获取天气数据
+        weather = await self.get_current_weather(city, latitude, longitude)
+
+        # 获取空气质量数据
+        air_quality = await air_quality_service.get_air_quality(city, latitude, longitude)
+
+        return {
+            "weather": weather,
+            "air_quality": air_quality,
+            "location": {
+                "city": city,
+                "latitude": latitude,
+                "longitude": longitude
+            }
+        }
+
 
 # 单例实例 - 从环境变量读取API配置
 weather_service = WeatherService(
