@@ -169,50 +169,41 @@ export default function AIAssistantPage() {
   };
 
   return (
-    <div className="fixed inset-0 top-16 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col overflow-hidden">
-      {/* 顶部栏 */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-white/10">
-        <button
-          onClick={toggleHistory}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-600/20 transition-all text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/50"
-        >
-          <span className="text-xl">{showHistory ? '✕' : '💬'}</span>
-          <span className="text-sm font-medium">{showHistory ? '关闭' : '历史'}</span>
-        </button>
-        <div className="flex-1"></div>
-        <button
-          onClick={handleNewChat}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-600/20 transition-all text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/50"
-        >
-          <span className="text-xl">+</span>
-          <span className="text-sm font-medium">新建</span>
-        </button>
-      </div>
+    <div className="fixed inset-0 top-16 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex overflow-hidden">
+      {/* 历史对话侧栏 */}
+      {showHistory && (
+        <div className="w-80 bg-slate-800/80 border-r border-purple-500/30 flex flex-col shadow-lg">
+          {/* 侧边栏顶部 - 新建对话按钮 */}
+          <div className="p-3 border-b border-purple-500/30 bg-slate-900/50">
+            <button
+              onClick={handleNewChat}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 transition-all text-white font-medium shadow-lg"
+            >
+              <span className="text-xl">+</span>
+              <span>新建对话</span>
+            </button>
+          </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* 历史对话侧栏 */}
-        {showHistory && (
-          <div className="w-80 bg-slate-800/80 border-r border-purple-500/30 flex flex-col shadow-lg">
-            <div className="p-4 border-b border-purple-500/30 bg-slate-900/50">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-3">
-                <span>💬</span>
-                <span>对话记录</span>
-              </h2>
-              {/* 搜索框 */}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setCurrentPage(1); // 搜索时重置到第一页
-                  }}
-                  placeholder="搜索对话..."
-                  className="w-full px-3 py-2 pl-9 rounded-lg bg-slate-700/50 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
-              </div>
+          {/* 搜索框 */}
+          <div className="p-4 border-b border-purple-500/30 bg-slate-900/50">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-3">
+              <span>💬</span>
+              <span>对话记录</span>
+            </h2>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1); // 搜索时重置到第一页
+                }}
+                placeholder="搜索对话..."
+                className="w-full px-3 py-2 pl-9 rounded-lg bg-slate-700/50 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
             </div>
+          </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
                 <div className="p-8 text-center text-slate-400">
@@ -297,7 +288,18 @@ export default function AIAssistantPage() {
         )}
 
         {/* 主聊天区域 */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col relative">
+          {/* 切换侧边栏按钮 (仅当侧边栏关闭时显示) */}
+          {!showHistory && (
+            <button
+              onClick={toggleHistory}
+              className="absolute top-4 left-4 z-10 w-10 h-10 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-white/10 flex items-center justify-center text-purple-300 hover:text-purple-200 transition-all shadow-lg"
+              title="打开历史记录"
+            >
+              <span className="text-xl">💬</span>
+            </button>
+          )}
+
           {/* 消息列表 */}
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="max-w-4xl mx-auto space-y-4">
@@ -460,7 +462,6 @@ export default function AIAssistantPage() {
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }
