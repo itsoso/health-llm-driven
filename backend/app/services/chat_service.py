@@ -62,10 +62,14 @@ class ChatService:
                 user_city = profile.city
                 parts.append(f"位置: {user_city}")
 
-        # 获取当前天气信息（异步调用）
+        # 获取当前天气和空气质量信息（异步调用）
         if user_city:
             try:
-                weather = await weather_service.get_current_weather(user_city)
+                # 使用综合上下文API，同时获取天气、空气质量和生活指数
+                context = await weather_service.get_comprehensive_context(city=user_city)
+
+                # 天气信息
+                weather = context.get('weather')
                 if weather:
                     weather_info = f"当前天气: {weather.get('text', '')}, 温度{weather.get('temp', '')}℃"
                     if weather.get('feelsLike'):
@@ -75,8 +79,28 @@ class ChatService:
                     if weather.get('windDir') and weather.get('windScale'):
                         weather_info += f", {weather.get('windDir')}{weather.get('windScale')}级"
                     parts.append(weather_info)
+
+                # 空气质量信息
+                air_quality = context.get('air_quality')
+                if air_quality and air_quality.get('available'):
+                    aqi = air_quality.get('aqi', 'N/A')
+                    level = air_quality.get('level', '未知')
+                    primary = air_quality.get('primary_pollutant', '无')
+                    air_info = f"空气质量: AQI {aqi} ({level})"
+                    if primary and primary != '无':
+                        air_info += f", 主要污染物: {primary}"
+                    parts.append(air_info)
+
+                # 生活指数（如果可用）
+                lifestyle = context.get('lifestyle_indices')
+                if lifestyle and lifestyle.get('available'):
+                    # 运动指数
+                    sport = lifestyle.get('1')  # 1 = 运动指数
+                    if sport:
+                        sport_info = f"运动指数: {sport.get('category', '')} - {sport.get('text', '')}"
+                        parts.append(sport_info)
             except Exception as e:
-                logger.warning(f"获取天气信息失败: {e}")
+                logger.warning(f"获取环境信息失败: {e}")
 
         if user:
             info = f"用户: {user.name or user.username}"
