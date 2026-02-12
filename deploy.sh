@@ -108,8 +108,8 @@ restart_services() {
     ssh $SERVER "
         echo '重启后端服务...' && \
         systemctl restart health-backend && \
-        echo '重启前端服务...' && \
-        systemctl restart health-frontend
+        echo '重启前端服务 (PM2)...' && \
+        pm2 restart health-frontend
     "
 
     print_success "服务已重启"
@@ -151,8 +151,8 @@ deploy_frontend() {
         npm install && \
         echo '正在构建前端...' && \
         npm run build && \
-        echo '重启前端服务...' && \
-        systemctl restart health-frontend
+        echo '重启前端服务 (PM2)...' && \
+        pm2 restart health-frontend
     "
 
     print_success "前端部署完成"
@@ -184,10 +184,10 @@ deploy_backend() {
 check_status() {
     print_step "服务器服务状态..."
     echo ""
-    
+
     ssh $SERVER "
-        echo '=== 前端服务 ===' && \
-        systemctl status health-frontend --no-pager | head -15 && \
+        echo '=== 前端服务 (PM2) ===' && \
+        pm2 list && \
         echo '' && \
         echo '=== 后端服务 ===' && \
         systemctl status health-backend --no-pager | head -15

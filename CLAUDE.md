@@ -38,16 +38,17 @@
 
 #### 服务管理
 
-前端和后端使用 systemd 管理：
+**前端服务**使用 PM2 管理，**后端服务**使用 systemd 管理：
 
 ```bash
-# 前端服务
-systemctl status health-frontend
-systemctl restart health-frontend
-systemctl stop health-frontend
-systemctl start health-frontend
+# 前端服务 (PM2)
+pm2 list
+pm2 restart health-frontend
+pm2 stop health-frontend
+pm2 start health-frontend
+pm2 logs health-frontend
 
-# 后端服务
+# 后端服务 (systemd)
 systemctl status health-backend
 systemctl restart health-backend
 systemctl stop health-backend
@@ -66,7 +67,7 @@ cd /opt/health-app/frontend
 git pull
 npm install
 npm run build
-systemctl restart health-frontend
+pm2 restart health-frontend
 ```
 
 #### 后端部署
