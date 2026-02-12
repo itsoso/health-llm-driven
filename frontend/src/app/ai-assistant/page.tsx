@@ -157,18 +157,20 @@ export default function AIAssistantPage() {
       <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-white/10">
         <button
           onClick={toggleHistory}
-          className="text-2xl hover:text-purple-400 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-600/20 transition-all text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/50"
         >
-          {showHistory ? '✕' : '☰'}
+          <span className="text-xl">{showHistory ? '✕' : '💬'}</span>
+          <span className="text-sm font-medium">{showHistory ? '关闭' : '历史'}</span>
         </button>
         <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
           健康顾问
         </h1>
         <button
           onClick={handleNewChat}
-          className="text-2xl hover:text-purple-400 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-600/20 transition-all text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/50"
         >
-          +
+          <span className="text-xl">+</span>
+          <span className="text-sm font-medium">新建</span>
         </button>
       </div>
 
