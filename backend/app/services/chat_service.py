@@ -18,6 +18,7 @@ from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.chat import ChatConversation, ChatMessage
+from app.services.environment.weather_service import weather_service
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,46 @@ class ChatService:
         # 用户基本信息
         user = self.db.query(User).filter(User.id == user_id).first()
         profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+
+        # 用户位置信息
+        user_city = None
+        if profile:
+            # 优先使用手动设置的位置
+            if profile.use_manual_location and profile.manual_location:
+                manual_loc = profile.manual_location
+                if isinstance(manual_loc, dict):
+                    user_city = manual_loc.get('city')
+                    if user_city:
+                        location_info = f"位置: {manual_loc.get('province', '')}{user_city}"
+                        parts.append(location_info)
+            # 其次使用IP检测的位置
+            elif profile.detected_location:
+                detected_loc = profile.detected_location
+                if isinstance(detected_loc, dict):
+                    user_city = detected_loc.get('city')
+                    if user_city:
+                        location_info = f"位置: {detected_loc.get('province', '')}{user_city}"
+                        parts.append(location_info)
+            # 兜底使用city字段
+            elif profile.city:
+                user_city = profile.city
+                parts.append(f"位置: {user_city}")
+
+        # 获取当前天气信息
+        if user_city:
+            try:
+                weather = weather_service.get_current_weather(user_city)
+                if weather:
+                    weather_info = f"当前天气: {weather.get('text', '')}, 温度{weather.get('temp', '')}℃"
+                    if weather.get('feelsLike'):
+                        weather_info += f", 体感{weather.get('feelsLike')}℃"
+                    if weather.get('humidity'):
+                        weather_info += f", 湿度{weather.get('humidity')}%"
+                    if weather.get('windDir') and weather.get('windScale'):
+                        weather_info += f", {weather.get('windDir')}{weather.get('windScale')}级"
+                    parts.append(weather_info)
+            except Exception as e:
+                logger.warning(f"获取天气信息失败: {e}")
 
         if user:
             info = f"用户: {user.name or user.username}"
