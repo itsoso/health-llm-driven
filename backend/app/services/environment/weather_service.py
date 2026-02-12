@@ -25,25 +25,35 @@ class WeatherService:
     - 生活指数（运动、穿衣、紫外线等）
     """
     
-    # 和风天气免费 API (需要注册获取 key)
-    QWEATHER_BASE_URL = "https://devapi.qweather.com/v7"
+    # 和风天气 API
+    # 免费版: https://devapi.qweather.com/v7
+    # 商用版: https://api.qweather.com/v7
+    QWEATHER_BASE_URL = "https://api.qweather.com/v7"
     # 备用：Open-Meteo 免费 API（无需 key）
     OPENMETEO_BASE_URL = "https://api.open-meteo.com/v1"
-    
-    def __init__(self, api_key: Optional[str] = None):
+
+    def __init__(self, api_key: Optional[str] = None, api_type: str = "free"):
         """
         初始化天气服务
-        
+
         Args:
             api_key: 和风天气 API Key（可选，不提供则使用 Open-Meteo）
+            api_type: API类型，"free" 或 "premium"（商用版）
         """
         self.api_key = api_key
+        self.api_type = api_type
         self._cache: Dict[str, Any] = {}
         self._cache_time: Dict[str, datetime] = {}
         self._cache_duration = timedelta(minutes=30)  # 缓存30分钟
-        
+
+        # 根据API类型选择URL
+        if api_type == "premium":
+            self.QWEATHER_BASE_URL = "https://api.qweather.com/v7"
+        else:
+            self.QWEATHER_BASE_URL = "https://devapi.qweather.com/v7"
+
         if api_key:
-            logger.info("天气服务初始化完成 (使用和风天气 API)")
+            logger.info(f"天气服务初始化完成 (使用和风天气 {api_type.upper()} API)")
         else:
             logger.info("天气服务初始化完成 (使用 Open-Meteo 免费 API)")
     
@@ -379,5 +389,8 @@ class WeatherService:
         }
 
 
-# 单例实例 - 从环境变量读取API key
-weather_service = WeatherService(api_key=os.getenv("QWEATHER_API_KEY"))
+# 单例实例 - 从环境变量读取API key和类型
+weather_service = WeatherService(
+    api_key=os.getenv("QWEATHER_API_KEY"),
+    api_type=os.getenv("QWEATHER_API_TYPE", "free")
+)
