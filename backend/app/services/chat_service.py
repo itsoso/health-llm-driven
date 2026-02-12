@@ -14,7 +14,7 @@ from app.config import settings
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.basic_health import BasicHealthData
-from app.models.daily_health import GarminData
+from app.models.daily_health import GarminData, DietRecord
 from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
@@ -252,6 +252,151 @@ class ChatService:
                 stats_30d.append(f"平均REM{avg_rem:.0f}min")
             parts.append(": ".join(stats_30d))
 
+        # 运动数据分析（最近7天、30天）
+        # 最近7天运动数据
+        exercise_7days = self.db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= seven_days_ago
+        ).all()
+
+        if exercise_7days:
+            steps_list = [r.steps for r in exercise_7days if r.steps is not None]
+            calories_list = [r.calories_total for r in exercise_7days if r.calories_total is not None]
+            active_mins = [r.vigorous_activity_duration + r.moderate_activity_duration
+                          for r in exercise_7days
+                          if r.vigorous_activity_duration is not None and r.moderate_activity_duration is not None]
+
+            exercise_stats_7d = [f"最近7天运动统计({len(exercise_7days)}天)"]
+            if steps_list:
+                avg_steps = sum(steps_list) / len(steps_list)
+                total_steps = sum(steps_list)
+                exercise_stats_7d.append(f"平均步数{avg_steps:.0f}, 总计{total_steps}")
+            if calories_list:
+                avg_calories = sum(calories_list) / len(calories_list)
+                exercise_stats_7d.append(f"平均消耗{avg_calories:.0f}卡")
+            if active_mins:
+                avg_active = sum(active_mins) / len(active_mins)
+                exercise_stats_7d.append(f"平均活动{avg_active:.0f}分钟")
+            parts.append(": ".join(exercise_stats_7d))
+
+        # 最近30天运动数据
+        exercise_30days = self.db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= thirty_days_ago
+        ).all()
+
+        if exercise_30days:
+            steps_list = [r.steps for r in exercise_30days if r.steps is not None]
+            calories_list = [r.calories_total for r in exercise_30days if r.calories_total is not None]
+            active_mins = [r.vigorous_activity_duration + r.moderate_activity_duration
+                          for r in exercise_30days
+                          if r.vigorous_activity_duration is not None and r.moderate_activity_duration is not None]
+
+            exercise_stats_30d = [f"最近30天运动统计({len(exercise_30days)}天)"]
+            if steps_list:
+                avg_steps = sum(steps_list) / len(steps_list)
+                total_steps = sum(steps_list)
+                exercise_stats_30d.append(f"平均步数{avg_steps:.0f}, 总计{total_steps}")
+            if calories_list:
+                avg_calories = sum(calories_list) / len(calories_list)
+                exercise_stats_30d.append(f"平均消耗{avg_calories:.0f}卡")
+            if active_mins:
+                avg_active = sum(active_mins) / len(active_mins)
+                exercise_stats_30d.append(f"平均活动{avg_active:.0f}分钟")
+            parts.append(": ".join(exercise_stats_30d))
+
+        # 饮食数据分析（最近3天、7天）
+        # 最近3天详细饮食记录
+        diet_3days = self.db.query(DietRecord).filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date >= three_days_ago
+        ).order_by(DietRecord.record_date.desc(), DietRecord.meal_time.desc()).all()
+
+        if diet_3days:
+            diet_summary = ["最近3天饮食:"]
+            # 按日期分组
+            from collections import defaultdict
+            by_date = defaultdict(list)
+            for record in diet_3days:
+                by_date[record.record_date].append(record)
+
+            for date_key in sorted(by_date.keys(), reverse=True):
+                day_records = by_date[date_key]
+                day_info = [f"{date_key}"]
+
+                # 统计当天的营养摄入
+                total_calories = sum(r.calories for r in day_records if r.calories)
+                total_protein = sum(r.protein for r in day_records if r.protein)
+                total_carbs = sum(r.carbs for r in day_records if r.carbs)
+                total_fat = sum(r.fat for r in day_records if r.fat)
+
+                nutrition = []
+                if total_calories:
+                    nutrition.append(f"{total_calories:.0f}卡")
+                if total_protein:
+                    nutrition.append(f"蛋白质{total_protein:.0f}g")
+                if total_carbs:
+                    nutrition.append(f"碳水{total_carbs:.0f}g")
+                if total_fat:
+                    nutrition.append(f"脂肪{total_fat:.0f}g")
+
+                if nutrition:
+                    day_info.append(", ".join(nutrition))
+
+                # 列出主要食物
+                meals = [f"{r.meal_type}:{r.food_items or r.food_name}"
+                        for r in day_records if r.food_items or r.food_name]
+                if meals:
+                    day_info.append(f"[{'; '.join(meals[:3])}{'...' if len(meals) > 3 else ''}]")
+
+                diet_summary.append(" ".join(day_info))
+            parts.append("\n  ".join(diet_summary))
+
+        # 最近7天饮食统计
+        diet_7days = self.db.query(DietRecord).filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date >= seven_days_ago
+        ).all()
+
+        if diet_7days:
+            # 按日期分组统计
+            from collections import defaultdict
+            daily_nutrition = defaultdict(lambda: {'calories': 0, 'protein': 0, 'carbs': 0, 'fat': 0})
+
+            for record in diet_7days:
+                date_key = record.record_date
+                if record.calories:
+                    daily_nutrition[date_key]['calories'] += record.calories
+                if record.protein:
+                    daily_nutrition[date_key]['protein'] += record.protein
+                if record.carbs:
+                    daily_nutrition[date_key]['carbs'] += record.carbs
+                if record.fat:
+                    daily_nutrition[date_key]['fat'] += record.fat
+
+            if daily_nutrition:
+                days_count = len(daily_nutrition)
+                total_calories = sum(d['calories'] for d in daily_nutrition.values())
+                total_protein = sum(d['protein'] for d in daily_nutrition.values())
+                total_carbs = sum(d['carbs'] for d in daily_nutrition.values())
+                total_fat = sum(d['fat'] for d in daily_nutrition.values())
+
+                diet_stats_7d = [f"最近7天饮食统计({days_count}天)"]
+                if total_calories:
+                    avg_calories = total_calories / days_count
+                    diet_stats_7d.append(f"平均{avg_calories:.0f}卡/天")
+                if total_protein:
+                    avg_protein = total_protein / days_count
+                    diet_stats_7d.append(f"平均蛋白质{avg_protein:.0f}g/天")
+                if total_carbs:
+                    avg_carbs = total_carbs / days_count
+                    diet_stats_7d.append(f"平均碳水{avg_carbs:.0f}g/天")
+                if total_fat:
+                    avg_fat = total_fat / days_count
+                    diet_stats_7d.append(f"平均脂肪{avg_fat:.0f}g/天")
+                parts.append(": ".join(diet_stats_7d))
+
+        # 打卡数据分析（最近7天、30天）
         # 今日打卡记录
         checkins = self.db.query(CheckinRecord, CheckinTemplate).join(
             CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
@@ -263,6 +408,62 @@ class ChatService:
             checkin_items = [f"{t.name}({r.value}{t.unit})" for r, t in checkins]
             if checkin_items:
                 parts.append(f"今日打卡: {', '.join(checkin_items)}")
+
+        # 最近7天打卡统计
+        checkins_7days = self.db.query(CheckinRecord, CheckinTemplate).join(
+            CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
+        ).filter(
+            CheckinRecord.user_id == user_id,
+            CheckinRecord.checkin_date >= seven_days_ago
+        ).all()
+
+        if checkins_7days:
+            # 按模板分组统计
+            from collections import defaultdict
+            template_stats = defaultdict(lambda: {'count': 0, 'total': 0, 'name': '', 'unit': ''})
+
+            for record, template in checkins_7days:
+                template_id = template.id
+                template_stats[template_id]['name'] = template.name
+                template_stats[template_id]['unit'] = template.unit
+                template_stats[template_id]['count'] += 1
+                if record.value:
+                    template_stats[template_id]['total'] += record.value
+
+            if template_stats:
+                checkin_stats_7d = [f"最近7天打卡统计({len(checkins_7days)}次)"]
+                for stats in template_stats.values():
+                    avg_val = stats['total'] / stats['count'] if stats['count'] > 0 else 0
+                    checkin_stats_7d.append(f"{stats['name']}:完成{stats['count']}天,平均{avg_val:.1f}{stats['unit']}")
+                parts.append("; ".join(checkin_stats_7d))
+
+        # 最近30天打卡统计
+        checkins_30days = self.db.query(CheckinRecord, CheckinTemplate).join(
+            CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
+        ).filter(
+            CheckinRecord.user_id == user_id,
+            CheckinRecord.checkin_date >= thirty_days_ago
+        ).all()
+
+        if checkins_30days:
+            # 按模板分组统计
+            from collections import defaultdict
+            template_stats = defaultdict(lambda: {'count': 0, 'total': 0, 'name': '', 'unit': ''})
+
+            for record, template in checkins_30days:
+                template_id = template.id
+                template_stats[template_id]['name'] = template.name
+                template_stats[template_id]['unit'] = template.unit
+                template_stats[template_id]['count'] += 1
+                if record.value:
+                    template_stats[template_id]['total'] += record.value
+
+            if template_stats:
+                checkin_stats_30d = [f"最近30天打卡统计({len(checkins_30days)}次)"]
+                for stats in template_stats.values():
+                    avg_val = stats['total'] / stats['count'] if stats['count'] > 0 else 0
+                    checkin_stats_30d.append(f"{stats['name']}:完成{stats['count']}天,平均{avg_val:.1f}{stats['unit']}")
+                parts.append("; ".join(checkin_stats_30d))
 
         if not parts:
             return ""
