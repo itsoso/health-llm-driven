@@ -98,6 +98,10 @@ async def verify_user_api_key(
     db: Session = Depends(get_db)
 ) -> UserApiKey:
     """验证用户 API Key"""
+    # 记录API Key验证尝试
+    key_preview = x_api_key[:8] + "..." if len(x_api_key) > 8 else x_api_key
+    logger.info(f"API Key 验证请求: key={key_preview}")
+
     key_hash = hash_api_key(x_api_key)
     api_key = db.query(UserApiKey).filter(
         UserApiKey.api_key == key_hash,
@@ -105,12 +109,14 @@ async def verify_user_api_key(
     ).first()
 
     if not api_key:
+        logger.warning(f"API Key 验证失败: 无效或未激活的 key={key_preview}")
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
     # 更新最后使用时间
     api_key.last_used_at = datetime.now(CHINA_TIMEZONE)
     db.commit()
 
+    logger.info(f"API Key 验证成功: user_id={api_key.user_id}, key_name={api_key.name}")
     return api_key
 
 
