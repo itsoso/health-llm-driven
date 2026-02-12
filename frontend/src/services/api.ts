@@ -391,3 +391,46 @@ export const externalRecommendationApi = {
   // 获取今日外部建议
   getToday: () => api.get<TodayExternalRecommendations>('/external-recommendations/today'),
 };
+
+// OpenClaw AI 对话接口
+export interface ChatMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message?: string;
+}
+
+export interface ConversationDetail {
+  id: number;
+  title: string;
+  messages: ChatMessage[];
+}
+
+export interface ChatSendResponse {
+  conversation_id: number;
+  message_id: number;
+  reply: string;
+}
+
+export const chatApi = {
+  // 发送消息
+  sendMessage: (message: string, conversationId?: number) =>
+    api.post<ChatSendResponse>('/chat/send', { message, conversation_id: conversationId }),
+  // 获取对话列表
+  getConversations: (limit: number = 20) =>
+    api.get<Conversation[]>(`/chat/conversations?limit=${limit}`),
+  // 获取对话详情
+  getConversation: (conversationId: number) =>
+    api.get<ConversationDetail>(`/chat/conversations/${conversationId}`),
+  // 删除对话
+  deleteConversation: (conversationId: number) =>
+    api.delete(`/chat/conversations/${conversationId}`),
+};

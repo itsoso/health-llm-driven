@@ -1,478 +1,356 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/services/api';
+import { chatApi, ChatMessage, Conversation } from '@/services/api';
+import ReactMarkdown from 'react-markdown';
 
-interface BriefingSection {
-  title: string;
-  status: string;
-  items: string[];
-}
-
-interface Briefing {
-  date: string;
-  greeting: string;
-  sections: BriefingSection[];
-}
-
-interface Recommendation {
-  timestamp: string;
-  primary: {
-    icon: string;
-    title: string;
-    message: string;
-    checkin_action?: string; // 可打卡事项类型：water, nasal_wash, supplement, exercise, weight, diet
-  } | null;
-  secondary: Array<string | {
-    text: string;
-    checkin_action?: string;
-  }>;
-  status: Record<string, any>;
-}
-
-interface Reminder {
-  type: string;
-  title: string;
-  message: string;
-  scheduled_time: string;
-  priority: number;
-}
-
-interface ScheduleItem {
-  time: string;
-  activity: string;
-  category: string;
-  duration_minutes: number;
-  tasks: string[];
-}
+const QUICK_QUESTIONS = [
+  { label: '分析打卡', text: '请分析一下我今天的打卡完成情况，给出建议' },
+  { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
+  { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量，有什么改善建议？' },
+  { label: '饮食建议', text: '根据我的健康目标，今天的饮食应该注意什么？' },
+];
 
 export default function AIAssistantPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [briefing, setBriefing] = useState<Briefing | null>(null);
-  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<number | undefined>();
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 处理打卡跳转
-  const handleCheckinAction = (checkinAction: string) => {
-    const actionMap: Record<string, string> = {
-      'water': '/water',
-      'nasal_wash': '/checkin',
-      'supplement': '/supplements',
-      'exercise': '/workout',
-      'weight': '/weight',
-      'diet': '/diet',
-    };
-    
-    const targetPage = actionMap[checkinAction];
-    if (targetPage) {
-      router.push(targetPage);
-    }
+  // 滚动到底部
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
-  const [testResult, setTestResult] = useState<{
-    name: string;
-    path: string;
-    data: any;
-    error: string | null;
-    loading: boolean;
-    duration: number;
-  } | null>(null);
 
-  // 更新当前时间
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    scrollToBottom();
+  }, [messages]);
+
+  // 加载对话列表
+  const loadConversations = useCallback(async () => {
+    try {
+      const response = await chatApi.getConversations();
+      setConversations(response.data || []);
+    } catch (e) {
+      console.error('加载对话列表失败:', e);
+    }
   }, []);
 
-  // 获取数据
+  // 加载指定对话的消息
+  const loadConversation = useCallback(async (convId: number) => {
+    try {
+      const response = await chatApi.getConversation(convId);
+      setMessages(response.data.messages || []);
+      setConversationId(convId);
+      setShowHistory(false);
+    } catch (e) {
+      console.error('加载对话失败:', e);
+      alert('加载失败');
+    }
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
       router.push('/login');
       return;
     }
+    loadConversations();
+  }, [loadConversations, router]);
 
-    fetchAllData();
-  }, []);
+  // 发送消息
+  const handleSend = async (text?: string) => {
+    const msg = (text || inputText).trim();
+    if (!msg || loading) return;
 
-  const testApi = async (path: string, name: string) => {
-    setTestResult({ name, path, data: null, error: null, loading: true, duration: 0 });
-    const startTime = Date.now();
-    
-    try {
-      const response = await api.get(path);
-      const duration = Date.now() - startTime;
-      setTestResult({ name, path, data: response.data, error: null, loading: false, duration });
-    } catch (err: any) {
-      const duration = Date.now() - startTime;
-      setTestResult({ 
-        name, 
-        path, 
-        data: null, 
-        error: err.response?.data?.detail || err.message || '请求失败', 
-        loading: false, 
-        duration 
-      });
-    }
-  };
+    setInputText('');
 
-  const fetchAllData = async () => {
+    // 乐观更新：先显示用户消息
+    const tempUserMsg: ChatMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: msg,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempUserMsg]);
     setLoading(true);
-    setError(null);
 
     try {
-      // 添加时间戳参数防止缓存
-      const timestamp = Date.now();
-      const [briefingRes, recommendationRes, remindersRes, scheduleRes] = await Promise.allSettled([
-        api.get(`/ai-scheduler/morning-briefing?_t=${timestamp}`),
-        api.get(`/ai-scheduler/recommendation?_t=${timestamp}`),
-        api.get(`/ai-scheduler/reminders?_t=${timestamp}`),
-        api.get(`/ai-scheduler/daily-schedule?_t=${timestamp}`),
-      ]);
+      const response = await chatApi.sendMessage(msg, conversationId);
+      const result = response.data;
 
-      if (briefingRes.status === 'fulfilled') {
-        setBriefing(briefingRes.value.data);
+      // 更新会话 ID
+      if (!conversationId && result.conversation_id) {
+        setConversationId(result.conversation_id);
       }
-      if (recommendationRes.status === 'fulfilled') {
-        setRecommendation(recommendationRes.value.data);
-      }
-      if (remindersRes.status === 'fulfilled') {
-        setReminders(remindersRes.value.data.reminders || []);
-      }
-      if (scheduleRes.status === 'fulfilled') {
-        setSchedule(scheduleRes.value.data.schedule || []);
-      }
-    } catch (err: any) {
-      console.error('获取数据失败:', err);
-      setError(err.message || '获取数据失败');
+
+      // 添加 AI 回复
+      const aiMsg: ChatMessage = {
+        id: result.message_id,
+        role: 'assistant',
+        content: result.reply,
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, aiMsg]);
+
+      // 重新加载对话列表
+      loadConversations();
+    } catch (e: any) {
+      const errorMsg: ChatMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: '抱歉，请求失败了，请稍后再试。',
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'good': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-      case 'warning': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-      case 'poor': return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
-      default: return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+  // 新建对话
+  const handleNewChat = () => {
+    setMessages([]);
+    setConversationId(undefined);
+    setShowHistory(false);
+  };
+
+  // 删除对话
+  const handleDeleteConversation = async (convId: number) => {
+    try {
+      await chatApi.deleteConversation(convId);
+      setConversations(prev => prev.filter(c => c.id !== convId));
+      if (conversationId === convId) {
+        handleNewChat();
+      }
+      alert('已删除');
+    } catch (e) {
+      alert('删除失败');
     }
   };
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      routine: 'bg-slate-600',
-      meal: 'bg-orange-600',
-      work: 'bg-blue-600',
-      exercise: 'bg-green-600',
-      rest: 'bg-purple-600',
-      leisure: 'bg-pink-600',
-      sleep: 'bg-indigo-600',
-    };
-    return colors[category] || 'bg-gray-600';
+  // 切换历史面板
+  const toggleHistory = () => {
+    if (!showHistory) {
+      loadConversations();
+    }
+    setShowHistory(!showHistory);
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('zh-CN', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false 
-    });
+  // 按 Enter 发送消息
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
-          <p className="text-purple-300 text-lg">加载 AI 助手...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white pt-4">
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* 页面标题 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">✨</span>
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                AI 健康助手
-              </h1>
-              <p className="text-sm text-slate-400">智能健康分析</p>
+    <div className="h-[calc(100vh-64px)] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col">
+      {/* 顶部栏 */}
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-white/10">
+        <button
+          onClick={toggleHistory}
+          className="text-2xl hover:text-purple-400 transition-colors"
+        >
+          {showHistory ? '✕' : '☰'}
+        </button>
+        <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+          健康顾问
+        </h1>
+        <button
+          onClick={handleNewChat}
+          className="text-2xl hover:text-purple-400 transition-colors"
+        >
+          +
+        </button>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* 历史对话侧栏 */}
+        {showHistory && (
+          <div className="w-80 bg-slate-800/50 border-r border-white/10 flex flex-col">
+            <div className="p-4 border-b border-white/10">
+              <h2 className="text-lg font-bold text-white">对话记录</h2>
             </div>
-          </div>
-          <div className="text-right">
-            <div className="text-xl font-mono text-purple-300">{formatTime(currentTime)}</div>
-            <div className="text-xs text-slate-500">北京时间</div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="bg-rose-500/20 border border-rose-500/30 rounded-xl p-4 text-rose-300">
-            ⚠️ {error}
-          </div>
-        )}
-
-        {/* 实时建议 - 最重要，放最上面 */}
-        {recommendation && (
-          <section className="bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-2xl p-6 border border-purple-500/20 shadow-xl">
-            <div className="flex items-start gap-4">
-              <span className="text-5xl">{recommendation.primary?.icon || '💡'}</span>
-              <div className="flex-1">
-                <h2 className="text-2xl font-bold mb-2">{recommendation.primary?.title || '健康建议'}</h2>
-                <p className="text-lg text-purple-200 mb-4">{recommendation.primary?.message}</p>
-                
-                {/* 主建议的打卡按钮 */}
-                {recommendation.primary?.checkin_action && (
-                  <button
-                    onClick={() => handleCheckinAction(recommendation.primary!.checkin_action!)}
-                    className="mb-3 px-4 py-2 bg-white text-purple-700 rounded-full font-semibold hover:bg-purple-100 transition-colors flex items-center gap-2"
-                  >
-                    <span>✓</span>
-                    <span>立即打卡</span>
-                  </button>
-                )}
-                
-                {recommendation.secondary && recommendation.secondary.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {recommendation.secondary.map((item, idx) => {
-                      // 安全地获取文本和动作
-                      const itemText = typeof item === 'string' 
-                        ? item 
-                        : (item && typeof item === 'object' && 'text' in item) 
-                          ? item.text 
-                          : String(item);
-                      const itemAction = (item && typeof item === 'object' && 'checkin_action' in item) 
-                        ? item.checkin_action 
-                        : undefined;
-                      
-                      return itemAction ? (
-                        <button
-                          key={idx}
-                          onClick={() => handleCheckinAction(itemAction)}
-                          className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-sm transition-colors cursor-pointer"
-                        >
-                          {itemText}
-                        </button>
-                      ) : (
-                        <span key={idx} className="px-3 py-1 bg-white/10 rounded-full text-sm">
-                          {itemText}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* 当前提醒 - 只在有提醒时显示 */}
-        {reminders.length > 0 && (
-          <section className="bg-slate-800/50 rounded-2xl p-6 border border-amber-500/20">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <span>🔔</span> 当前提醒
-              <span className="text-sm font-normal text-slate-400">
-                (±15分钟内)
-              </span>
-            </h2>
-            <div className="grid gap-3">
-              {reminders.map((reminder, idx) => (
-                <div key={idx} className="flex items-center gap-4 p-4 bg-amber-500/10 rounded-xl border border-amber-500/20">
-                  <div className="text-3xl">{reminder.title.split(' ')[0]}</div>
-                  <div className="flex-1">
-                    <div className="font-semibold">{reminder.title.replace(/^[^\s]+\s/, '')}</div>
-                    <div className="text-sm text-slate-400">{reminder.message}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-mono text-amber-400">{reminder.scheduled_time}</div>
-                    <div className="text-xs text-slate-500">优先级 {reminder.priority}</div>
-                  </div>
+            <div className="flex-1 overflow-y-auto">
+              {conversations.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  暂无对话记录
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* 早间简报 */}
-          {briefing && (
-            <section className="bg-slate-800/50 rounded-2xl p-6 border border-white/10">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <span>📋</span> 健康简报
-                </h2>
-                <span className="text-sm text-slate-400">{briefing.date}</span>
-              </div>
-              
-              <p className="text-lg text-purple-300 mb-4">{briefing.greeting}</p>
-              
-              <div className="space-y-4">
-                {briefing.sections.map((section, idx) => (
-                  <div key={idx} className={`p-4 rounded-xl border ${getStatusColor(section.status)}`}>
-                    <h3 className="font-semibold mb-2">{section.title}</h3>
-                    <ul className="space-y-1">
-                      {section.items.map((item, itemIdx) => (
-                        <li key={itemIdx} className="text-sm opacity-90">• {item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* 今日日程 */}
-          <section className="bg-slate-800/50 rounded-2xl p-6 border border-white/10">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <span>📅</span> 今日日程
-            </h2>
-            
-            <div className="space-y-2 max-h-[calc(100vh-320px)] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-              {schedule.map((item, idx) => {
-                const isCurrentTime = (() => {
-                  const [h, m] = item.time.split(':').map(Number);
-                  const itemMinutes = h * 60 + m;
-                  const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
-                  return Math.abs(itemMinutes - currentMinutes) < item.duration_minutes;
-                })();
-
-                return (
-                  <div 
-                    key={idx} 
-                    className={`flex items-start gap-3 p-3 rounded-xl transition-all ${
-                      isCurrentTime 
-                        ? 'bg-purple-500/20 border border-purple-500/40 scale-[1.02]' 
-                        : 'bg-slate-700/30 hover:bg-slate-700/50'
+              ) : (
+                conversations.map(conv => (
+                  <div
+                    key={conv.id}
+                    className={`flex items-start justify-between p-4 border-b border-white/5 hover:bg-slate-700/30 cursor-pointer transition-colors ${
+                      conv.id === conversationId ? 'bg-purple-900/20' : ''
                     }`}
+                    onClick={() => loadConversation(conv.id)}
                   >
-                    <div className="text-center min-w-[50px]">
-                      <div className={`font-mono text-sm ${isCurrentTime ? 'text-purple-300' : 'text-slate-400'}`}>
-                        {item.time}
-                      </div>
-                      <div className={`text-xs px-2 py-0.5 rounded mt-1 ${getCategoryColor(item.category)}`}>
-                        {item.duration_minutes}分钟
-                      </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-white truncate">{conv.title}</div>
+                      {conv.last_message && (
+                        <div className="text-sm text-slate-400 truncate mt-1">
+                          {conv.last_message}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <div className={`font-medium ${isCurrentTime ? 'text-purple-200' : ''}`}>
-                        {item.activity}
-                        {isCurrentTime && <span className="ml-2 text-xs text-purple-400">← 当前</span>}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {item.tasks.join(' · ')}
-                      </div>
-                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteConversation(conv.id);
+                      }}
+                      className="ml-2 text-slate-400 hover:text-red-400 text-xl"
+                    >
+                      ×
+                    </button>
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
-          </section>
-        </div>
-
-        {/* 刷新按钮 */}
-        <div className="text-center pt-4">
-          <button
-            onClick={fetchAllData}
-            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-semibold hover:from-purple-500 hover:to-pink-500 transition-all shadow-lg hover:shadow-purple-500/25"
-          >
-            🔄 刷新数据
-          </button>
-        </div>
-
-        {/* API 测试区域 */}
-        <section className="bg-slate-800/30 rounded-2xl p-6 border border-slate-700/50">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span>🧪</span> API 测试端点
-            <span className="text-sm font-normal text-slate-400">（点击卡片测试）</span>
-          </h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[
-              { name: '早间简报', path: '/ai-scheduler/morning-briefing', icon: '📋' },
-              { name: '实时建议', path: '/ai-scheduler/recommendation', icon: '💡' },
-              { name: '当前提醒', path: '/ai-scheduler/reminders', icon: '🔔' },
-              { name: '今日日程', path: '/ai-scheduler/daily-schedule', icon: '📅' },
-              { name: '综合摘要', path: '/ai-scheduler/summary', icon: '📋' },
-            ].map((apiItem) => (
-              <button
-                key={apiItem.path}
-                onClick={() => testApi(apiItem.path, apiItem.name)}
-                className="p-3 bg-slate-700/30 rounded-lg hover:bg-slate-600/50 transition-all text-left group"
-              >
-                <div className="font-medium text-sm flex items-center gap-2">
-                  <span>{apiItem.icon}</span>
-                  {apiItem.name}
-                  <span className="text-xs text-slate-500 group-hover:text-purple-400">→ 点击测试</span>
-                </div>
-                <code className="text-xs text-purple-400 break-all">/api/v1{apiItem.path}</code>
-              </button>
-            ))}
           </div>
-          
-          {/* API 测试结果弹窗 */}
-          {testResult && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setTestResult(null)}>
-              <div className="bg-slate-800 rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-4 border-b border-slate-700">
-                  <h3 className="text-lg font-bold">{testResult.name} - API 响应</h3>
-                  <button onClick={() => setTestResult(null)} className="text-slate-400 hover:text-white text-2xl">×</button>
+        )}
+
+        {/* 主聊天区域 */}
+        <div className="flex-1 flex flex-col">
+          {/* 消息列表 */}
+          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+            {messages.length === 0 && !loading && (
+              <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
+                <div className="text-6xl">💬</div>
+                <h2 className="text-2xl font-bold text-white">你好，我是你的健康顾问</h2>
+                <p className="text-slate-400">
+                  我了解你的健康数据，可以为你提供个性化的健康建议
+                </p>
+                <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">
+                  {QUICK_QUESTIONS.map((q, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSend(q.text)}
+                      className="px-4 py-3 bg-slate-700/50 hover:bg-slate-600/50 rounded-xl text-left transition-colors border border-white/10"
+                    >
+                      <div className="font-medium text-white">{q.label}</div>
+                    </button>
+                  ))}
                 </div>
-                <div className="p-4 overflow-auto max-h-[60vh]">
-                  {testResult.loading ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mx-auto"></div>
-                      <p className="text-slate-400 mt-2">加载中...</p>
-                    </div>
-                  ) : testResult.error ? (
-                    <div className="bg-rose-500/20 border border-rose-500/30 rounded-lg p-4 text-rose-300">
-                      <p className="font-bold">❌ 请求失败</p>
-                      <p className="text-sm mt-1">{testResult.error}</p>
+              </div>
+            )}
+
+            {messages.map(msg => (
+              <div
+                key={msg.id}
+                className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {msg.role === 'assistant' && (
+                  <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
+                    <span className="text-lg">💬</span>
+                  </div>
+                )}
+                <div
+                  className={`max-w-2xl rounded-2xl px-4 py-3 ${
+                    msg.role === 'user'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-slate-700/50 text-white border border-white/10'
+                  }`}
+                >
+                  {msg.role === 'assistant' ? (
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="ml-2">{children}</li>,
+                          h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-4 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-2 first:mt-0">{children}</h3>,
+                          strong: ({ children }) => <strong className="font-bold text-purple-300">{children}</strong>,
+                          table: ({ children }) => (
+                            <div className="overflow-x-auto my-2">
+                              <table className="min-w-full border-collapse border border-slate-600">{children}</table>
+                            </div>
+                          ),
+                          thead: ({ children }) => <thead className="bg-slate-600">{children}</thead>,
+                          th: ({ children }) => <th className="border border-slate-600 px-3 py-2 text-left">{children}</th>,
+                          td: ({ children }) => <td className="border border-slate-600 px-3 py-2">{children}</td>,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
                     </div>
                   ) : (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded text-xs">200 OK</span>
-                        <span className="text-xs text-slate-500">{testResult.duration}ms</span>
-                      </div>
-                      <pre className="bg-slate-900 rounded-lg p-4 overflow-auto text-sm text-slate-300 font-mono">
-                        {JSON.stringify(testResult.data, null, 2)}
-                      </pre>
-                    </div>
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
                   )}
                 </div>
-                <div className="p-4 border-t border-slate-700 flex justify-end gap-2">
-                  <button 
-                    onClick={() => testResult.path && testApi(testResult.path, testResult.name)}
-                    className="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-500 text-sm"
-                  >
-                    🔄 重新请求
-                  </button>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(JSON.stringify(testResult.data, null, 2));
-                      alert('已复制到剪贴板');
-                    }}
-                    className="px-4 py-2 bg-slate-600 rounded-lg hover:bg-slate-500 text-sm"
-                  >
-                    📋 复制 JSON
-                  </button>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
+                  <span className="text-lg">💬</span>
                 </div>
+                <div className="bg-slate-700/50 rounded-2xl px-4 py-3 border border-white/10">
+                  <div className="flex gap-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* 快捷提问栏 (对话进行中也显示) */}
+          {messages.length > 0 && !loading && (
+            <div className="px-4 py-2 border-t border-white/10 overflow-x-auto">
+              <div className="flex gap-2">
+                {QUICK_QUESTIONS.map((q, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSend(q.text)}
+                    className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-full text-sm whitespace-nowrap transition-colors border border-white/10"
+                  >
+                    {q.label}
+                  </button>
+                ))}
               </div>
             </div>
           )}
-        </section>
-      </main>
 
+          {/* 输入区域 */}
+          <div className="p-4 bg-slate-800/50 border-t border-white/10">
+            <div className="max-w-4xl mx-auto flex gap-3">
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="输入健康相关问题..."
+                className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={!inputText.trim() || loading}
+                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                  inputText.trim() && !loading
+                    ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                <span className="text-xl">↑</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
