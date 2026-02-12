@@ -517,9 +517,11 @@ class WeatherService:
         }
 
 
-# 单例实例 - 从环境变量读取API配置
+# 单例实例 - 从 settings 配置读取（确保环境变量已加载）
+from app.config import settings
+
 weather_service = WeatherService(
-    api_key=os.getenv("QWEATHER_API_KEY"),
-    api_type=os.getenv("QWEATHER_API_TYPE", "free"),
-    api_host=os.getenv("QWEATHER_API_HOST")
+    api_key=settings.qweather_api_key,
+    api_type=settings.qweather_api_type,
+    api_host=settings.qweather_api_host
 )

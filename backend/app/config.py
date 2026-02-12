@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # 和风天气 API 配置 (https://dev.qweather.com/)
     qweather_api_key: Optional[str] = None  # 和风天气 API Key
     qweather_api_type: str = "free"  # free 或 premium
+    qweather_api_host: Optional[str] = None  # 自定义API Host (如: your-host.qweatherapi.com)
 
     # 数据库配置
     database_url: str = "sqlite:///./health.db"
