@@ -261,10 +261,10 @@ class ChatService:
 
         if exercise_7days:
             steps_list = [r.steps for r in exercise_7days if r.steps is not None]
-            calories_list = [r.calories_total for r in exercise_7days if r.calories_total is not None]
-            active_mins = [r.vigorous_activity_duration + r.moderate_activity_duration
+            calories_list = [r.calories_burned for r in exercise_7days if r.calories_burned is not None]
+            active_mins = [r.vigorous_intensity_minutes + r.moderate_intensity_minutes
                           for r in exercise_7days
-                          if r.vigorous_activity_duration is not None and r.moderate_activity_duration is not None]
+                          if r.vigorous_intensity_minutes is not None and r.moderate_intensity_minutes is not None]
 
             exercise_stats_7d = [f"最近7天运动统计({len(exercise_7days)}天)"]
             if steps_list:
@@ -287,10 +287,10 @@ class ChatService:
 
         if exercise_30days:
             steps_list = [r.steps for r in exercise_30days if r.steps is not None]
-            calories_list = [r.calories_total for r in exercise_30days if r.calories_total is not None]
-            active_mins = [r.vigorous_activity_duration + r.moderate_activity_duration
+            calories_list = [r.calories_burned for r in exercise_30days if r.calories_burned is not None]
+            active_mins = [r.vigorous_intensity_minutes + r.moderate_intensity_minutes
                           for r in exercise_30days
-                          if r.vigorous_activity_duration is not None and r.moderate_activity_duration is not None]
+                          if r.vigorous_intensity_minutes is not None and r.moderate_intensity_minutes is not None]
 
             exercise_stats_30d = [f"最近30天运动统计({len(exercise_30days)}天)"]
             if steps_list:
