@@ -757,7 +757,11 @@ function SettingsContent() {
   };
 
   const handleCreateApiKey = async () => {
-    if (!token || !newKeyName.trim()) return;
+    if (!token || !newKeyName.trim()) {
+      setMessage({ type: 'error', text: 'API Key 名称不能为空' });
+      return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/user-api-keys`, {
         method: 'POST',
@@ -767,25 +771,38 @@ function SettingsContent() {
         },
         body: JSON.stringify({ name: newKeyName.trim() }),
       });
+
       if (res.ok) {
         const newKey = await res.json();
         // 保存新创建的Key用于展示
         if (newKey.api_key) {
           setNewlyCreatedKey(newKey.api_key);
           // 复制到剪贴板
-          navigator.clipboard.writeText(newKey.api_key);
-          setMessage({ type: 'success', text: 'API Key 已创建并复制到剪贴板！请妥善保存，此密钥只显示一次。' });
+          try {
+            await navigator.clipboard.writeText(newKey.api_key);
+            setMessage({ type: 'success', text: 'API Key 已创建并复制到剪贴板！请妥善保存，此密钥只显示一次。' });
+          } catch {
+            setMessage({ type: 'success', text: 'API Key 已创建！请复制保存，此密钥只显示一次。' });
+          }
         } else {
           setMessage({ type: 'error', text: '创建成功但未返回密钥，请联系管理员' });
         }
         setNewKeyName('');
         loadApiKeys();
       } else {
-        const error = await res.json();
-        setMessage({ type: 'error', text: error.detail || '创建失败' });
+        // 尝试解析错误响应
+        let errorMessage = '创建失败';
+        try {
+          const error = await res.json();
+          errorMessage = error.detail || errorMessage;
+        } catch {
+          errorMessage = `创建失败 (HTTP ${res.status})`;
+        }
+        setMessage({ type: 'error', text: errorMessage });
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || '创建失败' });
+      console.error('创建 API Key 失败:', error);
+      setMessage({ type: 'error', text: error.message || '网络错误，请检查连接' });
     }
   };
 
@@ -1727,7 +1744,10 @@ function SettingsContent() {
               {/* API Key 列表 */}
               {apiKeys.length > 0 && (
                 <div className="space-y-3">
-                  <h3 className="font-semibold text-gray-800">已创建的 API Key</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-800">已创建的 API Key</h3>
+                    <span className="text-sm text-gray-500">{apiKeys.length} / 10</span>
+                  </div>
                   {apiKeys.map((key) => (
                     <div key={key.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <div>
@@ -1781,22 +1801,29 @@ function SettingsContent() {
               {/* 创建新 Key */}
               <div className="space-y-3">
                 <h3 className="font-semibold text-gray-800">创建新的 API Key</h3>
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    placeholder="输入名称（如：Browser-LLM-Driven）"
-                    className="flex-1 p-3 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                  <button
-                    onClick={handleCreateApiKey}
-                    disabled={!newKeyName.trim()}
-                    className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 font-semibold whitespace-nowrap"
-                  >
-                    + 创建
-                  </button>
-                </div>
+                {apiKeys.length >= 10 ? (
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                    <p className="font-semibold">⚠️ 已达到最大限制</p>
+                    <p className="mt-1">您已创建 10 个 API Key，这是允许的最大数量。请删除不需要的 Key 后再创建新的。</p>
+                  </div>
+                ) : (
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      placeholder="输入名称（如：Browser-LLM-Driven）"
+                      className="flex-1 p-3 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    <button
+                      onClick={handleCreateApiKey}
+                      disabled={!newKeyName.trim()}
+                      className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold whitespace-nowrap"
+                    >
+                      + 创建
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* 使用说明 */}

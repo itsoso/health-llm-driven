@@ -147,41 +147,56 @@ async def create_user_api_key(
     db: Session = Depends(get_db)
 ):
     """创建新的 API Key"""
-    # 限制每个用户最多 5 个 API Key
-    existing_count = db.query(UserApiKey).filter(
-        UserApiKey.user_id == current_user.id,
-        UserApiKey.is_active == True
-    ).count()
+    try:
+        logger.info(f"用户 {current_user.id} 尝试创建 API Key: name={key_data.name}, scopes={key_data.scopes}")
 
-    if existing_count >= 5:
-        raise HTTPException(status_code=400, detail="每个用户最多创建 5 个 API Key")
+        # 验证 name 不为空
+        if not key_data.name or not key_data.name.strip():
+            raise HTTPException(status_code=400, detail="API Key 名称不能为空")
 
-    # 生成随机 API Key
-    raw_key = secrets.token_urlsafe(32)
-    key_hash = hash_api_key(raw_key)
+        # 限制每个用户最多 10 个 API Key（增加到10个）
+        existing_count = db.query(UserApiKey).filter(
+            UserApiKey.user_id == current_user.id,
+            UserApiKey.is_active == True
+        ).count()
 
-    db_key = UserApiKey(
-        user_id=current_user.id,
-        name=key_data.name,
-        api_key=key_hash,
-        scopes=key_data.scopes,
-    )
-    db.add(db_key)
-    db.commit()
-    db.refresh(db_key)
+        if existing_count >= 10:
+            raise HTTPException(
+                status_code=400,
+                detail=f"每个用户最多创建 10 个 API Key，您已创建 {existing_count} 个。请删除不需要的 Key 后再试。"
+            )
 
-    logger.info(f"用户 {current_user.id} 创建了 API Key: {key_data.name}")
+        # 生成随机 API Key
+        raw_key = secrets.token_urlsafe(32)
+        key_hash = hash_api_key(raw_key)
 
-    # 只在创建时返回原始 key
-    return {
-        "id": db_key.id,
-        "name": db_key.name,
-        "api_key": raw_key,  # 原始 key，只返回一次
-        "scopes": db_key.scopes,
-        "is_active": db_key.is_active,
-        "last_used_at": db_key.last_used_at,
-        "created_at": db_key.created_at,
-    }
+        db_key = UserApiKey(
+            user_id=current_user.id,
+            name=key_data.name.strip(),
+            api_key=key_hash,
+            scopes=key_data.scopes,
+        )
+        db.add(db_key)
+        db.commit()
+        db.refresh(db_key)
+
+        logger.info(f"用户 {current_user.id} 成功创建 API Key: {key_data.name} (id={db_key.id})")
+
+        # 只在创建时返回原始 key
+        return {
+            "id": db_key.id,
+            "name": db_key.name,
+            "api_key": raw_key,  # 原始 key，只返回一次
+            "scopes": db_key.scopes,
+            "is_active": db_key.is_active,
+            "last_used_at": db_key.last_used_at,
+            "created_at": db_key.created_at,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建 API Key 失败: user={current_user.id}, error={str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"创建 API Key 失败: {str(e)}")
 
 
 @router.delete("/user-api-keys/{key_id}")
