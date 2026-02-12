@@ -158,7 +158,12 @@ class WeatherService:
     ) -> Dict[str, Any]:
         """使用和风天气 API 获取当前天气"""
         async with httpx.AsyncClient() as client:
-            location = city if city else f"{lon},{lat}"
+            # 和风天气API需要Location ID或经纬度，不支持中文城市名
+            if city:
+                location = self._city_to_location_id(city)
+            else:
+                location = f"{lon},{lat}"
+
             url = f"{self.QWEATHER_BASE_URL}/weather/now"
             params = {
                 "location": location,
@@ -255,6 +260,27 @@ class WeatherService:
                 "forecasts": forecasts
             }
     
+    def _city_to_location_id(self, city: str) -> str:
+        """城市名转和风天气Location ID"""
+        city_location_ids = {
+            "北京": "101010100",
+            "上海": "101020100",
+            "广州": "101280101",
+            "深圳": "101280601",
+            "杭州": "101210101",
+            "南京": "101190101",
+            "成都": "101270101",
+            "武汉": "101200101",
+            "西安": "101110101",
+            "重庆": "101040100",
+            "天津": "101030100",
+            "苏州": "101190401",
+            "青岛": "101120201",
+            "大连": "101070201",
+            "厦门": "101230201",
+        }
+        return city_location_ids.get(city, "101010100")  # 默认北京
+
     def _city_to_coords(self, city: str) -> tuple:
         """城市名转经纬度（简化版，仅支持主要城市）"""
         city_coords = {
