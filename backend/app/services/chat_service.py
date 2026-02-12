@@ -200,8 +200,7 @@ class ChatService:
         seven_days_ago = today - timedelta(days=7)
         sleep_7days = self.db.query(GarminData).filter(
             GarminData.user_id == user_id,
-            GarminData.record_date >= seven_days_ago,
-            GarminData.sleep_score.isnot(None)
+            GarminData.record_date >= seven_days_ago
         ).all()
 
         if sleep_7days:
@@ -231,8 +230,7 @@ class ChatService:
         thirty_days_ago = today - timedelta(days=30)
         sleep_30days = self.db.query(GarminData).filter(
             GarminData.user_id == user_id,
-            GarminData.record_date >= thirty_days_ago,
-            GarminData.sleep_score.isnot(None)
+            GarminData.record_date >= thirty_days_ago
         ).all()
 
         if sleep_30days:
