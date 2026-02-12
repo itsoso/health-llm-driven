@@ -169,7 +169,7 @@ export default function AIAssistantPage() {
   };
 
   return (
-    <div className="w-full h-[calc(100vh-64px)] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col">
+    <div className="w-full min-h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col">
       {/* 顶部栏 */}
       <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-white/10">
         <button
