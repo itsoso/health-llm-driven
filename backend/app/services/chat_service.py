@@ -3,6 +3,7 @@
 利用 OpenClaw 的 OpenAI 兼容 API，注入用户健康上下文
 """
 import logging
+import asyncio
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 
@@ -61,10 +62,15 @@ class ChatService:
                 user_city = profile.city
                 parts.append(f"位置: {user_city}")
 
-        # 获取当前天气信息
+        # 获取当前天气信息（同步方式调用异步函数）
         if user_city:
             try:
-                weather = weather_service.get_current_weather(user_city)
+                # 使用 asyncio.run() 同步调用异步函数
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                weather = loop.run_until_complete(weather_service.get_current_weather(user_city))
+                loop.close()
+
                 if weather:
                     weather_info = f"当前天气: {weather.get('text', '')}, 温度{weather.get('temp', '')}℃"
                     if weather.get('feelsLike'):
