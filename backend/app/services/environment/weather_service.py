@@ -6,6 +6,7 @@
 
 import httpx
 import logging
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -378,5 +379,5 @@ class WeatherService:
         }
 
 
-# 单例实例
-weather_service = WeatherService()
+# 单例实例 - 从环境变量读取API key
+weather_service = WeatherService(api_key=os.getenv("QWEATHER_API_KEY"))
