@@ -169,9 +169,9 @@ export default function AIAssistantPage() {
   };
 
   return (
-    <div className="w-full h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col">
+    <div className="fixed inset-0 top-16 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col overflow-hidden">
       {/* 顶部栏 */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-white/10">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-white/10">
         <button
           onClick={toggleHistory}
           className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-600/20 transition-all text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/50"
