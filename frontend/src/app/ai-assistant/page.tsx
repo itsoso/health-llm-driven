@@ -258,26 +258,51 @@ export default function AIAssistantPage() {
                       : 'bg-slate-700/50 text-white border border-white/10'
                   }`}
                 >
-                  {msg.role === 'assistant' ? (
-                    <div className="prose prose-invert prose-sm max-w-none">
+  {msg.role === 'assistant' ? (
+                    <div className="text-white text-sm leading-relaxed">
                       <ReactMarkdown
                         components={{
-                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
-                          li: ({ children }) => <li className="ml-2">{children}</li>,
-                          h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-4 first:mt-0">{children}</h1>,
-                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
-                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-2 first:mt-0">{children}</h3>,
-                          strong: ({ children }) => <strong className="font-bold text-purple-300">{children}</strong>,
+                          p: ({ children }) => <p className="mb-3 last:mb-0 whitespace-pre-wrap">{children}</p>,
+                          ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1.5">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1.5">{children}</ol>,
+                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                          h1: ({ children }) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0 text-purple-300">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-4 first:mt-0 text-purple-300">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0 text-purple-300">{children}</h3>,
+                          strong: ({ children }) => <strong className="font-bold text-purple-200">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-slate-300">{children}</em>,
+                          code: ({ node, ...props }: any) => {
+                            const inline = !props.className?.includes('language-');
+                            return inline ? (
+                              <code className="px-1.5 py-0.5 bg-slate-800 rounded text-purple-300 font-mono text-xs" {...props} />
+                            ) : (
+                              <code className="block px-4 py-3 bg-slate-800 rounded-lg overflow-x-auto font-mono text-xs my-2" {...props} />
+                            );
+                          },
+                          pre: ({ children }) => <pre className="bg-slate-800 rounded-lg p-4 overflow-x-auto my-3">{children}</pre>,
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-4 border-purple-500 pl-4 py-2 my-3 italic text-slate-300 bg-slate-800/30 rounded-r">
+                              {children}
+                            </blockquote>
+                          ),
                           table: ({ children }) => (
-                            <div className="overflow-x-auto my-2">
-                              <table className="min-w-full border-collapse border border-slate-600">{children}</table>
+                            <div className="overflow-x-auto my-3">
+                              <table className="min-w-full border-collapse border border-slate-600 rounded-lg overflow-hidden">
+                                {children}
+                              </table>
                             </div>
                           ),
-                          thead: ({ children }) => <thead className="bg-slate-600">{children}</thead>,
-                          th: ({ children }) => <th className="border border-slate-600 px-3 py-2 text-left">{children}</th>,
+                          thead: ({ children }) => <thead className="bg-slate-700">{children}</thead>,
+                          tbody: ({ children }) => <tbody className="bg-slate-800/30">{children}</tbody>,
+                          tr: ({ children }) => <tr className="border-b border-slate-600 last:border-0">{children}</tr>,
+                          th: ({ children }) => <th className="border border-slate-600 px-3 py-2 text-left font-semibold text-purple-300">{children}</th>,
                           td: ({ children }) => <td className="border border-slate-600 px-3 py-2">{children}</td>,
+                          hr: () => <hr className="my-4 border-slate-600" />,
+                          a: ({ children, href }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline">
+                              {children}
+                            </a>
+                          ),
                         }}
                       >
                         {msg.content}
