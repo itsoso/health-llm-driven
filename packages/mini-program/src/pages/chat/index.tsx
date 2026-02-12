@@ -35,6 +35,9 @@ export default function Chat() {
   const [conversationId, setConversationId] = useState<number | undefined>();
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const scrollId = useRef('msg-bottom');
 
   // 加载对话列表
@@ -135,9 +138,23 @@ export default function Chat() {
   const toggleHistory = () => {
     if (!showHistory) {
       loadConversations();
+      setSearchQuery('');
+      setCurrentPage(1);
     }
     setShowHistory(!showHistory);
   };
+
+  // 过滤和分页对话列表
+  const filteredConversations = conversations.filter(conv =>
+    conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (conv.last_message && conv.last_message.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const totalPages = Math.ceil(filteredConversations.length / itemsPerPage);
+  const paginatedConversations = filteredConversations.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   // 渲染行内样式（加粗）
   const renderInline = (text: string) => {
@@ -267,14 +284,32 @@ export default function Chat() {
         <View className="history-panel">
           <View className="history-header">
             <Text className="history-title">对话记录</Text>
+            {/* 搜索框 */}
+            <View className="history-search">
+              <Input
+                className="history-search-input"
+                placeholder="搜索对话..."
+                value={searchQuery}
+                onInput={(e) => {
+                  setSearchQuery(e.detail.value);
+                  setCurrentPage(1);
+                }}
+              />
+              <Text className="history-search-icon">🔍</Text>
+            </View>
           </View>
           <ScrollView scrollY className="history-list">
             {conversations.length === 0 ? (
               <View className="history-empty">
                 <Text>暂无对话记录</Text>
               </View>
+            ) : paginatedConversations.length === 0 ? (
+              <View className="history-empty">
+                <Text className="history-empty-icon">🔍</Text>
+                <Text>未找到匹配的对话</Text>
+              </View>
             ) : (
-              conversations.map(conv => (
+              paginatedConversations.map(conv => (
                 <View
                   key={conv.id}
                   className={`history-item ${conv.id === conversationId ? 'active' : ''}`}
@@ -299,6 +334,27 @@ export default function Chat() {
               ))
             )}
           </ScrollView>
+
+          {/* 分页控件 */}
+          {filteredConversations.length > itemsPerPage && (
+            <View className="history-pagination">
+              <View
+                className={`pagination-btn ${currentPage === 1 ? 'disabled' : ''}`}
+                onClick={() => currentPage > 1 && setCurrentPage(p => p - 1)}
+              >
+                <Text>← 上一页</Text>
+              </View>
+              <Text className="pagination-info">
+                {currentPage} / {totalPages}
+              </Text>
+              <View
+                className={`pagination-btn ${currentPage === totalPages ? 'disabled' : ''}`}
+                onClick={() => currentPage < totalPages && setCurrentPage(p => p + 1)}
+              >
+                <Text>下一页 →</Text>
+              </View>
+            </View>
+          )}
         </View>
       )}
 

@@ -487,6 +487,89 @@ class WeatherService:
             "weather_summary": f"{weather_text}，{temp}°C，湿度{humidity}%"
         }
 
+    async def get_lifestyle_indices(
+        self,
+        city: str = None,
+        lat: float = None,
+        lon: float = None,
+        days: int = 1
+    ) -> Dict[str, Any]:
+        """
+        获取和风天气生活指数（包括运动指数、穿衣指数等）
+
+        Args:
+            city: 城市名称
+            lat: 纬度
+            lon: 经度
+            days: 天数（1或3）
+
+        Returns:
+            生活指数数据，包括：
+            - sport: 运动指数
+            - drsg: 穿衣指数
+            - uv: 紫外线指数
+            - comf: 舒适度指数
+            - flu: 感冒指数
+            等
+        """
+        if not self.api_key:
+            logger.warning("未配置和风天气API Key，无法获取生活指数")
+            return {"available": False, "error": "未配置API Key"}
+
+        cache_key = f"indices_{city or f'{lat},{lon}'}_{days}d"
+        cached = self._get_cache(cache_key)
+        if cached:
+            return cached
+
+        try:
+            async with httpx.AsyncClient() as client:
+                # 和风天气API需要Location ID或经纬度
+                if city:
+                    location = self._city_to_location_id(city)
+                else:
+                    location = f"{lon},{lat}"
+
+                # 生活指数接口
+                url = f"{self.QWEATHER_BASE_URL}/indices/{days}d"
+                params = {
+                    "location": location,
+                    "key": self.api_key,
+                    "type": "0"  # 0 = 全部生活指数
+                }
+
+                response = await client.get(url, params=params, timeout=10)
+                data = response.json()
+
+                if data.get("code") == "200":
+                    daily = data.get("daily", [])
+
+                    # 解析各项指数
+                    indices = {
+                        "available": True,
+                        "source": "qweather",
+                        "update_time": data.get("updateTime", "")
+                    }
+
+                    for item in daily:
+                        idx_type = item.get("type")
+                        indices[idx_type] = {
+                            "name": item.get("name", ""),
+                            "level": item.get("level", ""),
+                            "category": item.get("category", ""),
+                            "text": item.get("text", ""),
+                            "date": item.get("date", "")
+                        }
+
+                    self._set_cache(cache_key, indices)
+                    return indices
+                else:
+                    logger.error(f"获取生活指数失败: {data.get('code')}")
+                    return {"available": False, "error": f"API返回错误: {data.get('code')}"}
+
+        except Exception as e:
+            logger.error(f"获取生活指数失败: {e}")
+            return {"available": False, "error": str(e)}
+
     async def get_comprehensive_context(
         self,
         city: str = None,
@@ -507,6 +590,7 @@ class WeatherService:
             {
                 "weather": {...},
                 "air_quality": {...},
+                "lifestyle_indices": {...},  # 生活指数，包括运动指数
                 "location": {"city": "北京", "latitude": 39.9, "longitude": 116.4}
             }
         """
@@ -519,9 +603,13 @@ class WeatherService:
         # 获取空气质量数据
         air_quality = await air_quality_service.get_air_quality(city, latitude, longitude)
 
+        # 获取生活指数（包括运动指数）
+        lifestyle_indices = await self.get_lifestyle_indices(city, latitude, longitude)
+
         return {
             "weather": weather,
             "air_quality": air_quality,
+            "lifestyle_indices": lifestyle_indices,
             "location": {
                 "city": city,
                 "latitude": latitude,

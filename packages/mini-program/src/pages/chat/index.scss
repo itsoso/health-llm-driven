@@ -67,6 +67,32 @@ page {
   font-size: 30px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 16px;
+}
+
+// 搜索框
+.history-search {
+  position: relative;
+  margin-top: 16px;
+}
+
+.history-search-input {
+  width: 100%;
+  padding: 16px 24px 16px 56px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 26px;
+}
+
+.history-search-icon {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 26px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .history-list {
@@ -79,6 +105,40 @@ page {
   text-align: center;
   color: rgba(255, 255, 255, 0.3);
   font-size: 28px;
+}
+
+.history-empty-icon {
+  display: block;
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+// 分页控件
+.history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 10, 30, 0.5);
+}
+
+.pagination-btn {
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(139, 92, 246, 0.1);
+  color: rgba(139, 92, 246, 0.9);
+  font-size: 24px;
+
+  &.disabled {
+    opacity: 0.3;
+    color: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.pagination-info {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .history-item {

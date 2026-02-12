@@ -21,6 +21,9 @@ export default function AIAssistantPage() {
   const [conversationId, setConversationId] = useState<number | undefined>();
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 滚动到底部
@@ -139,9 +142,23 @@ export default function AIAssistantPage() {
   const toggleHistory = () => {
     if (!showHistory) {
       loadConversations();
+      setSearchQuery('');
+      setCurrentPage(1);
     }
     setShowHistory(!showHistory);
   };
+
+  // 过滤和分页对话列表
+  const filteredConversations = conversations.filter(conv =>
+    conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (conv.last_message && conv.last_message.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const totalPages = Math.ceil(filteredConversations.length / itemsPerPage);
+  const paginatedConversations = filteredConversations.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   // 按 Enter 发送消息
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -162,9 +179,7 @@ export default function AIAssistantPage() {
           <span className="text-xl">{showHistory ? '✕' : '💬'}</span>
           <span className="text-sm font-medium">{showHistory ? '关闭' : '历史'}</span>
         </button>
-        <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-          健康顾问
-        </h1>
+        <div className="flex-1"></div>
         <button
           onClick={handleNewChat}
           className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-600/20 transition-all text-purple-300 hover:text-purple-200 border border-purple-500/30 hover:border-purple-500/50"
@@ -179,10 +194,24 @@ export default function AIAssistantPage() {
         {showHistory && (
           <div className="w-80 bg-slate-800/80 border-r border-purple-500/30 flex flex-col shadow-lg">
             <div className="p-4 border-b border-purple-500/30 bg-slate-900/50">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-3">
                 <span>💬</span>
                 <span>对话记录</span>
               </h2>
+              {/* 搜索框 */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1); // 搜索时重置到第一页
+                  }}
+                  placeholder="搜索对话..."
+                  className="w-full px-3 py-2 pl-9 rounded-lg bg-slate-700/50 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
@@ -190,8 +219,13 @@ export default function AIAssistantPage() {
                   <div className="text-4xl mb-3">📝</div>
                   <div>暂无对话记录</div>
                 </div>
+              ) : paginatedConversations.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  <div className="text-4xl mb-3">🔍</div>
+                  <div>未找到匹配的对话</div>
+                </div>
               ) : (
-                conversations.map(conv => (
+                paginatedConversations.map(conv => (
                   <div
                     key={conv.id}
                     className={`group flex items-start gap-3 p-4 border-b border-white/5 hover:bg-purple-900/20 cursor-pointer transition-all ${
@@ -226,6 +260,39 @@ export default function AIAssistantPage() {
                 ))
               )}
             </div>
+
+            {/* 分页控件 */}
+            {filteredConversations.length > itemsPerPage && (
+              <div className="p-3 border-t border-purple-500/30 bg-slate-900/50">
+                <div className="flex items-center justify-between text-sm">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className={`px-3 py-1.5 rounded-lg transition-colors ${
+                      currentPage === 1
+                        ? 'text-slate-500 cursor-not-allowed'
+                        : 'text-purple-300 hover:bg-purple-600/20'
+                    }`}
+                  >
+                    ← 上一页
+                  </button>
+                  <span className="text-slate-300">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`px-3 py-1.5 rounded-lg transition-colors ${
+                      currentPage === totalPages
+                        ? 'text-slate-500 cursor-not-allowed'
+                        : 'text-purple-300 hover:bg-purple-600/20'
+                    }`}
+                  >
+                    下一页 →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -358,7 +425,7 @@ export default function AIAssistantPage() {
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
-                      className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-full text-sm whitespace-nowrap transition-colors border border-white/10"
+                      className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-full text-sm whitespace-nowrap transition-colors border border-white/10 text-slate-200 hover:text-white"
                     >
                       {q.label}
                     </button>
@@ -377,7 +444,7 @@ export default function AIAssistantPage() {
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="输入健康相关问题..."
-                className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
               <button
                 onClick={() => handleSend()}
