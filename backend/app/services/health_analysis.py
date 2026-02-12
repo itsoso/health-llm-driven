@@ -87,8 +87,8 @@ class HealthAnalysisService:
             "medical_exams": [
                 {
                     "exam_date": exam.exam_date.isoformat(),
-                    "exam_type": exam.exam_type.value,
-                    "body_system": exam.body_system.value if exam.body_system else None,
+                    "exam_type": exam.exam_type.value if hasattr(exam.exam_type, 'value') else exam.exam_type,
+                    "body_system": exam.body_system.value if exam.body_system and hasattr(exam.body_system, 'value') else (exam.body_system if exam.body_system else None),
                     "overall_assessment": exam.overall_assessment,
                     "items": [
                         {

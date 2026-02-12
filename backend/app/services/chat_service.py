@@ -35,7 +35,7 @@ class ChatService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _build_health_context(self, user_id: int) -> str:
+    async def _build_health_context(self, user_id: int) -> str:
         """构建用户健康上下文，注入为 system prompt"""
         parts = []
         today = date.today()
@@ -62,15 +62,10 @@ class ChatService:
                 user_city = profile.city
                 parts.append(f"位置: {user_city}")
 
-        # 获取当前天气信息（同步方式调用异步函数）
+        # 获取当前天气信息（异步调用）
         if user_city:
             try:
-                # 使用 asyncio.run() 同步调用异步函数
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                weather = loop.run_until_complete(weather_service.get_current_weather(user_city))
-                loop.close()
-
+                weather = await weather_service.get_current_weather(user_city)
                 if weather:
                     weather_info = f"当前天气: {weather.get('text', '')}, 温度{weather.get('temp', '')}℃"
                     if weather.get('feelsLike'):
@@ -565,7 +560,7 @@ class ChatService:
 
         return "以下是该用户的最新健康数据：\n" + "\n".join(parts)
 
-    def _get_system_prompt(self, user_id: int) -> str:
+    async def _get_system_prompt(self, user_id: int) -> str:
         """组装完整的 system prompt"""
         base = (
             "你是一个专业的私人健康顾问。你的名字叫「健康顾问」。\n"
@@ -574,7 +569,7 @@ class ChatService:
             "使用中文回答。"
         )
 
-        health_ctx = self._build_health_context(user_id)
+        health_ctx = await self._build_health_context(user_id)
         if health_ctx:
             return f"{base}\n\n{health_ctx}"
         return base
@@ -614,7 +609,7 @@ class ChatService:
         # 只取最近 20 条消息避免超长
         recent = history[-20:] if len(history) > 20 else history
 
-        messages = [{"role": "system", "content": self._get_system_prompt(user_id)}]
+        messages = [{"role": "system", "content": await self._get_system_prompt(user_id)}]
         for msg in recent:
             messages.append({"role": msg.role, "content": msg.content})
 
