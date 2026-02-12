@@ -132,7 +132,7 @@ class ChatService:
         if bp:
             parts.append(f"最近血压: {bp.systolic}/{bp.diastolic}mmHg ({bp.record_date})")
 
-        # 最近 Garmin 数据
+        # 最近 Garmin 数据（今日）
         garmin = self.db.query(GarminData).filter(
             GarminData.user_id == user_id
         ).order_by(GarminData.record_date.desc()).first()
@@ -149,6 +149,37 @@ class ChatService:
             if garmin.body_battery_most_charged:
                 g_parts.append(f"身体电量峰值:{garmin.body_battery_most_charged}")
             parts.append(", ".join(g_parts))
+
+        # 最近3天的睡眠数据
+        from datetime import timedelta
+        three_days_ago = today - timedelta(days=3)
+        sleep_records = self.db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= three_days_ago
+        ).order_by(GarminData.record_date.desc()).limit(3).all()
+
+        if sleep_records:
+            sleep_summary = ["最近3天睡眠:"]
+            for record in sleep_records:
+                sleep_info = [f"{record.record_date}"]
+                if record.sleep_score is not None:
+                    sleep_info.append(f"分数{record.sleep_score}")
+                if record.total_sleep_duration is not None:
+                    hours = record.total_sleep_duration // 60
+                    mins = record.total_sleep_duration % 60
+                    sleep_info.append(f"总时长{hours}h{mins}min")
+                if record.deep_sleep_duration is not None:
+                    sleep_info.append(f"深睡{record.deep_sleep_duration}min")
+                if record.rem_sleep_duration is not None:
+                    sleep_info.append(f"REM{record.rem_sleep_duration}min")
+                if record.light_sleep_duration is not None:
+                    sleep_info.append(f"浅睡{record.light_sleep_duration}min")
+                if record.awake_duration is not None:
+                    sleep_info.append(f"清醒{record.awake_duration}min")
+                if record.sleep_start_time and record.sleep_end_time:
+                    sleep_info.append(f"时段{record.sleep_start_time.strftime('%H:%M')}-{record.sleep_end_time.strftime('%H:%M')}")
+                sleep_summary.append(" ".join(sleep_info))
+            parts.append("\n  ".join(sleep_summary))
 
         # 今日打卡记录
         checkins = self.db.query(CheckinRecord, CheckinTemplate).join(
