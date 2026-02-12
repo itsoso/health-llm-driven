@@ -156,7 +156,7 @@ export default function Navigation() {
   };
 
   return (
-    <nav className="bg-[#1a1625]/90 backdrop-blur-xl border-b border-purple-900/20 shadow-sm sticky top-0 z-50 font-sans">
+    <nav className="bg-[#1a1625]/90 backdrop-blur-xl border-b border-purple-900/20 shadow-sm fixed top-0 left-0 right-0 z-50 font-sans">
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
         <div className="flex justify-between items-center h-16 gap-4">
           {/* Logo和首页链接 */}
