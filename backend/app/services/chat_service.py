@@ -179,7 +179,14 @@ class ChatService:
                 if record.awake_duration is not None:
                     sleep_info.append(f"清醒{record.awake_duration}min")
                 if record.sleep_start_time and record.sleep_end_time:
-                    sleep_info.append(f"时段{record.sleep_start_time.strftime('%H:%M')}-{record.sleep_end_time.strftime('%H:%M')}")
+                    # 处理时间字段可能是字符串或time对象的情况
+                    start_time = record.sleep_start_time
+                    end_time = record.sleep_end_time
+                    if hasattr(start_time, 'strftime'):
+                        start_time = start_time.strftime('%H:%M')
+                    if hasattr(end_time, 'strftime'):
+                        end_time = end_time.strftime('%H:%M')
+                    sleep_info.append(f"时段{start_time}-{end_time}")
                 sleep_summary.append(" ".join(sleep_info))
             parts.append("\n  ".join(sleep_summary))
 
