@@ -150,17 +150,19 @@ class ChatService:
                 g_parts.append(f"身体电量峰值:{garmin.body_battery_most_charged}")
             parts.append(", ".join(g_parts))
 
-        # 最近3天的睡眠数据
+        # 睡眠数据分析（最近3天、7天、30天）
         from datetime import timedelta
+
+        # 最近3天详细数据
         three_days_ago = today - timedelta(days=3)
-        sleep_records = self.db.query(GarminData).filter(
+        sleep_3days = self.db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date >= three_days_ago
         ).order_by(GarminData.record_date.desc()).limit(3).all()
 
-        if sleep_records:
+        if sleep_3days:
             sleep_summary = ["最近3天睡眠:"]
-            for record in sleep_records:
+            for record in sleep_3days:
                 sleep_info = [f"{record.record_date}"]
                 if record.sleep_score is not None:
                     sleep_info.append(f"分数{record.sleep_score}")
@@ -180,6 +182,68 @@ class ChatService:
                     sleep_info.append(f"时段{record.sleep_start_time.strftime('%H:%M')}-{record.sleep_end_time.strftime('%H:%M')}")
                 sleep_summary.append(" ".join(sleep_info))
             parts.append("\n  ".join(sleep_summary))
+
+        # 最近7天统计
+        seven_days_ago = today - timedelta(days=7)
+        sleep_7days = self.db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= seven_days_ago,
+            GarminData.sleep_score.isnot(None)
+        ).all()
+
+        if sleep_7days:
+            scores = [r.sleep_score for r in sleep_7days if r.sleep_score is not None]
+            durations = [r.total_sleep_duration for r in sleep_7days if r.total_sleep_duration is not None]
+            deep_sleeps = [r.deep_sleep_duration for r in sleep_7days if r.deep_sleep_duration is not None]
+            rem_sleeps = [r.rem_sleep_duration for r in sleep_7days if r.rem_sleep_duration is not None]
+
+            stats_7d = [f"最近7天睡眠统计({len(sleep_7days)}天)"]
+            if scores:
+                avg_score = sum(scores) / len(scores)
+                stats_7d.append(f"平均分数{avg_score:.1f}")
+            if durations:
+                avg_duration = sum(durations) / len(durations)
+                avg_hours = int(avg_duration // 60)
+                avg_mins = int(avg_duration % 60)
+                stats_7d.append(f"平均时长{avg_hours}h{avg_mins}min")
+            if deep_sleeps:
+                avg_deep = sum(deep_sleeps) / len(deep_sleeps)
+                stats_7d.append(f"平均深睡{avg_deep:.0f}min")
+            if rem_sleeps:
+                avg_rem = sum(rem_sleeps) / len(rem_sleeps)
+                stats_7d.append(f"平均REM{avg_rem:.0f}min")
+            parts.append(": ".join(stats_7d))
+
+        # 最近30天统计
+        thirty_days_ago = today - timedelta(days=30)
+        sleep_30days = self.db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= thirty_days_ago,
+            GarminData.sleep_score.isnot(None)
+        ).all()
+
+        if sleep_30days:
+            scores = [r.sleep_score for r in sleep_30days if r.sleep_score is not None]
+            durations = [r.total_sleep_duration for r in sleep_30days if r.total_sleep_duration is not None]
+            deep_sleeps = [r.deep_sleep_duration for r in sleep_30days if r.deep_sleep_duration is not None]
+            rem_sleeps = [r.rem_sleep_duration for r in sleep_30days if r.rem_sleep_duration is not None]
+
+            stats_30d = [f"最近30天睡眠统计({len(sleep_30days)}天)"]
+            if scores:
+                avg_score = sum(scores) / len(scores)
+                stats_30d.append(f"平均分数{avg_score:.1f}")
+            if durations:
+                avg_duration = sum(durations) / len(durations)
+                avg_hours = int(avg_duration // 60)
+                avg_mins = int(avg_duration % 60)
+                stats_30d.append(f"平均时长{avg_hours}h{avg_mins}min")
+            if deep_sleeps:
+                avg_deep = sum(deep_sleeps) / len(deep_sleeps)
+                stats_30d.append(f"平均深睡{avg_deep:.0f}min")
+            if rem_sleeps:
+                avg_rem = sum(rem_sleeps) / len(rem_sleeps)
+                stats_30d.append(f"平均REM{avg_rem:.0f}min")
+            parts.append(": ".join(stats_30d))
 
         # 今日打卡记录
         checkins = self.db.query(CheckinRecord, CheckinTemplate).join(
