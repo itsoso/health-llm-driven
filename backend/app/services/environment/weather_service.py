@@ -212,7 +212,20 @@ class WeatherService:
             else:
                 location = f"{lon},{lat}"
 
-            url = f"{self.QWEATHER_BASE_URL}/weather/{days}d"
+            # 和风天气API只支持 3, 7, 10, 15, 30 天预报
+            # 将请求天数映射到支持的天数
+            if days <= 3:
+                api_days = 3
+            elif days <= 7:
+                api_days = 7
+            elif days <= 10:
+                api_days = 10
+            elif days <= 15:
+                api_days = 15
+            else:
+                api_days = 30
+
+            url = f"{self.QWEATHER_BASE_URL}/weather/{api_days}d"
             params = {
                 "location": location,
                 "key": self.api_key
