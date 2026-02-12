@@ -100,9 +100,35 @@ function AIInsightsContent() {
   const handleGenerateInsight = async () => {
     if (!token) return;
 
+    // 检查今天是否已有洞察
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    const todayInsight = insights.find(insight => {
+      const insightDate = insight.review_date.split('T')[0];
+      return insightDate === yesterdayStr;
+    });
+
+    let forceRegenerate = false;
+    if (todayInsight) {
+      const confirmed = window.confirm(
+        '今日洞察已存在，是否要重新生成？\n\n重新生成将覆盖已有内容。'
+      );
+      if (!confirmed) {
+        return; // 用户取消
+      }
+      forceRegenerate = true;
+    }
+
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/ai-insights/insights/daily/generate`, {
+      const url = forceRegenerate
+        ? `${API_BASE}/ai-insights/insights/daily/generate?force_regenerate=true`
+        : `${API_BASE}/ai-insights/insights/daily/generate`;
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -113,7 +139,7 @@ function AIInsightsContent() {
         throw new Error('Failed to generate insight');
       }
 
-      alert('✅ 今日洞察生成成功！');
+      alert(forceRegenerate ? '✅ 洞察已重新生成！' : '✅ 今日洞察生成成功！');
       await loadInsights();
     } catch (error) {
       console.error('Failed to generate insight:', error);

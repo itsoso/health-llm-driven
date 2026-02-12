@@ -64,14 +64,19 @@ async def get_daily_insight_by_date(
 @router.post("/insights/daily/generate", response_model=AIInsightResponse)
 async def generate_daily_insight(
     target_date: Optional[date] = None,
+    force_regenerate: bool = Query(False, description="是否强制重新生成（覆盖已有洞察）"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     手动触发生成每日洞察（通常由定时任务自动执行）
+
+    参数:
+    - target_date: 目标日期，默认为昨天
+    - force_regenerate: 是否强制重新生成，默认为 False
     """
     service = AIInsightsService(db)
-    insight = await service.generate_daily_insight(current_user.id, target_date)
+    insight = await service.generate_daily_insight(current_user.id, target_date, force_regenerate)
 
     if not insight:
         raise HTTPException(status_code=500, detail="生成洞察失败，请稍后重试")

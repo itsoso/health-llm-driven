@@ -201,9 +201,14 @@ class AIInsightsService:
 
     # ========== 每日复盘生成 ==========
 
-    async def generate_daily_insight(self, user_id: int, target_date: date = None) -> Optional[AIInsight]:
+    async def generate_daily_insight(self, user_id: int, target_date: date = None, force_regenerate: bool = False) -> Optional[AIInsight]:
         """
         生成每日健康洞察
+
+        Args:
+            user_id: 用户ID
+            target_date: 目标日期，默认为昨天
+            force_regenerate: 是否强制重新生成（覆盖已有洞察）
         """
         if target_date is None:
             target_date = date.today() - timedelta(days=1)  # 默认昨天
@@ -214,8 +219,14 @@ class AIInsightsService:
             AIInsight.review_date == target_date
         ).first()
         if existing:
-            logger.info(f"Daily insight already exists for user {user_id} on {target_date}")
-            return existing
+            if force_regenerate:
+                # 删除旧的洞察，重新生成
+                logger.info(f"Force regenerating daily insight for user {user_id} on {target_date}")
+                self.db.delete(existing)
+                self.db.commit()
+            else:
+                logger.info(f"Daily insight already exists for user {user_id} on {target_date}")
+                return existing
 
         # 聚合健康数据
         snapshot = await self._aggregate_health_snapshot(user_id, target_date)
