@@ -1,0 +1,284 @@
+.hs-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f3ff 0%, #fefce8 100%);
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    .loading-spinner {
+      width: 80px;
+      height: 80px;
+      border: 4px solid #e5e7eb;
+      border-top-color: #8b5cf6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .loading-text {
+      margin-top: 24px;
+      font-size: 28px;
+      color: #6b7280;
+    }
+  }
+}
+
+.hs-scroll {
+  height: 100vh;
+}
+
+// Score card
+.score-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px 32px;
+
+  .score-ring {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: 8px solid #f3f4f6;
+    justify-content: center;
+    background: #fff;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+
+    .score-value {
+      font-size: 72px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .score-grade {
+      font-size: 26px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+  }
+
+  .score-date {
+    font-size: 24px;
+    color: #9ca3af;
+    margin-top: 16px;
+  }
+}
+
+// Empty state
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 120px 48px;
+
+  .empty-icon {
+    font-size: 80px;
+    margin-bottom: 16px;
+  }
+
+  .empty-text {
+    font-size: 30px;
+    color: #6b7280;
+    margin-bottom: 8px;
+  }
+
+  .empty-hint {
+    font-size: 24px;
+    color: #9ca3af;
+  }
+}
+
+// Card shared
+.card-title {
+  font-size: 30px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 16px;
+}
+
+// Dimensions card
+.dimensions-card {
+  margin: 0 24px 24px;
+  padding: 24px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+  .dimension-item {
+    padding: 16px 0;
+    border-bottom: 1px solid #f3f4f6;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .dim-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+
+      .dim-name {
+        font-size: 28px;
+        font-weight: 500;
+        color: #374151;
+      }
+
+      .dim-score {
+        font-size: 28px;
+        font-weight: 700;
+      }
+    }
+
+    .dim-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: #f3f4f6;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 6px;
+
+      .dim-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.3s;
+      }
+    }
+
+    .dim-desc {
+      font-size: 22px;
+      color: #9ca3af;
+    }
+  }
+}
+
+// Suggestions card
+.suggestions-card {
+  margin: 0 24px 24px;
+  padding: 24px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+  .suggestion-item {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+
+    .suggestion-dot {
+      font-size: 28px;
+      color: #8b5cf6;
+      flex-shrink: 0;
+    }
+
+    .suggestion-text {
+      font-size: 24px;
+      color: #4b5563;
+      line-height: 1.5;
+    }
+  }
+}
+
+// Trend card
+.trend-card {
+  margin: 0 24px 24px;
+  padding: 24px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+  .trend-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+
+    .days-selector {
+      display: flex;
+      gap: 8px;
+
+      .days-btn {
+        padding: 4px 16px;
+        border-radius: 16px;
+        background: #f3f4f6;
+        font-size: 22px;
+        color: #6b7280;
+
+        &.active {
+          background: #8b5cf6;
+          color: #fff;
+        }
+      }
+    }
+  }
+
+  .trend-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+
+    .trend-avg, .trend-direction {
+      font-size: 24px;
+      color: #6b7280;
+    }
+  }
+
+  .trend-list {
+    .trend-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0;
+
+      .trend-date {
+        font-size: 22px;
+        color: #9ca3af;
+        width: 80px;
+        flex-shrink: 0;
+      }
+
+      .trend-bar-bg {
+        flex: 1;
+        height: 12px;
+        background: #f3f4f6;
+        border-radius: 6px;
+        overflow: hidden;
+
+        .trend-bar-fill {
+          height: 100%;
+          border-radius: 6px;
+          transition: width 0.3s;
+        }
+      }
+
+      .trend-score {
+        font-size: 24px;
+        font-weight: 600;
+        width: 60px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+    }
+  }
+
+  .no-trend {
+    text-align: center;
+    font-size: 24px;
+    color: #9ca3af;
+    padding: 32px 0;
+  }
+}
+
+.bottom-spacer {
+  height: 40px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -206,6 +206,151 @@ export interface PreWorkoutGuidance {
   course_insights: string[];
 }
 
+// 情绪记录
+export interface MoodRecord {
+  id: number;
+  user_id: number;
+  record_date: string;
+  mood_score: number;
+  mood_tags: string[];
+  energy_level: number | null;
+  stress_level: number | null;
+  anxiety_level: number | null;
+  sleep_quality: number | null;
+  journal: string | null;
+  triggers: string[];
+  coping_methods: string[];
+  record_time: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface MoodStats {
+  total_records: number;
+  avg_mood_score: number | null;
+  avg_energy_level: number | null;
+  avg_stress_level: number | null;
+  avg_anxiety_level: number | null;
+  mood_distribution: Record<number, number>;
+  top_mood_tags: Record<string, number>;
+  top_triggers: Record<string, number>;
+  top_coping_methods: Record<string, number>;
+  daily_trend: {
+    date: string;
+    mood_score: number;
+    energy_level: number | null;
+    stress_level: number | null;
+    record_count: number;
+  }[];
+  mood_energy_correlation: number | null;
+  mood_sleep_correlation: number | null;
+}
+
+// 身体成分数据点
+export interface BodyCompositionDataPoint {
+  date: string;
+  weight: number;
+  body_fat_percentage: number | null;
+  muscle_mass_kg: number | null;
+  visceral_fat: number | null;
+  bone_mass_kg: number | null;
+  water_percentage: number | null;
+  bmi: number | null;
+  bmr: number | null;
+  skeletal_muscle_pct: number | null;
+}
+
+// 身体成分趋势
+export interface BodyCompositionTrend {
+  data_points: BodyCompositionDataPoint[];
+  summary: {
+    current_weight: number | null;
+    weight_change: number | null;
+    current_body_fat: number | null;
+    current_muscle_mass: number | null;
+    current_bmi: number | null;
+    record_count: number;
+    date_range: string;
+    body_fat_change?: number;
+    muscle_mass_change?: number;
+  };
+}
+
+// 身体分析项
+export interface BodyAnalysisItem {
+  metric: string;
+  value: any;
+  status: string;
+  advice: string;
+}
+
+// 身体分析结果
+export interface BodyAnalysisResult {
+  status: string;
+  record_date?: string;
+  analysis: BodyAnalysisItem[];
+}
+
+// 健康评分维度
+export interface HealthScoreDimension {
+  name: string;
+  score: number;
+  weight: number;
+  description: string;
+  details: Record<string, any>;
+}
+
+// 健康评分结果
+export interface HealthScoreResult {
+  status: string;
+  date?: string;
+  total_score: number;
+  grade?: string;
+  dimensions: HealthScoreDimension[];
+  suggestions: string[];
+}
+
+// 健康评分趋势项
+export interface HealthScoreTrendItem {
+  date: string;
+  score: number;
+  grade: string;
+}
+
+// 健康评分趋势
+export interface HealthScoreTrend {
+  scores: HealthScoreTrendItem[];
+  avg_score: number | null;
+  trend: string | null;
+  best_day: HealthScoreTrendItem | null;
+  worst_day: HealthScoreTrendItem | null;
+}
+
+// 用药管理
+export interface MedicationItem {
+  id: number;
+  name: string;
+  dosage: string | null;
+  frequency: string | null;
+  times_per_day: number;
+  reminder_times: string[] | null;
+  category: string | null;
+  purpose: string | null;
+  is_active: boolean;
+  notes: string | null;
+}
+
+export interface MedicationTodayStatus {
+  medication_id: number;
+  name: string;
+  dosage: string | null;
+  total_count: number;
+  taken_count: number;
+  skipped_count: number;
+  reminder_times: string[];
+  logs: { time: string; status: string; id: number }[];
+}
+
 // API 端点
 export const API_ENDPOINTS = {
   AUTH: {
@@ -255,6 +400,43 @@ export const API_ENDPOINTS = {
   CHAT: {
     SEND: '/chat/send',
     CONVERSATIONS: '/chat/conversations',
+  },
+  MOOD: {
+    CREATE: '/mood/records',
+    MY_RECORDS: '/mood/records/me',
+    TODAY: '/mood/records/me/today',
+    STATS: '/mood/stats/me',
+    CALENDAR: '/mood/calendar/me',
+  },
+  HEALTH_REPORT: {
+    GENERATE: '/health-report/generate',
+    LIST: '/health-report/list/me',
+    DETAIL: '/health-report/detail',
+  },
+  BODY_COMPOSITION: {
+    TREND: '/body-composition/trend/me',
+    ANALYSIS: '/body-composition/analysis/me',
+  },
+  HEALTH_SCORE: {
+    DAILY: '/health-score/daily/me',
+    TREND: '/health-score/trend/me',
+  },
+  MEDICATION: {
+    ADD: '/medication/medications',
+    MY_LIST: '/medication/medications/me',
+    LOG: '/medication/logs',
+    TODAY: '/medication/today/me',
+    ADHERENCE: '/medication/adherence/me',
+  },
+  WOMENS_HEALTH: {
+    START_PERIOD: '/womens-health/period/start',
+    END_PERIOD: '/womens-health/period',
+    CYCLES: '/womens-health/cycles/me',
+    PREDICT: '/womens-health/predict/me',
+    SYMPTOMS: '/womens-health/symptoms',
+    STATS: '/womens-health/stats/me',
+    CALENDAR: '/womens-health/calendar/me',
+    MY_SYMPTOMS: '/womens-health/symptoms/me',
   },
 };
 
@@ -381,4 +563,48 @@ export interface TodayExternalRecommendations {
   date: string;
   has_recommendations: boolean;
   categories: Record<string, ExternalRecommendation[]>;
+}
+
+// ========== 女性健康相关类型 ==========
+
+export interface MenstrualCycleItem {
+  id: number;
+  user_id: number;
+  start_date: string;
+  end_date: string | null;
+  cycle_length: number | null;
+  period_length: number | null;
+  flow_intensity: string;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface CyclePrediction {
+  predicted_start: string;
+  predicted_end: string;
+  avg_cycle_length: number;
+  avg_period_length: number | null;
+  based_on_cycles: number;
+}
+
+export interface CycleStats {
+  avg_cycle_length: number | null;
+  avg_period_length: number | null;
+  total_cycles: number;
+}
+
+export interface CycleCalendar {
+  year: number;
+  month: number;
+  period_days: string[];
+  symptom_days: Record<string, Array<{ type: string; severity: number }>>;
+}
+
+export interface CycleSymptomItem {
+  id: number;
+  cycle_id: number | null;
+  record_date: string;
+  symptom_type: string;
+  severity: number;
+  notes: string | null;
 }

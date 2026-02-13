@@ -43,6 +43,14 @@ from app.models.external_recommendation import ExternalRecommendation
 from app.models.chat import ChatConversation, ChatMessage
 # AI 洞察模型
 from app.models.ai_insights import AIInsight, RealtimeRecommendation
+# 情绪追踪模型
+from app.models.mood import MoodRecord
+# 健康报告模型
+from app.models.health_report import HealthReport
+# 用药管理模型
+from app.models.medication import Medication, MedicationLog
+# 女性健康模型
+from app.models.womens_health import MenstrualCycle, CycleSymptom
 
 __all__ = [
     "User",
@@ -105,5 +113,15 @@ __all__ = [
     # AI 洞察模型
     "AIInsight",
     "RealtimeRecommendation",
+    # 情绪追踪模型
+    "MoodRecord",
+    # 健康报告模型
+    "HealthReport",
+    # 用药管理模型
+    "Medication",
+    "MedicationLog",
+    # 女性健康模型
+    "MenstrualCycle",
+    "CycleSymptom",
 ]
 

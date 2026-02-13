@@ -1,0 +1,261 @@
+.report-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+  padding: 24rpx;
+  padding-bottom: 120rpx;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 60rpx;
+  height: 60rpx;
+  border: 4rpx solid #dbeafe;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 16rpx;
+  color: #6b7280;
+  font-size: 28rpx;
+}
+
+.generate-buttons {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.gen-btn {
+  flex: 1;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  text-align: center;
+
+  &.weekly { background: #3b82f6; }
+  &.monthly { background: #22c55e; }
+}
+
+.gen-text {
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 80rpx 0;
+}
+
+.empty-text {
+  font-size: 30rpx;
+  color: #9ca3af;
+  display: block;
+}
+
+.empty-hint {
+  font-size: 24rpx;
+  color: #d1d5db;
+  margin-top: 8rpx;
+  display: block;
+}
+
+// 报告列表
+.report-card {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.card-score {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  border: 4rpx solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 20rpx;
+}
+
+.card-score-num {
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.card-info {
+  flex: 1;
+}
+
+.card-title-text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2937;
+  display: block;
+}
+
+.card-date {
+  font-size: 24rpx;
+  color: #9ca3af;
+  margin-top: 4rpx;
+  display: block;
+}
+
+.card-badge {
+  background: #eff6ff;
+  padding: 6rpx 16rpx;
+  border-radius: 8rpx;
+}
+
+.badge-text {
+  font-size: 22rpx;
+  color: #3b82f6;
+}
+
+// 详情页
+.back-btn {
+  padding: 16rpx 0;
+  margin-bottom: 16rpx;
+}
+
+.back-text {
+  color: #3b82f6;
+  font-size: 28rpx;
+}
+
+.detail-header {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-info {
+  flex: 1;
+}
+
+.report-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #1f2937;
+  display: block;
+}
+
+.report-date {
+  font-size: 26rpx;
+  color: #9ca3af;
+  margin-top: 8rpx;
+  display: block;
+}
+
+.score-circle {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  border: 6rpx solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-num {
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.score-label {
+  font-size: 20rpx;
+  color: #9ca3af;
+}
+
+// 摘要网格
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.summary-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+}
+
+.card-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 16rpx;
+  display: block;
+}
+
+.metric {
+  display: flex;
+  justify-content: space-between;
+  padding: 6rpx 0;
+}
+
+.metric-label {
+  font-size: 24rpx;
+  color: #9ca3af;
+}
+
+.metric-value {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+// 建议
+.recommendations {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 20rpx;
+  display: block;
+}
+
+.rec-item {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.rec-icon {
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.rec-text {
+  flex: 1;
+  font-size: 26rpx;
+  color: #4b5563;
+  line-height: 1.6;
+}

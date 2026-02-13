@@ -524,3 +524,234 @@ export async function getChatMessages(conversationId: number): Promise<any> {
 export async function deleteChatConversation(conversationId: number): Promise<void> {
   return await del(`${API_ENDPOINTS.CHAT.CONVERSATIONS}/${conversationId}`);
 }
+
+// ===== 情绪追踪 =====
+
+import type { MoodRecord, MoodStats } from '../types';
+
+/**
+ * 创建情绪记录
+ */
+export async function createMoodRecord(data: {
+  record_date: string;
+  mood_score: number;
+  mood_tags?: string[];
+  energy_level?: number;
+  stress_level?: number;
+  anxiety_level?: number;
+  sleep_quality?: number;
+  journal?: string;
+  triggers?: string[];
+  coping_methods?: string[];
+}): Promise<MoodRecord> {
+  return await post(API_ENDPOINTS.MOOD.CREATE, data);
+}
+
+/**
+ * 获取情绪记录列表
+ */
+export async function getMoodRecords(
+  startDate?: string,
+  endDate?: string,
+  limit: number = 30,
+): Promise<MoodRecord[]> {
+  let url = `${API_ENDPOINTS.MOOD.MY_RECORDS}?limit=${limit}`;
+  if (startDate) url += `&start_date=${startDate}`;
+  if (endDate) url += `&end_date=${endDate}`;
+  return await get(url);
+}
+
+/**
+ * 获取今日情绪记录
+ */
+export async function getTodayMoodRecord(): Promise<MoodRecord | null> {
+  return await get(API_ENDPOINTS.MOOD.TODAY);
+}
+
+/**
+ * 更新情绪记录
+ */
+export async function updateMoodRecord(
+  recordId: number,
+  data: Partial<{
+    mood_score: number;
+    mood_tags: string[];
+    energy_level: number;
+    stress_level: number;
+    anxiety_level: number;
+    sleep_quality: number;
+    journal: string;
+    triggers: string[];
+    coping_methods: string[];
+  }>,
+): Promise<MoodRecord> {
+  return await put(`${API_ENDPOINTS.MOOD.CREATE}/${recordId}`, data);
+}
+
+/**
+ * 删除情绪记录
+ */
+export async function deleteMoodRecord(recordId: number): Promise<void> {
+  return await del(`${API_ENDPOINTS.MOOD.CREATE}/${recordId}`);
+}
+
+/**
+ * 获取情绪统计
+ */
+export async function getMoodStats(days: number = 7): Promise<MoodStats> {
+  return await get(`${API_ENDPOINTS.MOOD.STATS}?days=${days}`);
+}
+
+// ===== 健康报告 =====
+
+export interface HealthReportItem {
+  id: number;
+  report_type: string;
+  start_date: string;
+  end_date: string;
+  title: string;
+  exercise_summary: Record<string, any>;
+  diet_summary: Record<string, any>;
+  sleep_summary: Record<string, any>;
+  weight_summary: Record<string, any>;
+  mood_summary: Record<string, any>;
+  vital_signs_summary: Record<string, any>;
+  ai_recommendations: string[];
+  health_score: number | null;
+  comparison: Record<string, any>;
+  created_at: string;
+}
+
+/**
+ * 生成健康报告
+ */
+export async function generateHealthReport(reportType: string): Promise<HealthReportItem> {
+  return await post(API_ENDPOINTS.HEALTH_REPORT.GENERATE, { report_type: reportType });
+}
+
+/**
+ * 获取报告列表
+ */
+export async function getHealthReports(limit: number = 20): Promise<HealthReportItem[]> {
+  return await get(`${API_ENDPOINTS.HEALTH_REPORT.LIST}?limit=${limit}`);
+}
+
+/**
+ * 获取报告详情
+ */
+export async function getHealthReportDetail(reportId: number): Promise<HealthReportItem> {
+  return await get(`${API_ENDPOINTS.HEALTH_REPORT.DETAIL}/${reportId}`);
+}
+
+// ===== 身体成分分析 =====
+
+import type { BodyCompositionTrend, BodyAnalysisResult } from '../types';
+
+/**
+ * 获取身体成分趋势
+ */
+export async function getBodyCompositionTrend(days: number = 30): Promise<BodyCompositionTrend> {
+  return await get(`${API_ENDPOINTS.BODY_COMPOSITION.TREND}?days=${days}`);
+}
+
+/**
+ * 获取身体成分分析
+ */
+export async function getBodyAnalysis(): Promise<BodyAnalysisResult> {
+  return await get(API_ENDPOINTS.BODY_COMPOSITION.ANALYSIS);
+}
+
+// ===== 健康评分 =====
+
+import type { HealthScoreResult, HealthScoreTrend } from '../types';
+
+/**
+ * 获取每日健康评分
+ */
+export async function getDailyHealthScore(targetDate?: string): Promise<HealthScoreResult> {
+  let url = API_ENDPOINTS.HEALTH_SCORE.DAILY;
+  if (targetDate) url += `?target_date=${targetDate}`;
+  return await get(url);
+}
+
+/**
+ * 获取健康评分趋势
+ */
+export async function getHealthScoreTrend(days: number = 7): Promise<HealthScoreTrend> {
+  return await get(`${API_ENDPOINTS.HEALTH_SCORE.TREND}?days=${days}`);
+}
+
+// ===== 用药管理 =====
+
+import type { MedicationItem, MedicationTodayStatus } from '../types';
+
+export async function addMedication(data: {
+  name: string; dosage?: string; frequency?: string;
+  times_per_day?: number; reminder_times?: string[]; notes?: string;
+}): Promise<MedicationItem> {
+  return await post(API_ENDPOINTS.MEDICATION.ADD, data);
+}
+
+export async function getMyMedications(activeOnly: boolean = true): Promise<MedicationItem[]> {
+  return await get(`${API_ENDPOINTS.MEDICATION.MY_LIST}?active_only=${activeOnly}`);
+}
+
+export async function logMedication(data: {
+  medication_id: number; taken_time: string; status: string;
+  skip_reason?: string;
+}): Promise<any> {
+  return await post(API_ENDPOINTS.MEDICATION.LOG, data);
+}
+
+export async function getTodayMedicationStatus(): Promise<MedicationTodayStatus[]> {
+  return await get(API_ENDPOINTS.MEDICATION.TODAY);
+}
+
+export async function getMedicationAdherence(days: number = 7): Promise<any> {
+  return await get(`${API_ENDPOINTS.MEDICATION.ADHERENCE}?days=${days}`);
+}
+
+// ===== 女性健康 =====
+
+import type { MenstrualCycleItem, CyclePrediction, CycleStats, CycleCalendar, CycleSymptomItem } from '../types';
+
+export async function startPeriod(start_date: string, flow_intensity: string = 'moderate'): Promise<MenstrualCycleItem> {
+  return await post(API_ENDPOINTS.WOMENS_HEALTH.START_PERIOD, { start_date, flow_intensity });
+}
+
+export async function endPeriod(cycleId: number, end_date: string): Promise<MenstrualCycleItem> {
+  return await post(`${API_ENDPOINTS.WOMENS_HEALTH.END_PERIOD}/${cycleId}/end`, { end_date });
+}
+
+export async function getMyCycles(limit: number = 12): Promise<MenstrualCycleItem[]> {
+  return await get(`${API_ENDPOINTS.WOMENS_HEALTH.CYCLES}?limit=${limit}`);
+}
+
+export async function predictNextPeriod(): Promise<{ prediction: CyclePrediction | null; message?: string }> {
+  return await get(API_ENDPOINTS.WOMENS_HEALTH.PREDICT);
+}
+
+export async function logCycleSymptom(data: {
+  record_date: string; symptom_type: string; severity: number; notes?: string;
+}): Promise<CycleSymptomItem> {
+  return await post(API_ENDPOINTS.WOMENS_HEALTH.SYMPTOMS, data);
+}
+
+export async function getCycleStats(): Promise<CycleStats> {
+  return await get(API_ENDPOINTS.WOMENS_HEALTH.STATS);
+}
+
+export async function getCycleCalendar(year: number, month: number): Promise<CycleCalendar> {
+  return await get(`${API_ENDPOINTS.WOMENS_HEALTH.CALENDAR}?year=${year}&month=${month}`);
+}
+
+export async function getMyCycleSymptoms(params?: {
+  cycle_id?: number; start_date?: string; end_date?: string;
+}): Promise<CycleSymptomItem[]> {
+  const query = new URLSearchParams();
+  if (params?.cycle_id) query.append('cycle_id', String(params.cycle_id));
+  if (params?.start_date) query.append('start_date', params.start_date);
+  if (params?.end_date) query.append('end_date', params.end_date);
+  const qs = query.toString();
+  return await get(`${API_ENDPOINTS.WOMENS_HEALTH.MY_SYMPTOMS}${qs ? '?' + qs : ''}`);
+}

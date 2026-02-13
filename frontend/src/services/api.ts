@@ -392,6 +392,300 @@ export const externalRecommendationApi = {
   getToday: () => api.get<TodayExternalRecommendations>('/external-recommendations/today'),
 };
 
+// 情绪追踪 API
+export interface MoodRecord {
+  id: number;
+  user_id: number;
+  record_date: string;
+  mood_score: number;
+  mood_tags: string[];
+  energy_level: number | null;
+  stress_level: number | null;
+  anxiety_level: number | null;
+  sleep_quality: number | null;
+  journal: string | null;
+  triggers: string[];
+  coping_methods: string[];
+  record_time: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface MoodStats {
+  total_records: number;
+  avg_mood_score: number | null;
+  avg_energy_level: number | null;
+  avg_stress_level: number | null;
+  avg_anxiety_level: number | null;
+  mood_distribution: Record<number, number>;
+  top_mood_tags: Record<string, number>;
+  top_triggers: Record<string, number>;
+  top_coping_methods: Record<string, number>;
+  daily_trend: {
+    date: string;
+    mood_score: number;
+    energy_level: number | null;
+    stress_level: number | null;
+    anxiety_level: number | null;
+    record_count: number;
+  }[];
+  mood_energy_correlation: number | null;
+  mood_sleep_correlation: number | null;
+}
+
+export interface MoodCalendar {
+  year: number;
+  month: number;
+  days: Record<number, {
+    mood_score: number;
+    mood_tags: string[];
+    has_journal: boolean;
+    energy_level: number | null;
+    stress_level: number | null;
+  }>;
+  total_days: number;
+  recorded_days: number;
+  avg_mood_score: number | null;
+}
+
+export const moodApi = {
+  createRecord: (data: {
+    record_date: string;
+    mood_score: number;
+    mood_tags?: string[];
+    energy_level?: number;
+    stress_level?: number;
+    anxiety_level?: number;
+    sleep_quality?: number;
+    journal?: string;
+    triggers?: string[];
+    coping_methods?: string[];
+  }) => api.post<MoodRecord>('/mood/records', data),
+
+  getMyRecords: (startDate?: string, endDate?: string, limit?: number) =>
+    api.get<MoodRecord[]>('/mood/records/me', {
+      params: { start_date: startDate, end_date: endDate, limit },
+    }),
+
+  getTodayRecord: () =>
+    api.get<MoodRecord | null>('/mood/records/me/today'),
+
+  getRecord: (id: number) =>
+    api.get<MoodRecord>(`/mood/records/${id}`),
+
+  updateRecord: (id: number, data: Partial<{
+    mood_score: number;
+    mood_tags: string[];
+    energy_level: number;
+    stress_level: number;
+    anxiety_level: number;
+    sleep_quality: number;
+    journal: string;
+    triggers: string[];
+    coping_methods: string[];
+  }>) => api.put<MoodRecord>(`/mood/records/${id}`, data),
+
+  deleteRecord: (id: number) =>
+    api.delete(`/mood/records/${id}`),
+
+  getStats: (days?: number) =>
+    api.get<MoodStats>('/mood/stats/me', { params: { days } }),
+
+  getCalendar: (year: number, month: number) =>
+    api.get<MoodCalendar>('/mood/calendar/me', { params: { year, month } }),
+};
+
+// 健康报告 API
+export interface HealthReport {
+  id: number;
+  user_id: number;
+  report_type: string;
+  start_date: string;
+  end_date: string;
+  title: string;
+  exercise_summary: Record<string, any>;
+  diet_summary: Record<string, any>;
+  sleep_summary: Record<string, any>;
+  weight_summary: Record<string, any>;
+  mood_summary: Record<string, any>;
+  checkin_summary: Record<string, any>;
+  vital_signs_summary: Record<string, any>;
+  ai_analysis: string | null;
+  ai_recommendations: string[];
+  health_score: number | null;
+  comparison: Record<string, any>;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export const healthReportApi = {
+  generate: (reportType: string, startDate?: string) =>
+    api.post<HealthReport>('/health-report/generate', {
+      report_type: reportType,
+      start_date: startDate,
+    }),
+  list: (reportType?: string, limit?: number) =>
+    api.get<HealthReport[]>('/health-report/list/me', {
+      params: { report_type: reportType, limit },
+    }),
+  getDetail: (id: number) =>
+    api.get<HealthReport>(`/health-report/detail/${id}`),
+  delete: (id: number) =>
+    api.delete(`/health-report/${id}`),
+};
+
+// 健康评分 API
+export interface HealthScoreDimension {
+  name: string;
+  score: number;
+  weight: number;
+  description: string;
+  details: Record<string, any>;
+}
+
+export interface HealthScoreResult {
+  status: string;
+  date?: string;
+  total_score: number;
+  grade?: string;
+  dimensions: HealthScoreDimension[];
+  suggestions: string[];
+}
+
+export interface HealthScoreTrendItem {
+  date: string;
+  score: number;
+  grade: string;
+}
+
+export interface HealthScoreTrend {
+  scores: HealthScoreTrendItem[];
+  avg_score: number | null;
+  trend: string | null;
+  best_day: HealthScoreTrendItem | null;
+  worst_day: HealthScoreTrendItem | null;
+}
+
+export const healthScoreApi = {
+  getDailyScore: (targetDate?: string) =>
+    api.get<HealthScoreResult>('/health-score/daily/me', { params: { target_date: targetDate } }),
+  getScoreTrend: (days: number = 7) =>
+    api.get<HealthScoreTrend>('/health-score/trend/me', { params: { days } }),
+};
+
+// 用药管理 API
+export interface MedicationItem {
+  id: number;
+  user_id: number;
+  name: string;
+  dosage: string | null;
+  frequency: string | null;
+  times_per_day: number;
+  reminder_times: string[] | null;
+  category: string | null;
+  purpose: string | null;
+  is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface MedicationTodayStatus {
+  medication_id: number;
+  name: string;
+  dosage: string | null;
+  total_count: number;
+  taken_count: number;
+  skipped_count: number;
+  reminder_times: string[];
+  logs: { time: string; status: string; id: number }[];
+}
+
+export interface MedicationAdherence {
+  adherence_rate: number;
+  total_taken: number;
+  total_skipped: number;
+  total_expected: number;
+  days: number;
+}
+
+export const medicationApi = {
+  addMedication: (data: {
+    name: string; dosage?: string; frequency?: string; times_per_day?: number;
+    reminder_times?: string[]; category?: string; purpose?: string; notes?: string;
+  }) => api.post<MedicationItem>('/medication/medications', data),
+
+  listMyMedications: (activeOnly: boolean = true) =>
+    api.get<MedicationItem[]>('/medication/medications/me', { params: { active_only: activeOnly } }),
+
+  updateMedication: (id: number, data: Partial<MedicationItem>) =>
+    api.put<MedicationItem>(`/medication/medications/${id}`, data),
+
+  deactivateMedication: (id: number) =>
+    api.delete(`/medication/medications/${id}`),
+
+  logMedication: (data: {
+    medication_id: number; taken_time: string; status?: string;
+    skip_reason?: string; notes?: string;
+  }) => api.post('/medication/logs', data),
+
+  getTodayStatus: () =>
+    api.get<MedicationTodayStatus[]>('/medication/today/me'),
+
+  getAdherence: (days: number = 7) =>
+    api.get<MedicationAdherence>('/medication/adherence/me', { params: { days } }),
+};
+
+// 身体成分分析 API
+export interface BodyCompositionDataPoint {
+  date: string;
+  weight: number;
+  body_fat_percentage: number | null;
+  muscle_mass_kg: number | null;
+  visceral_fat: number | null;
+  bone_mass_kg: number | null;
+  water_percentage: number | null;
+  bmi: number | null;
+  bmr: number | null;
+  skeletal_muscle_pct: number | null;
+}
+
+export interface BodyCompositionTrend {
+  data_points: BodyCompositionDataPoint[];
+  summary: {
+    current_weight: number | null;
+    weight_change: number | null;
+    current_body_fat: number | null;
+    current_muscle_mass: number | null;
+    current_bmi: number | null;
+    record_count: number;
+    date_range: string;
+    body_fat_change?: number;
+    muscle_mass_change?: number;
+  };
+}
+
+export interface BodyAnalysisItem {
+  metric: string;
+  value: any;
+  status: string;
+  advice: string;
+}
+
+export interface BodyAnalysisResult {
+  status: string;
+  record_date?: string;
+  analysis: BodyAnalysisItem[];
+}
+
+export const bodyCompositionApi = {
+  getTrend: (days: number = 30) =>
+    api.get<BodyCompositionTrend>('/body-composition/trend/me', { params: { days } }),
+  getAnalysis: () =>
+    api.get<BodyAnalysisResult>('/body-composition/analysis/me'),
+};
+
 // OpenClaw AI 对话接口
 export interface ChatMessage {
   id: number;
@@ -419,6 +713,68 @@ export interface ChatSendResponse {
   message_id: number;
   reply: string;
 }
+
+// ====== 女性健康 ======
+export interface MenstrualCycleItem {
+  id: number;
+  user_id: number;
+  start_date: string;
+  end_date: string | null;
+  cycle_length: number | null;
+  period_length: number | null;
+  flow_intensity: string;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface CyclePrediction {
+  predicted_start: string;
+  predicted_end: string;
+  avg_cycle_length: number;
+  avg_period_length: number | null;
+  based_on_cycles: number;
+}
+
+export interface CycleStats {
+  avg_cycle_length: number | null;
+  avg_period_length: number | null;
+  total_cycles: number;
+}
+
+export interface CycleCalendar {
+  year: number;
+  month: number;
+  period_days: string[];
+  symptom_days: Record<string, Array<{ type: string; severity: number }>>;
+}
+
+export interface CycleSymptomItem {
+  id: number;
+  cycle_id: number | null;
+  record_date: string;
+  symptom_type: string;
+  severity: number;
+  notes: string | null;
+}
+
+export const womensHealthApi = {
+  startPeriod: (start_date: string, flow_intensity: string = 'moderate') =>
+    api.post<MenstrualCycleItem>('/womens-health/period/start', { start_date, flow_intensity }),
+  endPeriod: (cycleId: number, end_date: string) =>
+    api.post<MenstrualCycleItem>(`/womens-health/period/${cycleId}/end`, { end_date }),
+  getCycles: (limit: number = 12) =>
+    api.get<MenstrualCycleItem[]>(`/womens-health/cycles/me?limit=${limit}`),
+  predict: () =>
+    api.get<{ prediction: CyclePrediction | null; message?: string }>('/womens-health/predict/me'),
+  logSymptom: (data: { record_date: string; symptom_type: string; severity: number; notes?: string }) =>
+    api.post<CycleSymptomItem>('/womens-health/symptoms', data),
+  getStats: () =>
+    api.get<CycleStats>('/womens-health/stats/me'),
+  getCalendar: (year: number, month: number) =>
+    api.get<CycleCalendar>(`/womens-health/calendar/me?year=${year}&month=${month}`),
+  getSymptoms: (params?: { cycle_id?: number; start_date?: string; end_date?: string }) =>
+    api.get<CycleSymptomItem[]>('/womens-health/symptoms/me', { params }),
+};
 
 export const chatApi = {
   // 发送消息

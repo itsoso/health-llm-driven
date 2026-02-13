@@ -45,6 +45,12 @@ from app.api import (
     user_api_key,  # 用户 API Key 管理 & 外部系统接口
     chat,  # OpenClaw AI 对话
     ai_insights,  # AI 健康洞察（每日复盘+实时建议）
+    mood,  # 情绪追踪
+    health_report,  # 健康报告
+    body_composition,  # 身体成分分析
+    health_score,  # 健康评分
+    medication,  # 用药管理
+    womens_health,  # 女性健康
 )
 
 api_router = APIRouter()
@@ -98,3 +104,9 @@ api_router.include_router(news.router)  # 资讯系统（prefix 已在 router �
 api_router.include_router(user_api_key.router, tags=["user-api-key"])  # 用户 API Key & 外部接口
 api_router.include_router(chat.router)  # OpenClaw AI 对话
 api_router.include_router(ai_insights.router, prefix="/ai-insights", tags=["ai-insights"])  # AI 健康洞察
+api_router.include_router(mood.router)  # 情绪追踪
+api_router.include_router(health_report.router)  # 健康报告
+api_router.include_router(body_composition.router)  # 身体成分分析
+api_router.include_router(health_score.router)  # 健康评分
+api_router.include_router(medication.router)  # 用药管理
+api_router.include_router(womens_health.router)  # 女性健康

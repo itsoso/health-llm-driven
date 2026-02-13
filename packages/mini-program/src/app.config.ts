@@ -29,6 +29,12 @@ export default {
     'pages/external-advice/index', // 外部健康建议
     'pages/chat/index',            // AI 对话（OpenClaw）
     'pages/ai-insights/index',     // AI 健康洞察（测试）
+    'pages/mood/index',             // 情绪追踪
+    'pages/health-report/index',    // 健康报告
+    'pages/body-composition/index', // 身体成分分析
+    'pages/health-score/index',     // 健康评分
+    'pages/medication/index',       // 用药管理
+    'pages/womens-health/index',    // 女性健康
   ],
   window: {
     backgroundTextStyle: 'light',

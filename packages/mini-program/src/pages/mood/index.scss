@@ -1,0 +1,567 @@
+.mood-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f3ff 0%, #fdf2f8 100%);
+  padding: 24rpx;
+  padding-bottom: 160rpx;
+
+  &.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.loading-spinner {
+  width: 60rpx;
+  height: 60rpx;
+  border: 4rpx solid #e9d5ff;
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 16rpx;
+  color: #6b7280;
+  font-size: 28rpx;
+}
+
+// 今日情绪卡片
+.today-card {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.today-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.today-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.today-edit {
+  font-size: 26rpx;
+  color: #8b5cf6;
+}
+
+.today-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 24rpx;
+}
+
+.today-emoji {
+  font-size: 72rpx;
+  line-height: 1;
+}
+
+.today-info {
+  flex: 1;
+}
+
+.today-label {
+  font-size: 36rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.today-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-bottom: 8rpx;
+}
+
+.today-journal {
+  font-size: 26rpx;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+// 空状态
+.today-empty {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 48rpx 32rpx;
+  margin-bottom: 24rpx;
+  text-align: center;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.empty-emoji {
+  font-size: 80rpx;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.empty-text {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+  display: block;
+}
+
+.empty-hint {
+  font-size: 24rpx;
+  color: #9ca3af;
+  margin-top: 8rpx;
+  display: block;
+}
+
+// 标签
+.mini-tag {
+  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 20rpx;
+
+  &.purple {
+    background: #f3e8ff;
+    color: #7c3aed;
+  }
+}
+
+// Tab 栏
+.tab-bar {
+  display: flex;
+  background: #f3f4f6;
+  border-radius: 16rpx;
+  padding: 4rpx;
+  margin-bottom: 24rpx;
+}
+
+.tab-item {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: 12rpx;
+  transition: all 0.2s;
+
+  &.active {
+    background: #fff;
+    box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+  }
+}
+
+.tab-text {
+  font-size: 28rpx;
+  color: #6b7280;
+
+  .active & {
+    color: #7c3aed;
+    font-weight: 600;
+  }
+}
+
+// 记录列表
+.record-card {
+  display: flex;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03);
+}
+
+.record-left {
+  margin-right: 20rpx;
+}
+
+.record-emoji {
+  font-size: 52rpx;
+}
+
+.record-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.record-label {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.record-date {
+  font-size: 24rpx;
+  color: #9ca3af;
+}
+
+.record-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6rpx;
+  margin-bottom: 8rpx;
+}
+
+.record-journal {
+  font-size: 24rpx;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 8rpx;
+}
+
+.record-meta {
+  display: flex;
+  gap: 16rpx;
+}
+
+.meta-item {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.record-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12rpx;
+  margin-left: 16rpx;
+}
+
+.action-btn {
+  font-size: 24rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 8rpx;
+  text-align: center;
+
+  &.edit {
+    color: #8b5cf6;
+    background: #f5f3ff;
+  }
+
+  &.delete {
+    color: #ef4444;
+    background: #fef2f2;
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 80rpx 0;
+}
+
+.empty-state-text {
+  font-size: 28rpx;
+  color: #9ca3af;
+}
+
+// 表单
+.form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 0;
+  margin-bottom: 16rpx;
+}
+
+.form-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.form-close {
+  font-size: 28rpx;
+  color: #8b5cf6;
+}
+
+.form-section {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx;
+  margin-bottom: 20rpx;
+}
+
+.section-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 20rpx;
+  display: block;
+}
+
+.mood-selector {
+  display: flex;
+  justify-content: space-between;
+}
+
+.mood-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16rpx 20rpx;
+  border-radius: 16rpx;
+  transition: all 0.2s;
+
+  &.active {
+    background: #f5f3ff;
+    transform: scale(1.1);
+    box-shadow: 0 0 0 4rpx #c4b5fd;
+  }
+}
+
+.mood-emoji {
+  font-size: 56rpx;
+  margin-bottom: 8rpx;
+}
+
+.mood-label {
+  font-size: 22rpx;
+  color: #6b7280;
+}
+
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.tag-item {
+  padding: 10rpx 24rpx;
+  border-radius: 32rpx;
+  border: 2rpx solid #e5e7eb;
+  background: #fff;
+  transition: all 0.2s;
+
+  &.active-purple {
+    background: #f3e8ff;
+    border-color: #c4b5fd;
+  }
+
+  &.active-orange {
+    background: #fff7ed;
+    border-color: #fdba74;
+  }
+
+  &.active-green {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+}
+
+.tag-text {
+  font-size: 26rpx;
+  color: #374151;
+}
+
+.level-row {
+  display: flex;
+  gap: 24rpx;
+}
+
+.level-group {
+  flex: 1;
+}
+
+.level-selector {
+  display: flex;
+  gap: 8rpx;
+}
+
+.level-btn {
+  flex: 1;
+  text-align: center;
+  padding: 14rpx 0;
+  border-radius: 10rpx;
+  background: #f3f4f6;
+  transition: all 0.2s;
+
+  &.active-green {
+    background: #22c55e;
+    .level-text { color: #fff; }
+  }
+
+  &.active-red {
+    background: #ef4444;
+    .level-text { color: #fff; }
+  }
+}
+
+.level-text {
+  font-size: 28rpx;
+  color: #6b7280;
+}
+
+.journal-input {
+  width: 100%;
+  min-height: 160rpx;
+  border: 2rpx solid #e5e7eb;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+.form-submit {
+  background: #8b5cf6;
+  border-radius: 20rpx;
+  padding: 28rpx;
+  text-align: center;
+  margin-top: 12rpx;
+}
+
+.submit-text {
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+// 统计
+.stats-section {
+  padding-bottom: 40rpx;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  text-align: center;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03);
+}
+
+.stat-emoji {
+  font-size: 44rpx;
+  display: block;
+  margin-bottom: 4rpx;
+}
+
+.stat-value {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #1f2937;
+  display: block;
+}
+
+.stat-label {
+  font-size: 22rpx;
+  color: #9ca3af;
+  margin-top: 4rpx;
+  display: block;
+}
+
+.distribution-section, .tags-ranking {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03);
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 20rpx;
+  display: block;
+}
+
+.dist-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.dist-emoji {
+  font-size: 32rpx;
+  width: 48rpx;
+  text-align: center;
+}
+
+.dist-bar-bg {
+  flex: 1;
+  height: 24rpx;
+  background: #f3f4f6;
+  border-radius: 12rpx;
+  overflow: hidden;
+}
+
+.dist-bar-fill {
+  height: 100%;
+  border-radius: 12rpx;
+  transition: width 0.3s;
+}
+
+.dist-count {
+  font-size: 24rpx;
+  color: #6b7280;
+  width: 40rpx;
+  text-align: right;
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.ranking-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8rpx 0;
+}
+
+.ranking-tag {
+  font-size: 28rpx;
+  color: #374151;
+}
+
+.ranking-count {
+  font-size: 24rpx;
+  color: #8b5cf6;
+  background: #f5f3ff;
+  padding: 4rpx 16rpx;
+  border-radius: 12rpx;
+}
+
+// 浮动按钮
+.fab-button {
+  position: fixed;
+  right: 40rpx;
+  bottom: 200rpx;
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: #8b5cf6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 24rpx rgba(139, 92, 246, 0.4);
+  z-index: 100;
+}
+
+.fab-text {
+  color: #fff;
+  font-size: 48rpx;
+  font-weight: 300;
+  line-height: 1;
+}

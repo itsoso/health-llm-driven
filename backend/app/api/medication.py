@@ -1,0 +1,180 @@
+"""用药管理 API"""
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel
+
+from app.database import get_db
+from app.models.user import User
+from app.api.deps import get_current_user_required
+from app.services.medication_service import medication_service
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/medication", tags=["用药管理"])
+
+
+class MedicationCreate(BaseModel):
+    name: str
+    dosage: Optional[str] = None
+    frequency: Optional[str] = None
+    times_per_day: int = 1
+    reminder_times: Optional[List[str]] = None
+    category: Optional[str] = None
+    purpose: Optional[str] = None
+    side_effects: Optional[str] = None
+    interactions: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MedicationUpdate(BaseModel):
+    name: Optional[str] = None
+    dosage: Optional[str] = None
+    frequency: Optional[str] = None
+    times_per_day: Optional[int] = None
+    reminder_times: Optional[List[str]] = None
+    category: Optional[str] = None
+    purpose: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MedicationLogCreate(BaseModel):
+    medication_id: int
+    taken_time: str
+    status: str = "taken"
+    skip_reason: Optional[str] = None
+    actual_dosage: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post("/medications")
+async def add_medication(
+    data: MedicationCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """添加药品"""
+    logger.info(f"[MedAPI] 用户 {current_user.id} 添加药品: {data.name}")
+    med = medication_service.add_medication(db, current_user.id, data.model_dump(exclude_none=True))
+    return _serialize_medication(med)
+
+
+@router.get("/medications/me")
+async def list_my_medications(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取我的药品列表"""
+    meds = medication_service.list_medications(db, current_user.id, active_only)
+    return [_serialize_medication(m) for m in meds]
+
+
+@router.get("/medications/{medication_id}")
+async def get_medication(
+    medication_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取药品详情"""
+    med = medication_service.get_medication(db, medication_id, current_user.id)
+    if not med:
+        raise HTTPException(status_code=404, detail="药品不存在")
+    return _serialize_medication(med)
+
+
+@router.put("/medications/{medication_id}")
+async def update_medication(
+    medication_id: int,
+    data: MedicationUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """更新药品"""
+    med = medication_service.update_medication(db, medication_id, current_user.id, data.model_dump(exclude_none=True))
+    if not med:
+        raise HTTPException(status_code=404, detail="药品不存在")
+    return _serialize_medication(med)
+
+
+@router.delete("/medications/{medication_id}")
+async def deactivate_medication(
+    medication_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """停用药品"""
+    success = medication_service.deactivate_medication(db, medication_id, current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="药品不存在")
+    return {"message": "药品已停用"}
+
+
+@router.post("/logs")
+async def log_medication(
+    data: MedicationLogCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """记录服药"""
+    logger.info(f"[MedAPI] 用户 {current_user.id} 记录服药: med={data.medication_id}")
+    log = medication_service.log_medication(
+        db=db,
+        user_id=current_user.id,
+        medication_id=data.medication_id,
+        taken_time=data.taken_time,
+        status=data.status,
+        skip_reason=data.skip_reason,
+        actual_dosage=data.actual_dosage,
+        notes=data.notes,
+    )
+    return {
+        "id": log.id,
+        "medication_id": log.medication_id,
+        "taken_date": str(log.taken_date),
+        "taken_time": log.taken_time,
+        "status": log.status,
+    }
+
+
+@router.get("/today/me")
+async def get_today_status(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取今日服药状态"""
+    return medication_service.get_today_status(db, current_user.id)
+
+
+@router.get("/adherence/me")
+async def get_adherence_stats(
+    days: int = Query(default=7, le=90),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取服药依从性统计"""
+    return medication_service.get_adherence_stats(db, current_user.id, days)
+
+
+def _serialize_medication(med) -> Dict[str, Any]:
+    return {
+        "id": med.id,
+        "user_id": med.user_id,
+        "name": med.name,
+        "dosage": med.dosage,
+        "frequency": med.frequency,
+        "times_per_day": med.times_per_day,
+        "reminder_times": med.reminder_times,
+        "category": med.category,
+        "purpose": med.purpose,
+        "side_effects": med.side_effects,
+        "interactions": med.interactions,
+        "start_date": str(med.start_date) if med.start_date else None,
+        "end_date": str(med.end_date) if med.end_date else None,
+        "is_active": med.is_active,
+        "notes": med.notes,
+        "created_at": str(med.created_at) if med.created_at else None,
+    }
