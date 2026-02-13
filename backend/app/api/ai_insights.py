@@ -93,13 +93,28 @@ async def generate_realtime_recommendation(
     """
     生成实时健康建议
     基于当前时间、位置、天气、身体状态等
+    如果请求中未提供城市，自动从用户画像中获取
     """
+    # 如果未提供城市，从用户画像获取
+    city = request.city
+    if not city:
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if profile:
+            # 优先使用手动设置的城市，其次使用 profile.city，最后使用 IP 检测的城市
+            if profile.use_manual_location and profile.manual_city:
+                city = profile.manual_city
+            elif profile.city:
+                city = profile.city
+            elif profile.detected_city:
+                city = profile.detected_city
+
     service = AIInsightsService(db)
     recommendation = await service.generate_realtime_recommendation(
         user_id=current_user.id,
         latitude=request.latitude,
         longitude=request.longitude,
-        city=request.city
+        city=city
     )
 
     if not recommendation:

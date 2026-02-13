@@ -1,5 +1,5 @@
 /**
- * AI 健康洞察测试页面
+ * 健康洞察页面
  */
 import { useState } from 'react';
 import { View, Text, Button, ScrollView } from '@tarojs/components';
@@ -18,7 +18,7 @@ export default function AIInsights() {
     try {
       Taro.showLoading({ title: '生成中...' });
       await request<any>({
-        url: '/api/ai-insights/insights/daily/generate',
+        url: '/ai-insights/insights/daily/generate',
         method: 'POST',
       });
 
@@ -43,7 +43,7 @@ export default function AIInsights() {
   const loadDailyInsights = async () => {
     try {
       const result = await request<any>({
-        url: '/api/ai-insights/insights/daily?days=7',
+        url: '/ai-insights/insights/daily?days=7',
         method: 'GET',
       });
       setDailyInsights(result.items || []);
@@ -58,16 +58,24 @@ export default function AIInsights() {
     try {
       Taro.showLoading({ title: '分析中...' });
 
-      // 获取当前位置
-      const location = await Taro.getLocation({ type: 'gcj02' });
+      // 尝试获取当前位置（非必须，后端会从用户画像获取城市）
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      try {
+        const location = await Taro.getLocation({ type: 'gcj02' });
+        latitude = location.latitude;
+        longitude = location.longitude;
+      } catch {
+        console.log('获取位置失败，将使用用户画像中的城市设置');
+      }
 
       const result = await request<any>({
-        url: '/api/ai-insights/recommendations/realtime',
+        url: '/ai-insights/recommendations/realtime',
         method: 'POST',
         data: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          city: '北京', // 这里可以通过逆地理编码获取城市名
+          latitude,
+          longitude,
+          // city 不传，后端自动从用户画像获取
         },
       });
 
@@ -90,7 +98,7 @@ export default function AIInsights() {
   const handleGetLatestRecommendation = async () => {
     try {
       const result = await request<any>({
-        url: '/api/ai-insights/recommendations/latest',
+        url: '/ai-insights/recommendations/latest',
         method: 'GET',
       });
 
@@ -131,8 +139,8 @@ export default function AIInsights() {
     <ScrollView className="ai-insights-page" scrollY>
       {/* 页面标题 */}
       <View className="page-header">
-        <Text className="page-title">🧠 AI 健康洞察</Text>
-        <Text className="page-subtitle">测试每日复盘和实时建议功能</Text>
+        <Text className="page-title">🧠 健康洞察</Text>
+        <Text className="page-subtitle">每日复盘和实时健康建议</Text>
       </View>
 
       {/* 每日洞察区域 */}
@@ -145,7 +153,7 @@ export default function AIInsights() {
         <View className="action-card">
           <View className="action-info">
             <Text className="action-title">生成今日洞察</Text>
-            <Text className="action-desc">基于今日健康数据生成AI分析报告</Text>
+            <Text className="action-desc">基于今日健康数据生成分析报告</Text>
           </View>
           <Button
             className="action-btn primary"
@@ -282,39 +290,7 @@ export default function AIInsights() {
         )}
       </View>
 
-      {/* API 文档说明 */}
-      <View className="section api-docs">
-        <View className="section-header">
-          <Text className="section-icon">📚</Text>
-          <Text className="section-title">API 端点</Text>
-        </View>
-
-        <View className="api-list">
-          <View className="api-item">
-            <Text className="api-method post">POST</Text>
-            <Text className="api-path">/api/ai-insights/insights/daily/generate</Text>
-            <Text className="api-desc">生成每日洞察</Text>
-          </View>
-
-          <View className="api-item">
-            <Text className="api-method get">GET</Text>
-            <Text className="api-path">/api/ai-insights/insights/daily?days=7</Text>
-            <Text className="api-desc">获取最近N天洞察</Text>
-          </View>
-
-          <View className="api-item">
-            <Text className="api-method post">POST</Text>
-            <Text className="api-path">/api/ai-insights/recommendations/realtime</Text>
-            <Text className="api-desc">生成实时建议</Text>
-          </View>
-
-          <View className="api-item">
-            <Text className="api-method get">GET</Text>
-            <Text className="api-path">/api/ai-insights/recommendations/latest</Text>
-            <Text className="api-desc">获取最新有效建议</Text>
-          </View>
-        </View>
-      </View>
+      <View style={{ height: '40px' }} />
     </ScrollView>
   );
 }

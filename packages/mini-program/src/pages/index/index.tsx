@@ -658,7 +658,7 @@ export default function Index() {
                 <Text className="quick-card-emoji">🧠</Text>
               </View>
               <View className="quick-card-info">
-                <Text className="quick-card-title">AI洞察</Text>
+                <Text className="quick-card-title">健康洞察</Text>
                 <Text className="quick-card-desc">智能复盘</Text>
               </View>
             </View>
