@@ -71,6 +71,8 @@ def create_health_checkin(
         except Exception as e:
             logger.warning(f"生成个性化建议失败: {e}")
             checkin_data["personalized_advice"] = None
+            # 回滚事务，避免后续操作因 InFailedSqlTransaction 失败
+            db.rollback()
     
     logger.info(f"创建新记录: {checkin_data}")
     db_checkin = HealthCheckin(**checkin_data)
