@@ -60,7 +60,7 @@ class UserProfileBase(BaseModel):
     muscle_mass_kg: Optional[float] = Field(None, ge=10, le=200, description="肌肉量(kg)")
     
     # 健康目标
-    target_steps: int = Field(8000, ge=1000, le=50000, description="目标步数")
+    target_steps: int = Field(8000, ge=1000, le=100000, description="目标步数")
     target_sleep_hours: float = Field(7.5, ge=4, le=12, description="目标睡眠时长(小时)")
     target_water_ml: int = Field(2000, ge=500, le=5000, description="目标饮水量(ml)")
     target_calories_burn: Optional[int] = Field(None, ge=100, le=5000, description="目标消耗卡路里")
