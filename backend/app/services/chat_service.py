@@ -113,10 +113,12 @@ class ChatService:
             info = f"用户: {user.name or user.username}"
             if user.gender:
                 info += f", 性别: {user.gender}"
-            if user.birth_date:
-                age = today.year - user.birth_date.year
+            # 优先使用 profile 中的 birth_date（用户可编辑），其次用 users 表的
+            birth_date = (profile.birth_date if profile and profile.birth_date else None) or user.birth_date
+            if birth_date:
+                age = today.year - birth_date.year
                 # Adjust if birthday hasn't occurred yet this year
-                if (today.month, today.day) < (user.birth_date.month, user.birth_date.day):
+                if (today.month, today.day) < (birth_date.month, birth_date.day):
                     age -= 1
                 info += f", 年龄: {age}岁"
                 # 计算最大心率 (220 - 年龄)，用于运动强度分析
@@ -342,9 +344,10 @@ class ChatService:
 
         if workout_30days:
             # 添加心率分析提示
-            if user and user.birth_date:
-                age = today.year - user.birth_date.year
-                if (today.month, today.day) < (user.birth_date.month, user.birth_date.day):
+            birth_date = (profile.birth_date if profile and profile.birth_date else None) or (user.birth_date if user else None)
+            if birth_date:
+                age = today.year - birth_date.year
+                if (today.month, today.day) < (birth_date.month, birth_date.day):
                     age -= 1
                 max_hr = 220 - age
                 workout_summary = [
