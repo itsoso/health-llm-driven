@@ -21,7 +21,7 @@ export default function KidsTabBar({ currentPath }: KidsTabBarProps) {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-[101] bg-white/90 backdrop-blur-xl border-t-2 border-pink-100 shadow-lg"
+    <nav className="flex-shrink-0 bg-white/90 backdrop-blur-xl border-t-2 border-pink-100 shadow-lg"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className="flex justify-around items-center h-20 max-w-2xl mx-auto px-4">
         {TABS.map(tab => {
@@ -36,7 +36,7 @@ export default function KidsTabBar({ currentPath }: KidsTabBarProps) {
                   : 'hover:bg-pink-50 active:scale-95'
               }`}
             >
-              <span className={`text-3xl ${active ? 'animate-bounce' : ''}`}>
+              <span className="text-3xl">
                 {tab.icon}
               </span>
               <span className={`text-sm font-bold ${

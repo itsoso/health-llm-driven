@@ -224,7 +224,7 @@ export default function KidsChatPage() {
   };
 
   return (
-    <div className="flex h-full min-h-screen">
+    <div className="flex h-full">
       {/* 历史对话侧栏 */}
       {showHistory && (
         <div className="w-80 bg-white/90 backdrop-blur-sm border-r-2 border-pink-100 flex flex-col shadow-lg flex-shrink-0">

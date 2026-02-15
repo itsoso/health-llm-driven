@@ -20,7 +20,7 @@ export default function KidsLayout({ children }: { children: React.ReactNode }) 
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </head>
       <div className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
-        <main className="flex-1 overflow-y-auto pb-24">
+        <main className="flex-1 overflow-hidden">
           {children}
         </main>
         <KidsTabBar currentPath={pathname} />
