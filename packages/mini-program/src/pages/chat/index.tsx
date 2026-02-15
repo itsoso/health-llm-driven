@@ -103,6 +103,21 @@ export default function Chat() {
         created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, aiMsg]);
+
+      // 显示活动记录通知
+      if (result.activities_saved && result.activities?.length > 0) {
+        const msgs = result.activities
+          .filter((a: any) => a.status !== 'already_exists')
+          .map((a: any) => a.message);
+        if (msgs.length > 0) {
+          Taro.showToast({ title: msgs.join('、'), icon: 'none', duration: 3000 });
+        }
+      }
+
+      // 显示饮食记录通知
+      if (result.diet_saved) {
+        Taro.showToast({ title: '饮食已自动记录', icon: 'success', duration: 2000 });
+      }
     } catch (e: any) {
       const errorMsg: Message = {
         id: Date.now() + 1,

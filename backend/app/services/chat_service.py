@@ -16,11 +16,14 @@ from app.config import settings
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.basic_health import BasicHealthData
-from app.models.daily_health import GarminData, DietRecord, ExerciseRecord, WorkoutRecord
+from datetime import timedelta
+from app.models.daily_health import GarminData, DietRecord, ExerciseRecord, WorkoutRecord, WaterIntake
 from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.chat import ChatConversation, ChatMessage
+from app.models.supplement import SupplementDefinition, SupplementRecord
+from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
 
@@ -179,8 +182,6 @@ class ChatService:
             parts.append(", ".join(g_parts))
 
         # 睡眠数据分析（最近3天、7天、30天）
-        from datetime import timedelta
-
         # 最近3天详细数据
         three_days_ago = today - timedelta(days=3)
         sleep_3days = self.db.query(GarminData).filter(
@@ -587,6 +588,42 @@ class ChatService:
 
         return "以下是该用户的最新健康数据：\n" + "\n".join(parts)
 
+    def _build_activity_context(self, user_id: int) -> str:
+        """构建用户可记录的活动上下文（打卡模板、补剂、疾病档案）"""
+        parts = []
+
+        # 打卡模板
+        templates = self.db.query(CheckinTemplate).filter(
+            CheckinTemplate.user_id == user_id,
+            CheckinTemplate.is_active == True,
+            CheckinTemplate.is_archived == False
+        ).all()
+        if templates:
+            tpl_list = [f'  - id={t.id}, name="{t.name}", unit="{t.unit}", default={t.default_target}'
+                        for t in templates]
+            parts.append("用户的打卡模板:\n" + "\n".join(tpl_list))
+
+        # 补剂定义
+        supplements = self.db.query(SupplementDefinition).filter(
+            SupplementDefinition.user_id == user_id,
+            SupplementDefinition.is_active == True
+        ).all()
+        if supplements:
+            supp_list = [f'  - id={s.id}, name="{s.name}", dosage="{s.dosage or ""}"'
+                         for s in supplements]
+            parts.append("用户的补剂列表:\n" + "\n".join(supp_list))
+
+        # 疾病档案
+        profiles = self.db.query(UserDiseaseProfile).filter(
+            UserDiseaseProfile.user_id == user_id,
+            UserDiseaseProfile.tracking_enabled == True
+        ).all()
+        if profiles:
+            prof_list = [f'  - id={p.id}, disease="{p.disease_name}"' for p in profiles]
+            parts.append("用户的疾病档案:\n" + "\n".join(prof_list))
+
+        return "\n\n".join(parts)
+
     async def _get_system_prompt(self, user_id: int) -> str:
         """组装完整的 system prompt"""
         base = (
@@ -598,10 +635,44 @@ class ChatService:
             "如果消息中包含[系统提示]的营养分析结果，请基于这些数据给用户清晰的热量和营养反馈。"
         )
 
+        # 活动记录能力
+        activity_ctx = self._build_activity_context(user_id)
+        activity_prompt = (
+            "\n\n## 活动记录功能\n"
+            "你可以帮用户自动记录健康活动。当用户消息描述了**已经完成**的活动时，"
+            "请在回复末尾附加活动数据标记。\n\n"
+            "### 规则\n"
+            "1. 只在用户**陈述已完成**的活动时记录（如\"刚做了50个俯卧撑\"）\n"
+            "2. 提问/计划/咨询建议不要记录（如\"俯卧撑怎么做？\"\"明天计划跑步\"）\n"
+            "3. 一条消息可包含多个活动\n"
+            "4. 饮食由系统另外处理，不要在活动标记中包含饮食\n\n"
+            "### 格式\n"
+            "在正常回复之后附加（用户不可见）：\n"
+            '<<<ACTIONS:[{"type":"checkin","template_id":ID,"template_name":"名称","value":数值或null,"notes":"备注或null"},'
+            '{"type":"water","amount":毫升数,"drink_type":"水/茶/咖啡"},'
+            '{"type":"supplement","supplement_id":ID,"supplement_name":"名称"},'
+            '{"type":"symptom","profile_id":ID,"disease_name":"疾病名","overall_severity":0到10,"symptoms":[{"name":"症状","severity":1到10}]}]>>>\n\n'
+            "### 示例\n"
+            "- \"刚踢腿200下\" → checkin, 匹配踢腿模板, value=200\n"
+            "- \"洗了鼻子\" → checkin, 匹配洗鼻模板, value=null(用默认值)\n"
+            "- \"喝了一杯水\" → water, amount=250\n"
+            "- \"喝了500ml水\" → water, amount=500\n"
+            "- \"吃了维生素D\" → supplement\n"
+            "- \"今天打了好几个喷嚏\" → symptom, 匹配鼻炎档案\n"
+            "- \"做了30个俯卧撑然后喝了杯水\" → 两个活动\n\n"
+            "### 不应记录\n"
+            "- \"我应该每天踢多少下？\" → 提问不记录\n"
+            "- \"明天计划跑步\" → 计划不记录\n"
+            "- \"帮我看看打卡情况\" → 查询不记录\n"
+        )
+        if activity_ctx:
+            activity_prompt += f"\n### 用户数据\n{activity_ctx}\n"
+
         health_ctx = await self._build_health_context(user_id)
+        prompt = base + activity_prompt
         if health_ctx:
-            return f"{base}\n\n{health_ctx}"
-        return base
+            prompt += f"\n\n{health_ctx}"
+        return prompt
 
     def _is_food_message(self, message: str) -> bool:
         """检测消息是否是记录饮食的内容"""
@@ -695,6 +766,220 @@ class ChatService:
             self.db.rollback()
             return None
 
+    def _parse_actions(self, reply: str) -> tuple:
+        """从AI回复中解析活动标记，返回 (clean_reply, actions_list)"""
+        pattern = r'<<<ACTIONS:\s*(\[[\s\S]*?\])\s*>>>'
+        match = re.search(pattern, reply)
+        if not match:
+            return reply, []
+        clean_reply = reply[:match.start()].rstrip()
+        try:
+            actions = json.loads(match.group(1))
+            if not isinstance(actions, list):
+                return clean_reply, []
+            return clean_reply, actions
+        except json.JSONDecodeError as e:
+            logger.warning(f"解析活动JSON失败: {e}")
+            return clean_reply, []
+
+    def _execute_actions(self, user_id: int, actions: list) -> list:
+        """执行检测到的活动并返回结果列表"""
+        results = []
+        today = date.today()
+        now = datetime.now()
+        for action in actions:
+            action_type = action.get("type")
+            try:
+                if action_type == "checkin":
+                    result = self._handle_checkin_action(user_id, action, today)
+                elif action_type == "water":
+                    result = self._handle_water_action(user_id, action, today, now)
+                elif action_type == "supplement":
+                    result = self._handle_supplement_action(user_id, action, today)
+                elif action_type == "symptom":
+                    result = self._handle_symptom_action(user_id, action, today)
+                else:
+                    logger.warning(f"未知活动类型: {action_type}")
+                    continue
+                if result:
+                    results.append(result)
+            except Exception as e:
+                logger.error(f"执行{action_type}活动失败: {e}")
+                self.db.rollback()
+        return results
+
+    def _handle_checkin_action(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """处理打卡活动"""
+        template_id = action.get("template_id")
+        template_name = action.get("template_name")
+        value = action.get("value")
+
+        # 按ID查找模板，失败则按名称
+        template = None
+        if template_id:
+            template = self.db.query(CheckinTemplate).filter(
+                CheckinTemplate.id == template_id,
+                CheckinTemplate.user_id == user_id,
+                CheckinTemplate.is_active == True
+            ).first()
+        if not template and template_name:
+            template = self.db.query(CheckinTemplate).filter(
+                CheckinTemplate.user_id == user_id,
+                CheckinTemplate.name.ilike(f"%{template_name}%"),
+                CheckinTemplate.is_active == True
+            ).first()
+        if not template:
+            logger.warning(f"打卡模板未找到: id={template_id}, name={template_name}")
+            return None
+
+        # 检查今日是否已打卡
+        existing = self.db.query(CheckinRecord).filter(
+            CheckinRecord.template_id == template.id,
+            CheckinRecord.user_id == user_id,
+            CheckinRecord.checkin_date == today
+        ).first()
+
+        actual_value = value if value is not None else template.default_target
+
+        if existing:
+            # 如果已打卡，累加数值
+            existing.value = (existing.value or 0) + actual_value
+            existing.completion_rate = (existing.value / template.default_target * 100) if template.default_target > 0 else 100
+            template.total_value = (template.total_value or 0) + actual_value
+            self.db.commit()
+            return {
+                "type": "checkin", "status": "updated",
+                "message": f"{template.icon} {template.name} 累计{existing.value}{template.unit} 已更新"
+            }
+
+        completion_rate = (actual_value / template.default_target * 100) if template.default_target > 0 else 100
+        record = CheckinRecord(
+            template_id=template.id, user_id=user_id,
+            checkin_date=today, value=actual_value,
+            target=template.default_target, completion_rate=completion_rate,
+            notes="通过健康顾问对话自动记录"
+        )
+        self.db.add(record)
+
+        # 更新模板统计
+        template.total_checkins = (template.total_checkins or 0) + 1
+        template.total_value = (template.total_value or 0) + actual_value
+        yesterday = today - timedelta(days=1)
+        if template.last_checkin_date == yesterday:
+            template.current_streak = (template.current_streak or 0) + 1
+        elif template.last_checkin_date != today:
+            template.current_streak = 1
+        template.last_checkin_date = today
+        if (template.current_streak or 0) > (template.best_streak or 0):
+            template.best_streak = template.current_streak
+
+        self.db.commit()
+        logger.info(f"用户{user_id} 打卡: {template.name} {actual_value}{template.unit}")
+        return {
+            "type": "checkin", "status": "saved",
+            "message": f"{template.icon} {template.name} {actual_value}{template.unit} 已记录"
+        }
+
+    def _handle_water_action(self, user_id: int, action: dict, today: date, now: datetime) -> Optional[Dict]:
+        """处理喝水活动"""
+        amount = action.get("amount", 250)
+        drink_type = action.get("drink_type", "水")
+        record = WaterIntake(
+            user_id=user_id, record_date=today,
+            amount_ml=amount, intake_time=now, drink_type=drink_type,
+        )
+        self.db.add(record)
+        self.db.commit()
+        logger.info(f"用户{user_id} 喝水: {amount}ml {drink_type}")
+        return {
+            "type": "water", "status": "saved",
+            "message": f"💧 {drink_type} {amount}ml 已记录"
+        }
+
+    def _handle_supplement_action(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """处理补剂活动"""
+        supplement_id = action.get("supplement_id")
+        supplement_name = action.get("supplement_name")
+
+        supplement = None
+        if supplement_id:
+            supplement = self.db.query(SupplementDefinition).filter(
+                SupplementDefinition.id == supplement_id,
+                SupplementDefinition.user_id == user_id,
+                SupplementDefinition.is_active == True
+            ).first()
+        if not supplement and supplement_name:
+            supplement = self.db.query(SupplementDefinition).filter(
+                SupplementDefinition.user_id == user_id,
+                SupplementDefinition.name.ilike(f"%{supplement_name}%"),
+                SupplementDefinition.is_active == True
+            ).first()
+        if not supplement:
+            logger.warning(f"补剂未找到: id={supplement_id}, name={supplement_name}")
+            return None
+
+        existing = self.db.query(SupplementRecord).filter(
+            SupplementRecord.supplement_id == supplement.id,
+            SupplementRecord.user_id == user_id,
+            SupplementRecord.record_date == today
+        ).first()
+        if existing:
+            existing.taken = True
+            self.db.commit()
+            return {
+                "type": "supplement", "status": "updated",
+                "message": f"💊 {supplement.name} 已标记为已服用"
+            }
+
+        record = SupplementRecord(
+            supplement_id=supplement.id, user_id=user_id,
+            record_date=today, taken=True,
+            notes="通过健康顾问对话自动记录"
+        )
+        self.db.add(record)
+        self.db.commit()
+        logger.info(f"用户{user_id} 补剂: {supplement.name}")
+        return {
+            "type": "supplement", "status": "saved",
+            "message": f"💊 {supplement.name} 已记录"
+        }
+
+    def _handle_symptom_action(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """处理症状记录活动"""
+        profile_id = action.get("profile_id")
+        disease_name = action.get("disease_name")
+        overall_severity = action.get("overall_severity", 3)
+        symptoms = action.get("symptoms", [])
+
+        profile = None
+        if profile_id:
+            profile = self.db.query(UserDiseaseProfile).filter(
+                UserDiseaseProfile.id == profile_id,
+                UserDiseaseProfile.user_id == user_id
+            ).first()
+        if not profile and disease_name:
+            profile = self.db.query(UserDiseaseProfile).filter(
+                UserDiseaseProfile.user_id == user_id,
+                UserDiseaseProfile.disease_name.ilike(f"%{disease_name}%")
+            ).first()
+        if not profile:
+            logger.warning(f"疾病档案未找到: id={profile_id}, name={disease_name}")
+            return None
+
+        log = SymptomLog(
+            user_id=user_id, disease_profile_id=profile.id,
+            log_date=today, overall_severity=overall_severity,
+            symptoms=symptoms,
+            notes="通过健康顾问对话自动记录"
+        )
+        self.db.add(log)
+        self.db.commit()
+        logger.info(f"用户{user_id} 症状: {profile.disease_name} 严重度{overall_severity}")
+        return {
+            "type": "symptom", "status": "saved",
+            "message": f"🏥 {profile.disease_name}症状(严重度{overall_severity}/10) 已记录"
+        }
+
     async def send_message(
         self,
         user_id: int,
@@ -778,8 +1063,15 @@ class ChatService:
             logger.error(f"OpenClaw 调用失败: {e}")
             reply_content = "抱歉，健康顾问暂时无法响应，请稍后再试。"
 
-        # 保存 AI 回复
-        ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=reply_content)
+        # 解析活动标记
+        clean_reply, actions = self._parse_actions(reply_content)
+        activity_results = []
+        if actions:
+            activity_results = self._execute_actions(user_id, actions)
+            logger.info(f"用户{user_id} 执行了{len(activity_results)}个活动")
+
+        # 保存 AI 回复（使用清理后的内容）
+        ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=clean_reply)
         self.db.add(ai_msg)
 
         # 更新对话标题（首次对话用用户消息做标题）
@@ -789,7 +1081,7 @@ class ChatService:
 
         result = {
             "conversation_id": conv.id,
-            "reply": reply_content,
+            "reply": clean_reply,
             "message_id": ai_msg.id
         }
 
@@ -797,6 +1089,11 @@ class ChatService:
         if diet_result:
             result["diet_saved"] = True
             result["diet_data"] = diet_result
+
+        # 添加活动记录信息
+        if activity_results:
+            result["activities_saved"] = True
+            result["activities"] = activity_results
 
         return result
 

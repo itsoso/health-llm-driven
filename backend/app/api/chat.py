@@ -50,6 +50,8 @@ async def send_message(
         message_id=result["message_id"],
         diet_saved=result.get("diet_saved"),
         diet_data=result.get("diet_data"),
+        activities_saved=result.get("activities_saved"),
+        activities=result.get("activities"),
     )
     return response
 

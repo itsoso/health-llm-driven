@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { chatApi, ChatMessage, Conversation, DietSavedData } from '@/services/api';
+import { chatApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -32,6 +32,7 @@ export default function AIAssistantPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [dietNotification, setDietNotification] = useState<DietSavedData | null>(null);
+  const [activityNotifications, setActivityNotifications] = useState<ActivitySavedData[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const itemsPerPage = 10;
@@ -120,6 +121,15 @@ export default function AIAssistantPage() {
       if (result.diet_saved && result.diet_data) {
         setDietNotification(result.diet_data);
         setTimeout(() => setDietNotification(null), 5000);
+      }
+
+      // 显示活动记录通知
+      if (result.activities_saved && result.activities) {
+        const saved = result.activities.filter((a: ActivitySavedData) => a.status !== 'already_exists');
+        if (saved.length > 0) {
+          setActivityNotifications(saved);
+          setTimeout(() => setActivityNotifications([]), 5000);
+        }
       }
 
       // 重新加载对话列表
@@ -421,6 +431,23 @@ export default function AIAssistantPage() {
                   </div>
                 </div>
                 <button onClick={() => setDietNotification(null)} className="ml-2 text-green-200 hover:text-white">×</button>
+              </div>
+            </div>
+          )}
+
+          {/* 活动记录通知 */}
+          {activityNotifications.length > 0 && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300">
+              <div className="bg-emerald-600/90 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <div className="font-medium text-sm">已自动记录</div>
+                  <button onClick={() => setActivityNotifications([])} className="text-emerald-200 hover:text-white text-lg leading-none">×</button>
+                </div>
+                <div className="space-y-0.5">
+                  {activityNotifications.map((a, idx) => (
+                    <div key={idx} className="text-xs text-emerald-100">{a.message}</div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

@@ -719,12 +719,20 @@ export interface DietSavedData {
   record_date: string;
 }
 
+export interface ActivitySavedData {
+  type: string;
+  status: string;
+  message: string;
+}
+
 export interface ChatSendResponse {
   conversation_id: number;
   message_id: number;
   reply: string;
   diet_saved?: boolean;
   diet_data?: DietSavedData;
+  activities_saved?: boolean;
+  activities?: ActivitySavedData[];
 }
 
 // ====== 女性健康 ======

@@ -30,12 +30,20 @@ class DietSavedData(BaseModel):
     record_date: str
 
 
+class ActivitySavedData(BaseModel):
+    type: str  # checkin, water, supplement, symptom
+    status: str  # saved, updated, already_exists
+    message: str  # 人类可读摘要
+
+
 class ChatSendResponse(BaseModel):
     conversation_id: int
     reply: str
     message_id: int
     diet_saved: Optional[bool] = None
     diet_data: Optional[DietSavedData] = None
+    activities_saved: Optional[bool] = None
+    activities: Optional[List[ActivitySavedData]] = None
 
 
 class TranscribeRequest(BaseModel):
