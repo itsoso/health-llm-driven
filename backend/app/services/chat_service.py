@@ -613,14 +613,30 @@ class ChatService:
                          for s in supplements]
             parts.append("用户的补剂列表:\n" + "\n".join(supp_list))
 
-        # 疾病档案
-        profiles = self.db.query(UserDiseaseProfile).filter(
-            UserDiseaseProfile.user_id == user_id,
-            UserDiseaseProfile.tracking_enabled == True
-        ).all()
-        if profiles:
-            prof_list = [f'  - id={p.id}, disease="{p.disease_name}"' for p in profiles]
-            parts.append("用户的疾病档案:\n" + "\n".join(prof_list))
+        # 疾病档案（数据库表结构可能尚未迁移，安全查询）
+        try:
+            from sqlalchemy import text as sa_text
+            rows = self.db.execute(sa_text(
+                "SELECT id, disease_id, severity FROM user_disease_profiles "
+                "WHERE user_id = :uid AND is_active = true"
+            ), {"uid": user_id}).fetchall()
+            if rows:
+                # 尝试关联 disease_templates 获取名称
+                disease_ids = [r[1] for r in rows if r[1]]
+                name_map = {}
+                if disease_ids:
+                    dt_rows = self.db.execute(sa_text(
+                        "SELECT id, display_name FROM disease_templates WHERE id = ANY(:ids)"
+                    ), {"ids": disease_ids}).fetchall()
+                    name_map = {r[0]: r[1] for r in dt_rows}
+                prof_list = []
+                for r in rows:
+                    name = name_map.get(r[1], f"疾病{r[1]}")
+                    prof_list.append(f'  - id={r[0]}, disease="{name}", severity="{r[2]}"')
+                parts.append("用户的疾病档案:\n" + "\n".join(prof_list))
+        except Exception as e:
+            logger.warning(f"查询疾病档案失败(可忽略): {e}")
+            self.db.rollback()
 
         return "\n\n".join(parts)
 
@@ -946,39 +962,54 @@ class ChatService:
 
     def _handle_symptom_action(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
         """处理症状记录活动"""
+        from sqlalchemy import text as sa_text
         profile_id = action.get("profile_id")
         disease_name = action.get("disease_name")
         overall_severity = action.get("overall_severity", 3)
         symptoms = action.get("symptoms", [])
 
-        profile = None
-        if profile_id:
-            profile = self.db.query(UserDiseaseProfile).filter(
-                UserDiseaseProfile.id == profile_id,
-                UserDiseaseProfile.user_id == user_id
-            ).first()
-        if not profile and disease_name:
-            profile = self.db.query(UserDiseaseProfile).filter(
-                UserDiseaseProfile.user_id == user_id,
-                UserDiseaseProfile.disease_name.ilike(f"%{disease_name}%")
-            ).first()
-        if not profile:
-            logger.warning(f"疾病档案未找到: id={profile_id}, name={disease_name}")
-            return None
+        try:
+            row = None
+            if profile_id:
+                row = self.db.execute(sa_text(
+                    "SELECT p.id, COALESCE(dt.display_name, dt.name, '未知疾病') as disease_name "
+                    "FROM user_disease_profiles p "
+                    "LEFT JOIN disease_templates dt ON dt.id = p.disease_id "
+                    "WHERE p.id = :pid AND p.user_id = :uid"
+                ), {"pid": profile_id, "uid": user_id}).first()
+            if not row and disease_name:
+                row = self.db.execute(sa_text(
+                    "SELECT p.id, COALESCE(dt.display_name, dt.name, '未知疾病') as disease_name "
+                    "FROM user_disease_profiles p "
+                    "LEFT JOIN disease_templates dt ON dt.id = p.disease_id "
+                    "WHERE p.user_id = :uid AND (dt.display_name ILIKE :name OR dt.name ILIKE :name)"
+                ), {"uid": user_id, "name": f"%{disease_name}%"}).first()
+            if not row:
+                logger.warning(f"疾病档案未找到: id={profile_id}, name={disease_name}")
+                return None
 
-        log = SymptomLog(
-            user_id=user_id, disease_profile_id=profile.id,
-            log_date=today, overall_severity=overall_severity,
-            symptoms=symptoms,
-            notes="通过健康顾问对话自动记录"
-        )
-        self.db.add(log)
-        self.db.commit()
-        logger.info(f"用户{user_id} 症状: {profile.disease_name} 严重度{overall_severity}")
-        return {
-            "type": "symptom", "status": "saved",
-            "message": f"🏥 {profile.disease_name}症状(严重度{overall_severity}/10) 已记录"
-        }
+            p_id, p_disease_name = row[0], row[1]
+            # 使用原始SQL插入，避免ORM模型与数据库字段不匹配
+            symptom_type = symptoms[0]["name"] if symptoms else p_disease_name
+            severity_val = overall_severity
+            self.db.execute(sa_text(
+                "INSERT INTO symptom_logs (user_id, disease_profile_id, log_date, symptom_type, severity, notes, created_at) "
+                "VALUES (:uid, :pid, :log_date, :stype, :sev, :notes, NOW())"
+            ), {
+                "uid": user_id, "pid": p_id, "log_date": today,
+                "stype": symptom_type, "sev": severity_val,
+                "notes": "通过健康顾问对话自动记录"
+            })
+            self.db.commit()
+            logger.info(f"用户{user_id} 症状: {p_disease_name} 严重度{overall_severity}")
+            return {
+                "type": "symptom", "status": "saved",
+                "message": f"🏥 {p_disease_name}症状(严重度{overall_severity}/10) 已记录"
+            }
+        except Exception as e:
+            logger.error(f"症状记录失败: {e}")
+            self.db.rollback()
+            return None
 
     async def send_message(
         self,
