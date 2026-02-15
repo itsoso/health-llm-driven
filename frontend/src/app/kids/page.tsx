@@ -33,6 +33,27 @@ export default function KidsChatPage() {
     scrollToBottom();
   }, [messages]);
 
+  // 加载最近的对话
+  useEffect(() => {
+    const loadLastConversation = async () => {
+      try {
+        const res = await chatApi.getConversations(1);
+        const conversations = res.data;
+        if (conversations && conversations.length > 0) {
+          const lastConv = conversations[0];
+          const detailRes = await chatApi.getConversation(lastConv.id);
+          if (detailRes.data?.messages?.length > 0) {
+            setConversationId(lastConv.id);
+            setMessages(detailRes.data.messages);
+          }
+        }
+      } catch {
+        // 忽略
+      }
+    };
+    loadLastConversation();
+  }, []);
+
   // 发送消息
   const handleSend = useCallback(async (text?: string) => {
     const msg = (text || inputText).trim();

@@ -30,16 +30,19 @@ export default function KidsCheckinPage() {
 
   const loadData = useCallback(async () => {
     try {
+      // 先尝试初始化默认模板（如果没有的话）
+      await api.post('/checkin/templates/init-defaults').catch(() => {});
+
       const [tplRes, todayRes] = await Promise.all([
         api.get('/checkin/templates'),
         api.get('/checkin/records/today'),
       ]);
 
-      setTemplates(tplRes.data || []);
+      setTemplates(tplRes.data?.templates || []);
 
       // 将今日记录转为 map
       const records: Record<number, TodayRecord> = {};
-      (todayRes.data || []).forEach((r: any) => {
+      (todayRes.data?.records || []).forEach((r: any) => {
         records[r.template_id] = r;
       });
       setTodayRecords(records);
@@ -58,8 +61,10 @@ export default function KidsCheckinPage() {
     setSavingId(template.id);
     try {
       const checkinValue = value ?? template.default_target;
+      const today = new Date().toISOString().split('T')[0];
       await api.post('/checkin/records', {
         template_id: template.id,
+        checkin_date: today,
         value: checkinValue,
         target: template.default_target,
       });
@@ -100,7 +105,7 @@ export default function KidsCheckinPage() {
     return (
       <div className="flex items-center justify-center min-h-full">
         <div className="text-center">
-          <div className="text-6xl animate-bounce mb-4">✅</div>
+          <div className="text-6xl mb-4">✅</div>
           <p className="text-xl text-purple-500 font-bold">加载中...</p>
         </div>
       </div>
@@ -114,7 +119,7 @@ export default function KidsCheckinPage() {
 
       {/* 成功提示 */}
       {showSuccess && (
-        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-green-100 border-2 border-green-300 rounded-2xl shadow-lg animate-bounce">
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-green-100 border-2 border-green-300 rounded-2xl shadow-lg">
           <span className="text-lg font-bold text-green-600">{showSuccess}</span>
         </div>
       )}

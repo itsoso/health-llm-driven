@@ -23,7 +23,7 @@ export default function KidsMePage() {
       ]);
 
       const checkins = checkinRes.status === 'fulfilled'
-        ? (checkinRes.value.data || []).filter((r: any) => r.completion_rate >= 100).length
+        ? (checkinRes.value.data?.records || checkinRes.value.data || []).filter((r: any) => r.completion_rate >= 100).length
         : 0;
 
       const water = waterRes.status === 'fulfilled'
