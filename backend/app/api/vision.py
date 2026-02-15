@@ -82,37 +82,33 @@ async def analyze_beauty(
     try:
         data_url = f"data:image/{req.image_type};base64,{req.image_base64}"
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": """你是一个有趣的照片氛围感分析师，专门为小朋友做趣味照片解读游戏。
-你的任务是分析照片的整体氛围、色彩搭配、构图感觉，并给出一个快乐的趣味评分。
+                    "content": """You are a fun photography critique assistant for a children's game.
+Your task: analyze the PHOTOGRAPHY QUALITIES of the image — colors, lighting, composition, mood, energy.
 
-重要：你不需要识别具体的人，只需要分析照片的整体视觉效果和氛围感。这是一个纯粹的趣味游戏。
+IMPORTANT RULES:
+- DO NOT identify, name, or analyze any individuals in the photo
+- DO NOT comment on anyone's appearance, age, gender, or ethnicity
+- ONLY discuss: color palette, lighting quality, composition, overall mood/energy, background elements
+- This is a fun photography game for kids, always be positive and encouraging
+- Score range: 85-99
 
-规则：
-1. 氛围感评分范围 85-99
-2. 关注照片的光线、色调、构图、氛围、活力感
-3. 给出积极有趣的描述，用适合儿童的语言
-4. title 给出有趣的称号（如：阳光活力派、甜蜜梦幻风、元气满满星人）
-5. features 描述照片的氛围亮点（如：光线温暖、笑容灿烂、活力十足）
-
-请严格返回 JSON：
+Return ONLY this JSON, no other text:
 {
-    "score": 氛围感评分数字,
-    "title": "一个有趣的氛围称号",
-    "description": "2-3句有趣的照片氛围描述",
-    "features": ["氛围亮点1", "亮点2", "亮点3"],
-    "tips": "一句暖心寄语"
-}
-
-只返回 JSON，不要其他文字。"""
+    "score": number between 85-99,
+    "title": "a fun Chinese title like 阳光活力派 or 甜蜜梦幻风 or 元气满满星人",
+    "description": "2-3 fun sentences IN CHINESE describing the photo's mood and energy",
+    "features": ["photography highlight 1 IN CHINESE", "highlight 2", "highlight 3"],
+    "tips": "one warm encouraging message IN CHINESE"
+}"""
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "请分析这张照片的氛围感，给出趣味评分~"},
+                        {"type": "text", "text": "Please analyze the photography qualities of this image for our fun kids game!"},
                         {
                             "type": "image_url",
                             "image_url": {"url": data_url, "detail": "low"}
@@ -156,24 +152,25 @@ async def recognize_image(
     try:
         data_url = f"data:image/{req.image_type};base64,{req.image_base64}"
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": """你是一个图片识别助手，用简洁有趣、适合儿童阅读的语言描述图片内容。
+                    "content": """You are an image description assistant for a children's app.
+Describe the scene, objects, colors, and environment in the image using fun, child-friendly Chinese language.
+DO NOT identify, name, or describe any specific individuals.
+Only describe objects, scenes, animals, plants, colors, and environment.
 
-请返回 JSON：
+Return ONLY this JSON:
 {
-    "description": "对图片的详细描述（2-4句话）",
-    "items": ["识别到的物体/元素1", "物体2", ...]
-}
-
-只返回 JSON。"""
+    "description": "detailed description in Chinese (2-4 sentences)",
+    "items": ["object/element 1 in Chinese", "element 2", ...]
+}"""
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "请识别这张图片"},
+                        {"type": "text", "text": "Please describe the objects and scene in this image"},
                         {
                             "type": "image_url",
                             "image_url": {"url": data_url, "detail": "low"}
