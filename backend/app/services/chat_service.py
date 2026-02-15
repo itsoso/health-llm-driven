@@ -1132,7 +1132,7 @@ class ChatService:
                 if diet_context:
                     content += diet_context
                 if search_context:
-                    content += f"\n\n[参考资料 - 来自网络搜索]\n{search_context}\n[请基于以上参考资料和你的专业知识回答用户问题，不要直接提及"搜索结果"或"参考资料"。]"
+                    content += f"\n\n[参考资料 - 来自网络搜索]\n{search_context}\n[请基于以上参考资料和你的专业知识回答用户问题，不要直接提及搜索结果或参考资料。]"
             messages.append({"role": msg.role, "content": content})
 
         # 调用 OpenClaw API
