@@ -4,15 +4,16 @@
 """
 import asyncio
 import logging
-import os
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # 阿里云配置
-ALIYUN_ACCESS_KEY_ID = os.environ.get('ALIYUN_ACCESS_KEY_ID', '')
-ALIYUN_ACCESS_KEY_SECRET = os.environ.get('ALIYUN_ACCESS_KEY_SECRET', '')
+ALIYUN_ACCESS_KEY_ID = settings.aliyun_access_key_id or ''
+ALIYUN_ACCESS_KEY_SECRET = settings.aliyun_access_key_secret or ''
 
 
 @dataclass
