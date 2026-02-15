@@ -51,6 +51,7 @@ from app.api import (
     health_score,  # 健康评分
     medication,  # 用药管理
     womens_health,  # 女性健康
+    vision,  # 视觉分析（颜值测试、图片识别）
 )
 
 api_router = APIRouter()
@@ -110,3 +111,4 @@ api_router.include_router(body_composition.router)  # 身体成分分析
 api_router.include_router(health_score.router)  # 健康评分
 api_router.include_router(medication.router)  # 用药管理
 api_router.include_router(womens_health.router)  # 女性健康
+api_router.include_router(vision.router)  # 视觉分析（颜值测试、图片识别）

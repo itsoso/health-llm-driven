@@ -10,6 +10,7 @@ const TABS = [
   { href: '/kids', label: '聊天', icon: '💬' },
   { href: '/kids/checkin', label: '打卡', icon: '✅' },
   { href: '/kids/water', label: '喝水', icon: '💧' },
+  { href: '/kids/beauty', label: '测颜值', icon: '📸' },
   { href: '/kids/mood', label: '心情', icon: '😊' },
   { href: '/kids/me', label: '我的', icon: '👤' },
 ];
@@ -30,7 +31,7 @@ export default function KidsTabBar({ currentPath }: KidsTabBarProps) {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[64px] rounded-2xl transition-all duration-200 ${
+              className={`flex flex-col items-center justify-center gap-1 min-w-[52px] min-h-[56px] rounded-2xl transition-all duration-200 ${
                 active
                   ? 'bg-pink-100 scale-110 shadow-md'
                   : 'hover:bg-pink-50 active:scale-95'
