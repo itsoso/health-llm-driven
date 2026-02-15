@@ -15,6 +15,7 @@ interface User {
   is_active: boolean;
   is_admin: boolean;
   has_garmin_credentials: boolean;
+  avatar_url: string | null;
 }
 
 interface AuthContextType {

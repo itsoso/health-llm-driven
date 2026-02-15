@@ -44,6 +44,7 @@ class UserResponse(BaseModel):
     is_admin: bool = False
     created_at: Optional[datetime] = None
     has_garmin_credentials: bool = False
+    avatar_url: Optional[str] = None
     
     class Config:
         from_attributes = True

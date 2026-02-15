@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { api, moodApi } from '@/services/api';
 
 export default function KidsMePage() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [stats, setStats] = useState({ checkins: 0, water: 0, mood: '' });
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -47,14 +49,59 @@ export default function KidsMePage() {
     router.push('/login');
   };
 
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await api.post('/users/me/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await refreshUser();
+    } catch {
+      // 忽略
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const firstName = user?.name?.charAt(0) || '👧';
 
   return (
     <div className="flex flex-col items-center px-6 py-8 min-h-full">
       {/* 头像 */}
-      <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 flex items-center justify-center shadow-xl mb-4">
-        <span className="text-5xl text-white font-bold">{firstName}</span>
-      </div>
+      <button
+        onClick={handleAvatarClick}
+        disabled={uploading}
+        className="relative w-28 h-28 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 flex items-center justify-center shadow-xl mb-2 overflow-hidden active:scale-95 transition-transform"
+      >
+        {user?.avatar_url ? (
+          <img src={user.avatar_url} alt="头像" className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-5xl text-white font-bold">{firstName}</span>
+        )}
+        {uploading && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAvatarUpload}
+      />
+      <p className="text-sm text-gray-400 mb-4">点击头像更换照片</p>
 
       {/* 用户名 */}
       <h1 className="text-3xl font-bold text-purple-600 mb-8">{user?.name || '小朋友'}</h1>

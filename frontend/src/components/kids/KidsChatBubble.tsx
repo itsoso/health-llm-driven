@@ -4,7 +4,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatMessage } from '@/services/api';
 
-export default function KidsChatBubble({ message }: { message: ChatMessage }) {
+interface KidsChatBubbleProps {
+  message: ChatMessage;
+  avatarUrl?: string | null;
+}
+
+export default function KidsChatBubble({ message, avatarUrl }: KidsChatBubbleProps) {
   const isUser = message.role === 'user';
 
   return (
@@ -75,8 +80,12 @@ export default function KidsChatBubble({ message }: { message: ChatMessage }) {
         )}
       </div>
       {isUser && (
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-300 to-cyan-300 flex items-center justify-center flex-shrink-0 shadow-md">
-          <span className="text-2xl">👧</span>
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-300 to-cyan-300 flex items-center justify-center flex-shrink-0 shadow-md overflow-hidden">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-2xl">👧</span>
+          )}
         </div>
       )}
     </div>

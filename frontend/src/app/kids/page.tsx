@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { chatApi, ChatMessage } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import KidsChatBubble from '@/components/kids/KidsChatBubble';
 
 const KIDS_QUICK_QUESTIONS = [
@@ -14,6 +15,7 @@ const KIDS_QUICK_QUESTIONS = [
 ];
 
 export default function KidsChatPage() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -158,7 +160,7 @@ export default function KidsChatPage() {
           {/* 欢迎屏 */}
           {messages.length === 0 && !loading && (
             <div className="text-center space-y-6 mt-8">
-              <div className="text-8xl animate-bounce">🌟</div>
+              <div className="text-8xl">🌟</div>
               <h2 className="text-3xl font-bold text-purple-600">
                 你好！我是你的健康小助手
               </h2>
@@ -182,7 +184,7 @@ export default function KidsChatPage() {
 
           {/* 消息列表 */}
           {messages.map(msg => (
-            <KidsChatBubble key={msg.id} message={msg} />
+            <KidsChatBubble key={msg.id} message={msg} avatarUrl={user?.avatar_url} />
           ))}
 
           {/* 加载动画 */}

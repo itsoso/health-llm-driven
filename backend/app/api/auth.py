@@ -42,7 +42,8 @@ def user_to_response(user: User, db: Session) -> UserResponse:
         is_active=user.is_active if user.is_active is not None else True,
         is_admin=getattr(user, 'is_admin', False) or False,
         created_at=user.created_at,
-        has_garmin_credentials=has_garmin
+        has_garmin_credentials=has_garmin,
+        avatar_url=getattr(user, 'avatar_url', None)
     )
 
 
