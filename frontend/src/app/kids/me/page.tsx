@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { api, moodApi } from '@/services/api';
+import { compressImage } from '@/utils/imageCompress';
 
 export default function KidsMePage() {
   const router = useRouter();
@@ -59,8 +60,9 @@ export default function KidsMePage() {
 
     setUploading(true);
     try {
+      const compressed = await compressImage(file, 512, 0.8);
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', compressed);
       await api.post('/users/me/avatar', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
