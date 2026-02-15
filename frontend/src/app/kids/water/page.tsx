@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/services/api';
 
 const DAILY_TARGET = 1200; // 9岁儿童每日饮水目标(ml)
+const MAX_AMOUNT = 2000; // 每日最高上限(ml)
 
 const WATER_AMOUNTS = [
   { amount: 150, label: '小杯水', icon: '🥛' },
@@ -11,19 +12,29 @@ const WATER_AMOUNTS = [
   { amount: 350, label: '水壶', icon: '🧴' },
 ];
 
+interface WaterRecord {
+  id: number;
+  amount: number;
+  drink_time: string;
+}
+
 export default function KidsWaterPage() {
   const [todayTotal, setTodayTotal] = useState(0);
+  const [records, setRecords] = useState<WaterRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastAdded, setLastAdded] = useState(0);
+  const [showMessage, setShowMessage] = useState('');
 
   const today = new Date().toISOString().split('T')[0];
 
   const loadTodayData = useCallback(async () => {
     try {
       const res = await api.get(`/water/records/me/date/${today}`);
-      const records = res.data || [];
-      const total = records.reduce((sum: number, r: any) => sum + (r.amount_ml || 0), 0);
+      const data = res.data;
+      const recs: WaterRecord[] = data?.records || [];
+      const total = data?.total_amount ?? recs.reduce((sum: number, r) => sum + (r.amount || 0), 0);
+      setRecords(recs);
       setTodayTotal(total);
     } catch {
       // 忽略
@@ -36,13 +47,37 @@ export default function KidsWaterPage() {
 
   const handleAddWater = async (amount: number) => {
     if (loading) return;
+
+    // 检查是否超过上限
+    if (todayTotal + amount > MAX_AMOUNT) {
+      setShowMessage(`已达到每日上限 ${MAX_AMOUNT}ml，不能再加啦~`);
+      setTimeout(() => setShowMessage(''), 2500);
+      return;
+    }
+
     setLoading(true);
     try {
       await api.post(`/water/records/quick?amount=${amount}`);
-      setTodayTotal(prev => prev + amount);
       setLastAdded(amount);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 2000);
+      await loadTodayData();
+    } catch {
+      // 忽略
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (loading || records.length === 0) return;
+    setLoading(true);
+    try {
+      const lastRecord = records[records.length - 1];
+      await api.delete(`/water/records/${lastRecord.id}`);
+      setShowMessage(`已撤回 ${lastRecord.amount}ml`);
+      setTimeout(() => setShowMessage(''), 2000);
+      await loadTodayData();
     } catch {
       // 忽略
     } finally {
@@ -52,6 +87,7 @@ export default function KidsWaterPage() {
 
   const fillPercent = Math.min(100, (todayTotal / DAILY_TARGET) * 100);
   const isCompleted = todayTotal >= DAILY_TARGET;
+  const isMaxed = todayTotal >= MAX_AMOUNT;
 
   return (
     <div className="flex flex-col items-center px-6 py-8 min-h-full">
@@ -92,8 +128,13 @@ export default function KidsWaterPage() {
         </div>
       )}
 
-      {/* 成功提示 */}
-      {showSuccess && (
+      {/* 上限提示 / 成功提示 / 消息 */}
+      {showMessage && (
+        <div className="mb-4 px-6 py-3 bg-yellow-100 border-2 border-yellow-300 rounded-2xl">
+          <span className="text-lg font-bold text-yellow-700">{showMessage}</span>
+        </div>
+      )}
+      {showSuccess && !showMessage && (
         <div className="mb-4 px-6 py-3 bg-blue-100 border-2 border-blue-300 rounded-2xl animate-bounce">
           <span className="text-lg font-bold text-blue-600">
             💧 +{lastAdded}ml 已记录！
@@ -103,21 +144,45 @@ export default function KidsWaterPage() {
 
       {/* 快捷按钮 */}
       <div className="flex gap-6">
-        {WATER_AMOUNTS.map(item => (
-          <button
-            key={item.amount}
-            onClick={() => handleAddWater(item.amount)}
-            disabled={loading}
-            className={`flex flex-col items-center gap-3 px-8 py-6 bg-white rounded-3xl shadow-lg border-2 border-blue-100 hover:border-blue-300 hover:shadow-xl transition-all active:scale-95 ${
-              loading ? 'opacity-50' : ''
-            }`}
-          >
-            <span className="text-5xl">{item.icon}</span>
-            <span className="text-lg font-bold text-gray-700">{item.label}</span>
-            <span className="text-base text-blue-500 font-medium">{item.amount}ml</span>
-          </button>
-        ))}
+        {WATER_AMOUNTS.map(item => {
+          const wouldExceed = todayTotal + item.amount > MAX_AMOUNT;
+          return (
+            <button
+              key={item.amount}
+              onClick={() => handleAddWater(item.amount)}
+              disabled={loading || isMaxed}
+              className={`flex flex-col items-center gap-3 px-8 py-6 bg-white rounded-3xl shadow-lg border-2 transition-all active:scale-95 ${
+                isMaxed || wouldExceed
+                  ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                  : 'border-blue-100 hover:border-blue-300 hover:shadow-xl'
+              } ${loading ? 'opacity-50' : ''}`}
+            >
+              <span className="text-5xl">{item.icon}</span>
+              <span className="text-lg font-bold text-gray-700">{item.label}</span>
+              <span className="text-base text-blue-500 font-medium">{item.amount}ml</span>
+            </button>
+          );
+        })}
       </div>
+
+      {/* 撤回按钮 */}
+      {records.length > 0 && (
+        <button
+          onClick={handleUndo}
+          disabled={loading}
+          className="mt-6 flex items-center gap-2 px-6 py-3 bg-white border-2 border-orange-200 rounded-full text-base font-bold text-orange-500 hover:border-orange-400 active:scale-95 transition-all shadow-sm"
+        >
+          <span>↩️</span>
+          撤回上一杯（{records[records.length - 1]?.amount}ml）
+        </button>
+      )}
+
+      {/* 上限说明 */}
+      {isMaxed && (
+        <p className="mt-4 text-base text-gray-400">
+          今日已达上限 {MAX_AMOUNT}ml，喝太多也不好哦~
+        </p>
+      )}
     </div>
   );
 }
