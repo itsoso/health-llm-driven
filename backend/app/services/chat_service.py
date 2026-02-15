@@ -648,6 +648,8 @@ class ChatService:
             "请基于用户的健康数据，提供个性化、科学、实用的健康建议。\n"
             "回答要简洁友好，避免过度医学化。如涉及严重健康问题请建议就医。\n"
             "使用中文回答。\n\n"
+            "你具有联网搜索能力。系统会自动为用户的问题搜索最新信息，搜索结果会附在用户消息后面的[参考资料]中。"
+            "请自然地整合这些信息来回答，不要提及'搜索结果'、'参考资料'、'根据搜索'等字眼，也不要说自己没有搜索功能。\n\n"
             "你具有饮食记录和热量计算功能。当用户描述吃了什么食物时，系统会自动分析营养成分并保存饮食记录。"
             "如果消息中包含[系统提示]的营养分析结果，请基于这些数据给用户清晰的热量和营养反馈。"
         )
@@ -717,36 +719,26 @@ class ChatService:
         return False
 
     def _should_search(self, message: str) -> bool:
-        """检测消息是否需要联网搜索"""
+        """检测消息是否需要联网搜索 - 默认搜索，只排除明确不需要的"""
+        msg = message.strip()
         # 饮食记录消息不搜索
         if self._is_food_message(message):
             return False
-        # 太短的消息不搜索
-        if len(message.strip()) < 4:
+        # 太短的消息不搜索（3个字以下）
+        if len(msg) < 3:
             return False
-        # 简单打招呼不搜索
-        greetings = ['你好', '嗨', '早上好', '晚上好', '下午好', '谢谢', '好的', '嗯']
-        if message.strip() in greetings:
+        # 简单打招呼/确认不搜索
+        no_search = ['你好', '嗨', '早上好', '晚上好', '下午好', '谢谢', '好的',
+                     '嗯', '哦', '知道了', '明白', '收到', '好', '是的', '不是',
+                     '对', '不对', '行', '可以', '不行', '没有', '有']
+        if msg in no_search:
             return False
-        # 包含疑问词的消息需要搜索
-        question_words = ['怎么', '什么', '如何', '为什么', '哪些', '哪个', '哪种',
-                         '多少', '能不能', '可以吗', '好不好', '是不是', '有没有',
-                         '应该', '需要', '建议', '推荐', '区别', '对比']
-        if any(w in message for w in question_words):
-            return True
-        # 包含问号的消息
-        if '？' in message or '?' in message:
-            return True
-        # 健康相关话题关键词
-        health_keywords = ['营养', '维生素', '矿物质', '蛋白质', '碳水', '脂肪',
-                          '运动', '锻炼', '健身', '跑步', '游泳',
-                          '睡眠', '失眠', '长高', '发育', '近视', '眼睛',
-                          '感冒', '发烧', '咳嗽', '过敏', '鼻炎',
-                          '食谱', '食物', '水果', '蔬菜', '零食',
-                          '肥胖', '减肥', '体重', '身高']
-        if any(w in message for w in health_keywords):
-            return True
-        return False
+        # 纯活动记录陈述（已由活动系统处理）不搜索
+        activity_only = ['刚', '做了', '喝了水', '吃了药', '洗了鼻']
+        if len(msg) < 10 and any(msg.startswith(w) for w in activity_only):
+            return False
+        # 其余消息默认都搜索
+        return True
 
     def _get_meal_type_by_time(self) -> str:
         """根据当前时间推断餐次"""
