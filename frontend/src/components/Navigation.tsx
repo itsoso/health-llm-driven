@@ -291,6 +291,14 @@ export default function Navigation() {
                             <User className="w-4 h-4" />
                             <span>个人画像</span>
                           </Link>
+                          <Link
+                            href="/kids"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-pink-400 hover:bg-pink-600/10 hover:text-pink-300 transition-all"
+                          >
+                            <span className="w-4 h-4 text-center">👧</span>
+                            <span>儿童模式</span>
+                          </Link>
                         </div>
                         {user?.is_admin && (
                           <div className="border-t border-purple-900/30 py-1">
@@ -477,6 +485,14 @@ export default function Navigation() {
                     >
                       <User className="mr-3 w-5 h-5" />
                       个人画像
+                    </Link>
+                    <Link
+                      href="/kids"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center px-4 py-3 rounded-lg text-lg font-medium text-pink-400 hover:bg-pink-600/10"
+                    >
+                      <span className="mr-3 w-5 h-5 text-center">👧</span>
+                      儿童模式
                     </Link>
                     {user?.is_admin && (
                       <>
