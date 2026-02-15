@@ -26,6 +26,7 @@ from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
+from app.services.quark_search import get_search_client
 
 logger = logging.getLogger(__name__)
 
@@ -715,6 +716,38 @@ class ChatService:
 
         return False
 
+    def _should_search(self, message: str) -> bool:
+        """检测消息是否需要联网搜索"""
+        # 饮食记录消息不搜索
+        if self._is_food_message(message):
+            return False
+        # 太短的消息不搜索
+        if len(message.strip()) < 4:
+            return False
+        # 简单打招呼不搜索
+        greetings = ['你好', '嗨', '早上好', '晚上好', '下午好', '谢谢', '好的', '嗯']
+        if message.strip() in greetings:
+            return False
+        # 包含疑问词的消息需要搜索
+        question_words = ['怎么', '什么', '如何', '为什么', '哪些', '哪个', '哪种',
+                         '多少', '能不能', '可以吗', '好不好', '是不是', '有没有',
+                         '应该', '需要', '建议', '推荐', '区别', '对比']
+        if any(w in message for w in question_words):
+            return True
+        # 包含问号的消息
+        if '？' in message or '?' in message:
+            return True
+        # 健康相关话题关键词
+        health_keywords = ['营养', '维生素', '矿物质', '蛋白质', '碳水', '脂肪',
+                          '运动', '锻炼', '健身', '跑步', '游泳',
+                          '睡眠', '失眠', '长高', '发育', '近视', '眼睛',
+                          '感冒', '发烧', '咳嗽', '过敏', '鼻炎',
+                          '食谱', '食物', '水果', '蔬菜', '零食',
+                          '肥胖', '减肥', '体重', '身高']
+        if any(w in message for w in health_keywords):
+            return True
+        return False
+
     def _get_meal_type_by_time(self) -> str:
         """根据当前时间推断餐次"""
         hour = datetime.now().hour
@@ -1071,6 +1104,18 @@ class ChatService:
             except Exception as e:
                 logger.error(f"饮食检测处理失败: {e}")
 
+        # 联网搜索增强
+        search_context = ""
+        if self._should_search(message):
+            search_client = get_search_client()
+            if search_client:
+                try:
+                    search_context = await search_client.search_with_context(message, max_results=3, context_length=500)
+                    if search_context:
+                        logger.info(f"夸克搜索命中: query={message[:50]}")
+                except Exception as e:
+                    logger.warning(f"夸克搜索异常: {e}")
+
         # 构建消息列表（最近 20 条作为上下文）
         history = self.db.query(ChatMessage).filter(
             ChatMessage.conversation_id == conv.id
@@ -1082,9 +1127,12 @@ class ChatService:
         messages = [{"role": "system", "content": await self._get_system_prompt(user_id)}]
         for msg in recent:
             content = msg.content
-            # 在最后一条用户消息中追加饮食上下文
-            if msg.id == user_msg.id and diet_context:
-                content += diet_context
+            # 在最后一条用户消息中追加饮食上下文和搜索上下文
+            if msg.id == user_msg.id:
+                if diet_context:
+                    content += diet_context
+                if search_context:
+                    content += f"\n\n[参考资料 - 来自网络搜索]\n{search_context}\n[请基于以上参考资料和你的专业知识回答用户问题，不要直接提及"搜索结果"或"参考资料"。]"
             messages.append({"role": msg.role, "content": content})
 
         # 调用 OpenClaw API
