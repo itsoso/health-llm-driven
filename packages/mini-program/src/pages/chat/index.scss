@@ -526,6 +526,40 @@ page {
   font-size: 28px;
 }
 
+// 工具按钮（语音、图片）
+.tool-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:active {
+    background: rgba(139, 92, 246, 0.2);
+  }
+
+  &.recording {
+    background: rgba(239, 68, 68, 0.3);
+    animation: pulse-recording 1.5s infinite;
+  }
+
+  &.uploading {
+    opacity: 0.5;
+  }
+}
+
+.tool-icon {
+  font-size: 28px;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .send-btn {
   width: 72px;
   height: 72px;

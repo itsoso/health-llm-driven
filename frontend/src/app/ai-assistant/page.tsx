@@ -6,6 +6,14 @@ import { chatApi, ChatMessage, Conversation, DietSavedData } from '@/services/ap
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// 扩展 Window 类型以支持 webkitSpeechRecognition
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
+
 const QUICK_QUESTIONS = [
   { label: '分析打卡', text: '请分析一下我今天的打卡完成情况，给出建议' },
   { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
@@ -24,8 +32,13 @@ export default function AIAssistantPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [dietNotification, setDietNotification] = useState<DietSavedData | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -172,6 +185,95 @@ export default function AIAssistantPage() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  // 语音录制
+  const handleVoiceToggle = async () => {
+    if (isRecording) {
+      // 停止录音
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        setIsRecording(false);
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (audioBlob.size < 1000) return; // 太短忽略
+
+        try {
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64 = (reader.result as string).split(',')[1];
+            const res = await chatApi.transcribe(base64, 'webm');
+            const text = res.data.text?.trim();
+            if (text) {
+              setInputText(prev => prev + text);
+            }
+          };
+        } catch (err) {
+          console.error('语音转文字失败:', err);
+          alert('语音识别失败，请重试');
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('无法访问麦克风:', err);
+      alert('无法访问麦克风，请检查浏览器权限');
+    }
+  };
+
+  // 图片上传处理
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 重置 input 以便再次选择同一文件
+    e.target.value = '';
+
+    setImageUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onloadend = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const imageType = file.type || 'image/jpeg';
+
+        try {
+          const res = await chatApi.recognizeFood(base64, imageType);
+          const data = res.data;
+          if (data.success && data.meal_description) {
+            // 将识别结果作为消息发送给AI
+            const foodText = `我刚吃了：${data.meal_description}，请帮我计算热量并记录`;
+            handleSend(foodText);
+          } else {
+            alert('未能识别食物，请拍摄更清晰的食物照片');
+          }
+        } catch (err) {
+          console.error('食物识别失败:', err);
+          alert('食物识别失败，请重试');
+        } finally {
+          setImageUploading(false);
+        }
+      };
+    } catch (err) {
+      console.error('读取图片失败:', err);
+      setImageUploading(false);
     }
   };
 
@@ -462,19 +564,64 @@ export default function AIAssistantPage() {
 
           {/* 输入区域 */}
           <div className="p-4 bg-slate-800/50 border-t border-white/10">
-            <div className="max-w-4xl mx-auto flex gap-3">
+            <div className="max-w-4xl mx-auto flex gap-2 items-center">
+              {/* 图片按钮 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageUpload}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={imageUploading || loading}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
+                  imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                }`}
+                title="拍照/上传食物图片"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              {/* 语音按钮 */}
+              <button
+                onClick={handleVoiceToggle}
+                disabled={loading}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
+                  isRecording
+                    ? 'bg-red-500 text-white animate-pulse'
+                    : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                }`}
+                title={isRecording ? '停止录音' : '语音输入'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  {isRecording ? (
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  ) : (
+                    <>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" />
+                    </>
+                  )}
+                </svg>
+              </button>
+              {/* 文本输入 */}
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="输入健康相关问题..."
+                placeholder={isRecording ? '正在录音...' : '输入健康相关问题...'}
                 className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                disabled={isRecording}
               />
+              {/* 发送按钮 */}
               <button
                 onClick={() => handleSend()}
                 disabled={!inputText.trim() || loading}
-                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                   inputText.trim() && !loading
                     ? 'bg-purple-600 hover:bg-purple-500 text-white'
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'

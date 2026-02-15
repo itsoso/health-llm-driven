@@ -4,7 +4,7 @@
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Taro from '@tarojs/taro';
-import { chatSend, getChatConversations, getChatMessages, deleteChatConversation } from '../../services/api';
+import { chatSend, getChatConversations, getChatMessages, deleteChatConversation, chatTranscribe, recognizeFood } from '../../services/api';
 import './index.scss';
 
 interface Message {
@@ -37,8 +37,11 @@ export default function Chat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [isRecording, setIsRecording] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const itemsPerPage = 10;
   const scrollId = useRef('msg-bottom');
+  const recorderManager = useRef<Taro.RecorderManager | null>(null);
 
   // 加载对话列表
   const loadConversations = useCallback(async () => {
@@ -142,6 +145,90 @@ export default function Chat() {
       setCurrentPage(1);
     }
     setShowHistory(!showHistory);
+  };
+
+  // 语音录制
+  const handleVoiceToggle = () => {
+    if (isRecording) {
+      // 停止录音
+      recorderManager.current?.stop();
+      return;
+    }
+
+    if (!recorderManager.current) {
+      recorderManager.current = Taro.getRecorderManager();
+
+      recorderManager.current.onStop(async (res) => {
+        setIsRecording(false);
+        if (!res.tempFilePath) return;
+
+        Taro.showLoading({ title: '识别中...' });
+        try {
+          const fs = Taro.getFileSystemManager();
+          const base64 = fs.readFileSync(res.tempFilePath, 'base64') as string;
+          const result = await chatTranscribe(base64, 'mp3');
+          const text = result.text?.trim();
+          if (text) {
+            setInputText(prev => prev + text);
+          } else {
+            Taro.showToast({ title: '未识别到语音', icon: 'none' });
+          }
+        } catch (err) {
+          console.error('语音转文字失败:', err);
+          Taro.showToast({ title: '语音识别失败', icon: 'none' });
+        } finally {
+          Taro.hideLoading();
+        }
+      });
+
+      recorderManager.current.onError((err) => {
+        console.error('录音错误:', err);
+        setIsRecording(false);
+        Taro.showToast({ title: '录音失败', icon: 'none' });
+      });
+    }
+
+    recorderManager.current.start({
+      duration: 60000,
+      sampleRate: 16000,
+      numberOfChannels: 1,
+      encodeBitRate: 64000,
+      format: 'mp3',
+    });
+    setIsRecording(true);
+  };
+
+  // 图片识别食物
+  const handleImageChoose = () => {
+    Taro.chooseImage({
+      count: 1,
+      sizeType: ['compressed'],
+      sourceType: ['album', 'camera'],
+      success: async (res) => {
+        const tempFilePath = res.tempFilePaths[0];
+        setImageUploading(true);
+        Taro.showLoading({ title: '识别中...' });
+
+        try {
+          const fs = Taro.getFileSystemManager();
+          const base64 = fs.readFileSync(tempFilePath, 'base64') as string;
+          const result = await recognizeFood(base64, 'image/jpeg');
+
+          if (result.success && result.meal_description) {
+            const foodText = `我刚吃了：${result.meal_description}，请帮我计算热量并记录`;
+            handleSend(foodText);
+          } else {
+            Taro.showToast({ title: '未识别到食物', icon: 'none' });
+          }
+        } catch (err) {
+          console.error('食物识别失败:', err);
+          Taro.showToast({ title: '识别失败，请重试', icon: 'none' });
+        } finally {
+          setImageUploading(false);
+          Taro.hideLoading();
+        }
+      },
+    });
   };
 
   // 过滤和分页对话列表
@@ -438,14 +525,27 @@ export default function Chat() {
 
       {/* 输入区域 */}
       <View className="chat-input-area">
+        <View
+          className={`tool-btn ${imageUploading ? 'uploading' : ''}`}
+          onClick={handleImageChoose}
+        >
+          <Text className="tool-icon">📷</Text>
+        </View>
+        <View
+          className={`tool-btn ${isRecording ? 'recording' : ''}`}
+          onClick={handleVoiceToggle}
+        >
+          <Text className="tool-icon">{isRecording ? '⏹' : '🎤'}</Text>
+        </View>
         <Input
           className="chat-input"
-          placeholder="输入健康相关问题..."
+          placeholder={isRecording ? '正在录音...' : '输入健康相关问题...'}
           value={inputText}
           onInput={(e) => setInputText(e.detail.value)}
           onConfirm={() => handleSend()}
           confirmType="send"
           adjustPosition
+          disabled={isRecording}
         />
         <View
           className={`send-btn ${inputText.trim() && !loading ? 'active' : ''}`}

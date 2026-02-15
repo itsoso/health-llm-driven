@@ -38,6 +38,15 @@ class ChatSendResponse(BaseModel):
     diet_data: Optional[DietSavedData] = None
 
 
+class TranscribeRequest(BaseModel):
+    audio_base64: str
+    audio_format: str = "mp3"
+
+
+class TranscribeResponse(BaseModel):
+    text: str
+
+
 class ConversationResponse(BaseModel):
     id: int
     title: str

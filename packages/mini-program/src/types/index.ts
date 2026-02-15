@@ -400,6 +400,10 @@ export const API_ENDPOINTS = {
   CHAT: {
     SEND: '/chat/send',
     CONVERSATIONS: '/chat/conversations',
+    TRANSCRIBE: '/chat/transcribe',
+  },
+  DIET_AI: {
+    RECOGNIZE: '/diet/recognize',
   },
   MOOD: {
     CREATE: '/mood/records',

@@ -802,4 +802,10 @@ export const chatApi = {
   // 删除对话
   deleteConversation: (conversationId: number) =>
     api.delete(`/chat/conversations/${conversationId}`),
+  // 语音转文字
+  transcribe: (audioBase64: string, audioFormat: string = 'webm') =>
+    api.post<{ text: string }>('/chat/transcribe', { audio_base64: audioBase64, audio_format: audioFormat }),
+  // 食物图片识别
+  recognizeFood: (imageBase64: string, imageType: string = 'image/jpeg') =>
+    api.post<{ success: boolean; foods: any[]; meal_description: string; health_tips: string; totals: any }>('/diet/recognize', { image_base64: imageBase64, image_type: imageType }),
 };

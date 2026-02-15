@@ -525,6 +525,14 @@ export async function deleteChatConversation(conversationId: number): Promise<vo
   return await del(`${API_ENDPOINTS.CHAT.CONVERSATIONS}/${conversationId}`);
 }
 
+export async function chatTranscribe(audioBase64: string, audioFormat: string = 'mp3'): Promise<{ text: string }> {
+  return await post(API_ENDPOINTS.CHAT.TRANSCRIBE, { audio_base64: audioBase64, audio_format: audioFormat });
+}
+
+export async function recognizeFood(imageBase64: string, imageType: string = 'image/jpeg'): Promise<{ success: boolean; foods: any[]; meal_description: string; health_tips: string; totals: any }> {
+  return await post(API_ENDPOINTS.DIET_AI.RECOGNIZE, { image_base64: imageBase64, image_type: imageType });
+}
+
 // ===== 情绪追踪 =====
 
 import type { MoodRecord, MoodStats } from '../types';
