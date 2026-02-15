@@ -39,7 +39,14 @@ async def send_message(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return ChatSendResponse(**result)
+    response = ChatSendResponse(
+        conversation_id=result["conversation_id"],
+        reply=result["reply"],
+        message_id=result["message_id"],
+        diet_saved=result.get("diet_saved"),
+        diet_data=result.get("diet_data"),
+    )
+    return response
 
 
 @router.get("/conversations", response_model=List[ConversationResponse], summary="对话列表")

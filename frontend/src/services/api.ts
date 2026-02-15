@@ -708,10 +708,23 @@ export interface ConversationDetail {
   messages: ChatMessage[];
 }
 
+export interface DietSavedData {
+  record_id: number;
+  food_items: string;
+  total_calories?: number;
+  total_protein?: number;
+  total_carbs?: number;
+  total_fat?: number;
+  meal_type: string;
+  record_date: string;
+}
+
 export interface ChatSendResponse {
   conversation_id: number;
   message_id: number;
   reply: string;
+  diet_saved?: boolean;
+  diet_data?: DietSavedData;
 }
 
 // ====== 女性健康 ======

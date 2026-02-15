@@ -19,10 +19,23 @@ class ChatMessageResponse(BaseModel):
         from_attributes = True
 
 
+class DietSavedData(BaseModel):
+    record_id: int
+    food_items: str
+    total_calories: Optional[float] = None
+    total_protein: Optional[float] = None
+    total_carbs: Optional[float] = None
+    total_fat: Optional[float] = None
+    meal_type: str
+    record_date: str
+
+
 class ChatSendResponse(BaseModel):
     conversation_id: int
     reply: str
     message_id: int
+    diet_saved: Optional[bool] = None
+    diet_data: Optional[DietSavedData] = None
 
 
 class ConversationResponse(BaseModel):

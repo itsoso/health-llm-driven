@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { chatApi, ChatMessage, Conversation } from '@/services/api';
+import { chatApi, ChatMessage, Conversation, DietSavedData } from '@/services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -23,6 +23,7 @@ export default function AIAssistantPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [dietNotification, setDietNotification] = useState<DietSavedData | null>(null);
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -101,6 +102,12 @@ export default function AIAssistantPage() {
         created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, aiMsg]);
+
+      // 显示饮食记录保存通知
+      if (result.diet_saved && result.diet_data) {
+        setDietNotification(result.diet_data);
+        setTimeout(() => setDietNotification(null), 5000);
+      }
 
       // 重新加载对话列表
       loadConversations();
@@ -298,6 +305,22 @@ export default function AIAssistantPage() {
             >
               <span className="text-xl">💬</span>
             </button>
+          )}
+
+          {/* 饮食记录保存通知 */}
+          {dietNotification && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300">
+              <div className="bg-green-600/90 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
+                <span className="text-xl">🍽</span>
+                <div>
+                  <div className="font-medium text-sm">饮食已自动记录</div>
+                  <div className="text-xs text-green-100">
+                    {dietNotification.total_calories ? `${Math.round(dietNotification.total_calories)} kcal` : ''} · {{'breakfast': '早餐', 'lunch': '午餐', 'dinner': '晚餐', 'snack': '加餐'}[dietNotification.meal_type] || '加餐'}
+                  </div>
+                </div>
+                <button onClick={() => setDietNotification(null)} className="ml-2 text-green-200 hover:text-white">×</button>
+              </div>
+            </div>
           )}
 
           {/* 消息列表 */}

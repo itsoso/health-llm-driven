@@ -2,7 +2,9 @@
 聊天服务 - 通过 OpenClaw 提供 AI 对话能力
 利用 OpenClaw 的 OpenAI 兼容 API，注入用户健康上下文
 """
+import json
 import logging
+import re
 import asyncio
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
@@ -20,6 +22,7 @@ from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.chat import ChatConversation, ChatMessage
 from app.services.environment.weather_service import weather_service
+from app.services.ai.food_recognition import food_recognition_service
 
 logger = logging.getLogger(__name__)
 
@@ -590,13 +593,107 @@ class ChatService:
             "你是一个专业的私人健康顾问。你的名字叫「健康顾问」。\n"
             "请基于用户的健康数据，提供个性化、科学、实用的健康建议。\n"
             "回答要简洁友好，避免过度医学化。如涉及严重健康问题请建议就医。\n"
-            "使用中文回答。"
+            "使用中文回答。\n\n"
+            "你具有饮食记录和热量计算功能。当用户描述吃了什么食物时，系统会自动分析营养成分并保存饮食记录。"
+            "如果消息中包含[系统提示]的营养分析结果，请基于这些数据给用户清晰的热量和营养反馈。"
         )
 
         health_ctx = await self._build_health_context(user_id)
         if health_ctx:
             return f"{base}\n\n{health_ctx}"
         return base
+
+    def _is_food_message(self, message: str) -> bool:
+        """检测消息是否是记录饮食的内容"""
+        # 量词列表
+        quantity_words = '个只条碗盘杯片块份根勺两斤克袋瓶罐把串盒听颗粒'
+        pattern = rf'[一二三四五六七八九十百千万半\d]+\s*[{quantity_words}]'
+        matches = re.findall(pattern, message)
+
+        # 2个以上量词模式，很可能是食物列表
+        if len(matches) >= 2:
+            return True
+
+        # 显式饮食记录关键词
+        food_action_keywords = ['计算热量', '记录饮食', '热量计算', '算一下热量', '算热量',
+                                '多少卡', '多少热量', '多少卡路里', '记一下饮食']
+        if any(kw in message for kw in food_action_keywords):
+            return True
+
+        # 饮食上下文关键词 + 至少1个量词
+        food_context_keywords = ['吃了', '吃的', '早餐', '午餐', '晚餐', '夜宵',
+                                 '早饭', '中饭', '晚饭', '喝了', '加餐']
+        if len(matches) >= 1 and any(kw in message for kw in food_context_keywords):
+            return True
+
+        return False
+
+    def _get_meal_type_by_time(self) -> str:
+        """根据当前时间推断餐次"""
+        hour = datetime.now().hour
+        if hour < 10:
+            return "breakfast"
+        elif hour < 14:
+            return "lunch"
+        elif hour < 17:
+            return "snack"
+        elif hour < 21:
+            return "dinner"
+        else:
+            return "snack"
+
+    def _process_diet_record(self, user_id: int, message: str, nutrition_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """将营养数据保存为饮食记录"""
+        try:
+            foods = nutrition_data.get("foods", [])
+            if not foods:
+                return None
+
+            # 组合食物名称
+            food_items = ", ".join([
+                f"{f.get('name', '')}({f.get('quantity', '')})" if f.get('quantity') else f.get('name', '')
+                for f in foods
+            ])
+            food_name = food_items[:100] if len(food_items) > 100 else food_items
+
+            meal_type = self._get_meal_type_by_time()
+            today = date.today()
+
+            db_record = DietRecord(
+                user_id=user_id,
+                record_date=today,
+                meal_type=meal_type,
+                food_name=food_name,
+                food_items=food_items,
+                calories=nutrition_data.get("total_calories"),
+                protein=nutrition_data.get("total_protein"),
+                carbs=nutrition_data.get("total_carbs"),
+                fat=nutrition_data.get("total_fat"),
+                notes=f"通过健康顾问对话自动记录: {message[:100]}",
+                ai_recognized=True,
+                ai_raw_result=json.dumps(nutrition_data, ensure_ascii=False),
+                health_tips=nutrition_data.get("health_tips"),
+            )
+            self.db.add(db_record)
+            self.db.commit()
+            self.db.refresh(db_record)
+
+            logger.info(f"用户 {user_id} 通过对话自动保存饮食记录: id={db_record.id}, {food_items}")
+
+            return {
+                "record_id": db_record.id,
+                "food_items": food_items,
+                "total_calories": nutrition_data.get("total_calories"),
+                "total_protein": nutrition_data.get("total_protein"),
+                "total_carbs": nutrition_data.get("total_carbs"),
+                "total_fat": nutrition_data.get("total_fat"),
+                "meal_type": meal_type,
+                "record_date": str(today),
+            }
+        except Exception as e:
+            logger.error(f"自动保存饮食记录失败: {e}")
+            self.db.rollback()
+            return None
 
     async def send_message(
         self,
@@ -625,6 +722,39 @@ class ChatService:
         self.db.add(user_msg)
         self.db.commit()
 
+        # 检测是否是饮食记录消息
+        diet_result = None
+        diet_context = ""
+        if self._is_food_message(message):
+            logger.info(f"检测到饮食记录消息: {message[:80]}")
+            try:
+                nutrition_data = food_recognition_service.estimate_nutrition_from_text(message)
+                if nutrition_data.get("success"):
+                    # 保存饮食记录
+                    diet_result = self._process_diet_record(user_id, message, nutrition_data)
+                    if diet_result:
+                        # 构建营养数据上下文，让AI基于此回复
+                        foods_detail = "\n".join([
+                            f"- {f.get('name', '')}: {f.get('quantity', '')}, {f.get('calories', 0)}kcal, "
+                            f"蛋白质{f.get('protein', 0)}g, 碳水{f.get('carbs', 0)}g, 脂肪{f.get('fat', 0)}g"
+                            for f in nutrition_data.get("foods", [])
+                        ])
+                        meal_type_cn = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}.get(diet_result["meal_type"], "加餐")
+                        diet_context = (
+                            f"\n\n[系统提示：已自动分析用户的饮食并保存为{meal_type_cn}记录。营养分析结果：\n"
+                            f"食物明细：\n{foods_detail}\n"
+                            f"总热量：{nutrition_data.get('total_calories', 0)}kcal\n"
+                            f"总蛋白质：{nutrition_data.get('total_protein', 0)}g\n"
+                            f"总碳水：{nutrition_data.get('total_carbs', 0)}g\n"
+                            f"总脂肪：{nutrition_data.get('total_fat', 0)}g\n"
+                            f"请基于以上数据给用户一个友好的饮食反馈，包含各食物热量明细、总热量、营养评价和建议。"
+                            f"告知用户饮食已自动记录。]"
+                        )
+                else:
+                    logger.warning(f"营养估算失败: {nutrition_data.get('error')}")
+            except Exception as e:
+                logger.error(f"饮食检测处理失败: {e}")
+
         # 构建消息列表（最近 20 条作为上下文）
         history = self.db.query(ChatMessage).filter(
             ChatMessage.conversation_id == conv.id
@@ -635,7 +765,11 @@ class ChatService:
 
         messages = [{"role": "system", "content": await self._get_system_prompt(user_id)}]
         for msg in recent:
-            messages.append({"role": msg.role, "content": msg.content})
+            content = msg.content
+            # 在最后一条用户消息中追加饮食上下文
+            if msg.id == user_msg.id and diet_context:
+                content += diet_context
+            messages.append({"role": msg.role, "content": content})
 
         # 调用 OpenClaw API
         try:
@@ -653,11 +787,18 @@ class ChatService:
         self.db.commit()
         self.db.refresh(ai_msg)
 
-        return {
+        result = {
             "conversation_id": conv.id,
             "reply": reply_content,
             "message_id": ai_msg.id
         }
+
+        # 添加饮食记录信息
+        if diet_result:
+            result["diet_saved"] = True
+            result["diet_data"] = diet_result
+
+        return result
 
     async def _call_openclaw(self, messages: list) -> str:
         """调用 OpenClaw 的 OpenAI 兼容 API"""
