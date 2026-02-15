@@ -23,17 +23,25 @@ export default function KidsMePage() {
         moodApi.getTodayRecord(),
       ]);
 
-      const checkins = checkinRes.status === 'fulfilled'
-        ? (checkinRes.value.data?.records || checkinRes.value.data || []).filter((r: any) => r.completion_rate >= 100).length
-        : 0;
+      let checkins = 0;
+      if (checkinRes.status === 'fulfilled') {
+        const data = checkinRes.value.data;
+        // 优先用 completed_templates，其次用 records 过滤
+        checkins = data?.completed_templates ?? (data?.records || []).filter((r: any) => r.completion_rate >= 100).length;
+      }
 
       const water = waterRes.status === 'fulfilled'
         ? (waterRes.value.data || []).reduce((sum: number, r: any) => sum + (r.amount_ml || 0), 0)
         : 0;
 
       const moodEmojis: Record<number, string> = { 1: '😢', 2: '😟', 3: '😐', 4: '😊', 5: '😄' };
-      const moodScore = moodRes.status === 'fulfilled' && moodRes.value.data?.mood_score;
-      const mood = moodScore ? moodEmojis[moodScore] || '' : '';
+      let mood = '';
+      if (moodRes.status === 'fulfilled' && moodRes.value.data) {
+        const score = moodRes.value.data.mood_score;
+        if (score && moodEmojis[score]) {
+          mood = moodEmojis[score];
+        }
+      }
 
       setStats({ checkins, water, mood });
     } catch {
