@@ -30,9 +30,12 @@ export default function KidsMePage() {
         checkins = data?.completed_templates ?? (data?.records || []).filter((r: any) => r.completion_rate >= 100).length;
       }
 
-      const water = waterRes.status === 'fulfilled'
-        ? (waterRes.value.data || []).reduce((sum: number, r: any) => sum + (r.amount_ml || 0), 0)
-        : 0;
+      let water = 0;
+      if (waterRes.status === 'fulfilled') {
+        const wData = waterRes.value.data;
+        // API 返回对象 { total_amount, records: [...] }
+        water = wData?.total_amount ?? (wData?.records || []).reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
+      }
 
       const moodEmojis: Record<number, string> = { 1: '😢', 2: '😟', 3: '😐', 4: '😊', 5: '😄' };
       let mood = '';
