@@ -51,6 +51,8 @@ from app.models.health_report import HealthReport
 from app.models.medication import Medication, MedicationLog
 # 女性健康模型
 from app.models.womens_health import MenstrualCycle, CycleSymptom
+# 视觉API使用记录
+from app.models.vision_usage import VisionUsageLog
 
 __all__ = [
     "User",
@@ -123,5 +125,7 @@ __all__ = [
     # 女性健康模型
     "MenstrualCycle",
     "CycleSymptom",
+    # 视觉API使用记录
+    "VisionUsageLog",
 ]
 

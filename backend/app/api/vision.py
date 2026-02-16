@@ -1,23 +1,26 @@
 """
 视觉分析 API - 颜值测试、图片识别
 使用 GPT-4 Vision
+每用户每天最多 10 次
 """
-import base64
 import json
 import logging
 import re
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.models.vision_usage import VisionUsageLog
 from app.api.auth import get_current_user_required
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/vision", tags=["vision"])
+
+DAILY_LIMIT = 10  # 每用户每天最多次数
 
 try:
     from openai import OpenAI
@@ -47,6 +50,26 @@ def _extract_json(text: str) -> str:
     return text
 
 
+def _get_today_usage(db: Session, user_id: int) -> int:
+    """获取用户今日已使用次数"""
+    today = date.today()
+    return db.query(VisionUsageLog).filter(
+        VisionUsageLog.user_id == user_id,
+        VisionUsageLog.usage_date == today,
+    ).count()
+
+
+def _record_usage(db: Session, user_id: int, usage_type: str):
+    """记录一次使用"""
+    log = VisionUsageLog(
+        user_id=user_id,
+        usage_date=date.today(),
+        usage_type=usage_type,
+    )
+    db.add(log)
+    db.commit()
+
+
 class ImageAnalysisRequest(BaseModel):
     image_base64: str
     image_type: str = "jpeg"
@@ -60,6 +83,7 @@ class BeautyResponse(BaseModel):
     features: list[str] = []
     tips: str = ""
     error: str = ""
+    remaining: int = DAILY_LIMIT  # 剩余次数
 
 
 class RecognitionResponse(BaseModel):
@@ -67,14 +91,45 @@ class RecognitionResponse(BaseModel):
     description: str = ""
     items: list[str] = []
     error: str = ""
+    remaining: int = DAILY_LIMIT  # 剩余次数
+
+
+class UsageResponse(BaseModel):
+    used: int
+    remaining: int
+    daily_limit: int
+
+
+@router.get("/usage", response_model=UsageResponse, summary="查询今日使用次数")
+async def get_usage(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户今日视觉API使用情况"""
+    used = _get_today_usage(db, current_user.id)
+    return UsageResponse(
+        used=used,
+        remaining=max(0, DAILY_LIMIT - used),
+        daily_limit=DAILY_LIMIT,
+    )
 
 
 @router.post("/beauty", response_model=BeautyResponse, summary="颜值测试")
 async def analyze_beauty(
     req: ImageAnalysisRequest,
     current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
 ):
     """拍照测颜值 - 给出趣味评分和夸奖"""
+    used = _get_today_usage(db, current_user.id)
+    remaining = max(0, DAILY_LIMIT - used)
+    if remaining <= 0:
+        return BeautyResponse(
+            success=False,
+            error=f"今天已用完 {DAILY_LIMIT} 次，明天再来玩吧~",
+            remaining=0,
+        )
+
     client = _get_client()
     if not client:
         raise HTTPException(status_code=503, detail="AI 服务不可用")
@@ -123,6 +178,11 @@ Return ONLY this JSON, no other text:
         raw = response.choices[0].message.content or ""
         json_str = _extract_json(raw)
         result = json.loads(json_str)
+
+        # 成功后记录使用
+        _record_usage(db, current_user.id, "beauty")
+        new_remaining = remaining - 1
+
         return BeautyResponse(
             success=True,
             score=result.get("score", 90),
@@ -130,21 +190,32 @@ Return ONLY this JSON, no other text:
             description=result.get("description", ""),
             features=result.get("features", []),
             tips=result.get("tips", ""),
+            remaining=new_remaining,
         )
     except json.JSONDecodeError:
         logger.error(f"颜值分析 JSON 解析失败: {raw[:300]}")
-        return BeautyResponse(success=False, error="分析结果解析失败，请重试")
+        return BeautyResponse(success=False, error="分析结果解析失败，请重试", remaining=remaining)
     except Exception as e:
         logger.error(f"颜值分析失败: {e}")
-        return BeautyResponse(success=False, error="分析失败，请重试")
+        return BeautyResponse(success=False, error="分析失败，请重试", remaining=remaining)
 
 
 @router.post("/recognize", response_model=RecognitionResponse, summary="图片识别")
 async def recognize_image(
     req: ImageAnalysisRequest,
     current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
 ):
     """通用图片识别 - 识别图片中的物体、场景等"""
+    used = _get_today_usage(db, current_user.id)
+    remaining = max(0, DAILY_LIMIT - used)
+    if remaining <= 0:
+        return RecognitionResponse(
+            success=False,
+            error=f"今天已用完 {DAILY_LIMIT} 次，明天再来玩吧~",
+            remaining=0,
+        )
+
     client = _get_client()
     if not client:
         raise HTTPException(status_code=503, detail="AI 服务不可用")
@@ -185,14 +256,20 @@ Return ONLY this JSON:
         raw = response.choices[0].message.content or ""
         json_str = _extract_json(raw)
         result = json.loads(json_str)
+
+        # 成功后记录使用
+        _record_usage(db, current_user.id, "recognize")
+        new_remaining = remaining - 1
+
         return RecognitionResponse(
             success=True,
             description=result.get("description", ""),
             items=result.get("items", []),
+            remaining=new_remaining,
         )
     except json.JSONDecodeError:
         logger.error(f"图片识别 JSON 解析失败")
-        return RecognitionResponse(success=False, error="识别结果解析失败，请重试")
+        return RecognitionResponse(success=False, error="识别结果解析失败，请重试", remaining=remaining)
     except Exception as e:
         logger.error(f"图片识别失败: {e}")
-        return RecognitionResponse(success=False, error="识别失败，请重试")
+        return RecognitionResponse(success=False, error="识别失败，请重试", remaining=remaining)

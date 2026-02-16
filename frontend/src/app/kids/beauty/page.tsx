@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '@/services/api';
 import { compressImage } from '@/utils/imageCompress';
 
@@ -11,6 +11,7 @@ interface BeautyResult {
   description: string;
   features: string[];
   tips: string;
+  remaining?: number;
   error?: string;
 }
 
@@ -18,10 +19,13 @@ interface RecognizeResult {
   success: boolean;
   description: string;
   items: string[];
+  remaining?: number;
   error?: string;
 }
 
 type Mode = 'beauty' | 'recognize';
+
+const DAILY_LIMIT = 10;
 
 export default function KidsBeautyPage() {
   const [mode, setMode] = useState<Mode>('beauty');
@@ -29,23 +33,34 @@ export default function KidsBeautyPage() {
   const [beautyResult, setBeautyResult] = useState<BeautyResult | null>(null);
   const [recognizeResult, setRecognizeResult] = useState<RecognizeResult | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [remaining, setRemaining] = useState(DAILY_LIMIT);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  const loadUsage = useCallback(async () => {
+    try {
+      const res = await api.get('/vision/usage');
+      setRemaining(res.data.remaining ?? DAILY_LIMIT);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
+
   const handleImage = async (file: File) => {
+    if (remaining <= 0) return;
     setLoading(true);
     setBeautyResult(null);
     setRecognizeResult(null);
 
     try {
-      // Compress image
       const compressed = await compressImage(file, 800, 0.8);
-
-      // Preview
       const url = URL.createObjectURL(compressed);
       setPreviewUrl(url);
 
-      // Convert to base64
       const reader = new FileReader();
       reader.readAsDataURL(compressed);
       reader.onloadend = async () => {
@@ -59,12 +74,14 @@ export default function KidsBeautyPage() {
               image_type: imageType,
             });
             setBeautyResult(res.data);
+            if (res.data.remaining !== undefined) setRemaining(res.data.remaining);
           } else {
             const res = await api.post('/vision/recognize', {
               image_base64: base64,
               image_type: imageType,
             });
             setRecognizeResult(res.data);
+            if (res.data.remaining !== undefined) setRemaining(res.data.remaining);
           }
         } catch {
           if (mode === 'beauty') {
@@ -99,14 +116,30 @@ export default function KidsBeautyPage() {
     return 'text-blue-500';
   };
 
+  const isLimitReached = remaining <= 0;
+
   return (
     <div className="flex flex-col items-center px-6 py-8 min-h-full overflow-y-auto">
       <h1 className="text-3xl font-bold text-purple-600 mb-2">
         {mode === 'beauty' ? '📸 趣味测颜值' : '🔍 图片识别'}
       </h1>
-      <p className="text-lg text-gray-500 mb-6">
+      <p className="text-lg text-gray-500 mb-2">
         {mode === 'beauty' ? '拍张照片看看你有多可爱~' : '拍照或选图，看看AI怎么说~'}
       </p>
+
+      {/* 剩余次数提示 */}
+      <div className={`mb-6 px-5 py-2 rounded-full text-base font-bold ${
+        isLimitReached
+          ? 'bg-red-100 text-red-500 border-2 border-red-200'
+          : remaining <= 3
+            ? 'bg-orange-100 text-orange-500 border-2 border-orange-200'
+            : 'bg-purple-50 text-purple-500 border-2 border-purple-100'
+      }`}>
+        {isLimitReached
+          ? `🚫 今日 ${DAILY_LIMIT} 次已用完，明天再来~`
+          : `✨ 今日剩余 ${remaining}/${DAILY_LIMIT} 次`
+        }
+      </div>
 
       {/* Mode Toggle */}
       <div className="flex gap-3 mb-8">
@@ -137,14 +170,24 @@ export default function KidsBeautyPage() {
         <div className="flex flex-col items-center gap-5 w-full max-w-sm">
           <button
             onClick={() => cameraInputRef.current?.click()}
-            className="w-full py-6 bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-3xl font-bold text-xl shadow-xl hover:shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
+            disabled={isLimitReached}
+            className={`w-full py-6 rounded-3xl font-bold text-xl shadow-xl transition-all flex items-center justify-center gap-3 ${
+              isLimitReached
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-pink-400 to-purple-400 text-white hover:shadow-2xl active:scale-95'
+            }`}
           >
             <span className="text-3xl">📷</span>
             拍照
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-full py-6 bg-white border-3 border-pink-200 rounded-3xl font-bold text-xl text-gray-600 shadow-lg hover:border-pink-400 active:scale-95 transition-all flex items-center justify-center gap-3 border-2"
+            disabled={isLimitReached}
+            className={`w-full py-6 rounded-3xl font-bold text-xl shadow-lg transition-all flex items-center justify-center gap-3 border-2 ${
+              isLimitReached
+                ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-white border-pink-200 text-gray-600 hover:border-pink-400 active:scale-95'
+            }`}
           >
             <span className="text-3xl">🖼️</span>
             从相册选
@@ -249,9 +292,14 @@ export default function KidsBeautyPage() {
 
           <button
             onClick={handleReset}
-            className="mt-4 px-8 py-3 bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-full font-bold text-lg shadow-lg active:scale-95 transition-all"
+            disabled={isLimitReached}
+            className={`mt-4 px-8 py-3 rounded-full font-bold text-lg shadow-lg transition-all ${
+              isLimitReached
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-pink-400 to-purple-400 text-white active:scale-95'
+            }`}
           >
-            再来一次
+            {isLimitReached ? '今日次数已用完' : '再来一次'}
           </button>
         </div>
       )}
@@ -297,9 +345,14 @@ export default function KidsBeautyPage() {
 
           <button
             onClick={handleReset}
-            className="mt-4 px-8 py-3 bg-gradient-to-r from-blue-400 to-cyan-400 text-white rounded-full font-bold text-lg shadow-lg active:scale-95 transition-all"
+            disabled={isLimitReached}
+            className={`mt-4 px-8 py-3 rounded-full font-bold text-lg shadow-lg transition-all ${
+              isLimitReached
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-blue-400 to-cyan-400 text-white active:scale-95'
+            }`}
           >
-            再来一次
+            {isLimitReached ? '今日次数已用完' : '再来一次'}
           </button>
         </div>
       )}
