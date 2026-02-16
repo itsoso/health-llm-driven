@@ -271,7 +271,7 @@ export default function Chat() {
     }
     if (lastIndex < text.length) parts.push(text.slice(lastIndex));
     return parts.map((p, j) =>
-      typeof p === 'string' ? <Text key={j}>{p}</Text> : <Text key={j} className="msg-bold">{p.bold}</Text>
+      typeof p === 'string' ? <Text key={j} userSelect>{p}</Text> : <Text key={j} className="msg-bold" userSelect>{p.bold}</Text>
     );
   };
 
@@ -303,7 +303,7 @@ export default function Chat() {
               {tableRows.map((row, ri) => (
                 <View key={ri} className={`md-table-row ${ri === 0 ? 'header' : ''}`}>
                   {row.map((cell, ci) => (
-                    <View key={ci} className="md-table-cell"><Text>{cell}</Text></View>
+                    <View key={ci} className="md-table-cell"><Text userSelect>{cell}</Text></View>
                   ))}
                 </View>
               ))}
@@ -497,7 +497,15 @@ export default function Chat() {
                 <Text>💬</Text>
               </View>
             )}
-            <View className={`msg-bubble ${msg.role}`}>
+            <View
+              className={`msg-bubble ${msg.role}`}
+              onLongPress={() => {
+                Taro.setClipboardData({
+                  data: msg.content,
+                  success: () => Taro.showToast({ title: '已复制', icon: 'success', duration: 1500 }),
+                });
+              }}
+            >
               {renderContent(msg.content)}
             </View>
           </View>
