@@ -43,7 +43,8 @@ import {
   Smile,
   FileBarChart,
   Gauge,
-  Baby
+  Baby,
+  Plane,
 } from 'lucide-react';
 
 interface NavItem {
@@ -111,6 +112,7 @@ export default function Navigation() {
         { href: '/water', label: '饮水追踪', icon: <Droplets className="w-4 h-4" /> },
         { href: '/garmin', label: 'Garmin数据', icon: <Watch className="w-4 h-4" /> },
         { href: '/analysis', label: '健康分析', icon: <LineChart className="w-4 h-4" /> },
+        { href: '/trip', label: '行程记录', icon: <Plane className="w-4 h-4" /> },
       ],
     },
     {

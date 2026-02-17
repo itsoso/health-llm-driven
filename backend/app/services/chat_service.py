@@ -21,6 +21,7 @@ from app.models.daily_health import GarminData, DietRecord, ExerciseRecord, Work
 from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
+from app.models.trip import Trip, TripItem
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
@@ -586,6 +587,87 @@ class ChatService:
                     avg_val = stats['total'] / stats['count'] if stats['count'] > 0 else 0
                     checkin_stats_30d.append(f"{stats['name']}:完成{stats['count']}天,平均{avg_val:.1f}{stats['unit']}")
                 parts.append("; ".join(checkin_stats_30d))
+
+        # 行程数据分析
+        try:
+            # 当前进行中的行程
+            current_trips = self.db.query(Trip).filter(
+                Trip.user_id == user_id,
+                Trip.start_date <= today,
+                Trip.end_date >= today,
+            ).all()
+
+            # 最近90天的历史行程
+            ninety_days_ago = today - timedelta(days=90)
+            recent_trips = self.db.query(Trip).filter(
+                Trip.user_id == user_id,
+                Trip.end_date >= ninety_days_ago,
+                Trip.end_date < today,
+            ).order_by(Trip.start_date.desc()).limit(5).all()
+
+            all_trips = current_trips + recent_trips
+            if all_trips:
+                for trip in all_trips:
+                    is_current = trip.start_date <= today <= trip.end_date
+                    prefix = "当前行程" if is_current else "近期行程"
+                    trip_header = f"{prefix}: {trip.trip_name}({trip.start_date.strftime('%m/%d')}-{trip.end_date.strftime('%m/%d')})"
+                    if trip.destination:
+                        trip_header += f" 目的地:{trip.destination}"
+
+                    # 查询该行程的所有明细
+                    items = self.db.query(TripItem).filter(
+                        TripItem.trip_id == trip.id
+                    ).order_by(TripItem.item_date, TripItem.item_order).all()
+
+                    if items:
+                        from collections import defaultdict
+                        day_items = defaultdict(list)
+                        for item in items:
+                            day_items[item.item_date].append(item)
+
+                        day_lines = []
+                        for d in sorted(day_items.keys()):
+                            item_descs = []
+                            for item in day_items[d]:
+                                if item.item_type in ('flight', 'train', 'bus'):
+                                    desc = ""
+                                    if item.carrier:
+                                        desc += item.carrier
+                                    if item.transport_number:
+                                        desc += item.transport_number
+                                    desc += " "
+                                    if item.origin:
+                                        desc += item.origin
+                                        if item.departure_terminal:
+                                            desc += item.departure_terminal
+                                    if item.departure_time:
+                                        desc += f" {item.departure_time}"
+                                    desc += "→"
+                                    if item.destination:
+                                        desc += item.destination
+                                        if item.arrival_terminal:
+                                            desc += item.arrival_terminal
+                                    if item.arrival_time:
+                                        desc += f" {item.arrival_time}"
+                                    item_descs.append(desc.strip())
+                                elif item.item_type == 'hotel':
+                                    desc = f"住宿:{item.title}"
+                                    if item.location:
+                                        desc += f"({item.location})"
+                                    item_descs.append(desc)
+                                else:
+                                    desc = item.title
+                                    if item.location:
+                                        desc += f"({item.location})"
+                                    item_descs.append(desc)
+
+                            day_lines.append(f"  {d.strftime('%m/%d')}: {'; '.join(item_descs)}")
+
+                        parts.append(trip_header + "\n" + "\n".join(day_lines))
+                    else:
+                        parts.append(trip_header)
+        except Exception as e:
+            logger.warning(f"获取行程数据失败: {e}")
 
         if not parts:
             return ""

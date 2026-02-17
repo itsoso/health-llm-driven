@@ -35,6 +35,7 @@ export default {
     'pages/health-score/index',     // 健康评分
     'pages/medication/index',       // 用药管理
     'pages/womens-health/index',    // 女性健康
+    'pages/trip/index',              // 行程记录
   ],
   window: {
     backgroundTextStyle: 'light',

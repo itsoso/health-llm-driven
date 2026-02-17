@@ -490,6 +490,12 @@ export default function Settings() {
           <Text className="menu-text">历史数据</Text>
           <Text className="menu-arrow">›</Text>
         </View>
+
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/trip/index' })}>
+          <Text className="menu-icon">✈️</Text>
+          <Text className="menu-text">行程记录</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
       </View>
 
       {/* VIP功能 - 资讯入口 */}

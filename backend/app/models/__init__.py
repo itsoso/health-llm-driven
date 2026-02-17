@@ -53,6 +53,8 @@ from app.models.medication import Medication, MedicationLog
 from app.models.womens_health import MenstrualCycle, CycleSymptom
 # 视觉API使用记录
 from app.models.vision_usage import VisionUsageLog
+# 行程记录模型
+from app.models.trip import Trip, TripItem
 
 __all__ = [
     "User",
@@ -127,5 +129,8 @@ __all__ = [
     "CycleSymptom",
     # 视觉API使用记录
     "VisionUsageLog",
+    # 行程记录
+    "Trip",
+    "TripItem",
 ]
 
