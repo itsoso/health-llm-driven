@@ -5,7 +5,8 @@
 import Taro from '@tarojs/taro';
 import { getToken } from './request';
 
-const BASE_API_URL = 'https://base.executor.life/api';
+// 通过 health.executor.life 反向代理，避免小程序域名白名单限制
+const BASE_API_URL = 'https://health.executor.life/llm-api';
 
 interface BaseRequestConfig {
   url: string;
