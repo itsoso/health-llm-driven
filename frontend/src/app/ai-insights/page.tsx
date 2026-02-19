@@ -190,29 +190,14 @@ function AIInsightsContent() {
 
     setLoading(true);
     try {
-      // 从用户profile获取城市信息
-      // 优先使用手动设置的位置，否则使用IP检测的位置
-      let userCity = '北京'; // 默认值
-
-      if (userProfile) {
-        if (userProfile.use_manual_location && userProfile.manual_location?.city) {
-          userCity = userProfile.manual_location.city;
-        } else if (userProfile.detected_location?.city) {
-          userCity = userProfile.detected_location.city;
-        } else if (userProfile.city) {
-          userCity = userProfile.city;
-        }
-      }
-
+      // 城市由后端自动推断（行程 > 手动设置 > IP检测 > profile城市）
       const response = await fetch(`${API_BASE}/ai-insights/recommendations/realtime`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          city: userCity,
-        }),
+        body: JSON.stringify({}),
       });
 
       if (!response.ok) {
@@ -221,7 +206,7 @@ function AIInsightsContent() {
 
       const data = await response.json();
       setCurrentRecommendation(data);
-      alert(`✅ 实时建议生成成功！（基于城市: ${userCity}）`);
+      alert(`✅ 实时建议生成成功！（城市: ${data.city || '自动检测'}）`);
     } catch (error) {
       console.error('Failed to generate recommendation:', error);
       alert('❌ 生成失败，请稍后重试');

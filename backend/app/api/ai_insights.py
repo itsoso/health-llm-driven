@@ -17,6 +17,66 @@ from app.services.ai_insights_service import AIInsightsService
 router = APIRouter()
 
 
+def _resolve_user_city(db: Session, user_id: int) -> Optional[str]:
+    """按优先级推断用户今天所在城市：行程 > 手动设置 > IP检测 > profile城市"""
+    import re
+    from app.models.user_profile import UserProfile
+    from app.models.trip import Trip, TripItem
+
+    today = date.today()
+
+    def extract_city(location: str) -> str:
+        if not location:
+            return location
+        loc = re.sub(r'T\d+$', '', location).strip()
+        airport_codes = ['首都', '双流', '天府', '萧山', '浦东', '虹桥', '白云', '天河',
+                         '禄口', '江北', '长水', '太平', '咸阳', '遥墙', '宝安', '流亭']
+        station_suffixes = ['东站', '西站', '南站', '北站', '高铁站', '火车站']
+        for suffix in airport_codes + station_suffixes:
+            if loc.endswith(suffix) and len(loc) > len(suffix):
+                loc = loc[:-len(suffix)]
+                break
+        return loc.strip() or location
+
+    # 1. 行程：今天是否在旅途中
+    try:
+        ongoing_trip = db.query(Trip).filter(
+            Trip.user_id == user_id,
+            Trip.start_date <= today,
+            Trip.end_date >= today,
+        ).first()
+        if ongoing_trip:
+            today_items = db.query(TripItem).filter(
+                TripItem.trip_id == ongoing_trip.id,
+                TripItem.item_date == today,
+            ).order_by(TripItem.item_order).all()
+            # 今天最后一个到达的交通目的地
+            for item in reversed(today_items):
+                if item.item_type in ('flight', 'train', 'bus') and item.destination:
+                    return extract_city(item.destination)
+            # 活动 / 酒店地点
+            for item in today_items:
+                if item.item_type in ('activity', 'hotel', 'other') and item.location:
+                    return extract_city(item.location)
+            # 行程目的地兜底
+            if ongoing_trip.destination:
+                return ongoing_trip.destination
+    except Exception:
+        pass
+
+    # 2. 用户画像：手动 > IP检测 > city字段
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if profile:
+        if profile.use_manual_location and profile.manual_city:
+            return profile.manual_city
+        if profile.detected_city:
+            return profile.detected_city
+        if profile.city:
+            return profile.city
+
+    return None
+
+
 @router.get("/insights/daily", response_model=AIInsightListResponse)
 async def get_daily_insights(
     days: int = Query(7, ge=1, le=30, description="获取最近几天的洞察"),
@@ -95,19 +155,8 @@ async def generate_realtime_recommendation(
     基于当前时间、位置、天气、身体状态等
     如果请求中未提供城市，自动从用户画像中获取
     """
-    # 如果未提供城市，从用户画像获取
-    city = request.city
-    if not city:
-        from app.models.user_profile import UserProfile
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if profile:
-            # 优先使用手动设置的城市，其次使用 profile.city，最后使用 IP 检测的城市
-            if profile.use_manual_location and profile.manual_city:
-                city = profile.manual_city
-            elif profile.city:
-                city = profile.city
-            elif profile.detected_city:
-                city = profile.detected_city
+    # 始终由后端推断城市（行程 > 手动 > IP检测 > profile），忽略前端传来的默认值
+    city = _resolve_user_city(db, current_user.id) or request.city
 
     service = AIInsightsService(db)
     recommendation = await service.generate_realtime_recommendation(
