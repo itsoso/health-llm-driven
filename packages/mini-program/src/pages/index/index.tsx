@@ -300,7 +300,7 @@ export default function Index() {
         ] = await Promise.allSettled([
           performanceMonitor.trackAPI('getMorningBriefing', () => getMorningBriefingCached()),
           performanceMonitor.trackAPI('getAIRecommendation', () => getAIRecommendationCached()),
-          performanceMonitor.trackAPI('getTodayRhinitis', () => getTodayRhinitisCached())
+          performanceMonitor.trackAPI('getTodayRhinitis', () => getTodayRhinitisCached(true))
         ]);
         
         performanceMonitor.end('首页-第三批加载', {
