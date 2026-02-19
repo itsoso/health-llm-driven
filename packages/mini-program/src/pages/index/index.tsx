@@ -913,7 +913,7 @@ export default function Index() {
               <Text className="briefing-title">今日提醒</Text>
             </View>
             <View className="briefing-content">
-              <View className="data-row">
+              <View className="data-row" onClick={() => Taro.navigateTo({ url: '/pages/rhinitis/index' })}>
                 <View className="dot blue"></View>
                 <Text className="data-text">
                   🫧 洗鼻 {homeData.rhinitis?.nasal_wash_count || 0}/2 次
