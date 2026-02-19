@@ -833,16 +833,19 @@ class ChatService:
             "### 格式\n"
             "在正常回复之后附加（用户不可见）：\n"
             '<<<ACTIONS:[{"type":"checkin","template_id":ID,"template_name":"名称","value":数值或null,"notes":"备注或null"},'
+            '{"type":"rhinitis","nasal_wash":次数或null,"nasal_wash_type":"wash或soak","sneeze_count":次数或null},'
             '{"type":"water","amount":毫升数,"drink_type":"水/茶/咖啡"},'
             '{"type":"supplement","supplement_id":ID,"supplement_name":"名称"},'
             '{"type":"symptom","profile_id":ID,"disease_name":"疾病名","overall_severity":0到10,"symptoms":[{"name":"症状","severity":1到10}]}]>>>\n\n'
             "### 示例\n"
             "- \"刚踢腿200下\" → checkin, 匹配踢腿模板, value=200\n"
-            "- \"洗了鼻子\" → checkin, 匹配洗鼻模板, value=null(用默认值)\n"
+            "- \"洗了鼻子\" → rhinitis, nasal_wash=1, nasal_wash_type=\"wash\"\n"
+            "- \"泡鼻了\" → rhinitis, nasal_wash=1, nasal_wash_type=\"soak\"\n"
+            "- \"今天打了好几个喷嚏\" → rhinitis, sneeze_count=估算数量(默认5)\n"
+            "- \"打了3个喷嚏\" → rhinitis, sneeze_count=3\n"
             "- \"喝了一杯水\" → water, amount=250\n"
             "- \"喝了500ml水\" → water, amount=500\n"
             "- \"吃了维生素D\" → supplement\n"
-            "- \"今天打了好几个喷嚏\" → symptom, 匹配鼻炎档案\n"
             "- \"做了30个俯卧撑然后喝了杯水\" → 两个活动\n\n"
             "### 不应记录\n"
             "- \"我应该每天踢多少下？\" → 提问不记录\n"
@@ -1004,6 +1007,8 @@ class ChatService:
                     result = self._handle_supplement_action(user_id, action, today)
                 elif action_type == "symptom":
                     result = self._handle_symptom_action(user_id, action, today)
+                elif action_type == "rhinitis":
+                    result = self._handle_rhinitis_action(user_id, action, today)
                 elif action_type == "illness_create":
                     result = self._handle_illness_create(user_id, action, today)
                 elif action_type == "illness_update":
@@ -1056,9 +1061,6 @@ class ChatService:
             existing.value = (existing.value or 0) + actual_value
             existing.completion_rate = (existing.value / template.default_target * 100) if template.default_target > 0 else 100
             template.total_value = (template.total_value or 0) + actual_value
-            # 同步洗鼻次数到 health_checkins 表
-            if "洗鼻" in template.name:
-                self._sync_nasal_wash(user_id, today, actual_value)
             self.db.commit()
             return {
                 "type": "checkin", "status": "updated",
@@ -1086,10 +1088,6 @@ class ChatService:
         if (template.current_streak or 0) > (template.best_streak or 0):
             template.best_streak = template.current_streak
 
-        # 同步洗鼻次数到 health_checkins 表
-        if "洗鼻" in template.name:
-            self._sync_nasal_wash(user_id, today, actual_value)
-
         self.db.commit()
         logger.info(f"用户{user_id} 打卡: {template.name} {actual_value}{template.unit}")
         return {
@@ -1097,21 +1095,42 @@ class ChatService:
             "message": f"{template.icon} {template.name} {actual_value}{template.unit} 已记录"
         }
 
-    def _sync_nasal_wash(self, user_id: int, today: date, count: int):
-        """同步洗鼻次数到 health_checkins 表"""
+    def _handle_rhinitis_action(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """处理鼻炎活动（洗鼻/泡鼻/打喷嚏），直接写入 health_checkins 表"""
+        nasal_wash = action.get("nasal_wash")          # 洗鼻次数，通常1
+        nasal_wash_type = action.get("nasal_wash_type", "wash")  # "wash" 或 "soak"
+        sneeze_count = action.get("sneeze_count")       # 喷嚏次数
+        now_str = datetime.now().strftime("%H:%M")
+
         hc = self.db.query(HealthCheckin).filter(
             HealthCheckin.user_id == user_id,
             HealthCheckin.checkin_date == today,
         ).first()
-        if hc:
-            hc.nasal_wash_count = (hc.nasal_wash_count or 0) + count
-        else:
-            hc = HealthCheckin(
-                user_id=user_id,
-                checkin_date=today,
-                nasal_wash_count=count,
-            )
+        if not hc:
+            hc = HealthCheckin(user_id=user_id, checkin_date=today)
             self.db.add(hc)
+
+        msgs = []
+        if nasal_wash:
+            hc.nasal_wash_count = (hc.nasal_wash_count or 0) + int(nasal_wash)
+            times = list(hc.nasal_wash_times or [])
+            times.append({"time": now_str, "type": nasal_wash_type})
+            hc.nasal_wash_times = times
+            label = "泡鼻" if nasal_wash_type == "soak" else "洗鼻"
+            msgs.append(f"🫧 {label} {hc.nasal_wash_count}次 已记录")
+
+        if sneeze_count:
+            hc.sneeze_count = (hc.sneeze_count or 0) + int(sneeze_count)
+            times = list(hc.sneeze_times or [])
+            times.append({"time": now_str, "count": int(sneeze_count)})
+            hc.sneeze_times = times
+            msgs.append(f"🤧 打喷嚏 {hc.sneeze_count}次 已记录")
+
+        if not msgs:
+            return None
+
+        self.db.commit()
+        return {"type": "rhinitis", "status": "saved", "message": "、".join(msgs)}
 
     def _handle_water_action(self, user_id: int, action: dict, today: date, now: datetime) -> Optional[Dict]:
         """处理喝水活动"""

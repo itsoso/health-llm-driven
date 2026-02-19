@@ -425,7 +425,7 @@ export default function Index() {
       }
 
       const actionMap: Record<string, string> = {
-        'nasal_wash': '/pages/checkin/index',      // 洗鼻 → 通用打卡页
+        'nasal_wash': '/pages/rhinitis/index',      // 洗鼻 → 鼻炎记录页
         'supplement': '/pages/supplements/index',  // 补剂 → 补剂记录页
         'exercise': '/pages/workout/index',        // 运动 → 运动记录页
         'weight': '/pages/checkin/index',          // 体重 → 通用打卡页（暂无独立页面）
