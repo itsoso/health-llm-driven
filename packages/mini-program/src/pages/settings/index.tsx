@@ -460,20 +460,20 @@ export default function Settings() {
 
       {/* 多模型分析 */}
       <View className="menu-section">
-        <Text className="section-label">AI 分析工具</Text>
+        <Text className="section-label">智能分析</Text>
         <View className="menu-item highlight" onClick={() => Taro.navigateTo({ url: '/pages/llm-analysis/index' })}>
-          <Text className="menu-icon">🤖</Text>
+          <Text className="menu-icon">🔬</Text>
           <Text className="menu-text">多模型分析</Text>
-          <Text className="menu-desc">多 AI 同时分析 · 自动汇总</Text>
+          <Text className="menu-desc">多模型同时分析 · 自动汇总</Text>
           <Text className="menu-arrow">›</Text>
         </View>
         <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/llm-history/index' })}>
-          <Text className="menu-icon">📜</Text>
+          <Text className="menu-icon">📋</Text>
           <Text className="menu-text">分析历史</Text>
           <Text className="menu-arrow">›</Text>
         </View>
         <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/llm-scheduler/index' })}>
-          <Text className="menu-icon">⏰</Text>
+          <Text className="menu-icon">⏱</Text>
           <Text className="menu-text">定时任务</Text>
           <Text className="menu-arrow">›</Text>
         </View>
