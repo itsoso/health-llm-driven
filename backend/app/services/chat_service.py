@@ -23,6 +23,7 @@ from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.trip import Trip, TripItem
 from app.models.illness import IllnessEpisode, IllnessUpdate
+from app.models.health_checkin import HealthCheckin
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
@@ -1055,6 +1056,9 @@ class ChatService:
             existing.value = (existing.value or 0) + actual_value
             existing.completion_rate = (existing.value / template.default_target * 100) if template.default_target > 0 else 100
             template.total_value = (template.total_value or 0) + actual_value
+            # 同步洗鼻次数到 health_checkins 表
+            if "洗鼻" in template.name:
+                self._sync_nasal_wash(user_id, today, actual_value)
             self.db.commit()
             return {
                 "type": "checkin", "status": "updated",
@@ -1082,12 +1086,32 @@ class ChatService:
         if (template.current_streak or 0) > (template.best_streak or 0):
             template.best_streak = template.current_streak
 
+        # 同步洗鼻次数到 health_checkins 表
+        if "洗鼻" in template.name:
+            self._sync_nasal_wash(user_id, today, actual_value)
+
         self.db.commit()
         logger.info(f"用户{user_id} 打卡: {template.name} {actual_value}{template.unit}")
         return {
             "type": "checkin", "status": "saved",
             "message": f"{template.icon} {template.name} {actual_value}{template.unit} 已记录"
         }
+
+    def _sync_nasal_wash(self, user_id: int, today: date, count: int):
+        """同步洗鼻次数到 health_checkins 表"""
+        hc = self.db.query(HealthCheckin).filter(
+            HealthCheckin.user_id == user_id,
+            HealthCheckin.checkin_date == today,
+        ).first()
+        if hc:
+            hc.nasal_wash_count = (hc.nasal_wash_count or 0) + count
+        else:
+            hc = HealthCheckin(
+                user_id=user_id,
+                checkin_date=today,
+                nasal_wash_count=count,
+            )
+            self.db.add(hc)
 
     def _handle_water_action(self, user_id: int, action: dict, today: date, now: datetime) -> Optional[Dict]:
         """处理喝水活动"""
