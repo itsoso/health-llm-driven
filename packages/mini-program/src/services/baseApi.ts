@@ -3,7 +3,7 @@
  * 复用 health.executor.life 的 JWT token
  */
 import Taro from '@tarojs/taro';
-import { getToken, clearToken } from './request';
+import { getToken } from './request';
 
 const BASE_API_URL = 'https://base.executor.life/api';
 
@@ -46,8 +46,8 @@ export async function baseRequest<T = any>(config: BaseRequestConfig): Promise<T
     });
 
     if (response.statusCode === 401) {
-      clearToken();
-      throw new Error('登录已过期，请重新登录');
+      // 不清除 token，避免影响 health.executor.life 的登录状态
+      throw new Error('分析服务认证失败，请重新登录');
     }
 
     if (response.statusCode >= 400) {
@@ -59,7 +59,7 @@ export async function baseRequest<T = any>(config: BaseRequestConfig): Promise<T
 
     return response.data;
   } catch (error: any) {
-    if (error?.message?.includes('登录已过期')) {
+    if (error?.message?.includes('认证失败')) {
       throw error;
     }
 
