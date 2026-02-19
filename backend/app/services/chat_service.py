@@ -43,6 +43,23 @@ class ChatService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _extract_city_from_location(self, location: str) -> str:
+        """从地点字符串中提取城市名
+        例：成都双流T2 → 成都，杭州萧山T4 → 杭州，成都东站 → 成都，江油 → 江油
+        """
+        import re
+        if not location:
+            return location
+        loc = re.sub(r'T\d+$', '', location).strip()
+        airport_codes = ['首都', '双流', '天府', '萧山', '浦东', '虹桥', '白云', '天河',
+                         '禄口', '江北', '长水', '太平', '咸阳', '遥墙', '宝安', '流亭']
+        station_suffixes = ['东站', '西站', '南站', '北站', '高铁站', '火车站']
+        for suffix in airport_codes + station_suffixes:
+            if loc.endswith(suffix) and len(loc) > len(suffix):
+                loc = loc[:-len(suffix)]
+                break
+        return loc.strip() or location
+
     async def _build_health_context(self, user_id: int) -> str:
         """构建用户健康上下文，注入为 system prompt"""
         parts = []
@@ -52,9 +69,50 @@ class ChatService:
         user = self.db.query(User).filter(User.id == user_id).first()
         profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
 
-        # 用户位置信息
+        # 检查是否在旅行中，推断当前所在城市（用于天气和地理相关建议）
+        travel_city = None
+        ongoing_trip_info = None
+        try:
+            ongoing_trip = self.db.query(Trip).filter(
+                Trip.user_id == user_id,
+                Trip.start_date <= today,
+                Trip.end_date >= today,
+            ).first()
+
+            if ongoing_trip:
+                today_items = self.db.query(TripItem).filter(
+                    TripItem.trip_id == ongoing_trip.id,
+                    TripItem.item_date == today,
+                ).order_by(TripItem.item_order).all()
+
+                # 优先：今天最后一个到达的交通项目目的地（用户当前落脚点）
+                for item in reversed(today_items):
+                    if item.item_type in ('flight', 'train', 'bus') and item.destination:
+                        travel_city = self._extract_city_from_location(item.destination)
+                        break
+
+                # 次选：今天活动或住宿的位置
+                if not travel_city:
+                    for item in today_items:
+                        if item.item_type in ('activity', 'hotel', 'other') and item.location:
+                            travel_city = self._extract_city_from_location(item.location)
+                            break
+
+                # 兜底：行程目的地字段
+                if not travel_city and ongoing_trip.destination:
+                    travel_city = ongoing_trip.destination
+
+                if travel_city:
+                    ongoing_trip_info = ongoing_trip
+        except Exception as e:
+            logger.warning(f"获取旅行位置失败: {e}")
+
+        # 用户位置信息（旅行中优先使用行程地点）
         user_city = None
-        if profile:
+        if travel_city and ongoing_trip_info:
+            user_city = travel_city
+            parts.append(f"当前位置: {travel_city}（旅行中：{ongoing_trip_info.trip_name}，归家城市不适用）")
+        elif profile:
             # 优先使用手动设置的位置
             if profile.use_manual_location and profile.manual_city:
                 user_city = profile.manual_city
