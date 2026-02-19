@@ -1,0 +1,184 @@
+@import '../../pages/llm-analysis/index.scss';
+
+.detail-page {
+  height: 100vh;
+  background: #f5f5f7;
+  padding: 16px;
+
+  &.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+.header-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+
+  &.status-completed { background: #dcfce7; color: #16a34a; }
+  &.status-failed { background: #fee2e2; color: #dc2626; }
+  &.status-partial { background: #fef3c7; color: #d97706; }
+  &.status-processing { background: #e0e7ff; color: #4f46e5; }
+  &.status-pending { background: #f0f0f5; color: #999; }
+  &.status-cancelled { background: #f0f0f5; color: #666; }
+}
+
+.time {
+  font-size: 12px;
+  color: #999;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.meta-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.meta {
+  font-size: 12px;
+  color: #999;
+}
+
+.prompt-toggle {
+  margin-top: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #f0f0f5;
+}
+
+.prompt-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.prompt-content {
+  background: #f8f8fa;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.prompt-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+}
+
+// 结果卡片
+.result-card {
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+
+  &.aggregation {
+    border: 2px solid #4f46e5;
+  }
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  gap: 8px;
+}
+
+.result-icon {
+  font-size: 18px;
+}
+
+.result-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: #333;
+}
+
+.mini-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.result-elapsed {
+  font-size: 12px;
+  color: #999;
+}
+
+.expand-arrow {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.error-bar {
+  padding: 8px 16px;
+  background: #fef2f2;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+.result-body {
+  padding: 16px;
+  border-top: 1px solid #f0f0f5;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.copy-btn {
+  margin-top: 12px;
+  text-align: right;
+  font-size: 13px;
+  color: #4f46e5;
+}
+
+// 操作按钮
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.action-btn {
+  flex: 1;
+  text-align: center;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 14px;
+
+  &.retry {
+    background: #fef3c7;
+    color: #d97706;
+  }
+
+  &.reagg {
+    background: #e8eaff;
+    color: #4f46e5;
+  }
+}
+
+.bottom-spacer {
+  height: 40px;
+}

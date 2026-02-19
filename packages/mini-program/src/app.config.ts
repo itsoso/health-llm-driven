@@ -36,6 +36,11 @@ export default {
     'pages/medication/index',       // 用药管理
     'pages/womens-health/index',    // 女性健康
     'pages/trip/index',              // 行程记录
+    'pages/llm-analysis/index',      // 多模型分析
+    'pages/llm-detail/index',        // 分析详情
+    'pages/llm-history/index',       // 分析历史
+    'pages/llm-templates/index',     // 模板选择
+    'pages/llm-scheduler/index',     // 调度器
   ],
   window: {
     backgroundTextStyle: 'light',
