@@ -7,13 +7,18 @@ Siri 快捷指令 API - 为 Apple Shortcuts 提供语音健康记录接口
   Body:   {"message": "记录我刚吃了三个西红柿和5颗花生"}
   Return: {"text": "已记录！西红柿3个约54千卡，花生5颗约30千卡..."}
 
-在 Apple Shortcuts 中配置：
-  触发词 → 「获取文本」(语音输入) → 「获取URL内容」(POST) → 「朗读文本」
+一键导入快捷指令：
+  在 iPhone Safari 中打开：
+  https://health.executor.life/api/siri/shortcut?token=<你的JWT_Token>
+  iOS 会自动提示导入到「快捷指令」App。
 """
 import re
 import logging
+import plistlib
+import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -28,6 +33,9 @@ router = APIRouter(prefix="/siri", tags=["Siri快捷指令"])
 
 # Siri 专用对话标题
 SIRI_CONVERSATION_TITLE = "🎙️ Siri快捷指令"
+
+# API 基础 URL（写入快捷指令文件）
+_API_BASE = "https://health.executor.life/api"
 
 
 def strip_markdown(text: str) -> str:
@@ -69,6 +77,106 @@ def get_or_create_siri_conversation(user_id: int, db: Session) -> int:
     return conv.id
 
 
+def _generate_shortcut_plist(token: str) -> bytes:
+    """
+    生成可直接导入 iPhone「快捷指令」App 的 .shortcut 文件（XML plist 格式）。
+
+    快捷指令流程：
+      1. 听写文本（语音输入）
+      2. 发送 POST 请求到健康 API（body = 听写结果，text/plain）
+      3. 从 JSON 响应中取 "text" 字段
+      4. 朗读回复
+    """
+    dictate_uuid = str(uuid.uuid4()).upper()
+    download_uuid = str(uuid.uuid4()).upper()
+
+    # 引用前一步 Action 输出的 helper
+    def _action_ref(output_uuid: str, output_name: str) -> dict:
+        return {
+            "Value": {
+                "attachmentsByRange": {
+                    "{0, 1}": {
+                        "Type": "ActionOutput",
+                        "OutputUUID": output_uuid,
+                        "OutputName": output_name,
+                    }
+                },
+                "string": "\ufffc",
+            },
+            "WFSerializationType": "WFTextTokenAttachmentParameterState",
+        }
+
+    actions = [
+        # ── Step 1: 听写文本 ──────────────────────────────────────────
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.dictatetext",
+            "WFWorkflowActionParameters": {
+                "UUID": dictate_uuid,
+            },
+        },
+        # ── Step 2: 发送到健康 API ────────────────────────────────────
+        # body 类型 = File → 把上一步的文本作为 text/plain 发送
+        # 后端 /siri/say 同时接受 JSON 和 text/plain
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+            "WFWorkflowActionParameters": {
+                "UUID": download_uuid,
+                "WFHTTPMethod": "POST",
+                "WFURL": f"{_API_BASE}/siri/say",
+                "WFHTTPHeaders": {
+                    "Value": {
+                        "WFDictionaryFieldValueItems": [
+                            {
+                                "WFItemType": 0,
+                                "WFKey": {
+                                    "Value": {"string": "Authorization"},
+                                    "WFSerializationType": "WFTextTokenString",
+                                },
+                                "WFValue": {
+                                    "Value": {"string": f"Bearer {token}"},
+                                    "WFSerializationType": "WFTextTokenString",
+                                },
+                            }
+                        ]
+                    },
+                    "WFSerializationType": "WFDictionaryFieldValue",
+                },
+                "WFHTTPBodyType": "File",
+                "WFHTTPBody": _action_ref(dictate_uuid, "Dictated Text"),
+            },
+        },
+        # ── Step 3: 取 JSON 中的 "text" 字段 ─────────────────────────
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.getvalueforkey",
+            "WFWorkflowActionParameters": {
+                "WFGetDictionaryValueType": "Value",
+                "WFDictionaryKey": "text",
+            },
+        },
+        # ── Step 4: 朗读回复 ──────────────────────────────────────────
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.speak",
+            "WFWorkflowActionParameters": {
+                "WFSpeakTextWaitUntilDone": True,
+            },
+        },
+    ]
+
+    shortcut = {
+        "WFWorkflowClientVersion": "2600.0.57",
+        "WFWorkflowHasOutputFallback": False,
+        "WFWorkflowImportQuestions": [],
+        "WFWorkflowInputContentItemClasses": [],
+        "WFWorkflowMinimumClientVersion": 900,
+        "WFWorkflowMinimumClientVersionString": "900",
+        "WFWorkflowName": "健康记录",
+        "WFWorkflowActions": actions,
+        "WFWorkflowTypes": [],
+    }
+
+    return plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
+
+
 class SiriRequest(BaseModel):
     message: str
 
@@ -81,21 +189,32 @@ class SiriResponse(BaseModel):
 
 @router.post("/say", response_model=SiriResponse, summary="Siri语音健康记录")
 async def siri_say(
-    req: SiriRequest,
+    request: Request,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """
     Siri 快捷指令主入口。接收自然语言，自动完成饮食/运动/打卡记录并返回纯文本回复。
 
+    同时支持两种 Content-Type：
+    - application/json  →  {"message": "..."}
+    - text/plain        →  直接发送消息文本（快捷指令 File body 模式）
+
     支持的语音指令示例：
     - 「记录我刚吃了三个西红柿和5颗花生」→ 自动保存饮食记录
     - 「我刚跑步40分钟」→ 自动保存运动记录
     - 「完成了50个俯卧撑」→ 自动打卡
     - 「最近的步数怎么样」→ 查看数据
-    - 「今天成都天气怎么样，适合户外吗」→ 基于当前位置/行程给建议
     """
-    message = req.message.strip()
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = await request.json()
+        message = body.get("message", "").strip()
+    else:
+        # text/plain — 快捷指令 "File" body 模式直接发送听写文本
+        raw = await request.body()
+        message = raw.decode("utf-8", errors="ignore").strip()
+
     if not message:
         raise HTTPException(status_code=400, detail="消息不能为空")
 
@@ -123,6 +242,33 @@ async def siri_say(
     )
 
 
+@router.get("/shortcut", summary="一键下载Siri快捷指令文件")
+async def download_shortcut(
+    token: str = Query(..., description="JWT Token（Bearer 后面的部分）"),
+):
+    """
+    生成并下载预配置好的快捷指令 .shortcut 文件。
+
+    **在 iPhone 的 Safari 浏览器中打开此链接**，iOS 会自动提示导入到「快捷指令」App。
+
+    示例链接：
+    ```
+    https://health.executor.life/api/siri/shortcut?token=<你的JWT_Token>
+    ```
+    """
+    from app.services.auth import AuthService
+    payload = AuthService.decode_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token 无效或已过期，请重新登录获取")
+
+    shortcut_bytes = _generate_shortcut_plist(token)
+    return Response(
+        content=shortcut_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="HealthRecord.shortcut"'},
+    )
+
+
 @router.get("/token-hint", summary="获取Token提示")
 async def token_hint(
     current_user: User = Depends(get_current_user_required),
@@ -135,5 +281,6 @@ async def token_hint(
         "user": current_user.name or current_user.username,
         "hint": "你的 Authorization Header 中的 Bearer Token 即为 Shortcuts 所需的 token。",
         "shortcut_url": "POST https://health.executor.life/api/siri/say",
+        "shortcut_download": f"{_API_BASE}/siri/shortcut?token=<your_token>",
         "body_example": {"message": "记录我刚吃了三个西红柿和5颗花生"},
     }
