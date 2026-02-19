@@ -517,6 +517,11 @@ export default function Settings() {
           <Text className="menu-text">行程记录</Text>
           <Text className="menu-arrow">›</Text>
         </View>
+        <View className="menu-item" onClick={() => Taro.navigateTo({ url: '/pages/illness/index' })}>
+          <Text className="menu-icon">💊</Text>
+          <Text className="menu-text">当前病症</Text>
+          <Text className="menu-arrow">›</Text>
+        </View>
       </View>
 
       {/* VIP功能 - 资讯入口 */}

@@ -22,6 +22,7 @@ from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.trip import Trip, TripItem
+from app.models.illness import IllnessEpisode, IllnessUpdate
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
@@ -727,6 +728,26 @@ class ChatService:
         except Exception as e:
             logger.warning(f"获取行程数据失败: {e}")
 
+        # ── 当前病症 ──────────────────────────────────────────────────
+        try:
+            active_illnesses = self.db.query(IllnessEpisode).filter(
+                IllnessEpisode.user_id == user_id,
+                IllnessEpisode.status != "resolved",
+            ).order_by(IllnessEpisode.start_date.desc()).all()
+
+            if active_illnesses:
+                status_label = {"active": "发作中", "improving": "好转中"}
+                illness_lines = []
+                for ep in active_illnesses:
+                    days = (today - ep.start_date).days + 1
+                    label = status_label.get(ep.status, ep.status)
+                    illness_lines.append(
+                        f"  {ep.name}(id={ep.id}, {label}, 严重度{ep.severity}/10, 已{days}天)"
+                    )
+                parts.append("当前病症:\n" + "\n".join(illness_lines))
+        except Exception as e:
+            logger.warning(f"获取病症数据失败: {e}")
+
         if not parts:
             return ""
 
@@ -982,6 +1003,10 @@ class ChatService:
                     result = self._handle_supplement_action(user_id, action, today)
                 elif action_type == "symptom":
                     result = self._handle_symptom_action(user_id, action, today)
+                elif action_type == "illness_create":
+                    result = self._handle_illness_create(user_id, action, today)
+                elif action_type == "illness_update":
+                    result = self._handle_illness_update(user_id, action, today)
                 else:
                     logger.warning(f"未知活动类型: {action_type}")
                     continue
@@ -1346,6 +1371,88 @@ class ChatService:
             ChatConversation.id == conversation_id,
             ChatConversation.user_id == user_id
         ).first()
+
+    def _handle_illness_create(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """通过 AI 对话新建病症发作记录"""
+        name = action.get("name", "").strip()
+        if not name:
+            return None
+        severity = max(1, min(10, int(action.get("severity", 5))))
+        notes = action.get("notes", "")
+        start_date_str = action.get("start_date")
+        try:
+            from datetime import datetime as _dt
+            start_date = _dt.strptime(start_date_str, "%Y-%m-%d").date() if start_date_str else today
+        except Exception:
+            start_date = today
+
+        episode = IllnessEpisode(
+            user_id=user_id,
+            name=name,
+            start_date=start_date,
+            severity=severity,
+            status="active",
+            notes=notes or "通过健康顾问对话记录",
+        )
+        self.db.add(episode)
+        self.db.commit()
+        logger.info(f"用户{user_id} 病症发作: {name}, 严重度{severity}")
+        return {
+            "type": "illness_create", "status": "saved",
+            "message": f"🤒 {name}(严重度{severity}/10) 已记录，希望你早日康复！"
+        }
+
+    def _handle_illness_update(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """通过 AI 对话更新病症状态"""
+        episode_id = action.get("episode_id")
+        name = action.get("name", "").strip()
+
+        episode = None
+        if episode_id:
+            episode = self.db.query(IllnessEpisode).filter(
+                IllnessEpisode.id == episode_id,
+                IllnessEpisode.user_id == user_id,
+            ).first()
+        if not episode and name:
+            episode = self.db.query(IllnessEpisode).filter(
+                IllnessEpisode.user_id == user_id,
+                IllnessEpisode.name.ilike(f"%{name}%"),
+                IllnessEpisode.status != "resolved",
+            ).order_by(IllnessEpisode.start_date.desc()).first()
+
+        if not episode:
+            logger.warning(f"病症记录未找到: id={episode_id}, name={name}")
+            return None
+
+        new_status = action.get("status")
+        new_severity = action.get("severity")
+        notes = action.get("notes", "")
+
+        if new_severity is not None:
+            episode.severity = max(1, min(10, int(new_severity)))
+        if new_status:
+            episode.status = new_status
+            if new_status == "resolved" and not episode.end_date:
+                episode.end_date = today
+
+        update = IllnessUpdate(
+            episode_id=episode.id,
+            user_id=user_id,
+            update_date=today,
+            severity=episode.severity,
+            status=episode.status,
+            notes=notes or f"通过健康顾问对话更新",
+        )
+        self.db.add(update)
+        self.db.commit()
+
+        status_label = {"active": "发作中", "improving": "好转中", "resolved": "已痊愈"}
+        label = status_label.get(episode.status, episode.status)
+        msg = f"✅ {episode.name} 状态已更新：{label}，严重度{episode.severity}/10"
+        if episode.status == "resolved":
+            msg = f"🎉 {episode.name} 已痊愈！共持续{(today - episode.start_date).days + 1}天"
+        logger.info(f"用户{user_id} 病症更新: {episode.name} → {episode.status}")
+        return {"type": "illness_update", "status": "saved", "message": msg}
 
     def delete_conversation(self, user_id: int, conversation_id: int) -> bool:
         """删除对话"""

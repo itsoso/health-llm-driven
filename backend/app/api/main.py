@@ -54,6 +54,7 @@ from app.api import (
     vision,  # 视觉分析（颜值测试、图片识别）
     trip,  # 行程记录
     siri,  # Siri 快捷指令
+    illness,  # 当前病症追踪
 )
 
 api_router = APIRouter()
@@ -116,3 +117,4 @@ api_router.include_router(womens_health.router)  # 女性健康
 api_router.include_router(vision.router)  # 视觉分析（颜值测试、图片识别）
 api_router.include_router(trip.router)  # 行程记录
 api_router.include_router(siri.router)  # Siri 快捷指令
+api_router.include_router(illness.router)  # 当前病症追踪

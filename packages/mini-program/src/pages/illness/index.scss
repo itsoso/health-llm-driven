@@ -1,0 +1,284 @@
+$bg: #0F172A;
+$card: #1E293B;
+$card-dark: #172033;
+$white: #F8FAFC;
+$gray-300: #CBD5E1;
+$gray-400: #94A3B8;
+$gray-500: #64748B;
+$blue: #3B82F6;
+$green: #22C55E;
+$yellow: #EAB308;
+$red: #EF4444;
+$indigo: #6366F1;
+
+.illness-page {
+  min-height: 100vh;
+  background: $bg;
+  padding: 16px;
+  padding-bottom: 120px;
+}
+
+// ── 顶部栏 ──────────────────────────────
+.header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.header-title {
+  color: $white;
+  font-size: 36px;
+  font-weight: 700;
+}
+.add-btn {
+  background: $blue;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+// ── 分区标题 ────────────────────────────
+.section-title {
+  color: $gray-400;
+  font-size: 22px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 20px 0 10px;
+}
+
+// ── 病症卡片 ────────────────────────────
+.illness-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.illness-card {
+  background: $card;
+  border-radius: 12px;
+  padding: 16px;
+}
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.illness-name {
+  color: $white;
+  font-size: 30px;
+  font-weight: 700;
+  flex: 1;
+}
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 20px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-left: 8px;
+  &.active {
+    background: rgba(239, 68, 68, 0.15);
+    color: $red;
+  }
+  &.improving {
+    background: rgba(234, 179, 8, 0.15);
+    color: $yellow;
+  }
+  &.resolved {
+    background: rgba(34, 197, 94, 0.15);
+    color: $green;
+  }
+}
+
+.severity-bar-wrap {
+  margin-bottom: 8px;
+}
+.severity-label {
+  color: $gray-400;
+  font-size: 22px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.severity-bar {
+  height: 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.severity-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, $green, $yellow, $red);
+  transition: width 0.3s;
+}
+
+.card-meta {
+  color: $gray-500;
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+// ── 快捷操作按钮 ─────────────────────────
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.action-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 22px;
+  font-weight: 500;
+  &.improve {
+    background: rgba(234, 179, 8, 0.15);
+    color: $yellow;
+  }
+  &.resolve {
+    background: rgba(34, 197, 94, 0.15);
+    color: $green;
+  }
+  &.worsen {
+    background: rgba(239, 68, 68, 0.12);
+    color: $red;
+  }
+  &.detail {
+    background: rgba(59, 130, 246, 0.12);
+    color: $blue;
+  }
+  &.delete {
+    background: rgba(148, 163, 184, 0.1);
+    color: $gray-500;
+  }
+}
+
+// ── 空状态 ──────────────────────────────
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 0;
+}
+.empty-icon { font-size: 72px; margin-bottom: 16px; }
+.empty-text { color: $gray-500; font-size: 28px; }
+.empty-sub  { color: $gray-500; font-size: 22px; margin-top: 8px; }
+
+// ── 详情视图 ────────────────────────────
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.back-btn { color: $gray-400; font-size: 28px; padding: 8px; }
+.detail-title { color: $white; font-size: 34px; font-weight: 700; flex: 1; }
+
+.info-card {
+  background: $card;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.info-item { color: $gray-300; font-size: 24px; }
+.info-notes { color: $gray-400; font-size: 22px; margin-top: 8px; }
+
+.timeline-title {
+  color: $gray-400;
+  font-size: 22px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+}
+.update-item {
+  background: $card;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.update-dot { font-size: 20px; margin-top: 2px; }
+.update-content { flex: 1; }
+.update-date { color: $gray-400; font-size: 20px; }
+.update-text { color: $gray-300; font-size: 24px; margin-top: 2px; }
+
+// ── 新增表单 ────────────────────────────
+.form-section {
+  background: $card;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.form-title {
+  color: $white;
+  font-size: 28px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 16px;
+}
+.form-group { margin-bottom: 16px; }
+.form-label {
+  color: $gray-300;
+  font-size: 24px;
+  display: block;
+  margin-bottom: 8px;
+}
+.form-input {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 16px;
+  color: $white;
+  font-size: 26px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.severity-slider {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sev-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  color: $gray-400;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  &.selected {
+    background: $blue;
+    color: white;
+  }
+}
+.submit-btn {
+  background: linear-gradient(135deg, $blue 0%, $indigo 100%);
+  color: white;
+  text-align: center;
+  padding: 20px;
+  border-radius: 12px;
+  font-size: 28px;
+  font-weight: 600;
+  margin-top: 16px;
+  &.disabled { opacity: 0.5; }
+}
+
+// ── 加载 ────────────────────────────────
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+.loading-text { color: $gray-400; font-size: 28px; margin-top: 16px; }

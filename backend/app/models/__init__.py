@@ -55,6 +55,8 @@ from app.models.womens_health import MenstrualCycle, CycleSymptom
 from app.models.vision_usage import VisionUsageLog
 # 行程记录模型
 from app.models.trip import Trip, TripItem
+# 当前病症追踪模型
+from app.models.illness import IllnessEpisode, IllnessUpdate
 
 __all__ = [
     "User",
@@ -132,5 +134,8 @@ __all__ = [
     # 行程记录
     "Trip",
     "TripItem",
+    # 当前病症追踪
+    "IllnessEpisode",
+    "IllnessUpdate",
 ]
 
