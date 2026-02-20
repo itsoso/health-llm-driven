@@ -45,6 +45,7 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
     has_garmin_credentials: bool = False
     avatar_url: Optional[str] = None
+    kids_points: int = 0
     
     class Config:
         from_attributes = True
@@ -61,6 +62,16 @@ class PasswordChange(BaseModel):
     """修改密码"""
     old_password: str = Field(..., description="旧密码")
     new_password: str = Field(..., min_length=6, max_length=100, description="新密码")
+
+
+class KidsPointsUpdate(BaseModel):
+    """儿童模式积分更新"""
+    kids_points: int = Field(..., ge=0, le=1000000, description="儿童模式积分（总值）")
+
+
+class KidsPointsResponse(BaseModel):
+    """儿童模式积分响应"""
+    kids_points: int
 
 
 class GarminCredentialCreate(BaseModel):

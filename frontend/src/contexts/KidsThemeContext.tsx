@@ -333,7 +333,7 @@ export interface KidsThemeContextType {
 const KidsThemeContext = createContext<KidsThemeContextType | null>(null);
 
 export function KidsThemeProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const userId = user?.id || 'guest';
   const defaultSkinId = user?.gender === 'male' ? 'boy_default' : 'girl_default';
 
@@ -341,19 +341,42 @@ export function KidsThemeProvider({ children }: { children: ReactNode }) {
   const [points, setPoints] = useState<number>(0);
   const [unlockedSkins, setUnlockedSkins] = useState<string[]>(['boy_default', 'girl_default']);
 
+  const syncPointsToServer = useCallback(async (nextPoints: number) => {
+    if (!token || !user?.id) return;
+    try {
+      await fetch('/api/auth/me/kids-points', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ kids_points: nextPoints }),
+      });
+    } catch {
+      // Keep local state even if server sync is temporarily unavailable.
+    }
+  }, [token, user?.id]);
+
   useEffect(() => {
     const savedSkin = localStorage.getItem(`kids_skin_${userId}`);
     const savedPoints = localStorage.getItem(`kids_points_${userId}`);
     const savedUnlocked = localStorage.getItem(`kids_skins_${userId}`);
+    const dbPoints = typeof user?.kids_points === 'number' ? user.kids_points : 0;
+    const localPoints = savedPoints ? (parseInt(savedPoints) || 0) : 0;
+    const mergedPoints = Math.max(dbPoints, localPoints);
 
     setCurrentSkinId(savedSkin || defaultSkinId);
-    setPoints(savedPoints ? (parseInt(savedPoints) || 0) : 0);
+    setPoints(mergedPoints);
+    localStorage.setItem(`kids_points_${userId}`, mergedPoints.toString());
     if (savedUnlocked) {
       try { setUnlockedSkins(JSON.parse(savedUnlocked)); } catch { /* ignore */ }
     } else {
       setUnlockedSkins(['boy_default', 'girl_default']);
     }
-  }, [userId, defaultSkinId]);
+    if (mergedPoints !== dbPoints) {
+      void syncPointsToServer(mergedPoints);
+    }
+  }, [userId, defaultSkinId, user?.kids_points, syncPointsToServer]);
 
   const theme = SKINS.find(s => s.id === currentSkinId) || SKINS.find(s => s.id === defaultSkinId)!;
 
@@ -366,9 +389,10 @@ export function KidsThemeProvider({ children }: { children: ReactNode }) {
     setPoints(prev => {
       const next = prev + pts;
       localStorage.setItem(`kids_points_${userId}`, next.toString());
+      void syncPointsToServer(next);
       return next;
     });
-  }, [userId]);
+  }, [userId, syncPointsToServer]);
 
   const purchaseSkin = useCallback((skinId: string): boolean => {
     const skin = SKINS.find(s => s.id === skinId);
@@ -383,9 +407,10 @@ export function KidsThemeProvider({ children }: { children: ReactNode }) {
     setUnlockedSkins(newUnlocked);
     localStorage.setItem(`kids_points_${userId}`, newPoints.toString());
     localStorage.setItem(`kids_skins_${userId}`, JSON.stringify(newUnlocked));
+    void syncPointsToServer(newPoints);
 
     return true;
-  }, [points, unlockedSkins, userId]);
+  }, [points, unlockedSkins, userId, syncPointsToServer]);
 
   return (
     <KidsThemeContext.Provider value={{ theme, currentSkinId, points, unlockedSkins, setSkin, addPoints, purchaseSkin }}>
