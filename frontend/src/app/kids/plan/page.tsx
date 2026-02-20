@@ -228,7 +228,7 @@ export default function KidsPlanPage() {
                   if (e.key === 'Escape') setShowModal(false);
                 }}
                 placeholder="比如：读书30分钟"
-                className={`flex-1 px-4 py-3 border-2 ${theme.inputBorder} rounded-2xl text-lg focus:outline-none ${theme.inputFocus}`}
+                className={`flex-1 px-4 py-3 border-2 ${theme.inputBorder} rounded-2xl text-lg text-gray-800 placeholder-gray-400 focus:outline-none ${theme.inputFocus}`}
                 autoFocus
                 maxLength={20}
               />
