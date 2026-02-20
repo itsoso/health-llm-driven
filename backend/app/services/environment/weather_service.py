@@ -356,6 +356,10 @@ class WeatherService:
                     "range": "cn",  # 限定中国
                 }
                 response = await client.get(url, params=params, timeout=10)
+                if response.status_code != 200:
+                    logger.info(f"GeoAPI HTTP {response.status_code}，城市 '{city}' 将使用备用映射")
+                    self._geo_cache[city] = None
+                    return None
                 data = response.json()
 
                 if data.get("code") == "200" and data.get("location"):
@@ -714,6 +718,12 @@ class WeatherService:
                 }
 
                 response = await client.get(url, params=params, timeout=10)
+
+                # 处理HTTP错误（如403无权限）
+                if response.status_code != 200:
+                    logger.info(f"和风天气空气质量API HTTP {response.status_code}，将使用备用数据源")
+                    return {"available": False, "error": f"HTTP {response.status_code}"}
+
                 data = response.json()
 
                 if data.get("code") == "200":
@@ -740,7 +750,7 @@ class WeatherService:
                     self._set_cache(cache_key, result)
                     return result
                 else:
-                    logger.warning(f"和风天气空气质量API返回错误: code={data.get('code')}")
+                    logger.info(f"和风天气空气质量API返回: code={data.get('code')}，将使用备用数据源")
                     return {"available": False, "error": f"API error: {data.get('code')}"}
 
         except Exception as e:
