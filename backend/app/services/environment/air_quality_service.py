@@ -15,33 +15,44 @@ logger = logging.getLogger(__name__)
 class AirQualityService:
     """
     空气质量数据服务
-    
+
     支持:
     - 实时 AQI 查询
     - PM2.5、PM10 等污染物数据
     - 健康建议生成
-    
+
     数据源优先级:
-    1. aqicn.org (官方监测站数据，更准确)
-    2. Open-Meteo (全球模型估算，作为备用)
+    1. 和风天气 Air Quality API v1 (精度 1x1km，含健康建议)
+    2. aqicn.org (官方监测站数据)
+    3. Open-Meteo (全球模型估算，作为备用)
     """
-    
-    # aqicn.org API 
+
+    # aqicn.org API
     AQICN_URL = "https://api.waqi.info/feed"
-    
+
     # Open-Meteo Air Quality API (免费，作为备用)
     OPENMETEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
-    
+
     def __init__(self):
         self._cache: Dict[str, Any] = {}
         self._cache_time: Dict[str, datetime] = {}
         self._cache_duration = timedelta(minutes=30)  # 缓存30分钟
-        
+
         # 从配置读取 API Token
         from app.config import settings
         self.aqicn_token = settings.aqicn_api_token or "demo"
-        
-        if self.aqicn_token == "demo":
+
+        # 和风天气 Air Quality v1 配置
+        self.qweather_api_key = settings.qweather_api_key
+        qweather_host = settings.qweather_api_host
+        if qweather_host:
+            self.qweather_air_base_url = f"https://{qweather_host}/airquality/v1"
+        else:
+            self.qweather_air_base_url = "https://api.qweather.com/airquality/v1"
+
+        if self.qweather_api_key:
+            logger.info(f"✅ 空气质量服务初始化完成 (主数据源: 和风天气 Air Quality v1, host: {qweather_host or 'api.qweather.com'})")
+        elif self.aqicn_token == "demo":
             logger.warning("⚠️ 使用 aqicn.org demo token，数据可能不准确。建议配置 AQICN_API_TOKEN 环境变量")
         else:
             logger.info("✅ 空气质量服务初始化完成 (使用正式 API Token)")
@@ -84,7 +95,17 @@ class AirQualityService:
         if cached:
             return cached
         
-        # 优先使用 aqicn.org (官方监测站数据)
+        # 优先使用和风天气 Air Quality v1
+        if self.qweather_api_key:
+            try:
+                result = await self._get_qweather_aqi(lat, lon)
+                if result.get("available"):
+                    self._set_cache(cache_key, result)
+                    return result
+            except Exception as e:
+                logger.warning(f"和风天气 Air Quality v1 获取失败: {e}，尝试 aqicn.org")
+
+        # 回退到 aqicn.org (官方监测站数据)
         try:
             result = await self._get_aqicn_aqi(city, lat, lon)
             if result.get("available"):
@@ -92,7 +113,7 @@ class AirQualityService:
                 return result
         except Exception as e:
             logger.warning(f"aqicn.org 获取失败: {e}，尝试 Open-Meteo")
-        
+
         # 回退到 Open-Meteo
         try:
             result = await self._get_openmeteo_aqi(lat, lon)
@@ -102,6 +123,77 @@ class AirQualityService:
             logger.error(f"获取空气质量数据失败: {e}")
             return self._get_default_aqi()
     
+    async def _get_qweather_aqi(self, lat: float, lon: float) -> Dict[str, Any]:
+        """
+        使用和风天气 Air Quality API v1 获取实时空气质量
+
+        端点: /airquality/v1/current/{latitude}/{longitude}
+        认证: Authorization: Bearer {api_key}
+        精度: 1x1 公里
+        """
+        url = f"{self.qweather_air_base_url}/current/{lat:.2f}/{lon:.2f}"
+        headers = {"X-QW-Api-Key": self.qweather_api_key}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 403:
+                logger.warning("和风天气 Air Quality v1 返回 403，当前订阅无空气质量权限")
+                return {"available": False, "reason": "no_permission"}
+
+            response.raise_for_status()
+            data = response.json()
+
+        indexes = data.get("indexes", [])
+        pollutants = data.get("pollutants", [])
+
+        if not indexes:
+            return {"available": False}
+
+        # 优先取中国标准 cn-mee，其次取第一个
+        index = next((i for i in indexes if i.get("code") == "cn-mee"), indexes[0])
+
+        aqi = int(index.get("aqi", 0))
+        category = index.get("category", "")
+        health = index.get("health", {})
+        advice = health.get("advice", {})
+        primary_pollutant = index.get("primaryPollutant") or {}
+
+        # 解析污染物浓度
+        def _get_pollutant(code: str) -> float:
+            p = next((p for p in pollutants if p.get("code") == code), None)
+            return p["concentration"]["value"] if p else 0.0
+
+        pm25 = _get_pollutant("pm2p5")
+        pm10 = _get_pollutant("pm10")
+        o3 = _get_pollutant("o3")
+        no2 = _get_pollutant("no2")
+        so2 = _get_pollutant("so2")
+        co = _get_pollutant("co")
+
+        logger.info(f"和风天气 Air Quality v1: AQI={aqi}, 类别={category}, PM2.5={pm25}")
+
+        return {
+            "available": True,
+            "source": "qweather-v1",
+            "aqi": aqi,
+            "aqi_level": self._aqi_to_level(aqi),
+            "aqi_description": category or self._aqi_to_description(aqi),
+            "primary_pollutant": primary_pollutant.get("name", ""),
+            "pm25": pm25,
+            "pm10": pm10,
+            "o3": o3,
+            "no2": no2,
+            "so2": so2,
+            "co": co,
+            "update_time": data.get("metadata", {}).get("tag", ""),
+            "health_effect": health.get("effect", ""),
+            "advice_general": advice.get("generalPopulation", ""),
+            "advice_sensitive": advice.get("sensitivePopulation", ""),
+            "health_implications": health.get("effect") or self._get_health_implications(aqi),
+            "exercise_advice": self._get_exercise_advice(aqi),
+        }
+
     async def _get_aqicn_aqi(self, city: str, lat: float, lon: float) -> Dict[str, Any]:
         """
         使用 aqicn.org API 获取空气质量 (官方监测站数据)
