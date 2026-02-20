@@ -21,7 +21,8 @@ export default function KidsLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="健康小助手" />
-        <link rel="apple-touch-icon" href="/kids-icon-192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/kids-apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/kids-icon-512.png" />
         <meta name="theme-color" content={isBoy ? '#3b82f6' : '#a855f7'} />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </head>
