@@ -986,67 +986,96 @@ function SettingsContent() {
           {showQuickRecordSection && (
             <div className="mt-4 space-y-4 text-gray-700">
               <p className="text-gray-600 text-sm">
-                通过 iPhone 的「轻点背面」或「辅助触控」等方式一键唤起快捷指令，说出刚吃过的食物即可自动记录到本应用的饮食记录中。
+                通过 iPhone 快捷指令，一键语音记录饮食、运动、打卡等健康数据。说出刚做过的事即可自动识别并保存。
               </p>
 
-              <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                <h3 className="font-semibold text-amber-900 mb-2">前置条件</h3>
-                <ul className="list-disc list-inside text-sm text-amber-800 space-y-1">
-                  <li>iPhone 8 或更新机型，系统 iOS 14 及以上</li>
-                  <li>已在「快捷指令」App 中创建并配置好「记录饮食」快捷指令（调用本应用接口并传入 API Key 或登录态）</li>
-                </ul>
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="font-semibold text-gray-800">方式一：辅助触控浮钮（推荐）</h3>
-                <p className="text-sm text-gray-600">
-                  比背面双击更方便：浮钮位置固定、点击即触发，不依赖屏幕是否点亮；息屏时也能先点浮钮再听写。
+              {/* 第一步：安装快捷指令 */}
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <h3 className="font-semibold text-blue-900 mb-2">第一步：安装快捷指令</h3>
+                <p className="text-sm text-blue-800 mb-3">
+                  点击下方链接，在 iPhone 上用 Safari 打开，系统会自动跳转到「快捷指令」App 完成添加。
                 </p>
-                <ol className="list-decimal list-inside text-sm space-y-2 text-gray-600">
-                  <li>打开 <strong>设置</strong> → <strong>辅助功能</strong> → <strong>触控</strong> → <strong>辅助触控</strong>，开启辅助触控</li>
-                  <li>在「自定顶层菜单」或「轻点两下」中，将其中一项设为运行你的「记录饮食」快捷指令</li>
-                  <li>使用时点击屏幕上的浮钮（或双击浮钮），然后按提示说出饮食内容</li>
-                </ol>
+                <a
+                  href="https://www.icloud.com/shortcuts/11a1dc55510643f18559eab1909012a3"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
+                  获取「健康记录」快捷指令
+                </a>
               </div>
 
-              <div className="space-y-3">
-                <h3 className="font-semibold text-gray-800">方式二：轻点背面</h3>
-                <ol className="list-decimal list-inside text-sm space-y-2 text-gray-600">
-                  <li>打开 <strong>设置</strong> → <strong>辅助功能</strong> → <strong>触控</strong> → <strong>轻点背面</strong></li>
-                  <li>选择「轻点两下」或「轻点三下」</li>
-                  <li>在列表中选择 <strong>快捷指令</strong> → 你的「记录饮食」快捷指令</li>
-                  <li>使用时在手机背面轻点两下（或三下）触发，再按提示说出「刚才吃了什么」</li>
+              {/* 第二步：配置 Token */}
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                <h3 className="font-semibold text-green-900 mb-2">第二步：配置登录凭证</h3>
+                <p className="text-sm text-green-800 mb-2">
+                  快捷指令需要你的 Token 才能将数据写入你的账户。首次运行时会提示输入：
+                </p>
+                <ol className="list-decimal list-inside text-sm text-green-800 space-y-1">
+                  <li>在本页下方「API Key 管理」创建一个 Key，或直接使用浏览器中的登录 Token</li>
+                  <li>运行快捷指令时，将 Token 粘贴到提示框中（只需设置一次）</li>
                 </ol>
-                <div className="bg-amber-50 rounded-lg p-3 border border-amber-200 mt-2">
-                  <h4 className="font-medium text-amber-900 text-sm mb-1">背面双击的不足</h4>
-                  <ul className="list-disc list-inside text-xs text-amber-800 space-y-0.5">
-                    <li>锁屏且<strong>息屏</strong>时经常不触发或不稳定，需先点亮屏幕再双击背面才更可靠</li>
-                    <li>听写步骤多数情况下仍需解锁才能完成</li>
-                    <li>厚手机壳可能影响背面敲击识别</li>
-                    <li>手持姿势或放桌面时容易误触</li>
+                {token && (
+                  <div className="mt-3">
+                    <p className="text-xs text-green-700 mb-1">当前登录 Token（点击复制）：</p>
+                    <div
+                      className="bg-white rounded p-2 text-xs font-mono text-green-900 break-all cursor-pointer border border-green-300 hover:bg-green-100 transition-colors"
+                      onClick={() => {
+                        navigator.clipboard.writeText(token);
+                        alert('Token 已复制到剪贴板');
+                      }}
+                    >
+                      {token.slice(0, 30)}...{token.slice(-10)}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 第三步：设置触发方式 */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-800">第三步：设置触发方式</h3>
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700 text-sm">方式一：辅助触控浮钮（推荐）</h4>
+                  <ol className="list-decimal list-inside text-sm space-y-1 text-gray-600">
+                    <li><strong>设置</strong> → <strong>辅助功能</strong> → <strong>触控</strong> → <strong>辅助触控</strong>，开启</li>
+                    <li>在「自定顶层菜单」或「轻点两下」中，选择运行「健康记录」快捷指令</li>
+                    <li>使用时点击浮钮，按提示说出内容即可</li>
+                  </ol>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700 text-sm">方式二：轻点背面</h4>
+                  <ol className="list-decimal list-inside text-sm space-y-1 text-gray-600">
+                    <li><strong>设置</strong> → <strong>辅助功能</strong> → <strong>触控</strong> → <strong>轻点背面</strong></li>
+                    <li>选择「轻点两下」→ 选择「健康记录」快捷指令</li>
+                  </ol>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700 text-sm">其他方式</h4>
+                  <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                    <li><strong>控制中心</strong>：下滑即可触发</li>
+                    <li><strong>主屏幕小组件</strong>：桌面一键运行</li>
+                    <li><strong>Pro 操作按钮</strong>：iPhone 15 Pro+ 侧边按钮直接触发</li>
                   </ul>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <h3 className="font-semibold text-gray-800">其他方式</h3>
-                <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                  <li><strong>控制中心</strong>：将「记录饮食」快捷指令添加到控制中心，下滑后点击即可</li>
-                  <li><strong>主屏幕小组件</strong>：在桌面添加「快捷指令」小组件，选择「记录饮食」一键运行</li>
-                  <li><strong>Pro 机型操作按钮</strong>：iPhone 15 Pro 及更新 Pro 系列可将侧边操作按钮设为运行该快捷指令</li>
-                </ul>
-              </div>
-
+              {/* 支持的语音指令 */}
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <h3 className="font-semibold text-gray-800 mb-2">快捷指令如何配置</h3>
+                <h3 className="font-semibold text-gray-800 mb-2">支持的语音指令</h3>
                 <p className="text-sm text-gray-600 mb-2">
-                  在「快捷指令」App 中新建快捷指令，建议步骤：
+                  不止饮食，还支持运动、打卡、鼻炎等各类健康记录：
                 </p>
-                <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1">
-                  <li>添加「听写」或「要求输入」获取你所说的饮食内容</li>
-                  <li>使用「获取 URL 内容」或「请求 URL」向本应用的饮食记录接口发送上述文本（需在请求头中携带 API Key，可在下方「API Key 管理」中创建）</li>
-                  <li>可选：解析返回结果并用「朗读」播报「已记录：xxx 卡路里」等</li>
-                </ol>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>「吃了两个鸡蛋、一碗米饭、炒青菜」→ 自动记录饮食和营养</li>
+                  <li>「刚跑步40分钟」→ 记录运动</li>
+                  <li>「做了50个俯卧撑」→ 打卡记录</li>
+                  <li>「洗了鼻子」→ 记录鼻炎护理</li>
+                  <li>「吃了维生素D」→ 记录补剂</li>
+                  <li>「喝了一杯水」→ 记录饮水</li>
+                </ul>
               </div>
             </div>
           )}
