@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useKidsTheme } from '@/contexts/KidsThemeContext';
 
 interface KidsTabBarProps {
   currentPath: string;
-  isBoy?: boolean;
 }
 
 const TABS = [
@@ -16,20 +16,17 @@ const TABS = [
   { href: '/kids/me', label: '我的', icon: '👤' },
 ];
 
-export default function KidsTabBar({ currentPath, isBoy = false }: KidsTabBarProps) {
+export default function KidsTabBar({ currentPath }: KidsTabBarProps) {
+  const { theme } = useKidsTheme();
+
   const isActive = (href: string) => {
     if (href === '/kids') return currentPath === '/kids';
     return currentPath.startsWith(href);
   };
 
-  const activeBg = isBoy ? 'bg-blue-100' : 'bg-pink-100';
-  const activeText = isBoy ? 'text-blue-600' : 'text-pink-600';
-  const navBorder = isBoy ? 'border-blue-100' : 'border-pink-100';
-  const hoverBg = isBoy ? 'hover:bg-blue-50' : 'hover:bg-pink-50';
-
   return (
     <nav
-      className={`flex-shrink-0 bg-white/90 backdrop-blur-xl border-t-2 ${navBorder} shadow-lg`}
+      className={`flex-shrink-0 bg-white/90 backdrop-blur-xl border-t-2 ${theme.navBorder} shadow-lg`}
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <div className="flex justify-around items-center h-20 max-w-2xl mx-auto px-2">
@@ -40,11 +37,11 @@ export default function KidsTabBar({ currentPath, isBoy = false }: KidsTabBarPro
               key={tab.href}
               href={tab.href}
               className={`flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-[56px] px-1 rounded-2xl transition-all duration-200 ${
-                active ? `${activeBg} scale-110 shadow-md` : `${hoverBg} active:scale-95`
+                active ? `${theme.tabActiveBg} scale-110 shadow-md` : `${theme.hoverBg} active:scale-95`
               }`}
             >
               <span className="text-2xl">{tab.icon}</span>
-              <span className={`text-xs font-bold ${active ? activeText : 'text-gray-500'}`}>
+              <span className={`text-xs font-bold ${active ? theme.tabActiveText : 'text-gray-500'}`}>
                 {tab.label}
               </span>
             </Link>

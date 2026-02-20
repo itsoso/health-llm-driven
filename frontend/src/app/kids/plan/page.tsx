@@ -9,6 +9,8 @@ interface PlanItem {
   emoji: string;
   text: string;
   done: boolean;
+  startTime?: string;
+  endTime?: string;
 }
 
 const EMOJI_OPTIONS = [
@@ -17,17 +19,41 @@ const EMOJI_OPTIONS = [
   '🍱', '🎮', '🧩', '🌈', '✏️', '🎭',
 ];
 
+const DURATION_OPTIONS = [
+  { label: '15分钟', value: 15 },
+  { label: '30分钟', value: 30 },
+  { label: '45分钟', value: 45 },
+  { label: '1小时', value: 60 },
+  { label: '1.5小时', value: 90 },
+  { label: '2小时', value: 120 },
+];
+
+function computeEndTime(start: string, durationMinutes: number): string {
+  if (!start || !durationMinutes) return '';
+  const [h, m] = start.split(':').map(Number);
+  const total = h * 60 + m + durationMinutes;
+  const endH = Math.floor(total / 60) % 24;
+  const endM = total % 60;
+  return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+}
+
 export default function KidsPlanPage() {
   const { user } = useAuth();
-  const theme = useKidsTheme();
+  const { theme, points, addPoints } = useKidsTheme();
+  const userId = user?.id || 'guest';
   const today = new Date().toISOString().split('T')[0];
-  const storageKey = `kids_plan_${user?.id || 'guest'}_${today}`;
+  const storageKey = `kids_plan_${userId}_${today}`;
 
   const [items, setItems] = useState<PlanItem[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [modalEmoji, setModalEmoji] = useState('📝');
   const [modalText, setModalText] = useState('');
+  const [modalHasTime, setModalHasTime] = useState(false);
+  const [modalStartTime, setModalStartTime] = useState('');
+  const [modalDuration, setModalDuration] = useState(0);
+  const [showCopied, setShowCopied] = useState(false);
+  const [pointsToast, setPointsToast] = useState(0);
 
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
@@ -35,6 +61,42 @@ export default function KidsPlanPage() {
       try { setItems(JSON.parse(saved)); } catch { /* ignore */ }
     }
   }, [storageKey]);
+
+  // Award points for yesterday on first open of the day
+  useEffect(() => {
+    const awardKey = `kids_plan_awarded_${userId}`;
+    const lastAwarded = localStorage.getItem(awardKey);
+    if (lastAwarded === today) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayKey = `kids_plan_${userId}_${yesterdayStr}`;
+
+    try {
+      const savedYesterday = localStorage.getItem(yesterdayKey);
+      if (savedYesterday) {
+        const yesterdayItems: PlanItem[] = JSON.parse(savedYesterday);
+        if (yesterdayItems.length > 0) {
+          const done = yesterdayItems.filter(i => i.done).length;
+          const rate = done / yesterdayItems.length;
+          let pts = 0;
+          if (rate >= 1.0) pts = 5;
+          else if (rate >= 0.9) pts = 4;
+          else if (rate >= 0.8) pts = 3;
+          else if (rate >= 0.7) pts = 2;
+          else if (rate >= 0.6) pts = 1;
+          if (pts > 0) {
+            addPoints(pts);
+            setPointsToast(pts);
+            setTimeout(() => setPointsToast(0), 3000);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    localStorage.setItem(awardKey, today);
+  }, [userId, today, addPoints]);
 
   const saveItems = useCallback((newItems: PlanItem[]) => {
     setItems(newItems);
@@ -53,6 +115,9 @@ export default function KidsPlanPage() {
     setEditingId(null);
     setModalEmoji('📝');
     setModalText('');
+    setModalHasTime(false);
+    setModalStartTime('');
+    setModalDuration(0);
     setShowModal(true);
   };
 
@@ -60,19 +125,42 @@ export default function KidsPlanPage() {
     setEditingId(item.id);
     setModalEmoji(item.emoji);
     setModalText(item.text);
+    setModalHasTime(!!item.startTime);
+    setModalStartTime(item.startTime || '');
+    if (item.startTime && item.endTime) {
+      const [sh, sm] = item.startTime.split(':').map(Number);
+      const [eh, em] = item.endTime.split(':').map(Number);
+      const dur = (eh * 60 + em) - (sh * 60 + sm);
+      setModalDuration(dur > 0 ? dur : 0);
+    } else {
+      setModalDuration(0);
+    }
     setShowModal(true);
   };
 
   const handleSave = () => {
     if (!modalText.trim()) return;
+    const startTime = modalHasTime && modalStartTime ? modalStartTime : undefined;
+    const endTime = startTime && modalDuration > 0 ? computeEndTime(startTime, modalDuration) : undefined;
+    const updates = { emoji: modalEmoji, text: modalText.trim(), startTime, endTime };
+
     if (editingId) {
-      saveItems(items.map(item =>
-        item.id === editingId ? { ...item, emoji: modalEmoji, text: modalText.trim() } : item
-      ));
+      saveItems(items.map(item => item.id === editingId ? { ...item, ...updates } : item));
     } else {
-      saveItems([...items, { id: Date.now().toString(), emoji: modalEmoji, text: modalText.trim(), done: false }]);
+      saveItems([...items, { id: Date.now().toString(), ...updates, done: false }]);
     }
     setShowModal(false);
+  };
+
+  const copyToTomorrow = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const tomorrowKey = `kids_plan_${userId}_${tomorrowStr}`;
+    const tomorrowItems = items.map((item, idx) => ({ ...item, id: `${Date.now()}_${idx}`, done: false }));
+    localStorage.setItem(tomorrowKey, JSON.stringify(tomorrowItems));
+    setShowCopied(true);
+    setTimeout(() => setShowCopied(false), 2500);
   };
 
   const doneCount = items.filter(i => i.done).length;
@@ -96,7 +184,10 @@ export default function KidsPlanPage() {
             <div className={`text-3xl font-bold ${doneCount === total && total > 0 ? 'text-green-500' : theme.accent}`}>
               {doneCount}/{total}
             </div>
-            <div className="text-gray-400 text-xs">已完成</div>
+            <div className="flex items-center justify-end gap-1 mt-0.5">
+              <span className="text-amber-400 text-sm font-bold">⭐{points}</span>
+              <span className="text-gray-400 text-xs">积分</span>
+            </div>
           </div>
         </div>
 
@@ -142,18 +233,25 @@ export default function KidsPlanPage() {
                   {item.done && <span className="text-xl font-bold">✓</span>}
                 </button>
 
-                {/* 表情 + 文字（点击编辑） */}
+                {/* 表情 + 文字 + 时间（点击编辑） */}
                 <button
                   onClick={() => !item.done && openEdit(item)}
                   disabled={item.done}
-                  className="flex-1 flex items-center gap-3 text-left"
+                  className="flex-1 flex items-start gap-3 text-left min-w-0"
                 >
                   <span className="text-3xl flex-shrink-0">{item.emoji}</span>
-                  <span className={`text-lg font-medium leading-snug ${
-                    item.done ? 'line-through text-gray-400' : 'text-gray-700'
-                  }`}>
-                    {item.text}
-                  </span>
+                  <div className="flex flex-col min-w-0">
+                    <span className={`text-lg font-medium leading-snug ${
+                      item.done ? 'line-through text-gray-400' : 'text-gray-700'
+                    }`}>
+                      {item.text}
+                    </span>
+                    {(item.startTime || item.endTime) && (
+                      <span className="text-xs text-gray-400 mt-0.5">
+                        ⏰ {item.startTime}{item.endTime ? ` → ${item.endTime}` : ''}
+                      </span>
+                    )}
+                  </div>
                 </button>
 
                 {/* 删除按钮 */}
@@ -178,21 +276,48 @@ export default function KidsPlanPage() {
         </div>
       </div>
 
-      {/* 添加按钮 */}
+      {/* 底部按钮区 */}
       <div className={`px-6 py-4 bg-white/80 backdrop-blur-sm border-t-2 ${theme.navBorder} flex-shrink-0`}>
-        <button
-          onClick={openAdd}
-          className={`w-full max-w-2xl mx-auto flex items-center justify-center gap-2 py-4 rounded-2xl bg-gradient-to-r ${theme.btnGrad} text-white text-xl font-bold shadow-lg hover:shadow-xl active:scale-95 transition-all`}
-        >
-          <span className="text-2xl font-light">+</span>
-          添加计划
-        </button>
+        <div className="max-w-2xl mx-auto flex gap-3">
+          {items.length > 0 && (
+            <button
+              onClick={copyToTomorrow}
+              className={`flex items-center justify-center gap-2 px-4 py-4 rounded-2xl border-2 ${theme.navBorder} text-gray-600 font-bold hover:bg-gray-50 active:scale-95 transition-all flex-shrink-0 text-sm`}
+            >
+              <span>📋</span>
+              <span>复制到明天</span>
+            </button>
+          )}
+          <button
+            onClick={openAdd}
+            className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-gradient-to-r ${theme.btnGrad} text-white text-xl font-bold shadow-lg hover:shadow-xl active:scale-95 transition-all`}
+          >
+            <span className="text-2xl font-light">+</span>
+            添加计划
+          </button>
+        </div>
       </div>
+
+      {/* 复制到明天 Toast */}
+      {showCopied && (
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[300] bg-black/70 text-white px-6 py-4 rounded-2xl text-xl font-bold pointer-events-none">
+          📋 已复制到明天
+        </div>
+      )}
+
+      {/* 积分奖励 Toast */}
+      {pointsToast > 0 && (
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[300] bg-black/70 text-white px-8 py-5 rounded-2xl text-center pointer-events-none">
+          <div className="text-5xl mb-2">⭐</div>
+          <div className="text-2xl font-bold">获得 {pointsToast} 积分！</div>
+          <div className="text-sm opacity-80 mt-1">昨日计划完成奖励</div>
+        </div>
+      )}
 
       {/* 添加/编辑弹窗 */}
       {showModal && (
         <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/30 px-0 sm:px-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl w-full sm:max-w-sm">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl w-full sm:max-w-sm max-h-[90vh] overflow-y-auto">
             <h3 className={`text-2xl font-bold ${theme.accent} text-center mb-5`}>
               {editingId ? '✏️ 修改计划' : '➕ 添加计划'}
             </h3>
@@ -217,7 +342,7 @@ export default function KidsPlanPage() {
 
             {/* 文字输入 */}
             <p className="text-sm text-gray-500 mb-2 font-medium">计划内容：</p>
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <span className="text-3xl flex-shrink-0">{modalEmoji}</span>
               <input
                 type="text"
@@ -232,6 +357,68 @@ export default function KidsPlanPage() {
                 autoFocus
                 maxLength={20}
               />
+            </div>
+
+            {/* 时间设置 */}
+            <div className="mb-5">
+              <button
+                onClick={() => {
+                  setModalHasTime(!modalHasTime);
+                  if (modalHasTime) { setModalStartTime(''); setModalDuration(0); }
+                }}
+                className="flex items-center gap-2 text-sm font-medium text-gray-600 mb-3"
+              >
+                <span className={`w-5 h-5 rounded-md flex items-center justify-center border-2 transition-all ${
+                  modalHasTime
+                    ? `bg-gradient-to-br ${theme.btnGrad} border-transparent`
+                    : 'border-gray-300'
+                }`}>
+                  {modalHasTime && <span className="text-white text-xs font-bold">✓</span>}
+                </span>
+                ⏰ 设置时间
+              </button>
+
+              {modalHasTime && (
+                <div className="space-y-3 pl-1">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-500 w-14 flex-shrink-0">开始时间</span>
+                    <input
+                      type="time"
+                      value={modalStartTime}
+                      onChange={e => setModalStartTime(e.target.value)}
+                      className={`flex-1 px-3 py-2 border-2 ${theme.inputBorder} rounded-xl text-gray-800 focus:outline-none ${theme.inputFocus}`}
+                    />
+                  </div>
+
+                  <div>
+                    <span className="text-sm text-gray-500 block mb-2">持续时长</span>
+                    <div className="flex gap-2 flex-wrap">
+                      {DURATION_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setModalDuration(modalDuration === opt.value ? 0 : opt.value)}
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all active:scale-95 ${
+                            modalDuration === opt.value
+                              ? `bg-gradient-to-r ${theme.btnGrad} text-white shadow-sm`
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {modalStartTime && modalDuration > 0 && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-500 w-14 flex-shrink-0">结束时间</span>
+                      <span className={`text-lg font-bold ${theme.accent}`}>
+                        {computeEndTime(modalStartTime, modalDuration)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 操作按钮 */}

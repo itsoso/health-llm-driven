@@ -17,7 +17,7 @@ const KIDS_QUICK_QUESTIONS = [
 
 export default function KidsChatPage() {
   const { user } = useAuth();
-  const t = useKidsTheme();
+  const { theme: t } = useKidsTheme();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
