@@ -46,7 +46,7 @@ async def get_weather(
         if profile and profile.city:
             city = profile.city
         else:
-            city = "北京"  # 默认城市
+            city = "杭州"  # 默认城市
     
     weather = await weather_service.get_current_weather(city, lat, lon)
     exercise_advice = weather_service.get_exercise_advice(weather)
@@ -74,7 +74,7 @@ async def get_weather_forecast(
         if profile and profile.city:
             city = profile.city
         else:
-            city = "北京"
+            city = "杭州"
     
     forecast = await weather_service.get_weather_forecast(city, lat, lon, days)
     return forecast
@@ -98,9 +98,13 @@ async def get_air_quality(
         if profile and profile.city:
             city = profile.city
         else:
-            city = "北京"
+            city = "杭州"
     
-    aqi = await air_quality_service.get_air_quality(city, lat, lon)
+    # 优先使用和风天气空气质量API
+    aqi = await weather_service.get_air_quality(city, lat, lon)
+    if not aqi.get("available"):
+        # 回退到 AQICN / Open-Meteo
+        aqi = await air_quality_service.get_air_quality(city, lat, lon)
     return aqi
 
 
@@ -124,7 +128,7 @@ async def get_environment_advice(
         if profile and profile.city:
             city = profile.city
         else:
-            city = "北京"
+            city = "杭州"
     
     # 获取用户的慢性病列表
     user_conditions = []
@@ -158,7 +162,7 @@ async def get_morning_briefing(
         if profile and profile.city:
             city = profile.city
         else:
-            city = "北京"
+            city = "杭州"
     
     user_conditions = []
     if profile:
@@ -191,7 +195,7 @@ async def get_exercise_suitability(
         if profile and profile.city:
             city = profile.city
         else:
-            city = "北京"
+            city = "杭州"
     
     user_conditions = profile.chronic_conditions if profile else []
     

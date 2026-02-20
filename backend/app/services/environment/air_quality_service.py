@@ -335,7 +335,9 @@ class AirQualityService:
             "西安": (34.3416, 108.9398),
             "重庆": (29.4316, 106.9123),
         }
-        return city_coords.get(city, (39.9042, 116.4074))
+        if city not in city_coords:
+            logger.warning(f"城市 '{city}' 不在空气质量坐标映射中，默认使用杭州坐标")
+        return city_coords.get(city, (30.2741, 120.1551))  # 默认杭州
     
     def _get_default_aqi(self) -> Dict[str, Any]:
         """返回默认空气质量数据"""

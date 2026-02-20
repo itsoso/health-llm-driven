@@ -49,7 +49,10 @@ class EnvironmentAdvisor:
         
         # 获取天气和空气质量数据
         weather_data = await self.weather.get_current_weather(city, lat, lon)
-        aqi_data = await self.air_quality.get_air_quality(city, lat, lon)
+        # 优先使用和风天气空气质量API，失败回退到AQICN/Open-Meteo
+        aqi_data = await self.weather.get_air_quality(city, lat, lon)
+        if not aqi_data.get("available"):
+            aqi_data = await self.air_quality.get_air_quality(city, lat, lon)
         
         # 生成基础运动建议
         weather_advice = self.weather.get_exercise_advice(weather_data)

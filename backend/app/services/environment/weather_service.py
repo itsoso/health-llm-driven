@@ -18,18 +18,20 @@ logger = logging.getLogger(__name__)
 class WeatherService:
     """
     天气数据服务
-    
+
     支持:
     - 实时天气查询
     - 天气预报
     - 生活指数（运动、穿衣、紫外线等）
+    - 空气质量查询（和风天气 API）
     """
-    
+
     # 和风天气 API
     # 免费版: https://devapi.qweather.com/v7
     # 商用版: https://api.qweather.com/v7
     # 自定义Host: https://your-host.qweatherapi.com/v7
     QWEATHER_BASE_URL = "https://api.qweather.com/v7"
+    QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2"
     # 备用：Open-Meteo 免费 API（无需 key）
     OPENMETEO_BASE_URL = "https://api.open-meteo.com/v1"
 
@@ -47,17 +49,21 @@ class WeatherService:
         self._cache: Dict[str, Any] = {}
         self._cache_time: Dict[str, datetime] = {}
         self._cache_duration = timedelta(minutes=30)  # 缓存30分钟
+        self._geo_cache: Dict[str, dict] = {}  # GeoAPI 城市查找缓存
 
         # 根据API Host或类型选择URL
         if api_host:
             # 使用自定义API Host（推荐方式）
             self.QWEATHER_BASE_URL = f"https://{api_host}/v7"
+            self.QWEATHER_GEO_URL = f"https://{api_host}/v2"
             logger.info(f"天气服务初始化完成 (使用自定义API Host: {api_host})")
         elif api_type == "premium":
             self.QWEATHER_BASE_URL = "https://api.qweather.com/v7"
+            self.QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2"
             logger.info(f"天气服务初始化完成 (使用和风天气 PREMIUM API)")
         else:
             self.QWEATHER_BASE_URL = "https://devapi.qweather.com/v7"
+            self.QWEATHER_GEO_URL = "https://geoapi.qweather.com/v2"
             logger.info(f"天气服务初始化完成 (使用和风天气 FREE API)")
 
         if not api_key:
@@ -104,7 +110,6 @@ class WeatherService:
             else:
                 # 使用 Open-Meteo (免费，需要经纬度)
                 if lat is None or lon is None:
-                    # 默认使用北京坐标
                     lat, lon = self._city_to_coords(city)
                 result = await self._get_openmeteo_current(lat, lon)
             
@@ -163,9 +168,9 @@ class WeatherService:
     ) -> Dict[str, Any]:
         """使用和风天气 API 获取当前天气"""
         async with httpx.AsyncClient() as client:
-            # 和风天气API需要Location ID或经纬度，不支持中文城市名
+            # 和风天气API需要Location ID或经纬度
             if city:
-                location = self._city_to_location_id(city)
+                location = await self._city_to_location_id_async(city)
             else:
                 location = f"{lon},{lat}"
 
@@ -208,7 +213,7 @@ class WeatherService:
         async with httpx.AsyncClient() as client:
             # 和风天气API需要Location ID或经纬度
             if city:
-                location = self._city_to_location_id(city)
+                location = await self._city_to_location_id_async(city)
             else:
                 location = f"{lon},{lat}"
 
@@ -327,47 +332,148 @@ class WeatherService:
                 "forecasts": forecasts
             }
     
+    async def _lookup_city_via_geoapi(self, city: str) -> Optional[dict]:
+        """
+        通过和风天气 GeoAPI 动态查找城市信息
+
+        Returns:
+            {"id": "101210101", "name": "杭州", "lat": "30.28", "lon": "120.15"} or None
+        """
+        if not self.api_key:
+            return None
+
+        # 检查缓存
+        if city in self._geo_cache:
+            return self._geo_cache[city]
+
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.QWEATHER_GEO_URL}/city/lookup"
+                params = {
+                    "location": city,
+                    "key": self.api_key,
+                    "number": 1,
+                    "range": "cn",  # 限定中国
+                }
+                response = await client.get(url, params=params, timeout=10)
+                data = response.json()
+
+                if data.get("code") == "200" and data.get("location"):
+                    loc = data["location"][0]
+                    result = {
+                        "id": loc.get("id", ""),
+                        "name": loc.get("name", city),
+                        "lat": loc.get("lat", ""),
+                        "lon": loc.get("lon", ""),
+                    }
+                    self._geo_cache[city] = result
+                    logger.info(f"GeoAPI 查找成功: {city} → id={result['id']}, ({result['lat']},{result['lon']})")
+                    return result
+                else:
+                    logger.warning(f"GeoAPI 查找失败: {city}, code={data.get('code')}")
+                    self._geo_cache[city] = None
+                    return None
+        except Exception as e:
+            logger.warning(f"GeoAPI 查找异常: {city}, error={e}")
+            return None
+
+    def _city_to_location_id_sync(self, city: str) -> str:
+        """城市名转和风天气Location ID（同步版，仅用硬编码映射）"""
+        return self._CITY_LOCATION_IDS.get(city, "")
+
+    async def _city_to_location_id_async(self, city: str) -> str:
+        """城市名转和风天气Location ID（异步版，支持GeoAPI动态查找）"""
+        # 先查硬编码映射
+        if city in self._CITY_LOCATION_IDS:
+            return self._CITY_LOCATION_IDS[city]
+
+        # 通过GeoAPI动态查找
+        geo = await self._lookup_city_via_geoapi(city)
+        if geo and geo.get("id"):
+            return geo["id"]
+
+        logger.warning(f"城市 '{city}' 未找到 Location ID，尝试直接使用城市名查询")
+        return city  # 和风天气也支持直接用城市名
+
+    # 硬编码城市映射（常用城市快速查找，避免GeoAPI调用）
+    _CITY_LOCATION_IDS = {
+        "北京": "101010100",
+        "上海": "101020100",
+        "广州": "101280101",
+        "深圳": "101280601",
+        "杭州": "101210101",
+        "南京": "101190101",
+        "成都": "101270101",
+        "武汉": "101200101",
+        "西安": "101110101",
+        "重庆": "101040100",
+        "天津": "101030100",
+        "苏州": "101190401",
+        "青岛": "101120201",
+        "大连": "101070201",
+        "厦门": "101230201",
+        "长沙": "101250101",
+        "郑州": "101180101",
+        "宁波": "101210401",
+        "无锡": "101190201",
+        "合肥": "101220101",
+        "福州": "101230101",
+        "昆明": "101290101",
+        "哈尔滨": "101050101",
+        "沈阳": "101070101",
+        "长春": "101060101",
+        "济南": "101120101",
+        "石家庄": "101090101",
+        "太原": "101100101",
+        "兰州": "101160101",
+        "拉萨": "101140101",
+        "银川": "101170101",
+        "乌鲁木齐": "101130101",
+        "呼和浩特": "101080101",
+        "南宁": "101300101",
+        "贵阳": "101260101",
+        "海口": "101310101",
+        "三亚": "101310201",
+        "珠海": "101280701",
+        "江油": "101272305",
+        "绵阳": "101270401",
+    }
+
+    _CITY_COORDS = {
+        "北京": (39.9042, 116.4074),
+        "上海": (31.2304, 121.4737),
+        "广州": (23.1291, 113.2644),
+        "深圳": (22.5431, 114.0579),
+        "杭州": (30.2741, 120.1551),
+        "南京": (32.0603, 118.7969),
+        "成都": (30.5728, 104.0668),
+        "武汉": (30.5928, 114.3055),
+        "西安": (34.3416, 108.9398),
+        "重庆": (29.4316, 106.9123),
+        "天津": (39.0842, 117.2009),
+        "苏州": (31.2989, 120.5853),
+        "青岛": (36.0671, 120.3826),
+        "大连": (38.9140, 121.6147),
+        "厦门": (24.4798, 118.0894),
+        "长沙": (28.2282, 112.9388),
+        "郑州": (34.7466, 113.6254),
+        "宁波": (29.8683, 121.5440),
+        "无锡": (31.4912, 120.3119),
+        "合肥": (31.8206, 117.2272),
+        "福州": (26.0745, 119.2965),
+    }
+
     def _city_to_location_id(self, city: str) -> str:
-        """城市名转和风天气Location ID"""
-        city_location_ids = {
-            "北京": "101010100",
-            "上海": "101020100",
-            "广州": "101280101",
-            "深圳": "101280601",
-            "杭州": "101210101",
-            "南京": "101190101",
-            "成都": "101270101",
-            "武汉": "101200101",
-            "西安": "101110101",
-            "重庆": "101040100",
-            "天津": "101030100",
-            "苏州": "101190401",
-            "青岛": "101120201",
-            "大连": "101070201",
-            "厦门": "101230201",
-        }
-        return city_location_ids.get(city, "101010100")  # 默认北京
+        """城市名转和风天气Location ID（同步版，兼容旧调用）"""
+        return self._CITY_LOCATION_IDS.get(city, self._CITY_LOCATION_IDS.get("杭州", "101210101"))
 
     def _city_to_coords(self, city: str) -> tuple:
-        """城市名转经纬度（简化版，仅支持主要城市）"""
-        city_coords = {
-            "北京": (39.9042, 116.4074),
-            "上海": (31.2304, 121.4737),
-            "广州": (23.1291, 113.2644),
-            "深圳": (22.5431, 114.0579),
-            "杭州": (30.2741, 120.1551),
-            "南京": (32.0603, 118.7969),
-            "成都": (30.5728, 104.0668),
-            "武汉": (30.5928, 114.3055),
-            "西安": (34.3416, 108.9398),
-            "重庆": (29.4316, 106.9123),
-            "天津": (39.0842, 117.2009),
-            "苏州": (31.2989, 120.5853),
-            "青岛": (36.0671, 120.3826),
-            "大连": (38.9140, 121.6147),
-            "厦门": (24.4798, 118.0894),
-        }
-        return city_coords.get(city, (39.9042, 116.4074))  # 默认北京
+        """城市名转经纬度"""
+        if city in self._CITY_COORDS:
+            return self._CITY_COORDS[city]
+        # 默认杭州而非北京
+        logger.warning(f"城市 '{city}' 不在坐标映射中，默认使用杭州坐标")
+        return (30.2741, 120.1551)
     
     def _weather_code_to_text(self, code: int) -> str:
         """WMO 天气代码转文本"""
@@ -525,7 +631,7 @@ class WeatherService:
             async with httpx.AsyncClient() as client:
                 # 和风天气API需要Location ID或经纬度
                 if city:
-                    location = self._city_to_location_id(city)
+                    location = await self._city_to_location_id_async(city)
                 else:
                     location = f"{lon},{lat}"
 
@@ -570,6 +676,109 @@ class WeatherService:
             logger.error(f"获取生活指数失败: {e}")
             return {"available": False, "error": str(e)}
 
+    async def get_air_quality(
+        self,
+        city: str = None,
+        lat: float = None,
+        lon: float = None
+    ) -> Dict[str, Any]:
+        """
+        使用和风天气API获取实时空气质量
+
+        Args:
+            city: 城市名称
+            lat, lon: 经纬度
+
+        Returns:
+            空气质量数据
+        """
+        if not self.api_key:
+            return {"available": False, "error": "未配置和风天气API Key"}
+
+        cache_key = f"qweather_aqi_{city or f'{lat},{lon}'}"
+        cached = self._get_cache(cache_key)
+        if cached:
+            return cached
+
+        try:
+            async with httpx.AsyncClient() as client:
+                if city:
+                    location = await self._city_to_location_id_async(city)
+                else:
+                    location = f"{lon},{lat}"
+
+                url = f"{self.QWEATHER_BASE_URL}/air/now"
+                params = {
+                    "location": location,
+                    "key": self.api_key
+                }
+
+                response = await client.get(url, params=params, timeout=10)
+                data = response.json()
+
+                if data.get("code") == "200":
+                    now = data.get("now", {})
+                    aqi = int(now.get("aqi", 0))
+
+                    result = {
+                        "available": True,
+                        "source": "qweather",
+                        "station": now.get("primary", ""),
+                        "aqi": aqi,
+                        "aqi_level": self._aqi_to_level(aqi),
+                        "aqi_description": self._aqi_to_description(aqi),
+                        "pm25": float(now.get("pm2p5", 0)),
+                        "pm10": float(now.get("pm10", 0)),
+                        "co": float(now.get("co", 0)),
+                        "no2": float(now.get("no2", 0)),
+                        "so2": float(now.get("so2", 0)),
+                        "o3": float(now.get("o3", 0)),
+                        "category": now.get("category", ""),
+                        "update_time": data.get("updateTime", ""),
+                    }
+                    logger.info(f"和风天气空气质量: {city or location}, AQI={aqi}, {result['aqi_description']}")
+                    self._set_cache(cache_key, result)
+                    return result
+                else:
+                    logger.warning(f"和风天气空气质量API返回错误: code={data.get('code')}")
+                    return {"available": False, "error": f"API error: {data.get('code')}"}
+
+        except Exception as e:
+            logger.error(f"和风天气空气质量获取失败: {e}")
+            return {"available": False, "error": str(e)}
+
+    @staticmethod
+    def _aqi_to_level(aqi: int) -> str:
+        """AQI 转等级"""
+        if aqi <= 50:
+            return "excellent"
+        elif aqi <= 100:
+            return "good"
+        elif aqi <= 150:
+            return "moderate"
+        elif aqi <= 200:
+            return "unhealthy"
+        elif aqi <= 300:
+            return "very_unhealthy"
+        else:
+            return "hazardous"
+
+    @staticmethod
+    def _aqi_to_description(aqi: int) -> str:
+        """AQI 转中文描述"""
+        if aqi <= 50:
+            return "优"
+        elif aqi <= 100:
+            return "良"
+        elif aqi <= 150:
+            return "轻度污染"
+        elif aqi <= 200:
+            return "中度污染"
+        elif aqi <= 300:
+            return "重度污染"
+        else:
+            return "严重污染"
+
     async def get_comprehensive_context(
         self,
         city: str = None,
@@ -594,14 +803,14 @@ class WeatherService:
                 "location": {"city": "北京", "latitude": 39.9, "longitude": 116.4}
             }
         """
-        # 导入 air_quality_service（避免循环导入）
-        from .air_quality_service import air_quality_service
-
         # 获取天气数据
         weather = await self.get_current_weather(city, latitude, longitude)
 
-        # 获取空气质量数据
-        air_quality = await air_quality_service.get_air_quality(city, latitude, longitude)
+        # 获取空气质量数据（优先使用和风天气API，失败回退到旧服务）
+        air_quality = await self.get_air_quality(city, latitude, longitude)
+        if not air_quality.get("available"):
+            from .air_quality_service import air_quality_service
+            air_quality = await air_quality_service.get_air_quality(city, latitude, longitude)
 
         # 获取生活指数（包括运动指数）
         lifestyle_indices = await self.get_lifestyle_indices(city, latitude, longitude)
