@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { useKidsTheme } from '@/contexts/KidsThemeContext';
 
 interface Template {
   id: number;
@@ -20,6 +22,12 @@ interface TodayRecord {
 }
 
 export default function KidsCheckinPage() {
+  const { user } = useAuth();
+  const { addPoints } = useKidsTheme();
+  const userId = user?.id || 'guest';
+  const today = new Date().toISOString().split('T')[0];
+  const checkinPtsKey = `kids_checkin_pts_${userId}_${today}`;
+
   const [templates, setTemplates] = useState<Template[]>([]);
   const [todayRecords, setTodayRecords] = useState<Record<number, TodayRecord>>({});
   const [loading, setLoading] = useState(true);
@@ -70,15 +78,34 @@ export default function KidsCheckinPage() {
       });
 
       // 更新本地记录
+      const prevRecord = todayRecords[template.id];
+      const newValue = (prevRecord?.value || 0) + checkinValue;
+      const newRate = newValue / template.default_target * 100;
+      const wasNotDone = !prevRecord || prevRecord.completion_rate < 100;
+      const isNowDone = newRate >= 100;
+
       setTodayRecords(prev => ({
         ...prev,
         [template.id]: {
           template_id: template.id,
-          value: (prev[template.id]?.value || 0) + checkinValue,
+          value: newValue,
           target: template.default_target,
-          completion_rate: ((prev[template.id]?.value || 0) + checkinValue) / template.default_target * 100,
+          completion_rate: newRate,
         },
       }));
+
+      // 首次完成该模板打卡，奖励1积分
+      if (wasNotDone && isNowDone) {
+        const awardedIds: number[] = JSON.parse(localStorage.getItem(checkinPtsKey) || '[]');
+        if (!awardedIds.includes(template.id)) {
+          addPoints(1);
+          localStorage.setItem(checkinPtsKey, JSON.stringify([...awardedIds, template.id]));
+          setShowSuccess(`${template.icon} ${template.name} 打卡完成！🎉 +1积分`);
+          setTimeout(() => setShowSuccess(null), 2500);
+          setSavingId(null);
+          return;
+        }
+      }
 
       setShowSuccess(`${template.icon} ${template.name} 已打卡！`);
       setTimeout(() => setShowSuccess(null), 2000);

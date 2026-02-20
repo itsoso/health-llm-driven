@@ -13,6 +13,7 @@ const TABS = [
   { href: '/kids/checkin', label: '打卡', icon: '✅' },
   { href: '/kids/water', label: '喝水', icon: '💧' },
   { href: '/kids/mood', label: '心情', icon: '😊' },
+  { href: '/kids/dog', label: '狗狗', icon: '🐾' },
   { href: '/kids/me', label: '我的', icon: '👤' },
 ];
 
@@ -36,12 +37,12 @@ export default function KidsTabBar({ currentPath }: KidsTabBarProps) {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-[56px] px-1 rounded-2xl transition-all duration-200 ${
+              className={`flex flex-col items-center justify-center gap-0.5 min-w-[38px] min-h-[52px] px-0.5 rounded-2xl transition-all duration-200 ${
                 active ? `${theme.tabActiveBg} scale-110 shadow-md` : `${theme.hoverBg} active:scale-95`
               }`}
             >
-              <span className="text-2xl">{tab.icon}</span>
-              <span className={`text-xs font-bold ${active ? theme.tabActiveText : 'text-gray-500'}`}>
+              <span className="text-xl">{tab.icon}</span>
+              <span className={`text-[10px] font-bold ${active ? theme.tabActiveText : 'text-gray-500'}`}>
                 {tab.label}
               </span>
             </Link>
