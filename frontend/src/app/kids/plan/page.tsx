@@ -62,41 +62,33 @@ export default function KidsPlanPage() {
     }
   }, [storageKey]);
 
-  // Award points for yesterday on first open of the day
-  useEffect(() => {
-    const awardKey = `kids_plan_awarded_${userId}`;
-    const lastAwarded = localStorage.getItem(awardKey);
-    if (lastAwarded === today) return;
+  // Award points in real-time as completion tiers are reached
+  // localStorage key tracks the highest tier already awarded today (0-5)
+  const todayAwardedKey = `kids_plan_pts_${userId}_${today}`;
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-    const yesterdayKey = `kids_plan_${userId}_${yesterdayStr}`;
+  const getPointsTier = (rate: number): number => {
+    if (rate >= 1.0) return 5;
+    if (rate >= 0.9) return 4;
+    if (rate >= 0.8) return 3;
+    if (rate >= 0.7) return 2;
+    if (rate >= 0.6) return 1;
+    return 0;
+  };
 
-    try {
-      const savedYesterday = localStorage.getItem(yesterdayKey);
-      if (savedYesterday) {
-        const yesterdayItems: PlanItem[] = JSON.parse(savedYesterday);
-        if (yesterdayItems.length > 0) {
-          const done = yesterdayItems.filter(i => i.done).length;
-          const rate = done / yesterdayItems.length;
-          let pts = 0;
-          if (rate >= 1.0) pts = 5;
-          else if (rate >= 0.9) pts = 4;
-          else if (rate >= 0.8) pts = 3;
-          else if (rate >= 0.7) pts = 2;
-          else if (rate >= 0.6) pts = 1;
-          if (pts > 0) {
-            addPoints(pts);
-            setPointsToast(pts);
-            setTimeout(() => setPointsToast(0), 3000);
-          }
-        }
-      }
-    } catch { /* ignore */ }
-
-    localStorage.setItem(awardKey, today);
-  }, [userId, today, addPoints]);
+  const checkAndAwardPoints = useCallback((newItems: PlanItem[]) => {
+    if (newItems.length === 0) return;
+    const done = newItems.filter(i => i.done).length;
+    const rate = done / newItems.length;
+    const tier = getPointsTier(rate);
+    const alreadyAwarded = parseInt(localStorage.getItem(todayAwardedKey) || '0');
+    const toAward = tier - alreadyAwarded;
+    if (toAward > 0) {
+      addPoints(toAward);
+      localStorage.setItem(todayAwardedKey, tier.toString());
+      setPointsToast(toAward);
+      setTimeout(() => setPointsToast(0), 2500);
+    }
+  }, [addPoints, todayAwardedKey]);
 
   const saveItems = useCallback((newItems: PlanItem[]) => {
     setItems(newItems);
@@ -104,7 +96,9 @@ export default function KidsPlanPage() {
   }, [storageKey]);
 
   const toggleDone = (id: string) => {
-    saveItems(items.map(item => item.id === id ? { ...item, done: !item.done } : item));
+    const newItems = items.map(item => item.id === id ? { ...item, done: !item.done } : item);
+    saveItems(newItems);
+    checkAndAwardPoints(newItems);
   };
 
   const deleteItem = (id: string) => {
@@ -310,7 +304,7 @@ export default function KidsPlanPage() {
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[300] bg-black/70 text-white px-8 py-5 rounded-2xl text-center pointer-events-none">
           <div className="text-5xl mb-2">⭐</div>
           <div className="text-2xl font-bold">获得 {pointsToast} 积分！</div>
-          <div className="text-sm opacity-80 mt-1">昨日计划完成奖励</div>
+          <div className="text-sm opacity-80 mt-1">计划完成奖励</div>
         </div>
       )}
 
