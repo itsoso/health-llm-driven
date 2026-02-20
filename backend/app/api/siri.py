@@ -207,12 +207,15 @@ async def siri_say(
     - 「最近的步数怎么样」→ 查看数据
     """
     content_type = request.headers.get("content-type", "")
+    raw = await request.body()
+    logger.info(f"Siri请求 user={current_user.id} content-type={content_type} body_len={len(raw)} body_preview={raw[:200]}")
+
     if "application/json" in content_type:
-        body = await request.json()
+        import json as _json
+        body = _json.loads(raw)
         message = body.get("message", "").strip()
     else:
         # text/plain — 快捷指令 "File" body 模式直接发送听写文本
-        raw = await request.body()
         message = raw.decode("utf-8", errors="ignore").strip()
 
     if not message:
