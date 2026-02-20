@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/';
   const { login, isAuthenticated } = useAuth();
-  
+
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -16,9 +18,9 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // 如果已登录，重定向到首页
+  // 如果已登录，重定向到目标页面
   if (isAuthenticated) {
-    router.push('/');
+    router.push(redirectTo);
     return null;
   }
 
@@ -28,13 +30,13 @@ export default function LoginPage() {
     setIsLoading(true);
 
     const result = await login(formData.username, formData.password);
-    
+
     if (result.success) {
-      router.push('/');
+      router.push(redirectTo);
     } else {
       setError(result.error || '登录失败');
     }
-    
+
     setIsLoading(false);
   };
 
@@ -54,7 +56,7 @@ export default function LoginPage() {
         {/* 登录表单 */}
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
           <h1 className="text-2xl font-bold text-gray-900 text-center mb-6">欢迎回来</h1>
-          
+
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               ❌ {error}
@@ -120,3 +122,10 @@ export default function LoginPage() {
   );
 }
 
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}

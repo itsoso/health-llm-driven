@@ -16,7 +16,7 @@ export default function KidsProtectedRoute({ children }: KidsProtectedRouteProps
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push('/login');
+      router.push('/login?redirect=/kids');
     }
   }, [isLoading, isAuthenticated, router]);
 
