@@ -99,6 +99,7 @@ function SettingsContent() {
     city: string | null;
   }
   const [showPrivacySection, setShowPrivacySection] = useState(false);
+  const [showQuickRecordSection, setShowQuickRecordSection] = useState(true);
 
   // 用户名编辑状态
   const [isEditingName, setIsEditingName] = useState(false);
@@ -966,6 +967,89 @@ function SettingsContent() {
               退出登录
             </button>
           </div>
+        </div>
+
+        {/* 快捷记录饮食说明 */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowQuickRecordSection(!showQuickRecordSection)}
+          >
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              📱 快捷记录饮食
+            </h2>
+            <span className="text-gray-400 text-2xl">
+              {showQuickRecordSection ? '▼' : '›'}
+            </span>
+          </div>
+
+          {showQuickRecordSection && (
+            <div className="mt-4 space-y-4 text-gray-700">
+              <p className="text-gray-600 text-sm">
+                通过 iPhone 的「轻点背面」或「辅助触控」等方式一键唤起快捷指令，说出刚吃过的食物即可自动记录到本应用的饮食记录中。
+              </p>
+
+              <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                <h3 className="font-semibold text-amber-900 mb-2">前置条件</h3>
+                <ul className="list-disc list-inside text-sm text-amber-800 space-y-1">
+                  <li>iPhone 8 或更新机型，系统 iOS 14 及以上</li>
+                  <li>已在「快捷指令」App 中创建并配置好「记录饮食」快捷指令（调用本应用接口并传入 API Key 或登录态）</li>
+                </ul>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-800">方式一：辅助触控浮钮（推荐）</h3>
+                <p className="text-sm text-gray-600">
+                  比背面双击更方便：浮钮位置固定、点击即触发，不依赖屏幕是否点亮；息屏时也能先点浮钮再听写。
+                </p>
+                <ol className="list-decimal list-inside text-sm space-y-2 text-gray-600">
+                  <li>打开 <strong>设置</strong> → <strong>辅助功能</strong> → <strong>触控</strong> → <strong>辅助触控</strong>，开启辅助触控</li>
+                  <li>在「自定顶层菜单」或「轻点两下」中，将其中一项设为运行你的「记录饮食」快捷指令</li>
+                  <li>使用时点击屏幕上的浮钮（或双击浮钮），然后按提示说出饮食内容</li>
+                </ol>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-800">方式二：轻点背面</h3>
+                <ol className="list-decimal list-inside text-sm space-y-2 text-gray-600">
+                  <li>打开 <strong>设置</strong> → <strong>辅助功能</strong> → <strong>触控</strong> → <strong>轻点背面</strong></li>
+                  <li>选择「轻点两下」或「轻点三下」</li>
+                  <li>在列表中选择 <strong>快捷指令</strong> → 你的「记录饮食」快捷指令</li>
+                  <li>使用时在手机背面轻点两下（或三下）触发，再按提示说出「刚才吃了什么」</li>
+                </ol>
+                <div className="bg-amber-50 rounded-lg p-3 border border-amber-200 mt-2">
+                  <h4 className="font-medium text-amber-900 text-sm mb-1">背面双击的不足</h4>
+                  <ul className="list-disc list-inside text-xs text-amber-800 space-y-0.5">
+                    <li>锁屏且<strong>息屏</strong>时经常不触发或不稳定，需先点亮屏幕再双击背面才更可靠</li>
+                    <li>听写步骤多数情况下仍需解锁才能完成</li>
+                    <li>厚手机壳可能影响背面敲击识别</li>
+                    <li>手持姿势或放桌面时容易误触</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-800">其他方式</h3>
+                <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                  <li><strong>控制中心</strong>：将「记录饮食」快捷指令添加到控制中心，下滑后点击即可</li>
+                  <li><strong>主屏幕小组件</strong>：在桌面添加「快捷指令」小组件，选择「记录饮食」一键运行</li>
+                  <li><strong>Pro 机型操作按钮</strong>：iPhone 15 Pro 及更新 Pro 系列可将侧边操作按钮设为运行该快捷指令</li>
+                </ul>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <h3 className="font-semibold text-gray-800 mb-2">快捷指令如何配置</h3>
+                <p className="text-sm text-gray-600 mb-2">
+                  在「快捷指令」App 中新建快捷指令，建议步骤：
+                </p>
+                <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1">
+                  <li>添加「听写」或「要求输入」获取你所说的饮食内容</li>
+                  <li>使用「获取 URL 内容」或「请求 URL」向本应用的饮食记录接口发送上述文本（需在请求头中携带 API Key，可在下方「API Key 管理」中创建）</li>
+                  <li>可选：解析返回结果并用「朗读」播报「已记录：xxx 卡路里」等</li>
+                </ol>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 隐私设置卡片 */}
