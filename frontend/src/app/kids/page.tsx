@@ -168,9 +168,9 @@ export default function KidsChatPage() {
     currentPage * itemsPerPage
   );
 
-  // 按 Enter 发送
+  // 按 Enter 发送（忽略中文输入法组合阶段）
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
