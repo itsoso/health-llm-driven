@@ -993,13 +993,13 @@ function SettingsContent() {
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
                 <h3 className="font-semibold text-green-900 mb-2">第一步：复制你的专属 Token</h3>
                 <p className="text-sm text-green-800 mb-3">
-                  创建快捷指令时需要填入此 Token 作为身份凭证，点击下方一键复制。
+                  安装快捷指令后需要填入此 Token 作为身份凭证，点击下方一键复制。
                 </p>
                 {token ? (
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(token);
-                      alert('✅ Token 已复制！\n\n接下来去快捷指令 App 创建快捷指令，将其填入 Authorization 头中。');
+                      alert('✅ Token 已复制！\n\n安装快捷指令后，编辑第一步的「文本」块，将 YOUR_TOKEN_HERE 替换为此 Token。');
                     }}
                     className="w-full flex items-center justify-between gap-2 bg-white border-2 border-green-300 hover:bg-green-100 active:scale-[0.99] transition-all rounded-lg px-4 py-3 text-left cursor-pointer"
                   >
@@ -1013,57 +1013,37 @@ function SettingsContent() {
                 )}
               </div>
 
-              {/* 第二步：手动创建快捷指令 */}
+              {/* 第二步：安装快捷指令模板 */}
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h3 className="font-semibold text-blue-900 mb-3">第二步：在「快捷指令」App 手动创建</h3>
+                <h3 className="font-semibold text-blue-900 mb-2">第二步：安装快捷指令模板</h3>
                 <p className="text-sm text-blue-800 mb-3">
-                  打开 iPhone / iPad / Mac 上的「<strong>快捷指令</strong>」App，点右上角 <strong>＋</strong> 新建，按顺序添加以下 4 个动作：
+                  用 iPhone / iPad 的 <strong>Safari</strong> 打开下方链接，点「添加快捷指令」完成安装。
                 </p>
-                <ol className="space-y-3 text-sm text-blue-900">
-                  <li className="flex gap-3">
-                    <span className="font-bold text-blue-600 min-w-[20px]">①</span>
-                    <div>
-                      <strong>听写文本</strong>（Dictate Text）<br />
-                      <span className="text-blue-700 text-xs">搜索「听写」即可找到</span>
-                    </div>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="font-bold text-blue-600 min-w-[20px]">②</span>
-                    <div>
-                      <strong>获取 URL 内容</strong>（Get Contents of URL）<br />
-                      <span className="text-blue-700 text-xs">展开「显示更多」后配置：</span>
-                      <ul className="mt-1 space-y-0.5 text-xs text-blue-800 pl-2">
-                        <li>URL：<code className="bg-blue-100 px-1 rounded">https://health.executor.life/api/siri/say</code></li>
-                        <li>方法：<strong>POST</strong></li>
-                        <li>请求体：<strong>文件</strong> → 选择上一步的「听写的文本」</li>
-                        <li>标头（Header）→ 添加一项：<br />
-                          名称：<code className="bg-blue-100 px-1 rounded">Authorization</code><br />
-                          值：<code className="bg-blue-100 px-1 rounded">Bearer 【粘贴你的Token】</code>
-                        </li>
-                      </ul>
-                    </div>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="font-bold text-blue-600 min-w-[20px]">③</span>
-                    <div>
-                      <strong>获取词典中的值</strong>（Get Dictionary Value）<br />
-                      <span className="text-blue-700 text-xs">类型选「值」，键填 <code className="bg-blue-100 px-1 rounded">text</code></span>
-                    </div>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="font-bold text-blue-600 min-w-[20px]">④</span>
-                    <div>
-                      <strong>朗读文本</strong>（Speak Text）<br />
-                      <span className="text-blue-700 text-xs">搜索「朗读」即可找到</span>
-                    </div>
-                  </li>
-                </ol>
-                <p className="text-xs text-blue-600 mt-3">完成后将快捷指令命名为「健康记录」，保存即可使用。</p>
+                <a
+                  href="https://www.icloud.com/shortcuts/ad3061e9a2094555acb8b42b93f57c6c"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
+                  📥 获取「健康记录」快捷指令
+                </a>
               </div>
 
-              {/* 第三步：设置触发方式 */}
+              {/* 第三步：填入 Token */}
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <h3 className="font-semibold text-orange-900 mb-2">第三步：填入你的 Token</h3>
+                <ol className="text-sm text-orange-800 space-y-1 list-decimal list-inside">
+                  <li>打开「快捷指令」App，找到「健康记录」</li>
+                  <li>点右上角 <strong>···</strong> 进入编辑</li>
+                  <li>找到顶部的<strong>「文本」块</strong>（内容为 <code className="bg-orange-100 px-1 rounded text-xs">YOUR_TOKEN_HERE</code>）</li>
+                  <li>替换为第一步复制的 Token，保存</li>
+                </ol>
+                <p className="text-xs text-orange-600 mt-2">只需设置一次，之后每次运行无需重新输入。</p>
+              </div>
+
+              {/* 第四步：设置触发方式 */}
               <div className="space-y-3">
-                <h3 className="font-semibold text-gray-800">第三步：设置触发方式</h3>
+                <h3 className="font-semibold text-gray-800">第四步：设置触发方式</h3>
 
                 <div className="space-y-2">
                   <h4 className="font-medium text-gray-700 text-sm">方式一：辅助触控浮钮（推荐）</h4>
