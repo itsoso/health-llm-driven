@@ -57,6 +57,7 @@ from app.models.vision_usage import VisionUsageLog
 from app.models.trip import Trip, TripItem
 # 当前病症追踪模型
 from app.models.illness import IllnessEpisode, IllnessUpdate
+from app.models.kids_pet import KidsPetProfile
 
 __all__ = [
     "User",
@@ -137,5 +138,6 @@ __all__ = [
     # 当前病症追踪
     "IllnessEpisode",
     "IllnessUpdate",
+    "KidsPetProfile",
 ]
 

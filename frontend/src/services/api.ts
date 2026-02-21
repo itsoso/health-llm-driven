@@ -241,6 +241,43 @@ export const supplementApi = {
     api.post('/supplements/scientific-recommendation', { target_date: targetDate, debug }),
 };
 
+// 儿童狗狗空间
+export interface KidsPetState {
+  breed_id: string;
+  breed_name: string;
+  breed_image?: string | null;
+  dog_name: string;
+  hunger: number;
+  happiness: number;
+  level: number;
+  xp: number;
+  food_bags: number;
+  has_house: boolean;
+  has_garden: boolean;
+  last_decay_at?: string | null;
+  last_interaction_at?: string | null;
+}
+
+export interface KidsPetResponse {
+  has_pet: boolean;
+  kids_points: number;
+  pet?: KidsPetState | null;
+  message?: string;
+}
+
+export const kidsPetApi = {
+  getMyPet: () => api.get<KidsPetResponse>('/kids-pet/me'),
+  adoptPet: (data: {
+    breed_id: string;
+    breed_name: string;
+    breed_cost: number;
+    breed_image?: string;
+    dog_name: string;
+  }) => api.post<KidsPetResponse>('/kids-pet/adopt', data),
+  action: (action: 'buy_food' | 'feed' | 'feed_full' | 'buy_house' | 'buy_garden') =>
+    api.post<KidsPetResponse>('/kids-pet/action', { action }),
+};
+
 // 习惯追踪 API（已废弃，模块已移除）
 // export const habitApi = { ... };
 

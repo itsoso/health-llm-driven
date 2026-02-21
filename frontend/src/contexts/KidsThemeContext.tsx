@@ -359,22 +359,15 @@ export function KidsThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const savedSkin = localStorage.getItem(`kids_skin_${userId}`);
-    const savedPoints = localStorage.getItem(`kids_points_${userId}`);
     const savedUnlocked = localStorage.getItem(`kids_skins_${userId}`);
     const dbPoints = typeof user?.kids_points === 'number' ? user.kids_points : 0;
-    const localPoints = savedPoints ? (parseInt(savedPoints) || 0) : 0;
-    const mergedPoints = Math.max(dbPoints, localPoints);
 
     setCurrentSkinId(savedSkin || defaultSkinId);
-    setPoints(mergedPoints);
-    localStorage.setItem(`kids_points_${userId}`, mergedPoints.toString());
+    setPoints(dbPoints);
     if (savedUnlocked) {
       try { setUnlockedSkins(JSON.parse(savedUnlocked)); } catch { /* ignore */ }
     } else {
       setUnlockedSkins(['boy_default', 'girl_default']);
-    }
-    if (mergedPoints !== dbPoints) {
-      void syncPointsToServer(mergedPoints);
     }
   }, [userId, defaultSkinId, user?.kids_points, syncPointsToServer]);
 
@@ -388,11 +381,10 @@ export function KidsThemeProvider({ children }: { children: ReactNode }) {
   const addPoints = useCallback((pts: number) => {
     setPoints(prev => {
       const next = prev + pts;
-      localStorage.setItem(`kids_points_${userId}`, next.toString());
       void syncPointsToServer(next);
       return next;
     });
-  }, [userId, syncPointsToServer]);
+  }, [syncPointsToServer]);
 
   const purchaseSkin = useCallback((skinId: string): boolean => {
     const skin = SKINS.find(s => s.id === skinId);
@@ -405,12 +397,11 @@ export function KidsThemeProvider({ children }: { children: ReactNode }) {
 
     setPoints(newPoints);
     setUnlockedSkins(newUnlocked);
-    localStorage.setItem(`kids_points_${userId}`, newPoints.toString());
     localStorage.setItem(`kids_skins_${userId}`, JSON.stringify(newUnlocked));
     void syncPointsToServer(newPoints);
 
     return true;
-  }, [points, unlockedSkins, userId, syncPointsToServer]);
+  }, [points, unlockedSkins, syncPointsToServer]);
 
   return (
     <KidsThemeContext.Provider value={{ theme, currentSkinId, points, unlockedSkins, setSkin, addPoints, purchaseSkin }}>
