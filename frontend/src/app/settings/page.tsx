@@ -989,37 +989,57 @@ function SettingsContent() {
                 通过 iPhone 快捷指令，一键语音记录饮食、运动、打卡等健康数据。说出刚做过的事即可自动识别并保存。
               </p>
 
-              {/* 第一步：安装快捷指令 */}
+              {/* 第一步：安装专属快捷指令（Token 已内置） */}
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h3 className="font-semibold text-blue-900 mb-2">第一步：安装快捷指令</h3>
-                <p className="text-sm text-blue-800 mb-3">
-                  点击下方链接，在 iPhone 上用 Safari 打开，系统会自动跳转到「快捷指令」App 完成添加。
-                </p>
-                <a
-                  href="https://www.icloud.com/shortcuts/11a1dc55510643f18559eab1909012a3"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                >
-                  获取「健康记录」快捷指令
-                </a>
+                <h3 className="font-semibold text-blue-900 mb-2">第一步：下载专属快捷指令</h3>
+                {token ? (
+                  <>
+                    <p className="text-sm text-blue-800 mb-3">
+                      下方是你的<strong>专属链接</strong>，Token 已内置，无需手动配置。<br />
+                      用 iPhone / iPad 的 <strong>Safari</strong> 打开，直接点「添加快捷指令」即可。
+                    </p>
+                    <div className="bg-white rounded-lg p-3 border border-blue-300 mb-3">
+                      <p className="text-xs text-blue-600 font-mono break-all select-all">
+                        {`https://health.executor.life/api/siri/shortcut?token=${token}`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`https://health.executor.life/api/siri/shortcut?token=${token}`);
+                          alert('链接已复制！请在 iPhone/iPad 的 Safari 中粘贴打开');
+                        }}
+                        className="inline-flex items-center gap-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                      >
+                        📋 复制专属链接
+                      </button>
+                      <a
+                        href={`https://health.executor.life/api/siri/shortcut?token=${token}`}
+                        className="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+                      >
+                        ⬇️ 直接下载
+                      </a>
+                    </div>
+                    <p className="text-xs text-blue-600 mt-2">
+                      ⚠️ 此链接包含你的账户凭证，请勿分享给他人
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-blue-800">请先登录后查看专属快捷指令链接。</p>
+                )}
               </div>
 
-              {/* 第二步：配置 Token */}
+              {/* 第二步：Token 说明（已简化） */}
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h3 className="font-semibold text-green-900 mb-2">第二步：配置登录凭证</h3>
-                <p className="text-sm text-green-800 mb-2">
-                  快捷指令需要你的 Token 才能将数据写入你的账户。首次运行时会提示输入：
+                <h3 className="font-semibold text-green-900 mb-2">第二步：无需配置，开箱即用</h3>
+                <p className="text-sm text-green-800">
+                  使用上方专属链接安装后，Token 已自动内置，<strong>直接运行即可</strong>，无需手动粘贴任何凭证。
                 </p>
-                <ol className="list-decimal list-inside text-sm text-green-800 space-y-1">
-                  <li>在本页下方「API Key 管理」创建一个 Key，或直接使用浏览器中的登录 Token</li>
-                  <li>运行快捷指令时，将 Token 粘贴到提示框中（只需设置一次）</li>
-                </ol>
                 {token && (
-                  <div className="mt-3">
-                    <p className="text-xs text-green-700 mb-1">当前登录 Token（点击复制）：</p>
+                  <details className="mt-3">
+                    <summary className="text-xs text-green-700 cursor-pointer hover:text-green-900">手动查看 / 复制 Token</summary>
                     <div
-                      className="bg-white rounded p-2 text-xs font-mono text-green-900 break-all cursor-pointer border border-green-300 hover:bg-green-100 transition-colors"
+                      className="mt-2 bg-white rounded p-2 text-xs font-mono text-green-900 break-all cursor-pointer border border-green-300 hover:bg-green-100 transition-colors"
                       onClick={() => {
                         navigator.clipboard.writeText(token);
                         alert('Token 已复制到剪贴板');
@@ -1027,7 +1047,7 @@ function SettingsContent() {
                     >
                       {token.slice(0, 30)}...{token.slice(-10)}
                     </div>
-                  </div>
+                  </details>
                 )}
               </div>
 
