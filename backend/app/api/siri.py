@@ -77,6 +77,111 @@ def get_or_create_siri_conversation(user_id: int, db: Session) -> int:
     return conv.id
 
 
+def _generate_generic_shortcut_plist() -> bytes:
+    """
+    生成通用可分享的快捷指令（不含个人 Token）。
+
+    导入时 iOS 会弹窗询问用户输入 Token，用户粘贴后即可使用。
+    适合通过 iCloud 链接分享给所有人。
+    """
+    dictate_uuid = str(uuid.uuid4()).upper()
+    download_uuid = str(uuid.uuid4()).upper()
+    param_key = "health_token"
+
+    def _action_ref(output_uuid: str, output_name: str) -> dict:
+        return {
+            "Value": {
+                "attachmentsByRange": {
+                    "{0, 1}": {
+                        "Type": "ActionOutput",
+                        "OutputUUID": output_uuid,
+                        "OutputName": output_name,
+                    }
+                },
+                "string": "\ufffc",
+            },
+            "WFSerializationType": "WFTextTokenAttachmentParameterState",
+        }
+
+    # "Bearer " 是 7 个字符，所以占位符位置是 {7, 1}
+    auth_value_with_param = {
+        "Value": {
+            "attachmentsByRange": {
+                "{7, 1}": {
+                    "Type": "WorkflowConfiguration",
+                    "WorkflowConfigurationParameterKey": param_key,
+                }
+            },
+            "string": "Bearer \ufffc",
+        },
+        "WFSerializationType": "WFTextTokenAttachmentParameterState",
+    }
+
+    actions = [
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.dictatetext",
+            "WFWorkflowActionParameters": {"UUID": dictate_uuid},
+        },
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+            "WFWorkflowActionParameters": {
+                "UUID": download_uuid,
+                "WFHTTPMethod": "POST",
+                "WFURL": f"{_API_BASE}/siri/say",
+                "WFHTTPHeaders": {
+                    "Value": {
+                        "WFDictionaryFieldValueItems": [
+                            {
+                                "WFItemType": 0,
+                                "WFKey": {
+                                    "Value": {"string": "Authorization"},
+                                    "WFSerializationType": "WFTextTokenString",
+                                },
+                                "WFValue": auth_value_with_param,
+                            }
+                        ]
+                    },
+                    "WFSerializationType": "WFDictionaryFieldValue",
+                },
+                "WFHTTPBodyType": "File",
+                "WFHTTPBody": _action_ref(dictate_uuid, "Dictated Text"),
+            },
+        },
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.getvalueforkey",
+            "WFWorkflowActionParameters": {
+                "WFGetDictionaryValueType": "Value",
+                "WFDictionaryKey": "text",
+            },
+        },
+        {
+            "WFWorkflowActionIdentifier": "is.workflow.actions.speak",
+            "WFWorkflowActionParameters": {"WFSpeakTextWaitUntilDone": True},
+        },
+    ]
+
+    shortcut = {
+        "WFWorkflowClientVersion": "2600.0.57",
+        "WFWorkflowHasOutputFallback": False,
+        "WFWorkflowImportQuestions": [
+            {
+                "ParameterKey": param_key,
+                "QuestionType": "Text",
+                "Text": "请粘贴你的健康助手 Token（在 App「设置」页面复制）",
+                "DefaultValue": "",
+            }
+        ],
+        "WFWorkflowInputContentItemClasses": [],
+        "WFWorkflowMinimumClientVersion": 900,
+        "WFWorkflowMinimumClientVersionString": "900",
+        "WFWorkflowName": "健康记录",
+        "WFWorkflowActions": actions,
+        "WFWorkflowTypes": [],
+    }
+
+    return plistlib.dumps(shortcut, fmt=plistlib.FMT_XML)
+
+
 def _generate_shortcut_plist(token: str) -> bytes:
     """
     生成可直接导入 iPhone「快捷指令」App 的 .shortcut 文件（XML plist 格式）。
@@ -265,6 +370,26 @@ async def download_shortcut(
         raise HTTPException(status_code=401, detail="Token 无效或已过期，请重新登录获取")
 
     shortcut_bytes = _generate_shortcut_plist(token)
+    return Response(
+        content=shortcut_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="HealthRecord.shortcut"'},
+    )
+
+
+@router.get("/setup-shortcut", summary="下载通用可分享快捷指令（导入时提示输入Token）")
+async def download_setup_shortcut():
+    """
+    下载通用「健康记录」快捷指令文件。
+
+    **无需登录**，任何人均可下载。导入时 iOS 会弹窗提示粘贴个人 Token。
+
+    用法：
+    1. 在 iPhone Safari 打开此链接下载 .shortcut 文件
+    2. 粘贴在 App「设置」页面复制的 Token
+    3. 点击「添加快捷指令」完成安装
+    """
+    shortcut_bytes = _generate_generic_shortcut_plist()
     return Response(
         content=shortcut_bytes,
         media_type="application/octet-stream",

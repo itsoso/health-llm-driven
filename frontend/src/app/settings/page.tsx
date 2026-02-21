@@ -989,33 +989,44 @@ function SettingsContent() {
                 通过 iPhone 快捷指令，一键语音记录饮食、运动、打卡等健康数据。说出刚做过的事即可自动识别并保存。
               </p>
 
-              {/* 第一步：安装快捷指令（iCloud 受信任） */}
+              {/* 第一步：开启允许不受信任的快捷指令 */}
+              <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                <h3 className="font-semibold text-yellow-900 mb-2">第一步：开启系统设置</h3>
+                <p className="text-sm text-yellow-800 mb-1">
+                  iPhone/iPad <strong>设置</strong> → <strong>快捷指令</strong> → 开启「<strong>允许不受信任的快捷指令</strong>」
+                </p>
+                <p className="text-xs text-yellow-700">（首次需先运行过任意一个快捷指令，该选项才会出现）</p>
+              </div>
+
+              {/* 第二步：下载并安装快捷指令 */}
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h3 className="font-semibold text-blue-900 mb-2">第一步：安装快捷指令</h3>
+                <h3 className="font-semibold text-blue-900 mb-2">第二步：下载并安装快捷指令</h3>
                 <p className="text-sm text-blue-800 mb-3">
-                  用 iPhone / iPad 的 <strong>Safari</strong> 打开下方链接，系统自动跳转到「快捷指令」App 完成添加。
+                  用 iPhone / iPad 的 <strong>Safari</strong> 打开下方链接，点「添加快捷指令」完成安装。<br />
+                  安装时会弹出输入框，请<strong>粘贴第三步复制的 Token</strong>。
                 </p>
                 <a
-                  href="https://www.icloud.com/shortcuts/11a1dc55510643f18559eab1909012a3"
+                  href="https://health.executor.life/api/siri/setup-shortcut"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                 >
-                  获取「健康记录」快捷指令
+                  📥 下载「健康记录」快捷指令
                 </a>
+                <p className="text-xs text-blue-600 mt-2">此链接可分享给家人朋友，每人安装时输入自己的 Token 即可。</p>
               </div>
 
-              {/* 第二步：复制 Token（一键完成） */}
+              {/* 第三步：复制 Token */}
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h3 className="font-semibold text-green-900 mb-2">第二步：复制你的专属 Token</h3>
+                <h3 className="font-semibold text-green-900 mb-2">第三步：复制你的专属 Token</h3>
                 <p className="text-sm text-green-800 mb-3">
-                  首次运行快捷指令时会弹出输入框，将下方 Token 粘贴进去即可（只需设置一次，之后自动记住）。
+                  安装快捷指令时弹出的输入框中粘贴下方 Token（只需设置一次）。
                 </p>
                 {token ? (
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(token);
-                      alert('✅ Token 已复制！\n\n请运行「健康记录」快捷指令，将其粘贴到弹出的输入框中。');
+                      alert('✅ Token 已复制！\n\n请回到快捷指令安装界面，将其粘贴到弹出的输入框中，然后点「添加快捷指令」。');
                     }}
                     className="w-full flex items-center justify-between gap-2 bg-white border-2 border-green-300 hover:bg-green-100 active:scale-[0.99] transition-all rounded-lg px-4 py-3 text-left cursor-pointer"
                   >
@@ -1028,36 +1039,6 @@ function SettingsContent() {
                   <p className="text-sm text-green-800">请先登录后查看专属 Token。</p>
                 )}
               </div>
-
-              {/* 备用方案：允许不受信任的快捷指令 */}
-              <details className="bg-gray-50 rounded-lg border border-gray-200">
-                <summary className="px-4 py-3 text-sm font-medium text-gray-600 cursor-pointer hover:text-gray-800 list-none flex items-center justify-between">
-                  <span>🔧 备用方案：Token 已内置的专属文件（需先开启系统设置）</span>
-                  <span className="text-gray-400">›</span>
-                </summary>
-                <div className="px-4 pb-4 space-y-3">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                    <strong>第 0 步：开启「允许不受信任的快捷指令」</strong><br />
-                    iPhone/iPad 设置 → 快捷指令 → 开启「允许不受信任的快捷指令」<br />
-                    （首次需运行过至少一个快捷指令后该选项才会出现）
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    开启后，可用下方专属链接下载已内置 Token 的快捷指令文件，无需手动粘贴。
-                  </p>
-                  {token && (
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(`https://health.executor.life/api/siri/shortcut?token=${token}`);
-                        alert('专属链接已复制！请在 Safari 中粘贴打开，然后点「添加快捷指令」。');
-                      }}
-                      className="inline-flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-                    >
-                      📋 复制专属下载链接
-                    </button>
-                  )}
-                  <p className="text-xs text-gray-400">⚠️ 此链接含账户凭证，请勿分享给他人</p>
-                </div>
-              </details>
 
               {/* 第三步：设置触发方式 */}
               <div className="space-y-3">
