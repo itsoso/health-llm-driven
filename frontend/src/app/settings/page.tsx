@@ -989,44 +989,17 @@ function SettingsContent() {
                 通过 iPhone 快捷指令，一键语音记录饮食、运动、打卡等健康数据。说出刚做过的事即可自动识别并保存。
               </p>
 
-              {/* 第一步：开启允许不受信任的快捷指令 */}
-              <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                <h3 className="font-semibold text-yellow-900 mb-2">第一步：开启系统设置</h3>
-                <p className="text-sm text-yellow-800 mb-1">
-                  iPhone/iPad <strong>设置</strong> → <strong>快捷指令</strong> → 开启「<strong>允许不受信任的快捷指令</strong>」
-                </p>
-                <p className="text-xs text-yellow-700">（首次需先运行过任意一个快捷指令，该选项才会出现）</p>
-              </div>
-
-              {/* 第二步：下载并安装快捷指令 */}
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <h3 className="font-semibold text-blue-900 mb-2">第二步：下载并安装快捷指令</h3>
-                <p className="text-sm text-blue-800 mb-3">
-                  用 iPhone / iPad 的 <strong>Safari</strong> 打开下方链接，点「添加快捷指令」完成安装。<br />
-                  安装时会弹出输入框，请<strong>粘贴第三步复制的 Token</strong>。
-                </p>
-                <a
-                  href="https://health.executor.life/api/siri/setup-shortcut"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                >
-                  📥 下载「健康记录」快捷指令
-                </a>
-                <p className="text-xs text-blue-600 mt-2">此链接可分享给家人朋友，每人安装时输入自己的 Token 即可。</p>
-              </div>
-
-              {/* 第三步：复制 Token */}
+              {/* 第一步：复制 Token */}
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <h3 className="font-semibold text-green-900 mb-2">第三步：复制你的专属 Token</h3>
+                <h3 className="font-semibold text-green-900 mb-2">第一步：复制你的专属 Token</h3>
                 <p className="text-sm text-green-800 mb-3">
-                  安装快捷指令时弹出的输入框中粘贴下方 Token（只需设置一次）。
+                  创建快捷指令时需要填入此 Token 作为身份凭证，点击下方一键复制。
                 </p>
                 {token ? (
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(token);
-                      alert('✅ Token 已复制！\n\n请回到快捷指令安装界面，将其粘贴到弹出的输入框中，然后点「添加快捷指令」。');
+                      alert('✅ Token 已复制！\n\n接下来去快捷指令 App 创建快捷指令，将其填入 Authorization 头中。');
                     }}
                     className="w-full flex items-center justify-between gap-2 bg-white border-2 border-green-300 hover:bg-green-100 active:scale-[0.99] transition-all rounded-lg px-4 py-3 text-left cursor-pointer"
                   >
@@ -1038,6 +1011,54 @@ function SettingsContent() {
                 ) : (
                   <p className="text-sm text-green-800">请先登录后查看专属 Token。</p>
                 )}
+              </div>
+
+              {/* 第二步：手动创建快捷指令 */}
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <h3 className="font-semibold text-blue-900 mb-3">第二步：在「快捷指令」App 手动创建</h3>
+                <p className="text-sm text-blue-800 mb-3">
+                  打开 iPhone / iPad / Mac 上的「<strong>快捷指令</strong>」App，点右上角 <strong>＋</strong> 新建，按顺序添加以下 4 个动作：
+                </p>
+                <ol className="space-y-3 text-sm text-blue-900">
+                  <li className="flex gap-3">
+                    <span className="font-bold text-blue-600 min-w-[20px]">①</span>
+                    <div>
+                      <strong>听写文本</strong>（Dictate Text）<br />
+                      <span className="text-blue-700 text-xs">搜索「听写」即可找到</span>
+                    </div>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="font-bold text-blue-600 min-w-[20px]">②</span>
+                    <div>
+                      <strong>获取 URL 内容</strong>（Get Contents of URL）<br />
+                      <span className="text-blue-700 text-xs">展开「显示更多」后配置：</span>
+                      <ul className="mt-1 space-y-0.5 text-xs text-blue-800 pl-2">
+                        <li>URL：<code className="bg-blue-100 px-1 rounded">https://health.executor.life/api/siri/say</code></li>
+                        <li>方法：<strong>POST</strong></li>
+                        <li>请求体：<strong>文件</strong> → 选择上一步的「听写的文本」</li>
+                        <li>标头（Header）→ 添加一项：<br />
+                          名称：<code className="bg-blue-100 px-1 rounded">Authorization</code><br />
+                          值：<code className="bg-blue-100 px-1 rounded">Bearer 【粘贴你的Token】</code>
+                        </li>
+                      </ul>
+                    </div>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="font-bold text-blue-600 min-w-[20px]">③</span>
+                    <div>
+                      <strong>获取词典中的值</strong>（Get Dictionary Value）<br />
+                      <span className="text-blue-700 text-xs">类型选「值」，键填 <code className="bg-blue-100 px-1 rounded">text</code></span>
+                    </div>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="font-bold text-blue-600 min-w-[20px]">④</span>
+                    <div>
+                      <strong>朗读文本</strong>（Speak Text）<br />
+                      <span className="text-blue-700 text-xs">搜索「朗读」即可找到</span>
+                    </div>
+                  </li>
+                </ol>
+                <p className="text-xs text-blue-600 mt-3">完成后将快捷指令命名为「健康记录」，保存即可使用。</p>
               </div>
 
               {/* 第三步：设置触发方式 */}
