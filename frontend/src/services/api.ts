@@ -1041,3 +1041,112 @@ export const activityStatusApi = {
   getStats: (days: number = 7) =>
     api.get<ActivityStatsData>(`/activity-status/stats/me?days=${days}`),
 };
+
+// ===== 好友关系 =====
+
+export interface FriendInfo {
+  user_id: number;
+  name: string;
+  avatar_url: string | null;
+  friendship_id: number;
+  since: string;
+}
+
+export interface FriendRequestData {
+  id: number;
+  user_id: number;
+  friend_id: number;
+  status: string;
+  message: string | null;
+  created_at: string;
+  user_name: string | null;
+  user_avatar: string | null;
+  friend_name: string | null;
+  friend_avatar: string | null;
+}
+
+export interface UserSearchResultData {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  is_friend: boolean;
+  request_pending: boolean;
+}
+
+export const friendsApi = {
+  sendRequest: (friendId: number, message?: string) =>
+    api.post<FriendRequestData>('/friends/request', { friend_id: friendId, message }),
+  acceptRequest: (requestId: number) =>
+    api.put<FriendRequestData>(`/friends/request/${requestId}/accept`),
+  rejectRequest: (requestId: number) =>
+    api.put<FriendRequestData>(`/friends/request/${requestId}/reject`),
+  listFriends: () =>
+    api.get<FriendInfo[]>('/friends/list'),
+  pendingRequests: () =>
+    api.get<FriendRequestData[]>('/friends/requests/pending'),
+  removeFriend: (friendshipId: number) =>
+    api.delete(`/friends/${friendshipId}`),
+  searchUsers: (q: string) =>
+    api.get<UserSearchResultData[]>(`/friends/search?q=${encodeURIComponent(q)}`),
+};
+
+// ===== PK挑战 =====
+
+export interface ParticipantInfoData {
+  user_id: number;
+  user_name: string;
+  user_avatar: string | null;
+  score: number;
+  rank: number | null;
+  joined_at: string;
+}
+
+export interface PKChallengeData {
+  id: number;
+  creator_id: number;
+  creator_name: string | null;
+  title: string;
+  challenge_type: string;
+  checkin_template_id: number | null;
+  checkin_template_name: string | null;
+  activity_category: string | null;
+  metric: string;
+  duration_days: number;
+  start_date: string;
+  end_date: string;
+  status: string;
+  participants: ParticipantInfoData[];
+  created_at: string;
+}
+
+export interface PKChallengeDetailData extends PKChallengeData {
+  leaderboard: ParticipantInfoData[];
+}
+
+export interface PKStatsData {
+  total_challenges: number;
+  wins: number;
+  active_challenges: number;
+}
+
+export const pkChallengeApi = {
+  create: (data: {
+    title: string;
+    challenge_type: string;
+    checkin_template_id?: number;
+    activity_category?: string;
+    metric?: string;
+    duration_days?: number;
+    friend_ids: number[];
+  }) => api.post<PKChallengeData>('/pk-challenges', data),
+  list: (status?: string) =>
+    api.get<PKChallengeData[]>('/pk-challenges', { params: status ? { status } : {} }),
+  getDetail: (id: number) =>
+    api.get<PKChallengeDetailData>(`/pk-challenges/${id}`),
+  refresh: (id: number) =>
+    api.post<PKChallengeDetailData>(`/pk-challenges/${id}/refresh`),
+  cancel: (id: number) =>
+    api.delete(`/pk-challenges/${id}`),
+  myStats: () =>
+    api.get<PKStatsData>('/pk-challenges/stats/me'),
+};

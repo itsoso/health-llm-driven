@@ -59,6 +59,8 @@ from app.api import (
     excretion,  # 排泄记录
     sleep_record,  # 睡眠记录
     activity_status,  # 活动状态
+    friendship,  # 好友关系
+    pk_challenge,  # PK挑战
 )
 
 api_router = APIRouter()
@@ -126,3 +128,5 @@ api_router.include_router(kids_pet.router)  # 儿童狗狗空间
 api_router.include_router(excretion.router)  # 排泄记录
 api_router.include_router(sleep_record.router)  # 睡眠记录
 api_router.include_router(activity_status.router)  # 活动状态
+api_router.include_router(friendship.router)  # 好友关系
+api_router.include_router(pk_challenge.router)  # PK挑战

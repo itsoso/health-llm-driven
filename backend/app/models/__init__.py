@@ -64,6 +64,8 @@ from app.models.excretion import ExcretionRecord
 from app.models.sleep_record import SleepRecord
 # 活动状态模型
 from app.models.activity_status import ActivityStatus
+# 好友关系和PK挑战模型
+from app.models.friendship import Friendship, PKChallenge, ChallengeParticipant
 
 __all__ = [
     "User",
@@ -151,5 +153,9 @@ __all__ = [
     "SleepRecord",
     # 活动状态
     "ActivityStatus",
+    # 好友关系和PK挑战
+    "Friendship",
+    "PKChallenge",
+    "ChallengeParticipant",
 ]
 
