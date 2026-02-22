@@ -1072,6 +1072,28 @@ function SettingsContent() {
                 </div>
               </div>
 
+              {/* 安卓/华为用户专属 */}
+              <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                <h3 className="font-semibold text-purple-900 mb-2">安卓 / 华为用户</h3>
+                <p className="text-sm text-purple-800 mb-3">
+                  安卓手机无法使用 iPhone 快捷指令，可用下方「语音快捷记录」页面，添加到桌面后一点即用，体验一致。
+                </p>
+                {token ? (
+                  <button
+                    onClick={() => {
+                      const url = `https://health.executor.life/quick-record?token=${token}`;
+                      navigator.clipboard.writeText(url);
+                      alert('✅ 链接已复制！\n\n① 用手机浏览器打开此链接\n② 浏览器菜单 →「添加到桌面」\n③ 桌面出现图标，一点即可语音记录');
+                    }}
+                    className="inline-flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
+                  >
+                    📋 复制语音快捷记录链接
+                  </button>
+                ) : (
+                  <p className="text-sm text-purple-800">请先登录后获取专属链接。</p>
+                )}
+              </div>
+
               {/* 支持的语音指令 */}
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                 <h3 className="font-semibold text-gray-800 mb-2">支持的语音指令</h3>
