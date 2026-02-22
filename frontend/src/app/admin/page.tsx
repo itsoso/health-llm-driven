@@ -596,6 +596,12 @@ export default function AdminPage() {
           >
             📈 性能监控
           </button>
+          <button
+            onClick={() => router.push('/admin/architecture')}
+            className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20"
+          >
+            📐 技术架构
+          </button>
         </div>
 
         {/* 用户管理 Tab */}
