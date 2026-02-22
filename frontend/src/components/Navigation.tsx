@@ -48,6 +48,7 @@ import {
   Moon,
   Timer,
   Users,
+  Trophy,
 } from 'lucide-react';
 
 interface NavItem {
@@ -79,6 +80,7 @@ export default function Navigation() {
     { href: '/ai-assistant', label: '健康顾问', icon: <MessageCircle className="w-4 h-4" /> },
     { href: '/news', label: '资讯', icon: <Newspaper className="w-4 h-4" /> },
     { href: '/friends', label: '好友PK', icon: <Users className="w-4 h-4" /> },
+    { href: '/points', label: '积分', icon: <Trophy className="w-4 h-4" /> },
   ];
 
   // 分组下拉菜单

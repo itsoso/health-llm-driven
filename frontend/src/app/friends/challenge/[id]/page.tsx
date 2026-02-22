@@ -212,6 +212,9 @@ export default function ChallengeDetailPage() {
                   }
                 </div>
                 <div className="text-xs text-white/40">{getMetricUnit(challenge.metric)}</div>
+                {challenge.status === 'completed' && p.points > 0 && (
+                  <div className="text-xs text-cyan-400 mt-0.5">+{p.points}积分</div>
+                )}
               </div>
             </div>
           ))}

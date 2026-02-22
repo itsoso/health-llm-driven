@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
 os.environ.setdefault("SECRET_KEY", "test-secret-key-32-chars-minimum!!")
+os.environ.setdefault("GARMIN_ENCRYPTION_KEY", "mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=")
 
 from main import app
 

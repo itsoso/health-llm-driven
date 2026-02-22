@@ -51,6 +51,7 @@ class PKChallenge(Base):
 
     status = Column(String(20), nullable=False, default="active")            # active/completed/cancelled
     is_public = Column(Boolean, default=False)                               # 是否公开（可扩展）
+    points_awarded = Column(Boolean, default=False)                          # 积分是否已发放
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -75,6 +76,7 @@ class ChallengeParticipant(Base):
     # 实时统计（定期更新）
     score = Column(Float, default=0)                    # 当前得分
     rank = Column(Integer, nullable=True)               # 排名
+    points = Column(Integer, default=0)                 # 获得的积分
 
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

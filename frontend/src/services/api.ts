@@ -1098,6 +1098,7 @@ export interface ParticipantInfoData {
   user_avatar: string | null;
   score: number;
   rank: number | null;
+  points: number;
   joined_at: string;
 }
 
@@ -1127,7 +1128,48 @@ export interface PKStatsData {
   total_challenges: number;
   wins: number;
   active_challenges: number;
+  total_points: number;
 }
+
+// ===== 每日健康积分 =====
+
+export interface PointItemData {
+  category: string;
+  name: string;
+  points: number;
+  max_points: number;
+  detail: string;
+}
+
+export interface DailyPointsData {
+  date: string;
+  total_points: number;
+  items: PointItemData[];
+}
+
+export interface PointsHistoryItemData {
+  date: string;
+  total_points: number;
+}
+
+export interface PointsSummaryData {
+  today_points: number;
+  week_points: number;
+  month_points: number;
+  streak_days: number;
+  today_detail: DailyPointsData;
+}
+
+export const dailyPointsApi = {
+  getToday: () =>
+    api.get<DailyPointsData>('/points/today'),
+  getDate: (targetDate: string) =>
+    api.get<DailyPointsData>(`/points/date/${targetDate}`),
+  getSummary: () =>
+    api.get<PointsSummaryData>('/points/summary'),
+  getHistory: (days: number = 7) =>
+    api.get<PointsHistoryItemData[]>(`/points/history?days=${days}`),
+};
 
 export const pkChallengeApi = {
   create: (data: {

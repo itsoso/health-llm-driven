@@ -64,6 +64,7 @@ class ParticipantInfo(BaseModel):
     user_avatar: Optional[str] = None
     score: float = 0
     rank: Optional[int] = None
+    points: int = 0
     joined_at: datetime
 
     class Config:
@@ -101,3 +102,4 @@ class PKStatsResponse(BaseModel):
     total_challenges: int = 0
     wins: int = 0
     active_challenges: int = 0
+    total_points: int = 0

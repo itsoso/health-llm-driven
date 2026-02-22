@@ -120,6 +120,7 @@ def _build_challenge_response(
             user_avatar=u.avatar_url if u else None,
             score=p.score or 0,
             rank=p.rank,
+            points=p.points or 0,
             joined_at=p.joined_at,
         ))
 
@@ -257,10 +258,13 @@ async def my_stats(
             if p and p.rank == 1:
                 wins += 1
 
+    total_points = sum(p.points or 0 for p in my_participations)
+
     return PKStatsResponse(
         total_challenges=total,
         wins=wins,
         active_challenges=active,
+        total_points=total_points,
     )
 
 
@@ -349,3 +353,19 @@ def _update_scores(db: Session, challenge: PKChallenge):
     sorted_ps = sorted(challenge.participants, key=lambda x: x.score or 0, reverse=True)
     for i, p in enumerate(sorted_ps):
         p.rank = i + 1
+
+    # 挑战结束时发放积分（仅一次）
+    if challenge.status == "completed" and not challenge.points_awarded:
+        _award_points(db, challenge, sorted_ps)
+        challenge.points_awarded = True
+
+
+# 排名对应积分
+RANK_POINTS = {1: 10, 2: 8, 3: 5, 4: 3, 5: 2}
+
+
+def _award_points(db: Session, challenge: PKChallenge, sorted_participants):
+    """根据排名发放积分"""
+    for p in sorted_participants:
+        pts = RANK_POINTS.get(p.rank, 1)
+        p.points = pts

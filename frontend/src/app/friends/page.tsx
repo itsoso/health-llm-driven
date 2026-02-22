@@ -317,7 +317,7 @@ export default function FriendsPage() {
               <div>
                 {/* 统计卡片 */}
                 {pkStats && (
-                  <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-4 gap-3 mb-4">
                     <div className="bg-white/5 rounded-xl p-3 text-center">
                       <div className="text-2xl font-bold">{pkStats.total_challenges}</div>
                       <div className="text-xs text-white/40">总挑战</div>
@@ -329,6 +329,10 @@ export default function FriendsPage() {
                     <div className="bg-white/5 rounded-xl p-3 text-center">
                       <div className="text-2xl font-bold text-green-400">{pkStats.active_challenges}</div>
                       <div className="text-xs text-white/40">进行中</div>
+                    </div>
+                    <div className="bg-white/5 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold text-cyan-400">{pkStats.total_points}</div>
+                      <div className="text-xs text-white/40">积分</div>
                     </div>
                   </div>
                 )}
