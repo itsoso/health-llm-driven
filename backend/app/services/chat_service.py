@@ -582,6 +582,44 @@ class ChatService:
                     diet_stats_7d.append(f"平均脂肪{avg_fat:.0f}g/天")
                 parts.append(": ".join(diet_stats_7d))
 
+        # 饮水数据（从专用饮水记录表获取）
+        water_today = self.db.query(WaterIntake).filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date == today,
+        ).all()
+        if water_today:
+            total_ml = sum(w.amount_ml or 0 for w in water_today)
+            drink_types = {}
+            for w in water_today:
+                dt = w.drink_type or "水"
+                drink_types[dt] = drink_types.get(dt, 0) + (w.amount_ml or 0)
+            type_detail = ", ".join(f"{k}{v}ml" for k, v in drink_types.items())
+            target = 2000
+            pct = round(total_ml / target * 100)
+            parts.append(f"今日饮水: {total_ml}ml/{target}ml ({pct}%), 共{len(water_today)}次 [{type_detail}]")
+        else:
+            parts.append("今日饮水: 暂无记录")
+
+        # 最近7天饮水统计
+        water_7days = self.db.query(WaterIntake).filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date >= seven_days_ago,
+        ).all()
+        if water_7days:
+            from collections import defaultdict
+            daily_water = defaultdict(int)
+            for w in water_7days:
+                daily_water[w.record_date] += (w.amount_ml or 0)
+            days_with_water = len(daily_water)
+            total_7d = sum(daily_water.values())
+            avg_daily = total_7d / days_with_water if days_with_water > 0 else 0
+            target = 2000
+            days_met = sum(1 for v in daily_water.values() if v >= target)
+            parts.append(
+                f"最近7天饮水统计: 有{days_with_water}天记录, "
+                f"平均{avg_daily:.0f}ml/天, {days_met}天达标(≥{target}ml)"
+            )
+
         # 打卡数据分析（最近7天、30天）
         # 今日打卡记录
         checkins = self.db.query(CheckinRecord, CheckinTemplate).join(
