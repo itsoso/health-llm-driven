@@ -1492,6 +1492,18 @@ class ChatService:
             result["activities_saved"] = True
             result["activities"] = activity_results
 
+            # 检查是否有活动状态记录（需要设置提醒）
+            for ar in activity_results:
+                if ar.get("type") == "activity_status" and ar.get("status") == "saved":
+                    reminder_mins = ar.get("reminder_minutes")
+                    if reminder_mins and reminder_mins > 0:
+                        result["reminder"] = {
+                            "reminder_minutes": reminder_mins,
+                            "reminder_message": ar.get("reminder_message", "该休息一下了"),
+                            "activity_name": ar.get("activity_name", ""),
+                        }
+                        break
+
         return result
 
     async def _call_openclaw(self, messages: list) -> str:
@@ -1745,7 +1757,25 @@ class ChatService:
 
         dur_text = f"，预计{estimated_minutes}分钟" if estimated_minutes else ""
         logger.info(f"用户{user_id} AI记录活动状态: {activity_name}")
-        return {"type": "activity_status", "status": "saved", "message": f"已开始{activity_name}{dur_text}"}
+
+        # 计算提醒时间（活动预估时长后提醒休息）
+        reminder_minutes = estimated_minutes if estimated_minutes else 0
+        reminder_message = ""
+        if reminder_minutes > 0:
+            if category in ("studying", "working"):
+                reminder_message = f"{activity_name}已经{reminder_minutes}分钟了，该休息一下，看看远方，活动活动身体吧！"
+            elif category == "exercising":
+                reminder_message = f"{activity_name}已经{reminder_minutes}分钟了，注意补充水分和适当休息！"
+            else:
+                reminder_message = f"{activity_name}已经{reminder_minutes}分钟了，该换换活动了！"
+
+        return {
+            "type": "activity_status", "status": "saved",
+            "message": f"已开始{activity_name}{dur_text}",
+            "activity_name": activity_name,
+            "reminder_minutes": reminder_minutes,
+            "reminder_message": reminder_message,
+        }
 
     def delete_conversation(self, user_id: int, conversation_id: int) -> bool:
         """删除对话"""

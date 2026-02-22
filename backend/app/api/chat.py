@@ -53,6 +53,7 @@ async def send_message(
         diet_data=result.get("diet_data"),
         activities_saved=result.get("activities_saved"),
         activities=result.get("activities"),
+        reminder=result.get("reminder"),
     )
     return response
 

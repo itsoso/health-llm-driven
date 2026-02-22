@@ -132,6 +132,26 @@ export default function AIAssistantPage() {
         }
       }
 
+      // 设置休息提醒（浏览器通知）
+      if (result.reminder && result.reminder.reminder_minutes > 0) {
+        const { reminder_minutes, reminder_message, activity_name } = result.reminder;
+        if ('Notification' in window) {
+          if (Notification.permission === 'granted') {
+            setTimeout(() => {
+              new Notification(`${activity_name} - 休息提醒`, { body: reminder_message, icon: '/icon-192x192.png' });
+            }, reminder_minutes * 60 * 1000);
+          } else if (Notification.permission !== 'denied') {
+            Notification.requestPermission().then(perm => {
+              if (perm === 'granted') {
+                setTimeout(() => {
+                  new Notification(`${activity_name} - 休息提醒`, { body: reminder_message, icon: '/icon-192x192.png' });
+                }, reminder_minutes * 60 * 1000);
+              }
+            });
+          }
+        }
+      }
+
       // 重新加载对话列表
       loadConversations();
     } catch (e: any) {

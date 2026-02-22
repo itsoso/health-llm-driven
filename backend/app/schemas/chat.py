@@ -37,6 +37,12 @@ class ActivitySavedData(BaseModel):
     message: str  # 人类可读摘要
 
 
+class ReminderData(BaseModel):
+    reminder_minutes: int       # 多少分钟后提醒
+    reminder_message: str       # 提醒内容
+    activity_name: str          # 活动名称
+
+
 class ChatSendResponse(BaseModel):
     conversation_id: int
     reply: str
@@ -45,6 +51,7 @@ class ChatSendResponse(BaseModel):
     diet_data: Optional[DietSavedData] = None
     activities_saved: Optional[bool] = None
     activities: Optional[List[ActivitySavedData]] = None
+    reminder: Optional[ReminderData] = None
 
 
 class TranscribeRequest(BaseModel):

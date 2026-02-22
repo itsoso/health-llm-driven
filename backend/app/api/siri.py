@@ -290,6 +290,8 @@ class SiriResponse(BaseModel):
     text: str               # 纯文本，适合 Siri 朗读
     diet_saved: bool = False
     activities_saved: bool = False
+    reminder_minutes: int = 0       # >0 时快捷指令应设置本地提醒（分钟后）
+    reminder_message: str = ""      # 提醒内容
 
 
 @router.post("/say", response_model=SiriResponse, summary="Siri语音健康记录")
@@ -343,10 +345,20 @@ async def siri_say(
     reply = result.get("reply", "收到了，请稍后查看记录。")
     clean_text = strip_markdown(reply)
 
+    # 提取提醒信息
+    reminder = result.get("reminder")
+    reminder_minutes = 0
+    reminder_message = ""
+    if reminder:
+        reminder_minutes = reminder.get("reminder_minutes", 0)
+        reminder_message = reminder.get("reminder_message", "")
+
     return SiriResponse(
         text=clean_text,
         diet_saved=bool(result.get("diet_saved")),
         activities_saved=bool(result.get("activities_saved")),
+        reminder_minutes=reminder_minutes,
+        reminder_message=reminder_message,
     )
 
 

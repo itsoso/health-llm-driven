@@ -86,20 +86,35 @@ export default function ActivityStatusPage() {
 
   useEffect(() => {
     loadData();
+    // 请求通知权限（用于活动超时提醒）
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }, [loadData]);
 
   useEffect(() => {
     if (tab === 'stats') loadStats();
   }, [tab, loadStats]);
 
-  // 倒计时更新
+  // 倒计时更新 + 超时提醒
+  const [reminded, setReminded] = useState(false);
   useEffect(() => {
-    if (!currentStatus) return;
+    if (!currentStatus) { setReminded(false); return; }
     const timer = setInterval(() => {
-      setElapsed(getElapsedMinutes(currentStatus.start_time));
+      const mins = getElapsedMinutes(currentStatus.start_time);
+      setElapsed(mins);
+      // 到达预估时长时发送通知提醒
+      if (!reminded && currentStatus.estimated_duration_minutes && mins >= currentStatus.estimated_duration_minutes) {
+        setReminded(true);
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(`${currentStatus.status_text} - 休息提醒`, {
+            body: `已经${formatDuration(mins)}了，该休息一下，看看远方，活动活动身体吧！`,
+          });
+        }
+      }
     }, 60000);
     return () => clearInterval(timer);
-  }, [currentStatus]);
+  }, [currentStatus, reminded]);
 
   const startActivity = async (category: string, name?: string) => {
     try {
