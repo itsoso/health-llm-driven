@@ -34,8 +34,15 @@ def _calc_participant_score(
     db: Session, user_id: int, challenge: PKChallenge
 ) -> float:
     """计算参与者在挑战中的得分"""
+    now = datetime.now(timezone.utc)
     start = challenge.start_date
-    end = min(challenge.end_date, datetime.now(timezone.utc))
+    # 确保 datetime 比较安全（统一为 aware）
+    if start and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    end_dt = challenge.end_date
+    if end_dt and end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=timezone.utc)
+    end = min(end_dt, now) if end_dt else now
 
     if challenge.challenge_type == "checkin" and challenge.checkin_template_id:
         start_date = start.date() if hasattr(start, 'date') else start
@@ -213,7 +220,10 @@ async def list_challenges(
     # 自动结束已过期的挑战
     now = datetime.now(timezone.utc)
     for c in challenges:
-        if c.status == "active" and c.end_date < now:
+        end_dt = c.end_date
+        if end_dt and end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+        if c.status == "active" and end_dt and end_dt < now:
             c.status = "completed"
             # 更新分数和排名
             _update_scores(db, c)
@@ -274,7 +284,10 @@ async def get_challenge(
 
     # 自动结束
     now = datetime.now(timezone.utc)
-    if challenge.status == "active" and challenge.end_date < now:
+    end_dt = challenge.end_date
+    if end_dt and end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=timezone.utc)
+    if challenge.status == "active" and end_dt and end_dt < now:
         challenge.status = "completed"
 
     # 实时更新分数

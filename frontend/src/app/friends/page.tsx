@@ -368,7 +368,7 @@ export default function FriendsPage() {
                           </div>
                           {/* 参与者头像 */}
                           <div className="flex items-center gap-1">
-                            {c.participants.slice(0, 5).map((p, i) => (
+                            {c.participants.slice(0, 5).map((p) => (
                               <div
                                 key={p.user_id}
                                 className="w-7 h-7 rounded-full bg-purple-500/60 flex items-center justify-center text-xs font-bold border border-gray-800"

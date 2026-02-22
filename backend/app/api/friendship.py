@@ -51,9 +51,7 @@ async def send_friend_request(
                 return _build_request_response(existing, db)
             raise HTTPException(status_code=400, detail="已发送过好友请求，等待对方确认")
         if existing.status == "rejected":
-            # 重新发送
-            existing.user_id = current_user.id
-            existing.friend_id = data.friend_id
+            # 重新发送 — 保留原方向的 unique index，只更新状态
             existing.status = "pending"
             existing.message = data.message
             db.commit()
@@ -180,12 +178,14 @@ async def search_users(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
+    # 转义SQL通配符
+    safe_q = q.replace("%", "\\%").replace("_", "\\_")
     users = db.query(User).filter(
         User.is_active == True,
         User.id != current_user.id,
         or_(
-            User.name.ilike(f"%{q}%"),
-            User.username.ilike(f"%{q}%"),
+            User.name.ilike(f"%{safe_q}%"),
+            User.username.ilike(f"%{safe_q}%"),
         ),
     ).limit(20).all()
 

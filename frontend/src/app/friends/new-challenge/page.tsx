@@ -50,10 +50,10 @@ export default function NewChallengePage() {
       try {
         const [friendsRes, templatesRes] = await Promise.all([
           friendsApi.listFriends(),
-          api.get<CheckinTemplateOption[]>('/checkin/templates'),
+          api.get<{ templates: CheckinTemplateOption[]; total: number }>('/checkin/templates'),
         ]);
         setFriends(friendsRes.data);
-        setTemplates(templatesRes.data);
+        setTemplates(templatesRes.data.templates || []);
       } catch (err) {
         console.error('加载数据失败', err);
       } finally {

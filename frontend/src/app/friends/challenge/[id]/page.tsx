@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
 import { pkChallengeApi, PKChallengeDetailData } from '@/services/api';
 
 export default function ChallengeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const challengeId = Number(params.id);
   const [challenge, setChallenge] = useState<PKChallengeDetailData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -215,8 +217,8 @@ export default function ChallengeDetailPage() {
           ))}
         </div>
 
-        {/* 操作按钮 */}
-        {challenge.status === 'active' && (
+        {/* 操作按钮 - 仅创建者可取消 */}
+        {challenge.status === 'active' && user?.id === challenge.creator_id && (
           <button
             onClick={handleCancel}
             className="w-full py-3 bg-red-500/10 text-red-400 rounded-xl text-sm"
