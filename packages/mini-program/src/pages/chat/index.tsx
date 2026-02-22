@@ -40,8 +40,15 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const itemsPerPage = 10;
-  const scrollId = useRef('msg-bottom');
+  const [scrollTarget, setScrollTarget] = useState('msg-bottom');
+  const scrollFlip = useRef(false);
   const recorderManager = useRef<Taro.RecorderManager | null>(null);
+
+  // 滚动到底部（通过切换scrollIntoView的值触发）
+  const scrollToBottom = useCallback(() => {
+    scrollFlip.current = !scrollFlip.current;
+    setScrollTarget(scrollFlip.current ? 'msg-bottom-alt' : 'msg-bottom');
+  }, []);
 
   // 加载对话列表
   const loadConversations = useCallback(async () => {
@@ -60,11 +67,13 @@ export default function Chat() {
       setMessages(detail.messages || []);
       setConversationId(convId);
       setShowHistory(false);
+      // 延迟滚动到底部，等待消息渲染完成
+      setTimeout(() => scrollToBottom(), 100);
     } catch (e) {
       console.error('加载对话失败:', e);
       Taro.showToast({ title: '加载失败', icon: 'none' });
     }
-  }, []);
+  }, [scrollToBottom]);
 
   useEffect(() => {
     loadConversations();
@@ -86,6 +95,7 @@ export default function Chat() {
     };
     setMessages(prev => [...prev, tempUserMsg]);
     setLoading(true);
+    setTimeout(() => scrollToBottom(), 50);
 
     try {
       const result = await chatSend(msg, conversationId);
@@ -103,6 +113,7 @@ export default function Chat() {
         created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, aiMsg]);
+      setTimeout(() => scrollToBottom(), 50);
 
       // 显示活动记录通知
       if (result.activities_saved && result.activities?.length > 0) {
@@ -464,7 +475,7 @@ export default function Chat() {
       <ScrollView
         scrollY
         className="chat-messages"
-        scrollIntoView={scrollId.current}
+        scrollIntoView={scrollTarget}
         scrollWithAnimation
       >
         {messages.length === 0 && !loading && (
@@ -527,6 +538,7 @@ export default function Chat() {
         )}
 
         <View id="msg-bottom" />
+        <View id="msg-bottom-alt" />
       </ScrollView>
 
       {/* 快捷提问（对话进行中也显示） */}
