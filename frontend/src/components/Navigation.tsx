@@ -46,6 +46,7 @@ import {
   Baby,
   Plane,
   Moon,
+  Timer,
 } from 'lucide-react';
 
 interface NavItem {
@@ -117,6 +118,7 @@ export default function Navigation() {
         { href: '/illness', label: '当前病症', icon: <Stethoscope className="w-4 h-4" /> },
         { href: '/excretion', label: '排泄记录', icon: <Droplets className="w-4 h-4" /> },
         { href: '/sleep', label: '睡眠记录', icon: <Moon className="w-4 h-4" /> },
+        { href: '/activity-status', label: '活动状态', icon: <Timer className="w-4 h-4" /> },
       ],
     },
     {

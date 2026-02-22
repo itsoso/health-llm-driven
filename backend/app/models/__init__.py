@@ -62,6 +62,8 @@ from app.models.kids_pet import KidsPetProfile
 from app.models.excretion import ExcretionRecord
 # 睡眠记录模型
 from app.models.sleep_record import SleepRecord
+# 活动状态模型
+from app.models.activity_status import ActivityStatus
 
 __all__ = [
     "User",
@@ -147,5 +149,7 @@ __all__ = [
     "ExcretionRecord",
     # 睡眠记录
     "SleepRecord",
+    # 活动状态
+    "ActivityStatus",
 ]
 

@@ -29,6 +29,7 @@ from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
 from app.models.excretion import ExcretionRecord
 from app.models.sleep_record import SleepRecord
+from app.models.activity_status import ActivityStatus
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
 from app.services.quark_search import get_search_client
@@ -857,6 +858,22 @@ class ChatService:
             logger.warning(f"查询疾病档案失败(可忽略): {e}")
             self.db.rollback()
 
+        # 当前活动状态
+        try:
+            active_status = self.db.query(ActivityStatus).filter(
+                ActivityStatus.user_id == user_id,
+                ActivityStatus.is_active == True,
+            ).order_by(ActivityStatus.start_time.desc()).first()
+            if active_status:
+                status_info = f'当前活动状态: {active_status.status_text} (类别: {active_status.category})'
+                if active_status.start_time:
+                    status_info += f', 开始时间: {active_status.start_time.strftime("%H:%M")}'
+                if active_status.estimated_duration_minutes:
+                    status_info += f', 预计时长: {active_status.estimated_duration_minutes}分钟'
+                parts.append(status_info)
+        except Exception as e:
+            logger.warning(f"查询活动状态失败(可忽略): {e}")
+
         return "\n\n".join(parts)
 
     async def _get_system_prompt(self, user_id: int, is_kids_mode: bool = False) -> str:
@@ -917,7 +934,12 @@ class ChatService:
             '{"type":"rhinitis","nasal_wash":次数或null,"nasal_wash_type":"wash或soak","sneeze_count":次数或null},'
             '{"type":"water","amount":毫升数,"drink_type":"水/茶/咖啡"},'
             '{"type":"supplement","supplement_id":ID,"supplement_name":"名称"},'
-            '{"type":"symptom","profile_id":ID,"disease_name":"疾病名","overall_severity":0到10,"symptoms":[{"name":"症状","severity":1到10}]}]>>>\n\n'
+            '{"type":"symptom","profile_id":ID,"disease_name":"疾病名","overall_severity":0到10,"symptoms":[{"name":"症状","severity":1到10}]},'
+            '{"type":"activity_status","activity_name":"活动名","category":"studying|working|exercising|resting|entertainment|other","estimated_duration_minutes":分钟数}]>>>\n\n'
+            "### 活动状态说明\n"
+            "当用户说\"我正在...\"或\"我开始...\"时，记录当前活动状态。这不同于已完成的活动，而是正在进行的状态。\n"
+            "默认时长估算：学习/工作=120分钟，运动/锻炼=60分钟，休息/午睡=30分钟，阅读=60分钟，娱乐/游戏=60分钟，其他=60分钟\n"
+            "当用户说\"学习完了\"\"不学了\"等表示结束当前活动时，也用activity_status记录，并附加\"end\":true\n\n"
             "### 示例\n"
             "- \"刚踢腿200下\" → checkin, 匹配踢腿模板, value=200\n"
             "- \"洗了鼻子\" → rhinitis, nasal_wash=1, nasal_wash_type=\"wash\"\n"
@@ -927,7 +949,12 @@ class ChatService:
             "- \"喝了一杯水\" → water, amount=250\n"
             "- \"喝了500ml水\" → water, amount=500\n"
             "- \"吃了维生素D\" → supplement\n"
-            "- \"做了30个俯卧撑然后喝了杯水\" → 两个活动\n\n"
+            "- \"做了30个俯卧撑然后喝了杯水\" → 两个活动\n"
+            "- \"我正在学习\" → activity_status, activity_name=\"学习\", category=\"studying\", estimated_duration_minutes=120\n"
+            "- \"开始工作了\" → activity_status, activity_name=\"工作\", category=\"working\", estimated_duration_minutes=120\n"
+            "- \"我去跑步了\" → activity_status, activity_name=\"跑步\", category=\"exercising\", estimated_duration_minutes=60\n"
+            "- \"学习完了\" → activity_status, activity_name=\"学习\", end=true\n"
+            "- \"休息一下\" → activity_status, activity_name=\"休息\", category=\"resting\", estimated_duration_minutes=30\n\n"
             "### 不应记录\n"
             "- \"我应该每天踢多少下？\" → 提问不记录\n"
             "- \"明天计划跑步\" → 计划不记录\n"
@@ -1098,6 +1125,8 @@ class ChatService:
                     result = self._handle_excretion_action(user_id, action, today, now)
                 elif action_type == "sleep":
                     result = self._handle_sleep_action(user_id, action, today)
+                elif action_type == "activity_status":
+                    result = self._handle_activity_status_action(user_id, action, now)
                 else:
                     logger.warning(f"未知活动类型: {action_type}")
                     continue
@@ -1652,6 +1681,71 @@ class ChatService:
         except Exception as e:
             logger.warning(f"解析睡眠时间失败: {e}")
             return None
+
+    def _handle_activity_status_action(self, user_id: int, action: dict, now: datetime) -> Optional[Dict]:
+        """通过 AI 对话记录当前活动状态"""
+        # 结束当前活动
+        if action.get("end"):
+            active = self.db.query(ActivityStatus).filter(
+                ActivityStatus.user_id == user_id,
+                ActivityStatus.is_active == True,
+            ).all()
+            if not active:
+                return {"type": "activity_status", "status": "no_active", "message": "当前没有进行中的活动"}
+            from datetime import timezone as tz
+            end_time = datetime.now(tz.utc)
+            for a in active:
+                a.is_active = False
+                a.actual_end_time = end_time
+            self.db.commit()
+            names = "、".join(a.status_text for a in active)
+            return {"type": "activity_status", "status": "ended", "message": f"已结束活动: {names}"}
+
+        activity_name = action.get("activity_name", "").strip()
+        if not activity_name:
+            return None
+
+        category = action.get("category", "other")
+        valid_cats = {"studying", "working", "exercising", "resting", "entertainment", "other"}
+        if category not in valid_cats:
+            category = "other"
+
+        estimated_minutes = action.get("estimated_duration_minutes")
+        if estimated_minutes:
+            estimated_minutes = max(1, min(720, int(estimated_minutes)))
+
+        from datetime import timezone as tz
+        now_utc = datetime.now(tz.utc)
+
+        # 自动结束之前的活动
+        prev_active = self.db.query(ActivityStatus).filter(
+            ActivityStatus.user_id == user_id,
+            ActivityStatus.is_active == True,
+        ).all()
+        for a in prev_active:
+            a.is_active = False
+            a.actual_end_time = now_utc
+
+        estimated_end = None
+        if estimated_minutes:
+            estimated_end = now_utc + timedelta(minutes=estimated_minutes)
+
+        record = ActivityStatus(
+            user_id=user_id,
+            status_text=activity_name,
+            category=category,
+            start_time=now_utc,
+            estimated_duration_minutes=estimated_minutes,
+            estimated_end_time=estimated_end,
+            is_active=True,
+            notes=action.get("notes"),
+        )
+        self.db.add(record)
+        self.db.commit()
+
+        dur_text = f"，预计{estimated_minutes}分钟" if estimated_minutes else ""
+        logger.info(f"用户{user_id} AI记录活动状态: {activity_name}")
+        return {"type": "activity_status", "status": "saved", "message": f"已开始{activity_name}{dur_text}"}
 
     def delete_conversation(self, user_id: int, conversation_id: int) -> bool:
         """删除对话"""
