@@ -15,6 +15,7 @@ class KidsPetProfile(Base):
     breed_id = Column(String(50), nullable=False)
     breed_name = Column(String(100), nullable=False)
     breed_image = Column(String(255), nullable=True)
+    breed_cost = Column(Integer, nullable=False, default=0)
     dog_name = Column(String(50), nullable=False)
 
     hunger = Column(Integer, nullable=False, default=100)

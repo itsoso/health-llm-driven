@@ -61,6 +61,7 @@ export default function KidsDogPage() {
   const [toast, setToast] = useState('');
   const [toastOk, setToastOk] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [confirmReturn, setConfirmReturn] = useState<'house' | 'garden' | 'dog' | null>(null);
 
   const notify = useCallback((msg: string, ok = true) => {
     setToast(msg);
@@ -111,18 +112,19 @@ export default function KidsDogPage() {
     }
   };
 
-  const handleAction = async (action: 'buy_food' | 'feed' | 'feed_full' | 'buy_house' | 'buy_garden') => {
-    if (!dog) return;
+  const handleAction = async (action: 'buy_food' | 'feed' | 'feed_full' | 'buy_house' | 'buy_garden' | 'return_house' | 'return_garden' | 'return_dog') => {
+    if (!dog && action !== 'return_dog') return;
     setLoading(true);
     try {
       const { data } = await kidsPetApi.action(action);
-      setDog(data.pet || null);
+      setDog(data.has_pet ? (data.pet || null) : null);
       reconcilePoints(data.kids_points || 0);
       notify(data.message || '操作成功');
     } catch (error: any) {
       notify(error?.response?.data?.detail || '操作失败', false);
     } finally {
       setLoading(false);
+      setConfirmReturn(null);
     }
   };
 
@@ -275,19 +277,51 @@ export default function KidsDogPage() {
               <span className="text-base font-bold text-gray-700">直接喂饱</span>
               <span className="text-xs text-amber-500 font-bold">⭐ 2积分</span>
             </button>
-            <button onClick={() => void handleAction('buy_house')} disabled={dog.has_house || loading} className={`flex flex-col items-center py-4 rounded-2xl shadow-sm transition-all active:scale-95 border-2 ${dog.has_house ? 'bg-green-50 border-green-200' : `bg-white ${theme.cardBorder}`} disabled:opacity-40`}>
+            <button onClick={() => dog.has_house ? setConfirmReturn('house') : void handleAction('buy_house')} disabled={loading} className={`flex flex-col items-center py-4 rounded-2xl shadow-sm transition-all active:scale-95 border-2 ${dog.has_house ? 'bg-green-50 border-green-200' : `bg-white ${theme.cardBorder}`} disabled:opacity-40`}>
               <img src="/kids/dog/items/house.png" alt="小屋" className="w-10 h-10 mb-1 object-contain" />
               <span className="text-base font-bold text-gray-700">狗狗小屋</span>
-              {dog.has_house ? <span className="text-xs text-green-500 font-bold">✓ 已拥有</span> : <span className="text-xs text-amber-500 font-bold">⭐ 3积分</span>}
+              {dog.has_house ? <span className="text-xs text-orange-500 font-bold">退还 +3积分</span> : <span className="text-xs text-amber-500 font-bold">⭐ 3积分</span>}
             </button>
-            <button onClick={() => void handleAction('buy_garden')} disabled={dog.has_garden || loading} className={`col-span-2 flex flex-col items-center py-4 rounded-2xl shadow-sm transition-all active:scale-95 border-2 ${dog.has_garden ? 'bg-green-50 border-green-200' : `bg-white ${theme.cardBorder}`} disabled:opacity-40`}>
+            <button onClick={() => dog.has_garden ? setConfirmReturn('garden') : void handleAction('buy_garden')} disabled={loading} className={`flex flex-col items-center py-4 rounded-2xl shadow-sm transition-all active:scale-95 border-2 ${dog.has_garden ? 'bg-green-50 border-green-200' : `bg-white ${theme.cardBorder}`} disabled:opacity-40`}>
               <img src="/kids/dog/items/garden.png" alt="花园" className="w-10 h-10 mb-1 object-contain" />
               <span className="text-base font-bold text-gray-700">狗狗花园</span>
-              {dog.has_garden ? <span className="text-xs text-green-500 font-bold">✓ 已拥有</span> : <span className="text-xs text-amber-500 font-bold">⭐ 5积分</span>}
+              {dog.has_garden ? <span className="text-xs text-orange-500 font-bold">退还 +5积分</span> : <span className="text-xs text-amber-500 font-bold">⭐ 5积分</span>}
+            </button>
+            <button onClick={() => setConfirmReturn('dog')} disabled={loading} className="col-span-2 flex flex-col items-center py-3 rounded-2xl shadow-sm transition-all active:scale-95 border-2 border-red-100 bg-red-50 disabled:opacity-40">
+              <span className="text-base font-bold text-red-400">送走{dog.dog_name}</span>
+              <span className="text-xs text-red-300">退还领养积分 +{dog.breed_cost || '?'}</span>
             </button>
           </div>
         </div>
       </div>
+      {confirmReturn && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-3xl p-6 w-[85%] max-w-sm shadow-2xl text-center">
+            <div className="text-5xl mb-3">
+              {confirmReturn === 'house' ? '🏠' : confirmReturn === 'garden' ? '🌻' : '🐶'}
+            </div>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">
+              {confirmReturn === 'house' ? '确定退还小屋？' : confirmReturn === 'garden' ? '确定退还花园？' : `确定送走${dog.dog_name}？`}
+            </h3>
+            <p className="text-gray-500 text-sm mb-1">
+              {confirmReturn === 'house' ? '退还后将返还 3 积分'
+                : confirmReturn === 'garden' ? '退还后将返还 5 积分'
+                  : `送走后将返还 ${dog.breed_cost || 0} 积分`}
+            </p>
+            {confirmReturn === 'dog' && <p className="text-red-400 text-xs mb-4">小屋、花园和狗粮也会一起清除</p>}
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setConfirmReturn(null)} className="flex-1 py-3 rounded-2xl border-2 border-gray-200 text-lg font-bold text-gray-500 active:scale-95 transition-all">取消</button>
+              <button
+                onClick={() => void handleAction(confirmReturn === 'house' ? 'return_house' : confirmReturn === 'garden' ? 'return_garden' : 'return_dog')}
+                disabled={loading}
+                className="flex-1 py-3 rounded-2xl bg-red-500 text-white text-lg font-bold shadow-md disabled:opacity-40 active:scale-95 transition-all"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[300] ${toastOk ? 'bg-black/70' : 'bg-red-500/90'} text-white px-6 py-4 rounded-2xl text-lg font-bold pointer-events-none text-center max-w-xs`}>{toast}</div>}
     </div>
   );

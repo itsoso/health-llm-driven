@@ -246,6 +246,7 @@ export interface KidsPetState {
   breed_id: string;
   breed_name: string;
   breed_image?: string | null;
+  breed_cost: number;
   dog_name: string;
   hunger: number;
   happiness: number;
@@ -274,7 +275,7 @@ export const kidsPetApi = {
     breed_image?: string;
     dog_name: string;
   }) => api.post<KidsPetResponse>('/kids-pet/adopt', data),
-  action: (action: 'buy_food' | 'feed' | 'feed_full' | 'buy_house' | 'buy_garden') =>
+  action: (action: 'buy_food' | 'feed' | 'feed_full' | 'buy_house' | 'buy_garden' | 'return_house' | 'return_garden' | 'return_dog') =>
     api.post<KidsPetResponse>('/kids-pet/action', { action }),
 };
 

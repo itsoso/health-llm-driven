@@ -84,6 +84,7 @@ async def adopt_pet(
         breed_id=payload.breed_id,
         breed_name=payload.breed_name,
         breed_image=payload.breed_image,
+        breed_cost=payload.breed_cost,
         dog_name=payload.dog_name.strip(),
         hunger=100,
         happiness=100,
@@ -158,6 +159,25 @@ async def pet_action(
         pet.has_garden = True
         pet.xp += 12
         message = "购买花园成功"
+    elif payload.action == "return_house":
+        if not pet.has_house:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有小屋可以退还")
+        pet.has_house = False
+        current_user.kids_points = points + 3
+        message = "退还小屋成功，返还3积分"
+    elif payload.action == "return_garden":
+        if not pet.has_garden:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有花园可以退还")
+        pet.has_garden = False
+        current_user.kids_points = points + 5
+        message = "退还花园成功，返还5积分"
+    elif payload.action == "return_dog":
+        refund = pet.breed_cost or 0
+        db.delete(pet)
+        current_user.kids_points = points + refund
+        db.commit()
+        db.refresh(current_user)
+        return _to_response(current_user, None, f"已送走{pet.dog_name}，返还{refund}积分")
 
     _sync_level(pet)
     pet.last_interaction_at = now

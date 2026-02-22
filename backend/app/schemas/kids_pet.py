@@ -13,13 +13,14 @@ class KidsPetAdoptRequest(BaseModel):
 
 
 class KidsPetActionRequest(BaseModel):
-    action: Literal["buy_food", "feed", "feed_full", "buy_house", "buy_garden"]
+    action: Literal["buy_food", "feed", "feed_full", "buy_house", "buy_garden", "return_house", "return_garden", "return_dog"]
 
 
 class KidsPetState(BaseModel):
     breed_id: str
     breed_name: str
     breed_image: Optional[str] = None
+    breed_cost: int = 0
     dog_name: str
     hunger: int
     happiness: int
