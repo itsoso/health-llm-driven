@@ -959,8 +959,8 @@ export const womensHealthApi = {
 
 export const chatApi = {
   // 发送消息
-  sendMessage: (message: string, conversationId?: number) =>
-    api.post<ChatSendResponse>('/chat/send', { message, conversation_id: conversationId }),
+  sendMessage: (message: string, conversationId?: number, isKidsMode?: boolean) =>
+    api.post<ChatSendResponse>('/chat/send', { message, conversation_id: conversationId, is_kids_mode: isKidsMode || false }),
   // 获取对话列表
   getConversations: (limit: number = 20) =>
     api.get<Conversation[]>(`/chat/conversations?limit=${limit}`),

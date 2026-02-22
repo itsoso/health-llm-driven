@@ -86,7 +86,7 @@ export default function KidsChatPage() {
     setLoading(true);
 
     try {
-      const response = await chatApi.sendMessage(msg, conversationId);
+      const response = await chatApi.sendMessage(msg, conversationId, true);
       const result = response.data;
       if (!conversationId && result.conversation_id) setConversationId(result.conversation_id);
       const aiMsg: ChatMessage = {

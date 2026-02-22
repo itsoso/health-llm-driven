@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class ChatSendRequest(BaseModel):
     message: str
     conversation_id: Optional[int] = None
+    is_kids_mode: Optional[bool] = False
 
 
 class ChatMessageResponse(BaseModel):

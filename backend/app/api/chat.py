@@ -39,7 +39,8 @@ async def send_message(
         result = await service.send_message(
             user_id=current_user.id,
             message=req.message.strip(),
-            conversation_id=req.conversation_id
+            conversation_id=req.conversation_id,
+            is_kids_mode=req.is_kids_mode or False
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
