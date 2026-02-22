@@ -422,7 +422,7 @@ export default function CheckinPage() {
                 >
                   {/* 背景装饰 */}
                   <div className={`absolute inset-0 bg-gradient-to-br ${categoryColors[template.category] || 'from-gray-600 to-gray-500'} opacity-5`} />
-                  
+
                   <div className="relative p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
@@ -434,11 +434,22 @@ export default function CheckinPage() {
                           </span>
                         </div>
                       </div>
-                      {template.today_completed && (
-                        <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">
-                          ✓ 已完成
-                        </span>
-                      )}
+                      {template.today_completed && (() => {
+                        const record = todaySummary?.records.find(r => r.template_id === template.id);
+                        const timeStr = record?.checkin_time
+                          ? new Date(record.checkin_time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                          : '';
+                        return (
+                          <div className="text-right">
+                            <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">
+                              ✓ 已完成
+                            </span>
+                            {timeStr && (
+                              <div className="text-white/40 text-xs mt-1">{timeStr}</div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                     
                     {/* 统计信息 */}
