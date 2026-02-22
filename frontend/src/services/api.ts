@@ -885,6 +885,12 @@ export interface ActivitySavedData {
   message: string;
 }
 
+export interface ReminderData {
+  reminder_minutes: number;
+  reminder_message: string;
+  activity_name: string;
+}
+
 export interface ChatSendResponse {
   conversation_id: number;
   message_id: number;
@@ -893,6 +899,7 @@ export interface ChatSendResponse {
   diet_data?: DietSavedData;
   activities_saved?: boolean;
   activities?: ActivitySavedData[];
+  reminder?: ReminderData;
 }
 
 // ====== 女性健康 ======
