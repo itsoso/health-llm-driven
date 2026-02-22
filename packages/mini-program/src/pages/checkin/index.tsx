@@ -113,6 +113,7 @@ export default function CheckinPage() {
   const loadData = useCallback(async () => {
     const token = Taro.getStorageSync('access_token');
     if (!token) {
+      setLoading(false);
       Taro.switchTab({ url: '/pages/index/index' });
       return;
     }
@@ -120,30 +121,41 @@ export default function CheckinPage() {
     try {
       setLoading(true);
 
-      // 先尝试同步新增的默认模板
+      // 先尝试同步新增的默认模板（静默，不影响后续加载）
       await syncDefaultTemplates();
 
-      // 并行请求
-      const [templatesRes, summaryRes, statsRes] = await Promise.all([
+      // 并行请求，使用 allSettled 防止单个失败阻塞全部
+      const [templatesResult, summaryResult, statsResult] = await Promise.allSettled([
         request<{ templates: CheckinTemplate[] }>({
           url: '/checkin/templates',
           method: 'GET',
           params: selectedCategory ? { category: selectedCategory } : {},
+          silent: true,
         }),
         request<DailySummary>({
           url: '/checkin/records/today',
           method: 'GET',
+          silent: true,
         }),
         request<CheckinStats>({
           url: '/checkin/stats',
           method: 'GET',
+          silent: true,
         }),
       ]);
 
-      // request 函数直接返回响应数据
-      setTemplates(templatesRes?.templates || []);
-      setSummary(summaryRes);
-      setStats(statsRes);
+      // 逐个处理结果，单个失败不影响其他
+      if (templatesResult.status === 'fulfilled') {
+        setTemplates(templatesResult.value?.templates || []);
+      } else {
+        console.error('加载模板失败:', templatesResult.reason);
+      }
+      if (summaryResult.status === 'fulfilled') {
+        setSummary(summaryResult.value);
+      }
+      if (statsResult.status === 'fulfilled') {
+        setStats(statsResult.value);
+      }
     } catch (error) {
       console.error('加载数据失败:', error);
       Taro.showToast({ title: '加载失败', icon: 'none' });
