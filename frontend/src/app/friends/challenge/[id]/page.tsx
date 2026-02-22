@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { pkChallengeApi, PKChallengeDetailData } from '@/services/api';
@@ -9,11 +9,15 @@ import { pkChallengeApi, PKChallengeDetailData } from '@/services/api';
 export default function ChallengeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const challengeId = Number(params.id);
+  const isJustCreated = searchParams.get('created') === '1';
   const [challenge, setChallenge] = useState<PKChallengeDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showGuide, setShowGuide] = useState(isJustCreated);
+  const [copied, setCopied] = useState(false);
 
   const loadChallenge = useCallback(async () => {
     try {
@@ -49,6 +53,28 @@ export default function ChallengeDetailPage() {
       router.push('/friends?tab=challenges');
     } catch (err: any) {
       alert(err.response?.data?.detail || '取消失败');
+    }
+  };
+
+  const shareLink = typeof window !== 'undefined'
+    ? `https://health.executor.life/friends/challenge/${challengeId}`
+    : '';
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // 降级方案
+      const input = document.createElement('input');
+      input.value = shareLink;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -119,7 +145,7 @@ export default function ChallengeDetailPage() {
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-4 pb-24">
         {/* 顶部 */}
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => router.back()} className="text-white/50 hover:text-white">
+          <button onClick={() => router.push('/friends')} className="text-white/50 hover:text-white">
             &larr;
           </button>
           <h1 className="text-xl font-bold flex-1">{challenge.title}</h1>
@@ -133,6 +159,53 @@ export default function ChallengeDetailPage() {
             </button>
           )}
         </div>
+
+        {/* 创建成功指引 */}
+        {showGuide && (
+          <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 rounded-xl p-5 mb-6 relative">
+            <button
+              onClick={() => setShowGuide(false)}
+              className="absolute top-3 right-3 text-white/30 hover:text-white text-sm"
+            >
+              &times;
+            </button>
+            <div className="text-lg font-bold text-green-400 mb-3">PK挑战创建成功!</div>
+            <div className="space-y-2 text-sm text-white/70">
+              <div className="flex items-start gap-2">
+                <span className="text-green-400 font-bold mt-0.5">1</span>
+                <span>挑战已开始计时，参与者的数据会自动统计</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-green-400 font-bold mt-0.5">2</span>
+                <span>
+                  {challenge.challenge_type === 'checkin'
+                    ? '每天完成打卡，系统自动记录成绩'
+                    : '通过健康顾问记录活动（如"我在学习"），系统自动计时'}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-green-400 font-bold mt-0.5">3</span>
+                <span>挑战结束后按排名发放积分（第1名10分，第2名8分...）</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-green-500/20">
+              <div className="text-xs text-white/40 mb-2">分享链接给好友查看：</div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-black/20 rounded-lg px-3 py-2 text-xs text-cyan-300 truncate">
+                  {shareLink}
+                </div>
+                <button
+                  onClick={handleCopyLink}
+                  className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap ${
+                    copied ? 'bg-green-600 text-white' : 'bg-cyan-600 text-white'
+                  }`}
+                >
+                  {copied ? '已复制' : '复制'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 挑战信息卡 */}
         <div className="bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border border-cyan-500/30 rounded-xl p-5 mb-6">
@@ -219,6 +292,26 @@ export default function ChallengeDetailPage() {
             </div>
           ))}
         </div>
+
+        {/* 分享链接 */}
+        {!showGuide && challenge.status === 'active' && (
+          <div className="bg-white/5 rounded-xl p-4 mb-4">
+            <div className="text-xs text-white/40 mb-2">分享挑战链接：</div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 bg-black/20 rounded-lg px-3 py-2 text-xs text-cyan-300 truncate">
+                {shareLink}
+              </div>
+              <button
+                onClick={handleCopyLink}
+                className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap ${
+                  copied ? 'bg-green-600 text-white' : 'bg-cyan-600 text-white'
+                }`}
+              >
+                {copied ? '已复制' : '复制'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 操作按钮 - 仅创建者可取消 */}
         {challenge.status === 'active' && user?.id === challenge.creator_id && (

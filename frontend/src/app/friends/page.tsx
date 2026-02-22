@@ -346,6 +346,31 @@ export default function FriendsPage() {
                   <span className="ml-2 font-medium">发起新挑战</span>
                 </Link>
 
+                {/* PK玩法指引 */}
+                {challenges.length === 0 && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-4">
+                    <div className="text-sm font-medium text-white/70 mb-2">PK挑战玩法</div>
+                    <div className="space-y-2 text-xs text-white/50">
+                      <div className="flex items-start gap-2">
+                        <span className="text-cyan-400 font-bold">1.</span>
+                        <span>先在「好友列表」添加好友</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-cyan-400 font-bold">2.</span>
+                        <span>点击「发起新挑战」，选择打卡PK或活动时长PK</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-cyan-400 font-bold">3.</span>
+                        <span>挑战期间正常打卡或记录活动，系统自动统计</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-cyan-400 font-bold">4.</span>
+                        <span>挑战结束按排名发放积分，第1名10分、第2名8分...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* 挑战列表 */}
                 {challenges.length > 0 ? (
                   <div className="space-y-3">

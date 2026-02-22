@@ -85,7 +85,7 @@ export default function NewChallengePage() {
 
     setSubmitting(true);
     try {
-      await pkChallengeApi.create({
+      const res = await pkChallengeApi.create({
         title: title.trim(),
         challenge_type: challengeType,
         checkin_template_id: challengeType === 'checkin' ? templateId! : undefined,
@@ -94,7 +94,7 @@ export default function NewChallengePage() {
         duration_days: durationDays,
         friend_ids: selectedFriends,
       });
-      router.push('/friends?tab=challenges');
+      router.push(`/friends/challenge/${res.data.id}?created=1`);
     } catch (err: any) {
       alert(err.response?.data?.detail || '创建失败');
     } finally {
