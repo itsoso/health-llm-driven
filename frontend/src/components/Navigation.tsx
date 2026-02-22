@@ -45,6 +45,7 @@ import {
   Gauge,
   Baby,
   Plane,
+  Moon,
 } from 'lucide-react';
 
 interface NavItem {
@@ -114,6 +115,8 @@ export default function Navigation() {
         { href: '/analysis', label: '健康分析', icon: <LineChart className="w-4 h-4" /> },
         { href: '/trip', label: '行程记录', icon: <Plane className="w-4 h-4" /> },
         { href: '/illness', label: '当前病症', icon: <Stethoscope className="w-4 h-4" /> },
+        { href: '/excretion', label: '排泄记录', icon: <Droplets className="w-4 h-4" /> },
+        { href: '/sleep', label: '睡眠记录', icon: <Moon className="w-4 h-4" /> },
       ],
     },
     {

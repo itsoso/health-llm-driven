@@ -27,6 +27,8 @@ from app.models.health_checkin import HealthCheckin
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
+from app.models.excretion import ExcretionRecord
+from app.models.sleep_record import SleepRecord
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
 from app.services.quark_search import get_search_client
@@ -729,6 +731,57 @@ class ChatService:
         except Exception as e:
             logger.warning(f"获取行程数据失败: {e}")
 
+        # ── 排泄数据（最近7天） ──────────────────────────────────────
+        try:
+            excretion_records = self.db.query(ExcretionRecord).filter(
+                ExcretionRecord.user_id == user_id,
+                ExcretionRecord.record_date >= seven_days_ago,
+            ).order_by(ExcretionRecord.record_date.desc()).all()
+
+            if excretion_records:
+                bowel_recs = [r for r in excretion_records if r.type == "bowel"]
+                urine_recs = [r for r in excretion_records if r.type == "urine"]
+                exc_parts = [f"最近7天排泄记录:"]
+                if bowel_recs:
+                    stool_types = [r.stool_type for r in bowel_recs if r.stool_type]
+                    avg_st = round(sum(stool_types) / len(stool_types), 1) if stool_types else None
+                    blood_cnt = sum(1 for r in bowel_recs if r.blood_present)
+                    exc_parts.append(f"大便{len(bowel_recs)}次")
+                    if avg_st:
+                        exc_parts.append(f"平均Bristol{avg_st}")
+                    if blood_cnt:
+                        exc_parts.append(f"有血{blood_cnt}次(需关注)")
+                if urine_recs:
+                    exc_parts.append(f"小便{len(urine_recs)}次记录")
+                parts.append(", ".join(exc_parts))
+        except Exception as e:
+            logger.warning(f"获取排泄数据失败: {e}")
+
+        # ── 手动睡眠记录（最近7天，仅无Garmin睡眠数据时） ──────────────
+        try:
+            manual_sleep = self.db.query(SleepRecord).filter(
+                SleepRecord.user_id == user_id,
+                SleepRecord.record_date >= seven_days_ago,
+            ).order_by(SleepRecord.record_date.desc()).all()
+
+            if manual_sleep:
+                sleep_lines = [f"最近7天手动睡眠记录({len(manual_sleep)}天):"]
+                for sr in manual_sleep[:5]:
+                    info = [f"{sr.record_date}"]
+                    if sr.total_duration_minutes:
+                        h = sr.total_duration_minutes // 60
+                        m = sr.total_duration_minutes % 60
+                        info.append(f"时长{h}h{m}min")
+                    info.append(f"质量{sr.sleep_quality}/5")
+                    if sr.wake_count:
+                        info.append(f"夜醒{sr.wake_count}次")
+                    if sr.morning_feeling:
+                        info.append(f"醒后{sr.morning_feeling}/5")
+                    sleep_lines.append("  " + " ".join(info))
+                parts.append("\n".join(sleep_lines))
+        except Exception as e:
+            logger.warning(f"获取睡眠记录失败: {e}")
+
         # ── 当前病症 ──────────────────────────────────────────────────
         try:
             active_illnesses = self.db.query(IllnessEpisode).filter(
@@ -1013,6 +1066,10 @@ class ChatService:
                     result = self._handle_illness_create(user_id, action, today)
                 elif action_type == "illness_update":
                     result = self._handle_illness_update(user_id, action, today)
+                elif action_type == "excretion":
+                    result = self._handle_excretion_action(user_id, action, today, now)
+                elif action_type == "sleep":
+                    result = self._handle_sleep_action(user_id, action, today)
                 else:
                     logger.warning(f"未知活动类型: {action_type}")
                     continue
@@ -1496,6 +1553,76 @@ class ChatService:
             msg = f"🎉 {episode.name} 已痊愈！共持续{(today - episode.start_date).days + 1}天"
         logger.info(f"用户{user_id} 病症更新: {episode.name} → {episode.status}")
         return {"type": "illness_update", "status": "saved", "message": msg}
+
+    def _handle_excretion_action(self, user_id: int, action: dict, today: date, now: datetime) -> Optional[Dict]:
+        """通过 AI 对话记录排泄"""
+        exc_type = action.get("excretion_type", "bowel")
+        if exc_type not in ("bowel", "urine"):
+            exc_type = "bowel"
+
+        record = ExcretionRecord(
+            user_id=user_id,
+            record_date=today,
+            record_time=now.time(),
+            type=exc_type,
+            stool_type=action.get("stool_type"),
+            color=action.get("color"),
+            amount=action.get("amount"),
+            urine_color=action.get("urine_color"),
+            urine_amount=action.get("urine_amount"),
+            notes=action.get("notes"),
+        )
+        self.db.add(record)
+        self.db.commit()
+
+        label = "大便" if exc_type == "bowel" else "小便"
+        logger.info(f"用户{user_id} AI记录排泄: {label}")
+        return {"type": "excretion", "status": "saved", "message": f"已记录{label}"}
+
+    def _handle_sleep_action(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
+        """通过 AI 对话记录睡眠"""
+        quality = action.get("sleep_quality", 3)
+        bedtime_str = action.get("bedtime")
+        wake_str = action.get("wake_time")
+
+        if not bedtime_str or not wake_str:
+            return None
+
+        try:
+            # 解析 HH:MM 格式的时间
+            bh, bm = map(int, bedtime_str.split(":"))
+            wh, wm = map(int, wake_str.split(":"))
+
+            from datetime import timezone as tz
+            # 入睡时间：如果是晚上（>=18点），算前一天
+            bedtime_date = today - timedelta(days=1) if bh >= 18 else today
+            bedtime = datetime(bedtime_date.year, bedtime_date.month, bedtime_date.day, bh, bm, tzinfo=tz.utc)
+            wake_time = datetime(today.year, today.month, today.day, wh, wm, tzinfo=tz.utc)
+
+            if wake_time <= bedtime:
+                return None
+
+            duration = int((wake_time - bedtime).total_seconds() // 60)
+
+            record = SleepRecord(
+                user_id=user_id,
+                record_date=today,
+                bedtime=bedtime,
+                wake_time=wake_time,
+                sleep_quality=max(1, min(5, int(quality))),
+                total_duration_minutes=duration,
+                wake_count=action.get("wake_count"),
+            )
+            self.db.add(record)
+            self.db.commit()
+
+            hours = duration // 60
+            mins = duration % 60
+            logger.info(f"用户{user_id} AI记录睡眠: {hours}h{mins}min")
+            return {"type": "sleep", "status": "saved", "message": f"已记录睡眠{hours}小时{mins}分钟"}
+        except Exception as e:
+            logger.warning(f"解析睡眠时间失败: {e}")
+            return None
 
     def delete_conversation(self, user_id: int, conversation_id: int) -> bool:
         """删除对话"""

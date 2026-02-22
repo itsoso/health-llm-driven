@@ -279,6 +279,128 @@ export const kidsPetApi = {
     api.post<KidsPetResponse>('/kids-pet/action', { action }),
 };
 
+// 排泄记录 API
+export interface ExcretionRecord {
+  id: number;
+  user_id: number;
+  record_date: string;
+  record_time: string | null;
+  type: 'bowel' | 'urine';
+  stool_type: number | null;
+  color: string | null;
+  amount: string | null;
+  duration_minutes: number | null;
+  blood_present: boolean | null;
+  urine_color: string | null;
+  urine_amount: string | null;
+  urgency: number | null;
+  pain_level: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ExcretionStats {
+  total_records: number;
+  bowel_count: number;
+  urine_count: number;
+  avg_bowel_per_day: number | null;
+  avg_urine_per_day: number | null;
+  avg_stool_type: number | null;
+  stool_type_distribution: Record<number, number>;
+  color_distribution: Record<string, number>;
+  blood_count: number;
+  daily_summary: Array<{
+    date: string;
+    bowel_count: number;
+    urine_count: number;
+    avg_stool_type: number | null;
+    has_blood: boolean;
+    has_pain: boolean;
+  }>;
+}
+
+export const excretionApi = {
+  createRecord: (data: Partial<ExcretionRecord>) =>
+    api.post<ExcretionRecord>('/excretion/records', data),
+  getMyRecords: (params?: { type?: string; start_date?: string; end_date?: string; limit?: number }) =>
+    api.get<ExcretionRecord[]>('/excretion/records/me', { params }),
+  getTodayRecords: () =>
+    api.get<ExcretionRecord[]>('/excretion/records/me/today'),
+  getRecord: (id: number) =>
+    api.get<ExcretionRecord>(`/excretion/records/${id}`),
+  updateRecord: (id: number, data: Partial<ExcretionRecord>) =>
+    api.put<ExcretionRecord>(`/excretion/records/${id}`, data),
+  deleteRecord: (id: number) =>
+    api.delete(`/excretion/records/${id}`),
+  getStats: (days?: number) =>
+    api.get<ExcretionStats>('/excretion/stats/me', { params: { days } }),
+};
+
+// 睡眠记录 API
+export interface SleepRecordData {
+  id: number;
+  user_id: number;
+  record_date: string;
+  bedtime: string;
+  wake_time: string;
+  sleep_quality: number;
+  total_duration_minutes: number | null;
+  wake_count: number;
+  had_dream: boolean;
+  dream_description: string | null;
+  fall_asleep_difficulty: number | null;
+  morning_feeling: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface SleepStats {
+  total_records: number;
+  avg_sleep_quality: number | null;
+  avg_duration_hours: number | null;
+  avg_wake_count: number | null;
+  avg_fall_asleep_difficulty: number | null;
+  avg_morning_feeling: number | null;
+  dream_frequency: number | null;
+  quality_distribution: Record<number, number>;
+  daily_trend: Array<{
+    date: string;
+    sleep_quality: number;
+    duration_hours: number | null;
+    wake_count: number | null;
+    morning_feeling: number | null;
+  }>;
+  avg_bedtime: string | null;
+  avg_wake_time: string | null;
+}
+
+export const sleepApi = {
+  createRecord: (data: {
+    record_date: string;
+    bedtime: string;
+    wake_time: string;
+    sleep_quality: number;
+    wake_count?: number;
+    had_dream?: boolean;
+    dream_description?: string;
+    fall_asleep_difficulty?: number;
+    morning_feeling?: number;
+    notes?: string;
+  }) => api.post<SleepRecordData>('/sleep/records', data),
+  getMyRecords: (params?: { start_date?: string; end_date?: string; limit?: number }) =>
+    api.get<SleepRecordData[]>('/sleep/records/me', { params }),
+  getTodayRecord: () =>
+    api.get<SleepRecordData | null>('/sleep/records/me/today'),
+  getRecord: (id: number) =>
+    api.get<SleepRecordData>(`/sleep/records/${id}`),
+  updateRecord: (id: number, data: Partial<SleepRecordData>) =>
+    api.put<SleepRecordData>(`/sleep/records/${id}`, data),
+  deleteRecord: (id: number) =>
+    api.delete(`/sleep/records/${id}`),
+  getStats: (days?: number) =>
+    api.get<SleepStats>('/sleep/stats/me', { params: { days } }),
+};
+
 // 习惯追踪 API（已废弃，模块已移除）
 // export const habitApi = { ... };
 
