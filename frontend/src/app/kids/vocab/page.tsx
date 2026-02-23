@@ -23,6 +23,8 @@ export default function KidsVocabPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   // 详情展开
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // 多选
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const loadWords = useCallback(async () => {
     setLoading(true);
@@ -47,6 +49,7 @@ export default function KidsVocabPage() {
   useEffect(() => {
     setPage(1);
     setExpandedId(null);
+    setSelectedIds(new Set());
   }, [tab]);
 
   useEffect(() => {
@@ -76,6 +79,33 @@ export default function KidsVocabPage() {
       setReviewMode(true);
     } catch {
       // ignore
+    }
+  };
+
+  // 复习指定单词（单个或多选）
+  const startReviewWithWords = (wordsToReview: VocabularyWord[]) => {
+    if (wordsToReview.length === 0) return;
+    setReviewWords(wordsToReview);
+    setReviewIndex(0);
+    setShowAnswer(false);
+    setReviewMode(true);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelect = (wordId: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(wordId)) next.delete(wordId);
+      else next.add(wordId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === words.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(words.map(w => w.id)));
     }
   };
 
@@ -261,13 +291,37 @@ export default function KidsVocabPage() {
           ))}
         </div>
 
-        {/* 复习入口 */}
-        {tab !== 'mastered' && (
+        {/* 复习入口 + 选择操作 */}
+        <div className="flex gap-2 mb-4">
+          {tab !== 'mastered' && (
+            <button
+              onClick={startReview}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-white font-medium shadow-sm hover:shadow-md transition"
+            >
+              开始复习
+            </button>
+          )}
+          {words.length > 0 && (
+            <button
+              onClick={toggleSelectAll}
+              className={`${tab === 'mastered' ? 'flex-1' : ''} px-4 py-3 rounded-xl font-medium transition ${
+                selectedIds.size > 0 && selectedIds.size === words.length
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-white/80 text-gray-600 border border-gray-200'
+              }`}
+            >
+              {selectedIds.size > 0 && selectedIds.size === words.length ? '取消全选' : '全选'}
+            </button>
+          )}
+        </div>
+
+        {/* 选中复习按钮 */}
+        {selectedIds.size > 0 && (
           <button
-            onClick={startReview}
-            className="w-full mb-4 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-white font-medium shadow-sm hover:shadow-md transition"
+            onClick={() => startReviewWithWords(words.filter(w => selectedIds.has(w.id)))}
+            className="w-full mb-4 py-3 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-medium shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
           >
-            开始复习
+            <span>📝</span> 复习选中的 {selectedIds.size} 个单词
           </button>
         )}
 
@@ -303,14 +357,27 @@ export default function KidsVocabPage() {
             return (
               <div
                 key={word.id}
-                className="bg-white rounded-xl shadow-sm overflow-hidden"
+                className={`bg-white rounded-xl shadow-sm overflow-hidden transition-all ${
+                  selectedIds.has(word.id) ? 'ring-2 ring-purple-400 shadow-purple-100' : ''
+                }`}
               >
                 {/* 摘要行 */}
                 <div
                   onClick={() => setExpandedId(isExpanded ? null : word.id)}
                   className="p-4 cursor-pointer hover:bg-gray-50 transition"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* 选择框 */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleSelect(word.id); }}
+                      className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                        selectedIds.has(word.id)
+                          ? 'bg-purple-500 border-purple-500 text-white'
+                          : 'border-gray-300 hover:border-purple-400'
+                      }`}
+                    >
+                      {selectedIds.has(word.id) && <span className="text-xs">✓</span>}
+                    </button>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-gray-800">{word.word}</span>
@@ -388,17 +455,28 @@ export default function KidsVocabPage() {
                     </div>
 
                     {/* 统计和操作 */}
-                    <div className="flex items-center justify-between pt-2 text-xs text-gray-400">
-                      <span>复习{word.review_count}次 | 正确{word.correct_count}次</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(word.id);
-                        }}
-                        className="text-red-400 hover:text-red-600"
-                      >
-                        删除
-                      </button>
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-xs text-gray-400">复习{word.review_count}次 | 正确{word.correct_count}次</span>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startReviewWithWords([word]);
+                          }}
+                          className="text-xs text-purple-500 font-medium hover:text-purple-700"
+                        >
+                          复习
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(word.id);
+                          }}
+                          className="text-xs text-red-400 hover:text-red-600"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
