@@ -39,7 +39,7 @@ export default function ArchitecturePage() {
 
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 p-6 md:p-10">
           <h1 className="text-3xl font-bold text-white mb-2">系统技术架构文档</h1>
-          <p className="text-purple-300 text-sm mb-10">最后更新: 2026-02-22</p>
+          <p className="text-purple-300 text-sm mb-10">最后更新: 2026-02-23</p>
 
           <div className="prose prose-invert prose-purple max-w-none space-y-10 text-[15px] leading-relaxed">
 
@@ -91,7 +91,8 @@ export default function ArchitecturePage() {
                 </Card>
                 <Card title="第三方服务">
                   <ul className="space-y-1">
-                    <li><Tag>OpenClaw</Tag> — 自建 LLM (bot.executor.life)</li>
+                    <li><Tag>OpenClaw</Tag> — AI 网关 (Claude API 代理)</li>
+                    <li><Tag>Anthropic Claude</Tag> — Claude Max 大模型</li>
                     <li><Tag>Garmin Connect</Tag> — 运动数据同步</li>
                     <li><Tag>和风天气</Tag> — 天气与空气质量</li>
                     <li><Tag>阿里云 Quark</Tag> — 联网搜索</li>
@@ -115,77 +116,113 @@ export default function ArchitecturePage() {
         │              │            │              │
         ▼              ▼            ▼              ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   API 网关层 (Nginx)                     │
-│  health.executor.life → Next.js (3000)                  │
-│  health-api.executor.life → FastAPI (8000)               │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│                FastAPI 后端 (42 路由模块)                 │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐             │
-│  │ Auth API │  │Health API│  │  Chat API  │             │
-│  │(JWT认证) │  │(CRUD接口)│  │(AI对话核心)│             │
-│  └──────────┘  └──────────┘  └─────┬─────┘             │
-│                                    │                    │
-│  ┌─────────────────────────────────▼──────────────────┐ │
-│  │              ChatService (核心引擎)                 │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐         │ │
-│  │  │健康上下文 │  │ LLM 调用 │  │ Action   │         │ │
-│  │  │构建器    │  │(OpenClaw)│  │ 解析执行  │         │ │
-│  │  └──────────┘  └──────────┘  └──────────┘         │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ Garmin   │  │ Weather  │  │ Quark    │              │
-│  │ Scheduler│  │ Service  │  │ Search   │              │
-│  └──────────┘  └──────────┘  └──────────┘              │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│                     数据存储层                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │PostgreSQL│  │  Redis   │  │ ChromaDB │              │
-│  │ (60 表)  │  │ (缓存)   │  │(向量知识库)│             │
-│  └──────────┘  └──────────┘  └──────────┘              │
-└─────────────────────────────────────────────────────────┘
+│          Nginx 反向代理 (health.executor.life)           │
+│  /           → Next.js (:30001)     前端页面             │
+│  /api/v1/    → FastAPI (:8000)      后端 API             │
+└───────────────┬───────────────────────┬─────────────────┘
+                │                       │
+                ▼                       ▼
+┌──────────────────────┐  ┌───────────────────────────────┐
+│  Next.js 前端 (:30001)│  │  FastAPI 后端 (:8000)         │
+│  54 个页面路由        │  │  42 个 API 路由模块            │
+│  32 个 API 服务对象   │  │  ┌──────────┐ ┌──────────┐   │
+└──────────────────────┘  │  │ Auth API │ │Health API│   │
+                          │  │(JWT认证) │ │(CRUD接口)│   │
+                          │  └──────────┘ └──────────┘   │
+                          │  ┌──────────────────────────┐ │
+                          │  │  ChatService (核心引擎)   │ │
+                          │  │  健康上下文 → LLM 调用    │ │
+                          │  │  → Action 解析执行        │ │
+                          │  └───────────┬──────────────┘ │
+                          │              │                │
+                          │  ┌───────────▼──────────────┐ │
+                          │  │  OpenClaw AI 网关         │ │
+                          │  │  (bot.executor.life)      │ │
+                          │  │  Claude API 代理          │ │
+                          │  └──────────────────────────┘ │
+                          │                               │
+                          │  ┌──────────┐ ┌──────────┐   │
+                          │  │ Garmin   │ │ Weather  │   │
+                          │  │ Sync     │ │ + Search │   │
+                          │  └──────────┘ └──────────┘   │
+                          └───────────────┬───────────────┘
+                                          │
+                          ┌───────────────▼───────────────┐
+                          │          数据存储层             │
+                          │  PostgreSQL │ Redis │ ChromaDB │
+                          │   (60 表)   │(缓存) │(向量知识库)│
+                          └───────────────────────────────┘
                 `}</pre>
               </div>
             </Section>
 
             {/* 4. OpenClaw 集成 */}
-            <Section title="4. OpenClaw AI 集成">
+            <Section title="4. OpenClaw AI 网关集成">
               <p>
-                系统使用自建的 <Hl>OpenClaw</Hl> 大语言模型作为核心 AI 引擎，部署在
-                <code className="mx-1 px-1.5 py-0.5 bg-white/10 rounded text-cyan-300 text-sm">bot.executor.life</code>，
-                通过 OpenAI 兼容的 API 接口调用。
+                系统通过 <Hl>OpenClaw</Hl> AI 网关调用 Anthropic Claude API。OpenClaw 是一个
+                <Hl>多渠道 AI 网关</Hl>（Multi-channel AI Gateway），基于 Node.js 构建，
+                部署在独立服务器 (47.237.191.17)，提供 OpenAI 兼容的 API 接口。
               </p>
 
-              <Card title="配置参数">
+              <Card title="OpenClaw 架构">
+                <p className="text-sm text-purple-200 mb-3">
+                  OpenClaw 并非自建大模型，而是一个<Hl>AI 代理网关</Hl>，它将 Anthropic Claude Max API
+                  封装为 OpenAI 兼容的 <code className="px-1 py-0.5 bg-white/10 rounded text-cyan-300 text-xs">/chat/completions</code> 端点，
+                  同时集成了多渠道消息分发能力。
+                </p>
+                <div className="bg-black/20 rounded-lg p-4 font-mono text-sm text-purple-200">
+                  <pre>{`OpenClaw Gateway (v2026.2.9)
+├── 核心能力
+│   ├── OpenAI 兼容 API (/v1/chat/completions)
+│   ├── Agent 系统 (workspace + memory + subagents)
+│   ├── Cron 定时任务 (如 23:30 睡觉提醒)
+│   └── 设备配对与认证 (Token Auth)
+│
+├── 消息渠道
+│   ├── 飞书 (Feishu) — 群聊 + DM
+│   └── 企业微信 (WeCom) — 应用消息
+│
+├── AI 模型
+│   └── Anthropic Claude Max (claude-max)
+│       通过 sk-ant-oat01-*** 认证
+│
+└── 部署
+    ├── 服务: systemd (openclaw.service)
+    ├── 进程: openclaw-gateway (:18789)
+    └── 域名: bot.executor.life (Nginx SSL 代理)`}</pre>
+                </div>
+              </Card>
+
+              <Card title="健康系统调用配置">
                 <div className="font-mono text-sm space-y-1">
                   <div><span className="text-gray-400">Base URL:</span> <span className="text-cyan-300">https://bot.executor.life/v1</span></div>
                   <div><span className="text-gray-400">Model:</span> <span className="text-cyan-300">openclaw:main</span></div>
+                  <div><span className="text-gray-400">实际模型:</span> <span className="text-cyan-300">Anthropic Claude (通过 OpenClaw 代理)</span></div>
                   <div><span className="text-gray-400">协议:</span> <span className="text-cyan-300">OpenAI /chat/completions 兼容</span></div>
                   <div><span className="text-gray-400">备选:</span> <span className="text-cyan-300">gpt-4o-mini (OpenAI 直连)</span></div>
                 </div>
               </Card>
 
-              <Card title="调用流程">
+              <Card title="调用链路">
                 <div className="bg-black/20 rounded-lg p-4 font-mono text-sm text-purple-200">
-                  <pre>{`1. 用户发送消息 → POST /chat/send
-2. ChatService 构建系统提示 (800+ 行健康上下文)
-3. 调用 OpenClaw API → stream 返回
-4. 解析回复中的 <<<ACTIONS:[...]>>> 标记
-5. 执行 actions (写入数据库)
-6. 返回 AI 回复 + 数据操作结果`}</pre>
+                  <pre>{`健康系统后端 (39.98.206.178)
+  → OpenAI SDK (openai==1.3.0)
+    → HTTPS POST bot.executor.life/v1/chat/completions
+      → OpenClaw Gateway (47.237.191.17:18789)
+        → Anthropic Claude Max API
+          → 返回 AI 回复 (stream)`}</pre>
                 </div>
               </Card>
 
-              <p className="text-white/60 text-sm">
-                OpenClaw 是基于开源大模型的自部署方案，避免了对外部 LLM 服务的依赖，
-                同时保证了健康数据的隐私安全——所有数据处理在自有服务器完成。
-              </p>
+              <Card title="OpenClaw 额外能力">
+                <ul className="space-y-2 text-sm text-purple-200">
+                  <li><Hl>Agent 工作区:</Hl> 持久化 workspace，含 SOUL.md/MEMORY.md 等文件，跨会话记忆</li>
+                  <li><Hl>定时任务:</Hl> Cron 系统可设定定时提醒（如每晚 23:30 睡觉提醒）</li>
+                  <li><Hl>飞书集成:</Hl> 通过飞书机器人接收/发送消息，支持群聊和 DM</li>
+                  <li><Hl>企业微信集成:</Hl> 通过 WeCom 应用消息推送，支持 DM 策略</li>
+                  <li><Hl>心跳机制:</Hl> 每小时主动检查邮件、日历等，可执行后台任务</li>
+                </ul>
+              </Card>
             </Section>
 
             {/* 5. 健康顾问核心架构 */}
@@ -472,24 +509,31 @@ export default function ArchitecturePage() {
             {/* 12. 部署架构 */}
             <Section title="12. 部署架构">
               <div className="grid md:grid-cols-2 gap-4">
-                <Card title="服务器配置">
+                <Card title="健康系统服务器 (39.98.206.178)">
                   <ul className="space-y-1 text-sm text-purple-200">
-                    <li>阿里云 ECS: 39.98.206.178</li>
-                    <li>前端: PM2 管理 → :3000</li>
+                    <li>阿里云 ECS</li>
+                    <li>前端: PM2 管理 → :30001</li>
                     <li>后端: systemd 管理 → :8000</li>
-                    <li>Nginx 反向代理 + SSL 证书</li>
+                    <li>Nginx 反向代理 + Let{"'"}s Encrypt SSL</li>
                     <li>PostgreSQL 数据库</li>
                     <li>Redis 缓存服务</li>
                   </ul>
                 </Card>
-                <Card title="域名规划">
+                <Card title="OpenClaw 服务器 (47.237.191.17)">
                   <ul className="space-y-1 text-sm text-purple-200">
-                    <li><span className="text-cyan-300">health.executor.life</span> → 前端</li>
-                    <li><span className="text-cyan-300">health-api.executor.life</span> → 后端 API</li>
-                    <li><span className="text-cyan-300">bot.executor.life</span> → OpenClaw LLM</li>
+                    <li>OpenClaw Gateway: systemd 管理 → :18789</li>
+                    <li>Nginx SSL 代理 → bot.executor.life</li>
+                    <li>SSH: 端口 22222</li>
                   </ul>
                 </Card>
               </div>
+              <Card title="域名与路由规划">
+                <ul className="space-y-1 text-sm text-purple-200">
+                  <li><span className="text-cyan-300">health.executor.life /</span> → Next.js 前端 (:30001)</li>
+                  <li><span className="text-cyan-300">health.executor.life /api/v1/</span> → FastAPI 后端 (:8000)，同域二级目录</li>
+                  <li><span className="text-cyan-300">bot.executor.life</span> → OpenClaw AI 网关 (:18789)，独立服务器</li>
+                </ul>
+              </Card>
               <Card title="部署脚本">
                 <div className="font-mono text-sm text-purple-200 space-y-1">
                   <div><code className="text-cyan-300">./deploy.sh -f</code> — 仅部署前端</div>
