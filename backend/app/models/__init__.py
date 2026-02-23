@@ -66,6 +66,8 @@ from app.models.sleep_record import SleepRecord
 from app.models.activity_status import ActivityStatus
 # 好友关系和PK挑战模型
 from app.models.friendship import Friendship, PKChallenge, ChallengeParticipant
+# 单词本模型
+from app.models.vocabulary import VocabularyWord
 
 __all__ = [
     "User",
@@ -157,5 +159,7 @@ __all__ = [
     "Friendship",
     "PKChallenge",
     "ChallengeParticipant",
+    # 单词本
+    "VocabularyWord",
 ]
 

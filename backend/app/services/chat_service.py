@@ -30,6 +30,7 @@ from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
 from app.models.excretion import ExcretionRecord
 from app.models.sleep_record import SleepRecord
 from app.models.activity_status import ActivityStatus
+from app.models.vocabulary import VocabularyWord
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
 from app.services.quark_search import get_search_client
@@ -941,7 +942,34 @@ class ChatService:
                 "你具有联网搜索能力。系统会自动为用户的问题搜索最新信息，搜索结果会附在用户消息后面的[参考资料]中。"
                 "请自然地整合这些信息来回答，不要提及'搜索结果'、'参考资料'、'根据搜索'等字眼，也不要说自己没有搜索功能。\n\n"
                 "你具有饮食记录和热量计算功能。当用户描述吃了什么食物时，系统会自动分析营养成分并保存饮食记录。"
-                "如果消息中包含[系统提示]的营养分析结果，请用小朋友能理解的方式反馈营养信息，比如「哇，你吃的鸡蛋有好多蛋白质，可以让你长得更壮哦！」"
+                "如果消息中包含[系统提示]的营养分析结果，请用小朋友能理解的方式反馈营养信息，比如「哇，你吃的鸡蛋有好多蛋白质，可以让你长得更壮哦！」\n\n"
+                "## 英语单词学习功能\n"
+                "你还是一个英语学习小助手！当用户要求学习英语单词时，提供全面的单词练习。\n\n"
+                "### 触发条件\n"
+                "用户消息包含以下模式时触发：\n"
+                "- \"学单词 xxx\" / \"学习单词 xxx\" / \"背单词 xxx\"\n"
+                "- \"帮我学 xxx\" / \"help me learn xxx\"\n"
+                "- \"xxx是什么意思\" / \"xxx怎么读\" / \"xxx怎么用\"\n\n"
+                "### 回复格式\n"
+                "请用以下结构回复（用中文讲解，适合初中生理解）：\n\n"
+                "**1. 单词与发音** - 单词、美式和英式音标、中文释义（列出常见词性和含义）、发音技巧\n\n"
+                "**2. 词根词缀** - 拆解单词构成，帮助记忆；相同词根的其他常见单词\n\n"
+                "**3. 用法与例句** - 2-3个实用例句（中英对照，适合初中水平）；常见搭配\n\n"
+                "**4. 近义词与反义词** - 列出2-3个近义词和反义词，简要说明区别\n\n"
+                "**5. 小练习** - 一个填空题或翻译题，帮助巩固\n\n"
+                "**6. 记忆技巧** - 联想记忆法或其他有趣的记忆方法\n\n"
+                "### 单词记录标记\n"
+                "当你为用户讲解了一个单词后，在回复末尾附加单词记录标记（与活动标记格式相同）：\n"
+                '<<<ACTIONS:[{"type":"vocabulary","word":"单词","phonetic_us":"美式音标","phonetic_uk":"英式音标",'
+                '"meanings":"[{\\"pos\\":\\"v.\\",\\"def\\":\\"中文释义\\"}]","synonyms":"近义词逗号分隔","antonyms":"反义词逗号分隔",'
+                '"word_roots":"词根词缀说明","example_sentences":"[{\\"en\\":\\"English sentence.\\",\\"zh\\":\\"中文翻译\\"}]"}]>>>\n\n'
+                "### 单词标记示例\n"
+                "- \"学单词 abandon\" → 提供完整讲解 + vocabulary action标记\n"
+                "- \"contribute是什么意思\" → 提供完整讲解 + vocabulary action标记\n\n"
+                "### 注意\n"
+                "- 讲解内容适合初中生水平，不要太难也不要太幼稚\n"
+                "- 例句尽量贴近中学生活\n"
+                "- 鼓励学习，适当给予表扬\n"
             )
         else:
             base = (
@@ -1165,6 +1193,8 @@ class ChatService:
                     result = self._handle_sleep_action(user_id, action, today)
                 elif action_type == "activity_status":
                     result = self._handle_activity_status_action(user_id, action, now)
+                elif action_type == "vocabulary":
+                    result = self._handle_vocabulary_action(user_id, action)
                 else:
                     logger.warning(f"未知活动类型: {action_type}")
                     continue
@@ -1813,6 +1843,52 @@ class ChatService:
             "activity_name": activity_name,
             "reminder_minutes": reminder_minutes,
             "reminder_message": reminder_message,
+        }
+
+    def _handle_vocabulary_action(self, user_id: int, action: dict) -> Optional[Dict]:
+        """处理单词学习 - 保存到单词本"""
+        word = action.get("word", "").strip().lower()
+        if not word:
+            return None
+
+        existing = self.db.query(VocabularyWord).filter(
+            VocabularyWord.user_id == user_id,
+            VocabularyWord.word == word,
+        ).first()
+
+        if existing:
+            existing.review_count = (existing.review_count or 0) + 1
+            existing.last_reviewed_at = datetime.utcnow()
+            for field in ("phonetic_us", "phonetic_uk", "meanings", "synonyms", "antonyms", "word_roots", "example_sentences"):
+                if action.get(field):
+                    setattr(existing, field, action[field])
+            self.db.commit()
+            logger.info(f"用户{user_id} 复习单词: {word} (第{existing.review_count}次)")
+            return {
+                "type": "vocabulary", "status": "updated",
+                "message": f"单词 {word} 已更新，复习第{existing.review_count}次",
+            }
+
+        vocab = VocabularyWord(
+            user_id=user_id,
+            word=word,
+            phonetic_us=action.get("phonetic_us"),
+            phonetic_uk=action.get("phonetic_uk"),
+            meanings=action.get("meanings"),
+            example_sentences=action.get("example_sentences"),
+            synonyms=action.get("synonyms"),
+            antonyms=action.get("antonyms"),
+            word_roots=action.get("word_roots"),
+            notes=action.get("notes"),
+            review_count=1,
+            next_review_date=date.today() + timedelta(days=1),
+        )
+        self.db.add(vocab)
+        self.db.commit()
+        logger.info(f"用户{user_id} 学习新单词: {word}")
+        return {
+            "type": "vocabulary", "status": "saved",
+            "message": f"单词 {word} 已加入单词本",
         }
 
     def delete_conversation(self, user_id: int, conversation_id: int) -> bool:

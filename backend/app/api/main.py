@@ -62,6 +62,7 @@ from app.api import (
     friendship,  # 好友关系
     pk_challenge,  # PK挑战
     daily_points,  # 每日健康积分
+    vocabulary,  # 单词本
 )
 
 api_router = APIRouter()
@@ -132,3 +133,4 @@ api_router.include_router(activity_status.router)  # 活动状态
 api_router.include_router(friendship.router)  # 好友关系
 api_router.include_router(pk_challenge.router)  # PK挑战
 api_router.include_router(daily_points.router)  # 每日健康积分
+api_router.include_router(vocabulary.router)  # 单词本

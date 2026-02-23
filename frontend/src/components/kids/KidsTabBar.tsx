@@ -11,6 +11,7 @@ const TABS = [
   { href: '/kids', label: '聊天', icon: '💬' },
   { href: '/kids/plan', label: '计划', icon: '📋' },
   { href: '/kids/checkin', label: '打卡', icon: '✅' },
+  { href: '/kids/vocab', label: '单词', icon: '📖' },
   { href: '/kids/water', label: '喝水', icon: '💧' },
   { href: '/kids/mood', label: '心情', icon: '😊' },
   { href: '/kids/dog', label: '狗狗', icon: '🐾' },

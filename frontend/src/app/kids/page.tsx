@@ -13,6 +13,7 @@ const KIDS_QUICK_QUESTIONS = [
   { label: '长高秘诀', emoji: '📏', text: '我怎样才能长得更高呢？' },
   { label: '保护眼睛', emoji: '👀', text: '怎样保护我的眼睛？' },
   { label: '喝水提醒', emoji: '💧', text: '我今天应该喝多少水？' },
+  { label: '学单词', emoji: '📖', text: '学单词 important' },
 ];
 
 export default function KidsChatPage() {
