@@ -21,6 +21,11 @@ export default function KidsVocabPage() {
   const [reviewIndex, setReviewIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  // 默写模式
+  const [spellingInput, setSpellingInput] = useState('');
+  const [hintCount, setHintCount] = useState(0);
+  const [spellingChecked, setSpellingChecked] = useState(false);
+  const [spellingCorrect, setSpellingCorrect] = useState(false);
   // 详情展开
   const [expandedId, setExpandedId] = useState<number | null>(null);
   // 多选
@@ -88,6 +93,10 @@ export default function KidsVocabPage() {
     setReviewWords(wordsToReview);
     setReviewIndex(0);
     setShowAnswer(false);
+    setSpellingInput('');
+    setHintCount(0);
+    setSpellingChecked(false);
+    setSpellingCorrect(false);
     setReviewMode(true);
     setSelectedIds(new Set());
   };
@@ -122,6 +131,10 @@ export default function KidsVocabPage() {
     if (reviewIndex < reviewWords.length - 1) {
       setReviewIndex(i => i + 1);
       setShowAnswer(false);
+      setSpellingInput('');
+      setHintCount(0);
+      setSpellingChecked(false);
+      setSpellingCorrect(false);
     } else {
       setReviewMode(false);
       loadWords();
@@ -150,6 +163,36 @@ export default function KidsVocabPage() {
     return '★'.repeat(level) + '☆'.repeat(5 - level);
   };
 
+  // 生成默写提示（逐步揭示字母）
+  const getSpellingHint = (word: string, hintLevel: number) => {
+    if (hintLevel <= 0) return '_ '.repeat(word.length).trim();
+    const chars = word.split('');
+    return chars.map((c, i) => (i < hintLevel ? c : '_')).join(' ');
+  };
+
+  // 隐藏例句中的单词（用下划线替代）
+  const hideWordInSentence = (sentence: string, targetWord: string) => {
+    const regex = new RegExp(targetWord, 'gi');
+    return sentence.replace(regex, '______');
+  };
+
+  // 检查拼写
+  const checkSpelling = () => {
+    const word = reviewWords[reviewIndex];
+    const isCorrect = spellingInput.trim().toLowerCase() === word.word.toLowerCase();
+    setSpellingCorrect(isCorrect);
+    setSpellingChecked(true);
+    if (isCorrect) {
+      setShowAnswer(true);
+    }
+  };
+
+  // 添加提示
+  const addHint = () => {
+    const word = reviewWords[reviewIndex];
+    setHintCount(prev => Math.min(prev + 1, word.word.length));
+  };
+
   // 复习模式 UI
   if (reviewMode && reviewWords.length > 0) {
     const word = reviewWords[reviewIndex];
@@ -170,64 +213,160 @@ export default function KidsVocabPage() {
             </span>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 text-center">
-            <div className="text-4xl font-bold text-gray-800 mb-2">{word.word}</div>
-            {word.phonetic_us && (
-              <div className="text-gray-400 text-sm mb-4">
-                美 {word.phonetic_us}
-                {word.phonetic_uk && ` | 英 ${word.phonetic_uk}`}
+          <div className="bg-white rounded-2xl shadow-lg p-6">
+            {/* 顶部：单词或占位 */}
+            <div className="text-center mb-4">
+              {showAnswer ? (
+                <>
+                  <div className="text-4xl font-bold text-gray-800 mb-2">{word.word}</div>
+                  {word.phonetic_us && (
+                    <div className="text-gray-400 text-sm mb-1">
+                      美 {word.phonetic_us}
+                      {word.phonetic_uk && ` | 英 ${word.phonetic_uk}`}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-mono text-gray-400 tracking-widest mb-2">
+                    {getSpellingHint(word.word, hintCount)}
+                  </div>
+                  <div className="text-xs text-gray-400">{word.word.length} 个字母</div>
+                </>
+              )}
+              <div className="text-sm text-gray-400 mt-1">
+                {masteryStars(word.mastery_level)}
               </div>
-            )}
-            <div className="text-sm text-gray-400 mb-6">
-              {masteryStars(word.mastery_level)}
             </div>
 
-            {!showAnswer ? (
-              <button
-                onClick={() => setShowAnswer(true)}
-                className={`w-full py-3 rounded-xl text-white font-medium ${theme.btnGrad}`}
-              >
-                显示答案
-              </button>
-            ) : (
-              <div className="space-y-4">
-                <div className="text-left space-y-1">
-                  {meanings.map((m, i) => (
-                    <div key={i} className="text-gray-700">
-                      <span className="text-blue-500 font-medium mr-1">{m.pos}</span>
-                      {m.def}
+            {/* 释义（始终显示，帮助回忆） */}
+            <div className="text-left space-y-1 mb-4">
+              <div className="text-xs text-gray-400 mb-1">释义</div>
+              {meanings.map((m, i) => (
+                <div key={i} className="text-gray-700">
+                  <span className="text-blue-500 font-medium mr-1">{m.pos}</span>
+                  {m.def}
+                </div>
+              ))}
+            </div>
+
+            {/* 例句（始终显示，未答对前隐藏单词） */}
+            {examples.length > 0 && (
+              <div className="text-left mb-4">
+                <div className="text-xs text-gray-400 mb-1">例句</div>
+                <div className="space-y-2">
+                  {examples.map((ex, i) => (
+                    <div key={i} className="text-sm bg-gray-50 rounded-lg p-2">
+                      <div className="text-gray-700">
+                        {showAnswer ? ex.en : hideWordInSentence(ex.en, word.word)}
+                      </div>
+                      <div className="text-gray-400 mt-0.5">{ex.zh}</div>
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
 
+            {/* 默写输入区（未显示答案时） */}
+            {!showAnswer && (
+              <div className="space-y-3 mb-4">
+                <div className="text-xs text-gray-400">默写单词</div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={spellingInput}
+                    onChange={e => {
+                      setSpellingInput(e.target.value);
+                      if (spellingChecked) {
+                        setSpellingChecked(false);
+                        setSpellingCorrect(false);
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && spellingInput.trim()) checkSpelling();
+                    }}
+                    placeholder="输入单词拼写..."
+                    className={`flex-1 px-4 py-3 rounded-xl border-2 text-sm outline-none transition ${
+                      spellingChecked
+                        ? spellingCorrect
+                          ? 'border-green-400 bg-green-50'
+                          : 'border-red-400 bg-red-50'
+                        : 'border-gray-200 focus:border-blue-400'
+                    }`}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    onClick={checkSpelling}
+                    disabled={!spellingInput.trim()}
+                    className={`px-4 py-3 rounded-xl text-white text-sm font-medium disabled:opacity-40 ${theme.btnGrad}`}
+                  >
+                    检查
+                  </button>
+                </div>
+
+                {/* 拼写结果反馈 */}
+                {spellingChecked && !spellingCorrect && (
+                  <div className="text-sm text-red-500 flex items-center gap-1">
+                    拼写不正确，再试一次或查看提示
+                  </div>
+                )}
+                {spellingChecked && spellingCorrect && (
+                  <div className="text-sm text-green-600 font-medium">
+                    拼写正确!
+                  </div>
+                )}
+
+                {/* 提示和跳过按钮 */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={addHint}
+                    disabled={hintCount >= word.word.length}
+                    className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 text-sm font-medium hover:bg-amber-100 transition disabled:opacity-40"
+                  >
+                    提示 ({hintCount}/{word.word.length})
+                  </button>
+                  <button
+                    onClick={() => setShowAnswer(true)}
+                    className="flex-1 py-2 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium hover:bg-gray-200 transition"
+                  >
+                    显示答案
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 答案展示区 */}
+            {showAnswer && (
+              <div className="space-y-3">
+                {/* 词根 */}
                 {word.word_roots && (
-                  <div className="text-left text-sm text-gray-500 bg-gray-50 rounded-lg p-2">
-                    词根: {word.word_roots}
+                  <div className="text-left">
+                    <div className="text-xs text-gray-400 mb-1">词根词缀</div>
+                    <div className="text-sm text-gray-600 bg-blue-50 rounded-lg px-3 py-2">
+                      {word.word_roots}
+                    </div>
                   </div>
                 )}
 
-                {examples.length > 0 && (
-                  <div className="text-left space-y-1">
-                    {examples.slice(0, 2).map((ex, i) => (
-                      <div key={i} className="text-sm">
-                        <div className="text-gray-700">{ex.en}</div>
-                        <div className="text-gray-400">{ex.zh}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* 近义词/反义词 */}
+                <div className="flex gap-4 text-sm text-left">
+                  {word.synonyms && (
+                    <div className="flex-1">
+                      <span className="text-gray-400">近义词: </span>
+                      <span className="text-green-600">{word.synonyms}</span>
+                    </div>
+                  )}
+                  {word.antonyms && (
+                    <div className="flex-1">
+                      <span className="text-gray-400">反义词: </span>
+                      <span className="text-red-500">{word.antonyms}</span>
+                    </div>
+                  )}
+                </div>
 
-                {word.synonyms && (
-                  <div className="text-left text-sm text-gray-500">
-                    近义词: {word.synonyms}
-                  </div>
-                )}
-                {word.antonyms && (
-                  <div className="text-left text-sm text-gray-500">
-                    反义词: {word.antonyms}
-                  </div>
-                )}
-
+                {/* 记住/没记住 */}
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => handleReviewAnswer(false)}
