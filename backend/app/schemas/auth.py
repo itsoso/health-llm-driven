@@ -64,6 +64,12 @@ class PasswordChange(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=100, description="新密码")
 
 
+class BindWebLogin(BaseModel):
+    """微信用户绑定Web登录凭证"""
+    email: EmailStr = Field(..., description="邮箱地址")
+    password: str = Field(..., min_length=6, max_length=100, description="登录密码")
+
+
 class KidsPointsUpdate(BaseModel):
     """儿童模式积分更新"""
     kids_points: int = Field(..., ge=0, le=1000000, description="儿童模式积分（总值）")

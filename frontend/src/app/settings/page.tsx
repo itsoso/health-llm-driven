@@ -101,6 +101,12 @@ function SettingsContent() {
   const [showPrivacySection, setShowPrivacySection] = useState(false);
   const [showQuickRecordSection, setShowQuickRecordSection] = useState(true);
 
+  // Web登录绑定状态
+  const [showBindForm, setShowBindForm] = useState(false);
+  const [bindEmail, setBindEmail] = useState('');
+  const [bindPassword, setBindPassword] = useState('');
+  const [bindLoading, setBindLoading] = useState(false);
+
   // 用户名编辑状态
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
@@ -902,7 +908,19 @@ function SettingsContent() {
             </div>
             <div>
               <label className="text-sm text-gray-500">邮箱</label>
-              <p className="text-gray-900 font-medium">{user?.email || '-'}</p>
+              {user?.email ? (
+                <p className="text-gray-900 font-medium">{user.email}</p>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-gray-400">未绑定</p>
+                  <button
+                    onClick={() => setShowBindForm(!showBindForm)}
+                    className="text-indigo-500 hover:text-indigo-600 text-sm"
+                  >
+                    绑定邮箱
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-sm text-gray-500">姓名</label>
@@ -959,6 +977,88 @@ function SettingsContent() {
               </p>
             </div>
           </div>
+          {/* 绑定Web登录表单 */}
+          {showBindForm && !user?.email && (
+            <div className="mt-4 pt-4 border-t">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">绑定邮箱和密码（用于Web端登录）</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">邮箱地址</label>
+                  <input
+                    type="email"
+                    value={bindEmail}
+                    onChange={(e) => setBindEmail(e.target.value)}
+                    placeholder="请输入邮箱"
+                    className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">设置密码（至少6位）</label>
+                  <input
+                    type="password"
+                    value={bindPassword}
+                    onChange={(e) => setBindPassword(e.target.value)}
+                    placeholder="请设置登录密码"
+                    className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!bindEmail.trim() || !bindPassword.trim()) {
+                        setMessage({ type: 'error', text: '请填写邮箱和密码' });
+                        return;
+                      }
+                      if (bindPassword.length < 6) {
+                        setMessage({ type: 'error', text: '密码至少6位' });
+                        return;
+                      }
+                      setBindLoading(true);
+                      try {
+                        const res = await fetch(`${API_BASE}/auth/bind-web-login`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({ email: bindEmail, password: bindPassword }),
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setMessage({ type: 'success', text: '绑定成功！现在可以使用邮箱和密码在Web端登录' });
+                          setShowBindForm(false);
+                          setBindEmail('');
+                          setBindPassword('');
+                          refreshUser();
+                        } else {
+                          setMessage({ type: 'error', text: data.detail || '绑定失败' });
+                        }
+                      } catch {
+                        setMessage({ type: 'error', text: '网络错误，请重试' });
+                      } finally {
+                        setBindLoading(false);
+                      }
+                    }}
+                    disabled={bindLoading}
+                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 text-sm"
+                  >
+                    {bindLoading ? '绑定中...' : '确认绑定'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBindForm(false);
+                      setBindEmail('');
+                      setBindPassword('');
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 pt-4 border-t">
             <button
               onClick={logout}

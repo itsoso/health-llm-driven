@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.user import User, GarminCredential
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
-    PasswordChange, GarminCredentialCreate, GarminCredentialResponse,
+    PasswordChange, BindWebLogin, GarminCredentialCreate, GarminCredentialResponse,
     GarminSyncRequest, GarminSyncResponse, KidsPointsUpdate, KidsPointsResponse,
     GarminTestConnectionResponse, GarminMFAVerifyRequest, GarminMFAVerifyResponse
 )
@@ -263,6 +263,40 @@ async def change_password(
     db.commit()
     
     return {"message": "密码修改成功"}
+
+
+@router.post("/bind-web-login", summary="绑定Web登录凭证")
+async def bind_web_login(
+    bind_data: BindWebLogin,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    微信用户绑定邮箱和密码，以便在Web端登录。
+    仅适用于尚未设置邮箱的用户（如微信注册用户）。
+    """
+    # 已有邮箱的用户不允许重复绑定
+    if current_user.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="您已绑定邮箱，无需重复绑定"
+        )
+
+    # 检查邮箱是否已被其他用户使用
+    existing = db.query(User).filter(User.email == bind_data.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该邮箱已被其他账号使用"
+        )
+
+    # 绑定邮箱和密码
+    current_user.email = bind_data.email
+    current_user.hashed_password = auth_service.get_password_hash(bind_data.password)
+    db.commit()
+    db.refresh(current_user)
+
+    return {"message": "绑定成功，您现在可以使用邮箱和密码在Web端登录"}
 
 
 # ========== Garmin凭证管理 ==========
