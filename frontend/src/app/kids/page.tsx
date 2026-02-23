@@ -7,13 +7,13 @@ import { useKidsTheme } from '@/contexts/KidsThemeContext';
 import KidsChatBubble from '@/components/kids/KidsChatBubble';
 
 const KIDS_QUICK_QUESTIONS = [
-  { label: '今天吃什么好', emoji: '🍎', text: '今天我应该吃什么比较健康？' },
-  { label: '运动建议', emoji: '🏃', text: '今天适合做什么运动呢？' },
-  { label: '睡眠小知识', emoji: '😴', text: '怎样才能睡得更好呢？' },
-  { label: '长高秘诀', emoji: '📏', text: '我怎样才能长得更高呢？' },
-  { label: '保护眼睛', emoji: '👀', text: '怎样保护我的眼睛？' },
-  { label: '喝水提醒', emoji: '💧', text: '我今天应该喝多少水？' },
   { label: '学单词', emoji: '📖', text: '学单词 important' },
+  { label: '运动建议', emoji: '🏃', text: '今天适合做什么运动呢？' },
+  { label: '保护眼睛', emoji: '👀', text: '怎样保护我的眼睛？' },
+  { label: '睡眠小知识', emoji: '😴', text: '怎样才能睡得更好呢？' },
+  { label: '喝水提醒', emoji: '💧', text: '我今天应该喝多少水？' },
+  { label: '今天吃什么好', emoji: '🍎', text: '今天我应该吃什么比较健康？' },
+  { label: '长高秘诀', emoji: '📏', text: '我怎样才能长得更高呢？' },
 ];
 
 export default function KidsChatPage() {
@@ -330,14 +330,14 @@ export default function KidsChatPage() {
                 <p className="text-xl text-gray-500">
                   有什么想问的吗？点下面的问题试试吧~
                 </p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto mt-8">
+                <div className="flex flex-wrap justify-center gap-3 max-w-3xl mx-auto mt-8 px-4">
                   {KIDS_QUICK_QUESTIONS.map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
-                      className={`flex flex-col items-center gap-2 px-4 py-5 bg-white rounded-2xl shadow-md border-2 ${t.cardBorder} ${t.cardHoverBorder} hover:shadow-lg transition-all active:scale-95`}
+                      className={`flex items-center gap-2 px-5 py-3.5 bg-white rounded-full shadow-md border-2 ${t.cardBorder} ${t.cardHoverBorder} hover:shadow-lg transition-all active:scale-95`}
                     >
-                      <span className="text-4xl">{q.emoji}</span>
+                      <span className="text-2xl">{q.emoji}</span>
                       <span className="text-base font-bold text-gray-700">{q.label}</span>
                     </button>
                   ))}
@@ -369,18 +369,18 @@ export default function KidsChatPage() {
           </div>
         </div>
 
-        {/* 快捷问题横滑栏 */}
+        {/* 快捷问题栏 */}
         {messages.length > 0 && !loading && (
           <div className={`px-4 py-2 border-t ${t.navBorder} bg-white/40`}>
-            <div className="max-w-3xl mx-auto overflow-x-auto">
-              <div className="flex gap-3">
+            <div className="max-w-3xl mx-auto">
+              <div className="flex flex-wrap gap-2 justify-center">
                 {KIDS_QUICK_QUESTIONS.map((q, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSend(q.text)}
-                    className={`flex items-center gap-2 px-5 py-3 bg-white rounded-full shadow-sm border-2 ${t.cardBorder} ${t.cardHoverBorder} text-base font-bold whitespace-nowrap transition-all active:scale-95`}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 bg-white rounded-full shadow-sm border-2 ${t.cardBorder} ${t.cardHoverBorder} text-sm font-bold transition-all active:scale-95`}
                   >
-                    <span className="text-xl">{q.emoji}</span>
+                    <span className="text-base">{q.emoji}</span>
                     <span className="text-gray-700">{q.label}</span>
                   </button>
                 ))}
