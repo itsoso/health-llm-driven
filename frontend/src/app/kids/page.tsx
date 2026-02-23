@@ -306,7 +306,7 @@ export default function KidsChatPage() {
             </button>
             <h1 className={`text-2xl font-bold ${t.accent} flex items-center gap-2`}>
               <span className="text-3xl">{t.icon}</span>
-              健康小助手
+              健康&学习小助手
             </h1>
           </div>
           <button
@@ -325,7 +325,7 @@ export default function KidsChatPage() {
               <div className="text-center space-y-6 mt-8">
                 <div className="text-8xl">{t.icon}</div>
                 <h2 className={`text-3xl font-bold ${t.accent}`}>
-                  你好！我是你的健康小助手
+                  你好！我是你的健康&学习小助手
                 </h2>
                 <p className="text-xl text-gray-500">
                   有什么想问的吗？点下面的问题试试吧~

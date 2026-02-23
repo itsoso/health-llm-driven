@@ -1,6 +1,6 @@
 {
-  "name": "健康小助手",
-  "short_name": "健康小助手",
+  "name": "健康&学习小助手",
+  "short_name": "健康&学习小助手",
   "description": "专为小朋友设计的健康助手",
   "start_url": "/kids",
   "scope": "/kids",
