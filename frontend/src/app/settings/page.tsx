@@ -106,6 +106,12 @@ function SettingsContent() {
   const [bindEmail, setBindEmail] = useState('');
   const [bindPassword, setBindPassword] = useState('');
   const [bindLoading, setBindLoading] = useState(false);
+  // 修改密码
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changePwdLoading, setChangePwdLoading] = useState(false);
 
   // 用户名编辑状态
   const [isEditingName, setIsEditingName] = useState(false);
@@ -1056,6 +1062,97 @@ function SettingsContent() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* 修改密码 */}
+          {user?.email && (
+            <div className="mt-4 pt-4 border-t">
+              <button
+                onClick={() => setShowChangePassword(!showChangePassword)}
+                className="text-sm text-indigo-600 hover:text-indigo-800"
+              >
+                {showChangePassword ? '取消修改密码' : '修改密码'}
+              </button>
+              {showChangePassword && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">当前密码</label>
+                    <input
+                      type="password"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      placeholder="请输入当前密码"
+                      className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">新密码（至少6位）</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="请输入新密码"
+                      className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">确认新密码</label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="请再次输入新密码"
+                      className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!oldPassword.trim()) {
+                        setMessage({ type: 'error', text: '请输入当前密码' });
+                        return;
+                      }
+                      if (newPassword.length < 6) {
+                        setMessage({ type: 'error', text: '新密码至少6位' });
+                        return;
+                      }
+                      if (newPassword !== confirmPassword) {
+                        setMessage({ type: 'error', text: '两次输入的新密码不一致' });
+                        return;
+                      }
+                      setChangePwdLoading(true);
+                      try {
+                        const res = await fetch(`${API_BASE}/auth/change-password`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setMessage({ type: 'success', text: '密码修改成功' });
+                          setShowChangePassword(false);
+                          setOldPassword('');
+                          setNewPassword('');
+                          setConfirmPassword('');
+                        } else {
+                          setMessage({ type: 'error', text: data.detail || '修改失败' });
+                        }
+                      } catch {
+                        setMessage({ type: 'error', text: '网络错误，请重试' });
+                      } finally {
+                        setChangePwdLoading(false);
+                      }
+                    }}
+                    disabled={changePwdLoading}
+                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 text-sm"
+                  >
+                    {changePwdLoading ? '修改中...' : '确认修改'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
