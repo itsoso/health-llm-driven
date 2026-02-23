@@ -127,6 +127,13 @@ export default function FriendsPage() {
     return type === 'checkin' ? '打卡PK' : '学习时长PK';
   };
 
+  const formatChallengeDuration = (startDate: string, endDate: string) => {
+    const diffMin = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 60000);
+    if (diffMin < 60) return `${diffMin}分钟`;
+    if (diffMin < 1440) return `${Math.round(diffMin / 60)}小时`;
+    return `${Math.round(diffMin / 1440)}天`;
+  };
+
   const getStatusBadge = (status: string) => {
     if (status === 'active') return { text: '进行中', cls: 'bg-green-500/20 text-green-400' };
     if (status === 'completed') return { text: '已结束', cls: 'bg-gray-500/20 text-gray-400' };
@@ -393,7 +400,7 @@ export default function FriendsPage() {
                             <span>·</span>
                             <span>{getMetricLabel(c.metric)}</span>
                             <span>·</span>
-                            <span>{c.duration_days}天</span>
+                            <span>{formatChallengeDuration(c.start_date, c.end_date)}</span>
                           </div>
                           {/* 参与者头像 */}
                           <div className="flex items-center gap-1">

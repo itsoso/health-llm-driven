@@ -105,11 +105,26 @@ export default function ChallengeDetailPage() {
     return `#${rank}`;
   };
 
-  const getDaysLeft = () => {
-    if (!challenge) return 0;
+  const getTimeLeft = () => {
+    if (!challenge) return '0';
     const end = new Date(challenge.end_date).getTime();
     const now = Date.now();
-    return Math.max(0, Math.ceil((end - now) / 86400000));
+    const diffMs = Math.max(0, end - now);
+    const diffMin = Math.ceil(diffMs / 60000);
+    if (diffMin < 60) return `${diffMin}分钟`;
+    const diffHours = Math.ceil(diffMs / 3600000);
+    if (diffHours < 24) return `${diffHours}小时`;
+    return `${Math.ceil(diffMs / 86400000)}天`;
+  };
+
+  const formatDuration = () => {
+    if (!challenge) return '';
+    const start = new Date(challenge.start_date).getTime();
+    const end = new Date(challenge.end_date).getTime();
+    const diffMin = Math.round((end - start) / 60000);
+    if (diffMin < 60) return `${diffMin}分钟`;
+    if (diffMin < 1440) return `${Math.round(diffMin / 60)}小时`;
+    return `${Math.round(diffMin / 1440)}天`;
   };
 
   const getProgress = () => {
@@ -239,9 +254,9 @@ export default function ChallengeDetailPage() {
 
           <div className="flex items-center gap-4 text-xs text-white/40 mb-3">
             <span>创建: {challenge.creator_name}</span>
-            <span>{challenge.duration_days}天</span>
+            <span>{formatDuration()}</span>
             {challenge.status === 'active' && (
-              <span className="text-cyan-400">剩余 {getDaysLeft()} 天</span>
+              <span className="text-cyan-400">剩余 {getTimeLeft()}</span>
             )}
           </div>
 

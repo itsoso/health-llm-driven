@@ -1179,6 +1179,7 @@ export const pkChallengeApi = {
     activity_category?: string;
     metric?: string;
     duration_days?: number;
+    duration_minutes?: number;
     friend_ids: number[];
   }) => api.post<PKChallengeData>('/pk-challenges', data),
   list: (status?: string) =>

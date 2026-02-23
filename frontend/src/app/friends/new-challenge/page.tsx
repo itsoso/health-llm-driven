@@ -27,7 +27,22 @@ const METRICS = [
   { value: 'completion_rate', label: '完成率' },
 ];
 
-const DURATION_OPTIONS = [3, 7, 14, 30];
+const DURATION_OPTIONS = [
+  { minutes: 5, label: '5分钟' },
+  { minutes: 10, label: '10分钟' },
+  { minutes: 15, label: '15分钟' },
+  { minutes: 30, label: '30分钟' },
+  { minutes: 60, label: '1小时' },
+  { minutes: 120, label: '2小时' },
+  { minutes: 180, label: '3小时' },
+  { minutes: 240, label: '4小时' },
+  { minutes: 480, label: '8小时' },
+  { minutes: 1440, label: '1天' },
+  { minutes: 4320, label: '3天' },
+  { minutes: 10080, label: '7天' },
+  { minutes: 20160, label: '14天' },
+  { minutes: 43200, label: '30天' },
+];
 
 export default function NewChallengePage() {
   const router = useRouter();
@@ -42,7 +57,7 @@ export default function NewChallengePage() {
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [activityCategory, setActivityCategory] = useState('studying');
   const [metric, setMetric] = useState('total_minutes');
-  const [durationDays, setDurationDays] = useState(7);
+  const [durationMinutes, setDurationMinutes] = useState(10080); // 默认7天
   const [selectedFriends, setSelectedFriends] = useState<number[]>([]);
 
   useEffect(() => {
@@ -91,7 +106,7 @@ export default function NewChallengePage() {
         checkin_template_id: challengeType === 'checkin' ? templateId! : undefined,
         activity_category: challengeType === 'study_time' ? activityCategory : undefined,
         metric,
-        duration_days: durationDays,
+        duration_minutes: durationMinutes,
         friend_ids: selectedFriends,
       });
       router.push(`/friends/challenge/${res.data.id}?created=1`);
@@ -220,22 +235,20 @@ export default function NewChallengePage() {
             </div>
           </div>
 
-          {/* 持续天数 */}
+          {/* PK时长 */}
           <div>
-            <label className="text-sm text-white/50 mb-2 block">持续天数</label>
-            <div className="flex gap-2">
+            <label className="text-sm text-white/50 mb-2 block">PK时长</label>
+            <select
+              value={durationMinutes}
+              onChange={e => setDurationMinutes(Number(e.target.value))}
+              className="w-full bg-white/10 rounded-xl px-4 py-3 text-sm outline-none appearance-none cursor-pointer"
+            >
               {DURATION_OPTIONS.map(d => (
-                <button
-                  key={d}
-                  onClick={() => setDurationDays(d)}
-                  className={`flex-1 py-3 rounded-xl text-sm text-center ${
-                    durationDays === d ? 'bg-cyan-600' : 'bg-white/10'
-                  }`}
-                >
-                  {d}天
-                </button>
+                <option key={d.minutes} value={d.minutes} className="bg-gray-800 text-white">
+                  {d.label}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           {/* 选择好友 */}

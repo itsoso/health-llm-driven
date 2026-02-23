@@ -164,6 +164,14 @@ async def create_challenge(
             raise HTTPException(status_code=400, detail=f"用户 {fid} 不是你的好友")
 
     now = datetime.now(timezone.utc)
+    # 支持分钟级PK时长
+    if data.duration_minutes and data.duration_minutes > 0:
+        end_date = now + timedelta(minutes=data.duration_minutes)
+        duration_days = max(1, -(-data.duration_minutes // 1440))  # ceil division
+    else:
+        end_date = now + timedelta(days=data.duration_days)
+        duration_days = data.duration_days
+
     challenge = PKChallenge(
         creator_id=current_user.id,
         title=data.title,
@@ -171,9 +179,9 @@ async def create_challenge(
         checkin_template_id=data.checkin_template_id,
         activity_category=data.activity_category,
         metric=data.metric,
-        duration_days=data.duration_days,
+        duration_days=duration_days,
         start_date=now,
-        end_date=now + timedelta(days=data.duration_days),
+        end_date=end_date,
         status="active",
     )
     db.add(challenge)

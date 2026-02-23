@@ -55,6 +55,7 @@ class PKChallengeCreate(BaseModel):
     activity_category: Optional[str] = None    # study_time类型需要
     metric: str = Field(default="total_minutes", pattern="^(total_minutes|streak|completion_rate|count)$")
     duration_days: int = Field(default=7, ge=1, le=90)
+    duration_minutes: Optional[int] = Field(None, ge=5, le=129600, description="PK时长（分钟），优先于duration_days")
     friend_ids: List[int] = Field(default_factory=list)  # 邀请的好友ID
 
 
