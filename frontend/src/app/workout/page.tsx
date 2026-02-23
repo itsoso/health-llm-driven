@@ -638,6 +638,12 @@ function WorkoutContent() {
                           </h3>
                           <p className="text-gray-400 text-sm">
                             {format(parseISO(workoutDetail.workout_date), 'yyyy年MM月dd日 EEEE', { locale: zhCN })}
+                            {workoutDetail.start_time && (
+                              <span className="ml-2 text-gray-500">
+                                {format(parseISO(workoutDetail.start_time), 'HH:mm')}
+                                {workoutDetail.end_time && ` - ${format(parseISO(workoutDetail.end_time), 'HH:mm')}`}
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -1207,8 +1213,20 @@ function WorkoutContent() {
                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold text-gray-300 border-b border-slate-700 pb-2">计时</h4>
                       <div className="space-y-2 text-sm">
+                        {workoutDetail.start_time && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">开始时间</span>
+                            <span className="text-white font-medium">{format(parseISO(workoutDetail.start_time), 'yyyy-MM-dd HH:mm:ss')}</span>
+                          </div>
+                        )}
+                        {workoutDetail.end_time && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">结束时间</span>
+                            <span className="text-white font-medium">{format(parseISO(workoutDetail.end_time), 'yyyy-MM-dd HH:mm:ss')}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
-                          <span className="text-gray-400">时间</span>
+                          <span className="text-gray-400">总时长</span>
                           <span className="text-white font-medium font-mono">{formatDuration(workoutDetail.duration_seconds)}</span>
                         </div>
                         {workoutDetail.moving_duration_seconds && (
