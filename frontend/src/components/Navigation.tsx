@@ -15,7 +15,6 @@ import {
   Scale,
   CloudSun,
   ClipboardList,
-  CheckSquare,
   Pill,
   Flag,
   Wind,
@@ -47,8 +46,6 @@ import {
   Plane,
   Moon,
   Timer,
-  Users,
-  Trophy,
 } from 'lucide-react';
 
 interface NavItem {
@@ -79,8 +76,6 @@ export default function Navigation() {
     { href: '/daily-insights', label: '今日建议', icon: <Sparkles className="w-4 h-4" /> },
     { href: '/ai-assistant', label: '健康顾问', icon: <MessageCircle className="w-4 h-4" /> },
     { href: '/news', label: '资讯', icon: <Newspaper className="w-4 h-4" /> },
-    { href: '/friends', label: '好友PK', icon: <Users className="w-4 h-4" /> },
-    { href: '/points', label: '积分', icon: <Trophy className="w-4 h-4" /> },
   ];
 
   // 分组下拉菜单
@@ -146,12 +141,6 @@ export default function Navigation() {
     },
   ];
 
-  // 所有导航项（用于移动端）
-  const allNavItems: NavItem[] = [
-    ...mainNavItems,
-    ...navGroups.flatMap((g) => g.items),
-  ];
-
   // 点击外部关闭下拉菜单
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -213,7 +202,7 @@ export default function Navigation() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-3 py-2 rounded-md text-lg font-medium transition-all duration-200 flex items-center gap-2 whitespace-nowrap flex-shrink-0 ${
+                className={`px-2 xl:px-3 py-2 rounded-md text-sm xl:text-base font-medium transition-all duration-200 flex items-center gap-1.5 xl:gap-2 whitespace-nowrap flex-shrink-0 ${
                   isActive(item.href)
                     ? 'bg-purple-600/90 text-white shadow-sm'
                     : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -229,7 +218,7 @@ export default function Navigation() {
               <div key={group.label} className="relative flex-shrink-0">
                 <button
                   onClick={() => setOpenDropdown(openDropdown === group.label ? null : group.label)}
-                  className={`px-3 py-2 rounded-md text-lg font-medium transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap ${
+                  className={`px-2 xl:px-3 py-2 rounded-md text-sm xl:text-base font-medium transition-all duration-200 flex items-center gap-1 xl:gap-1.5 whitespace-nowrap ${
                     isGroupActive(group)
                       ? 'bg-purple-600/90 text-white shadow-sm'
                       : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -250,7 +239,7 @@ export default function Navigation() {
                         key={item.href}
                         href={item.href}
                         onClick={() => setOpenDropdown(null)}
-                        className={`flex items-center gap-3 px-4 py-2.5 text-lg font-medium transition-all ${
+                        className={`flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all ${
                           isActive(item.href)
                             ? 'bg-purple-600/20 text-purple-300'
                             : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -265,7 +254,7 @@ export default function Navigation() {
               </div>
             ))}
 
-            {/* 用户菜单 */}
+            {/* 用户菜单 - 始终可见 */}
             <div className="relative ml-3 pl-3 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
               {!authLoading && (
                 isAuthenticated ? (
