@@ -33,19 +33,19 @@ export default function KidsTabBar({ currentPath }: KidsTabBarProps) {
       className={`flex-shrink-0 bg-white/90 backdrop-blur-xl border-t-2 ${theme.navBorder} shadow-lg`}
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <div className="flex items-center h-16 max-w-2xl mx-auto px-1 overflow-x-auto scrollbar-hide">
+      <div className="flex items-center h-20 max-w-3xl mx-auto px-2 overflow-x-auto scrollbar-hide">
         {TABS.map(tab => {
           const active = isActive(tab.href);
           return (
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-[36px] min-h-[48px] px-1.5 rounded-2xl transition-all duration-200 flex-shrink-0 ${
+              className={`flex flex-col items-center justify-center gap-1 min-w-[56px] min-h-[60px] px-2 rounded-2xl transition-all duration-200 flex-shrink-0 ${
                 active ? `${theme.tabActiveBg} scale-105 shadow-md` : `${theme.hoverBg} active:scale-95`
               }`}
             >
-              <span className="text-lg">{tab.icon}</span>
-              <span className={`text-[9px] font-bold ${active ? theme.tabActiveText : 'text-gray-500'}`}>
+              <span className="text-2xl">{tab.icon}</span>
+              <span className={`text-xs font-bold ${active ? theme.tabActiveText : 'text-gray-500'}`}>
                 {tab.label}
               </span>
             </Link>
