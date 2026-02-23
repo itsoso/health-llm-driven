@@ -15,8 +15,8 @@ const TABS = [
   { href: '/kids/water', label: '喝水', icon: '💧' },
   { href: '/kids/mood', label: '心情', icon: '😊' },
   { href: '/kids/dog', label: '狗狗', icon: '🐾' },
-  { href: '/friends', label: '好友', icon: '👫' },
-  { href: '/points', label: '积分', icon: '🏆' },
+  { href: '/kids/friends', label: '好友', icon: '👫' },
+  { href: '/kids/points', label: '积分', icon: '🏆' },
   { href: '/kids/me', label: '我的', icon: '👤' },
 ];
 
