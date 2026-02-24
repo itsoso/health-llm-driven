@@ -743,10 +743,62 @@ async def set_user_sync_enabled(
     
     action = "启用" if request.sync_enabled else "禁用"
     logger.info(f"管理员 {admin_user.name} {action}了用户 {user_id} 的Garmin同步")
-    
+
     return {
         "message": f"已{action}用户 {user_id} 的Garmin同步",
         "user_id": user_id,
         "sync_enabled": request.sync_enabled
     }
+
+
+# ========== 用户合并（管理员） ==========
+
+class AdminMergeRequest(BaseModel):
+    """管理员合并用户请求"""
+    source_user_id: int  # 被合并的用户ID（将被删除）
+    target_user_id: int  # 目标用户ID（保留）
+
+
+@router.post("/users/merge", summary="合并两个用户（管理员）")
+async def admin_merge_users(
+    request: AdminMergeRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    管理员合并两个用户账号
+
+    - source_user 的所有数据迁移到 target_user
+    - source_user 被删除
+    - target_user 继承两个账号的微信/Web登录能力
+    """
+    from app.services.user_merge import UserMergeService
+
+    source = db.query(User).filter(User.id == request.source_user_id).first()
+    target = db.query(User).filter(User.id == request.target_user_id).first()
+
+    if not source or not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    if source.id == target.id:
+        raise HTTPException(status_code=400, detail="不能合并同一个用户")
+
+    logger.info(
+        f"管理员 {admin_user.name} 发起合并: "
+        f"source={source.id}({source.name}) -> target={target.id}({target.name})"
+    )
+
+    try:
+        result = UserMergeService.merge_users(
+            db=db,
+            source_user_id=request.source_user_id,
+            target_user_id=request.target_user_id
+        )
+        return {
+            "message": f"合并成功: {source.name}(ID:{source.id}) -> {target.name}(ID:{target.id})",
+            **result
+        }
+    except Exception as e:
+        logger.error(f"管理员合并用户失败: {e}")
+        raise HTTPException(status_code=500, detail=f"合并失败: {str(e)}")
 
