@@ -13,14 +13,21 @@ UNIQUE_USER_TABLES = {
     "user_profiles",
     "user_notification_settings",
     "kids_pets",
+    "kids_pet_profiles",
 }
 
 # user_id 参与复合唯一约束的表: {表名: [额外唯一字段]}
 COMPOSITE_UNIQUE_TABLES = {
+    "garmin_data": ["record_date"],
+    "weight_records": ["record_date"],
     "daily_recommendations": ["recommendation_date"],
+    "vocabulary_words": ["word"],
     "vocabularies": ["word"],
     "friendships": ["friend_id"],
     "challenge_participants": ["challenge_id"],
+    "checkin_records": ["template_id", "checkin_date"],
+    "health_analysis_cache": ["analysis_date", "cache_type"],
+    "habit_records": ["habit_id", "record_date"],
 }
 
 
