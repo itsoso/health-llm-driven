@@ -9,11 +9,31 @@ interface KidsChatBubbleProps {
   avatarUrl?: string | null;
 }
 
+function formatTime(dateStr?: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / 86400000);
+  const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (diffDays === 0) return timeStr;
+  if (diffDays === 1) return `昨天 ${timeStr}`;
+  if (diffDays < 7) return `${['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]} ${timeStr}`;
+  return `${d.getMonth() + 1}/${d.getDate()} ${timeStr}`;
+}
+
 export default function KidsChatBubble({ message, avatarUrl }: KidsChatBubbleProps) {
   const isUser = message.role === 'user';
+  const timeLabel = formatTime(message.created_at);
 
   return (
-    <div className={`flex gap-3 mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex flex-col mb-4 ${isUser ? 'items-end' : 'items-start'}`}>
+      {timeLabel && (
+        <div className="text-xs text-gray-400 mb-1 px-14">{timeLabel}</div>
+      )}
+      <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-300 to-purple-300 flex items-center justify-center flex-shrink-0 shadow-md">
           <span className="text-2xl">🌟</span>
@@ -88,6 +108,7 @@ export default function KidsChatBubble({ message, avatarUrl }: KidsChatBubblePro
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

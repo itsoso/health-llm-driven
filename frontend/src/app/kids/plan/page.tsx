@@ -41,7 +41,14 @@ export default function KidsPlanPage() {
   const { user } = useAuth();
   const { theme, points, addPoints } = useKidsTheme();
   const userId = user?.id || 'guest';
-  const today = new Date().toISOString().split('T')[0];
+  // 使用本地日期，避免 UTC 时区导致凌晨日期错位
+  const getLocalDateStr = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const today = getLocalDateStr(new Date());
   const storageKey = `kids_plan_${userId}_${today}`;
 
   const [items, setItems] = useState<PlanItem[]>([]);
@@ -149,7 +156,7 @@ export default function KidsPlanPage() {
   const copyToTomorrow = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const tomorrowStr = getLocalDateStr(tomorrow);
     const tomorrowKey = `kids_plan_${userId}_${tomorrowStr}`;
     const tomorrowItems = items.map((item, idx) => ({ ...item, id: `${Date.now()}_${idx}`, done: false }));
     localStorage.setItem(tomorrowKey, JSON.stringify(tomorrowItems));
