@@ -139,6 +139,19 @@ export default function Navigation() {
         { href: '/settings', label: '个人设置', icon: <Settings className="w-4 h-4" /> },
       ],
     },
+    {
+      label: '资产防御',
+      icon: <Shield className="w-4 h-4" />,
+      items: [
+        { href: '/security-life', label: '总览', icon: <LayoutDashboard className="w-4 h-4" /> },
+        { href: '/security-life/assets', label: '两层资产', icon: <Database className="w-4 h-4" /> },
+        { href: '/security-life/baskets', label: '资产篮子', icon: <LineChart className="w-4 h-4" /> },
+        { href: '/security-life/checklist', label: '90天清单', icon: <ClipboardList className="w-4 h-4" /> },
+        { href: '/security-life/risk', label: '风险与应对', icon: <Shield className="w-4 h-4" /> },
+        { href: '/security-life/dont-list', label: '不要清单', icon: <X className="w-4 h-4" /> },
+        { href: '/security-life/profile', label: '防御设置', icon: <Settings className="w-4 h-4" /> },
+      ],
+    },
   ];
 
   // 点击外部关闭下拉菜单

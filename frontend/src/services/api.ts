@@ -1340,3 +1340,43 @@ export const vocabularyApi = {
   deleteWord: (wordId: number) =>
     api.delete(`/vocabulary/words/${wordId}`),
 };
+
+// ── 资产防御与布局 (Security Life) ─────────────────────
+
+export const securityLifeApi = {
+  // Profile
+  getProfile: () => api.get('/security-life/profile'),
+  updateProfile: (data: Record<string, unknown>) => api.put('/security-life/profile', data),
+
+  // Assets (两层资产)
+  getAssets: () => api.get('/security-life/assets'),
+  updateAssets: (data: Record<string, unknown>) => api.put('/security-life/assets', data),
+  addProperty: (data: Record<string, unknown>) => api.post('/security-life/properties', data),
+  updateProperty: (id: number, data: Record<string, unknown>) => api.put(`/security-life/properties/${id}`, data),
+  deleteProperty: (id: number) => api.delete(`/security-life/properties/${id}`),
+
+  // Baskets (资产篮子)
+  getBaskets: () => api.get('/security-life/baskets'),
+  updateBasket: (basketId: string, data: Record<string, unknown>) => api.put(`/security-life/baskets/${basketId}`, data),
+
+  // Cash Layers (三层现金)
+  getCashLayers: () => api.get('/security-life/cash-layers'),
+  updateCashLayers: (data: { layers: Array<{ layer: string; amount: number; institution?: string; note?: string }> }) =>
+    api.put('/security-life/cash-layers', data),
+
+  // Checklist (90天清单)
+  getChecklist: () => api.get('/security-life/checklist'),
+  initChecklist: () => api.post('/security-life/checklist/init'),
+  addChecklistItem: (data: Record<string, unknown>) => api.post('/security-life/checklist', data),
+  updateChecklistItem: (id: number, data: Record<string, unknown>) => api.put(`/security-life/checklist/${id}`, data),
+  deleteChecklistItem: (id: number) => api.delete(`/security-life/checklist/${id}`),
+  toggleChecklistItem: (id: number) => api.patch(`/security-life/checklist/${id}/toggle`),
+
+  // Red Lines (三条红线)
+  getRedLines: () => api.get('/security-life/red-lines'),
+  updateRedLine: (lineId: number, data: { status: string; value_json?: string }) =>
+    api.put(`/security-life/red-lines/${lineId}`, data),
+
+  // Dashboard (总览)
+  getDashboard: () => api.get('/security-life/dashboard'),
+};
