@@ -10,15 +10,8 @@ import type { Batch, ModelResult } from '../../types/llm';
 import { getSiteInfo } from '../../types/llm';
 import './index.scss';
 
-// 可用模型配置
-const BROWSER_MODELS = [
-  { id: 'chatgpt', name: 'ChatGPT', icon: '🤖' },
-  { id: 'gemini', name: 'Gemini', icon: '✨' },
-  { id: 'grok', name: 'Grok', icon: '🧠' },
-  { id: 'claude', name: 'Claude', icon: '🎭' },
-];
-
-const API_MODELS = [
+// 可用模型配置（仅API模型）
+const ANALYSIS_MODELS = [
   { id: 'lb-gemini-3-pro', name: 'Gemini 3 Pro', icon: '✨' },
   { id: 'lb-claude-4.5-sonnet', name: 'Claude 4.5', icon: '🎭' },
   { id: 'lb-gpt-5.1', name: 'GPT 5.1', icon: '🤖' },
@@ -26,11 +19,10 @@ const API_MODELS = [
 ];
 
 const AGGREGATOR_OPTIONS = [
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'chatgpt', label: 'ChatGPT' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'lb-gemini-3-pro', label: 'Gemini 3 Pro (API)' },
-  { value: 'lb-claude-4.5-sonnet', label: 'Claude 4.5 (API)' },
+  { value: 'lb-claude-4.5-sonnet', label: 'Claude 4.5' },
+  { value: 'lb-gemini-3-pro', label: 'Gemini 3 Pro' },
+  { value: 'lb-gpt-5.1', label: 'GPT 5.1' },
+  { value: 'lb-claude-4-sonnet-think', label: 'Claude 4 Think' },
 ];
 
 const STATUS_ICONS: Record<string, string> = {
@@ -50,10 +42,8 @@ function formatElapsed(seconds?: number): string {
 export default function LLMAnalysisPage() {
   // 输入状态
   const [prompt, setPrompt] = useState('');
-  const [selectedSites, setSelectedSites] = useState<string[]>(['chatgpt', 'gemini', 'grok']);
-  const [adapterMode, setAdapterMode] = useState<'browser' | 'api'>('api');
-  const [aggregatorSite, setAggregatorSite] = useState('gemini');
-  const [showApiModels, setShowApiModels] = useState(false);
+  const [selectedSites, setSelectedSites] = useState<string[]>(['lb-gemini-3-pro', 'lb-claude-4.5-sonnet', 'lb-gpt-5.1']);
+  const [aggregatorSite, setAggregatorSite] = useState('lb-claude-4.5-sonnet');
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
   // 分析状态
@@ -168,7 +158,7 @@ export default function LLMAnalysisPage() {
         prompt: prompt.trim(),
         llm_sites: selectedSites,
         aggregator_site: aggregatorSite,
-        adapter_mode: adapterMode,
+        adapter_mode: 'api',
         web_search_enabled: webSearchEnabled,
       });
 
@@ -259,7 +249,7 @@ export default function LLMAnalysisPage() {
       <View className="model-section">
         <Text className="section-title">分析模型</Text>
         <View className="model-grid">
-          {BROWSER_MODELS.map(m => (
+          {ANALYSIS_MODELS.map(m => (
             <View
               key={m.id}
               className={`model-chip ${selectedSites.includes(m.id) ? 'selected' : ''}`}
@@ -269,27 +259,9 @@ export default function LLMAnalysisPage() {
             </View>
           ))}
         </View>
-
-        <View className="toggle-api" onClick={() => setShowApiModels(!showApiModels)}>
-          <Text className="toggle-text">API 模型 {showApiModels ? '▾' : '▸'}</Text>
-        </View>
-
-        {showApiModels && (
-          <View className="model-grid">
-            {API_MODELS.map(m => (
-              <View
-                key={m.id}
-                className={`model-chip ${selectedSites.includes(m.id) ? 'selected' : ''}`}
-                onClick={() => toggleSite(m.id)}
-              >
-                <Text>{m.icon} {m.name}</Text>
-              </View>
-            ))}
-          </View>
-        )}
       </View>
 
-      {/* 高级设置 */}
+      {/* 汇总模型设置 */}
       <View className="settings-section">
         <View className="setting-row">
           <Text className="setting-label">汇总模型</Text>
@@ -303,24 +275,6 @@ export default function LLMAnalysisPage() {
               {AGGREGATOR_OPTIONS.find(o => o.value === aggregatorSite)?.label || aggregatorSite} ▾
             </View>
           </Picker>
-        </View>
-
-        <View className="setting-row">
-          <Text className="setting-label">适配器</Text>
-          <View className="adapter-toggle">
-            <View
-              className={`adapter-btn ${adapterMode === 'api' ? 'active' : ''}`}
-              onClick={() => setAdapterMode('api')}
-            >
-              API
-            </View>
-            <View
-              className={`adapter-btn ${adapterMode === 'browser' ? 'active' : ''}`}
-              onClick={() => setAdapterMode('browser')}
-            >
-              Browser
-            </View>
-          </View>
         </View>
       </View>
 

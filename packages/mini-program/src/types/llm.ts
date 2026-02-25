@@ -2,7 +2,7 @@
  * browser-llm-orchestrator 相关类型定义
  */
 
-export type LLMSite = 'chatgpt' | 'gemini' | 'grok' | 'claude' | string;
+export type LLMSite = 'lb-gemini-3-pro' | 'lb-claude-4.5-sonnet' | 'lb-gpt-5.1' | 'lb-claude-4-sonnet-think' | string;
 export type AdapterMode = 'browser' | 'api';
 export type BatchStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'partial' | 'cancelled';
 

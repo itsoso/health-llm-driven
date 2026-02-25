@@ -1,94 +1,171 @@
 /**
  * Markdown 转 HTML 解析器
  * 专为小程序 RichText 组件设计
+ * 注意：RichText 只支持标准 HTML 标签（div, span, p, h1-h6, table 等），
+ * 不支持 Taro 的 view/text 标签
  */
 
-function processTable(html: string): string {
-  const tableRegex = /\|(.+)\|\n\|[-:\| ]+\|\n((?:\|.+\|\n?)+)/g;
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-  return html.replace(tableRegex, (_match, headerRow, bodyRows) => {
-    const headers = headerRow.split('|').map((h: string) => h.trim()).filter(Boolean);
-    const headerHtml = headers.map((h: string) => `<view class="md-th"><text>${h}</text></view>`).join('');
-
-    const rows = bodyRows.trim().split('\n');
-    const bodyHtml = rows.map((row: string) => {
-      const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean);
-      const cellsHtml = cells.map((c: string) => `<view class="md-td"><text>${c}</text></view>`).join('');
-      return `<view class="md-tr">${cellsHtml}</view>`;
-    }).join('');
-
-    return `<view class="md-table"><view class="md-thead"><view class="md-tr">${headerHtml}</view></view><view class="md-tbody">${bodyHtml}</view></view>`;
+function processInline(text: string): string {
+  // 粗体+斜体
+  let result = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  // 粗体
+  result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // 斜体
+  result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // 行内代码
+  result = result.replace(/`([^`]+)`/g, (_, code) => {
+    return `<span class="md-code">${escapeHtml(code)}</span>`;
   });
+  // 链接
+  result = result.replace(/\[([^\]]+)\]\([^)]+\)/g, '<span class="md-link">$1</span>');
+  return result;
 }
 
 export function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
 
   try {
-    let html = markdown;
+    const lines = markdown.split('\n');
+    const output: string[] = [];
+    let i = 0;
 
-    // 代码块
-    html = html.replace(/```[\s\S]*?```/g, (match) => {
-      const code = match.slice(3, -3).replace(/^\w*\n?/, '');
-      const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<view class="md-codeblock"><text class="md-code-text">${escaped}</text></view>`;
-    });
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
 
-    // 行内代码
-    html = html.replace(/`([^`]+)`/g, (_, code) => {
-      const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<text class="md-code">${escaped}</text>`;
-    });
-
-    // 标题
-    html = html.replace(/^###### (.+)$/gm, '<view class="md-h6">$1</view>');
-    html = html.replace(/^##### (.+)$/gm, '<view class="md-h5">$1</view>');
-    html = html.replace(/^#### (.+)$/gm, '<view class="md-h4">$1</view>');
-    html = html.replace(/^### (.+)$/gm, '<view class="md-h3">$1</view>');
-    html = html.replace(/^## (.+)$/gm, '<view class="md-h2">$1</view>');
-    html = html.replace(/^# (.+)$/gm, '<view class="md-h1">$1</view>');
-
-    // 粗体和斜体
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<text class="md-strong"><text class="md-em">$1</text></text>');
-    html = html.replace(/\*\*(.+?)\*\*/g, '<text class="md-strong">$1</text>');
-    html = html.replace(/\*(.+?)\*/g, '<text class="md-em">$1</text>');
-
-    // 链接
-    html = html.replace(/\[([^\]]+)\]\([^)]+\)/g, '<text class="md-link">$1</text>');
-
-    // 分隔线
-    html = html.replace(/^[-*_]{3,}$/gm, '<view class="md-hr"></view>');
-
-    // 引用块
-    html = html.replace(/^> (.+)$/gm, '<view class="md-blockquote"><view class="md-p">$1</view></view>');
-
-    // 无序列表
-    html = html.replace(/^[-*+] (.+)$/gm, '<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">$1</text></view>');
-
-    // 有序列表
-    html = html.replace(/^\d+\. (.+)$/gm, (_, text) =>
-      `<view class="md-li"><text class="md-li-marker">•</text><text class="md-li-text">${text}</text></view>`
-    );
-
-    // 表格
-    html = processTable(html);
-
-    // 段落处理
-    const lines = html.split('\n');
-    const processed: string[] = [];
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      if (line.startsWith('<view') || line.startsWith('<text') || line.startsWith('<image')) {
-        processed.push(line);
-      } else {
-        processed.push(`<view class="md-p">${line}</view>`);
+      // 空行
+      if (!trimmed) {
+        i++;
+        continue;
       }
+
+      // 代码块
+      if (trimmed.startsWith('```')) {
+        const codeLines: string[] = [];
+        i++;
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        i++; // skip closing ```
+        const code = escapeHtml(codeLines.join('\n'));
+        output.push(`<div class="md-codeblock"><span class="md-code-text">${code}</span></div>`);
+        continue;
+      }
+
+      // 表格检测
+      if (trimmed.includes('|') && i + 1 < lines.length && /^\|?[\s-:|]+\|?$/.test(lines[i + 1]?.trim())) {
+        // 表头
+        const headers = trimmed.split('|').map(h => h.trim()).filter(Boolean);
+        const headerHtml = headers.map(h => `<th class="md-th">${processInline(h)}</th>`).join('');
+        i += 2; // skip header + separator
+
+        // 表体
+        const rowsHtml: string[] = [];
+        while (i < lines.length && lines[i].trim().includes('|')) {
+          const cells = lines[i].trim().split('|').map(c => c.trim()).filter(Boolean);
+          const cellsHtml = cells.map(c => `<td class="md-td">${processInline(c)}</td>`).join('');
+          rowsHtml.push(`<tr class="md-tr">${cellsHtml}</tr>`);
+          i++;
+        }
+
+        output.push(`<div class="md-table"><table><thead><tr class="md-tr">${headerHtml}</tr></thead><tbody>${rowsHtml.join('')}</tbody></table></div>`);
+        continue;
+      }
+
+      // 标题
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        output.push(`<h${level} class="md-h${level}">${processInline(headingMatch[2])}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      // 分隔线
+      if (/^[-*_]{3,}$/.test(trimmed)) {
+        output.push('<div class="md-hr"></div>');
+        i++;
+        continue;
+      }
+
+      // 引用块 - 收集连续引用行
+      if (trimmed.startsWith('> ')) {
+        const quoteLines: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith('> ')) {
+          quoteLines.push(lines[i].trim().substring(2));
+          i++;
+        }
+        const quoteHtml = quoteLines.map(l => `<p class="md-p">${processInline(l)}</p>`).join('');
+        output.push(`<div class="md-blockquote">${quoteHtml}</div>`);
+        continue;
+      }
+
+      // 无序列表 - 收集连续列表项（支持缩进）
+      const ulMatch = trimmed.match(/^[-*+]\s+(.+)$/);
+      if (ulMatch) {
+        const items: string[] = [];
+        while (i < lines.length) {
+          const itemLine = lines[i].trim();
+          const m = itemLine.match(/^[-*+]\s+(.+)$/);
+          if (m) {
+            items.push(m[1]);
+            i++;
+          } else if (itemLine && !itemLine.match(/^\d+\.\s/) && !itemLine.startsWith('#') && !itemLine.startsWith('```') && !itemLine.startsWith('>')) {
+            // 续行（属于上一个列表项）
+            if (items.length > 0) {
+              items[items.length - 1] += ' ' + itemLine;
+            }
+            i++;
+          } else {
+            break;
+          }
+        }
+        const listHtml = items.map(item =>
+          `<div class="md-li"><span class="md-li-marker">•</span><span class="md-li-text">${processInline(item)}</span></div>`
+        ).join('');
+        output.push(`<div class="md-list">${listHtml}</div>`);
+        continue;
+      }
+
+      // 有序列表
+      const olMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+      if (olMatch) {
+        const items: { num: string; text: string }[] = [];
+        while (i < lines.length) {
+          const itemLine = lines[i].trim();
+          const m = itemLine.match(/^(\d+)\.\s+(.+)$/);
+          if (m) {
+            items.push({ num: m[1], text: m[2] });
+            i++;
+          } else if (itemLine && !itemLine.match(/^[-*+]\s/) && !itemLine.startsWith('#') && !itemLine.startsWith('```') && !itemLine.startsWith('>')) {
+            if (items.length > 0) {
+              items[items.length - 1].text += ' ' + itemLine;
+            }
+            i++;
+          } else {
+            break;
+          }
+        }
+        const listHtml = items.map(item =>
+          `<div class="md-li"><span class="md-li-marker">${item.num}.</span><span class="md-li-text">${processInline(item.text)}</span></div>`
+        ).join('');
+        output.push(`<div class="md-list">${listHtml}</div>`);
+        continue;
+      }
+
+      // 普通段落
+      output.push(`<p class="md-p">${processInline(trimmed)}</p>`);
+      i++;
     }
 
-    return processed.join('').replace(/\n+/g, '');
+    return output.join('');
   } catch (error) {
     console.error('[Markdown解析错误]', error);
-    return `<view class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</view>`;
+    return `<p class="md-p">${markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`;
   }
 }
