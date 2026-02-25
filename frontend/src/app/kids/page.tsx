@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { chatApi, ChatMessage, Conversation } from '@/services/api';
+import { useRouter } from 'next/navigation';
+import { chatApi, dmApi, ChatMessage, Conversation } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
 import KidsChatBubble from '@/components/kids/KidsChatBubble';
@@ -17,6 +18,7 @@ const KIDS_QUICK_QUESTIONS = [
 ];
 
 export default function KidsChatPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const { theme: t } = useKidsTheme();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -25,6 +27,9 @@ export default function KidsChatPage() {
   const [conversationId, setConversationId] = useState<number | undefined>();
   const [isRecording, setIsRecording] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showDmList, setShowDmList] = useState(false);
+  const [dmConversations, setDmConversations] = useState<any[]>([]);
+  const [totalUnread, setTotalUnread] = useState(0);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,6 +45,29 @@ export default function KidsChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Load DM unread count
+  useEffect(() => {
+    dmApi.getUnreadCount().then(res => {
+      setTotalUnread(res.data.total_unread);
+    }).catch(() => {});
+    // Poll every 30 seconds
+    const interval = setInterval(() => {
+      dmApi.getUnreadCount().then(res => {
+        setTotalUnread(res.data.total_unread);
+      }).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadDmConversations = useCallback(async () => {
+    try {
+      const res = await dmApi.getConversations();
+      setDmConversations(res.data);
+      const unread = res.data.reduce((sum: number, c: any) => sum + (c.unread_count || 0), 0);
+      setTotalUnread(unread);
+    } catch { /* ignore */ }
+  }, []);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -288,6 +316,54 @@ export default function KidsChatPage() {
         </div>
       )}
 
+      {/* 好友消息面板 */}
+      {showDmList && (
+        <div className={`w-80 bg-white/90 backdrop-blur-sm border-r-2 ${t.sidebarBorder} flex flex-col shadow-lg flex-shrink-0`}>
+          <div className={`p-4 border-b-2 ${t.sidebarBorder}`}>
+            <h2 className={`text-lg font-bold ${t.accent} flex items-center gap-2`}>
+              <span>👫</span> 好友消息
+            </h2>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {dmConversations.length === 0 ? (
+              <div className="p-8 text-center text-gray-400">
+                <div className="text-5xl mb-3">💬</div>
+                <div className="text-lg mb-2">还没有好友消息</div>
+                <button
+                  onClick={() => router.push('/kids/friends')}
+                  className={`mt-2 px-4 py-2 bg-gradient-to-r ${t.btnGrad} text-white rounded-full text-sm font-bold active:scale-95 transition-all`}
+                >
+                  去添加好友
+                </button>
+              </div>
+            ) : (
+              dmConversations.map((conv: any) => (
+                <button
+                  key={conv.friend_id}
+                  onClick={() => { router.push(`/kids/chat/${conv.friend_id}`); setShowDmList(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 border-b ${t.sidebarBorder} ${t.hoverBg} text-left transition-all`}
+                >
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br ${t.btnGrad} flex items-center justify-center text-white font-bold`}>
+                    {(conv.friend_name || '?').charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-gray-700 truncate">{conv.friend_name}</span>
+                      {conv.unread_count > 0 && (
+                        <span className="w-5 h-5 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold flex-shrink-0 ml-1">
+                          {conv.unread_count > 9 ? '9+' : conv.unread_count}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-400 truncate">{conv.last_message}</div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 主聊天区域 */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* 顶栏 */}
@@ -309,12 +385,30 @@ export default function KidsChatPage() {
               健康&学习小助手
             </h1>
           </div>
-          <button
-            onClick={handleNewChat}
-            className={`px-4 py-2 bg-gradient-to-r ${t.btnGrad} text-white rounded-full font-bold shadow-md hover:shadow-lg transition-all active:scale-95 text-base`}
-          >
-            + 新对话
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setShowDmList(!showDmList); if (!showDmList) loadDmConversations(); }}
+              className={`relative w-11 h-11 rounded-2xl flex items-center justify-center transition-all shadow-sm active:scale-95 ${
+                showDmList
+                  ? `${t.tabActiveBg} border-2 ${t.inputBorder}`
+                  : `bg-white border-2 ${t.navBorder} ${t.cardHoverBorder}`
+              }`}
+              title="好友消息"
+            >
+              <span className="text-xl">👫</span>
+              {totalUnread > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={handleNewChat}
+              className={`px-4 py-2 bg-gradient-to-r ${t.btnGrad} text-white rounded-full font-bold shadow-md hover:shadow-lg transition-all active:scale-95 text-base`}
+            >
+              + 新对话
+            </button>
+          </div>
         </header>
 
         {/* 消息区域 */}

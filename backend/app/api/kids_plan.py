@@ -46,8 +46,18 @@ def _compute_date_range(range_str: str) -> tuple:
         return today - timedelta(days=6), today
     elif range_str == "month":
         return today - timedelta(days=29), today
-    else:  # year
+    elif range_str == "year":
         return today - timedelta(days=364), today
+    elif range_str == "next_day":
+        return today, today + timedelta(days=1)
+    elif range_str == "next_week":
+        return today, today + timedelta(days=7)
+    elif range_str == "next_month":
+        return today, today + timedelta(days=30)
+    elif range_str == "next_year":
+        return today, today + timedelta(days=365)
+    else:
+        return today - timedelta(days=6), today
 
 
 def _build_history_data(
@@ -129,7 +139,7 @@ def _build_history_data(
 
 @router.get("/history", response_model=KidsPlanHistoryResponse, summary="获取计划历史统计")
 async def get_plan_history(
-    range: str = Query("week", pattern="^(week|month|year)$"),
+    range: str = Query("week", pattern="^(week|month|year|next_day|next_week|next_month|next_year)$"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
