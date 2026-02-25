@@ -387,6 +387,8 @@ export const API_ENDPOINTS = {
   NEWS: {
     LIST: '/news/articles',
     DETAIL: '/news/articles',
+    PUSH: '/news/articles/push',
+    VISIBILITY: '/news/articles',  // /{id}/visibility
   },
   USER_API_KEY: {
     LIST: '/user-api-keys',

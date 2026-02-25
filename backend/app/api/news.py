@@ -1,4 +1,4 @@
-"""资讯 API - VIP/管理员可见，支持外部 API Key 写入"""
+"""资讯 API - 多租户资讯系统，支持个人推送和公开API"""
 import hashlib
 import secrets
 import json
@@ -6,13 +6,13 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.news import NewsArticle, NewsApiKey, NewsComment
 from app.models.user import User
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user_required, get_current_user
 from app.utils.timezone import CHINA_TIMEZONE
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/news", tags=["news"])
 # ==================== Schemas ====================
 
 class ArticleCreate(BaseModel):
-    """创建文章请求"""
+    """创建文章请求（外部系统）"""
     source_batch_id: str
     source_type: str  # chatlog_analysis, custom_prompt, daily_recap
     title: str
@@ -34,6 +34,19 @@ class ArticleCreate(BaseModel):
     llm_models: Optional[List[str]] = None
     aggregator_model: Optional[str] = None
     source_created_at: Optional[datetime] = None
+
+
+class UserArticlePush(BaseModel):
+    """用户推送 LLM 分析结果到资讯"""
+    source_batch_id: str
+    title: str
+    content: str
+    summary: Optional[str] = None
+    source_type: str = "custom_prompt"
+    tags: Optional[List[str]] = None
+    llm_models: Optional[List[str]] = None
+    aggregator_model: Optional[str] = None
+    visibility: str = "public"  # "public" / "private"
 
 
 class ArticleResponse(BaseModel):
@@ -52,6 +65,9 @@ class ArticleResponse(BaseModel):
     aggregator_model: Optional[str]
     is_pinned: bool
     view_count: int
+    user_id: Optional[int] = None
+    visibility: str = "public"
+    author_name: Optional[str] = None
     source_created_at: Optional[datetime]
     created_at: datetime
 
@@ -70,6 +86,9 @@ class ArticleListItem(BaseModel):
     source_group: Optional[str]
     is_pinned: bool
     view_count: int
+    user_id: Optional[int] = None
+    visibility: str = "public"
+    author_name: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -146,7 +165,7 @@ def serialize_json_field(value: Optional[List[str]]) -> Optional[str]:
     return json.dumps(value, ensure_ascii=False)
 
 
-def article_to_response(article: NewsArticle, include_content: bool = True) -> dict:
+def article_to_response(article: NewsArticle, include_content: bool = True, author_name: str = None) -> dict:
     """将数据库模型转换为响应字典"""
     data = {
         "id": article.id,
@@ -162,6 +181,9 @@ def article_to_response(article: NewsArticle, include_content: bool = True) -> d
         "aggregator_model": article.aggregator_model,
         "is_pinned": article.is_pinned,
         "view_count": article.view_count,
+        "user_id": article.user_id,
+        "visibility": article.visibility or "public",
+        "author_name": author_name,
         "source_created_at": article.source_created_at,
         "created_at": article.created_at,
     }
@@ -170,17 +192,21 @@ def article_to_response(article: NewsArticle, include_content: bool = True) -> d
     return data
 
 
+def _get_author_names(db: Session, articles: list) -> dict:
+    """批量获取文章作者名"""
+    user_ids = list(set(a.user_id for a in articles if a.user_id))
+    if not user_ids:
+        return {}
+    users = db.query(User.id, User.name).filter(User.id.in_(user_ids)).all()
+    return {u.id: u.name for u in users}
+
+
 # ==================== 权限检查 ====================
 
 def check_news_access(user: User) -> bool:
-    """检查用户是否有资讯访问权限（管理员或 VIP）"""
-    # 管理员始终有权限
+    """检查用户是否有资讯访问权限（管理员或已审核用户）"""
     if user.is_admin:
         return True
-    # TODO: 后续可以添加 VIP 字段检查
-    # if hasattr(user, 'is_vip') and user.is_vip:
-    #     return True
-    # 暂时：已审核用户都可以访问
     return user.is_approved
 
 
@@ -212,14 +238,36 @@ async def list_articles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     source_type: Optional[str] = None,
+    feed: Optional[str] = Query("all", pattern="^(all|mine|community)$"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取资讯列表（需要 VIP/管理员权限）"""
+    """获取资讯列表，支持 feed 过滤：all/mine/community"""
     if not check_news_access(current_user):
         raise HTTPException(status_code=403, detail="需要 VIP 或管理员权限访问资讯")
 
     query = db.query(NewsArticle).filter(NewsArticle.is_published == True)
+
+    if feed == "mine":
+        # 仅自己的文章（含私密）
+        query = query.filter(NewsArticle.user_id == current_user.id)
+    elif feed == "community":
+        # 他人公开 + 系统文章
+        query = query.filter(
+            or_(
+                NewsArticle.user_id == None,
+                (NewsArticle.user_id != current_user.id) & (NewsArticle.visibility == "public")
+            )
+        )
+    else:
+        # all: 自己的全部 + 他人公开 + 系统文章
+        query = query.filter(
+            or_(
+                NewsArticle.user_id == None,
+                NewsArticle.user_id == current_user.id,
+                NewsArticle.visibility == "public"
+            )
+        )
 
     if source_type:
         query = query.filter(NewsArticle.source_type == source_type)
@@ -229,7 +277,10 @@ async def list_articles(
 
     articles = query.offset((page - 1) * page_size).limit(page_size).all()
 
-    return [article_to_response(a, include_content=False) for a in articles]
+    # 批量获取作者名
+    author_names = _get_author_names(db, articles)
+
+    return [article_to_response(a, include_content=False, author_name=author_names.get(a.user_id)) for a in articles]
 
 
 @router.get("/articles/{article_id}", response_model=ArticleResponse)
@@ -238,7 +289,7 @@ async def get_article(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取资讯详情（需要 VIP/管理员权限）"""
+    """获取资讯详情，含可见性检查"""
     if not check_news_access(current_user):
         raise HTTPException(status_code=403, detail="需要 VIP 或管理员权限访问资讯")
 
@@ -250,11 +301,147 @@ async def get_article(
     if not article:
         raise HTTPException(status_code=404, detail="文章不存在")
 
+    # 可见性检查
+    if article.user_id is not None and article.user_id != current_user.id:
+        if article.visibility != "public":
+            raise HTTPException(status_code=403, detail="该文章为私密文章")
+
     # 增加阅读次数
     article.view_count += 1
     db.commit()
 
-    return article_to_response(article, include_content=True)
+    # 获取作者名
+    author_name = None
+    if article.user_id:
+        user = db.query(User.name).filter(User.id == article.user_id).first()
+        author_name = user.name if user else None
+
+    return article_to_response(article, include_content=True, author_name=author_name)
+
+
+# ==================== 用户推送接口 ====================
+
+@router.post("/articles/push", response_model=ArticleResponse)
+async def push_article(
+    article: UserArticlePush,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """推送 LLM 分析结果到自己的资讯（JWT 认证）"""
+    if article.visibility not in ("public", "private"):
+        raise HTTPException(status_code=400, detail="visibility 必须是 public 或 private")
+
+    # 检查是否已存在（幂等：同一 batch_id 更新）
+    existing = db.query(NewsArticle).filter(
+        NewsArticle.source_batch_id == article.source_batch_id
+    ).first()
+
+    if existing:
+        if existing.user_id is not None and existing.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="无法更新他人的文章")
+        existing.title = article.title
+        existing.content = article.content
+        existing.summary = article.summary or (article.content[:200] if article.content else None)
+        existing.tags = serialize_json_field(article.tags)
+        existing.llm_models = serialize_json_field(article.llm_models)
+        existing.aggregator_model = article.aggregator_model
+        existing.visibility = article.visibility
+        existing.user_id = current_user.id
+        db.commit()
+        db.refresh(existing)
+        return article_to_response(existing, author_name=current_user.name)
+
+    # 创建新文章
+    db_article = NewsArticle(
+        user_id=current_user.id,
+        visibility=article.visibility,
+        source_batch_id=article.source_batch_id,
+        source_type=article.source_type,
+        title=article.title,
+        summary=article.summary or (article.content[:200] if article.content else None),
+        content=article.content,
+        tags=serialize_json_field(article.tags),
+        llm_models=serialize_json_field(article.llm_models),
+        aggregator_model=article.aggregator_model,
+        source_created_at=datetime.now(CHINA_TIMEZONE),
+    )
+    db.add(db_article)
+    db.commit()
+    db.refresh(db_article)
+
+    return article_to_response(db_article, author_name=current_user.name)
+
+
+@router.patch("/articles/{article_id}/visibility")
+async def update_article_visibility(
+    article_id: int,
+    visibility: str = Query(..., pattern="^(public|private)$"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """切换自己文章的公开/私密"""
+    article = db.query(NewsArticle).filter(
+        NewsArticle.id == article_id
+    ).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="文章不存在")
+    if article.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="只能修改自己的文章")
+
+    article.visibility = visibility
+    db.commit()
+    return {"ok": True, "visibility": visibility}
+
+
+@router.delete("/articles/{article_id}")
+async def delete_article(
+    article_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """删除文章（本人或管理员）"""
+    article = db.query(NewsArticle).filter(NewsArticle.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="文章不存在")
+    if article.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权删除此文章")
+
+    db.delete(article)
+    db.commit()
+    return {"ok": True, "message": "文章已删除"}
+
+
+# ==================== 公开 API（无需认证）====================
+
+@router.get("/public/feed/{user_id}")
+async def get_public_user_feed(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """公开 API：获取用户的公开资讯（无需登录）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    query = db.query(NewsArticle).filter(
+        NewsArticle.user_id == user_id,
+        NewsArticle.visibility == "public",
+        NewsArticle.is_published == True
+    ).order_by(desc(NewsArticle.created_at))
+
+    total = query.count()
+    articles = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    return {
+        "user_id": user_id,
+        "user_name": user.name,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "articles": [article_to_response(a, include_content=False, author_name=user.name) for a in articles]
+    }
 
 
 # ==================== 外部写入接口 (API Key 认证) ====================
@@ -265,7 +452,7 @@ async def create_article_external(
     api_key: NewsApiKey = Depends(verify_api_key),
     db: Session = Depends(get_db)
 ):
-    """创建文章（外部系统通过 API Key 调用）"""
+    """创建文章（外部系统通过 API Key 调用，系统级文章）"""
     # 检查是否已存在
     existing = db.query(NewsArticle).filter(
         NewsArticle.source_batch_id == article.source_batch_id
@@ -287,7 +474,7 @@ async def create_article_external(
         db.refresh(existing)
         return article_to_response(existing)
 
-    # 创建新文章
+    # 创建新文章（系统级，user_id=NULL）
     db_article = NewsArticle(
         source_batch_id=article.source_batch_id,
         source_type=article.source_type,
@@ -402,26 +589,6 @@ async def update_article_admin(
     db.commit()
 
     return {"ok": True, "message": "文章已更新"}
-
-
-@router.delete("/admin/articles/{article_id}")
-async def delete_article_admin(
-    article_id: int,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
-):
-    """管理员删除文章"""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-
-    article = db.query(NewsArticle).filter(NewsArticle.id == article_id).first()
-    if not article:
-        raise HTTPException(status_code=404, detail="文章不存在")
-
-    db.delete(article)
-    db.commit()
-
-    return {"ok": True, "message": "文章已删除"}
 
 
 # ==================== 评论接口 ====================

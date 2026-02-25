@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, RichText } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { llmAPI } from '../../services/llmApi';
+import { pushToNews } from '../../services/api';
 import { markdownToHtml } from '../../utils/markdown';
 import type { Batch, ModelResult } from '../../types/llm';
 import { getSiteInfo } from '../../types/llm';
@@ -97,6 +98,31 @@ export default function LLMDetailPage() {
 
   const handleCopyResult = (content: string) => {
     Taro.setClipboardData({ data: content });
+  };
+
+  const handlePublishToNews = () => {
+    if (!batch || !batch.task?.aggregation_result) return;
+    Taro.showActionSheet({
+      itemList: ['公开发布', '仅自己可见'],
+      success: async (res) => {
+        const visibility = res.tapIndex === 0 ? 'public' : 'private';
+        try {
+          await pushToNews({
+            source_batch_id: batch.batch_id,
+            title: batch.title || batch.prompt?.substring(0, 50) || '分析结果',
+            content: batch.task.aggregation_result!,
+            summary: batch.task.aggregation_result!.substring(0, 200),
+            source_type: 'custom_prompt',
+            llm_models: batch.llm_sites,
+            aggregator_model: batch.aggregator_site,
+            visibility,
+          });
+          Taro.showToast({ title: visibility === 'public' ? '已公开发布' : '已保存为私密', icon: 'success' });
+        } catch (err: any) {
+          Taro.showToast({ title: err.message || '发布失败', icon: 'none' });
+        }
+      },
+    });
   };
 
   if (loading) {
@@ -212,6 +238,11 @@ export default function LLMDetailPage() {
         {batch.status === 'completed' && (
           <View className="action-btn reagg" onClick={handleReAggregate}>
             <Text>🔀 重新汇总</Text>
+          </View>
+        )}
+        {batch.status === 'completed' && batch.task?.aggregation_result && (
+          <View className="action-btn publish" onClick={handlePublishToNews}>
+            <Text>📢 发布到资讯</Text>
           </View>
         )}
       </View>

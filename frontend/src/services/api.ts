@@ -584,23 +584,32 @@ export interface NewsArticle {
   aggregator_model?: string | null;
   is_pinned: boolean;
   view_count: number;
+  user_id?: number | null;
+  visibility?: string;
+  author_name?: string | null;
   source_created_at?: string;
   created_at: string;
 }
 
 export const newsApi = {
-  // 获取资讯列表
-  getArticles: (page: number = 1, pageSize: number = 20, sourceType?: string) => {
+  // 获取资讯列表（支持 feed 过滤）
+  getArticles: (page: number = 1, pageSize: number = 20, sourceType?: string, feed?: string) => {
     const params = new URLSearchParams();
     params.append('page', page.toString());
     params.append('page_size', pageSize.toString());
     if (sourceType) params.append('source_type', sourceType);
+    if (feed) params.append('feed', feed);
     return api.get<NewsArticle[]>(`/news/articles?${params.toString()}`);
   },
   // 获取资讯详情
   getArticle: (articleId: number) => api.get<NewsArticle>(`/news/articles/${articleId}`),
+  // 切换文章可见性
+  updateVisibility: (articleId: number, visibility: string) =>
+    api.patch(`/news/articles/${articleId}/visibility?visibility=${visibility}`),
+  // 删除文章（本人或管理员）
+  deleteArticle: (articleId: number) => api.delete(`/news/articles/${articleId}`),
   // 管理员删除文章
-  deleteArticle: (articleId: number) => api.delete(`/news/admin/articles/${articleId}`),
+  adminDeleteArticle: (articleId: number) => api.delete(`/news/admin/articles/${articleId}`),
   // 获取文章评论
   getComments: (articleId: number) => api.get<CommentsResponse>(`/news/articles/${articleId}/comments`),
   // 发表评论

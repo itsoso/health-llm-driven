@@ -5,13 +5,17 @@ from app.database import Base
 
 
 class NewsArticle(Base):
-    """资讯文章 - 来自 browser-llm-orchestrator 的群聊总结和研究结论"""
+    """资讯文章 - 支持多租户（用户个人 + 系统全局）"""
     __tablename__ = "news_articles"
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # 归属与可见性
+    user_id = Column(Integer, nullable=True, index=True)  # NULL=系统文章（向后兼容）
+    visibility = Column(String(20), default="public", nullable=False)  # "public" / "private"
+
     # 来源标识
-    source_batch_id = Column(String(100), unique=True, index=True, nullable=False)  # browser-llm-orch 的 batch_id
+    source_batch_id = Column(String(100), unique=True, index=True, nullable=False)  # batch_id
     source_type = Column(String(50), nullable=False)  # chatlog_analysis, custom_prompt, daily_recap
 
     # 文章内容
@@ -41,6 +45,7 @@ class NewsArticle(Base):
 
     __table_args__ = (
         Index('ix_news_published_created', 'is_published', 'created_at'),
+        Index('ix_news_user_visibility', 'user_id', 'visibility', 'created_at'),
     )
 
 

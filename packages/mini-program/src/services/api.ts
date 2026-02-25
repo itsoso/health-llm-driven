@@ -452,6 +452,23 @@ export async function getNewsDetail(articleId: number): Promise<NewsArticle> {
   return await get(`${API_ENDPOINTS.NEWS.DETAIL}/${articleId}`);
 }
 
+/**
+ * 推送 LLM 分析结果到资讯
+ */
+export async function pushToNews(data: {
+  source_batch_id: string;
+  title: string;
+  content: string;
+  summary?: string;
+  source_type?: string;
+  tags?: string[];
+  llm_models?: string[];
+  aggregator_model?: string;
+  visibility: string;
+}): Promise<any> {
+  return await post(API_ENDPOINTS.NEWS.PUSH, data);
+}
+
 // ========== 用户 API Key 管理 ==========
 
 import type { UserApiKey, ApiKeyCreateRequest, ExternalRecommendation, TodayExternalRecommendations } from '../types';

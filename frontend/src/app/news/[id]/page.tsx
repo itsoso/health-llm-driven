@@ -26,7 +26,9 @@ import {
   Download,
   X,
   Copy,
-  Check
+  Check,
+  Globe,
+  Lock,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -650,11 +652,13 @@ function CommentSection({ articleId }: { articleId: number }) {
 function NewsDetailContent() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const articleId = Number(params.id);
   const articleRef = useRef<HTMLElement>(null);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const { data: article, isLoading, error } = useQuery({
+  const { data: article, isLoading, error, refetch } = useQuery({
     queryKey: ['news-article', articleId],
     queryFn: async () => {
       const response = await newsApi.getArticle(articleId);
@@ -662,6 +666,36 @@ function NewsDetailContent() {
     },
     enabled: !!articleId,
   });
+
+  const isOwner = !!user && !!article && article.user_id === user.id;
+  const isAdmin = user?.is_admin ?? false;
+  const canDelete = isOwner || isAdmin;
+
+  const handleToggleVisibility = async () => {
+    if (!article) return;
+    setActionLoading(true);
+    try {
+      const newVisibility = article.visibility === 'public' ? 'private' : 'public';
+      await newsApi.updateVisibility(articleId, newVisibility);
+      refetch();
+    } catch (err) {
+      alert('更新失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!article || !confirm(`确定要删除文章「${article.title}」吗？`)) return;
+    setActionLoading(true);
+    try {
+      await newsApi.deleteArticle(articleId);
+      router.push('/news');
+    } catch (err) {
+      alert('删除失败');
+      setActionLoading(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -744,14 +778,46 @@ function NewsDetailContent() {
               )}
               </div>
 
-              {/* 分享按钮 */}
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
-              >
-                <Camera className="w-4 h-4" />
-                截图分享
-              </button>
+              {/* 操作按钮组 */}
+              <div className="flex items-center gap-2">
+                {/* 可见性切换（仅本人） */}
+                {isOwner && (
+                  <button
+                    onClick={handleToggleVisibility}
+                    disabled={actionLoading}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 ${
+                      article.visibility === 'public'
+                        ? 'bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30'
+                        : 'bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 border border-gray-500/30'
+                    }`}
+                    title={article.visibility === 'public' ? '点击设为私密' : '点击设为公开'}
+                  >
+                    {article.visibility === 'public'
+                      ? <><Globe className="w-4 h-4" />公开</>
+                      : <><Lock className="w-4 h-4" />私密</>
+                    }
+                  </button>
+                )}
+                {/* 删除（本人或管理员） */}
+                {canDelete && (
+                  <button
+                    onClick={handleDelete}
+                    disabled={actionLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 text-sm rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    删除
+                  </button>
+                )}
+                {/* 截图分享 */}
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
+                >
+                  <Camera className="w-4 h-4" />
+                  截图分享
+                </button>
+              </div>
             </div>
 
             {/* 标题 */}
@@ -769,6 +835,12 @@ function NewsDetailContent() {
                 <Eye className="w-4 h-4" />
                 {article.view_count} 次阅读
               </span>
+              {article.author_name && !isOwner && (
+                <span className="flex items-center gap-1.5">
+                  <User className="w-4 h-4" />
+                  {article.author_name}
+                </span>
+              )}
               {llmModels.length > 0 && (
                 <span className="flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4" />
