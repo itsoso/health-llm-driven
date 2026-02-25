@@ -14,14 +14,20 @@ function formatTime(dateStr?: string): string {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / 86400000);
-  const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (diffDays === 0) return timeStr;
-  if (diffDays === 1) return `昨天 ${timeStr}`;
-  if (diffDays < 7) return `${['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]} ${timeStr}`;
-  return `${d.getMonth() + 1}/${d.getDate()} ${timeStr}`;
+  // 使用北京时间比较日期
+  const bjDateFmt = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const bjDateStr = bjDateFmt.format(d);
+  const bjNowStr = bjDateFmt.format(now);
+  const bjYesterdayStr = bjDateFmt.format(new Date(now.getTime() - 86400000));
+  const timeStr = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' });
+  if (bjDateStr === bjNowStr) return timeStr;
+  if (bjDateStr === bjYesterdayStr) return `昨天 ${timeStr}`;
+  // 获取北京时间的星期几
+  const bjWeekday = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', weekday: 'short' }).format(d);
+  const diffDays = Math.floor((new Date(bjNowStr).getTime() - new Date(bjDateStr).getTime()) / 86400000);
+  if (diffDays < 7) return `${bjWeekday} ${timeStr}`;
+  const parts = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric' }).format(d);
+  return `${parts} ${timeStr}`;
 }
 
 export default function KidsChatBubble({ message, avatarUrl }: KidsChatBubbleProps) {

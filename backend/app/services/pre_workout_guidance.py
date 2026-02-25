@@ -689,7 +689,17 @@ class PreWorkoutGuidanceService:
         tips = base_tips.copy()
         if workout_type in type_specific:
             tips.extend(type_specific[workout_type])
-        
+
+        # 从知识库结果中提取热身相关建议
+        key_points = knowledge.get("key_points", [])
+        for point in key_points:
+            point_lower = point.lower()
+            if any(kw in point_lower for kw in ["热身", "拉伸", "激活", "准备", "warm"]):
+                # 截取合理长度
+                tip = point.strip()[:80]
+                if tip and tip not in tips:
+                    tips.append(f"📚 {tip}")
+
         return tips
     
     def _generate_key_reminders(

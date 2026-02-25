@@ -128,15 +128,18 @@ export default function KidsChatPage() {
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
     const now = new Date();
-    const isToday = d.toDateString() === now.toDateString();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isYesterday = d.toDateString() === yesterday.toDateString();
+    // 使用北京时间比较日期
+    const bjFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const bjDateStr = bjFormatter.format(d);
+    const bjNowStr = bjFormatter.format(now);
+    const yesterday = new Date(now.getTime() - 86400000);
+    const bjYesterdayStr = bjFormatter.format(yesterday);
 
-    const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    if (isToday) return time;
-    if (isYesterday) return `昨天 ${time}`;
-    return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+    const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' });
+    if (bjDateStr === bjNowStr) return time;
+    if (bjDateStr === bjYesterdayStr) return `昨天 ${time}`;
+    const parts = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric' }).format(d);
+    return `${parts} ${time}`;
   };
 
   // Should show time label if gap > 5 minutes

@@ -458,14 +458,14 @@ export default function WorkoutGuidancePage() {
                 </div>
               )}
 
-              {/* 科学知识要点 - 已隐藏 */}
-              {false && preGuidance.knowledge_points && preGuidance.knowledge_points.length > 0 && (
+              {/* 科学知识要点 */}
+              {preGuidance.course_insights && preGuidance.course_insights.length > 0 && (
                 <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
                   <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                     <span>📚</span> 科学知识要点
                   </h3>
                   <div className="space-y-3">
-                    {preGuidance.knowledge_points.map((point: string, index: number) => (
+                    {preGuidance.course_insights.map((point: string, index: number) => (
                       <div key={index} className="bg-slate-700/50 rounded-lg p-4">
                         <p className="text-gray-300 leading-relaxed">{point}</p>
                       </div>
