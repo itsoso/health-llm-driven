@@ -31,3 +31,43 @@ class KidsPlanResponse(BaseModel):
 class KidsPlanCopyRequest(BaseModel):
     from_date: date
     to_date: date
+
+
+# ===== 历史回顾 & AI 复盘 =====
+
+class KidsPlanDaySummary(BaseModel):
+    """每天摘要"""
+    plan_date: date
+    total_items: int
+    done_count: int
+    completion_rate: float  # 0.0 ~ 1.0
+    awarded_tier: int = 0
+
+
+class KidsPlanHistoryResponse(BaseModel):
+    """历史统计响应"""
+    range: str
+    start_date: date
+    end_date: date
+    days: List[KidsPlanDaySummary]
+    total_plan_days: int
+    total_items: int
+    total_done: int
+    avg_completion_rate: float
+    current_streak: int
+    best_streak: int
+    top_activities: List[dict]  # [{emoji, text, count}]
+
+
+class KidsPlanReviewRequest(BaseModel):
+    """AI 复盘请求"""
+    range: str = "week"  # week | month | year
+
+
+class KidsPlanReviewResponse(BaseModel):
+    """AI 复盘响应"""
+    range: str
+    start_date: date
+    end_date: date
+    review_text: str
+    stats_summary: dict

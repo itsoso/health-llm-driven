@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
 import { kidsPlanApi, KidsPlanItem } from '@/services/api';
@@ -39,6 +40,7 @@ function getLocalDateStr(d: Date) {
 }
 
 export default function KidsPlanPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const { theme, points, addPoints } = useKidsTheme();
   const userId = user?.id || 'guest';
@@ -218,13 +220,22 @@ export default function KidsPlanPage() {
             </h1>
             <p className="text-gray-400 text-sm mt-0.5">{dateStr}</p>
           </div>
-          <div className="text-right">
-            <div className={`text-3xl font-bold ${doneCount === total && total > 0 ? 'text-green-500' : theme.accent}`}>
-              {doneCount}/{total}
-            </div>
-            <div className="flex items-center justify-end gap-1 mt-0.5">
-              <span className="text-amber-400 text-sm font-bold">⭐{points}</span>
-              <span className="text-gray-400 text-xs">积分</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push('/kids/plan/history')}
+              className={`px-3 py-2 rounded-xl border-2 ${theme.cardBorder} text-lg active:scale-95 transition-all`}
+              title="计划回顾"
+            >
+              📊
+            </button>
+            <div className="text-right">
+              <div className={`text-3xl font-bold ${doneCount === total && total > 0 ? 'text-green-500' : theme.accent}`}>
+                {doneCount}/{total}
+              </div>
+              <div className="flex items-center justify-end gap-1 mt-0.5">
+                <span className="text-amber-400 text-sm font-bold">⭐{points}</span>
+                <span className="text-gray-400 text-xs">积分</span>
+              </div>
             </div>
           </div>
         </div>

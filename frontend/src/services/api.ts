@@ -297,6 +297,36 @@ export interface KidsPlanResponse {
   total_kids_points: number;
 }
 
+export interface KidsPlanDaySummary {
+  plan_date: string;
+  total_items: number;
+  done_count: number;
+  completion_rate: number;
+  awarded_tier: number;
+}
+
+export interface KidsPlanHistoryResponse {
+  range: string;
+  start_date: string;
+  end_date: string;
+  days: KidsPlanDaySummary[];
+  total_plan_days: number;
+  total_items: number;
+  total_done: number;
+  avg_completion_rate: number;
+  current_streak: number;
+  best_streak: number;
+  top_activities: Array<{ emoji: string; text: string; count: number }>;
+}
+
+export interface KidsPlanReviewResponse {
+  range: string;
+  start_date: string;
+  end_date: string;
+  review_text: string;
+  stats_summary: Record<string, number>;
+}
+
 export const kidsPlanApi = {
   getPlan: (planDate: string) =>
     api.get<KidsPlanResponse>(`/kids-plan/${planDate}`),
@@ -304,6 +334,10 @@ export const kidsPlanApi = {
     api.put<KidsPlanResponse>(`/kids-plan/${planDate}`, { items }),
   copyPlan: (fromDate: string, toDate: string) =>
     api.post<KidsPlanResponse>('/kids-plan/copy', { from_date: fromDate, to_date: toDate }),
+  getHistory: (range: string) =>
+    api.get<KidsPlanHistoryResponse>('/kids-plan/history', { params: { range } }),
+  getReview: (range: string) =>
+    api.post<KidsPlanReviewResponse>('/kids-plan/review', { range }),
 };
 
 // 排泄记录 API
