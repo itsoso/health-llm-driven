@@ -68,6 +68,8 @@ from app.models.activity_status import ActivityStatus
 from app.models.friendship import Friendship, PKChallenge, ChallengeParticipant
 # 单词本模型
 from app.models.vocabulary import VocabularyWord
+# Kids每日计划模型
+from app.models.kids_plan import KidsDailyPlan
 
 __all__ = [
     "User",
@@ -161,5 +163,7 @@ __all__ = [
     "ChallengeParticipant",
     # 单词本
     "VocabularyWord",
+    # Kids每日计划
+    "KidsDailyPlan",
 ]
 

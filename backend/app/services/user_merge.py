@@ -28,6 +28,7 @@ COMPOSITE_UNIQUE_TABLES = {
     "checkin_records": ["template_id", "checkin_date"],
     "health_analysis_cache": ["analysis_date", "cache_type"],
     "habit_records": ["habit_id", "record_date"],
+    "kids_daily_plans": ["plan_date"],
 }
 
 

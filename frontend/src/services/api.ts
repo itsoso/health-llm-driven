@@ -279,6 +279,33 @@ export const kidsPetApi = {
     api.post<KidsPetResponse>('/kids-pet/action', { action }),
 };
 
+// Kids每日计划 API
+export interface KidsPlanItem {
+  id: string;
+  emoji: string;
+  text: string;
+  done: boolean;
+  startTime?: string;
+  endTime?: string;
+}
+
+export interface KidsPlanResponse {
+  plan_date: string;
+  items: KidsPlanItem[];
+  awarded_tier: number;
+  points_awarded: number;
+  total_kids_points: number;
+}
+
+export const kidsPlanApi = {
+  getPlan: (planDate: string) =>
+    api.get<KidsPlanResponse>(`/kids-plan/${planDate}`),
+  savePlan: (planDate: string, items: KidsPlanItem[]) =>
+    api.put<KidsPlanResponse>(`/kids-plan/${planDate}`, { items }),
+  copyPlan: (fromDate: string, toDate: string) =>
+    api.post<KidsPlanResponse>('/kids-plan/copy', { from_date: fromDate, to_date: toDate }),
+};
+
 // 排泄记录 API
 export interface ExcretionRecord {
   id: number;

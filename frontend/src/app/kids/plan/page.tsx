@@ -1,17 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
+import { kidsPlanApi, KidsPlanItem } from '@/services/api';
 
-interface PlanItem {
-  id: string;
-  emoji: string;
-  text: string;
-  done: boolean;
-  startTime?: string;
-  endTime?: string;
-}
+interface PlanItem extends KidsPlanItem {}
 
 const EMOJI_OPTIONS = [
   '📚', '🏃', '🏊', '🎨', '🎵', '🍎',
@@ -37,21 +31,21 @@ function computeEndTime(start: string, durationMinutes: number): string {
   return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 }
 
+function getLocalDateStr(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export default function KidsPlanPage() {
   const { user } = useAuth();
   const { theme, points, addPoints } = useKidsTheme();
   const userId = user?.id || 'guest';
-  // 使用本地日期，避免 UTC 时区导致凌晨日期错位
-  const getLocalDateStr = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
   const today = getLocalDateStr(new Date());
-  const storageKey = `kids_plan_${userId}_${today}`;
 
   const [items, setItems] = useState<PlanItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [modalEmoji, setModalEmoji] = useState('📝');
@@ -62,50 +56,80 @@ export default function KidsPlanPage() {
   const [showCopied, setShowCopied] = useState(false);
   const [pointsToast, setPointsToast] = useState(0);
 
+  // debounce save timer
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestItemsRef = useRef<PlanItem[]>(items);
+  latestItemsRef.current = items;
+
+  // Load plan from server
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try { setItems(JSON.parse(saved)); } catch { /* ignore */ }
-    }
-  }, [storageKey]);
+    if (!user) return;
+    let cancelled = false;
 
-  // Award points in real-time as completion tiers are reached
-  // localStorage key tracks the highest tier already awarded today (0-5)
-  const todayAwardedKey = `kids_plan_pts_${userId}_${today}`;
+    const loadPlan = async () => {
+      setLoading(true);
+      try {
+        const res = await kidsPlanApi.getPlan(today);
+        if (cancelled) return;
+        const serverItems = res.data.items || [];
 
-  const getPointsTier = (rate: number): number => {
-    if (rate >= 1.0) return 5;
-    if (rate >= 0.9) return 4;
-    if (rate >= 0.8) return 3;
-    if (rate >= 0.7) return 2;
-    if (rate >= 0.6) return 1;
-    return 0;
-  };
+        if (serverItems.length === 0) {
+          // localStorage migration: if server has no data but localStorage does
+          const legacyKey = `kids_plan_${userId}_${today}`;
+          const legacyData = localStorage.getItem(legacyKey);
+          if (legacyData) {
+            try {
+              const parsed = JSON.parse(legacyData) as PlanItem[];
+              if (parsed.length > 0) {
+                setItems(parsed);
+                // Migrate to server
+                await kidsPlanApi.savePlan(today, parsed);
+                localStorage.removeItem(legacyKey);
+                setLoading(false);
+                return;
+              }
+            } catch { /* ignore parse error */ }
+          }
+        }
 
-  const checkAndAwardPoints = useCallback((newItems: PlanItem[]) => {
-    if (newItems.length === 0) return;
-    const done = newItems.filter(i => i.done).length;
-    const rate = done / newItems.length;
-    const tier = getPointsTier(rate);
-    const alreadyAwarded = parseInt(localStorage.getItem(todayAwardedKey) || '0');
-    const toAward = tier - alreadyAwarded;
-    if (toAward > 0) {
-      addPoints(toAward);
-      localStorage.setItem(todayAwardedKey, tier.toString());
-      setPointsToast(toAward);
-      setTimeout(() => setPointsToast(0), 2500);
-    }
-  }, [addPoints, todayAwardedKey]);
+        setItems(serverItems);
+      } catch (err) {
+        console.error('Failed to load plan:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadPlan();
+    return () => { cancelled = true; };
+  }, [today, user, userId]);
+
+  // Debounced save to server
+  const debouncedSave = useCallback((newItems: PlanItem[]) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await kidsPlanApi.savePlan(today, newItems);
+        const { points_awarded } = res.data;
+        if (points_awarded > 0) {
+          addPoints(points_awarded);
+          setPointsToast(points_awarded);
+          setTimeout(() => setPointsToast(0), 2500);
+        }
+      } catch (err) {
+        console.error('Failed to save plan:', err);
+      }
+    }, 500);
+  }, [today, addPoints]);
 
   const saveItems = useCallback((newItems: PlanItem[]) => {
     setItems(newItems);
-    localStorage.setItem(storageKey, JSON.stringify(newItems));
-  }, [storageKey]);
+    debouncedSave(newItems);
+  }, [debouncedSave]);
 
   const toggleDone = (id: string) => {
     const newItems = items.map(item => item.id === id ? { ...item, done: !item.done } : item);
     saveItems(newItems);
-    checkAndAwardPoints(newItems);
   };
 
   const deleteItem = (id: string) => {
@@ -153,15 +177,17 @@ export default function KidsPlanPage() {
     setShowModal(false);
   };
 
-  const copyToTomorrow = () => {
+  const copyToTomorrow = async () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = getLocalDateStr(tomorrow);
-    const tomorrowKey = `kids_plan_${userId}_${tomorrowStr}`;
-    const tomorrowItems = items.map((item, idx) => ({ ...item, id: `${Date.now()}_${idx}`, done: false }));
-    localStorage.setItem(tomorrowKey, JSON.stringify(tomorrowItems));
-    setShowCopied(true);
-    setTimeout(() => setShowCopied(false), 2500);
+    try {
+      await kidsPlanApi.copyPlan(today, tomorrowStr);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2500);
+    } catch (err) {
+      console.error('Failed to copy plan:', err);
+    }
   };
 
   const doneCount = items.filter(i => i.done).length;
@@ -169,6 +195,17 @@ export default function KidsPlanPage() {
   const dateStr = new Date().toLocaleDateString('zh-CN', {
     month: 'long', day: 'numeric', weekday: 'long',
   });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="text-5xl mb-3 animate-bounce">📋</div>
+          <p className="text-gray-400 text-lg">加载中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
