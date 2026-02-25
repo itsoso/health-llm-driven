@@ -101,9 +101,9 @@ class PreWorkoutGuidanceService:
             
             # 1. 获取用户信息
             step_start = time.time()
-            self._add_debug_step(debug_info, "获取用户基本信息", step_start)
-            
+
             profile = db.query(UserProfile).filter_by(user_id=user_id).first()
+            self._add_debug_step(debug_info, "获取用户基本信息", step_start)
             logger.info(f"[运动前指导] 用户资料查询结果: found={profile is not None}")
             
             if not profile:
@@ -143,8 +143,7 @@ class PreWorkoutGuidanceService:
             
             # 2. 获取用户目标
             step_start = time.time()
-            self._add_debug_step(debug_info, "获取用户运动目标", step_start)
-            
+
             goal = None
             try:
                 if goal_id:
@@ -190,6 +189,8 @@ class PreWorkoutGuidanceService:
                 self._add_debug_reasoning(debug_info, f"查询目标失败（枚举值问题），继续生成基础指导: {str(e)}", "warning")
                 goal = None
             
+            self._add_debug_step(debug_info, "获取用户运动目标", step_start)
+
             if goal:
                 goal_data = {
                     "id": goal.id,
@@ -201,12 +202,11 @@ class PreWorkoutGuidanceService:
                     "priority": goal.priority
                 }
                 self._add_debug_data(debug_info, "goal", goal_data)
-            
+
             # 3. 获取最近的健康数据
             step_start = time.time()
-            self._add_debug_step(debug_info, "获取最近7天Garmin健康数据", step_start)
-            
             recent_data = self._get_recent_health_data(db, user_id)
+            self._add_debug_step(debug_info, "获取最近7天Garmin健康数据", step_start)
             self._add_debug_data(debug_info, "recent_health", recent_data)
             
             if recent_data:
@@ -230,8 +230,7 @@ class PreWorkoutGuidanceService:
             
             # 4. 计算心率区间
             step_start = time.time()
-            self._add_debug_step(debug_info, "计算个性化心率区间", step_start)
-            
+
             hr_zones = None
             if profile.age:
                 digital_twin = DigitalTwinService(db, user_id)
@@ -259,10 +258,10 @@ class PreWorkoutGuidanceService:
                         )
             else:
                 self._add_debug_reasoning(debug_info, "用户未设置年龄，无法计算心率区间", "warning")
-            
+            self._add_debug_step(debug_info, "计算个性化心率区间", step_start)
+
             # 5. 获取环境因素（天气和空气质量）
             step_start = time.time()
-            self._add_debug_step(debug_info, "检测环境因素（天气和空气质量）", step_start)
             
             environment_data = None
             environment_warnings = []
@@ -352,11 +351,10 @@ class PreWorkoutGuidanceService:
             except Exception as e:
                 logger.error(f"[运动前指导] 获取环境数据失败: {e}", exc_info=True)
                 self._add_debug_reasoning(debug_info, f"环境数据获取失败：{str(e)}", "warning")
-            
+            self._add_debug_step(debug_info, "检测环境因素（天气和空气质量）", step_start)
+
             # 6. 确定运动类型
             step_start = time.time()
-            self._add_debug_step(debug_info, "确定运动类型", step_start)
-            
             if not workout_type and goal:
                 workout_type = self._infer_workout_type_from_goal(goal)
                 self._add_debug_reasoning(debug_info, f"根据目标推断运动类型：{workout_type}", "workout")
@@ -364,10 +362,10 @@ class PreWorkoutGuidanceService:
             
             if not goal:
                 self._add_debug_reasoning(debug_info, f"使用默认运动类型：{workout_type}", "info")
-            
+            self._add_debug_step(debug_info, "确定运动类型", step_start)
+
             # 7. 从知识库检索运动前建议
             step_start = time.time()
-            self._add_debug_step(debug_info, "从张展晖课程知识库检索相关建议", step_start)
             
             knowledge = self._retrieve_pre_workout_knowledge(
                 workout_type=workout_type,
@@ -375,10 +373,10 @@ class PreWorkoutGuidanceService:
                 recent_data=recent_data,
                 debug_info=debug_info
             )
-            
+            self._add_debug_step(debug_info, "从张展晖课程知识库检索相关建议", step_start)
+
             # 8. 生成指导内容
             step_start = time.time()
-            self._add_debug_step(debug_info, "生成个性化运动指导", step_start)
             
             logger.info(f"[运动前指导] 开始生成指导内容...")
             
@@ -402,6 +400,8 @@ class PreWorkoutGuidanceService:
             
             logger.info(f"[运动前指导] 指导内容生成完成: success={guidance['success']}, workout_type={guidance['workout_type']}")
             
+            self._add_debug_step(debug_info, "生成个性化运动指导", step_start)
+
             # 添加debug信息
             if debug_info:
                 total_time = (time.time() - overall_start) * 1000
