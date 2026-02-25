@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { kidsPlanApi, KidsPlanItem } from '@/services/api';
+import { kidsPlanApi, KidsPlanItem, KidsPlanDaySummary } from '@/services/api';
 
 interface PlanItem extends KidsPlanItem {}
 
@@ -57,6 +57,7 @@ export default function KidsPlanPage() {
   const [modalDuration, setModalDuration] = useState(0);
   const [showCopied, setShowCopied] = useState(false);
   const [pointsToast, setPointsToast] = useState(0);
+  const [weekHistory, setWeekHistory] = useState<KidsPlanDaySummary[]>([]);
 
   // debounce save timer
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,6 +106,14 @@ export default function KidsPlanPage() {
     loadPlan();
     return () => { cancelled = true; };
   }, [today, user, userId]);
+
+  // Load week history
+  useEffect(() => {
+    if (!user) return;
+    kidsPlanApi.getHistory('week').then(res => {
+      setWeekHistory(res.data.days || []);
+    }).catch(() => {});
+  }, [user]);
 
   // Debounced save to server
   const debouncedSave = useCallback((newItems: PlanItem[]) => {
@@ -252,6 +261,46 @@ export default function KidsPlanPage() {
           </div>
         )}
       </div>
+
+      {/* 最近7天完成情况 */}
+      {weekHistory.length > 0 && (
+        <button
+          onClick={() => router.push('/kids/plan/history')}
+          className={`mx-6 mt-3 p-3 rounded-2xl border-2 ${theme.cardBorder} bg-white/60 flex-shrink-0 active:scale-[0.98] transition-all`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-gray-500">最近7天</span>
+            <span className="text-xs text-gray-400">查看更多 ›</span>
+          </div>
+          <div className="flex gap-1.5">
+            {weekHistory.slice(-7).map((day) => {
+              const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date(day.plan_date + 'T00:00:00').getDay()];
+              const isToday = day.plan_date === today;
+              let bgColor = 'bg-gray-100';
+              if (day.total_items > 0) {
+                if (day.completion_rate >= 0.8) bgColor = 'bg-green-400';
+                else if (day.completion_rate >= 0.5) bgColor = 'bg-yellow-400';
+                else if (day.completion_rate > 0) bgColor = 'bg-orange-300';
+                else bgColor = 'bg-red-300';
+              }
+              return (
+                <div key={day.plan_date} className="flex-1 flex flex-col items-center gap-1">
+                  <span className={`text-[10px] ${isToday ? 'font-bold ' + theme.accent : 'text-gray-400'}`}>
+                    {isToday ? '今' : weekday}
+                  </span>
+                  <div className={`w-full aspect-square rounded-lg ${bgColor} flex items-center justify-center ${isToday ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`}>
+                    {day.total_items > 0 ? (
+                      <span className="text-[10px] font-bold text-white">{day.done_count}/{day.total_items}</span>
+                    ) : (
+                      <span className="text-[10px] text-gray-300">-</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </button>
+      )}
 
       {/* 计划列表 */}
       <div className="flex-1 overflow-y-auto px-6 py-4">

@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import {
-  friendsApi, pkChallengeApi,
+  friendsApi, pkChallengeApi, dmApi,
   FriendInfo, FriendRequestData, UserSearchResultData,
   PKChallengeData, PKStatsData,
 } from '@/services/api';
@@ -12,12 +13,17 @@ import {
 type Tab = 'friends' | 'requests' | 'challenges';
 
 export default function FriendsPage() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const isKids = pathname?.startsWith('/kids');
   const [tab, setTab] = useState<Tab>('friends');
   const [friends, setFriends] = useState<FriendInfo[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRequestData[]>([]);
   const [challenges, setChallenges] = useState<PKChallengeData[]>([]);
   const [pkStats, setPkStats] = useState<PKStatsData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [unreadMap, setUnreadMap] = useState<Record<number, number>>({});
 
   // 搜索
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,12 +33,19 @@ export default function FriendsPage() {
 
   const loadFriends = useCallback(async () => {
     try {
-      const [friendsRes, requestsRes] = await Promise.all([
+      const [friendsRes, requestsRes, convRes] = await Promise.all([
         friendsApi.listFriends(),
         friendsApi.pendingRequests(),
+        dmApi.getConversations().catch(() => ({ data: [] })),
       ]);
       setFriends(friendsRes.data);
       setPendingRequests(requestsRes.data);
+      // Build unread map from conversations
+      const uMap: Record<number, number> = {};
+      for (const c of convRes.data) {
+        if (c.unread_count > 0) uMap[c.friend_id] = c.unread_count;
+      }
+      setUnreadMap(uMap);
     } catch (err) {
       console.error('加载好友列表失败', err);
     } finally {
@@ -260,12 +273,25 @@ export default function FriendsPage() {
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleRemoveFriend(f.friendship_id)}
-                          className="text-xs text-red-400/60 hover:text-red-400"
-                        >
-                          删除
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => router.push(isKids ? `/kids/chat/${f.user_id}` : `/friends/chat/${f.user_id}`)}
+                            className="relative px-3 py-1.5 bg-cyan-600/30 hover:bg-cyan-600/50 rounded-lg text-sm transition-colors"
+                          >
+                            💬
+                            {unreadMap[f.user_id] > 0 && (
+                              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                                {unreadMap[f.user_id] > 9 ? '9+' : unreadMap[f.user_id]}
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleRemoveFriend(f.friendship_id)}
+                            className="text-xs text-red-400/60 hover:text-red-400"
+                          >
+                            删除
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

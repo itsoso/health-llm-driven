@@ -340,6 +340,48 @@ export const kidsPlanApi = {
     api.post<KidsPlanReviewResponse>('/kids-plan/review', { range }),
 };
 
+// ===== 私信聊天 =====
+
+export interface DMResponse {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+  sender_name: string | null;
+  sender_avatar: string | null;
+}
+
+export interface DMConversationItem {
+  friend_id: number;
+  friend_name: string;
+  friend_avatar: string | null;
+  last_message: string;
+  last_message_time: string;
+  unread_count: number;
+}
+
+export interface DMHistoryResponse {
+  messages: DMResponse[];
+  has_more: boolean;
+}
+
+export const dmApi = {
+  getConversations: () =>
+    api.get<DMConversationItem[]>('/dm/conversations'),
+  getMessages: (friendId: number, beforeId?: number, limit?: number) =>
+    api.get<DMHistoryResponse>(`/dm/messages/${friendId}`, {
+      params: { before_id: beforeId || 0, limit: limit || 30 },
+    }),
+  sendMessage: (receiverId: number, content: string) =>
+    api.post<DMResponse>('/dm/send', { receiver_id: receiverId, content }),
+  markRead: (friendId: number) =>
+    api.put(`/dm/read/${friendId}`),
+  getUnreadCount: () =>
+    api.get<{ total_unread: number }>('/dm/unread-count'),
+};
+
 // 排泄记录 API
 export interface ExcretionRecord {
   id: number;

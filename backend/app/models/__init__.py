@@ -70,6 +70,8 @@ from app.models.friendship import Friendship, PKChallenge, ChallengeParticipant
 from app.models.vocabulary import VocabularyWord
 # Kids每日计划模型
 from app.models.kids_plan import KidsDailyPlan
+# 私信消息模型
+from app.models.direct_message import DirectMessage
 
 __all__ = [
     "User",
@@ -165,5 +167,7 @@ __all__ = [
     "VocabularyWord",
     # Kids每日计划
     "KidsDailyPlan",
+    # 私信消息
+    "DirectMessage",
 ]
 

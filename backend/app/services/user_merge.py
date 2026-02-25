@@ -193,6 +193,16 @@ class UserMergeService:
                 if count > 0:
                     merge_stats[table_name] = count
 
+            # 1b. 迁移 direct_messages 表（sender_id / receiver_id）
+            for col in ("sender_id", "receiver_id"):
+                result = db.execute(
+                    text(f'UPDATE direct_messages SET {col} = :tid WHERE {col} = :sid'),
+                    {"tid": target_user_id, "sid": source_user_id}
+                )
+                if result.rowcount > 0:
+                    merge_stats[f"direct_messages.{col}"] = result.rowcount
+                    logger.info(f"  direct_messages.{col}: 迁移 {result.rowcount} 条")
+
             # 2. 合并用户基础信息（保留更完整的信息）
             if not target_user.email and source_user.email:
                 target_user.email = source_user.email
