@@ -214,12 +214,15 @@ export default function KidsChatPage() {
                 {/* 消息气泡 */}
                 <div className={`flex mb-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
-                    <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${theme.btnGrad} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mr-2 mt-1`}>
-                      {(msg.sender_name || '?').charAt(0)}
+                    <div className="flex flex-col items-center mr-2 mt-1 flex-shrink-0">
+                      <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${theme.btnGrad} flex items-center justify-center text-white text-xs font-bold`}>
+                        {(msg.sender_name || '?').charAt(0)}
+                      </div>
+                      <span className="text-[10px] text-gray-400 mt-0.5 max-w-[48px] truncate">{msg.sender_name || friendName}</span>
                     </div>
                   )}
                   <div
-                    className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words ${
+                    className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words ${
                       isMe
                         ? `bg-gradient-to-r ${theme.btnGrad} text-white rounded-br-md`
                         : 'bg-white border border-gray-100 text-gray-700 rounded-bl-md shadow-sm'
@@ -228,8 +231,11 @@ export default function KidsChatPage() {
                     {msg.content}
                   </div>
                   {isMe && (
-                    <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs font-bold flex-shrink-0 ml-2 mt-1">
-                      {(user?.name || '我').charAt(0)}
+                    <div className="flex flex-col items-center ml-2 mt-1 flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs font-bold">
+                        {(user?.name || '我').charAt(0)}
+                      </div>
+                      <span className="text-[10px] text-gray-400 mt-0.5 max-w-[48px] truncate">{user?.name || '我'}</span>
                     </div>
                   )}
                 </div>
