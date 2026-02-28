@@ -8,7 +8,7 @@ import { smartPlanApi } from '@/services/api';
 import {
   Calendar, ChevronRight, Check, Circle, Star,
   Loader2, RefreshCw, Trash2, Dumbbell, Utensils, Moon, Sparkles, MoreHorizontal,
-  Target, TrendingUp, ArrowRight
+  Target, TrendingUp, ArrowRight, Lightbulb, AlertTriangle
 } from 'lucide-react';
 
 interface PlanItem {
@@ -31,6 +31,8 @@ interface WeeklyPlan {
   week_start: string;
   status: string;
   focus_areas: string[];
+  ai_insights: string[];
+  ai_risks: string[];
   weekly_summary: string | null;
   completion_rate: number;
   ai_model: string | null;
@@ -372,6 +374,36 @@ function SmartPlanContent() {
 
                 {currentPlan.weekly_summary && (
                   <p className="text-sm text-gray-600 leading-relaxed">{currentPlan.weekly_summary}</p>
+                )}
+
+                {/* AI Insights */}
+                {currentPlan.ai_insights && currentPlan.ai_insights.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
+                      <Lightbulb className="w-3.5 h-3.5" />
+                      <span>AI 数据洞察</span>
+                    </div>
+                    {currentPlan.ai_insights.map((insight, idx) => (
+                      <div key={idx} className="text-xs text-gray-600 bg-white/60 rounded-lg px-3 py-2 leading-relaxed">
+                        {insight}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* AI Risks */}
+                {currentPlan.ai_risks && currentPlan.ai_risks.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>风险提示</span>
+                    </div>
+                    {currentPlan.ai_risks.map((risk, idx) => (
+                      <div key={idx} className="text-xs text-red-700 bg-red-50/60 rounded-lg px-3 py-2 leading-relaxed">
+                        {risk}
+                      </div>
+                    ))}
+                  </div>
                 )}
 
                 {/* Feedback & Delete */}

@@ -30,6 +30,8 @@ def _plan_to_response(plan: WeeklyPlan) -> WeeklyPlanResponse:
         week_start=plan.week_start,
         status=plan.status,
         focus_areas=plan.focus_areas or [],
+        ai_insights=plan.ai_insights or [],
+        ai_risks=plan.ai_risks or [],
         weekly_summary=plan.weekly_summary,
         completion_rate=plan.completion_rate,
         ai_model=plan.ai_model,

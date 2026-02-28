@@ -26,6 +26,8 @@ class WeeklyPlanResponse(BaseModel):
     week_start: date
     status: str
     focus_areas: List[str] = []
+    ai_insights: List[str] = []
+    ai_risks: List[str] = []
     weekly_summary: Optional[str] = None
     completion_rate: float = 0.0
     ai_model: Optional[str] = None

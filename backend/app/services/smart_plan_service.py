@@ -57,28 +57,64 @@ class SmartPlanService:
             monday += timedelta(weeks=1)
         return monday
 
-    def _get_last_week_feedback(self, user_id: int, current_week_start: date) -> str:
-        last_week = current_week_start - timedelta(weeks=1)
-        last_plan = self.db.query(WeeklyPlan).filter(
-            WeeklyPlan.user_id == user_id,
-            WeeklyPlan.week_start == last_week
-        ).first()
+    def _get_recent_plans_feedback(self, user_id: int, current_week_start: date) -> str:
+        """获取最近 2-4 周的计划完成分析，识别行为模式"""
+        parts = []
+        for weeks_ago in range(1, 5):
+            week_start = current_week_start - timedelta(weeks=weeks_ago)
+            plan = self.db.query(WeeklyPlan).filter(
+                WeeklyPlan.user_id == user_id,
+                WeeklyPlan.week_start == week_start
+            ).first()
+            if not plan:
+                continue
 
-        if not last_plan:
+            items = self.db.query(PlanItem).filter(PlanItem.plan_id == plan.id).all()
+            if not items:
+                continue
+
+            # 按类别统计完成情况
+            from collections import defaultdict
+            cat_stats = defaultdict(lambda: {"total": 0, "done": 0, "items": []})
+            for item in items:
+                cat = cat_stats[item.category]
+                cat["total"] += 1
+                if item.is_completed:
+                    cat["done"] += 1
+                    cat["items"].append(f"✅{item.title}")
+                else:
+                    cat["items"].append(f"❌{item.title}")
+
+            week_label = f"{weeks_ago}周前" if weeks_ago > 1 else "上周"
+            parts.append(f"\n【{week_label}计划 {week_start}】完成率 {plan.completion_rate:.0f}%")
+            for cat_name, stat in cat_stats.items():
+                rate = (stat["done"] / stat["total"] * 100) if stat["total"] > 0 else 0
+                parts.append(f"  {cat_name}: {stat['done']}/{stat['total']} ({rate:.0f}%) — {', '.join(stat['items'][:5])}")
+            if plan.user_feedback:
+                parts.append(f"  用户评分: {plan.user_feedback}/5")
+
+        return "\n".join(parts)
+
+    def _get_active_goals_context(self, user_id: int) -> str:
+        """获取活跃的阶段性目标，让周计划与目标对齐"""
+        from app.models.health_goal_plan import PeriodGoal
+        goals = self.db.query(PeriodGoal).filter(
+            PeriodGoal.user_id == user_id,
+            PeriodGoal.status == "active"
+        ).all()
+        if not goals:
             return ""
-
-        items = self.db.query(PlanItem).filter(PlanItem.plan_id == last_plan.id).all()
-        completed = [i for i in items if i.is_completed]
-        not_completed = [i for i in items if not i.is_completed]
-
-        parts = [f"\n上周计划完成率: {last_plan.completion_rate:.0f}%"]
-        if completed:
-            parts.append(f"完成的项目: {', '.join(i.title for i in completed[:10])}")
-        if not_completed:
-            parts.append(f"未完成的项目: {', '.join(i.title for i in not_completed[:10])}")
-        if last_plan.user_feedback:
-            parts.append(f"用户对上周计划评分: {last_plan.user_feedback}/5")
-
+        parts = []
+        for g in goals:
+            label = "月度目标" if g.period_type == "monthly" else "年度目标"
+            parts.append(f"\n【{label} {g.period_start}~{g.period_end}】")
+            if g.focus_areas:
+                parts.append(f"  重点: {', '.join(g.focus_areas)}")
+            for m in g.metrics:
+                progress = ""
+                if m.current_value is not None and m.target_value is not None:
+                    progress = f" (进度: {m.current_value} → 目标 {m.target_value}{m.unit or ''})"
+                parts.append(f"  {m.metric_name or m.metric_type}{progress}")
         return "\n".join(parts)
 
     def _get_checkin_templates(self, user_id: int) -> List[Dict]:
@@ -148,17 +184,25 @@ class SmartPlanService:
         self._add_reasoning(debug_info, f"健康上下文长度: {len(health_context)} 字符", "data")
         self._add_data(debug_info, "health_context", health_context[:2000] + ("..." if len(health_context) > 2000 else ""))
 
-        # Step 4: 获取上周反馈
+        # Step 4: 获取历史计划执行分析
         step_start = time.time()
-        feedback_context = self._get_last_week_feedback(user_id, week_start)
-        self._add_step(debug_info, "获取上周计划反馈", step_start)
+        feedback_context = self._get_recent_plans_feedback(user_id, week_start)
+        self._add_step(debug_info, "分析历史计划执行", step_start)
         if feedback_context:
-            self._add_reasoning(debug_info, f"上周有反馈数据: {feedback_context[:100]}", "data")
-            self._add_data(debug_info, "last_week_feedback", feedback_context)
+            self._add_reasoning(debug_info, f"获取到历史计划数据", "data")
+            self._add_data(debug_info, "plan_history", feedback_context)
         else:
-            self._add_reasoning(debug_info, "上周无历史计划", "info")
+            self._add_reasoning(debug_info, "无历史计划数据", "info")
 
-        # Step 5: 获取打卡模板
+        # Step 5: 获取活跃目标
+        step_start = time.time()
+        goals_context = self._get_active_goals_context(user_id)
+        self._add_step(debug_info, "获取阶段性目标", step_start)
+        if goals_context:
+            self._add_reasoning(debug_info, "有活跃目标，将指导计划方向", "goal")
+            self._add_data(debug_info, "active_goals", goals_context)
+
+        # Step 6: 获取打卡模板
         step_start = time.time()
         templates = self._get_checkin_templates(user_id)
         templates_str = "\n".join(
@@ -169,27 +213,62 @@ class SmartPlanService:
         self._add_reasoning(debug_info, f"找到 {len(templates)} 个打卡模板", "data")
         self._add_data(debug_info, "checkin_templates", templates)
 
-        # Step 6: 构建 Prompt
+        # Step 7: 构建 Prompt
         step_start = time.time()
-        prompt = f"""你是一位专业的健康教练。请根据用户的健康数据，为 {week_start.strftime('%Y-%m-%d')} 至 {week_end.strftime('%Y-%m-%d')} 这一周生成个性化健康计划。
+        prompt = f"""你是一位资深的运动医学和营养学专家。你需要先深入分析用户的健康数据，发现隐藏的规律和风险，然后基于这些洞察制定下周计划。
 
-用户健康数据：
+## 用户健康数据（请仔细分析趋势和异常）
 {health_context}
-{feedback_context}
 
-用户已有的打卡模板（生成运动/习惯项时请尽量匹配这些名称）：
+## 历史计划执行情况（请分析行为模式：哪些容易坚持？哪些总是失败？为什么？）
+{feedback_context if feedback_context else "（首次生成计划，无历史数据）"}
+
+## 用户当前阶段性目标（周计划需要服务于这些目标）
+{goals_context if goals_context else "（暂无设定目标）"}
+
+## 用户打卡模板（运动/习惯项尽量匹配）
 {templates_str if templates_str else "（暂无打卡模板）"}
 
-请严格按照以下 JSON 格式输出，不要输出其他内容：
+## 你的任务
+
+请为 {week_start.strftime('%Y-%m-%d')} 至 {week_end.strftime('%Y-%m-%d')} 生成周计划。
+
+**在制定计划前，你必须先完成以下分析（体现在 insights 和 weekly_summary 中）：**
+
+1. **数据洞察**：从健康数据中发现了什么？比如：
+   - 睡眠质量趋势（深睡比例是否正常？REM够不够？）
+   - 运动强度是否匹配目标（心率区间是否合理？配速变化？）
+   - 饮食结构问题（蛋白质是否充足？热量缺口？营养比例？）
+   - 压力与恢复的平衡（身体电量、压力水平的变化规律）
+   - 体重/体脂变化与运动饮食的关联
+
+2. **行为模式分析**（如果有历史数据）：
+   - 哪类任务执行率高？哪类低？是什么原因？
+   - 一周内哪几天执行力强/弱？是否跟工作日/休息日有关？
+   - 重复失败的项目是否需要换种方式或降低门槛？
+
+3. **风险预警**：
+   - 是否有健康指标需要关注？（如血压偏高、体脂过高、睡眠不足）
+   - 运动是否有受伤风险？（强度过大、缺乏恢复）
+   - 是否存在过度训练/恢复不足的信号？
+
+请严格按照以下 JSON 格式输出：
 ```json
 {{
-  "focus_areas": ["重点1", "重点2", "重点3"],
-  "weekly_summary": "一段话总结本周计划的思路和重点...",
+  "insights": [
+    "从数据中发现的洞察1（引用具体数据）",
+    "从数据中发现的洞察2",
+    "从数据中发现的洞察3"
+  ],
+  "risks": [
+    "需要注意的健康风险或行为风险"
+  ],
+  "focus_areas": ["本周重点1", "本周重点2", "本周重点3"],
+  "weekly_summary": "基于以上分析，本周计划的核心策略是...（必须引用具体数据支撑决策）",
   "days": {{
     "1": [
-      {{"category": "exercise", "title": "跑步30分钟", "description": "有氧训练，心率控制在130-145bpm", "target_value": 30, "target_unit": "分钟"}},
-      {{"category": "diet", "title": "控制午餐碳水", "description": "建议以蛋白质为主...", "target_value": null, "target_unit": null}},
-      {{"category": "rest", "title": "23:00前入睡", "description": "保证7-8小时睡眠", "target_value": null, "target_unit": null}}
+      {{"category": "exercise", "title": "跑步30分钟", "description": "【依据】根据最近配速x'xx和心率xxxbpm，本次目标心率控制在xxx-xxxbpm，配速不低于x'xx", "target_value": 30, "target_unit": "分钟"}},
+      {{"category": "diet", "title": "午餐高蛋白", "description": "【依据】近3天蛋白质摄入仅xxg，目标每餐30g+蛋白质", "target_value": null, "target_unit": null}}
     ],
     "2": [...],
     "3": [...],
@@ -201,15 +280,16 @@ class SmartPlanService:
 }}
 ```
 
-要求：
-1. 每天 3-5 个行动项
-2. category 只能是: exercise/diet/rest/habit/other
-3. 运动类项目请尽量使用用户已有打卡模板的名称
-4. 根据用户实际数据调整强度，循序渐进
-5. 如果有上周未完成的项目，适当降低难度或调整安排"""
-        self._add_step(debug_info, "构建 LLM Prompt", step_start)
+## 关键要求
+1. **每个计划项的 description 必须包含"【依据】"**，引用具体数据解释为什么安排这个任务、目标值怎么来的
+2. 每天 3-5 个行动项，category 只能是: exercise/diet/rest/habit/other
+3. insights 必须是从数据中挖掘的发现，不是泛泛的健康常识
+4. 如果有阶段性目标，周计划要明确服务于目标进度
+5. 运动安排要考虑恢复周期（不要连续高强度），饮食建议要具体到食物/营养素量
+6. 基于历史执行模式，对低执行率类别降低门槛或换种形式"""
+        self._add_step(debug_info, "构建 AI 分析 Prompt", step_start)
         self._add_reasoning(debug_info, f"Prompt 长度: {len(prompt)} 字符", "info")
-        self._add_data(debug_info, "prompt_preview", prompt[:500] + "...")
+        self._add_data(debug_info, "prompt_preview", prompt[:800] + "...")
 
         # Step 7: 调用 LLM
         step_start = time.time()
@@ -222,6 +302,12 @@ class SmartPlanService:
             raise ValueError("AI 生成计划失败，请稍后重试")
         self._add_reasoning(debug_info, f"LLM 生成成功，模型: {settings.openclaw_model}", "success")
         self._add_reasoning(debug_info, f"focus_areas: {plan_json.get('focus_areas', [])}", "goal")
+        insights = plan_json.get("insights", [])
+        risks = plan_json.get("risks", [])
+        if insights:
+            self._add_reasoning(debug_info, f"AI 洞察 ({len(insights)} 条): {insights[0][:80]}...", "data")
+        if risks:
+            self._add_reasoning(debug_info, f"风险预警 ({len(risks)} 条): {risks[0][:80]}...", "warning")
 
         # Step 8: 保存计划到数据库
         step_start = time.time()
@@ -230,6 +316,8 @@ class SmartPlanService:
             week_start=week_start,
             status="active",
             focus_areas=plan_json.get("focus_areas", []),
+            ai_insights=insights,
+            ai_risks=risks,
             weekly_summary=plan_json.get("weekly_summary", ""),
             ai_model=settings.openclaw_model,
         )
@@ -290,7 +378,7 @@ class SmartPlanService:
             return None, llm_debug
 
         messages = [
-            {"role": "system", "content": "你是一位专业的健康教练，擅长制定个性化健康计划。请严格按 JSON 格式输出。"},
+            {"role": "system", "content": "你是一位资深运动医学和营养学专家，擅长从健康数据中发现规律、识别风险、制定精准的个性化健康计划。你的建议必须基于数据证据，而非泛泛的健康常识。请严格按 JSON 格式输出。"},
             {"role": "user", "content": prompt}
         ]
 

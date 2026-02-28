@@ -17,6 +17,8 @@ class WeeklyPlan(Base):
     week_start = Column(Date, nullable=False)
     status = Column(String(20), default="active", nullable=False)
     focus_areas = Column(JSON, default=list)
+    ai_insights = Column(JSON, default=list)  # AI 数据洞察
+    ai_risks = Column(JSON, default=list)     # AI 风险预警
     weekly_summary = Column(Text, nullable=True)
     completion_rate = Column(Float, default=0.0)
     ai_model = Column(String(100), nullable=True)
