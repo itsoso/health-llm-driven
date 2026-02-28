@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -35,17 +36,22 @@ def _plan_to_response(plan: WeeklyPlan) -> WeeklyPlanResponse:
     )
 
 
-@router.post("/generate", response_model=WeeklyPlanResponse)
+@router.post("/generate")
 async def generate_plan(
     request: GeneratePlanRequest,
+    debug: bool = Query(default=False, description="是否返回调试信息"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """生成周计划（手动触发）"""
     service = SmartPlanService(db)
     try:
-        plan = await service.generate_plan(current_user.id, request.target_week)
-        return _plan_to_response(plan)
+        result = await service.generate_plan(current_user.id, request.target_week, debug=debug)
+        plan = result["plan"]
+        response = _plan_to_response(plan).model_dump(mode="json")
+        if debug and result.get("debug"):
+            response["debug"] = result["debug"]
+        return response
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -1,8 +1,9 @@
 import json
 import logging
 import re
+import time
 from datetime import date, datetime, timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 import httpx
 from sqlalchemy.orm import Session
@@ -20,6 +21,34 @@ class SmartPlanService:
     def __init__(self, db: Session):
         self.db = db
         self.chat_service = ChatService(db)
+
+    def _init_debug_info(self) -> Dict[str, Any]:
+        return {
+            "steps": [],
+            "data_sources": {},
+            "reasoning": [],
+            "performance": {},
+        }
+
+    def _add_step(self, debug: Optional[Dict], name: str, start: float = None):
+        if not debug:
+            return
+        step_num = len(debug["steps"]) + 1
+        debug["steps"].append(f"{step_num}. {name}")
+        if start:
+            elapsed = (time.time() - start) * 1000
+            debug["performance"][name] = f"{elapsed:.0f}ms"
+
+    def _add_reasoning(self, debug: Optional[Dict], msg: str, level: str = "info"):
+        if not debug:
+            return
+        icons = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌",
+                 "goal": "🎯", "data": "📊", "heart": "💓", "workout": "🏃", "knowledge": "📚"}
+        debug["reasoning"].append(f"{icons.get(level, '•')} {msg}")
+
+    def _add_data(self, debug: Optional[Dict], key: str, value: Any):
+        if debug:
+            debug["data_sources"][key] = value
 
     def _get_week_start(self, target: str) -> date:
         today = date.today()
@@ -86,10 +115,19 @@ class SmartPlanService:
                     return t["id"]
         return None
 
-    async def generate_plan(self, user_id: int, target_week: str = "current") -> WeeklyPlan:
-        week_start = self._get_week_start(target_week)
+    async def generate_plan(self, user_id: int, target_week: str = "current", debug: bool = False) -> Dict[str, Any]:
+        overall_start = time.time()
+        debug_info = self._init_debug_info() if debug else None
 
-        # 归档已有计划
+        # Step 1: 计算目标周
+        step_start = time.time()
+        week_start = self._get_week_start(target_week)
+        week_end = week_start + timedelta(days=6)
+        self._add_step(debug_info, "计算目标周", step_start)
+        self._add_reasoning(debug_info, f"目标周: {week_start} ~ {week_end} ({target_week})", "info")
+
+        # Step 2: 归档已有计划
+        step_start = time.time()
         existing = self.db.query(WeeklyPlan).filter(
             WeeklyPlan.user_id == user_id,
             WeeklyPlan.week_start == week_start,
@@ -98,17 +136,41 @@ class SmartPlanService:
         if existing:
             existing.status = "archived"
             self.db.flush()
+            self._add_reasoning(debug_info, f"已归档旧计划 ID={existing.id}", "warning")
+        else:
+            self._add_reasoning(debug_info, "无需归档，本周无已有计划", "info")
+        self._add_step(debug_info, "检查并归档已有计划", step_start)
 
-        # 收集上下文
+        # Step 3: 获取健康上下文
+        step_start = time.time()
         health_context = await self.chat_service._build_health_context(user_id)
+        self._add_step(debug_info, "获取用户健康数据上下文", step_start)
+        self._add_reasoning(debug_info, f"健康上下文长度: {len(health_context)} 字符", "data")
+        self._add_data(debug_info, "health_context", health_context[:2000] + ("..." if len(health_context) > 2000 else ""))
+
+        # Step 4: 获取上周反馈
+        step_start = time.time()
         feedback_context = self._get_last_week_feedback(user_id, week_start)
+        self._add_step(debug_info, "获取上周计划反馈", step_start)
+        if feedback_context:
+            self._add_reasoning(debug_info, f"上周有反馈数据: {feedback_context[:100]}", "data")
+            self._add_data(debug_info, "last_week_feedback", feedback_context)
+        else:
+            self._add_reasoning(debug_info, "上周无历史计划", "info")
+
+        # Step 5: 获取打卡模板
+        step_start = time.time()
         templates = self._get_checkin_templates(user_id)
         templates_str = "\n".join(
             f"- {t['name']}（{t['category']}，单位:{t['unit']}，目标:{t['default_target']}）"
             for t in templates
         )
+        self._add_step(debug_info, "获取用户打卡模板", step_start)
+        self._add_reasoning(debug_info, f"找到 {len(templates)} 个打卡模板", "data")
+        self._add_data(debug_info, "checkin_templates", templates)
 
-        week_end = week_start + timedelta(days=6)
+        # Step 6: 构建 Prompt
+        step_start = time.time()
         prompt = f"""你是一位专业的健康教练。请根据用户的健康数据，为 {week_start.strftime('%Y-%m-%d')} 至 {week_end.strftime('%Y-%m-%d')} 这一周生成个性化健康计划。
 
 用户健康数据：
@@ -145,11 +207,24 @@ class SmartPlanService:
 3. 运动类项目请尽量使用用户已有打卡模板的名称
 4. 根据用户实际数据调整强度，循序渐进
 5. 如果有上周未完成的项目，适当降低难度或调整安排"""
+        self._add_step(debug_info, "构建 LLM Prompt", step_start)
+        self._add_reasoning(debug_info, f"Prompt 长度: {len(prompt)} 字符", "info")
+        self._add_data(debug_info, "prompt_preview", prompt[:500] + "...")
 
-        plan_json = await self._call_llm(prompt)
+        # Step 7: 调用 LLM
+        step_start = time.time()
+        plan_json, llm_debug = await self._call_llm(prompt, debug=debug)
+        self._add_step(debug_info, "调用 LLM 生成计划", step_start)
+        if llm_debug and debug_info:
+            debug_info["data_sources"]["llm_info"] = llm_debug
         if not plan_json:
+            self._add_reasoning(debug_info, "LLM 生成失败", "error")
             raise ValueError("AI 生成计划失败，请稍后重试")
+        self._add_reasoning(debug_info, f"LLM 生成成功，模型: {settings.openclaw_model}", "success")
+        self._add_reasoning(debug_info, f"focus_areas: {plan_json.get('focus_areas', [])}", "goal")
 
+        # Step 8: 保存计划到数据库
+        step_start = time.time()
         plan = WeeklyPlan(
             user_id=user_id,
             week_start=week_start,
@@ -162,6 +237,8 @@ class SmartPlanService:
         self.db.flush()
 
         days_data = plan_json.get("days", {})
+        total_items = 0
+        matched_templates = 0
         for day_str, items in days_data.items():
             try:
                 day_num = int(day_str)
@@ -173,6 +250,8 @@ class SmartPlanService:
                 if not isinstance(item_data, dict):
                     continue
                 template_id = self._match_template(item_data.get("title", ""), templates)
+                if template_id:
+                    matched_templates += 1
                 plan_item = PlanItem(
                     plan_id=plan.id,
                     day_of_week=day_num,
@@ -185,15 +264,30 @@ class SmartPlanService:
                     sort_order=idx,
                 )
                 self.db.add(plan_item)
+                total_items += 1
 
         self.db.commit()
         self.db.refresh(plan)
-        return plan
+        self._add_step(debug_info, "保存计划到数据库", step_start)
+        self._add_reasoning(debug_info, f"共创建 {total_items} 个计划项，覆盖 {len(days_data)} 天", "success")
+        self._add_reasoning(debug_info, f"匹配到 {matched_templates} 个打卡模板联动", "data")
 
-    async def _call_llm(self, prompt: str) -> Optional[Dict]:
+        # 汇总
+        if debug_info:
+            total_time = (time.time() - overall_start) * 1000
+            debug_info["performance"]["总耗时"] = f"{total_time:.0f}ms"
+            debug_info["performance"]["总耗时(秒)"] = f"{total_time/1000:.2f}s"
+            self._add_reasoning(debug_info, f"生成完成，总耗时 {total_time:.0f}ms", "success")
+
+        return {"plan": plan, "debug": debug_info}
+
+    async def _call_llm(self, prompt: str, debug: bool = False):
+        """返回 (plan_json, llm_debug_info)"""
+        llm_debug = {} if debug else None
+
         if not settings.openclaw_api_key:
             logger.error("OpenClaw API key not configured")
-            return None
+            return None, llm_debug
 
         messages = [
             {"role": "system", "content": "你是一位专业的健康教练，擅长制定个性化健康计划。请严格按 JSON 格式输出。"},
@@ -203,6 +297,7 @@ class SmartPlanService:
         content = ""
         for attempt in range(2):
             try:
+                call_start = time.time()
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         f"{settings.openclaw_base_url}/chat/completions",
@@ -218,24 +313,38 @@ class SmartPlanService:
                     )
                     response.raise_for_status()
                     data = response.json()
+                    call_time = (time.time() - call_start) * 1000
                     content = data["choices"][0]["message"]["content"]
+                    usage = data.get("usage", {})
+
+                    if llm_debug is not None:
+                        llm_debug["model"] = settings.openclaw_model
+                        llm_debug["attempt"] = attempt + 1
+                        llm_debug["api_call_ms"] = f"{call_time:.0f}ms"
+                        llm_debug["usage"] = usage
+                        llm_debug["response_length"] = len(content)
+                        llm_debug["response_preview"] = content[:500] + ("..." if len(content) > 500 else "")
 
                     json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
                     if json_match:
-                        return json.loads(json_match.group(1))
-                    return json.loads(content)
+                        return json.loads(json_match.group(1)), llm_debug
+                    return json.loads(content), llm_debug
 
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"LLM 响应解析失败 (attempt {attempt+1}): {e}")
+                if llm_debug is not None:
+                    llm_debug[f"parse_error_attempt_{attempt+1}"] = str(e)
                 if attempt == 0:
                     messages.append({"role": "assistant", "content": content})
                     messages.append({"role": "user", "content": "你的输出格式不正确，请严格按照 JSON 格式重新输出，不要包含任何其他文字。"})
                 continue
             except Exception as e:
                 logger.error(f"LLM 调用失败: {e}")
-                return None
+                if llm_debug is not None:
+                    llm_debug["error"] = str(e)
+                return None, llm_debug
 
-        return None
+        return None, llm_debug
 
     def update_completion_rate(self, plan_id: int):
         total = self.db.query(func.count(PlanItem.id)).filter(PlanItem.plan_id == plan_id).scalar()
