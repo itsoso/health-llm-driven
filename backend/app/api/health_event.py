@@ -1,11 +1,12 @@
 """健康事件流 API"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from app.database import get_db
 from app.models.user import User
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user, get_current_user_required
 from app.services.health_event_service import HealthEventService
 from app.schemas.health_event import (
     HealthEventIngest,
@@ -18,21 +19,72 @@ from app.schemas.health_event import (
     EventSourceResponse,
 )
 
+logger = logging.getLogger(__name__)
+
+
+async def get_user_id_from_any_auth(
+    request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> int:
+    """
+    双重认证：优先 JWT Bearer Token，回退到 X-API-Key。
+    NFC 快捷指令场景使用 API Key（长期有效，无需刷新）。
+    """
+    # 1. JWT 认证成功
+    if current_user and current_user.is_active and current_user.is_approved:
+        return current_user.id
+
+    # 2. 尝试 API Key 认证
+    if x_api_key:
+        from app.api.user_api_key import hash_api_key
+        from app.models.user_api_key import UserApiKey
+        from app.utils.timezone import CHINA_TIMEZONE
+        from datetime import datetime
+
+        key_hash = hash_api_key(x_api_key)
+        api_key = db.query(UserApiKey).filter(
+            UserApiKey.api_key == key_hash,
+            UserApiKey.is_active == True,
+        ).first()
+
+        if api_key:
+            # 检查 write 权限
+            scopes = (api_key.scopes or "").split(",")
+            if "write" not in scopes:
+                raise HTTPException(status_code=403, detail="API Key 缺少 write 权限")
+            api_key.last_used_at = datetime.now(CHINA_TIMEZONE)
+            db.commit()
+            logger.info(f"健康事件 API Key 认证: user_id={api_key.user_id}, key={api_key.name}")
+            return api_key.user_id
+        else:
+            raise HTTPException(status_code=401, detail="无效的 API Key")
+
+    # 3. 都没有
+    raise HTTPException(status_code=401, detail="未登录或登录已过期，请提供 Bearer Token 或 X-API-Key")
+
 router = APIRouter(prefix="/health-events", tags=["health-events"])
 
 
 # ========== 事件摄入 ==========
 
 @router.post("/ingest", response_model=HealthEventResponse)
-def ingest_event(
+async def ingest_event(
     request: HealthEventIngest,
-    current_user: User = Depends(get_current_user_required),
+    user_id: int = Depends(get_user_id_from_any_auth),
     db: Session = Depends(get_db),
 ):
-    """摄入一个健康事件（来自设备/NFC/手动触发）"""
+    """
+    摄入一个健康事件（来自设备/NFC/手动触发）。
+
+    支持两种认证方式：
+    - Bearer Token（JWT）：小程序/App 使用
+    - X-API-Key：NFC 快捷指令/Siri/外部系统使用（长期有效）
+    """
     service = HealthEventService(db)
     event = service.ingest_event(
-        user_id=current_user.id,
+        user_id=user_id,
         event_type=request.event_type,
         source=request.source,
         raw_data=request.raw_data,
