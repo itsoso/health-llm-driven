@@ -42,6 +42,17 @@ def _plan_to_response(plan: WeeklyPlan) -> WeeklyPlanResponse:
     )
 
 
+@router.get("/analyze")
+async def analyze_for_plan(
+    target_week: str = Query("current", description="'current' 或 'next'"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取计划生成前的数据分析（不调用LLM）"""
+    service = SmartPlanService(db)
+    return await service.analyze_context(current_user.id, target_week)
+
+
 @router.post("/generate")
 async def generate_plan(
     request: GeneratePlanRequest,
@@ -52,7 +63,14 @@ async def generate_plan(
     """生成周计划（手动触发）"""
     service = SmartPlanService(db)
     try:
-        result = await service.generate_plan(current_user.id, request.target_week, debug=debug)
+        result = await service.generate_plan(
+            current_user.id,
+            request.target_week,
+            user_focus=request.user_focus,
+            user_notes=request.user_notes,
+            intensity=request.intensity,
+            debug=debug,
+        )
         plan = result["plan"]
         response = _plan_to_response(plan).model_dump(mode="json")
         if debug and result.get("debug"):

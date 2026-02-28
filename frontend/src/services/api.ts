@@ -1392,9 +1392,16 @@ export const securityLifeApi = {
 
 // AI 智能计划
 export const smartPlanApi = {
-  generate: (targetWeek: string = 'current', debug: boolean = false) => {
-    const params = debug ? '?debug=true' : '';
-    return api.post(`/smart-plan/generate${params}`, { target_week: targetWeek });
+  analyze: (targetWeek: string = 'current') =>
+    api.get('/smart-plan/analyze', { params: { target_week: targetWeek } }),
+  generate: (params: {
+    target_week?: string;
+    user_focus?: string[];
+    user_notes?: string;
+    intensity?: string;
+  }, debug: boolean = false) => {
+    const queryParams = debug ? '?debug=true' : '';
+    return api.post(`/smart-plan/generate${queryParams}`, params);
   },
   getCurrent: (week: string = 'current') => api.get('/smart-plan/current', { params: { week } }),
   getHistory: (page: number = 1, pageSize: number = 10) =>

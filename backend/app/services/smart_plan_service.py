@@ -57,6 +57,330 @@ class SmartPlanService:
             monday += timedelta(weeks=1)
         return monday
 
+    # ===== 分析上下文（供前端向导 Step 1 展示） =====
+
+    async def analyze_context(self, user_id: int, target_week: str = "current") -> dict:
+        """预计算分析数据，不调用 LLM，纯数据聚合"""
+        week_start = self._get_week_start(target_week)
+        week_end = week_start + timedelta(days=6)
+
+        past_performance = self._get_performance_summary(user_id, week_start)
+        body_metrics = self._get_body_metrics_snapshot(user_id)
+        weather_forecast = await self._get_week_weather(user_id, week_start)
+        goals = self._get_goals_summary(user_id)
+        trips = self._get_trips_context(user_id, week_start)
+        suggested_focus = self._compute_suggested_focus(past_performance, body_metrics, goals)
+
+        return {
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "past_performance": past_performance,
+            "body_metrics": body_metrics,
+            "weather_forecast": weather_forecast,
+            "active_goals": goals,
+            "trips": trips,
+            "suggested_focus": suggested_focus,
+        }
+
+    def _get_performance_summary(self, user_id: int, current_week_start: date) -> dict:
+        """返回结构化的历史计划执行摘要"""
+        from collections import defaultdict
+
+        all_cat_stats = defaultdict(lambda: {"done": 0, "total": 0, "items": set()})
+        weeks_analyzed = 0
+        total_rate = 0.0
+        rates = []
+
+        for weeks_ago in range(1, 5):
+            ws = current_week_start - timedelta(weeks=weeks_ago)
+            plan = self.db.query(WeeklyPlan).filter(
+                WeeklyPlan.user_id == user_id,
+                WeeklyPlan.week_start == ws
+            ).first()
+            if not plan:
+                continue
+            items = self.db.query(PlanItem).filter(PlanItem.plan_id == plan.id).all()
+            if not items:
+                continue
+
+            weeks_analyzed += 1
+            total_rate += plan.completion_rate
+            rates.append(plan.completion_rate)
+
+            for item in items:
+                cat = all_cat_stats[item.category]
+                cat["total"] += 1
+                if item.is_completed:
+                    cat["done"] += 1
+                    cat["items"].add(item.title)
+
+        if weeks_analyzed == 0:
+            return {"weeks_analyzed": 0, "avg_completion_rate": 0, "by_category": {}, "trend": "none", "strong_items": [], "weak_items": []}
+
+        avg_rate = total_rate / weeks_analyzed
+        # 趋势判断
+        trend = "stable"
+        if len(rates) >= 2:
+            if rates[0] > rates[-1] + 10:
+                trend = "improving"
+            elif rates[0] < rates[-1] - 10:
+                trend = "declining"
+
+        by_category = {}
+        strong_items = []
+        weak_items = []
+        for cat_name, stat in all_cat_stats.items():
+            rate = (stat["done"] / stat["total"] * 100) if stat["total"] > 0 else 0
+            top_items = list(stat["items"])[:5]
+            by_category[cat_name] = {"done": stat["done"], "total": stat["total"], "rate": round(rate), "top_items": top_items}
+            if rate >= 70:
+                strong_items.extend(top_items[:2])
+            elif rate < 50:
+                weak_items.extend(top_items[:2])
+
+        return {
+            "weeks_analyzed": weeks_analyzed,
+            "avg_completion_rate": round(avg_rate),
+            "by_category": by_category,
+            "trend": trend,
+            "strong_items": strong_items[:5],
+            "weak_items": weak_items[:5],
+        }
+
+    def _get_body_metrics_snapshot(self, user_id: int) -> dict:
+        """获取身体指标快照"""
+        from app.models.user_profile import UserProfile
+        from app.models.weight import WeightRecord
+        from app.models.daily_health import GarminData
+
+        result = {}
+
+        # 用户目标
+        profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        target_weight = profile.target_weight_kg if profile else None
+
+        # 最新体重
+        latest_weight = self.db.query(WeightRecord).filter(
+            WeightRecord.user_id == user_id
+        ).order_by(WeightRecord.record_date.desc()).first()
+        if latest_weight:
+            result["weight"] = {
+                "current": latest_weight.weight,
+                "target": target_weight,
+                "unit": "kg",
+                "date": latest_weight.record_date.isoformat(),
+            }
+            if latest_weight.bmi:
+                result["bmi"] = latest_weight.bmi
+            if latest_weight.body_fat_percentage:
+                result["body_fat"] = latest_weight.body_fat_percentage
+
+        # 最新 Garmin 数据
+        latest_garmin = self.db.query(GarminData).filter(
+            GarminData.user_id == user_id
+        ).order_by(GarminData.record_date.desc()).first()
+        if latest_garmin:
+            if latest_garmin.body_battery_current is not None:
+                result["body_battery"] = latest_garmin.body_battery_current
+            if latest_garmin.stress_level is not None:
+                result["stress_level"] = latest_garmin.stress_level
+            if latest_garmin.sleep_score is not None:
+                result["sleep_score"] = latest_garmin.sleep_score
+            if latest_garmin.resting_heart_rate is not None:
+                result["resting_hr"] = latest_garmin.resting_heart_rate
+
+        return result
+
+    def _get_user_city(self, user_id: int) -> Optional[str]:
+        """获取用户所在城市"""
+        from app.models.user_profile import UserProfile
+        profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if not profile:
+            return None
+        if profile.use_manual_location and profile.manual_city:
+            return profile.manual_city
+        if profile.detected_city:
+            return profile.detected_city
+        return profile.city
+
+    async def _get_week_weather(self, user_id: int, week_start: date) -> dict:
+        """获取目标周的天气预报 + 空气质量"""
+        from app.services.environment.weather_service import WeatherService
+        from app.services.environment.air_quality_service import AirQualityService
+
+        city = self._get_user_city(user_id)
+        if not city:
+            return {"available": False, "reason": "未设置城市"}
+
+        try:
+            weather_service = WeatherService()
+            forecast_data = await weather_service.get_weather_forecast(city=city, days=7)
+            if not forecast_data.get("available"):
+                return {"available": False, "reason": "天气服务不可用"}
+
+            day_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            daily = []
+            for i, f in enumerate(forecast_data.get("forecasts", [])[:7]):
+                d = week_start + timedelta(days=i)
+                daily.append({
+                    "date": f"{d.month}/{d.day}",
+                    "day_name": day_names[i] if i < 7 else "",
+                    "weather": f.get("weather", ""),
+                    "temp_high": f.get("temp_max"),
+                    "temp_low": f.get("temp_min"),
+                })
+
+            # 获取当前空气质量
+            air_quality = None
+            try:
+                aq_service = AirQualityService()
+                aq_data = await aq_service.get_air_quality(city=city)
+                if aq_data.get("available"):
+                    air_quality = {
+                        "aqi": aq_data.get("aqi"),
+                        "level": aq_data.get("level", ""),
+                        "primary_pollutant": aq_data.get("primary_pollutant", ""),
+                    }
+            except Exception as e:
+                logger.warning(f"获取空气质量失败: {e}")
+
+            # 运动建议
+            rain_days = [d["day_name"] for d in daily if "雨" in d.get("weather", "") or "雪" in d.get("weather", "")]
+            hot_days = [d["day_name"] for d in daily if d.get("temp_high") and d["temp_high"] > 35]
+            cold_days = [d["day_name"] for d in daily if d.get("temp_low") and d["temp_low"] < 0]
+
+            advice_parts = []
+            if rain_days:
+                advice_parts.append(f"{'、'.join(rain_days)}有雨雪，建议安排室内运动")
+            if hot_days:
+                advice_parts.append(f"{'、'.join(hot_days)}气温较高，避免正午户外运动")
+            if cold_days:
+                advice_parts.append(f"{'、'.join(cold_days)}气温较低，注意保暖")
+            if air_quality and air_quality.get("aqi") and air_quality["aqi"] > 150:
+                advice_parts.append(f"空气质量{air_quality['level']}(AQI {air_quality['aqi']})，减少户外运动")
+            if not advice_parts:
+                advice_parts.append("本周天气适宜户外运动")
+
+            return {
+                "available": True,
+                "city": city,
+                "daily": daily,
+                "air_quality": air_quality,
+                "exercise_advice": "；".join(advice_parts),
+            }
+        except Exception as e:
+            logger.warning(f"获取天气预报失败: {e}")
+            return {"available": False, "reason": str(e)}
+
+    def _get_trips_context(self, user_id: int, week_start: date) -> list:
+        """获取目标周内的行程信息"""
+        from app.models.trip import Trip
+        week_end = week_start + timedelta(days=6)
+
+        trips = self.db.query(Trip).filter(
+            Trip.user_id == user_id,
+            Trip.start_date <= week_end,
+            Trip.end_date >= week_start,
+        ).all()
+
+        result = []
+        for trip in trips:
+            trip_data = {
+                "name": trip.trip_name,
+                "destination": trip.destination,
+                "start_date": trip.start_date.isoformat(),
+                "end_date": trip.end_date.isoformat(),
+                "days": [],
+            }
+            for item in trip.items:
+                if week_start <= item.item_date <= week_end:
+                    day_idx = (item.item_date - week_start).days
+                    day_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                    trip_data["days"].append({
+                        "day_name": day_names[day_idx] if day_idx < 7 else "",
+                        "date": item.item_date.isoformat(),
+                        "title": item.title,
+                        "type": item.item_type,
+                    })
+            result.append(trip_data)
+        return result
+
+    def _get_goals_summary(self, user_id: int) -> list:
+        """获取活跃目标摘要"""
+        from app.models.health_goal_plan import PeriodGoal
+
+        goals = self.db.query(PeriodGoal).filter(
+            PeriodGoal.user_id == user_id,
+            PeriodGoal.status == "active"
+        ).all()
+
+        result = []
+        for g in goals:
+            goal_data = {
+                "id": g.id,
+                "period_type": g.period_type,
+                "period_start": g.period_start.isoformat(),
+                "period_end": g.period_end.isoformat(),
+                "focus_areas": g.focus_areas or [],
+                "metrics": [],
+            }
+            for m in g.metrics:
+                goal_data["metrics"].append({
+                    "metric_name": m.metric_name or m.metric_type,
+                    "current_value": m.current_value,
+                    "target_value": m.target_value,
+                    "unit": m.unit,
+                })
+            result.append(goal_data)
+        return result
+
+    def _compute_suggested_focus(self, past_performance: dict, body_metrics: dict, goals: list) -> list:
+        """基于规则引擎生成建议聚焦点"""
+        suggestions = []
+
+        # 基于历史完成率
+        by_cat = past_performance.get("by_category", {})
+        if by_cat.get("diet", {}).get("rate", 100) < 50:
+            suggestions.append({"label": "改善饮食习惯", "reason": f"近期饮食打卡率仅{by_cat['diet']['rate']}%"})
+        if by_cat.get("exercise", {}).get("rate", 0) >= 70:
+            suggestions.append({"label": "提升运动强度", "reason": f"运动执行率{by_cat['exercise']['rate']}%，可适当提升难度"})
+        elif by_cat.get("exercise", {}).get("rate", 100) < 50:
+            suggestions.append({"label": "降低运动门槛", "reason": f"运动执行率仅{by_cat['exercise']['rate']}%，建议降低难度先建立习惯"})
+        if by_cat.get("habit", {}).get("rate", 100) < 50:
+            suggestions.append({"label": "培养日常习惯", "reason": f"习惯打卡率{by_cat['habit']['rate']}%，需加强"})
+
+        # 基于身体指标
+        weight_data = body_metrics.get("weight", {})
+        if weight_data.get("current") and weight_data.get("target"):
+            diff = weight_data["current"] - weight_data["target"]
+            if diff > 5:
+                suggestions.append({"label": "减脂控重", "reason": f"距目标体重还差{diff:.1f}kg"})
+            elif diff > 0:
+                suggestions.append({"label": "维持体重趋势", "reason": f"距目标体重{diff:.1f}kg，继续保持"})
+
+        if body_metrics.get("sleep_score") and body_metrics["sleep_score"] < 70:
+            suggestions.append({"label": "提升睡眠质量", "reason": f"近期睡眠评分{body_metrics['sleep_score']}分"})
+
+        if body_metrics.get("stress_level") and body_metrics["stress_level"] > 60:
+            suggestions.append({"label": "压力管理", "reason": f"压力水平{body_metrics['stress_level']}，偏高"})
+
+        # 基于目标
+        for goal in goals:
+            for metric in goal.get("metrics", []):
+                if metric.get("current_value") and metric.get("target_value"):
+                    name = metric["metric_name"]
+                    suggestions.append({"label": f"推进{name}目标", "reason": f"当前{metric['current_value']}{metric.get('unit', '')}，目标{metric['target_value']}{metric.get('unit', '')}"})
+
+        # 默认建议
+        if not suggestions:
+            suggestions = [
+                {"label": "均衡运动", "reason": "保持每周3-5次运动"},
+                {"label": "规律饮食", "reason": "三餐规律，营养均衡"},
+                {"label": "充足休息", "reason": "保证7-8小时睡眠"},
+            ]
+
+        return suggestions[:6]  # 最多6个建议
+
     def _get_recent_plans_feedback(self, user_id: int, current_week_start: date) -> str:
         """获取最近 2-4 周的计划完成分析，识别行为模式"""
         parts = []
@@ -151,7 +475,9 @@ class SmartPlanService:
                     return t["id"]
         return None
 
-    async def generate_plan(self, user_id: int, target_week: str = "current", debug: bool = False) -> Dict[str, Any]:
+    async def generate_plan(self, user_id: int, target_week: str = "current",
+                            user_focus: List[str] = None, user_notes: str = "",
+                            intensity: str = "moderate", debug: bool = False) -> Dict[str, Any]:
         overall_start = time.time()
         debug_info = self._init_debug_info() if debug else None
 
@@ -202,6 +528,34 @@ class SmartPlanService:
             self._add_reasoning(debug_info, "有活跃目标，将指导计划方向", "goal")
             self._add_data(debug_info, "active_goals", goals_context)
 
+        # Step 5.5: 获取天气和行程
+        step_start = time.time()
+        weather_data = await self._get_week_weather(user_id, week_start)
+        trips_data = self._get_trips_context(user_id, week_start)
+        self._add_step(debug_info, "获取天气和行程", step_start)
+
+        weather_context = ""
+        if weather_data.get("available"):
+            weather_parts = [f"所在城市: {weather_data.get('city', '')}"]
+            for d in weather_data.get("daily", []):
+                weather_parts.append(f"  {d['day_name']}({d['date']}): {d['weather']} {d.get('temp_low', '')}~{d.get('temp_high', '')}°C")
+            if weather_data.get("air_quality"):
+                aq = weather_data["air_quality"]
+                weather_parts.append(f"  当前空气质量: AQI {aq.get('aqi', '?')} {aq.get('level', '')}")
+            weather_parts.append(f"  运动建议: {weather_data.get('exercise_advice', '')}")
+            weather_context = "\n".join(weather_parts)
+            self._add_reasoning(debug_info, f"天气数据: {weather_data.get('city', '')}", "data")
+
+        trips_context = ""
+        if trips_data:
+            trips_parts = []
+            for trip in trips_data:
+                trips_parts.append(f"行程: {trip['name']}（{trip.get('destination', '')}，{trip['start_date']}~{trip['end_date']}）")
+                for day in trip.get("days", []):
+                    trips_parts.append(f"  {day['day_name']}: {day['title']}（{day['type']}）")
+            trips_context = "\n".join(trips_parts)
+            self._add_reasoning(debug_info, f"本周有 {len(trips_data)} 个行程", "info")
+
         # Step 6: 获取打卡模板
         step_start = time.time()
         templates = self._get_checkin_templates(user_id)
@@ -213,9 +567,19 @@ class SmartPlanService:
         self._add_reasoning(debug_info, f"找到 {len(templates)} 个打卡模板", "data")
         self._add_data(debug_info, "checkin_templates", templates)
 
+        # 用户偏好
+        intensity_map = {"light": "轻松（以恢复和习惯养成为主）", "moderate": "适中（平衡挑战与可持续性）", "challenge": "挑战（追求突破，高强度训练）"}
+        intensity_label = intensity_map.get(intensity, intensity_map["moderate"])
+        user_prefs = f"""## 用户本周偏好（必须优先满足）
+- 重点方向: {', '.join(user_focus) if user_focus else '由你根据数据分析决定'}
+- 运动强度偏好: {intensity_label}
+- 用户备注: {user_notes if user_notes else '无特殊要求'}"""
+        if user_focus:
+            self._add_reasoning(debug_info, f"用户选择重点: {', '.join(user_focus)}", "goal")
+
         # Step 7: 构建 Prompt
         step_start = time.time()
-        prompt = f"""你是一位资深的运动医学和营养学专家。你需要先深入分析用户的健康数据，发现隐藏的规律和风险，然后基于这些洞察制定下周计划。
+        prompt = f"""你是一位资深的运动医学和营养学专家。你需要先深入分析用户的健康数据，发现隐藏的规律和风险，然后基于这些洞察制定周计划。
 
 ## 用户健康数据（请仔细分析趋势和异常）
 {health_context}
@@ -226,6 +590,14 @@ class SmartPlanService:
 ## 用户当前阶段性目标（周计划需要服务于这些目标）
 {goals_context if goals_context else "（暂无设定目标）"}
 
+## 本周天气与空气质量（影响运动安排）
+{weather_context if weather_context else "（天气数据不可用）"}
+
+## 本周行程安排（有行程的日期应调整运动安排）
+{trips_context if trips_context else "（本周无特殊行程）"}
+
+{user_prefs}
+
 ## 用户打卡模板（运动/习惯项尽量匹配）
 {templates_str if templates_str else "（暂无打卡模板）"}
 
@@ -235,24 +607,12 @@ class SmartPlanService:
 
 **在制定计划前，你必须先完成以下分析（体现在 insights 和 weekly_summary 中）：**
 
-1. **数据洞察**：从健康数据中发现了什么？比如：
-   - 睡眠质量趋势（深睡比例是否正常？REM够不够？）
-   - 运动强度是否匹配目标（心率区间是否合理？配速变化？）
-   - 饮食结构问题（蛋白质是否充足？热量缺口？营养比例？）
-   - 压力与恢复的平衡（身体电量、压力水平的变化规律）
-   - 体重/体脂变化与运动饮食的关联
+1. **数据洞察**：从健康数据中发现了什么？
+2. **行为模式分析**（如果有历史数据）：哪类任务执行率高/低？
+3. **风险预警**：是否有健康指标需要关注？
+4. **环境因素**：天气、空气质量、行程对运动安排的影响
 
-2. **行为模式分析**（如果有历史数据）：
-   - 哪类任务执行率高？哪类低？是什么原因？
-   - 一周内哪几天执行力强/弱？是否跟工作日/休息日有关？
-   - 重复失败的项目是否需要换种方式或降低门槛？
-
-3. **风险预警**：
-   - 是否有健康指标需要关注？（如血压偏高、体脂过高、睡眠不足）
-   - 运动是否有受伤风险？（强度过大、缺乏恢复）
-   - 是否存在过度训练/恢复不足的信号？
-
-请严格按照以下 JSON 格式输出：
+请严格按照以下 JSON 格式输出（不要输出其他文字）：
 ```json
 {{
   "insights": [
@@ -264,29 +624,24 @@ class SmartPlanService:
     "需要注意的健康风险或行为风险"
   ],
   "focus_areas": ["本周重点1", "本周重点2", "本周重点3"],
-  "weekly_summary": "基于以上分析，本周计划的核心策略是...（必须引用具体数据支撑决策）",
+  "weekly_summary": "基于以上分析，本周计划的核心策略是...（引用具体数据）",
   "days": {{
     "1": [
-      {{"category": "exercise", "title": "跑步30分钟", "description": "【依据】根据最近配速x'xx和心率xxxbpm，本次目标心率控制在xxx-xxxbpm，配速不低于x'xx", "target_value": 30, "target_unit": "分钟"}},
-      {{"category": "diet", "title": "午餐高蛋白", "description": "【依据】近3天蛋白质摄入仅xxg，目标每餐30g+蛋白质", "target_value": null, "target_unit": null}}
+      {{"category": "exercise", "title": "跑步30分钟", "description": "【依据】根据最近配速和心率数据设定目标", "target_value": 30, "target_unit": "分钟"}},
+      {{"category": "diet", "title": "午餐高蛋白", "description": "【依据】近3天蛋白质摄入不足", "target_value": null, "target_unit": null}}
     ],
-    "2": [...],
-    "3": [...],
-    "4": [...],
-    "5": [...],
-    "6": [...],
-    "7": [...]
+    "2": [...], "3": [...], "4": [...], "5": [...], "6": [...], "7": [...]
   }}
 }}
 ```
 
 ## 关键要求
-1. **每个计划项的 description 必须包含"【依据】"**，引用具体数据解释为什么安排这个任务、目标值怎么来的
-2. 每天 3-5 个行动项，category 只能是: exercise/diet/rest/habit/other
-3. insights 必须是从数据中挖掘的发现，不是泛泛的健康常识
-4. 如果有阶段性目标，周计划要明确服务于目标进度
-5. 运动安排要考虑恢复周期（不要连续高强度），饮食建议要具体到食物/营养素量
-6. 基于历史执行模式，对低执行率类别降低门槛或换种形式"""
+1. 每个 description 包含"【依据】"，引用具体数据
+2. 每天 3-5 个行动项，category: exercise/diet/rest/habit/other
+3. insights 基于数据发现，不是泛泛健康常识
+4. 雨天/差空气质量日安排室内运动，有行程日减少运动安排
+5. 运动安排考虑恢复周期，饮食建议具体到食物/营养素量
+6. 对历史低执行率类别降低门槛或换种形式"""
         self._add_step(debug_info, "构建 AI 分析 Prompt", step_start)
         self._add_reasoning(debug_info, f"Prompt 长度: {len(prompt)} 字符", "info")
         self._add_data(debug_info, "prompt_preview", prompt[:800] + "...")
@@ -386,7 +741,7 @@ class SmartPlanService:
         for attempt in range(2):
             try:
                 call_start = time.time()
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=120.0) as client:
                     response = await client.post(
                         f"{settings.openclaw_base_url}/chat/completions",
                         headers={
@@ -427,7 +782,7 @@ class SmartPlanService:
                     messages.append({"role": "user", "content": "你的输出格式不正确，请严格按照 JSON 格式重新输出，不要包含任何其他文字。"})
                 continue
             except Exception as e:
-                logger.error(f"LLM 调用失败: {e}")
+                logger.error(f"LLM 调用失败: {type(e).__name__}: {e}")
                 if llm_debug is not None:
                     llm_debug["error"] = str(e)
                 return None, llm_debug

@@ -57,6 +57,9 @@ class WeeklyPlanListItem(BaseModel):
 
 class GeneratePlanRequest(BaseModel):
     target_week: str = Field("current", description="'current' 或 'next'")
+    user_focus: List[str] = Field(default_factory=list, description="用户选择的重点方向")
+    user_notes: str = Field("", description="用户备注（如'周三出差'）")
+    intensity: str = Field("moderate", description="运动强度: light/moderate/challenge")
 
 
 class PlanItemUpdate(BaseModel):
