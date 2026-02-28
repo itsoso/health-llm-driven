@@ -17,6 +17,7 @@ from app.schemas.weight import (
     WeightStats,
 )
 from app.api.deps import get_current_user_required
+from app.services.period_goal_service import PeriodGoalService
 
 router = APIRouter()
 
@@ -40,6 +41,22 @@ def _sync_weight_to_profile(db: Session, user_id: int, weight_record: WeightReco
     # 更新肌肉量
     if weight_record.muscle_mass_kg:
         profile.muscle_mass_kg = weight_record.muscle_mass_kg
+
+
+def _auto_update_goal_metrics(db: Session, user_id: int, weight_record: WeightRecord):
+    """自动更新阶段性目标中的身体指标"""
+    try:
+        service = PeriodGoalService(db)
+        if weight_record.weight:
+            service.update_metric_current_value(user_id, "weight", weight_record.weight)
+        if weight_record.bmi:
+            service.update_metric_current_value(user_id, "bmi", weight_record.bmi)
+        if weight_record.body_fat_percentage:
+            service.update_metric_current_value(user_id, "body_fat", weight_record.body_fat_percentage)
+        if weight_record.muscle_mass_kg:
+            service.update_metric_current_value(user_id, "muscle_mass", weight_record.muscle_mass_kg)
+    except Exception:
+        pass  # 不影响体重记录本身
 
 
 @router.post("/records", response_model=WeightRecordResponse)
@@ -72,6 +89,10 @@ def create_weight_record(
 
         db.commit()
         db.refresh(existing)
+
+        # 自动更新阶段性目标指标
+        _auto_update_goal_metrics(db, user_id, existing)
+
         return existing
 
     # 创建新记录
@@ -90,6 +111,10 @@ def create_weight_record(
 
     db.commit()
     db.refresh(db_record)
+
+    # 自动更新阶段性目标指标
+    _auto_update_goal_metrics(db, user_id, db_record)
+
     return db_record
 
 

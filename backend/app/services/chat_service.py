@@ -30,6 +30,7 @@ from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
 from app.models.excretion import ExcretionRecord
 from app.models.sleep_record import SleepRecord
 from app.models.activity_status import ActivityStatus
+from app.models.smart_plan import WeeklyPlan, PlanItem
 from app.models.vocabulary import VocabularyWord
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
@@ -842,6 +843,34 @@ class ChatService:
         except Exception as e:
             logger.warning(f"获取病症数据失败: {e}")
 
+        # ── 智能计划进度 ──────────────────────────────────────────────
+        try:
+            week_start = today - timedelta(days=today.weekday())
+            active_plan = self.db.query(WeeklyPlan).filter(
+                WeeklyPlan.user_id == user_id,
+                WeeklyPlan.week_start == week_start,
+                WeeklyPlan.status == "active"
+            ).first()
+
+            if active_plan:
+                plan_lines = [f"本周智能计划({week_start} ~ {week_start + timedelta(days=6)}):"]
+                plan_lines.append(f"  重点: {', '.join(active_plan.focus_areas or [])}")
+                plan_lines.append(f"  总体完成率: {active_plan.completion_rate:.0f}%")
+
+                day_of_week = today.weekday() + 1
+                today_items = [i for i in active_plan.items if i.day_of_week == day_of_week]
+                if today_items:
+                    done = [i for i in today_items if i.is_completed]
+                    undone = [i for i in today_items if not i.is_completed]
+                    plan_lines.append(f"  今日计划({len(done)}/{len(today_items)}完成):")
+                    for i in done:
+                        plan_lines.append(f"    ✅ {i.title}")
+                    for i in undone:
+                        plan_lines.append(f"    ⬜ {i.title}")
+                parts.append("\n".join(plan_lines))
+        except Exception as e:
+            logger.warning(f"获取智能计划数据失败: {e}")
+
         if not parts:
             return ""
 
@@ -980,7 +1009,12 @@ class ChatService:
                 "你具有联网搜索能力。系统会自动为用户的问题搜索最新信息，搜索结果会附在用户消息后面的[参考资料]中。"
                 "请自然地整合这些信息来回答，不要提及'搜索结果'、'参考资料'、'根据搜索'等字眼，也不要说自己没有搜索功能。\n\n"
                 "你具有饮食记录和热量计算功能。当用户描述吃了什么食物时，系统会自动分析营养成分并保存饮食记录。"
-                "如果消息中包含[系统提示]的营养分析结果，请基于这些数据给用户清晰的热量和营养反馈。"
+                "如果消息中包含[系统提示]的营养分析结果，请基于这些数据给用户清晰的热量和营养反馈。\n\n"
+                "如果用户有活跃的智能计划，你应该：\n"
+                "- 了解用户今天的待办事项，提供针对性的建议\n"
+                "- 鼓励用户完成未完成的计划项\n"
+                "- 根据计划完成情况给出调整建议\n"
+                "- 回答关于计划进度的问题\n"
             )
 
         # 活动记录能力

@@ -80,6 +80,18 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.maintenance.cleanup_expired_data",
         "schedule": crontab(hour=3, minute=0),  # 凌晨3点
     },
+
+    # 每日 08:00 推送今日计划提醒
+    "plan-morning-reminder": {
+        "task": "app.tasks.notifications.send_plan_morning_reminder",
+        "schedule": crontab(hour=8, minute=0),
+    },
+
+    # 每日 20:00 推送计划进度总结
+    "plan-evening-summary": {
+        "task": "app.tasks.notifications.send_plan_evening_summary",
+        "schedule": crontab(hour=20, minute=0),
+    },
 }
 
 logger.info("Celery 配置加载完成")

@@ -1400,9 +1400,22 @@ export const smartPlanApi = {
   getHistory: (page: number = 1, pageSize: number = 10) =>
     api.get('/smart-plan/history', { params: { page, page_size: pageSize } }),
   getDetail: (planId: number) => api.get(`/smart-plan/${planId}`),
+  getToday: () => api.get('/smart-plan/today'),
   updateItem: (planId: number, itemId: number, isCompleted: boolean) =>
     api.patch(`/smart-plan/${planId}/items/${itemId}`, { is_completed: isCompleted }),
   submitFeedback: (planId: number, score: number) =>
     api.post(`/smart-plan/${planId}/feedback`, { score }),
   deletePlan: (planId: number) => api.delete(`/smart-plan/${planId}`),
+
+  // 阶段性目标
+  generateGoal: (periodType: string, targetPeriod?: string, debug: boolean = false) => {
+    const params = debug ? '?debug=true' : '';
+    return api.post(`/smart-plan/goals/generate${params}`, { period_type: periodType, target_period: targetPeriod });
+  },
+  getActiveGoals: (periodType?: string) =>
+    api.get('/smart-plan/goals/active', { params: periodType ? { period_type: periodType } : {} }),
+  getGoalDetail: (goalId: number) => api.get(`/smart-plan/goals/${goalId}`),
+  updateMetric: (goalId: number, metricId: number, currentValue: number) =>
+    api.patch(`/smart-plan/goals/${goalId}/metrics/${metricId}`, { current_value: currentValue }),
+  deleteGoal: (goalId: number) => api.delete(`/smart-plan/goals/${goalId}`),
 };
