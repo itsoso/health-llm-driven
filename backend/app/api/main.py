@@ -67,6 +67,7 @@ from app.api import (
     direct_message,  # 私信聊天
     security_life,  # 资产防御与布局
     smart_plan,  # AI 智能计划
+    health_event,  # 健康事件流
 )
 
 api_router = APIRouter()
@@ -146,3 +147,6 @@ api_router.include_router(security_life.router, prefix="/security-life", tags=["
 
 # AI 智能计划
 api_router.include_router(smart_plan.router)  # prefix 已在 router 中定义
+
+# 健康事件流
+api_router.include_router(health_event.router)  # prefix 已在 router 中定义

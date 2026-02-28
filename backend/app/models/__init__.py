@@ -72,6 +72,8 @@ from app.models.vocabulary import VocabularyWord
 from app.models.kids_plan import KidsDailyPlan
 # 私信消息模型
 from app.models.direct_message import DirectMessage
+# 健康事件流模型
+from app.models.health_event import HealthEvent, EventSource, EventStatus
 
 __all__ = [
     "User",
@@ -169,5 +171,9 @@ __all__ = [
     "KidsDailyPlan",
     # 私信消息
     "DirectMessage",
+    # 健康事件流
+    "HealthEvent",
+    "EventSource",
+    "EventStatus",
 ]
 
