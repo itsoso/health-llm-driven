@@ -315,6 +315,10 @@ class HealthEventService:
         if not ai_inference:
             return 0.0
 
+        # Withings 设备 → 高置信度（云端同步的硬件传感器数据）
+        if source == "withings":
+            return 0.95
+
         # 蓝牙体重秤 → 高置信度（数据来自硬件传感器）
         if source in ("bluetooth_scale", "bluetooth_bp"):
             return 0.95

@@ -68,6 +68,7 @@ from app.api import (
     security_life,  # 资产防御与布局
     smart_plan,  # AI 智能计划
     health_event,  # 健康事件流
+    withings,  # Withings 设备集成
 )
 
 api_router = APIRouter()
@@ -150,3 +151,6 @@ api_router.include_router(smart_plan.router)  # prefix 已在 router 中定义
 
 # 健康事件流
 api_router.include_router(health_event.router)  # prefix 已在 router 中定义
+
+# Withings 设备集成
+api_router.include_router(withings.router)  # prefix 已在 router 中定义

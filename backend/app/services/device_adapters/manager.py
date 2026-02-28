@@ -347,9 +347,11 @@ def _register_default_adapters():
     except ImportError as e:
         logger.warning(f"Apple 适配器注册失败: {e}")
     
-    # TODO: 后续添加更多适配器
-    # from .garmin import GarminAdapter
-    # DeviceManager.register_adapter("garmin", GarminAdapter)
+    try:
+        from .withings import WithingsHealthAdapter
+        DeviceManager.register_adapter("withings", WithingsHealthAdapter)
+    except ImportError as e:
+        logger.warning(f"Withings 适配器注册失败: {e}")
 
 
 # 模块加载时注册适配器

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # 华为 Health Kit 配置
     huawei_client_id: Optional[str] = None
     huawei_client_secret: Optional[str] = None
+
+    # Withings API 配置
+    withings_client_id: Optional[str] = None
+    withings_client_secret: Optional[str] = None
     
     # 微信小程序配置
     wechat_appid: Optional[str] = None  # 小程序 AppID
