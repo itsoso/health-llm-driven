@@ -16,8 +16,56 @@ from app.schemas.checkin import (
     CheckinDailySummary, CheckinStats, CheckinCalendar
 )
 from app.api.auth import get_current_user_required
+from app.models.smart_plan import WeeklyPlan, PlanItem
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/checkin", tags=["打卡系统"])
+
+
+def _auto_complete_plan_items(user_id: int, template_id: int, checkin_date: date, db: Session):
+    """打卡后自动标记匹配的计划项为完成"""
+    try:
+        week_start = checkin_date - timedelta(days=checkin_date.weekday())
+        day_of_week = checkin_date.weekday() + 1  # 1=周一 ... 7=周日
+
+        plan = db.query(WeeklyPlan).filter(
+            WeeklyPlan.user_id == user_id,
+            WeeklyPlan.week_start == week_start,
+            WeeklyPlan.status == "active"
+        ).first()
+        if not plan:
+            return
+
+        items = db.query(PlanItem).filter(
+            PlanItem.plan_id == plan.id,
+            PlanItem.day_of_week == day_of_week,
+            PlanItem.checkin_template_id == template_id,
+            PlanItem.is_completed == False
+        ).all()
+
+        if not items:
+            return
+
+        for item in items:
+            item.is_completed = True
+            item.completed_at = datetime.utcnow()
+
+        # 更新完成率
+        total = db.query(func.count(PlanItem.id)).filter(PlanItem.plan_id == plan.id).scalar()
+        completed = db.query(func.count(PlanItem.id)).filter(
+            PlanItem.plan_id == plan.id, PlanItem.is_completed == True
+        ).scalar()
+        plan.completion_rate = round(completed / total * 100, 1) if total > 0 else 0.0
+        if plan.completion_rate >= 100:
+            plan.status = "completed"
+
+        db.commit()
+        logger.info(f"Auto-completed {len(items)} plan items for user {user_id}, template {template_id}")
+    except Exception as e:
+        logger.error(f"Auto-complete plan items failed: {e}")
 
 
 # =====================================================
@@ -270,12 +318,15 @@ async def create_record(
     
     db.commit()
     db.refresh(record)
-    
+
+    # 自动标记匹配的计划项为完成
+    _auto_complete_plan_items(current_user.id, template.id, record_data.checkin_date, db)
+
     response = CheckinRecordResponse.model_validate(record)
     response.template_name = template.name
     response.template_icon = template.icon
     response.template_category = template.category
-    
+
     return response
 
 
@@ -328,12 +379,15 @@ async def quick_checkin(
     
     db.commit()
     db.refresh(record)
-    
+
+    # 自动标记匹配的计划项为完成
+    _auto_complete_plan_items(current_user.id, template.id, today, db)
+
     response = CheckinRecordResponse.model_validate(record)
     response.template_name = template.name
     response.template_icon = template.icon
     response.template_category = template.category
-    
+
     return response
 
 

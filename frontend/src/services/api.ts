@@ -1389,3 +1389,18 @@ export const securityLifeApi = {
   // Dashboard (总览)
   getDashboard: () => api.get('/security-life/dashboard'),
 };
+
+// AI 智能计划
+export const smartPlanApi = {
+  generate: (targetWeek: string = 'current') =>
+    api.post('/smart-plan/generate', { target_week: targetWeek }),
+  getCurrent: () => api.get('/smart-plan/current'),
+  getHistory: (page: number = 1, pageSize: number = 10) =>
+    api.get('/smart-plan/history', { params: { page, page_size: pageSize } }),
+  getDetail: (planId: number) => api.get(`/smart-plan/${planId}`),
+  updateItem: (planId: number, itemId: number, isCompleted: boolean) =>
+    api.patch(`/smart-plan/${planId}/items/${itemId}`, { is_completed: isCompleted }),
+  submitFeedback: (planId: number, score: number) =>
+    api.post(`/smart-plan/${planId}/feedback`, { score }),
+  deletePlan: (planId: number) => api.delete(`/smart-plan/${planId}`),
+};
