@@ -1396,7 +1396,7 @@ export const smartPlanApi = {
     const params = debug ? '?debug=true' : '';
     return api.post(`/smart-plan/generate${params}`, { target_week: targetWeek });
   },
-  getCurrent: () => api.get('/smart-plan/current'),
+  getCurrent: (week: string = 'current') => api.get('/smart-plan/current', { params: { week } }),
   getHistory: (page: number = 1, pageSize: number = 10) =>
     api.get('/smart-plan/history', { params: { page, page_size: pageSize } }),
   getDetail: (planId: number) => api.get(`/smart-plan/${planId}`),

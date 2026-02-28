@@ -113,14 +113,25 @@ function SmartPlanContent() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState<any>(null);
+  const [viewingWeek, setViewingWeek] = useState<'current' | 'next'>('current');
 
-  // 当前计划
+  // 当前周计划
   const { data: currentPlan, isLoading: planLoading } = useQuery<WeeklyPlan | null>({
-    queryKey: ['smart-plan', 'current'],
+    queryKey: ['smart-plan', 'current', viewingWeek],
     queryFn: async () => {
-      const res = await smartPlanApi.getCurrent();
+      const res = await smartPlanApi.getCurrent(viewingWeek);
       return res.data;
     },
+  });
+
+  // 检查是否有下周计划（用于显示切换按钮）
+  const { data: nextWeekPlan } = useQuery<WeeklyPlan | null>({
+    queryKey: ['smart-plan', 'current', 'next'],
+    queryFn: async () => {
+      const res = await smartPlanApi.getCurrent('next');
+      return res.data;
+    },
+    enabled: viewingWeek === 'current',
   });
 
   // 历史计划
@@ -136,11 +147,16 @@ function SmartPlanContent() {
   // 生成计划
   const generateMutation = useMutation({
     mutationFn: (targetWeek: string) => smartPlanApi.generate(targetWeek, debugMode),
-    onSuccess: (res) => {
+    onSuccess: (res, targetWeek) => {
       if (res.data?.debug) {
         setDebugData(res.data.debug);
       }
+      // 切换到刚生成的计划所在周
+      setViewingWeek(targetWeek === 'next' ? 'next' : 'current');
       queryClient.invalidateQueries({ queryKey: ['smart-plan'] });
+    },
+    onError: (error: any) => {
+      alert(error?.response?.data?.detail || '生成计划失败，请稍后重试');
     },
   });
 
@@ -168,6 +184,9 @@ function SmartPlanContent() {
     mutationFn: (planId: number) => smartPlanApi.deletePlan(planId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['smart-plan'] });
+    },
+    onError: (error: any) => {
+      alert(error?.response?.data?.detail || '删除失败');
     },
   });
 
@@ -205,7 +224,7 @@ function SmartPlanContent() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => generateMutation.mutate('current')}
+            onClick={() => generateMutation.mutate(viewingWeek)}
             disabled={generateMutation.isPending}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm"
           >
@@ -214,18 +233,8 @@ function SmartPlanContent() {
             ) : (
               <RefreshCw className="w-4 h-4" />
             )}
-            {generateMutation.isPending ? '生成中...' : '本周计划'}
+            {generateMutation.isPending ? '生成中...' : (viewingWeek === 'next' ? '重新生成' : '生成计划')}
           </button>
-          {currentPlan && (
-            <button
-              onClick={() => generateMutation.mutate('next')}
-              disabled={generateMutation.isPending}
-              className="flex items-center gap-2 px-3 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors text-sm"
-            >
-              <ArrowRight className="w-4 h-4" />
-              下周计划
-            </button>
-          )}
         </div>
       </div>
 
@@ -276,6 +285,33 @@ function SmartPlanContent() {
       {/* Current Plan Tab */}
       {activeTab === 'current' && (
         <>
+          {/* Week Switcher */}
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => setViewingWeek('current')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                viewingWeek === 'current'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              本周
+            </button>
+            <button
+              onClick={() => setViewingWeek('next')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                viewingWeek === 'next'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              下周
+              {viewingWeek === 'current' && nextWeekPlan && (
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              )}
+            </button>
+          </div>
+
           {planLoading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -283,14 +319,18 @@ function SmartPlanContent() {
           ) : !currentPlan ? (
             <div className="text-center py-20">
               <Calendar className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-600 mb-2">还没有本周计划</h3>
-              <p className="text-gray-400 mb-6">点击"生成本周计划"，AI 将根据你的健康数据定制专属计划</p>
+              <h3 className="text-lg font-medium text-gray-600 mb-2">
+                {viewingWeek === 'next' ? '还没有下周计划' : '还没有本周计划'}
+              </h3>
+              <p className="text-gray-400 mb-6">
+                点击下方按钮，AI 将根据你的健康数据定制专属计划
+              </p>
               <button
-                onClick={() => generateMutation.mutate('current')}
+                onClick={() => generateMutation.mutate(viewingWeek)}
                 disabled={generateMutation.isPending}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {generateMutation.isPending ? '生成中...' : '立即生成'}
+                {generateMutation.isPending ? '生成中...' : (viewingWeek === 'next' ? '生成下周计划' : '生成本周计划')}
               </button>
               {debugData && <div className="mt-6 text-left"><DebugPanel debug={debugData} /></div>}
             </div>

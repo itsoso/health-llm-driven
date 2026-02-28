@@ -126,20 +126,20 @@ class SmartPlanService:
         self._add_step(debug_info, "计算目标周", step_start)
         self._add_reasoning(debug_info, f"目标周: {week_start} ~ {week_end} ({target_week})", "info")
 
-        # Step 2: 归档已有计划
+        # Step 2: 删除已有计划（唯一约束 user_id + week_start）
         step_start = time.time()
         existing = self.db.query(WeeklyPlan).filter(
             WeeklyPlan.user_id == user_id,
             WeeklyPlan.week_start == week_start,
-            WeeklyPlan.status.in_(["active", "draft"])
         ).first()
         if existing:
-            existing.status = "archived"
+            old_id = existing.id
+            self.db.delete(existing)
             self.db.flush()
-            self._add_reasoning(debug_info, f"已归档旧计划 ID={existing.id}", "warning")
+            self._add_reasoning(debug_info, f"已删除旧计划 ID={old_id}（重新生成）", "warning")
         else:
-            self._add_reasoning(debug_info, "无需归档，本周无已有计划", "info")
-        self._add_step(debug_info, "检查并归档已有计划", step_start)
+            self._add_reasoning(debug_info, "无已有计划，直接创建", "info")
+        self._add_step(debug_info, "检查并清理已有计划", step_start)
 
         # Step 3: 获取健康上下文
         step_start = time.time()

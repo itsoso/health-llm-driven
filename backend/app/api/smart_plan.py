@@ -62,12 +62,15 @@ async def generate_plan(
 
 @router.get("/current", response_model=Optional[WeeklyPlanResponse])
 async def get_current_plan(
+    week: str = Query("current", description="'current' 或 'next'"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取当前周计划"""
+    """获取当前/下周计划"""
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
+    if week == "next":
+        week_start += timedelta(weeks=1)
 
     plan = db.query(WeeklyPlan).filter(
         WeeklyPlan.user_id == current_user.id,
