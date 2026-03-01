@@ -879,11 +879,25 @@ class ChatService:
                 air_quality = context.get('air_quality')
                 if air_quality and air_quality.get('available'):
                     aqi = air_quality.get('aqi', 'N/A')
-                    level = air_quality.get('level', '未知')
-                    primary = air_quality.get('primary_pollutant', '无')
+                    level = air_quality.get('aqi_description') or air_quality.get('level', '未知')
+                    pm25 = air_quality.get('pm25')
+                    primary = air_quality.get('primary_pollutant', '') or air_quality.get('station', '')
                     air_info = f"空气质量: AQI {aqi} ({level})"
-                    if primary and primary != '无':
+                    if pm25 is not None and pm25 > 0:
+                        air_info += f", PM2.5 {pm25:.0f}μg/m³"
+                    if primary and primary not in ('无', ''):
                         air_info += f", 主要污染物: {primary}"
+                    # 根据 AQI 给出户外运动建议（让 AI 知道是否适合户外跑步）
+                    try:
+                        aqi_val = int(aqi)
+                        if aqi_val > 200:
+                            air_info += " ⚠️ 严重污染，禁止户外运动"
+                        elif aqi_val > 150:
+                            air_info += " ⚠️ 污染较重，不建议户外跑步"
+                        elif aqi_val > 100:
+                            air_info += " ⚠️ 轻度污染，敏感人群避免户外长跑"
+                    except (ValueError, TypeError):
+                        pass
                     weather_parts.append(air_info)
                 lifestyle = context.get('lifestyle_indices')
                 if lifestyle and lifestyle.get('available'):
