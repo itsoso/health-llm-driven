@@ -147,7 +147,7 @@ async def list_groups(
 
     groups = db.query(GroupChat).filter(
         GroupChat.id.in_(my_group_ids)
-    ).order_by(desc(GroupChat.updated_at.nulls_last()), desc(GroupChat.created_at)).all()
+    ).order_by(GroupChat.updated_at.desc().nulls_last(), desc(GroupChat.created_at)).all()
 
     result = []
     for g in groups:
