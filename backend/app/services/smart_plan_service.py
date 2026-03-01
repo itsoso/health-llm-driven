@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -66,7 +67,13 @@ class SmartPlanService:
 
         past_performance = self._get_performance_summary(user_id, week_start)
         body_metrics = self._get_body_metrics_snapshot(user_id)
-        weather_forecast = await self._get_week_weather(user_id, week_start)
+        try:
+            weather_forecast = await asyncio.wait_for(
+                self._get_week_weather(user_id, week_start), timeout=15.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("_get_week_weather 超时 (15s)，跳过天气数据")
+            weather_forecast = {"available": False, "reason": "天气服务超时"}
         goals = self._get_goals_summary(user_id)
         trips = self._get_trips_context(user_id, week_start)
         suggested_focus = self._compute_suggested_focus(past_performance, body_metrics, goals)
@@ -530,7 +537,13 @@ class SmartPlanService:
 
         # Step 5.5: 获取天气和行程
         step_start = time.time()
-        weather_data = await self._get_week_weather(user_id, week_start)
+        try:
+            weather_data = await asyncio.wait_for(
+                self._get_week_weather(user_id, week_start), timeout=15.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("_get_week_weather 超时 (15s)，跳过天气数据")
+            weather_data = {"available": False, "reason": "天气服务超时"}
         trips_data = self._get_trips_context(user_id, week_start)
         self._add_step(debug_info, "获取天气和行程", step_start)
 
