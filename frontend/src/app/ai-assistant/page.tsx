@@ -33,6 +33,7 @@ export default function AIAssistantPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [dietNotification, setDietNotification] = useState<DietSavedData | null>(null);
   const [activityNotifications, setActivityNotifications] = useState<ActivitySavedData[]>([]);
+  const [planCreatedNotification, setPlanCreatedNotification] = useState<{message: string; planId?: number} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const itemsPerPage = 10;
@@ -126,8 +127,15 @@ export default function AIAssistantPage() {
       // 显示活动记录通知
       if (result.activities_saved && result.activities) {
         const saved = result.activities.filter((a: ActivitySavedData) => a.status !== 'already_exists');
-        if (saved.length > 0) {
-          setActivityNotifications(saved);
+        // 智能计划创建通知（单独展示）
+        const planResult = saved.find((a: ActivitySavedData & {type?: string; plan_id?: number}) => a.type === 'create_plan') as (ActivitySavedData & {type?: string; plan_id?: number}) | undefined;
+        if (planResult) {
+          setPlanCreatedNotification({ message: planResult.message, planId: planResult.plan_id });
+          setTimeout(() => setPlanCreatedNotification(null), 8000);
+        }
+        const nonPlan = saved.filter((a: ActivitySavedData & {type?: string}) => a.type !== 'create_plan');
+        if (nonPlan.length > 0) {
+          setActivityNotifications(nonPlan);
           setTimeout(() => setActivityNotifications([]), 5000);
         }
       }
@@ -468,6 +476,28 @@ export default function AIAssistantPage() {
                     <div key={idx} className="text-xs text-emerald-100">{a.message}</div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 智能计划创建通知 */}
+          {planCreatedNotification && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300 w-80">
+              <div className="bg-blue-600/95 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <div className="font-medium text-sm flex items-center gap-2">
+                    <span>📋</span>
+                    智能计划已生成
+                  </div>
+                  <button onClick={() => setPlanCreatedNotification(null)} className="text-blue-200 hover:text-white text-lg leading-none">×</button>
+                </div>
+                <div className="text-xs text-blue-100 mb-2">{planCreatedNotification.message}</div>
+                <button
+                  onClick={() => { setPlanCreatedNotification(null); router.push('/smart-plan'); }}
+                  className="w-full text-xs py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-center font-medium transition-colors"
+                >
+                  前往「智能计划」查看 →
+                </button>
               </div>
             </div>
           )}

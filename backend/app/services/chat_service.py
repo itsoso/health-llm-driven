@@ -1102,8 +1102,32 @@ class ChatService:
         if activity_ctx:
             activity_prompt += f"\n### 用户数据\n{activity_ctx}\n"
 
+        # 智能计划创建功能
+        create_plan_prompt = (
+            "\n\n## 智能计划创建功能\n"
+            "当用户请求制定周计划时（如「帮我制定下周计划」「规划一下本周运动」「生成周计划」），"
+            "你可以直接调用系统为用户在「智能计划」中生成计划。\n\n"
+            "### 触发条件\n"
+            "用户明确要求「制定计划」「生成计划」「做个周计划」「规划一下」时触发。\n\n"
+            "### 格式\n"
+            "在正常回复之后附加（用户不可见）：\n"
+            '<<<ACTIONS:[{"type":"create_plan","target_week":"next或current","user_focus":["重点1","重点2"],'
+            '"user_notes":"用户提到的特殊需求或限制，如周三出差","intensity":"light或moderate或challenge"}]>>>\n\n'
+            "### 规则\n"
+            "1. target_week: \"next\"=下周，\"current\"=本周，默认 \"next\"\n"
+            "2. user_focus: 根据对话和健康数据提取 2-3 个重点方向（如[\"有氧运动\",\"体重控制\"]）\n"
+            "3. user_notes: 用户提到的约束条件（如\"周三出差不能运动\"），无约束则空字符串\n"
+            "4. intensity: 根据用户当前状态判断，默认 moderate\n"
+            "5. 触发后在回复中明确告知用户：「正在为你生成计划，完成后可在「智能计划」页面查看」\n"
+            "6. 不要询问用户是否需要写入，直接写入\n\n"
+            "### 示例\n"
+            "- \"帮我制定下周的锻炼计划\" → create_plan, target_week=\"next\", user_focus=[\"有氧运动\",\"力量训练\"]\n"
+            "- \"规划一下本周，我周三有出差\" → create_plan, target_week=\"current\", user_notes=\"周三出差\"\n"
+            "- \"做个减脂周计划\" → create_plan, target_week=\"next\", user_focus=[\"减脂\",\"饮食控制\"]\n"
+        )
+
         health_ctx = await self._build_health_context(user_id)
-        prompt = base + activity_prompt
+        prompt = base + activity_prompt + create_plan_prompt
         if health_ctx:
             prompt += f"\n\n{health_ctx}"
         return prompt
@@ -1605,7 +1629,15 @@ class ChatService:
         clean_reply, actions = self._parse_actions(reply_content)
         activity_results = []
         if actions:
-            activity_results = self._execute_actions(user_id, actions)
+            # create_plan 需要异步调用 LLM，单独处理
+            plan_actions = [a for a in actions if a.get("type") == "create_plan"]
+            other_actions = [a for a in actions if a.get("type") != "create_plan"]
+            if other_actions:
+                activity_results = self._execute_actions(user_id, other_actions)
+            for pa in plan_actions:
+                plan_result = await self._handle_create_plan_async(user_id, pa)
+                if plan_result:
+                    activity_results.append(plan_result)
             logger.info(f"用户{user_id} 执行了{len(activity_results)}个活动")
 
         # 保存 AI 回复（使用清理后的内容）
@@ -1682,6 +1714,41 @@ class ChatService:
             ChatConversation.id == conversation_id,
             ChatConversation.user_id == user_id
         ).first()
+
+    async def _handle_create_plan_async(self, user_id: int, action: dict) -> Optional[Dict]:
+        """通过 AI 对话直接生成并写入智能计划"""
+        from app.services.smart_plan_service import SmartPlanService
+        target_week = action.get("target_week", "next")
+        user_focus = action.get("user_focus") or []
+        user_notes = action.get("user_notes") or ""
+        intensity = action.get("intensity", "moderate")
+        try:
+            service = SmartPlanService(self.db)
+            result = await service.generate_plan(
+                user_id,
+                target_week=target_week,
+                user_focus=user_focus,
+                user_notes=user_notes,
+                intensity=intensity,
+            )
+            plan = result["plan"]
+            week_label = "下周" if target_week == "next" else "本周"
+            logger.info(f"用户{user_id} AI 自动生成{week_label}计划 plan_id={plan.id}")
+            return {
+                "type": "create_plan",
+                "status": "saved",
+                "plan_id": plan.id,
+                "week_label": week_label,
+                "item_count": len(plan.items),
+                "message": f"已为你生成{week_label}计划，共 {len(plan.items)} 项行动，可在「智能计划」页面查看",
+            }
+        except Exception as e:
+            logger.error(f"AI 自动生成计划失败: {type(e).__name__}: {e}")
+            return {
+                "type": "create_plan",
+                "status": "failed",
+                "message": "计划生成失败，请稍后在「智能计划」页面手动生成",
+            }
 
     def _handle_illness_create(self, user_id: int, action: dict, today: date) -> Optional[Dict]:
         """通过 AI 对话新建病症发作记录"""
