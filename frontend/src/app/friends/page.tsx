@@ -398,7 +398,7 @@ export default function FriendsPage() {
                     {groups.map(g => (
                       <button
                         key={g.id}
-                        onClick={() => router.push(`/friends/group/${g.id}`)}
+                        onClick={() => router.push(isKids ? `/kids/group/${g.id}` : `/friends/group/${g.id}`)}
                         className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left hover:bg-white/10 transition-colors"
                       >
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg font-bold flex-shrink-0">
