@@ -711,7 +711,7 @@ function PlanWizard({ targetWeek, debugMode, onClose, onSuccess }: {
       setProgressStep(4);
       setTimeout(() => {
         onSuccess(res.data, targetWeek);
-      }, 500);
+      }, 1500);
     } catch (e: any) {
       clearInterval(timer);
       setGenerateError(e?.response?.data?.detail || 'AI 生成失败，请稍后重试');
@@ -1077,7 +1077,7 @@ function PlanWizard({ targetWeek, debugMode, onClose, onSuccess }: {
               <div className="mt-6 w-full max-w-xs">
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-1000"
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
                     style={{ width: `${Math.min((progressStep / 4) * 100, 100)}%` }}
                   />
                 </div>
