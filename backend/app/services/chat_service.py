@@ -38,6 +38,10 @@ from app.services.quark_search import get_search_client
 
 logger = logging.getLogger(__name__)
 
+# 天气数据模块级缓存（每个 worker 进程独立，8小时 TTL）
+_weather_cache: dict = {}  # key: city -> (timestamp, data)
+_WEATHER_CACHE_TTL = 8 * 3600  # 8 小时
+
 # OpenClaw 配置
 OPENCLAW_BASE_URL = settings.openclaw_base_url
 OPENCLAW_API_KEY = settings.openclaw_api_key or ""
@@ -66,6 +70,29 @@ class ChatService:
                 loc = loc[:-len(suffix)]
                 break
         return loc.strip() or location
+
+    async def _get_weather_cached(self, city: str) -> dict:
+        """获取天气综合数据，带 8 小时本地缓存"""
+        import time
+        now = time.time()
+        if city in _weather_cache:
+            ts, data = _weather_cache[city]
+            if now - ts < _WEATHER_CACHE_TTL:
+                logger.debug(f"天气缓存命中: {city}")
+                return data
+        try:
+            data = await asyncio.wait_for(
+                weather_service.get_comprehensive_context(city=city),
+                timeout=10.0
+            )
+            _weather_cache[city] = (now, data)
+            return data
+        except asyncio.TimeoutError:
+            logger.warning(f"天气API超时(10s): {city}")
+            return {}
+        except Exception as e:
+            logger.warning(f"天气API失败: {type(e).__name__}: {e}")
+            return {}
 
     async def _build_health_context(self, user_id: int) -> str:
         """构建用户健康上下文，注入为 system prompt"""
@@ -135,45 +162,11 @@ class ChatService:
                 user_city = profile.city
                 parts.append(f"位置: {user_city}")
 
-        # 获取当前天气和空气质量信息（异步调用）
+        # 提前异步获取天气（与后续数据库查询并行，使用本地缓存）
+        weather_task = None
+        weather_insert_pos = len(parts)  # 天气数据将插入到此位置（紧接位置信息之后）
         if user_city:
-            try:
-                # 使用综合上下文API，同时获取天气、空气质量和生活指数
-                context = await weather_service.get_comprehensive_context(city=user_city)
-
-                # 天气信息
-                weather = context.get('weather')
-                if weather:
-                    weather_info = f"当前天气: {weather.get('text', '')}, 温度{weather.get('temp', '')}℃"
-                    if weather.get('feelsLike'):
-                        weather_info += f", 体感{weather.get('feelsLike')}℃"
-                    if weather.get('humidity'):
-                        weather_info += f", 湿度{weather.get('humidity')}%"
-                    if weather.get('windDir') and weather.get('windScale'):
-                        weather_info += f", {weather.get('windDir')}{weather.get('windScale')}级"
-                    parts.append(weather_info)
-
-                # 空气质量信息
-                air_quality = context.get('air_quality')
-                if air_quality and air_quality.get('available'):
-                    aqi = air_quality.get('aqi', 'N/A')
-                    level = air_quality.get('level', '未知')
-                    primary = air_quality.get('primary_pollutant', '无')
-                    air_info = f"空气质量: AQI {aqi} ({level})"
-                    if primary and primary != '无':
-                        air_info += f", 主要污染物: {primary}"
-                    parts.append(air_info)
-
-                # 生活指数（如果可用）
-                lifestyle = context.get('lifestyle_indices')
-                if lifestyle and lifestyle.get('available'):
-                    # 运动指数
-                    sport = lifestyle.get('1')  # 1 = 运动指数
-                    if sport:
-                        sport_info = f"运动指数: {sport.get('category', '')} - {sport.get('text', '')}"
-                        parts.append(sport_info)
-            except Exception as e:
-                logger.warning(f"获取环境信息失败: {e}")
+            weather_task = asyncio.create_task(self._get_weather_cached(user_city))
 
         if user:
             info = f"用户: {user.name or user.username}"
@@ -255,13 +248,16 @@ class ChatService:
                 g_parts.append(f"身体电量峰值:{garmin.body_battery_most_charged}")
             parts.append(", ".join(g_parts))
 
-        # 睡眠数据分析（最近3天、7天、30天）
-        # 最近3天详细数据
+        # 睡眠/运动数据分析（GarminData 一次性查询30天，Python中过滤，减少数据库往返）
         three_days_ago = today - timedelta(days=3)
-        sleep_3days = self.db.query(GarminData).filter(
+        seven_days_ago = today - timedelta(days=7)
+        thirty_days_ago = today - timedelta(days=30)
+        _garmin_30d = self.db.query(GarminData).filter(
             GarminData.user_id == user_id,
-            GarminData.record_date >= three_days_ago
-        ).order_by(GarminData.record_date.desc()).limit(3).all()
+            GarminData.record_date >= thirty_days_ago
+        ).order_by(GarminData.record_date.desc()).all()
+        # 从30天数据中在Python中过滤各时间段
+        sleep_3days = [r for r in _garmin_30d if r.record_date >= three_days_ago][:3]
 
         if sleep_3days:
             sleep_summary = ["最近3天睡眠:"]
@@ -294,11 +290,7 @@ class ChatService:
             parts.append("\n  ".join(sleep_summary))
 
         # 最近7天统计
-        seven_days_ago = today - timedelta(days=7)
-        sleep_7days = self.db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= seven_days_ago
-        ).all()
+        sleep_7days = [r for r in _garmin_30d if r.record_date >= seven_days_ago]
 
         if sleep_7days:
             scores = [r.sleep_score for r in sleep_7days if r.sleep_score is not None]
@@ -324,11 +316,7 @@ class ChatService:
             parts.append(": ".join(stats_7d))
 
         # 最近30天统计
-        thirty_days_ago = today - timedelta(days=30)
-        sleep_30days = self.db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= thirty_days_ago
-        ).all()
+        sleep_30days = _garmin_30d
 
         if sleep_30days:
             scores = [r.sleep_score for r in sleep_30days if r.sleep_score is not None]
@@ -353,12 +341,9 @@ class ChatService:
                 stats_30d.append(f"平均REM{avg_rem:.0f}min")
             parts.append(": ".join(stats_30d))
 
-        # 运动数据分析（最近7天、30天）
+        # 运动数据分析（复用上面查询的 GarminData）
         # 最近7天运动数据
-        exercise_7days = self.db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= seven_days_ago
-        ).all()
+        exercise_7days = sleep_7days  # 同一份 7 天 GarminData
 
         if exercise_7days:
             steps_list = [r.steps for r in exercise_7days if r.steps is not None]
@@ -381,10 +366,7 @@ class ChatService:
             parts.append(": ".join(exercise_stats_7d))
 
         # 最近30天运动数据
-        exercise_30days = self.db.query(GarminData).filter(
-            GarminData.user_id == user_id,
-            GarminData.record_date >= thirty_days_ago
-        ).all()
+        exercise_30days = _garmin_30d  # 同一份 30 天 GarminData
 
         if exercise_30days:
             steps_list = [r.steps for r in exercise_30days if r.steps is not None]
@@ -498,12 +480,12 @@ class ChatService:
                 exercise_summary.append(f"...还有{len(exercise_30days_detailed) - 10}次锻炼记录")
             parts.append("\n  ".join(exercise_summary))
 
-        # 饮食数据分析（最近3天、7天）
-        # 最近3天详细饮食记录
-        diet_3days = self.db.query(DietRecord).filter(
+        # 饮食数据分析（一次性查询7天，Python中过滤3天，减少数据库往返）
+        _diet_7d_all = self.db.query(DietRecord).filter(
             DietRecord.user_id == user_id,
-            DietRecord.record_date >= three_days_ago
+            DietRecord.record_date >= seven_days_ago
         ).order_by(DietRecord.record_date.desc(), DietRecord.meal_time.desc()).all()
+        diet_3days = [r for r in _diet_7d_all if r.record_date >= three_days_ago]
 
         if diet_3days:
             diet_summary = ["最近3天饮食:"]
@@ -545,11 +527,8 @@ class ChatService:
                 diet_summary.append(" ".join(day_info))
             parts.append("\n  ".join(diet_summary))
 
-        # 最近7天饮食统计
-        diet_7days = self.db.query(DietRecord).filter(
-            DietRecord.user_id == user_id,
-            DietRecord.record_date >= seven_days_ago
-        ).all()
+        # 最近7天饮食统计（复用上面查询的数据）
+        diet_7days = _diet_7d_all
 
         if diet_7days:
             # 按日期分组统计
@@ -589,11 +568,12 @@ class ChatService:
                     diet_stats_7d.append(f"平均脂肪{avg_fat:.0f}g/天")
                 parts.append(": ".join(diet_stats_7d))
 
-        # 饮水数据（从专用饮水记录表获取）
-        water_today = self.db.query(WaterIntake).filter(
+        # 饮水数据（一次性查询7天，Python中过滤今日）
+        _water_7d_all = self.db.query(WaterIntake).filter(
             WaterIntake.user_id == user_id,
-            WaterIntake.record_date == today,
+            WaterIntake.record_date >= seven_days_ago,
         ).all()
+        water_today = [w for w in _water_7d_all if w.record_date == today]
         if water_today:
             total_ml = sum(w.amount_ml or 0 for w in water_today)
             drink_types = {}
@@ -607,11 +587,8 @@ class ChatService:
         else:
             parts.append("今日饮水: 暂无记录")
 
-        # 最近7天饮水统计
-        water_7days = self.db.query(WaterIntake).filter(
-            WaterIntake.user_id == user_id,
-            WaterIntake.record_date >= seven_days_ago,
-        ).all()
+        # 最近7天饮水统计（复用上面查询的数据）
+        water_7days = _water_7d_all
         if water_7days:
             from collections import defaultdict
             daily_water = defaultdict(int)
@@ -627,26 +604,21 @@ class ChatService:
                 f"平均{avg_daily:.0f}ml/天, {days_met}天达标(≥{target}ml)"
             )
 
-        # 打卡数据分析（最近7天、30天）
-        # 今日打卡记录
-        checkins = self.db.query(CheckinRecord, CheckinTemplate).join(
+        # 打卡数据分析（一次性查询30天，Python中过滤今日/7天，减少数据库往返）
+        _checkins_30d = self.db.query(CheckinRecord, CheckinTemplate).join(
             CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
         ).filter(
             CheckinRecord.user_id == user_id,
-            CheckinRecord.checkin_date == today
+            CheckinRecord.checkin_date >= thirty_days_ago
         ).all()
+        checkins = [(r, t) for r, t in _checkins_30d if r.checkin_date == today]
         if checkins:
             checkin_items = [f"{t.name}({r.value}{t.unit})" for r, t in checkins]
             if checkin_items:
                 parts.append(f"今日打卡: {', '.join(checkin_items)}")
 
-        # 最近7天打卡统计
-        checkins_7days = self.db.query(CheckinRecord, CheckinTemplate).join(
-            CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
-        ).filter(
-            CheckinRecord.user_id == user_id,
-            CheckinRecord.checkin_date >= seven_days_ago
-        ).all()
+        # 最近7天打卡统计（复用上面查询的数据）
+        checkins_7days = [(r, t) for r, t in _checkins_30d if r.checkin_date >= seven_days_ago]
 
         if checkins_7days:
             # 按模板分组统计
@@ -668,13 +640,8 @@ class ChatService:
                     checkin_stats_7d.append(f"{stats['name']}:完成{stats['count']}天,平均{avg_val:.1f}{stats['unit']}")
                 parts.append("; ".join(checkin_stats_7d))
 
-        # 最近30天打卡统计
-        checkins_30days = self.db.query(CheckinRecord, CheckinTemplate).join(
-            CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
-        ).filter(
-            CheckinRecord.user_id == user_id,
-            CheckinRecord.checkin_date >= thirty_days_ago
-        ).all()
+        # 最近30天打卡统计（复用上面查询的数据）
+        checkins_30days = _checkins_30d
 
         if checkins_30days:
             # 按模板分组统计
@@ -875,6 +842,41 @@ class ChatService:
                 parts.append("\n".join(plan_lines))
         except Exception as e:
             logger.warning(f"获取智能计划数据失败: {e}")
+
+        # 等待天气数据（此时数据库查询已全部完成，网络IO大概率已就绪）
+        if weather_task:
+            try:
+                context = await weather_task
+                weather_parts = []
+                weather = context.get('weather')
+                if weather:
+                    weather_info = f"当前天气: {weather.get('text', '')}, 温度{weather.get('temp', '')}℃"
+                    if weather.get('feelsLike'):
+                        weather_info += f", 体感{weather.get('feelsLike')}℃"
+                    if weather.get('humidity'):
+                        weather_info += f", 湿度{weather.get('humidity')}%"
+                    if weather.get('windDir') and weather.get('windScale'):
+                        weather_info += f", {weather.get('windDir')}{weather.get('windScale')}级"
+                    weather_parts.append(weather_info)
+                air_quality = context.get('air_quality')
+                if air_quality and air_quality.get('available'):
+                    aqi = air_quality.get('aqi', 'N/A')
+                    level = air_quality.get('level', '未知')
+                    primary = air_quality.get('primary_pollutant', '无')
+                    air_info = f"空气质量: AQI {aqi} ({level})"
+                    if primary and primary != '无':
+                        air_info += f", 主要污染物: {primary}"
+                    weather_parts.append(air_info)
+                lifestyle = context.get('lifestyle_indices')
+                if lifestyle and lifestyle.get('available'):
+                    sport = lifestyle.get('1')  # 1 = 运动指数
+                    if sport:
+                        weather_parts.append(f"运动指数: {sport.get('category', '')} - {sport.get('text', '')}")
+                # 将天气数据插入到位置信息之后
+                for i, wp in enumerate(weather_parts):
+                    parts.insert(weather_insert_pos + i, wp)
+            except Exception as e:
+                logger.warning(f"获取环境信息失败: {type(e).__name__}: {e}")
 
         if not parts:
             return ""
