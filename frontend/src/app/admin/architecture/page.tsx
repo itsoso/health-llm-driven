@@ -39,7 +39,7 @@ export default function ArchitecturePage() {
 
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 p-6 md:p-10">
           <h1 className="text-3xl font-bold text-white mb-2">系统技术架构文档</h1>
-          <p className="text-purple-300 text-sm mb-10">最后更新: 2026-02-23</p>
+          <p className="text-purple-300 text-sm mb-10">最后更新: 2026-03-01</p>
 
           <div className="prose prose-invert prose-purple max-w-none space-y-10 text-[15px] leading-relaxed">
 
@@ -124,8 +124,8 @@ export default function ArchitecturePage() {
                 ▼                       ▼
 ┌──────────────────────┐  ┌───────────────────────────────┐
 │  Next.js 前端 (:30001)│  │  FastAPI 后端 (:8000)         │
-│  54 个页面路由        │  │  42 个 API 路由模块            │
-│  32 个 API 服务对象   │  │  ┌──────────┐ ┌──────────┐   │
+│  78 个页面路由        │  │  68 个 API 路由模块            │
+│  35 个 API 服务对象   │  │  ┌──────────┐ ┌──────────┐   │
 └──────────────────────┘  │  │ Auth API │ │Health API│   │
                           │  │(JWT认证) │ │(CRUD接口)│   │
                           │  └──────────┘ └──────────┘   │
@@ -229,7 +229,7 @@ export default function ArchitecturePage() {
             <Section title="5. 健康顾问 (ChatService) 核心架构">
               <p>
                 健康顾问是系统的核心模块，位于 <code className="mx-1 px-1.5 py-0.5 bg-white/10 rounded text-cyan-300 text-sm">
-                backend/app/services/chat_service.py</code>（约 1500 行），
+                backend/app/services/chat_service.py</code>（约 1943 行），
                 负责用户对话处理、健康上下文构建、AI 调用和 Action 执行。
               </p>
 
@@ -343,8 +343,8 @@ export default function ArchitecturePage() {
             </Section>
 
             {/* 6. 数据模型 */}
-            <Section title="6. 数据模型 (60 张表)">
-              <p>系统使用 PostgreSQL 存储 60 个数据模型，按业务域分组如下：</p>
+            <Section title="6. 数据模型 (47 个模型 / 65+ 张表)">
+              <p>系统使用 PostgreSQL 存储 47 个 SQLAlchemy 模型（含多张关联表），按业务域分组如下：</p>
               <div className="grid md:grid-cols-2 gap-4 mt-4">
                 {[
                   { title: '用户与认证', models: 'User, UserProfile, HealthGoal, InvitationCode, UserApplication, DeviceCredential' },
@@ -355,7 +355,7 @@ export default function ArchitecturePage() {
                   { title: '专项追踪', models: 'VisionRecord, DailyEyeHabit, MenstrualCycle, CycleSymptom, Medication, MedicationLog' },
                   { title: '生活记录', models: 'SleepRecord, ActivityStatus, IllnessEpisode, IllnessUpdate, ExcretionRecord, OutdoorActivity, Trip, TripItem' },
                   { title: 'AI 与通知', models: 'ChatConversation, ChatMessage, DailyRecommendation, HealthAnalysisCache, AIInsight, RealtimeRecommendation' },
-                  { title: '社交与积分', models: 'Friendship, PKChallenge, ChallengeParticipant' },
+                  { title: '社交与通讯', models: 'Friendship, PKChallenge, ChallengeParticipant, DirectMessage, GroupChat, GroupMember, GroupMessage, VocabularyWord' },
                   { title: '复盘与报告', models: 'DailyReview, PeriodReview, HealthReport, NewsArticle' },
                 ].map((group, i) => (
                   <div key={i} className="bg-white/5 rounded-lg p-3">
@@ -367,8 +367,8 @@ export default function ArchitecturePage() {
             </Section>
 
             {/* 7. API 路由 */}
-            <Section title="7. API 路由体系 (42 模块)">
-              <p>后端通过 42 个路由模块提供 REST API，按功能分类：</p>
+            <Section title="7. API 路由体系 (68 模块)">
+              <p>后端通过 68 个路由模块提供 REST API，按功能分类：</p>
               <div className="overflow-x-auto mt-4">
                 <table className="w-full text-sm">
                   <thead>
@@ -387,7 +387,7 @@ export default function ArchitecturePage() {
                       ['打卡与目标', '/checkin, /goals, /daily-points'],
                       ['医疗与疾病', '/medical-exams, /diseases, /disease-tracking, /illness'],
                       ['专项追踪', '/mood, /medication, /womens-health, /vision, /sleep, /excretion, /rhinitis'],
-                      ['社交功能', '/friendship, /pk-challenge'],
+                      ['社交与通讯', '/friendship, /pk-challenge, /direct-message, /group-chat'],
                       ['系统管理', '/admin, /monitoring, /performance, /news, /devices, /upload'],
                       ['外部集成', '/siri, /data-collection, /external (用户 API Key)'],
                     ].map(([category, routes], i) => (
@@ -448,13 +448,13 @@ export default function ArchitecturePage() {
 
             {/* 10. 前端架构 */}
             <Section title="10. 前端架构">
-              <p>前端基于 Next.js 14 构建，54 个页面路由覆盖全部业务功能。</p>
+              <p>前端基于 Next.js 14 构建，78 个页面路由覆盖全部业务功能，前端代码约 44,951 行 TypeScript/TSX。</p>
 
               <Card title="核心架构模式">
                 <ul className="space-y-2 text-sm text-purple-200">
                   <li><Hl>路由:</Hl> App Router (Next.js 14) — 基于文件系统的路由</li>
                   <li><Hl>状态管理:</Hl> TanStack React Query 管理服务端状态，AuthContext 管理认证</li>
-                  <li><Hl>API 层:</Hl> 32 个 API 服务对象，通过 Axios 与后端通信</li>
+                  <li><Hl>API 层:</Hl> 35 个 API 服务对象，通过 Axios 与后端通信</li>
                   <li><Hl>样式:</Hl> Tailwind CSS + 深色主题 (bg-gradient-to-br from-slate-900)</li>
                   <li><Hl>图表:</Hl> Recharts (柱状图、折线图、饼图)</li>
                   <li><Hl>图标:</Hl> lucide-react + @heroicons/react</li>
@@ -471,14 +471,14 @@ export default function ArchitecturePage() {
                 </ul>
               </Card>
 
-              <h4 className="text-lg font-semibold text-white mt-6 mb-3">页面分类 (54 个路由)</h4>
+              <h4 className="text-lg font-semibold text-white mt-6 mb-3">页面分类 (78 个路由)</h4>
               <div className="grid md:grid-cols-3 gap-3">
                 {[
                   { title: '核心页面', pages: '首页, 健康概览, 今日建议, 健康顾问, 积分' },
                   { title: '健康追踪', pages: '仪表盘, 运动, 心率, 体重, 血压, 身体成分, 健康评分' },
                   { title: '每日记录', pages: '饮食, 饮水, 睡眠, 打卡, 补剂, 活动状态' },
                   { title: '专项管理', pages: '情绪, 用药, 女性健康, 鼻炎, 视力, 病症' },
-                  { title: '社交功能', pages: '好友PK, 资讯' },
+                  { title: '社交功能', pages: '好友列表, PK挑战, 群聊, 私信, 资讯' },
                   { title: '系统管理', pages: '设置, 管理后台, 知识库, 性能监控' },
                 ].map((group, i) => (
                   <div key={i} className="bg-white/5 rounded-lg p-3">
@@ -549,14 +549,18 @@ export default function ArchitecturePage() {
             <Section title="13. 系统规模统计">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { num: '60', label: '数据库表' },
-                  { num: '42', label: 'API 路由模块' },
-                  { num: '54', label: '前端页面' },
-                  { num: '32', label: 'API 服务对象' },
+                  { num: '~11万', label: '总代码行数' },
+                  { num: '64,293', label: '后端 Python 行' },
+                  { num: '44,951', label: '前端 TS/TSX 行' },
+                  { num: '68', label: 'API 路由模块' },
+                  { num: '47', label: '数据模型文件' },
+                  { num: '65', label: '后端服务文件' },
+                  { num: '78', label: '前端页面路由' },
+                  { num: '1,943', label: 'ChatService 行数' },
                   { num: '10', label: 'AI Action 类型' },
                   { num: '12+', label: '健康数据源' },
-                  { num: '45+', label: '后端依赖包' },
-                  { num: '1500+', label: 'ChatService 行数' },
+                  { num: '35', label: 'API 服务对象' },
+                  { num: '14', label: '数据库迁移文件' },
                 ].map((stat, i) => (
                   <div key={i} className="bg-white/5 rounded-xl p-4 text-center">
                     <div className="text-2xl font-bold text-cyan-400">{stat.num}</div>
