@@ -39,6 +39,25 @@ function getLocalDateStr(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+// localStorage 缓存 key
+function getCacheKey(userId: number | string, dateStr: string) {
+  return `kids_plan_cache_${userId}_${dateStr}`;
+}
+
+// 骨架屏占位
+function SkeletonItem({ theme }: { theme: { cardBorder: string } }) {
+  return (
+    <div className={`flex items-center gap-4 p-4 rounded-2xl border-2 bg-white shadow-sm ${theme.cardBorder} animate-pulse`}>
+      <div className="w-10 h-10 rounded-full bg-gray-100 flex-shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 bg-gray-100 rounded-full w-3/4" />
+        <div className="h-3 bg-gray-100 rounded-full w-1/3" />
+      </div>
+      <div className="w-8 h-8 rounded-full bg-gray-100 flex-shrink-0" />
+    </div>
+  );
+}
+
 export default function KidsPlanPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -61,23 +80,47 @@ export default function KidsPlanPage() {
 
   // debounce save timer
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestItemsRef = useRef<PlanItem[]>(items);
-  latestItemsRef.current = items;
 
-  // Load plan from server
+  // 1. 立即从 localStorage 缓存恢复，避免白屏等待
+  useEffect(() => {
+    if (!user) return;
+    const cacheKey = getCacheKey(user.id, today);
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as PlanItem[];
+        if (parsed.length > 0) {
+          setItems(parsed);
+          setLoading(false); // 有缓存就立即显示
+        }
+      } catch { /* ignore */ }
+    }
+  }, [user, today]);
+
+  // 2. 并行加载：getPlan + getHistory 同时发出，减少等待时间
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
 
-    const loadPlan = async () => {
-      setLoading(true);
+    const loadAll = async () => {
       try {
-        const res = await kidsPlanApi.getPlan(today);
-        if (cancelled) return;
-        const serverItems = res.data.items || [];
+        // 两个请求并行发出
+        const [planRes, historyRes] = await Promise.all([
+          kidsPlanApi.getPlan(today),
+          kidsPlanApi.getHistory('week').catch(() => null), // history 失败不影响主流程
+        ]);
 
+        if (cancelled) return;
+
+        // 更新周历史
+        if (historyRes) {
+          setWeekHistory(historyRes.data.days || []);
+        }
+
+        const serverItems = planRes.data.items || [];
+
+        // localStorage 迁移（旧版数据）
         if (serverItems.length === 0) {
-          // localStorage migration: if server has no data but localStorage does
           const legacyKey = `kids_plan_${userId}_${today}`;
           const legacyData = localStorage.getItem(legacyKey);
           if (legacyData) {
@@ -85,17 +128,22 @@ export default function KidsPlanPage() {
               const parsed = JSON.parse(legacyData) as PlanItem[];
               if (parsed.length > 0) {
                 setItems(parsed);
-                // Migrate to server
+                setLoading(false);
                 await kidsPlanApi.savePlan(today, parsed);
                 localStorage.removeItem(legacyKey);
-                setLoading(false);
+                // 写入新缓存
+                localStorage.setItem(getCacheKey(user.id, today), JSON.stringify(parsed));
                 return;
               }
-            } catch { /* ignore parse error */ }
+            } catch { /* ignore */ }
           }
         }
 
         setItems(serverItems);
+        // 写入缓存供下次快速加载
+        if (serverItems.length > 0) {
+          localStorage.setItem(getCacheKey(user.id, today), JSON.stringify(serverItems));
+        }
       } catch (err) {
         console.error('Failed to load plan:', err);
       } finally {
@@ -103,17 +151,9 @@ export default function KidsPlanPage() {
       }
     };
 
-    loadPlan();
+    loadAll();
     return () => { cancelled = true; };
   }, [today, user, userId]);
-
-  // Load week history
-  useEffect(() => {
-    if (!user) return;
-    kidsPlanApi.getHistory('week').then(res => {
-      setWeekHistory(res.data.days || []);
-    }).catch(() => {});
-  }, [user]);
 
   // Debounced save to server
   const debouncedSave = useCallback((newItems: PlanItem[]) => {
@@ -122,6 +162,8 @@ export default function KidsPlanPage() {
       try {
         const res = await kidsPlanApi.savePlan(today, newItems);
         const { points_awarded } = res.data;
+        // 同步更新缓存
+        localStorage.setItem(getCacheKey(userId, today), JSON.stringify(newItems));
         if (points_awarded > 0) {
           addPoints(points_awarded);
           setPointsToast(points_awarded);
@@ -131,7 +173,7 @@ export default function KidsPlanPage() {
         console.error('Failed to save plan:', err);
       }
     }, 500);
-  }, [today, addPoints]);
+  }, [today, userId, addPoints]);
 
   const saveItems = useCallback((newItems: PlanItem[]) => {
     setItems(newItems);
@@ -207,17 +249,6 @@ export default function KidsPlanPage() {
     month: 'long', day: 'numeric', weekday: 'long',
   });
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="text-5xl mb-3 animate-bounce">📋</div>
-          <p className="text-gray-400 text-lg">加载中...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-full">
       {/* 顶栏 */}
@@ -239,7 +270,7 @@ export default function KidsPlanPage() {
             </button>
             <div className="text-right">
               <div className={`text-3xl font-bold ${doneCount === total && total > 0 ? 'text-green-500' : theme.accent}`}>
-                {doneCount}/{total}
+                {total > 0 ? `${doneCount}/${total}` : (loading ? '…' : '0/0')}
               </div>
               <div className="flex items-center justify-end gap-1 mt-0.5">
                 <span className="text-amber-400 text-sm font-bold">⭐{points}</span>
@@ -262,7 +293,7 @@ export default function KidsPlanPage() {
         )}
       </div>
 
-      {/* 最近7天完成情况 */}
+      {/* 最近7天完成情况（懒渲染，不阻塞主内容） */}
       {weekHistory.length > 0 && (
         <button
           onClick={() => router.push('/kids/plan/history')}
@@ -305,63 +336,72 @@ export default function KidsPlanPage() {
       {/* 计划列表 */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         <div className="max-w-2xl mx-auto space-y-3">
-          {items.length === 0 ? (
+          {/* 加载中：骨架屏（不阻塞整个页面） */}
+          {loading && items.length === 0 && (
+            <>
+              <SkeletonItem theme={theme} />
+              <SkeletonItem theme={theme} />
+              <SkeletonItem theme={theme} />
+            </>
+          )}
+
+          {!loading && items.length === 0 && (
             <div className="text-center py-16">
               <div className="text-7xl mb-4">📋</div>
               <p className="text-xl text-gray-400 font-medium">今天还没有计划哦~</p>
               <p className="text-base text-gray-400 mt-1">点下面的按钮来添加吧！</p>
             </div>
-          ) : (
-            items.map(item => (
-              <div
-                key={item.id}
-                className={`flex items-center gap-4 p-4 rounded-2xl border-2 bg-white shadow-sm transition-all ${
-                  item.done ? 'border-green-200 bg-green-50' : `${theme.cardBorder}`
+          )}
+
+          {items.map(item => (
+            <div
+              key={item.id}
+              className={`flex items-center gap-4 p-4 rounded-2xl border-2 bg-white shadow-sm transition-all ${
+                item.done ? 'border-green-200 bg-green-50' : `${theme.cardBorder}`
+              }`}
+            >
+              {/* 完成按钮 */}
+              <button
+                onClick={() => toggleDone(item.id)}
+                className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-90 ${
+                  item.done
+                    ? 'bg-green-400 text-white shadow-md'
+                    : `border-2 border-gray-300 ${theme.cardHoverBorder}`
                 }`}
               >
-                {/* 完成按钮 */}
-                <button
-                  onClick={() => toggleDone(item.id)}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all active:scale-90 ${
-                    item.done
-                      ? 'bg-green-400 text-white shadow-md'
-                      : `border-2 border-gray-300 ${theme.cardHoverBorder}`
-                  }`}
-                >
-                  {item.done && <span className="text-xl font-bold">✓</span>}
-                </button>
+                {item.done && <span className="text-xl font-bold">✓</span>}
+              </button>
 
-                {/* 表情 + 文字 + 时间（点击编辑） */}
-                <button
-                  onClick={() => !item.done && openEdit(item)}
-                  disabled={item.done}
-                  className="flex-1 flex items-start gap-3 text-left min-w-0"
-                >
-                  <span className="text-3xl flex-shrink-0">{item.emoji}</span>
-                  <div className="flex flex-col min-w-0">
-                    <span className={`text-lg font-medium leading-snug ${
-                      item.done ? 'line-through text-gray-400' : 'text-gray-700'
-                    }`}>
-                      {item.text}
+              {/* 表情 + 文字 + 时间（点击编辑） */}
+              <button
+                onClick={() => !item.done && openEdit(item)}
+                disabled={item.done}
+                className="flex-1 flex items-start gap-3 text-left min-w-0"
+              >
+                <span className="text-3xl flex-shrink-0">{item.emoji}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className={`text-lg font-medium leading-snug ${
+                    item.done ? 'line-through text-gray-400' : 'text-gray-700'
+                  }`}>
+                    {item.text}
+                  </span>
+                  {(item.startTime || item.endTime) && (
+                    <span className="text-xs text-gray-400 mt-0.5">
+                      ⏰ {item.startTime}{item.endTime ? ` → ${item.endTime}` : ''}
                     </span>
-                    {(item.startTime || item.endTime) && (
-                      <span className="text-xs text-gray-400 mt-0.5">
-                        ⏰ {item.startTime}{item.endTime ? ` → ${item.endTime}` : ''}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                  )}
+                </div>
+              </button>
 
-                {/* 删除按钮 */}
-                <button
-                  onClick={() => deleteItem(item.id)}
-                  className="w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-300 hover:text-red-400 transition-all flex-shrink-0 text-xl leading-none"
-                >
-                  ×
-                </button>
-              </div>
-            ))
-          )}
+              {/* 删除按钮 */}
+              <button
+                onClick={() => deleteItem(item.id)}
+                className="w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-300 hover:text-red-400 transition-all flex-shrink-0 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+          ))}
 
           {/* 全部完成庆祝 */}
           {total > 0 && doneCount === total && (
