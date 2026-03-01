@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import {
-  friendsApi, pkChallengeApi, dmApi,
+  friendsApi, pkChallengeApi, dmApi, groupApi,
   FriendInfo, FriendRequestData, UserSearchResultData,
-  PKChallengeData, PKStatsData,
+  PKChallengeData, PKStatsData, GroupListItem,
 } from '@/services/api';
 
-type Tab = 'friends' | 'requests' | 'challenges';
+type Tab = 'friends' | 'requests' | 'challenges' | 'groups';
 
 export default function FriendsPage() {
   const pathname = usePathname();
@@ -21,7 +21,14 @@ export default function FriendsPage() {
   const [pendingRequests, setPendingRequests] = useState<FriendRequestData[]>([]);
   const [challenges, setChallenges] = useState<PKChallengeData[]>([]);
   const [pkStats, setPkStats] = useState<PKStatsData | null>(null);
+  const [groups, setGroups] = useState<GroupListItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 创建群聊状态
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   const [unreadMap, setUnreadMap] = useState<Record<number, number>>({});
 
@@ -72,7 +79,33 @@ export default function FriendsPage() {
 
   useEffect(() => {
     if (tab === 'challenges') loadChallenges();
+    if (tab === 'groups') loadGroups();
   }, [tab, loadChallenges]);
+
+  const loadGroups = async () => {
+    try {
+      const res = await groupApi.list();
+      setGroups(res.data);
+    } catch (err) {
+      console.error('加载群聊失败', err);
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim() || selectedMembers.length === 0) return;
+    setCreatingGroup(true);
+    try {
+      await groupApi.create(newGroupName.trim(), selectedMembers);
+      setShowCreateGroup(false);
+      setNewGroupName('');
+      setSelectedMembers([]);
+      loadGroups();
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || '创建失败');
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -171,16 +204,17 @@ export default function FriendsPage() {
         <h1 className="text-xl font-bold mb-4">好友 & PK</h1>
 
         {/* Tab 切换 */}
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
           {([
             { key: 'friends' as Tab, label: '好友列表' },
-            { key: 'requests' as Tab, label: `好友请求${pendingRequests.length > 0 ? ` (${pendingRequests.length})` : ''}` },
+            { key: 'requests' as Tab, label: `请求${pendingRequests.length > 0 ? `(${pendingRequests.length})` : ''}` },
+            { key: 'groups' as Tab, label: '群聊' },
             { key: 'challenges' as Tab, label: 'PK挑战' },
           ]).map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-4 py-2 rounded-full text-sm ${
+              className={`px-4 py-2 rounded-full text-sm whitespace-nowrap flex-shrink-0 ${
                 tab === t.key ? 'bg-cyan-600 text-white' : 'bg-white/10 text-white/60'
               }`}
             >
@@ -299,6 +333,93 @@ export default function FriendsPage() {
                   <div className="text-center text-white/40 py-8">
                     还没有好友，搜索添加吧
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* 群聊 Tab */}
+            {tab === 'groups' && (
+              <div>
+                {/* 创建群聊按钮 */}
+                <button
+                  onClick={() => setShowCreateGroup(!showCreateGroup)}
+                  className="w-full bg-white/5 border border-dashed border-white/20 rounded-xl p-3 text-white/40 text-sm mb-4"
+                >
+                  + 创建新群聊
+                </button>
+
+                {/* 创建群聊表单 */}
+                {showCreateGroup && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-4 space-y-3">
+                    <input
+                      type="text"
+                      value={newGroupName}
+                      onChange={e => setNewGroupName(e.target.value)}
+                      placeholder="群聊名称"
+                      maxLength={50}
+                      className="w-full bg-white/10 rounded-lg px-3 py-2 text-sm outline-none text-white placeholder-white/30"
+                    />
+                    <div>
+                      <p className="text-xs text-white/40 mb-2">选择好友加入群聊（至少1位）</p>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {friends.map(f => (
+                          <label key={f.user_id} className="flex items-center gap-3 cursor-pointer bg-white/5 rounded-lg px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedMembers.includes(f.user_id)}
+                              onChange={e => {
+                                setSelectedMembers(prev =>
+                                  e.target.checked ? [...prev, f.user_id] : prev.filter(id => id !== f.user_id)
+                                );
+                              }}
+                              className="w-4 h-4 accent-cyan-500"
+                            />
+                            <div className="w-7 h-7 rounded-full bg-purple-500 flex items-center justify-center text-xs font-bold">
+                              {f.name.charAt(0)}
+                            </div>
+                            <span className="text-sm">{f.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleCreateGroup}
+                      disabled={!newGroupName.trim() || selectedMembers.length === 0 || creatingGroup}
+                      className="w-full py-2 bg-cyan-600 disabled:opacity-40 rounded-lg text-sm font-medium"
+                    >
+                      {creatingGroup ? '创建中...' : `创建群聊（${selectedMembers.length + 1}人）`}
+                    </button>
+                  </div>
+                )}
+
+                {/* 群聊列表 */}
+                {groups.length > 0 ? (
+                  <div className="space-y-2">
+                    {groups.map(g => (
+                      <button
+                        key={g.id}
+                        onClick={() => router.push(`/friends/group/${g.id}`)}
+                        className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left hover:bg-white/10 transition-colors"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg font-bold flex-shrink-0">
+                          {g.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-white truncate">{g.name}</div>
+                          <div className="text-xs text-white/40 truncate">
+                            {g.last_message || '暂无消息'} · {g.member_count}人
+                          </div>
+                        </div>
+                        {g.last_message_at && (
+                          <div className="text-[10px] text-white/30 flex-shrink-0">
+                            {new Date(g.last_message_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-white/40 py-8">还没有群聊，快去创建一个吧</div>
                 )}
               </div>
             )}

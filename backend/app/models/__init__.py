@@ -74,6 +74,8 @@ from app.models.kids_plan import KidsDailyPlan
 from app.models.direct_message import DirectMessage
 # 健康事件流模型
 from app.models.health_event import HealthEvent, EventSource, EventStatus
+# 群聊模型
+from app.models.group_chat import GroupChat, GroupMember, GroupMessage
 
 __all__ = [
     "User",
@@ -175,5 +177,9 @@ __all__ = [
     "HealthEvent",
     "EventSource",
     "EventStatus",
+    # 群聊
+    "GroupChat",
+    "GroupMember",
+    "GroupMessage",
 ]
 

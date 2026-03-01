@@ -65,6 +65,7 @@ from app.api import (
     vocabulary,  # 单词本
     kids_plan,  # Kids每日计划
     direct_message,  # 私信聊天
+    group_chat,  # 群聊
     security_life,  # 资产防御与布局
     smart_plan,  # AI 智能计划
     health_event,  # 健康事件流
@@ -142,6 +143,7 @@ api_router.include_router(daily_points.router)  # 每日健康积分
 api_router.include_router(vocabulary.router)  # 单词本
 api_router.include_router(kids_plan.router)  # Kids每日计划
 api_router.include_router(direct_message.router)  # 私信聊天
+api_router.include_router(group_chat.router)  # 群聊
 
 # 资产防御与布局
 api_router.include_router(security_life.router, prefix="/security-life", tags=["security-life"])

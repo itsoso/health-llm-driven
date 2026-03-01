@@ -1426,3 +1426,72 @@ export const smartPlanApi = {
     api.patch(`/smart-plan/goals/${goalId}/metrics/${metricId}`, { current_value: currentValue }),
   deleteGoal: (goalId: number) => api.delete(`/smart-plan/goals/${goalId}`),
 };
+
+// ===== 群聊 =====
+
+export interface GroupMemberInfo {
+  user_id: number;
+  name: string;
+  avatar_url: string | null;
+  role: string;
+  joined_at: string;
+}
+
+export interface GroupMsgData {
+  id: number;
+  group_id: number;
+  sender_id: number;
+  sender_name: string;
+  sender_avatar: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface GroupListItem {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  member_count: number;
+  last_message: string | null;
+  last_message_at: string | null;
+  created_at: string;
+}
+
+export interface GroupDetail {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  creator_id: number;
+  members: GroupMemberInfo[];
+  created_at: string;
+}
+
+export interface GroupMsgHistory {
+  messages: GroupMsgData[];
+  has_more: boolean;
+}
+
+export const groupApi = {
+  create: (name: string, memberIds: number[]) =>
+    api.post<GroupDetail>('/groups', { name, member_ids: memberIds }),
+  list: () =>
+    api.get<GroupListItem[]>('/groups'),
+  getDetail: (groupId: number) =>
+    api.get<GroupDetail>(`/groups/${groupId}`),
+  update: (groupId: number, name: string) =>
+    api.put<GroupDetail>(`/groups/${groupId}`, { name }),
+  dissolve: (groupId: number) =>
+    api.delete(`/groups/${groupId}`),
+  sendMessage: (groupId: number, content: string) =>
+    api.post<GroupMsgData>(`/groups/${groupId}/messages`, { content }),
+  getMessages: (groupId: number, beforeId?: number, limit?: number) =>
+    api.get<GroupMsgHistory>(`/groups/${groupId}/messages`, {
+      params: { before_id: beforeId || 0, limit: limit || 50 },
+    }),
+  addMember: (groupId: number, userId: number) =>
+    api.post(`/groups/${groupId}/members`, { user_id: userId }),
+  removeMember: (groupId: number, userId: number) =>
+    api.delete(`/groups/${groupId}/members/${userId}`),
+  leave: (groupId: number) =>
+    api.post(`/groups/${groupId}/leave`),
+};
