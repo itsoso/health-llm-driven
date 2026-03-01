@@ -47,9 +47,28 @@ def _calc_participant_score(
     if challenge.challenge_type == "checkin" and challenge.checkin_template_id:
         start_date = start.date() if hasattr(start, 'date') else start
         end_date = end.date() if hasattr(end, 'date') else end
+
+        # 每个用户有自己的同名模板副本，按模板名称匹配而非固定 template_id
+        # 先取挑战模板的名称，再找该用户同名模板（包含全局模板 user_id=None）
+        challenge_template = db.query(CheckinTemplate).filter(
+            CheckinTemplate.id == challenge.checkin_template_id
+        ).first()
+        if challenge_template:
+            user_templates = db.query(CheckinTemplate).filter(
+                CheckinTemplate.name == challenge_template.name,
+                or_(
+                    CheckinTemplate.user_id == user_id,
+                    CheckinTemplate.user_id == None,
+                    CheckinTemplate.id == challenge.checkin_template_id,
+                )
+            ).all()
+            template_ids = [t.id for t in user_templates] if user_templates else [challenge.checkin_template_id]
+        else:
+            template_ids = [challenge.checkin_template_id]
+
         records = db.query(CheckinRecord).filter(
             CheckinRecord.user_id == user_id,
-            CheckinRecord.template_id == challenge.checkin_template_id,
+            CheckinRecord.template_id.in_(template_ids),
             CheckinRecord.checkin_date >= start_date,
             CheckinRecord.checkin_date <= end_date,
         ).all()
