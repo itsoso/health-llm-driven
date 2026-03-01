@@ -1564,7 +1564,7 @@ class ChatService:
         try:
             reply_content = await self._call_openclaw(messages)
         except Exception as e:
-            logger.error(f"OpenClaw 调用失败: {e}")
+            logger.error(f"OpenClaw 调用失败: {type(e).__name__}: {e}")
             reply_content = "抱歉，健康顾问暂时无法响应，请稍后再试。"
 
         # 解析活动标记
@@ -1628,7 +1628,7 @@ class ChatService:
             "messages": messages,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=240.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
