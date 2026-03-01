@@ -97,7 +97,25 @@ class ChatService:
     async def _build_health_context(self, user_id: int) -> str:
         """构建用户健康上下文，注入为 system prompt"""
         parts = []
-        today = date.today()
+        now = datetime.now()
+        today = now.date()
+        hour = now.hour
+        # 时段描述（帮助 AI 给出时间敏感建议，如睡前不宜高强度运动）
+        if 5 <= hour < 9:
+            time_period = "清晨"
+        elif 9 <= hour < 12:
+            time_period = "上午"
+        elif 12 <= hour < 14:
+            time_period = "午间"
+        elif 14 <= hour < 18:
+            time_period = "下午"
+        elif 18 <= hour < 21:
+            time_period = "傍晚"
+        elif 21 <= hour < 23:
+            time_period = "晚上（接近睡眠时间）"
+        else:
+            time_period = "深夜（应准备入睡）"
+        parts.append(f"当前时间: {now.strftime('%H:%M')}（{time_period}）")
 
         # 用户基本信息
         user = self.db.query(User).filter(User.id == user_id).first()
