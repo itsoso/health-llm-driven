@@ -210,7 +210,7 @@ export default function Navigation() {
             </Link>
           </div>
 
-          {/* 桌面导航菜单 */}
+          {/* 桌面导航菜单（lg+，仅导航项，用户菜单由下方独立区块处理） */}
           <div className="hidden lg:flex lg:items-center lg:gap-1 flex-1 justify-end" ref={dropdownRef}>
             {/* 主要导航项 */}
             {mainNavItems.slice(1).map((item) => (
@@ -268,115 +268,9 @@ export default function Navigation() {
                 )}
               </div>
             ))}
-
-            {/* 用户菜单 - 始终可见 */}
-            <div className="relative ml-3 pl-3 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
-              {!authLoading && (
-                isAuthenticated ? (
-                  <>
-                    <button
-                      onClick={() => setShowUserMenu(!showUserMenu)}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-full text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all border border-transparent hover:border-purple-500/30"
-                    >
-                      <span className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-inner">
-                        {user?.name?.charAt(0) || '?'}
-                      </span>
-                      <span className="hidden xl:inline truncate max-w-[100px] text-base font-medium tracking-wide">{user?.name}</span>
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
-                    </button>
-                    {showUserMenu && (
-                      <div className="absolute top-full right-0 mt-2 w-56 bg-[#252033] rounded-lg shadow-xl border border-purple-900/40 py-1.5 z-50 backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-100">
-                        <div className="px-4 py-3 border-b border-purple-900/30">
-                          <p className="text-base font-semibold text-white truncate">{user?.name}</p>
-                          <p className="text-sm text-gray-400 truncate font-mono mt-0.5">{user?.email}</p>
-                        </div>
-                        <div className="py-1">
-                          <Link
-                            href="/settings"
-                            onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
-                          >
-                            <Settings className="w-4 h-4" />
-                            <span>个人设置</span>
-                          </Link>
-                          <Link
-                            href="/profile"
-                            onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
-                          >
-                            <User className="w-4 h-4" />
-                            <span>个人画像</span>
-                          </Link>
-                          <Link
-                            href="/kids"
-                            onClick={() => setShowUserMenu(false)}
-                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-pink-400 hover:bg-pink-600/10 hover:text-pink-300 transition-all"
-                          >
-                            <span className="w-4 h-4 text-center">👧</span>
-                            <span>儿童模式</span>
-                          </Link>
-                        </div>
-                        {user?.is_admin && (
-                          <div className="border-t border-purple-900/30 py-1">
-                            <Link
-                              href="/admin"
-                              onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
-                            >
-                              <Shield className="w-4 h-4" />
-                              <span>管理后台</span>
-                            </Link>
-                            <Link
-                              href="/admin/applications"
-                              onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
-                            >
-                              <Ticket className="w-4 h-4" />
-                              <span>邀请码审批</span>
-                            </Link>
-                            <Link
-                              href="/knowledge"
-                              onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
-                            >
-                              <Book className="w-4 h-4" />
-                              <span>知识库管理</span>
-                            </Link>
-                          </div>
-                        )}
-                        <div className="border-t border-purple-900/30 py-1">
-                          <button
-                            onClick={() => { logout(); setShowUserMenu(false); }}
-                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-red-400 hover:bg-red-600/10 transition-all w-full text-left"
-                          >
-                            <LogOut className="w-4 h-4" />
-                            <span>退出登录</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <Link
-                      href="/login"
-                      className="px-4 py-2 rounded-md text-lg font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
-                    >
-                      登录
-                    </Link>
-                    <Link
-                      href="/register"
-                      className="px-4 py-2 rounded-md text-lg font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap shadow-lg shadow-purple-900/20"
-                    >
-                      注册
-                    </Link>
-                  </div>
-                )
-              )}
-            </div>
           </div>
 
-          {/* 平板导航菜单 */}
+          {/* 平板导航菜单（md~lg，仅图标） */}
           <div className="hidden md:flex lg:hidden md:items-center md:space-x-1">
             {mainNavItems.slice(1).map((item) => (
               <Link
@@ -406,6 +300,112 @@ export default function Navigation() {
                 {item.icon}
               </Link>
             ))}
+          </div>
+
+          {/* 用户菜单（md+，平板和桌面共用，独立于导航区块，确保 iPad 可点击） */}
+          <div className="hidden md:flex relative ml-2 pl-2 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
+            {!authLoading && (
+              isAuthenticated ? (
+                <>
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-full text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all border border-transparent hover:border-purple-500/30"
+                  >
+                    <span className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-inner">
+                      {user?.name?.charAt(0) || '?'}
+                    </span>
+                    <span className="hidden xl:inline truncate max-w-[100px] text-base font-medium tracking-wide">{user?.name}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showUserMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-[#252033] rounded-lg shadow-xl border border-purple-900/40 py-1.5 z-50 backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-100">
+                      <div className="px-4 py-3 border-b border-purple-900/30">
+                        <p className="text-base font-semibold text-white truncate">{user?.name}</p>
+                        <p className="text-sm text-gray-400 truncate font-mono mt-0.5">{user?.email}</p>
+                      </div>
+                      <div className="py-1">
+                        <Link
+                          href="/settings"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
+                        >
+                          <Settings className="w-4 h-4" />
+                          <span>个人设置</span>
+                        </Link>
+                        <Link
+                          href="/profile"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all"
+                        >
+                          <User className="w-4 h-4" />
+                          <span>个人画像</span>
+                        </Link>
+                        <Link
+                          href="/kids"
+                          onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-pink-400 hover:bg-pink-600/10 hover:text-pink-300 transition-all"
+                        >
+                          <span className="w-4 h-4 text-center">👧</span>
+                          <span>儿童模式</span>
+                        </Link>
+                      </div>
+                      {user?.is_admin && (
+                        <div className="border-t border-purple-900/30 py-1">
+                          <Link
+                            href="/admin"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                          >
+                            <Shield className="w-4 h-4" />
+                            <span>管理后台</span>
+                          </Link>
+                          <Link
+                            href="/admin/applications"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                          >
+                            <Ticket className="w-4 h-4" />
+                            <span>邀请码审批</span>
+                          </Link>
+                          <Link
+                            href="/knowledge"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-purple-400 hover:bg-purple-600/10 hover:text-purple-300 transition-all"
+                          >
+                            <Book className="w-4 h-4" />
+                            <span>知识库管理</span>
+                          </Link>
+                        </div>
+                      )}
+                      <div className="border-t border-purple-900/30 py-1">
+                        <button
+                          onClick={() => { logout(); setShowUserMenu(false); }}
+                          className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-red-400 hover:bg-red-600/10 transition-all w-full text-left"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>退出登录</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/login"
+                    className="px-4 py-2 rounded-md text-lg font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
+                  >
+                    登录
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="px-4 py-2 rounded-md text-lg font-medium bg-purple-600 text-white hover:bg-purple-500 transition-all whitespace-nowrap shadow-lg shadow-purple-900/20"
+                  >
+                    注册
+                  </Link>
+                </div>
+              )
+            )}
           </div>
 
           {/* 移动端菜单按钮 */}
