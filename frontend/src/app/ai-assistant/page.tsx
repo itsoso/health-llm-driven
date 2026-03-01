@@ -320,14 +320,23 @@ export default function AIAssistantPage() {
       {/* 历史对话侧栏 */}
       {showHistory && (
         <div className="w-80 bg-slate-800/80 border-r border-purple-500/30 flex flex-col shadow-lg">
-          {/* 侧边栏顶部 - 新建对话按钮 */}
-          <div className="p-3 border-b border-purple-500/30 bg-slate-900/50">
+          {/* 侧边栏顶部 - 新建对话按钮 + 收起按钮 */}
+          <div className="p-3 border-b border-purple-500/30 bg-slate-900/50 flex items-center gap-2">
             <button
               onClick={handleNewChat}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 transition-all text-white font-medium shadow-lg"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 transition-all text-white font-medium shadow-lg"
             >
               <span className="text-xl">+</span>
               <span>新建对话</span>
+            </button>
+            <button
+              onClick={toggleHistory}
+              className="w-10 h-10 rounded-lg bg-slate-700/60 hover:bg-slate-600/80 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all flex-shrink-0"
+              title="收起侧边栏"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
+              </svg>
             </button>
           </div>
 
