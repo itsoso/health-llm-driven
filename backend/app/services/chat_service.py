@@ -177,7 +177,7 @@ class ChatService:
 
         if user:
             info = f"用户: {user.name or user.username}"
-            if user.gender:
+            if user.gender and user.gender not in ("未设置", ""):
                 info += f", 性别: {user.gender}"
             # 优先使用 profile 中的 birth_date（用户可编辑），其次用 users 表的
             birth_date = (profile.birth_date if profile and profile.birth_date else None) or user.birth_date
@@ -190,7 +190,12 @@ class ChatService:
                 # 计算最大心率 (220 - 年龄)，用于运动强度分析
                 max_heart_rate = 220 - age
                 info += f", 最大心率: {max_heart_rate}bpm (220-年龄)"
+            else:
+                info += ", 年龄: 未知（用户尚未填写出生日期）"
             parts.append(info)
+            # 若缺失关键 profile 信息，提示 AI 引导用户完善
+            if not birth_date or not (user.gender and user.gender not in ("未设置", "")):
+                parts.append("⚠️ 该用户尚未完善个人资料（出生日期/性别），请在回答涉及年龄的建议时告知用户前往「设置 → 个人资料」填写，不要基于默认值推断年龄。")
 
         if profile:
             if profile.height_cm:

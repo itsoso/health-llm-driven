@@ -103,7 +103,6 @@ class AuthService:
     @staticmethod
     def create_user(db: Session, username: str, email: str, password: str, name: str) -> User:
         """创建新用户"""
-        from datetime import date
         hashed_password = AuthService.get_password_hash(password)
         user = User(
             username=username,
@@ -111,9 +110,8 @@ class AuthService:
             hashed_password=hashed_password,
             name=name,
             is_active=True,
-            # 提供默认值以兼容旧数据库结构
-            birth_date=date(1990, 1, 1),
-            gender="未设置"
+            birth_date=None,
+            gender=None,
         )
         db.add(user)
         db.commit()
