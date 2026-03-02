@@ -176,10 +176,13 @@ class PostRunAnalyzeService:
             parts = []
             if profile.gender:
                 parts.append(f"{'男' if profile.gender == 'male' else '女'}")
-            if profile.age:
-                parts.append(f"{profile.age}岁")
-            if profile.weight:
-                parts.append(f"体重{profile.weight}kg")
+            if profile.birth_date:
+                from datetime import date as _date
+                age = (_date.today() - profile.birth_date).days // 365
+                if age > 0:
+                    parts.append(f"{age}岁")
+            if profile.current_weight_kg:
+                parts.append(f"体重{profile.current_weight_kg}kg")
             profile_str = "、".join(parts)
 
         # Resting HR from latest Garmin data
