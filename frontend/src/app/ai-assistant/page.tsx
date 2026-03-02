@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { chatApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { api, chatApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -84,6 +84,14 @@ export default function AIAssistantPage() {
     loadConversations();
   }, [loadConversations, router]);
 
+  // 检测是否是运动完成意图
+  const isPostWorkoutMessage = (msg: string): boolean => {
+    const keywords = ['跑完了', '运动结束', '锻炼完了', '训练结束', '跑步结束', '运动完成',
+      '刚跑完', '刚运动完', '刚锻炼完', '刚练完', '骑完车', '游完泳', '运动完了',
+      '同步Garmin', '同步garmin', '分析本次训练', '分析刚才的运动'];
+    return keywords.some(kw => msg.includes(kw));
+  };
+
   // 发送消息
   const handleSend = async (text?: string) => {
     const msg = (text || inputText).trim();
@@ -100,6 +108,15 @@ export default function AIAssistantPage() {
     };
     setMessages(prev => [...prev, tempUserMsg]);
     setLoading(true);
+
+    // 检测运动完成意图 - 如果匹配，并行触发分析 API
+    const isWorkoutDone = isPostWorkoutMessage(msg);
+    let workoutAnalysisPromise: Promise<any> | null = null;
+    if (isWorkoutDone) {
+      workoutAnalysisPromise = api.post('/workout/post-run-analyze?format=full').catch(() => {
+        return null;
+      });
+    }
 
     try {
       const response = await chatApi.sendMessage(msg, conversationId);
@@ -119,7 +136,7 @@ export default function AIAssistantPage() {
       };
       setMessages(prev => [...prev, aiMsg]);
 
-      // 运动分析结果作为追加对话消息展示
+      // 运动分析结果作为追加对话消息展示（来自 action 系统）
       if (result.workout_analysis && result.workout_analysis.content) {
         const analysisMsg: ChatMessage = {
           id: result.workout_analysis.message_id,
@@ -128,6 +145,63 @@ export default function AIAssistantPage() {
           created_at: new Date().toISOString(),
         };
         setMessages(prev => [...prev, analysisMsg]);
+      }
+
+      // 如果前端触发了分析 API，等待结果并追加为消息
+      if (workoutAnalysisPromise && !result.workout_analysis) {
+        setLoading(false);
+        // 显示分析中的临时消息
+        const loadingMsgId = Date.now() + 1;
+        const loadingMsg: ChatMessage = {
+          id: loadingMsgId,
+          role: 'assistant',
+          content: '正在同步 Garmin 数据并进行多模型分析，请稍等约 30-60 秒...',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, loadingMsg]);
+
+        const analysisResp = await workoutAnalysisPromise;
+        if (analysisResp?.data?.success) {
+          const data = analysisResp.data;
+          const workout = data.workout || {};
+          const analysis = data.multi_model_analysis || {};
+
+          // 构建分析文本
+          const parts: string[] = [];
+          if (workout.name) parts.push(workout.name);
+          if (workout.distance_km) parts.push(`${workout.distance_km}km`);
+          if (workout.duration_min) parts.push(`${workout.duration_min}分钟`);
+          if (workout.pace) parts.push(`配速${workout.pace}`);
+          const workoutLine = parts.join(' | ');
+
+          let content = `**运动分析完成：${workoutLine}**\n\n`;
+          if (analysis.aggregation) {
+            content += `**综合分析：**\n${analysis.aggregation}\n\n`;
+          }
+          if (analysis.model_results?.length > 0) {
+            content += '**各模型视角：**\n\n';
+            for (const mr of analysis.model_results) {
+              const name = (mr.site || '').replace('lb-', '').replace(/-/g, ' ');
+              if (mr.content) {
+                const preview = mr.content.length > 400 ? mr.content.slice(0, 400) + '...' : mr.content;
+                content += `**${name}**:\n${preview}\n\n---\n\n`;
+              }
+            }
+          }
+
+          // 替换 loading 消息为真实分析结果
+          setMessages(prev => prev.map(m =>
+            m.id === loadingMsgId ? { ...m, content } : m
+          ));
+
+          // 分析结果已显示在界面，后续用户追问时 AI 有 Garmin 上下文可参考
+        } else {
+          // 分析失败，更新 loading 消息
+          const errMsg = analysisResp?.data?.message || '运动分析未完成，可能 Garmin 数据尚未同步。请稍后再试。';
+          setMessages(prev => prev.map(m =>
+            m.id === loadingMsgId ? { ...m, content: errMsg } : m
+          ));
+        }
       }
 
       // 显示饮食记录保存通知
