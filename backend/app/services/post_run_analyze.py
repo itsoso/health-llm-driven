@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 
 from sqlalchemy.orm import Session
 
-from app.models.daily_health import WorkoutRecord, GarminData
+from app.models.daily_health import WorkoutRecord, GarminData, WorkoutAnalysisResult
 from app.models.user_profile import UserProfile
 from app.services.openclaw_analyze import OpenClawAnalyzeClient
 from app.utils.timezone import get_china_now, get_china_today
@@ -59,7 +59,10 @@ class PostRunAnalyzeService:
         # Step 5: Call OpenClaw multi-model analysis
         analysis = await self.openclaw.analyze(prompt)
 
-        # Step 6: Format response
+        # Step 6: Save analysis result to DB
+        self._save_analysis_result(user_id, workout.id, prompt, analysis)
+
+        # Step 7: Format response
         if format == "brief":
             return self._format_brief(workout_data, analysis)
         return self._format_full(workout_data, analysis)
@@ -320,6 +323,26 @@ class PostRunAnalyzeService:
 5. **下次训练建议**：建议时间间隔、强度、运动类型"""
 
         return prompt
+
+    def _save_analysis_result(self, user_id: int, workout_id: int, prompt: str, analysis: Dict[str, Any]):
+        """保存多模型分析结果到数据库"""
+        try:
+            model_results_json = json.dumps(analysis.get("model_results", []), ensure_ascii=False)
+            record = WorkoutAnalysisResult(
+                workout_id=workout_id,
+                user_id=user_id,
+                source="openclaw_multi",
+                status=analysis.get("status", "error"),
+                aggregation=analysis.get("aggregation", ""),
+                model_results=model_results_json,
+                prompt=prompt,
+            )
+            self.db.add(record)
+            self.db.commit()
+            logger.info(f"[跑后分析] 分析结果已保存: workout_id={workout_id}, status={record.status}")
+        except Exception as e:
+            logger.error(f"[跑后分析] 保存分析结果失败: {e}")
+            self.db.rollback()
 
     def _format_full(self, workout_data: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
         """格式化完整报告"""

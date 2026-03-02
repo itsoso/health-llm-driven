@@ -9,7 +9,7 @@ import logging
 
 from app.database import get_db
 from app.models.user import User
-from app.models.daily_health import WorkoutRecord
+from app.models.daily_health import WorkoutRecord, WorkoutAnalysisResult
 from app.api.deps import get_current_user, get_current_user_required
 from app.services.pre_workout_guidance import PreWorkoutGuidanceService
 from app.services.post_workout_analysis import PostWorkoutAnalysisService
@@ -492,6 +492,43 @@ def get_workout_analysis(
         )
     except:
         raise HTTPException(status_code=500, detail="分析数据格式错误")
+
+
+@router.get("/me/{workout_id}/multi-analyses")
+def get_workout_multi_analyses(
+    workout_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取运动记录的所有多模型分析结果"""
+    record = db.query(WorkoutRecord).filter(
+        WorkoutRecord.id == workout_id,
+        WorkoutRecord.user_id == current_user.id
+    ).first()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="运动记录不存在")
+
+    results = db.query(WorkoutAnalysisResult).filter(
+        WorkoutAnalysisResult.workout_id == workout_id,
+        WorkoutAnalysisResult.user_id == current_user.id,
+    ).order_by(WorkoutAnalysisResult.created_at.desc()).all()
+
+    return {
+        "workout_id": workout_id,
+        "count": len(results),
+        "analyses": [
+            {
+                "id": r.id,
+                "source": r.source,
+                "status": r.status,
+                "aggregation": r.aggregation,
+                "model_results": json.loads(r.model_results) if r.model_results else [],
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in results
+        ],
+    }
 
 
 # ========== Garmin 同步 ==========

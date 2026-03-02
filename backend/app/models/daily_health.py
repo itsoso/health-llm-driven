@@ -364,3 +364,20 @@ class WorkoutRecord(Base):
         Index('idx_workout_source_external', 'source', 'external_id'),
     )
 
+
+class WorkoutAnalysisResult(Base):
+    """运动分析结果（支持多个分析关联到同一次运动）"""
+    __tablename__ = "workout_analysis_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workout_id = Column(Integer, ForeignKey("workout_records.id"), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    source = Column(String(50), nullable=False)  # "openclaw_multi", "openai", "rule_engine"
+    status = Column(String(20))  # "completed", "partial", "timeout", "error"
+    aggregation = Column(Text)  # 综合分析结论
+    model_results = Column(Text)  # 各模型独立结果 (JSON array)
+    prompt = Column(Text)  # 发送给AI的prompt
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    workout = relationship("WorkoutRecord", backref="analysis_results")
+
