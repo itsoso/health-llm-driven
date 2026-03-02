@@ -13,7 +13,7 @@ OPENCLAW_ANALYZE_API_KEY = "oc-kuaishou-2026"
 OPENCLAW_KIM_USER_ID = "baokun"
 
 POLL_INTERVAL_SECONDS = 10
-MAX_POLL_ATTEMPTS = 6  # 60 seconds max
+MAX_POLL_ATTEMPTS = 18  # 180 seconds max (多模型分析通常需要60-120秒)
 
 
 class OpenClawAnalyzeClient:

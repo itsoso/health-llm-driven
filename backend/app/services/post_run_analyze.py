@@ -92,6 +92,11 @@ class PostRunAnalyzeService:
                 workout_synced = result.get("synced_count", 0)
                 if workout_synced > 0:
                     break
+                # synced_count=0 可能是数据库已有记录，检查DB中是否已有近期运动
+                existing = self._find_latest_workout(user_id)
+                if existing:
+                    logger.info(f"[跑后分析] 数据库已有近期运动记录(id={existing.id})，跳过重试")
+                    break
                 if attempt < MAX_GARMIN_SYNC_RETRIES:
                     logger.info(f"[跑后分析] Garmin无新运动数据, 等待重试 ({attempt}/{MAX_GARMIN_SYNC_RETRIES})")
                     await asyncio.sleep(GARMIN_SYNC_INTERVAL_SECONDS)
