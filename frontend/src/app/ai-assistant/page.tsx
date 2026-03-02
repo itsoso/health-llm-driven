@@ -119,6 +119,17 @@ export default function AIAssistantPage() {
       };
       setMessages(prev => [...prev, aiMsg]);
 
+      // 运动分析结果作为追加对话消息展示
+      if (result.workout_analysis && result.workout_analysis.content) {
+        const analysisMsg: ChatMessage = {
+          id: result.workout_analysis.message_id,
+          role: 'assistant',
+          content: result.workout_analysis.content,
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, analysisMsg]);
+      }
+
       // 显示饮食记录保存通知
       if (result.diet_saved && result.diet_data) {
         setDietNotification(result.diet_data);

@@ -1682,15 +1682,38 @@ class ChatService:
             "message_id": ai_msg.id
         }
 
+        # 运动分析结果作为追加消息保存到对话历史
+        workout_analysis_msg = None
+        if activity_results:
+            for ar in activity_results:
+                if ar.get("type") == "workout_analyze" and ar.get("status") == "analyzed":
+                    analysis_content = ar.get("message", "")
+                    if analysis_content:
+                        workout_analysis_msg = ChatMessage(
+                            conversation_id=conv.id,
+                            role="assistant",
+                            content=analysis_content
+                        )
+                        self.db.add(workout_analysis_msg)
+                        self.db.commit()
+                        self.db.refresh(workout_analysis_msg)
+                        result["workout_analysis"] = {
+                            "message_id": workout_analysis_msg.id,
+                            "content": analysis_content,
+                            "workout_data": ar.get("workout_data"),
+                        }
+                    break
+
         # 添加饮食记录信息
         if diet_result:
             result["diet_saved"] = True
             result["diet_data"] = diet_result
 
-        # 添加活动记录信息
-        if activity_results:
+        # 添加活动记录信息（排除workout_analyze，已单独处理）
+        non_workout_activities = [a for a in activity_results if a.get("type") != "workout_analyze"] if activity_results else []
+        if non_workout_activities:
             result["activities_saved"] = True
-            result["activities"] = activity_results
+            result["activities"] = non_workout_activities
 
             # 检查是否有活动状态记录（需要设置提醒）
             for ar in activity_results:

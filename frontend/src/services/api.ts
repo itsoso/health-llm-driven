@@ -1012,6 +1012,11 @@ export interface ChatSendResponse {
   activities_saved?: boolean;
   activities?: ActivitySavedData[];
   reminder?: ReminderData;
+  workout_analysis?: {
+    message_id: number;
+    content: string;
+    workout_data?: Record<string, unknown>;
+  };
 }
 
 // ====== 女性健康 ======
