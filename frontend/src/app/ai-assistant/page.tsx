@@ -36,7 +36,7 @@ export default function AIAssistantPage() {
   const [activityNotifications, setActivityNotifications] = useState<ActivitySavedData[]>([]);
   const [planCreatedNotification, setPlanCreatedNotification] = useState<{message: string; planId?: number} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploading] = useState(false);
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,8 +92,63 @@ export default function AIAssistantPage() {
     return keywords.some(kw => msg.includes(kw));
   };
 
-  // 发送消息
-  const handleSend = async (text?: string) => {
+  // 处理流式完成事件中的通知（饮食、活动、提醒等）
+  const handleDoneEvent = (result: any) => {
+    // 运动分析结果作为追加对话消息展示
+    if (result.workout_analysis && result.workout_analysis.content) {
+      const analysisMsg: ChatMessage = {
+        id: result.workout_analysis.message_id,
+        role: 'assistant',
+        content: result.workout_analysis.content,
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, analysisMsg]);
+    }
+
+    // 显示饮食记录保存通知
+    if (result.diet_saved && result.diet_data) {
+      setDietNotification(result.diet_data);
+      setTimeout(() => setDietNotification(null), 5000);
+    }
+
+    // 显示活动记录通知
+    if (result.activities_saved && result.activities) {
+      const saved = result.activities.filter((a: ActivitySavedData) => a.status !== 'already_exists');
+      const planResult = saved.find((a: ActivitySavedData & {type?: string; plan_id?: number}) => a.type === 'create_plan') as (ActivitySavedData & {type?: string; plan_id?: number}) | undefined;
+      if (planResult) {
+        setPlanCreatedNotification({ message: planResult.message, planId: planResult.plan_id });
+        setTimeout(() => setPlanCreatedNotification(null), 8000);
+      }
+      const nonPlan = saved.filter((a: ActivitySavedData & {type?: string}) => a.type !== 'create_plan');
+      if (nonPlan.length > 0) {
+        setActivityNotifications(nonPlan);
+        setTimeout(() => setActivityNotifications([]), 5000);
+      }
+    }
+
+    // 设置休息提醒（浏览器通知）
+    if (result.reminder && result.reminder.reminder_minutes > 0) {
+      const { reminder_minutes, reminder_message, activity_name } = result.reminder;
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          setTimeout(() => {
+            new Notification(`${activity_name} - 休息提醒`, { body: reminder_message, icon: '/icon-192x192.png' });
+          }, reminder_minutes * 60 * 1000);
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(perm => {
+            if (perm === 'granted') {
+              setTimeout(() => {
+                new Notification(`${activity_name} - 休息提醒`, { body: reminder_message, icon: '/icon-192x192.png' });
+              }, reminder_minutes * 60 * 1000);
+            }
+          });
+        }
+      }
+    }
+  };
+
+  // 发送消息（流式优先，降级到非流式）
+  const handleSend = async (text?: string, imageBase64?: string, imageType?: string) => {
     const msg = (text || inputText).trim();
     if (!msg || loading) return;
 
@@ -118,40 +173,72 @@ export default function AIAssistantPage() {
       });
     }
 
+    // AI 消息占位 ID（用于流式更新）
+    const aiMsgId = Date.now() + 1;
+
     try {
-      const response = await chatApi.sendMessage(msg, conversationId);
-      const result = response.data;
-
-      // 更新会话 ID
-      if (!conversationId && result.conversation_id) {
-        setConversationId(result.conversation_id);
-      }
-
-      // 添加 AI 回复
-      const aiMsg: ChatMessage = {
-        id: result.message_id,
+      // 流式模式
+      const aiPlaceholder: ChatMessage = {
+        id: aiMsgId,
         role: 'assistant',
-        content: result.reply,
+        content: '',
         created_at: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, aiMsg]);
+      setMessages(prev => [...prev, aiPlaceholder]);
 
-      // 运动分析结果作为追加对话消息展示（来自 action 系统）
-      if (result.workout_analysis && result.workout_analysis.content) {
-        const analysisMsg: ChatMessage = {
-          id: result.workout_analysis.message_id,
-          role: 'assistant',
-          content: result.workout_analysis.content,
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, analysisMsg]);
+      let gotDone = false;
+      let firstToken = true;
+      for await (const event of chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType)) {
+        if (event.event === 'token') {
+          // 首个 token 到达时隐藏 loading 动画（文字本身就是进度指示）
+          if (firstToken) {
+            firstToken = false;
+            setLoading(false);
+          }
+          // 逐 token 更新 AI 消息内容
+          setMessages(prev => prev.map(m =>
+            m.id === aiMsgId ? { ...m, content: m.content + event.data.content } : m
+          ));
+        } else if (event.event === 'done') {
+          gotDone = true;
+          const result = event.data;
+          // 更新会话 ID
+          if (!conversationId && result.conversation_id) {
+            setConversationId(result.conversation_id);
+          }
+          // 更新消息 ID 为真实数据库 ID
+          if (result.message_id) {
+            setMessages(prev => prev.map(m =>
+              m.id === aiMsgId ? { ...m, id: result.message_id } : m
+            ));
+          }
+          handleDoneEvent(result);
+        } else if (event.event === 'error') {
+          setMessages(prev => prev.map(m =>
+            m.id === aiMsgId ? { ...m, content: event.data.message || '服务异常，请重试' } : m
+          ));
+        }
       }
 
-      // 如果前端触发了分析 API，等待结果并追加为消息
-      if (workoutAnalysisPromise && !result.workout_analysis) {
+      // 如果流没有返回 done 事件且消息为空，显示错误
+      if (!gotDone) {
+        setMessages(prev => {
+          const aiMsg = prev.find(m => m.id === aiMsgId);
+          if (aiMsg && !aiMsg.content) {
+            return prev.map(m =>
+              m.id === aiMsgId ? { ...m, content: '抱歉，响应异常中断，请重试。' } : m
+            );
+          }
+          return prev;
+        });
+      }
+
+      // 如果前端触发了运动分析，等待结果并追加为消息
+      if (workoutAnalysisPromise && !gotDone) {
+        // fallback: 没收到 done 事件时跳过
+      } else if (workoutAnalysisPromise) {
         setLoading(false);
-        // 显示分析中的临时消息
-        const loadingMsgId = Date.now() + 1;
+        const loadingMsgId = Date.now() + 2;
         const loadingMsg: ChatMessage = {
           id: loadingMsgId,
           role: 'assistant',
@@ -166,7 +253,6 @@ export default function AIAssistantPage() {
           const workout = data.workout || {};
           const analysis = data.multi_model_analysis || {};
 
-          // 构建分析文本
           const parts: string[] = [];
           if (workout.name) parts.push(workout.name);
           if (workout.distance_km) parts.push(`${workout.distance_km}km`);
@@ -189,14 +275,10 @@ export default function AIAssistantPage() {
             }
           }
 
-          // 替换 loading 消息为真实分析结果
           setMessages(prev => prev.map(m =>
             m.id === loadingMsgId ? { ...m, content } : m
           ));
-
-          // 分析结果已显示在界面，后续用户追问时 AI 有 Garmin 上下文可参考
         } else {
-          // 分析失败，更新 loading 消息
           const errMsg = analysisResp?.data?.message || '运动分析未完成，可能 Garmin 数据尚未同步。请稍后再试。';
           setMessages(prev => prev.map(m =>
             m.id === loadingMsgId ? { ...m, content: errMsg } : m
@@ -204,58 +286,37 @@ export default function AIAssistantPage() {
         }
       }
 
-      // 显示饮食记录保存通知
-      if (result.diet_saved && result.diet_data) {
-        setDietNotification(result.diet_data);
-        setTimeout(() => setDietNotification(null), 5000);
-      }
-
-      // 显示活动记录通知
-      if (result.activities_saved && result.activities) {
-        const saved = result.activities.filter((a: ActivitySavedData) => a.status !== 'already_exists');
-        // 智能计划创建通知（单独展示）
-        const planResult = saved.find((a: ActivitySavedData & {type?: string; plan_id?: number}) => a.type === 'create_plan') as (ActivitySavedData & {type?: string; plan_id?: number}) | undefined;
-        if (planResult) {
-          setPlanCreatedNotification({ message: planResult.message, planId: planResult.plan_id });
-          setTimeout(() => setPlanCreatedNotification(null), 8000);
-        }
-        const nonPlan = saved.filter((a: ActivitySavedData & {type?: string}) => a.type !== 'create_plan');
-        if (nonPlan.length > 0) {
-          setActivityNotifications(nonPlan);
-          setTimeout(() => setActivityNotifications([]), 5000);
-        }
-      }
-
-      // 设置休息提醒（浏览器通知）
-      if (result.reminder && result.reminder.reminder_minutes > 0) {
-        const { reminder_minutes, reminder_message, activity_name } = result.reminder;
-        if ('Notification' in window) {
-          if (Notification.permission === 'granted') {
-            setTimeout(() => {
-              new Notification(`${activity_name} - 休息提醒`, { body: reminder_message, icon: '/icon-192x192.png' });
-            }, reminder_minutes * 60 * 1000);
-          } else if (Notification.permission !== 'denied') {
-            Notification.requestPermission().then(perm => {
-              if (perm === 'granted') {
-                setTimeout(() => {
-                  new Notification(`${activity_name} - 休息提醒`, { body: reminder_message, icon: '/icon-192x192.png' });
-                }, reminder_minutes * 60 * 1000);
-              }
-            });
-          }
-        }
-      }
-
       // 重新加载对话列表
       loadConversations();
     } catch (e: any) {
-      const errorMsg: ChatMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: '抱歉，请求失败了，请稍后再试。',
-        created_at: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      // 流式失败 → 降级到非流式
+      console.warn('流式请求失败，降级到非流式模式:', e);
+      // 先移除空的 AI 占位消息
+      setMessages(prev => prev.filter(m => m.id !== aiMsgId));
+      try {
+        const response = await chatApi.sendMessage(msg, conversationId, undefined, imageBase64, imageType);
+        const result = response.data;
+        if (!conversationId && result.conversation_id) {
+          setConversationId(result.conversation_id);
+        }
+        const aiMsg: ChatMessage = {
+          id: result.message_id,
+          role: 'assistant',
+          content: result.reply,
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, aiMsg]);
+        handleDoneEvent(result);
+        loadConversations();
+      } catch {
+        const errorMsg: ChatMessage = {
+          id: Date.now() + 3,
+          role: 'assistant',
+          content: '抱歉，请求失败了，请稍后再试。',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
     } finally {
       setLoading(false);
     }
@@ -362,7 +423,7 @@ export default function AIAssistantPage() {
     }
   };
 
-  // 图片上传处理
+  // 图片上传处理 - 直接发送给 OpenClaw 识别
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -370,34 +431,17 @@ export default function AIAssistantPage() {
     // 重置 input 以便再次选择同一文件
     e.target.value = '';
 
-    setImageUploading(true);
     try {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onloadend = async () => {
         const base64 = (reader.result as string).split(',')[1];
-        const imageType = file.type || 'image/jpeg';
-
-        try {
-          const res = await chatApi.recognizeFood(base64, imageType);
-          const data = res.data;
-          if (data.success && data.meal_description) {
-            // 将识别结果作为消息发送给AI
-            const foodText = `我刚吃了：${data.meal_description}，请帮我计算热量并记录`;
-            handleSend(foodText);
-          } else {
-            alert('未能识别食物，请拍摄更清晰的食物照片');
-          }
-        } catch (err) {
-          console.error('食物识别失败:', err);
-          alert('食物识别失败，请重试');
-        } finally {
-          setImageUploading(false);
-        }
+        const imgType = file.type?.replace('image/', '') || 'jpeg';
+        const msg = inputText.trim() || '请识别这张图片中的食物，帮我分析营养并记录';
+        handleSend(msg, base64, imgType);
       };
     } catch (err) {
       console.error('读取图片失败:', err);
-      setImageUploading(false);
     }
   };
 

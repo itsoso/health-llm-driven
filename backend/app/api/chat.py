@@ -2,11 +2,13 @@
 聊天 API - OpenClaw 集成
 """
 import base64
+import json
 import logging
 import os
 import tempfile
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -40,7 +42,9 @@ async def send_message(
             user_id=current_user.id,
             message=req.message.strip(),
             conversation_id=req.conversation_id,
-            is_kids_mode=req.is_kids_mode or False
+            is_kids_mode=req.is_kids_mode or False,
+            image_base64=req.image_base64,
+            image_type=req.image_type,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -56,6 +60,44 @@ async def send_message(
         reminder=result.get("reminder"),
     )
     return response
+
+
+@router.post("/stream", summary="流式发送消息")
+async def stream_message(
+    req: ChatSendRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """SSE 流式消息 - 实时返回 AI 回复 token"""
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
+    service = ChatService(db)
+
+    async def generate():
+        try:
+            async for event in service.send_message_stream(
+                user_id=current_user.id,
+                message=req.message.strip(),
+                conversation_id=req.conversation_id,
+                is_kids_mode=req.is_kids_mode or False,
+                image_base64=req.image_base64,
+                image_type=req.image_type,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"流式消息异常: {e}", exc_info=True)
+            yield f"data: {json.dumps({'event': 'error', 'data': {'message': '服务异常，请重试'}}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @router.get("/conversations", response_model=List[ConversationResponse], summary="对话列表")

@@ -8,6 +8,8 @@ class ChatSendRequest(BaseModel):
     message: str
     conversation_id: Optional[int] = None
     is_kids_mode: Optional[bool] = False
+    image_base64: Optional[str] = None
+    image_type: Optional[str] = "jpeg"
 
 
 class ChatMessageResponse(BaseModel):

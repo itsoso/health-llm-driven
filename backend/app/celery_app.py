@@ -92,6 +92,18 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.notifications.send_plan_evening_summary",
         "schedule": crontab(hour=20, minute=0),
     },
+
+    # 每30分钟检查计划分时提醒
+    "plan-item-reminders": {
+        "task": "app.tasks.notifications.send_plan_item_reminders",
+        "schedule": crontab(minute="0,30"),
+    },
+
+    # 每日 20:30 多模型健康复盘
+    "daily-health-insights": {
+        "task": "app.tasks.notifications.generate_daily_insights_for_all",
+        "schedule": crontab(hour=20, minute=30),
+    },
 }
 
 logger.info("Celery 配置加载完成")

@@ -17,7 +17,7 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.basic_health import BasicHealthData
 from datetime import timedelta
-from app.models.daily_health import GarminData, DietRecord, ExerciseRecord, WorkoutRecord, WaterIntake
+from app.models.daily_health import GarminData, DietRecord, ExerciseRecord, WorkoutRecord, WaterIntake, WorkoutAnalysisResult
 from app.models.checkin import CheckinRecord, CheckinTemplate
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
@@ -471,6 +471,23 @@ class ChatService:
             if len(workout_30days) > 10:
                 workout_summary.append(f"...还有{len(workout_30days) - 10}次训练记录")
             parts.append("\n  ".join(workout_summary))
+
+        # 最近AI运动分析结论（多模型分析结果）
+        recent_analyses = self.db.query(WorkoutAnalysisResult).filter(
+            WorkoutAnalysisResult.user_id == user_id,
+            WorkoutAnalysisResult.status == "completed",
+            WorkoutAnalysisResult.created_at >= thirty_days_ago
+        ).order_by(WorkoutAnalysisResult.created_at.desc()).limit(3).all()
+
+        if recent_analyses:
+            analysis_lines = ["最近AI运动分析结论:"]
+            for ana in recent_analyses:
+                agg = (ana.aggregation or "")[:500]
+                if agg:
+                    created = ana.created_at.strftime("%Y-%m-%d") if ana.created_at else ""
+                    analysis_lines.append(f"  [{created}] {agg}")
+            if len(analysis_lines) > 1:
+                parts.append("\n".join(analysis_lines))
 
         # 查询 ExerciseRecord（日常锻炼记录）
         exercise_30days_detailed = self.db.query(ExerciseRecord).filter(
@@ -1553,7 +1570,9 @@ class ChatService:
         user_id: int,
         message: str,
         conversation_id: Optional[int] = None,
-        is_kids_mode: bool = False
+        is_kids_mode: bool = False,
+        image_base64: Optional[str] = None,
+        image_type: Optional[str] = "jpeg",
     ) -> Dict[str, Any]:
         """发送消息到 OpenClaw 并返回回复"""
 
@@ -1638,6 +1657,17 @@ class ChatService:
                     content += diet_context
                 if search_context:
                     content += f"\n\n[参考资料 - 来自网络搜索]\n{search_context}\n[请基于以上参考资料和你的专业知识回答用户问题，不要直接提及搜索结果或参考资料。]"
+                # 多模态消息：附带图片
+                if image_base64:
+                    content_parts = [
+                        {"type": "text", "text": content},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/{image_type};base64,{image_base64}",
+                            "detail": "high"
+                        }}
+                    ]
+                    messages.append({"role": msg.role, "content": content_parts})
+                    continue
             messages.append({"role": msg.role, "content": content})
 
         # 调用 OpenClaw API
@@ -1751,6 +1781,206 @@ class ChatService:
 
         choice = data.get("choices", [{}])[0]
         return choice.get("message", {}).get("content", "").strip()
+
+    async def _call_openclaw_stream(self, messages: list):
+        """调用 OpenClaw 流式 API，逐 token yield"""
+        url = f"{OPENCLAW_BASE_URL}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if OPENCLAW_API_KEY:
+            headers["Authorization"] = f"Bearer {OPENCLAW_API_KEY}"
+
+        payload = {
+            "model": OPENCLAW_MODEL,
+            "messages": messages,
+            "stream": True,
+        }
+
+        async with httpx.AsyncClient(timeout=240.0) as client:
+            async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        continue
+
+    async def send_message_stream(
+        self,
+        user_id: int,
+        message: str,
+        conversation_id: Optional[int] = None,
+        is_kids_mode: bool = False,
+        image_base64: Optional[str] = None,
+        image_type: Optional[str] = "jpeg",
+    ):
+        """流式发送消息，yield SSE 事件字典"""
+        # 获取或创建对话
+        if conversation_id:
+            conv = self.db.query(ChatConversation).filter(
+                ChatConversation.id == conversation_id,
+                ChatConversation.user_id == user_id
+            ).first()
+            if not conv:
+                yield {"event": "error", "data": {"message": "对话不存在"}}
+                return
+        else:
+            conv = ChatConversation(user_id=user_id, title=message[:50])
+            self.db.add(conv)
+            self.db.commit()
+            self.db.refresh(conv)
+
+        # 保存用户消息
+        user_msg = ChatMessage(conversation_id=conv.id, role="user", content=message)
+        self.db.add(user_msg)
+        self.db.commit()
+
+        # 饮食检测
+        diet_result = None
+        diet_context = ""
+        if self._is_food_message(message):
+            try:
+                nutrition_data = food_recognition_service.estimate_nutrition_from_text(message)
+                if nutrition_data.get("success"):
+                    diet_result = self._process_diet_record(user_id, message, nutrition_data)
+                    if diet_result:
+                        foods_detail = "\n".join([
+                            f"- {f.get('name', '')}: {f.get('quantity', '')}, {f.get('calories', 0)}kcal, "
+                            f"蛋白质{f.get('protein', 0)}g, 碳水{f.get('carbs', 0)}g, 脂肪{f.get('fat', 0)}g"
+                            for f in nutrition_data.get("foods", [])
+                        ])
+                        meal_type_cn = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}.get(diet_result["meal_type"], "加餐")
+                        diet_context = (
+                            f"\n\n[系统提示：已自动分析用户的饮食并保存为{meal_type_cn}记录。营养分析结果：\n"
+                            f"食物明细：\n{foods_detail}\n"
+                            f"总热量：{nutrition_data.get('total_calories', 0)}kcal\n"
+                            f"请基于以上数据给用户一个友好的饮食反馈。告知用户饮食已自动记录。]"
+                        )
+            except Exception as e:
+                logger.warning(f"流式模式饮食检测异常: {e}")
+
+        # 搜索上下文
+        search_context = ""
+        if not diet_context and not image_base64 and self._should_search(message):
+            try:
+                search_client = get_search_client()
+                if search_client:
+                    results = await search_client.search(message, max_results=3)
+                    if results:
+                        search_context = "\n".join([f"- {r.get('title', '')}: {r.get('content', '')[:500]}" for r in results])
+            except Exception as e:
+                logger.warning(f"流式模式搜索异常: {e}")
+
+        # 构建消息列表
+        history = self.db.query(ChatMessage).filter(
+            ChatMessage.conversation_id == conv.id
+        ).order_by(ChatMessage.created_at.asc()).all()
+        recent = history[-20:] if len(history) > 20 else history
+
+        messages = [{"role": "system", "content": await self._get_system_prompt(user_id, is_kids_mode=is_kids_mode)}]
+        for msg in recent:
+            content = msg.content
+            if msg.id == user_msg.id:
+                if diet_context:
+                    content += diet_context
+                if search_context:
+                    content += f"\n\n[参考资料 - 来自网络搜索]\n{search_context}\n[请基于以上参考资料和你的专业知识回答用户问题，不要直接提及搜索结果或参考资料。]"
+                if image_base64:
+                    content_parts = [
+                        {"type": "text", "text": content},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/{image_type};base64,{image_base64}",
+                            "detail": "high"
+                        }}
+                    ]
+                    messages.append({"role": msg.role, "content": content_parts})
+                    continue
+            messages.append({"role": msg.role, "content": content})
+
+        # 流式调用 OpenClaw
+        full_response = ""
+        in_action_block = False
+        try:
+            async for token in self._call_openclaw_stream(messages):
+                full_response += token
+                # 检测 action 标记开始，停止向前端发送
+                if "<<<ACTIONS:" in full_response and not in_action_block:
+                    in_action_block = True
+                    # 发送 action 标记前的最后一段文本
+                    pre_action = full_response.split("<<<ACTIONS:")[0]
+                    already_sent = full_response[:len(full_response) - len(token)]
+                    remaining = pre_action[len(already_sent):]
+                    if remaining:
+                        yield {"event": "token", "data": {"content": remaining}}
+                    continue
+                if not in_action_block:
+                    yield {"event": "token", "data": {"content": token}}
+        except Exception as e:
+            logger.error(f"OpenClaw 流式调用失败: {type(e).__name__}: {e}")
+            full_response = "抱歉，智能助理暂时无法响应，请稍后再试。"
+            yield {"event": "token", "data": {"content": full_response}}
+
+        # 解析 actions
+        clean_reply, actions = self._parse_actions(full_response)
+        activity_results = []
+        if actions:
+            plan_actions = [a for a in actions if a.get("type") == "create_plan"]
+            workout_actions = [a for a in actions if a.get("type") == "workout_analyze"]
+            other_actions = [a for a in actions if a.get("type") not in ("create_plan", "workout_analyze")]
+            if other_actions:
+                activity_results = self._execute_actions(user_id, other_actions)
+            for pa in plan_actions:
+                plan_result = await self._handle_create_plan_async(user_id, pa)
+                if plan_result:
+                    activity_results.append(plan_result)
+            for wa in workout_actions:
+                workout_result = await self._handle_workout_analyze_action(user_id, wa)
+                if workout_result:
+                    activity_results.append(workout_result)
+
+        # 保存 AI 回复
+        ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=clean_reply)
+        self.db.add(ai_msg)
+        conv.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(ai_msg)
+
+        # 构建完成事件
+        result_data = {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+        }
+        if diet_result:
+            result_data["diet_saved"] = True
+            result_data["diet_data"] = diet_result
+        non_workout = [a for a in activity_results if a.get("type") != "workout_analyze"] if activity_results else []
+        if non_workout:
+            result_data["activities_saved"] = True
+            result_data["activities"] = non_workout
+        # 运动分析结果
+        for ar in (activity_results or []):
+            if ar.get("type") == "workout_analyze" and ar.get("status") == "analyzed":
+                analysis_content = ar.get("message", "")
+                if analysis_content:
+                    workout_analysis_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=analysis_content)
+                    self.db.add(workout_analysis_msg)
+                    self.db.commit()
+                    self.db.refresh(workout_analysis_msg)
+                    result_data["workout_analysis"] = {
+                        "message_id": workout_analysis_msg.id,
+                        "content": analysis_content,
+                    }
+                break
+
+        yield {"event": "done", "data": result_data}
 
     def get_conversations(self, user_id: int, limit: int = 20) -> List[ChatConversation]:
         """获取用户的对话列表"""
