@@ -603,7 +603,7 @@ export default function AIAssistantPage() {
             {messages.length === 0 && !loading && (
               <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
                 <div className="text-6xl">💬</div>
-                <h2 className="text-2xl font-bold text-white">你好，我是你的健康顾问</h2>
+                <h2 className="text-2xl font-bold text-white">你好，我是你的智能助理</h2>
                 <p className="text-slate-400">
                   我了解你的健康数据，可以为你提供个性化的健康建议
                 </p>
@@ -785,7 +785,7 @@ export default function AIAssistantPage() {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isRecording ? '正在录音...' : '输入健康相关问题...'}
+                placeholder={isRecording ? '正在录音...' : '有什么可以帮你的...'}
                 className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 disabled={isRecording}
               />

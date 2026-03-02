@@ -131,7 +131,7 @@ class RAGPipeline:
         health_info = self._build_health_info(health_data) if health_data else ""
         
         # 3. 构建提示词
-        system_prompt = """你是一位专业的健康顾问，具有丰富的医学和营养学知识。
+        system_prompt = """你是一位专业的智能助理，具有丰富的医学和营养学知识。
 
 你的任务是根据用户的问题，结合以下信息给出专业、个性化的健康建议：
 1. 知识库中的专业健康知识
@@ -279,7 +279,7 @@ class RAGPipeline:
         # 构建增强提示
         knowledge_context = self._build_knowledge_context(all_knowledge)
         
-        system_prompt = """你是一位专业的健康顾问。请基于知识库中的专业内容，为用户的每日健康建议提供补充。
+        system_prompt = """你是一位专业的智能助理。请基于知识库中的专业内容，为用户的每日健康建议提供补充。
 
 要求：
 1. 从知识库内容中提取与用户当前状况最相关的建议

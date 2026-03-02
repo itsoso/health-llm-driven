@@ -558,7 +558,7 @@ class LLMHealthAnalyzer:
                 yesterday_data, recent_data, rule_analysis, user_context, environment_data
             )
             
-            system_prompt = """你是一位专业的健康顾问和运动生理学专家。
+            system_prompt = """你是一位专业的智能助理和运动生理学专家。
 你需要基于用户的可穿戴设备数据、个人画像和当地环境信息，提供科学、高度个性化的健康建议。
 
 ⚠️ 【关键提醒】你收到的所有运动数据（步数、活动分钟、卡路里）都是昨天的数据，不是今天的！
@@ -683,7 +683,7 @@ class LLMHealthAnalyzer:
             # 构建周数据摘要
             week_summary = self._build_week_summary(week_data)
             
-            system_prompt = """你是一位专业的健康顾问。请基于用户一周的健康数据，生成一份周报分析。
+            system_prompt = """你是一位专业的智能助理。请基于用户一周的健康数据，生成一份周报分析。
 
 请用JSON格式返回:
 {

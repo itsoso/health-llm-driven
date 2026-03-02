@@ -195,7 +195,7 @@ export default function ChallengeDetailPage() {
                 <span>
                   {challenge.challenge_type === 'checkin'
                     ? '每天完成打卡，系统自动记录成绩'
-                    : '通过健康顾问记录活动（如"我在学习"），系统自动计时'}
+                    : '通过智能助理记录活动（如"我在学习"），系统自动计时'}
                 </span>
               </div>
               <div className="flex items-start gap-2">

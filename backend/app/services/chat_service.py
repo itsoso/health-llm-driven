@@ -1041,7 +1041,7 @@ class ChatService:
             )
         else:
             base = (
-                "你是一个专业的私人健康顾问。你的名字叫「健康顾问」。\n"
+                "你是一个专业的私人智能助理。你的名字叫「智能助理」。\n"
                 "请基于用户的健康数据，提供个性化、科学、实用的健康建议。\n"
                 "回答要简洁友好，避免过度医学化。如涉及严重健康问题请建议就医。\n"
                 "使用中文回答。\n\n"
@@ -1242,7 +1242,7 @@ class ChatService:
                 protein=nutrition_data.get("total_protein"),
                 carbs=nutrition_data.get("total_carbs"),
                 fat=nutrition_data.get("total_fat"),
-                notes=f"通过健康顾问对话自动记录: {message[:100]}",
+                notes=f"通过智能助理对话自动记录: {message[:100]}",
                 ai_recognized=True,
                 ai_raw_result=json.dumps(nutrition_data, ensure_ascii=False),
                 health_tips=nutrition_data.get("health_tips"),
@@ -1373,7 +1373,7 @@ class ChatService:
             template_id=template.id, user_id=user_id,
             checkin_date=today, value=actual_value,
             target=template.default_target, completion_rate=completion_rate,
-            notes="通过健康顾问对话自动记录"
+            notes="通过智能助理对话自动记录"
         )
         self.db.add(record)
 
@@ -1487,7 +1487,7 @@ class ChatService:
         record = SupplementRecord(
             supplement_id=supplement.id, user_id=user_id,
             record_date=today, taken=True,
-            notes="通过健康顾问对话自动记录"
+            notes="通过智能助理对话自动记录"
         )
         self.db.add(record)
         self.db.commit()
@@ -1535,7 +1535,7 @@ class ChatService:
             ), {
                 "uid": user_id, "pid": p_id, "log_date": today,
                 "stype": symptom_type, "sev": severity_val,
-                "notes": "通过健康顾问对话自动记录"
+                "notes": "通过智能助理对话自动记录"
             })
             self.db.commit()
             logger.info(f"用户{user_id} 症状: {p_disease_name} 严重度{overall_severity}")
@@ -1645,7 +1645,7 @@ class ChatService:
             reply_content = await self._call_openclaw(messages)
         except Exception as e:
             logger.error(f"OpenClaw 调用失败: {type(e).__name__}: {e}")
-            reply_content = "抱歉，健康顾问暂时无法响应，请稍后再试。"
+            reply_content = "抱歉，智能助理暂时无法响应，请稍后再试。"
 
         # 解析活动标记
         clean_reply, actions = self._parse_actions(reply_content)
@@ -1889,7 +1889,7 @@ class ChatService:
             start_date=start_date,
             severity=severity,
             status="active",
-            notes=notes or "通过健康顾问对话记录",
+            notes=notes or "通过智能助理对话记录",
         )
         self.db.add(episode)
         self.db.commit()
@@ -1938,7 +1938,7 @@ class ChatService:
             update_date=today,
             severity=episode.severity,
             status=episode.status,
-            notes=notes or f"通过健康顾问对话更新",
+            notes=notes or f"通过智能助理对话更新",
         )
         self.db.add(update)
         self.db.commit()

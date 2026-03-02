@@ -386,7 +386,7 @@ export default function Chat() {
         <View className="header-left" onClick={toggleHistory}>
           <Text className="header-icon">{showHistory ? '✕' : '☰'}</Text>
         </View>
-        <Text className="header-title">健康顾问</Text>
+        <Text className="header-title">智能助理</Text>
         <View className="header-right" onClick={handleNewChat}>
           <Text className="header-icon">+</Text>
         </View>
@@ -483,7 +483,7 @@ export default function Chat() {
             <View className="welcome-icon-wrap">
               <Text className="welcome-icon">💬</Text>
             </View>
-            <Text className="welcome-title">你好，我是你的健康顾问</Text>
+            <Text className="welcome-title">你好，我是你的智能助理</Text>
             <Text className="welcome-desc">
               我了解你的健康数据，可以为你提供个性化的健康建议
             </Text>
@@ -574,7 +574,7 @@ export default function Chat() {
         </View>
         <Input
           className="chat-input"
-          placeholder={isRecording ? '正在录音...' : '输入健康相关问题...'}
+          placeholder={isRecording ? '正在录音...' : '有什么可以帮你的...'}
           value={inputText}
           onInput={(e) => setInputText(e.detail.value)}
           onConfirm={() => handleSend()}

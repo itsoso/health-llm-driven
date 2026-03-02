@@ -914,7 +914,7 @@ function DailyInsightsContent() {
         {currentData?.ai_insights && (
           <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">✨ AI 健康顾问</h2>
+              <h2 className="text-xl font-bold">✨ AI 智能助理</h2>
               <span className="text-xs bg-white/20 px-2 py-1 rounded">由大模型生成</span>
             </div>
             

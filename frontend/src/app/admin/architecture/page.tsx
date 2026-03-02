@@ -47,7 +47,7 @@ export default function ArchitecturePage() {
             <Section title="1. 系统概述">
               <p>
                 「自由是自律的泡沫」是一个 AI 驱动的全方位健康管理平台，通过自然语言对话实现健康数据的智能记录与分析。
-                系统核心理念是<Hl>对话即记录</Hl>——用户通过与 AI 健康顾问聊天（如"我在学习"、"刚喝了一杯咖啡"），
+                系统核心理念是<Hl>对话即记录</Hl>——用户通过与 AI 智能助理聊天（如"我在学习"、"刚喝了一杯咖啡"），
                 系统自动解析意图并写入结构化数据库，免去手动填表。
               </p>
               <p>平台覆盖 50+ 健康维度，包括运动、饮食、睡眠、饮水、用药、情绪、女性健康、鼻炎追踪、病症管理等，
@@ -225,10 +225,10 @@ export default function ArchitecturePage() {
               </Card>
             </Section>
 
-            {/* 5. 健康顾问核心架构 */}
-            <Section title="5. 健康顾问 (ChatService) 核心架构">
+            {/* 5. 智能助理核心架构 */}
+            <Section title="5. 智能助理 (ChatService) 核心架构">
               <p>
-                健康顾问是系统的核心模块，位于 <code className="mx-1 px-1.5 py-0.5 bg-white/10 rounded text-cyan-300 text-sm">
+                智能助理是系统的核心模块，位于 <code className="mx-1 px-1.5 py-0.5 bg-white/10 rounded text-cyan-300 text-sm">
                 backend/app/services/chat_service.py</code>（约 1943 行），
                 负责用户对话处理、健康上下文构建、AI 调用和 Action 执行。
               </p>
@@ -327,9 +327,9 @@ export default function ArchitecturePage() {
 
               <h4 className="text-lg font-semibold text-white mt-8 mb-3">5.4 双模式支持</h4>
               <div className="grid md:grid-cols-2 gap-4">
-                <Card title="成人模式 (健康顾问)">
+                <Card title="成人模式 (智能助理)">
                   <p className="text-sm text-purple-200">
-                    专业的私人健康顾问角色，基于用户健康数据提供个性化建议。支持饮食记录与热量计算、
+                    专业的私人智能助理角色，基于用户健康数据提供个性化建议。支持饮食记录与热量计算、
                     活动状态追踪、联网搜索辅助回答。回答简洁专业，涉及严重健康问题建议就医。
                   </p>
                 </Card>
@@ -474,7 +474,7 @@ export default function ArchitecturePage() {
               <h4 className="text-lg font-semibold text-white mt-6 mb-3">页面分类 (78 个路由)</h4>
               <div className="grid md:grid-cols-3 gap-3">
                 {[
-                  { title: '核心页面', pages: '首页, 健康概览, 今日建议, 健康顾问, 积分' },
+                  { title: '核心页面', pages: '首页, 健康概览, 今日建议, 智能助理, 积分' },
                   { title: '健康追踪', pages: '仪表盘, 运动, 心率, 体重, 血压, 身体成分, 健康评分' },
                   { title: '每日记录', pages: '饮食, 饮水, 睡眠, 打卡, 补剂, 活动状态' },
                   { title: '专项管理', pages: '情绪, 用药, 女性健康, 鼻炎, 视力, 病症' },
@@ -492,7 +492,7 @@ export default function ArchitecturePage() {
             {/* 11. 联网搜索 */}
             <Section title="11. 联网搜索 (Quark Search)">
               <p>
-                健康顾问支持联网搜索能力，当用户提问涉及最新信息、医学知识或健康资讯时，
+                智能助理支持联网搜索能力，当用户提问涉及最新信息、医学知识或健康资讯时，
                 系统会自动调用阿里云 Quark 搜索 API 获取网络信息，作为额外上下文注入到 AI 对话中。
               </p>
               <Card title="工作流程">

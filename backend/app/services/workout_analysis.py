@@ -325,7 +325,7 @@ class WorkoutAnalysisService:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "你是一位专业的运动教练和健康顾问，擅长分析运动数据并给出个性化建议。"},
+                    {"role": "system", "content": "你是一位专业的运动教练和智能助理，擅长分析运动数据并给出个性化建议。"},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=800,
