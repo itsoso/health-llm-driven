@@ -1126,8 +1126,30 @@ class ChatService:
             "- \"做个减脂周计划\" → create_plan, target_week=\"next\", user_focus=[\"减脂\",\"饮食控制\"]\n"
         )
 
+        # 运动完成分析功能
+        workout_analyze_prompt = (
+            "\n\n## 运动完成分析功能\n"
+            "当用户表达运动/跑步/锻炼/训练完成的意图时，帮助用户同步数据并分析。\n\n"
+            "### 触发条件\n"
+            "用户说「跑完了」「运动结束」「锻炼完了」「训练结束了」「刚跑完步」"
+            "「帮我分析刚才的运动」「同步一下运动数据」等表达已完成运动的意图时触发。\n\n"
+            "### 格式\n"
+            "在正常回复之后附加（用户不可见）：\n"
+            '<<<ACTIONS:[{"type":"workout_analyze","workout_type":"运动类型"}]>>>\n\n'
+            "### 规则\n"
+            "1. workout_type 根据用户描述判断：running/cycling/swimming/hiit/strength/yoga/other\n"
+            "2. 如用户未明确运动类型，使用 \"other\"，系统会自动检测最新记录的类型\n"
+            "3. 触发后在回复中告知用户：「正在同步 Garmin 数据并分析你的运动，请稍等...」\n"
+            "4. 只在用户表达**已完成**运动时触发，计划运动或询问不触发\n\n"
+            "### 示例\n"
+            "- \"我跑完了\" → workout_analyze, workout_type=\"running\"\n"
+            "- \"刚骑完车\" → workout_analyze, workout_type=\"cycling\"\n"
+            "- \"锻炼结束了，帮我看看数据\" → workout_analyze, workout_type=\"other\"\n"
+            "- \"游泳完了，同步一下\" → workout_analyze, workout_type=\"swimming\"\n"
+        )
+
         health_ctx = await self._build_health_context(user_id)
-        prompt = base + activity_prompt + create_plan_prompt
+        prompt = base + activity_prompt + create_plan_prompt + workout_analyze_prompt
         if health_ctx:
             prompt += f"\n\n{health_ctx}"
         return prompt
@@ -1629,15 +1651,20 @@ class ChatService:
         clean_reply, actions = self._parse_actions(reply_content)
         activity_results = []
         if actions:
-            # create_plan 需要异步调用 LLM，单独处理
+            # 异步 action 单独处理（create_plan, workout_analyze）
             plan_actions = [a for a in actions if a.get("type") == "create_plan"]
-            other_actions = [a for a in actions if a.get("type") != "create_plan"]
+            workout_actions = [a for a in actions if a.get("type") == "workout_analyze"]
+            other_actions = [a for a in actions if a.get("type") not in ("create_plan", "workout_analyze")]
             if other_actions:
                 activity_results = self._execute_actions(user_id, other_actions)
             for pa in plan_actions:
                 plan_result = await self._handle_create_plan_async(user_id, pa)
                 if plan_result:
                     activity_results.append(plan_result)
+            for wa in workout_actions:
+                workout_result = await self._handle_workout_analyze_action(user_id, wa)
+                if workout_result:
+                    activity_results.append(workout_result)
             logger.info(f"用户{user_id} 执行了{len(activity_results)}个活动")
 
         # 保存 AI 回复（使用清理后的内容）
@@ -1748,6 +1775,75 @@ class ChatService:
                 "type": "create_plan",
                 "status": "failed",
                 "message": "计划生成失败，请稍后在「智能计划」页面手动生成",
+            }
+
+    async def _handle_workout_analyze_action(self, user_id: int, action: dict) -> Optional[Dict]:
+        """处理运动完成分析 action：同步Garmin → 检测运动 → 多模型分析"""
+        workout_type = action.get("workout_type", "other")
+        try:
+            from app.services.post_run_analyze import PostRunAnalyzeService
+            service = PostRunAnalyzeService(self.db)
+            result = await service.analyze(
+                user_id=user_id,
+                workout_type=workout_type if workout_type != "other" else None,
+                format="full",
+            )
+            if not result.get("success"):
+                return {
+                    "type": "workout_analyze",
+                    "status": "no_data",
+                    "message": result.get("message", "未检测到运动记录"),
+                }
+
+            workout = result.get("workout", {})
+            analysis = result.get("multi_model_analysis", {})
+            aggregation = analysis.get("aggregation", "")
+
+            # Build workout summary line
+            parts = []
+            if workout.get("name"):
+                parts.append(workout["name"])
+            if workout.get("distance_km"):
+                parts.append(f"{workout['distance_km']}km")
+            if workout.get("duration_min"):
+                parts.append(f"{workout['duration_min']}分钟")
+            if workout.get("pace"):
+                parts.append(f"配速{workout['pace']}")
+            workout_line = " | ".join(parts)
+
+            # Build model insights
+            model_insights = ""
+            model_results = analysis.get("model_results", [])
+            if model_results:
+                insights = []
+                for mr in model_results:
+                    site = mr.get("site", "")
+                    content = mr.get("content", "")
+                    display_name = site.replace("lb-", "").replace("-", " ").title()
+                    if content:
+                        preview = content[:300] + "..." if len(content) > 300 else content
+                        insights.append(f"**{display_name}**:\n{preview}")
+                if insights:
+                    model_insights = "\n\n---\n\n".join(insights)
+
+            analysis_text = ""
+            if aggregation:
+                analysis_text = f"\n\n**综合分析：**\n{aggregation}"
+            if model_insights:
+                analysis_text += f"\n\n**各模型视角：**\n\n{model_insights}"
+
+            return {
+                "type": "workout_analyze",
+                "status": "analyzed",
+                "message": f"运动分析完成：{workout_line}{analysis_text}",
+                "workout_data": workout,
+            }
+        except Exception as e:
+            logger.error(f"运动分析 action 处理失败: {e}", exc_info=True)
+            return {
+                "type": "workout_analyze",
+                "status": "error",
+                "message": f"运动分析失败: {str(e)}",
             }
 
     def _handle_illness_create(self, user_id: int, action: dict, today: date) -> Optional[Dict]:

@@ -1,5 +1,5 @@
 """运动训练记录 API"""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Header, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date, datetime, timedelta
@@ -10,7 +10,7 @@ import logging
 from app.database import get_db
 from app.models.user import User
 from app.models.daily_health import WorkoutRecord
-from app.api.deps import get_current_user_required
+from app.api.deps import get_current_user, get_current_user_required
 from app.services.pre_workout_guidance import PreWorkoutGuidanceService
 from app.services.post_workout_analysis import PostWorkoutAnalysisService
 from app.schemas.workout import (
@@ -975,4 +975,61 @@ async def get_post_workout_analysis(
             status_code=500,
             detail=f"生成运动后分析失败: {str(e)}"
         )
+
+
+# ========== 跑后智能分析（多模型）==========
+
+@router.post("/post-run-analyze")
+async def post_run_analyze(
+    format: str = Query(default="full", description="full=完整报告 brief=Siri简洁摘要"),
+    workout_type: Optional[str] = Query(default=None, description="运动类型过滤，如 running/cycling"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    跑后智能分析：同步Garmin → 检测最新运动 → OpenClaw多模型分析
+
+    支持三种触发方式：
+    1. AI助手对话（通过 action 系统）
+    2. AI助手快捷按钮（前端直接调用）
+    3. Siri快捷指令（format=brief，使用 X-API-Key 认证）
+    """
+    if format not in ("full", "brief"):
+        format = "full"
+
+    from app.services.post_run_analyze import PostRunAnalyzeService
+
+    service = PostRunAnalyzeService(db)
+    try:
+        result = await service.analyze(
+            user_id=current_user.id,
+            workout_type=workout_type,
+            format=format,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"跑后分析失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
+
+
+@router.post("/post-run-analyze-siri")
+async def post_run_analyze_siri(
+    request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Siri 快捷指令专用端点，支持 X-API-Key 认证"""
+    from app.api.health_event import get_user_id_from_any_auth
+
+    user_id = await get_user_id_from_any_auth(request, x_api_key, current_user, db)
+
+    from app.services.post_run_analyze import PostRunAnalyzeService
+    service = PostRunAnalyzeService(db)
+    try:
+        result = await service.analyze(user_id=user_id, format="brief")
+        return result
+    except Exception as e:
+        logger.error(f"Siri跑后分析失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
 

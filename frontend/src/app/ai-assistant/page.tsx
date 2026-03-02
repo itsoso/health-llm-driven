@@ -19,6 +19,7 @@ const QUICK_QUESTIONS = [
   { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
   { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量，有什么改善建议？' },
   { label: '饮食建议', text: '根据我的健康目标，今天的饮食应该注意什么？' },
+  { label: '运动完成', text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出拉伸和恢复建议' },
 ];
 
 export default function AIAssistantPage() {
