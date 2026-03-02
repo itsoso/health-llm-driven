@@ -1697,6 +1697,17 @@ class ChatService:
                     activity_results.append(workout_result)
             logger.info(f"用户{user_id} 执行了{len(activity_results)}个活动")
 
+        # 图片消息后处理：从AI回复中提取饮食营养数据
+        if image_base64 and not diet_result and clean_reply:
+            try:
+                nutrition_data = food_recognition_service.estimate_nutrition_from_text(clean_reply)
+                if nutrition_data.get("success") and nutrition_data.get("foods"):
+                    diet_result = self._process_diet_record(user_id, message, nutrition_data)
+                    if diet_result:
+                        logger.info(f"从图片AI分析中提取饮食记录: {diet_result.get('food_items', '')}")
+            except Exception as e:
+                logger.warning(f"图片消息饮食提取失败: {e}")
+
         # 保存 AI 回复（使用清理后的内容）
         ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=clean_reply)
         self.db.add(ai_msg)
@@ -1945,6 +1956,17 @@ class ChatService:
                 workout_result = await self._handle_workout_analyze_action(user_id, wa)
                 if workout_result:
                     activity_results.append(workout_result)
+
+        # 图片消息后处理：从AI回复中提取饮食营养数据
+        if image_base64 and not diet_result and clean_reply:
+            try:
+                nutrition_data = food_recognition_service.estimate_nutrition_from_text(clean_reply)
+                if nutrition_data.get("success") and nutrition_data.get("foods"):
+                    diet_result = self._process_diet_record(user_id, message, nutrition_data)
+                    if diet_result:
+                        logger.info(f"流式模式 - 从图片AI分析中提取饮食记录: {diet_result.get('food_items', '')}")
+            except Exception as e:
+                logger.warning(f"流式模式 - 图片消息饮食提取失败: {e}")
 
         # 保存 AI 回复
         ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=clean_reply)
