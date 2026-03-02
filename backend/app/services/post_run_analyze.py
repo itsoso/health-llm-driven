@@ -65,39 +65,65 @@ class PostRunAnalyzeService:
         return self._format_full(workout_data, analysis)
 
     async def _sync_garmin(self, user_id: int) -> Dict[str, Any]:
-        """同步 Garmin 运动数据（缓存token登录，最多重试3次）"""
+        """同步 Garmin 全量数据：运动记录 + 当日健康数据（步数、心率、压力等）"""
         import asyncio
         from app.services.auth import GarminCredentialService
         from app.services.workout_sync import WorkoutSyncService
+        from app.services.data_collection.garmin_connect import GarminConnectService
 
         cred_service = GarminCredentialService()
         credentials = cred_service.get_decrypted_credentials(self.db, user_id)
         if not credentials:
             return {"status": "no_credentials", "synced_count": 0}
 
+        email = credentials["email"]
+        password = credentials["password"]
+        is_cn = credentials.get("is_cn", False)
+
+        # === Part 1: 同步运动记录（WorkoutRecord）===
+        workout_synced = 0
         last_error = None
         for attempt in range(1, MAX_GARMIN_SYNC_RETRIES + 1):
             try:
                 sync_service = WorkoutSyncService(
-                    email=credentials["email"],
-                    password=credentials["password"],
-                    is_cn=credentials.get("is_cn", False),
-                    user_id=user_id,
+                    email=email, password=password, is_cn=is_cn, user_id=user_id,
                 )
                 result = await sync_service.sync_activities(self.db, user_id, days=1)
-                if result.get("synced_count", 0) > 0:
-                    return {"status": "synced", "synced_count": result["synced_count"]}
-                # No new data yet, wait and retry
+                workout_synced = result.get("synced_count", 0)
+                if workout_synced > 0:
+                    break
                 if attempt < MAX_GARMIN_SYNC_RETRIES:
-                    logger.info(f"[跑后分析] Garmin无新数据, 等待重试 ({attempt}/{MAX_GARMIN_SYNC_RETRIES})")
+                    logger.info(f"[跑后分析] Garmin无新运动数据, 等待重试 ({attempt}/{MAX_GARMIN_SYNC_RETRIES})")
                     await asyncio.sleep(GARMIN_SYNC_INTERVAL_SECONDS)
             except Exception as e:
                 last_error = str(e)
-                logger.warning(f"[跑后分析] Garmin同步异常 ({attempt}): {e}")
+                logger.warning(f"[跑后分析] Garmin运动同步异常 ({attempt}): {e}")
                 if attempt < MAX_GARMIN_SYNC_RETRIES:
                     await asyncio.sleep(GARMIN_SYNC_INTERVAL_SECONDS)
 
-        return {"status": "no_new_data", "synced_count": 0, "error": last_error}
+        # === Part 2: 同步当日健康数据（GarminData: 步数、静息心率、压力、Body Battery等）===
+        daily_synced = False
+        today = get_china_today()
+        try:
+            garmin_service = GarminConnectService(
+                email=email, password=password, is_cn=is_cn, user_id=user_id,
+            )
+            garmin_data = await asyncio.to_thread(
+                garmin_service.sync_daily_data, self.db, user_id, today
+            )
+            if garmin_data:
+                daily_synced = True
+                logger.info(f"[跑后分析] 当日健康数据同步成功: 步数={garmin_data.steps}, 静息心率={garmin_data.resting_heart_rate}")
+        except Exception as e:
+            logger.warning(f"[跑后分析] 当日健康数据同步失败: {e}")
+
+        if workout_synced > 0 or daily_synced:
+            return {
+                "status": "synced",
+                "synced_count": workout_synced,
+                "daily_synced": daily_synced,
+            }
+        return {"status": "no_new_data", "synced_count": 0, "daily_synced": False, "error": last_error}
 
     def _find_latest_workout(self, user_id: int, workout_type: Optional[str] = None) -> Optional[WorkoutRecord]:
         """查找最近的运动记录（今天或昨天）"""
@@ -185,13 +211,32 @@ class PostRunAnalyzeService:
                 parts.append(f"体重{profile.current_weight_kg}kg")
             profile_str = "、".join(parts)
 
-        # Resting HR from latest Garmin data
+        # Today's Garmin daily data (freshly synced: steps, resting HR, body battery, stress, sleep)
         resting_hr = None
+        daily_health_str = ""
         latest_garmin = self.db.query(GarminData).filter(
             GarminData.user_id == user_id
         ).order_by(GarminData.record_date.desc()).first()
         if latest_garmin:
             resting_hr = latest_garmin.resting_heart_rate
+            daily_parts = []
+            if latest_garmin.steps:
+                daily_parts.append(f"今日步数{latest_garmin.steps}")
+            if latest_garmin.resting_heart_rate:
+                daily_parts.append(f"静息心率{latest_garmin.resting_heart_rate}")
+            if latest_garmin.body_battery_current:
+                daily_parts.append(f"Body Battery当前{latest_garmin.body_battery_current}")
+            if latest_garmin.stress_level:
+                daily_parts.append(f"压力指数{latest_garmin.stress_level}")
+            if latest_garmin.sleep_score:
+                daily_parts.append(f"昨晚睡眠评分{latest_garmin.sleep_score}")
+            if latest_garmin.total_sleep_duration:
+                sleep_hours = round(latest_garmin.total_sleep_duration / 3600, 1)
+                daily_parts.append(f"睡眠时长{sleep_hours}小时")
+            if latest_garmin.hrv:
+                daily_parts.append(f"HRV {latest_garmin.hrv}ms")
+            if daily_parts:
+                daily_health_str = "、".join(daily_parts)
 
         # Recent workout history (same type, last 30 days)
         history_records = self.db.query(WorkoutRecord).filter(
@@ -251,6 +296,9 @@ class PostRunAnalyzeService:
 
         if history_str:
             prompt += f"\n\n【近30天同类运动历史】\n{history_str}"
+
+        if daily_health_str:
+            prompt += f"\n\n【当日身体状态】\n{daily_health_str}"
 
         if profile_str:
             prompt += f"\n\n【用户画像】\n{profile_str}"
