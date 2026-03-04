@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import NotificationCenter from '@/components/NotificationCenter';
 import {
   Home,
   LayoutDashboard,
@@ -303,10 +304,11 @@ export default function Navigation() {
           </div>
 
           {/* 用户菜单（md+，平板和桌面共用，独立于导航区块，确保 iPad 可点击） */}
-          <div className="hidden md:flex relative ml-2 pl-2 border-l border-purple-900/30 flex-shrink-0" ref={userMenuRef}>
+          <div className="hidden md:flex items-center relative ml-2 pl-2 border-l border-purple-900/30 flex-shrink-0 gap-1" ref={userMenuRef}>
             {!authLoading && (
               isAuthenticated ? (
                 <>
+                  <NotificationCenter />
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
                     className="flex items-center gap-2 px-2 py-1.5 rounded-full text-lg font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-all border border-transparent hover:border-purple-500/30"

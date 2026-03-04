@@ -32,6 +32,7 @@ class User(Base):
     gender = Column(String, nullable=True)  # 男/女
     phone = Column(String, nullable=True)  # 手机号
     kids_points = Column(Integer, nullable=False, default=0)  # 儿童模式积分
+    onboarding_completed = Column(Boolean, default=False)  # 是否完成新手引导
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

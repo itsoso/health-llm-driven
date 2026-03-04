@@ -14,10 +14,9 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+import { api } from '@/services/api';
 import ProtectedRoute from '@/components/ProtectedRoute';
-
-// 使用相对路径，通过Next.js代理到后端
-const API_BASE = '/api';
 
 const QUICK_AMOUNTS = [
   { amount: 200, label: '一杯水', icon: '🥛' },
@@ -40,97 +39,68 @@ function WaterContent() {
     notes: '',
   });
 
+  const { showToast } = useToast();
   const today = format(new Date(), 'yyyy-MM-dd');
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
   // 获取某日饮水记录
   const { data: dailySummary, isLoading } = useQuery({
     queryKey: ['water-summary', selectedDate],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/water/records/me/date/${selectedDate}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return res.json();
-    },
+    queryFn: () => api.get(`/water/records/me/date/${selectedDate}`).then(r => r.data),
     enabled: isAuthenticated,
   });
 
   // 获取统计
   const { data: stats } = useQuery({
     queryKey: ['water-stats'],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/water/records/me/stats?days=7`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return res.json();
-    },
+    queryFn: () => api.get('/water/records/me/stats', { params: { days: 7 } }).then(r => r.data),
     enabled: isAuthenticated,
   });
 
   // 获取最近7天记录用于图表
   const { data: recentRecords } = useQuery({
     queryKey: ['water-recent'],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/water/records/me?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return res.json();
-    },
+    queryFn: () => api.get('/water/records/me', { params: { limit: 100 } }).then(r => r.data),
     enabled: isAuthenticated,
   });
 
   // 快速添加
   const quickAddMutation = useMutation({
-    mutationFn: async (amount: number) => {
-      const res = await fetch(`${API_BASE}/water/records/quick?amount=${amount}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return res.json();
-    },
-    onSuccess: () => {
+    mutationFn: (amount: number) =>
+      api.post(`/water/records/quick?amount=${amount}`).then(r => r.data),
+    onSuccess: (_data, amount) => {
       queryClient.invalidateQueries({ queryKey: ['water-summary'] });
       queryClient.invalidateQueries({ queryKey: ['water-stats'] });
       queryClient.invalidateQueries({ queryKey: ['water-recent'] });
+      showToast(`已记录${amount}ml饮水`, 'success');
     },
+    onError: () => showToast('操作失败，请重试', 'error'),
   });
 
   // 创建记录
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await fetch(`${API_BASE}/water/records`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(data),
-      });
-      return res.json();
-    },
+    mutationFn: (data: any) => api.post('/water/records', data).then(r => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['water-summary'] });
       queryClient.invalidateQueries({ queryKey: ['water-stats'] });
       queryClient.invalidateQueries({ queryKey: ['water-recent'] });
       setShowForm(false);
       setFormData({ amount: '', drink_type: '水', notes: '' });
+      showToast('饮水记录已添加', 'success');
     },
+    onError: () => showToast('操作失败，请重试', 'error'),
   });
 
   // 删除记录
   const deleteMutation = useMutation({
-    mutationFn: async (recordId: number) => {
-      const res = await fetch(`${API_BASE}/water/records/${recordId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return res.json();
-    },
+    mutationFn: (recordId: number) =>
+      api.delete(`/water/records/${recordId}`).then(r => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['water-summary'] });
       queryClient.invalidateQueries({ queryKey: ['water-stats'] });
       queryClient.invalidateQueries({ queryKey: ['water-recent'] });
+      showToast('记录已删除', 'success');
     },
+    onError: () => showToast('操作失败，请重试', 'error'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

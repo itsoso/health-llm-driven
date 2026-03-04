@@ -7,9 +7,11 @@ import logging
 import os
 import tempfile
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models.user import User
@@ -25,9 +27,14 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+# AI 对话限流器
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("/send", response_model=ChatSendResponse, summary="发送消息")
+@limiter.limit("20/minute")  # AI 对话每分钟最多20次
 async def send_message(
+    request: Request,
     req: ChatSendRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -63,7 +70,9 @@ async def send_message(
 
 
 @router.post("/stream", summary="流式发送消息")
+@limiter.limit("20/minute")  # AI 流式对话每分钟最多20次
 async def stream_message(
+    request: Request,
     req: ChatSendRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -145,7 +154,9 @@ async def get_conversation(
 
 
 @router.post("/transcribe", response_model=TranscribeResponse, summary="语音转文字")
+@limiter.limit("10/minute")  # 语音转文字每分钟最多10次
 async def transcribe_audio(
+    request: Request,
     req: TranscribeRequest,
     current_user: User = Depends(get_current_user_required),
 ):
@@ -181,6 +192,28 @@ async def transcribe_audio(
     except Exception as e:
         logger.error(f"语音转文字失败: {e}")
         raise HTTPException(status_code=500, detail=f"语音识别失败: {str(e)[:100]}")
+
+
+@router.post("/voice-command", summary="语音指令快速执行")
+@limiter.limit("30/minute")  # 语音指令每分钟最多30次
+async def voice_command(
+    request: Request,
+    req: dict,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """语音转文字后，尝试匹配快捷指令直接执行"""
+    from app.services.voice_command_service import VoiceCommandService
+
+    text = (req.get("text") or "").strip()
+    if not text:
+        return {"matched": False}
+
+    svc = VoiceCommandService(db, current_user.id)
+    result = svc.try_execute(text)
+    if result:
+        return {"matched": True, **result}
+    return {"matched": False}
 
 
 @router.delete("/conversations/{conversation_id}", summary="删除对话")

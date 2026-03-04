@@ -1,7 +1,12 @@
 """主应用入口"""
 import logging
+import time
+import uuid
+import traceback
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -114,6 +119,32 @@ app.add_middleware(
     max_age=600,
 )
 
+# 全局异常处理中间件
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-Response-Time"] = f"{(time.time() - start_time)*1000:.0f}ms"
+            return response
+        except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            logger.error(
+                f"[{request_id}] {request.method} {request.url.path} "
+                f"failed after {duration:.0f}ms: {type(e).__name__}: {e}"
+            )
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "detail": "服务器内部错误，请稍后重试",
+                    "request_id": request_id,
+                },
+            )
+
+app.add_middleware(RequestContextMiddleware)
+
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")
 
@@ -143,7 +174,12 @@ def root():
 def health_check():
     """健康检查 - 用于监控和负载均衡"""
     from app.utils.redis_cache import get_redis_client
+    from app.database import SessionLocal
+    from sqlalchemy import text
 
+    overall = "healthy"
+
+    # Redis 检查
     redis_status = "connected"
     try:
         client = get_redis_client()
@@ -155,11 +191,37 @@ def health_check():
         logger.warning(f"Redis health check failed: {e}")
         redis_status = "error"
 
+    # 数据库实际连接检查
+    db_status = "connected"
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+    except Exception as e:
+        logger.warning(f"DB health check failed: {e}")
+        db_status = "error"
+        overall = "degraded"
+
+    # Celery worker 检查
+    celery_status = "unknown"
+    try:
+        from app.celery_app import celery_app
+        inspector = celery_app.control.inspect(timeout=2)
+        active = inspector.active()
+        celery_status = "connected" if active else "no_workers"
+    except Exception as e:
+        logger.warning(f"Celery health check failed: {e}")
+        celery_status = "error"
+
+    if redis_status == "error":
+        overall = "degraded"
+
     return {
-        "status": "healthy",
+        "status": overall,
         "services": {
             "api": "running",
-            "database": "connected",
-            "redis": redis_status
+            "database": db_status,
+            "redis": redis_status,
+            "celery": celery_status,
         }
     }

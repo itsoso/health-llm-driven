@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, chatApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -24,6 +25,7 @@ const QUICK_QUESTIONS = [
 
 export default function AIAssistantPage() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,6 +44,8 @@ export default function AIAssistantPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const streamBufferRef = useRef('');
+  const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -71,7 +75,7 @@ export default function AIAssistantPage() {
       // 保持历史记录面板打开，不自动关闭
     } catch (e) {
       console.error('加载对话失败:', e);
-      alert('加载失败');
+      showToast('加载失败', 'error');
     }
   }, []);
 
@@ -190,15 +194,22 @@ export default function AIAssistantPage() {
       let firstToken = true;
       for await (const event of chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType)) {
         if (event.event === 'token') {
-          // 首个 token 到达时隐藏 loading 动画（文字本身就是进度指示）
           if (firstToken) {
             firstToken = false;
             setLoading(false);
           }
-          // 逐 token 更新 AI 消息内容
-          setMessages(prev => prev.map(m =>
-            m.id === aiMsgId ? { ...m, content: m.content + event.data.content } : m
-          ));
+          // 缓冲 token，批量更新减少渲染次数
+          streamBufferRef.current += event.data.content;
+          if (!flushTimerRef.current) {
+            flushTimerRef.current = setTimeout(() => {
+              const buffered = streamBufferRef.current;
+              streamBufferRef.current = '';
+              flushTimerRef.current = null;
+              setMessages(prev => prev.map(m =>
+                m.id === aiMsgId ? { ...m, content: m.content + buffered } : m
+              ));
+            }, 50);
+          }
         } else if (event.event === 'done') {
           gotDone = true;
           const result = event.data;
@@ -231,6 +242,19 @@ export default function AIAssistantPage() {
           }
           return prev;
         });
+      }
+
+      // 刷新剩余缓冲
+      if (streamBufferRef.current) {
+        if (flushTimerRef.current) {
+          clearTimeout(flushTimerRef.current);
+          flushTimerRef.current = null;
+        }
+        const remaining = streamBufferRef.current;
+        streamBufferRef.current = '';
+        setMessages(prev => prev.map(m =>
+          m.id === aiMsgId ? { ...m, content: m.content + remaining } : m
+        ));
       }
 
       // 如果前端触发了运动分析，等待结果并追加为消息
@@ -337,9 +361,9 @@ export default function AIAssistantPage() {
       if (conversationId === convId) {
         handleNewChat();
       }
-      alert('已删除');
+      showToast('已删除', 'success');
     } catch (e) {
-      alert('删除失败');
+      showToast('删除失败', 'error');
     }
   };
 
@@ -406,12 +430,24 @@ export default function AIAssistantPage() {
             const res = await chatApi.transcribe(base64, 'webm');
             const text = res.data.text?.trim();
             if (text) {
+              // 先尝试语音快捷指令
+              try {
+                const voiceRes = await chatApi.voiceCommand(text);
+                if (voiceRes.data.matched) {
+                  // 快捷指令执行成功，显示结果通知
+                  showToast(voiceRes.data.message || '指令已执行', 'success');
+                  return;
+                }
+              } catch (e) {
+                console.warn('语音指令检测失败，回退到输入框:', e);
+              }
+              // 未匹配快捷指令，填入输入框
               setInputText(prev => prev + text);
             }
           };
         } catch (err) {
           console.error('语音转文字失败:', err);
-          alert('语音识别失败，请重试');
+          showToast('语音识别失败，请重试', 'error');
         }
       };
 
@@ -419,7 +455,7 @@ export default function AIAssistantPage() {
       setIsRecording(true);
     } catch (err) {
       console.error('无法访问麦克风:', err);
-      alert('无法访问麦克风，请检查浏览器权限');
+      showToast('无法访问麦克风，请检查浏览器权限', 'warning');
     }
   };
 

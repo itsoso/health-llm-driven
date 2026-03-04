@@ -1,6 +1,8 @@
 """运动训练记录 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Header, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
@@ -846,8 +848,12 @@ async def refresh_workout_gps_batch(
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
 
 
+limiter = Limiter(key_func=get_remote_address)
+
 @router.post("/me/sync-garmin")
+@limiter.limit("5/minute")  # Garmin 运动同步每分钟最多5次
 async def sync_garmin_activities(
+    request: Request,
     days: int = Query(default=7, ge=1, le=30, description="同步最近N天的活动"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface ProtectedRouteProps {
@@ -10,6 +10,7 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAuthenticated, isLoading, user } = useAuth();
 
   useEffect(() => {
@@ -17,6 +18,15 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       router.push('/login');
     }
   }, [isLoading, isAuthenticated, router]);
+
+  // 已认证但未完成引导 → 跳转引导页（排除已在引导页的情况）
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user && user.onboarding_completed === false) {
+      if (!pathname?.startsWith('/onboarding')) {
+        router.push('/onboarding');
+      }
+    }
+  }, [isLoading, isAuthenticated, user, pathname, router]);
 
   // 加载中显示loading
   if (isLoading) {

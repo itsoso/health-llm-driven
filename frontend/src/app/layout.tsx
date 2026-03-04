@@ -4,6 +4,7 @@ import './globals.css';
 import { Providers } from './providers';
 import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
+import QuickActionButton from '@/components/QuickActionButton';
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -34,6 +35,7 @@ export default function RootLayout({
             {children}
           </main>
           <Footer />
+          <QuickActionButton />
         </Providers>
       </body>
     </html>

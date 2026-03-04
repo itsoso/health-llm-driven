@@ -383,12 +383,30 @@ async def quick_checkin(
     # 自动标记匹配的计划项为完成
     _auto_complete_plan_items(current_user.id, template.id, today, db)
 
+    # 触发成就检查
+    unlocked_badges = []
+    try:
+        from app.services.achievement_service import AchievementService
+        newly = AchievementService(db).check_and_award(current_user.id, trigger="checkin")
+        if newly:
+            badge_defs = {d.id: d for d in AchievementService(db).get_all_definitions()}
+            unlocked_badges = [
+                {"name": badge_defs[ub.badge_id].name, "icon": badge_defs[ub.badge_id].icon}
+                for ub in newly if ub.badge_id in badge_defs
+            ]
+    except Exception as e:
+        logger.warning(f"成就检查失败 user={current_user.id}: {e}")
+
     response = CheckinRecordResponse.model_validate(record)
     response.template_name = template.name
     response.template_icon = template.icon
     response.template_category = template.category
 
-    return response
+    # 附加解锁成就信息
+    result = response.model_dump()
+    if unlocked_badges:
+        result["unlocked_badges"] = unlocked_badges
+    return result
 
 
 @router.get("/records/today", response_model=CheckinDailySummary)
@@ -517,11 +535,39 @@ async def get_stats(
     
     # 计算完成率
     completion_rate_today = (today_count / len(active_templates) * 100) if active_templates else 0
-    
+
+    # 计算本周完成率：本周有打卡的天数 / 已过天数
+    if active_templates:
+        days_in_week = (today - week_start).days + 1
+        week_day_count = db.query(
+            func.count(func.distinct(CheckinRecord.checkin_date))
+        ).filter(
+            CheckinRecord.user_id == current_user.id,
+            CheckinRecord.checkin_date >= week_start,
+            CheckinRecord.checkin_date <= today
+        ).scalar() or 0
+        completion_rate_week = round(week_day_count / days_in_week * 100, 1)
+    else:
+        completion_rate_week = 0.0
+
+    # 计算本月完成率
+    if active_templates:
+        days_in_month = (today - month_start).days + 1
+        month_day_count = db.query(
+            func.count(func.distinct(CheckinRecord.checkin_date))
+        ).filter(
+            CheckinRecord.user_id == current_user.id,
+            CheckinRecord.checkin_date >= month_start,
+            CheckinRecord.checkin_date <= today
+        ).scalar() or 0
+        completion_rate_month = round(month_day_count / days_in_month * 100, 1)
+    else:
+        completion_rate_month = 0.0
+
     # 计算连续打卡
     current_streak = 0
     best_streak = max((t.best_streak for t in templates), default=0)
-    
+
     # 统计最近7天趋势 - 批量查询避免 N+1
     week_ago = today - timedelta(days=6)
     trend_records = db.query(
@@ -563,8 +609,8 @@ async def get_stats(
         checkins_this_week=week_count,
         checkins_this_month=month_count,
         completion_rate_today=round(completion_rate_today, 1),
-        completion_rate_week=0,  # TODO: 计算
-        completion_rate_month=0,  # TODO: 计算
+        completion_rate_week=completion_rate_week,
+        completion_rate_month=completion_rate_month,
         by_category=by_category,
         daily_trend=daily_trend
     )

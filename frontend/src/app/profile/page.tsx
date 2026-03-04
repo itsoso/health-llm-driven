@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { api } from '@/services/api';
 
 interface UserProfile {
@@ -47,6 +48,7 @@ interface UserProfile {
 export default function ProfilePage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
   
   const [formData, setFormData] = useState<Partial<UserProfile>>({});
@@ -72,10 +74,10 @@ export default function ProfilePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      alert('保存成功！');
+      showToast('保存成功！', 'success');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || '保存失败');
+      showToast(error.response?.data?.detail || '保存失败', 'error');
     },
   });
 

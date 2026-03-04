@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+import { useCelebration } from '@/components/AchievementCelebration';
 import { api } from '@/services/api';
 
 interface CheckinTemplate {
@@ -93,6 +95,8 @@ const categoryColors: Record<string, string> = {
 export default function CheckinPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
+  const { showToast } = useToast();
+  const { celebrate } = useCelebration();
   const queryClient = useQueryClient();
   
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -198,7 +202,7 @@ export default function CheckinPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['checkinTemplates'] });
       queryClient.invalidateQueries({ queryKey: ['checkinStats'] });
-      alert(data.message);
+      showToast(data.message, 'success');
     },
   });
 
@@ -211,21 +215,26 @@ export default function CheckinPage() {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['checkinToday'] });
       queryClient.invalidateQueries({ queryKey: ['checkinTemplates'] });
       queryClient.invalidateQueries({ queryKey: ['checkinStats'] });
       setShowQuickCheckin(null);
       setQuickValue('');
+      showToast('打卡成功', 'success');
+      // 成就解锁庆祝
+      if (data?.unlocked_badges?.length > 0) {
+        setTimeout(() => celebrate(data.unlocked_badges), 500);
+      }
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || '打卡失败');
+      showToast(error.response?.data?.detail || '打卡失败', 'error');
     },
   });
 
   const handleQuickCheckin = (template: CheckinTemplate) => {
     if (template.today_completed) {
-      alert('今日已完成此项打卡');
+      showToast('今日已完成此项打卡', 'info');
       return;
     }
     setShowQuickCheckin(template);

@@ -15,6 +15,7 @@ import {
   Legend,
 } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
@@ -23,6 +24,7 @@ const API_BASE = '/api';
 function BloodPressureContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -83,10 +85,10 @@ function BloodPressureContent() {
       queryClient.invalidateQueries({ queryKey: ['blood-pressure-stats'] });
       setShowForm(false);
       setFormData({ systolic: '', diastolic: '', pulse: '', measurement_position: '坐', arm: '左', notes: '' });
-      alert('✅ 血压记录保存成功！');
+      showToast('血压记录保存成功！', 'success');
     },
     onError: (error) => {
-      alert('❌ 保存失败，请重试');
+      showToast('保存失败，请重试', 'error');
       console.error('Save error:', error);
     },
   });

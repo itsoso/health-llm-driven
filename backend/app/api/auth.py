@@ -44,7 +44,8 @@ def user_to_response(user: User, db: Session) -> UserResponse:
         created_at=user.created_at,
         has_garmin_credentials=has_garmin,
         avatar_url=getattr(user, 'avatar_url', None),
-        kids_points=getattr(user, 'kids_points', 0) or 0
+        kids_points=getattr(user, 'kids_points', 0) or 0,
+        onboarding_completed=getattr(user, 'onboarding_completed', False) or False
     )
 
 
@@ -386,7 +387,9 @@ async def toggle_garmin_sync(
 
 
 @router.post("/garmin/sync", response_model=GarminSyncResponse, summary="同步Garmin数据")
+@limiter.limit("5/minute")  # Garmin 同步每分钟最多5次
 async def sync_garmin_data(
+    request: Request,
     sync_request: GarminSyncRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -495,7 +498,9 @@ async def sync_garmin_data(
 
 
 @router.get("/garmin/sync-stream", summary="流式同步Garmin数据（带进度）")
+@limiter.limit("5/minute")  # Garmin 流式同步每分钟最多5次
 async def sync_garmin_data_stream(
+    request: Request,
     days: int = 7,
     mfa_session_id: Optional[str] = Query(default=None, description="MFA会话ID（如果已完成MFA验证）"),
     current_user: User = Depends(get_current_user_required),

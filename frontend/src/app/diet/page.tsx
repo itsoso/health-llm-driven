@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 // 使用相对路径，通过Next.js代理到后端
@@ -62,6 +63,7 @@ interface RecognitionResult {
 function DietContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -136,11 +138,11 @@ function DietContent() {
       queryClient.invalidateQueries({ queryKey: ['diet-summary'] });
       queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
       resetForm();
-      alert('✅ 保存成功！');
+      showToast('保存成功！', 'success');
     },
     onError: (error: Error) => {
       console.error('[饮食保存] 失败:', error);
-      alert(`保存失败: ${error.message}`);
+      showToast(`保存失败: ${error.message}`, 'error');
     },
   });
 
@@ -165,10 +167,10 @@ function DietContent() {
       queryClient.invalidateQueries({ queryKey: ['diet-summary'] });
       queryClient.invalidateQueries({ queryKey: ['diet-stats'] });
       resetForm();
-      alert('✅ 识别并保存成功！');
+      showToast('识别并保存成功！', 'success');
     },
     onError: (error: Error) => {
-      alert(`保存失败: ${error.message}`);
+      showToast(`保存失败: ${error.message}`, 'error');
     },
   });
 
@@ -203,13 +205,13 @@ function DietContent() {
 
     // 检查文件类型
     if (!file.type.startsWith('image/')) {
-      alert('请选择图片文件');
+      showToast('请选择图片文件', 'warning');
       return;
     }
 
     // 检查文件大小（限制10MB）
     if (file.size > 10 * 1024 * 1024) {
-      alert('图片大小不能超过10MB');
+      showToast('图片大小不能超过10MB', 'warning');
       return;
     }
 
@@ -229,7 +231,7 @@ function DietContent() {
   // AI识别图片
   const handleRecognize = async () => {
     if (!imageBase64) {
-      alert('请先选择图片');
+      showToast('请先选择图片', 'warning');
       return;
     }
 
@@ -268,7 +270,7 @@ function DietContent() {
       }
     } catch (error) {
       console.error('识别失败:', error);
-      alert('识别失败，请重试');
+      showToast('识别失败，请重试', 'error');
     } finally {
       setIsRecognizing(false);
     }
@@ -277,7 +279,7 @@ function DietContent() {
   // 一键识别并保存
   const handleRecognizeAndSave = async () => {
     if (!imageBase64) {
-      alert('请先选择图片');
+      showToast('请先选择图片', 'warning');
       return;
     }
 
@@ -294,7 +296,7 @@ function DietContent() {
   const handleTextAnalyze = async () => {
     const text = formData.food_items.trim();
     if (!text) {
-      alert('请先输入食物内容');
+      showToast('请先输入食物内容', 'warning');
       return;
     }
 
@@ -323,13 +325,13 @@ function DietContent() {
 
         // 显示识别结果
         setRecognitionResult(result);
-        alert('✅ 分析成功！营养数据已自动填充');
+        showToast('分析成功！营养数据已自动填充', 'success');
       } else {
-        alert(result.error || '分析失败，请重试');
+        showToast(result.error || '分析失败，请重试', 'error');
       }
     } catch (error: any) {
       console.error('文字分析失败:', error);
-      alert('分析失败，请重试');
+      showToast('分析失败，请重试', 'error');
     } finally {
       setIsAnalyzing(false);
     }
@@ -338,7 +340,7 @@ function DietContent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.food_items.trim()) {
-      alert('请输入食物内容');
+      showToast('请输入食物内容', 'warning');
       return;
     }
     

@@ -65,6 +65,17 @@ def sync_user_garmin_data(self, user_id: int):
             except Exception as e:
                 logger.warning(f"检测新运动触发分析失败: {e}")
 
+            # 触发健康异常检测
+            try:
+                from app.services.anomaly_detection_service import AnomalyDetectionService
+                anomaly_svc = AnomalyDetectionService(db)
+                alerts = anomaly_svc.detect_anomalies(user_id)
+                if alerts:
+                    logger.info(f"用户 {user_id} 检测到 {len(alerts)} 个健康异常")
+                    asyncio.run(anomaly_svc.send_alerts(user_id, alerts))
+            except Exception as e:
+                logger.warning(f"健康异常检测失败: {e}")
+
             return {"status": "success", "result": result}
             
     except Exception as e:
@@ -128,9 +139,7 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
             prompt = service._build_prompt(user_id, workout, workout_data)
 
             # 异步调用 OpenClaw 多模型分析
-            analysis = asyncio.get_event_loop().run_until_complete(
-                service.openclaw.analyze(prompt)
-            )
+            analysis = asyncio.run(service.openclaw.analyze(prompt))
 
             # 保存分析结果
             service._save_analysis_result(user_id, workout_id, prompt, analysis)
@@ -143,7 +152,7 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
             try:
                 from app.services.notification.push_service import PushService
                 push_service = PushService(db)
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     push_service.send_notification(
                         user_id=user_id,
                         notification_type="workout_analysis",

@@ -46,7 +46,8 @@ class UserResponse(BaseModel):
     has_garmin_credentials: bool = False
     avatar_url: Optional[str] = None
     kids_points: int = 0
-    
+    onboarding_completed: bool = False
+
     class Config:
         from_attributes = True
 
