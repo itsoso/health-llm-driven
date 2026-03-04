@@ -35,6 +35,7 @@ from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
 from app.services.quark_search import get_search_client
 from app.services.llm import get_llm_provider
+from app.services.chat_tools import HEALTH_TOOLS, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -1692,15 +1693,67 @@ class ChatService:
                     continue
             messages.append({"role": msg.role, "content": content})
 
-        # 调用 OpenClaw API
+        # 调用 OpenClaw API（传入 Function Calling tools）
         try:
-            reply_content = await self._call_openclaw(messages)
+            reply_content = await self._call_openclaw(messages, tools=HEALTH_TOOLS)
         except Exception as e:
             logger.error(f"OpenClaw 调用失败: {type(e).__name__}: {e}")
             reply_content = "抱歉，智能助理暂时无法响应，请稍后再试。"
 
-        # 解析活动标记
-        clean_reply, actions = self._parse_actions(reply_content)
+        # ---- Function Calling 处理 ----
+        # 如果 LLM 返回 tool_calls，执行工具并将结果发回 LLM 获取最终回复
+        fc_activity_results = []
+        if isinstance(reply_content, dict) and reply_content.get("tool_calls"):
+            tool_calls = reply_content["tool_calls"]
+            logger.info(f"LLM 返回 {len(tool_calls)} 个 tool_calls: {[tc['function']['name'] for tc in tool_calls]}")
+
+            # 查询用户对象供 execute_tool 使用
+            fc_user = self.db.query(User).filter(User.id == user_id).first()
+
+            # 将 assistant 的 tool_calls 消息追加到上下文
+            messages.append({
+                "role": "assistant",
+                "content": reply_content.get("content"),
+                "tool_calls": tool_calls,
+            })
+
+            # 逐个执行工具，收集结果
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                try:
+                    func_args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    func_args = {}
+                try:
+                    result = await execute_tool(func_name, func_args, self.db, fc_user)
+                except Exception as tool_err:
+                    logger.error(f"execute_tool({func_name}) 异常: {tool_err}")
+                    result = {"error": str(tool_err)}
+
+                fc_activity_results.append({"type": func_name, **result})
+
+                # 将工具结果作为 tool 消息发回
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": json.dumps(result, ensure_ascii=False, default=str),
+                })
+
+            # 第二轮调用 LLM（不带 tools），让模型基于工具结果生成自然语言回复
+            try:
+                reply_content = await self._call_openclaw(messages)
+                # 如果第二轮仍然返回 dict（不应发生），取 content 字段
+                if isinstance(reply_content, dict):
+                    reply_content = reply_content.get("content") or "操作已完成。"
+            except Exception as e:
+                logger.error(f"Function Calling 第二轮调用失败: {e}")
+                # 兜底：基于工具执行结果拼装回复
+                success_msgs = [r.get("message", "") for r in fc_activity_results if r.get("success")]
+                reply_content = "；".join(success_msgs) if success_msgs else "操作已执行，但生成回复时出错。"
+
+        # ---- <<<ACTIONS: 解析（作为 fallback） ----
+        # 对于不支持 function calling 的模型，仍通过正则解析 <<<ACTIONS:>>> 标记
+        clean_reply, actions = self._parse_actions(reply_content if isinstance(reply_content, str) else str(reply_content))
         activity_results = []
         if actions:
             # 异步 action 单独处理（create_plan, workout_analyze）
@@ -1717,7 +1770,23 @@ class ChatService:
                 workout_result = await self._handle_workout_analyze_action(user_id, wa)
                 if workout_result:
                     activity_results.append(workout_result)
-            logger.info(f"用户{user_id} 执行了{len(activity_results)}个活动")
+            logger.info(f"用户{user_id} 执行了{len(activity_results)}个活动（<<<ACTIONS: fallback）")
+
+        # 合并 Function Calling 执行结果
+        if fc_activity_results:
+            # 处理 create_plan / workout_analyze 等特殊 action_type
+            for fc_r in fc_activity_results:
+                if fc_r.get("action_type") == "create_plan":
+                    plan_result = await self._handle_create_plan_async(user_id, fc_r.get("arguments", {}))
+                    if plan_result:
+                        activity_results.append(plan_result)
+                elif fc_r.get("action_type") == "workout_analyze":
+                    workout_result = await self._handle_workout_analyze_action(user_id, fc_r.get("arguments", {}))
+                    if workout_result:
+                        activity_results.append(workout_result)
+                elif fc_r.get("success"):
+                    activity_results.append(fc_r)
+            logger.info(f"用户{user_id} Function Calling 执行了{len(fc_activity_results)}个工具")
 
         # 图片消息后处理：从AI回复中提取饮食营养数据
         if image_base64 and not diet_result and clean_reply:
@@ -1792,10 +1861,21 @@ class ChatService:
 
         return result
 
-    async def _call_openclaw(self, messages: list) -> str:
-        """调用 LLM Provider（非流式）"""
+    async def _call_openclaw(self, messages: list, tools: list = None):
+        """调用 LLM Provider（非流式）
+
+        Args:
+            messages: 消息列表
+            tools: Function Calling 工具定义列表（可选）
+
+        Returns:
+            str 或 dict（当 LLM 返回 tool_calls 时）
+        """
         provider = get_llm_provider()
-        result = await provider.chat(messages=messages)
+        kwargs = {}
+        if tools:
+            kwargs["tools"] = tools
+        result = await provider.chat(messages=messages, **kwargs)
         return result
 
     async def _call_openclaw_stream(self, messages: list):
