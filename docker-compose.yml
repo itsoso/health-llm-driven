@@ -87,6 +87,23 @@ services:
       redis:
         condition: service_healthy
 
+  # ─── MCP Server (Model Context Protocol) ───────────────────────────
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    environment:
+      HEALTH_API_URL: http://backend:8000/api/v1
+      HEALTH_API_TOKEN: ${MCP_API_TOKEN:-}
+      MCP_TRANSPORT: sse
+      MCP_SSE_PORT: "8808"
+    ports:
+      - "8808:8808"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ─── Celery Worker ──────────────────────────────────────────────────
   celery-worker:
     build:
