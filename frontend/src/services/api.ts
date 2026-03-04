@@ -1097,6 +1097,9 @@ export const chatApi = {
   // 语音转文字
   transcribe: (audioBase64: string, audioFormat: string = 'webm') =>
     api.post<{ text: string }>('/chat/transcribe', { audio_base64: audioBase64, audio_format: audioFormat }),
+  // 语音指令快速执行
+  voiceCommand: (text: string) =>
+    api.post<{ matched: boolean; command_type?: string; message?: string; data?: any }>('/chat/voice-command', { text }),
   // 食物图片识别（保留兼容）
   recognizeFood: (imageBase64: string, imageType: string = 'image/jpeg') =>
     api.post<{ success: boolean; foods: any[]; meal_description: string; health_tips: string; totals: any }>('/diet/recognize', { image_base64: imageBase64, image_type: imageType }),
@@ -1543,4 +1546,86 @@ export const groupApi = {
     api.delete(`/groups/${groupId}/members/${userId}`),
   leave: (groupId: number) =>
     api.post(`/groups/${groupId}/leave`),
+};
+
+export const onboardingApi = {
+  getStatus: () =>
+    api.get<{ onboarding_completed: boolean; has_profile: boolean; has_health_goals: boolean; has_checkin_templates: boolean }>('/onboarding/status'),
+  saveStep1: (data: { height_cm?: number; current_weight_kg?: number; gender?: string; birth_date?: string }) =>
+    api.post('/onboarding/step1', data),
+  saveStep2: (data: { target_steps?: number; target_sleep_hours?: number; target_water_ml?: number; target_exercise_minutes?: number }) =>
+    api.post('/onboarding/step2', data),
+  complete: (data: { init_default_templates: boolean; selected_template_names?: string[] }) =>
+    api.post('/onboarding/complete', data),
+  skip: () =>
+    api.post('/onboarding/skip'),
+};
+
+export const dataExportApi = {
+  exportData: (dataType = 'all', format = 'csv', startDate?: string, endDate?: string) =>
+    api.get('/export/health-data', {
+      params: { data_type: dataType, format, start_date: startDate, end_date: endDate },
+      responseType: 'blob',
+    }),
+};
+
+export const notificationApi = {
+  getLogs: (limit = 50, type?: string) =>
+    api.get<{ logs: Array<{ id: number; notification_type: string; channel: string; title: string; content: string; status: string; sent_at: string | null; created_at: string | null }> }>('/notification/logs', { params: { limit, notification_type: type } }),
+  getSettings: () =>
+    api.get('/notification/settings'),
+};
+
+export const achievementApi = {
+  getDefinitions: () =>
+    api.get<Array<{ id: number; code: string; name: string; description: string; icon: string; category: string; criteria_type: string; criteria_value: number; rarity: string; sort_order: number }>>('/achievements/definitions'),
+  getMyAchievements: () =>
+    api.get<{ total: number; unlocked: number; achievements: Array<{ id: number; code: string; name: string; description: string; icon: string; category: string; rarity: string; criteria_value: number; progress: number; unlocked: boolean; unlocked_at: string | null }> }>('/achievements/me'),
+  checkAchievements: () =>
+    api.post<{ newly_unlocked: number; badges: Array<{ badge_id: number; progress: number }> }>('/achievements/check'),
+};
+
+export const healthTrendApi = {
+  getLatest: () =>
+    api.get<{
+      report_date: string | null;
+      dimensions: Array<{
+        dimension: string;
+        period: string;
+        trend_direction: string | null;
+        insights: string[];
+        suggestions: string[];
+        risk_alerts: string[];
+        report_date: string;
+      }>;
+    }>('/health-trends/latest'),
+  getDimension: (dimension: string, period: string = '7d') =>
+    api.get<{
+      id: number;
+      report_date: string;
+      dimension: string;
+      period: string;
+      trend_direction: string | null;
+      raw_data_summary: Record<string, unknown> | null;
+      insights: string[];
+      suggestions: string[];
+      risk_alerts: string[];
+      full_report: string | null;
+      created_at: string;
+    }>(`/health-trends/${dimension}`, { params: { period } }),
+  getHistory: (limit: number = 20, offset: number = 0) =>
+    api.get<{
+      total: number;
+      items: Array<{
+        id: number;
+        report_date: string;
+        dimension: string;
+        period: string;
+        trend_direction: string | null;
+        insights: string[];
+        created_at: string;
+      }>;
+    }>('/health-trends/history', { params: { limit, offset } }),
+  generate: () =>
+    api.post<{ analyzed_dimensions: string[] }>('/health-trends/generate'),
 };
