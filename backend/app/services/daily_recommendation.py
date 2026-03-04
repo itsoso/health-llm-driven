@@ -610,7 +610,7 @@ class DailyRecommendationService:
             "_recent_data": recent_data
         }
     
-    def generate_daily_summary_with_llm(
+    async def generate_daily_summary_with_llm(
         self,
         db: Session,
         user_id: int,
@@ -667,7 +667,7 @@ class DailyRecommendationService:
             # 如果睡眠和运动数据来自不同日期，需要在提示词中明确说明
             logger.info(f"睡眠数据日期: {sleep_data.record_date if sleep_data else 'N/A'}, 运动数据日期: {activity_data.record_date if activity_data else 'N/A'}")
         
-        llm_result = llm_analyzer.analyze_daily_health(
+        llm_result = await llm_analyzer.analyze_daily_health(
             db=db,
             user_id=user_id,
             yesterday_data=combined_data,
@@ -914,7 +914,7 @@ class DailyRecommendationService:
         
         return goals
     
-    def get_or_generate_recommendations(
+    async def get_or_generate_recommendations(
         self,
         db: Session,
         user_id: int,
@@ -962,10 +962,10 @@ class DailyRecommendationService:
         logger.info(f"生成新的建议数据（用户 {user_id}，日期 {today}，分析数据日期 {analysis_date}）")
         
         # 生成1天建议（基于最新的数据）
-        one_day_rec = self.generate_one_day_recommendation(db, user_id, use_llm)
-        
+        one_day_rec = await self.generate_one_day_recommendation(db, user_id, use_llm)
+
         # 生成7天建议（基于最近7天的数据）
-        seven_day_rec = self.generate_seven_day_recommendation(db, user_id, use_llm)
+        seven_day_rec = await self.generate_seven_day_recommendation(db, user_id, use_llm)
         
         # 保存到数据库
         if cached:
@@ -997,7 +997,7 @@ class DailyRecommendationService:
             "cached": False
         }
     
-    def generate_one_day_recommendation(
+    async def generate_one_day_recommendation(
         self,
         db: Session,
         user_id: int,
@@ -1005,7 +1005,7 @@ class DailyRecommendationService:
     ) -> Dict[str, Any]:
         """生成1天建议（基于昨天的数据）"""
         if use_llm:
-            return self.generate_daily_summary_with_llm(db, user_id)
+            return await self.generate_daily_summary_with_llm(db, user_id)
         else:
             result = self.generate_daily_summary(db, user_id)
             # 清理内部字段
@@ -1014,7 +1014,7 @@ class DailyRecommendationService:
             result.pop("_recent_data", None)
             return result
     
-    def generate_seven_day_recommendation(
+    async def generate_seven_day_recommendation(
         self,
         db: Session,
         user_id: int,
@@ -1133,7 +1133,7 @@ class DailyRecommendationService:
         # 如果启用LLM，添加LLM分析
         if use_llm and yesterday_data:
             try:
-                llm_result = llm_analyzer.analyze_daily_health(
+                llm_result = await llm_analyzer.analyze_daily_health(
                     db=db,
                     user_id=user_id,
                     yesterday_data=yesterday_data,

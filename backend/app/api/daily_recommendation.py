@@ -53,7 +53,7 @@ def clear_my_recommendations_cache(
 
 
 @router.post("/me/refresh")
-def refresh_my_recommendations(
+async def refresh_my_recommendations(
     use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -82,7 +82,7 @@ def refresh_my_recommendations(
     date_str = today.strftime('%Y-%m-%d')
 
     try:
-        result = service.get_or_generate_recommendations(db, current_user.id, use_llm)
+        result = await service.get_or_generate_recommendations(db, current_user.id, use_llm)
 
         if result.get("status") == "no_data":
             raise HTTPException(
@@ -106,7 +106,7 @@ def refresh_my_recommendations(
 
 
 @router.get("/me")
-def get_my_recommendations(
+async def get_my_recommendations(
     use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
@@ -144,7 +144,7 @@ def get_my_recommendations(
     service = DailyRecommendationService()
 
     try:
-        result = service.get_or_generate_recommendations(db, current_user.id, use_llm)
+        result = await service.get_or_generate_recommendations(db, current_user.id, use_llm)
 
         if result.get("status") == "no_data":
             raise HTTPException(
@@ -273,7 +273,7 @@ def get_my_recommendation_by_date(
 
 
 @router.get("/user/{user_id}/recommendations")
-def get_recommendations(
+async def get_recommendations(
     user_id: int,
     use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
     db: Session = Depends(get_db)
@@ -296,8 +296,8 @@ def get_recommendations(
     service = DailyRecommendationService()
     
     try:
-        result = service.get_or_generate_recommendations(db, user_id, use_llm)
-        
+        result = await service.get_or_generate_recommendations(db, user_id, use_llm)
+
         if result.get("status") == "no_data":
             raise HTTPException(
                 status_code=404,
@@ -306,7 +306,7 @@ def get_recommendations(
                     "suggestion": "运行: python scripts/sync_garmin.py <email> <password> <user_id>"
                 }
             )
-        
+
         return result
     except Exception as e:
         logger.error(f"获取建议失败: {e}")
@@ -314,7 +314,7 @@ def get_recommendations(
 
 
 @router.get("/user/{user_id}/today")
-def get_today_recommendations(
+async def get_today_recommendations(
     user_id: int,
     use_llm: bool = Query(default=True, description="是否使用大模型增强分析"),
     db: Session = Depends(get_db)
@@ -340,7 +340,7 @@ def get_today_recommendations(
     service = DailyRecommendationService()
     
     if use_llm:
-        result = service.generate_daily_summary_with_llm(db, user_id)
+        result = await service.generate_daily_summary_with_llm(db, user_id)
     else:
         result = service.generate_daily_summary(db, user_id)
         # 清理内部字段
@@ -394,7 +394,7 @@ def get_llm_status():
     """
     return {
         "available": llm_analyzer.is_available(),
-        "message": "LLM服务可用" if llm_analyzer.is_available() else "LLM服务不可用，请配置OpenAI API Key"
+        "message": "LLM服务可用" if llm_analyzer.is_available() else "LLM服务不可用，请配置 LLM Provider"
     }
 
 

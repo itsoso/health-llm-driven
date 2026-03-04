@@ -13,13 +13,8 @@ from app.utils.timezone import get_china_now, get_china_today
 
 logger = logging.getLogger(__name__)
 
-# 尝试导入 OpenAI
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    logger.warning("OpenAI库未安装，LLM分析功能将不可用")
+# 导入 LLM Provider
+from app.services.llm import get_llm_provider
 
 
 class LLMHealthAnalyzer:
@@ -30,20 +25,17 @@ class LLMHealthAnalyzer:
     """
     
     def __init__(self):
-        self.client = None
-        self.model = settings.openai_model or "gpt-4o-mini"
-        if OPENAI_AVAILABLE and settings.openai_api_key:
-            # 支持代理配置
-            client_kwargs = {"api_key": settings.openai_api_key}
-            if settings.openai_base_url:
-                client_kwargs["base_url"] = settings.openai_base_url
-            self.client = OpenAI(**client_kwargs)
-        else:
-            logger.warning("OpenAI API未配置，将使用纯规则分析")
+        self._provider = None
+        try:
+            self._provider = get_llm_provider()
+            self.model = getattr(self._provider, 'model', 'gpt-4o-mini')
+        except Exception as e:
+            logger.warning(f"LLM Provider 初始化失败，将使用纯规则分析: {e}")
+            self.model = "gpt-4o-mini"
     
     def is_available(self) -> bool:
         """检查LLM服务是否可用"""
-        return self.client is not None
+        return self._provider is not None
 
     async def analyze_with_prompt(
         self,
@@ -65,20 +57,18 @@ class LLMHealthAnalyzer:
             LLM 响应内容字符串
         """
         if not self.is_available():
-            raise Exception("LLM 服务不可用，请配置 OpenAI API Key")
+            raise Exception("LLM 服务不可用，请配置 LLM Provider")
 
-        response = self.client.chat.completions.create(
-            model=self.model,
+        content = await self._provider.chat(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=60
         )
 
-        content = response.choices[0].message.content.strip()
+        content = content.strip()
 
         # 处理可能的 markdown 代码块
         if content.startswith("```"):
@@ -523,7 +513,7 @@ class LLMHealthAnalyzer:
         
         return time_info + user_info + yesterday_info + trend_info + rule_summary + environment_info
     
-    def analyze_daily_health(
+    async def analyze_daily_health(
         self,
         db: Session,
         user_id: int,
@@ -534,7 +524,7 @@ class LLMHealthAnalyzer:
     ) -> Dict[str, Any]:
         """
         使用大模型分析每日健康数据
-        
+
         Args:
             db: 数据库会话
             user_id: 用户ID
@@ -542,16 +532,16 @@ class LLMHealthAnalyzer:
             recent_data: 最近几天的数据
             rule_analysis: 规则分析结果
             environment_data: 环境数据（天气、空气质量）
-            
+
         Returns:
             包含LLM分析结果的字典
         """
         if not self.is_available():
             return {
                 "available": False,
-                "message": "LLM服务不可用，请配置OpenAI API Key"
+                "message": "LLM服务不可用，请配置 LLM Provider"
             }
-        
+
         try:
             user_context = self._build_user_context(db, user_id)
             health_prompt = self._build_health_data_prompt(
@@ -623,19 +613,18 @@ class LLMHealthAnalyzer:
 
 请分析这些数据并给出具体、可执行的建议，特别注意结合环境信息给出合适的运动推荐。"""
 
-            response = self.client.chat.completions.create(
-                model=self.model,
+            content = await self._provider.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7,
                 max_tokens=1500,
-                timeout=60
+                timeout=60,
             )
-            
-            content = response.choices[0].message.content.strip()
-            
+
+            content = content.strip()
+
             # 尝试解析JSON
             # 处理可能的markdown代码块
             if content.startswith("```"):
@@ -664,7 +653,7 @@ class LLMHealthAnalyzer:
                 "error": str(e)
             }
     
-    def generate_weekly_report(
+    async def generate_weekly_report(
         self,
         db: Session,
         user_id: int,
@@ -673,16 +662,16 @@ class LLMHealthAnalyzer:
         """生成周报分析"""
         if not self.is_available():
             return {"available": False, "message": "LLM服务不可用"}
-        
+
         if not week_data:
             return {"available": False, "message": "无周数据"}
-        
+
         try:
             user_context = self._build_user_context(db, user_id)
-            
+
             # 构建周数据摘要
             week_summary = self._build_week_summary(week_data)
-            
+
             system_prompt = """你是一位专业的智能助理。请基于用户一周的健康数据，生成一份周报分析。
 
 请用JSON格式返回:
@@ -708,28 +697,27 @@ class LLMHealthAnalyzer:
 
 请分析并生成周报。"""
 
-            response = self.client.chat.completions.create(
-                model=self.model,
+            content = await self._provider.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7,
                 max_tokens=1000,
-                timeout=60
+                timeout=60,
             )
-            
-            content = response.choices[0].message.content.strip()
+
+            content = content.strip()
             if content.startswith("```"):
                 content = content.split("```")[1]
                 if content.startswith("json"):
                     content = content[4:]
                 content = content.strip()
-            
+
             result = json.loads(content)
             result["available"] = True
             return result
-            
+
         except Exception as e:
             logger.error(f"周报生成失败: {e}")
             return {"available": False, "error": str(e)}
