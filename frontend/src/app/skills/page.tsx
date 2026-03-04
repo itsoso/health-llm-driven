@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { api } from '@/services/api';
 
-const API_URL = 'https://health-api.executor.life/api/v1';
+const API_URL = 'https://health.executor.life/api/v1';
 
 interface ApiKey {
   id: number;
