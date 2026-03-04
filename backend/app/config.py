@@ -6,6 +6,22 @@ from typing import Optional, List
 class Settings(BaseSettings):
     """应用设置"""
     
+    # === LLM Provider 统一配置 ===
+    llm_provider: str = "openai"  # openai | ollama | openclaw
+    llm_api_key: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_model: str = "gpt-4o-mini"
+    llm_vision_model: str = "gpt-4o"
+
+    # Ollama 本地模型配置
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3"
+
+    # OpenClaw 多模型分析配置（可选）
+    openclaw_analyze_url: Optional[str] = None
+    openclaw_analyze_api_key: Optional[str] = None
+    openclaw_analyze_user_id: Optional[str] = None
+
     # OpenAI配置
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None  # 代理地址，如: https://api.openai-proxy.com/v1
