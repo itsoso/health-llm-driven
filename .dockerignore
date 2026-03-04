@@ -1,0 +1,59 @@
+# Version control
+.git
+.gitignore
+
+# Node.js
+frontend/node_modules
+frontend/.next
+frontend/out
+
+# Python
+backend/venv
+backend/__pycache__
+backend/**/__pycache__
+backend/.pytest_cache
+backend/.coverage
+backend/htmlcov
+*.pyc
+*.pyo
+
+# Environment files (secrets)
+.env
+.env.local
+.env-online
+backend/.env
+frontend/.env.local
+
+# IDE / Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude
+
+# Documentation (not needed in images)
+docs
+*.md
+
+# SQLite legacy database
+*.db
+*.sqlite
+*.sqlite3
+health.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Capacitor / native builds
+frontend/ios
+frontend/android
+
+# Deployment scripts (not needed in images)
+deploy.sh
+
+# Packages (mini program, not part of Docker)
+packages

@@ -1,0 +1,21 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies first (layer caching)
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci --legacy-peer-deps 2>/dev/null || npm install
+
+# Copy application code
+COPY frontend/ .
+
+# Backend URL for Next.js rewrites (build-time and runtime)
+ARG BACKEND_URL=http://backend:8000
+ENV BACKEND_URL=$BACKEND_URL
+
+# Build the Next.js application
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
