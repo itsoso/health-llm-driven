@@ -233,16 +233,17 @@ curl -s -X POST -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/daily-reco
 \`\`\`
 AI 生成个性化运动、饮食、作息建议。
 
-### 健康趋势预测
+### 健康趋势概览
 \`\`\`bash
-curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/health-trend/me/prediction?days=30"
+curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/health-trends/latest"
 \`\`\`
-预测未来7天的睡眠、心率、压力等趋势。
+返回各维度（体重、睡眠、运动、综合）趋势方向、洞察和风险提示。
 
-### 健康风险因素
+### 指定维度趋势详情
 \`\`\`bash
-curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/health-trend/me/risk-factors"
+curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/health-trends/overall?period=7d"
 \`\`\`
+支持维度: weight / sleep / exercise / overall，period: 7d / 30d
 
 ### 今日健康评分
 \`\`\`bash

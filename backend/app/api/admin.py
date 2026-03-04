@@ -88,6 +88,15 @@ class ResetPasswordByEmailRequest(BaseModel):
     new_password: str
 
 
+class AdminCreateUserRequest(BaseModel):
+    """管理员创建用户请求"""
+    username: str
+    email: str
+    password: str
+    name: str
+    is_approved: bool = True
+
+
 # ========== 权限检查 ==========
 
 async def get_admin_user(
@@ -412,6 +421,44 @@ async def reset_password_by_email(
     logger.info(f"管理员 {admin_user.name} 通过邮箱重置了用户 {user.name} (email: {request.email}) 的密码")
 
     return {"message": f"已重置用户 {user.name} ({request.email}) 的密码"}
+
+
+@router.post("/users/create", summary="管理员创建用户")
+async def admin_create_user(
+    request: AdminCreateUserRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """管理员直接创建用户（无需邀请码）"""
+    from app.services.auth import AuthService
+
+    # 检查用户名和邮箱是否已存在
+    existing = db.query(User).filter(
+        (User.username == request.username) | (User.email == request.email)
+    ).first()
+    if existing:
+        detail = "用户名已存在" if existing.username == request.username else "邮箱已存在"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    if len(request.password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码长度至少6位")
+
+    hashed_password = AuthService.get_password_hash(request.password)
+    new_user = User(
+        username=request.username,
+        email=request.email,
+        hashed_password=hashed_password,
+        name=request.name,
+        is_active=True,
+        is_approved=request.is_approved,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    logger.info(f"管理员 {admin_user.name} 创建了用户 {new_user.name} (ID: {new_user.id})")
+
+    return {"message": f"用户 {new_user.name} 创建成功", "user_id": new_user.id}
 
 
 @router.delete("/users/{user_id}", summary="删除用户")

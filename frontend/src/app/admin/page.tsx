@@ -152,6 +152,8 @@ export default function AdminPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({ username: '', email: '', password: '', name: '', is_approved: true });
   const [syncDays, setSyncDays] = useState(3);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncingUserId, setSyncingUserId] = useState<number | null>(null);
@@ -497,6 +499,23 @@ export default function AdminPage() {
     }
   };
 
+  // 创建用户
+  const createUserMutation = useMutation({
+    mutationFn: async (form: typeof createUserForm) => {
+      const res = await api.post('/admin/users/create', form);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setShowCreateUser(false);
+      setCreateUserForm({ username: '', email: '', password: '', name: '', is_approved: true });
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      alert(data.message || '用户创建成功');
+    },
+    onError: (error: any) => {
+      alert(`❌ ${error?.response?.data?.detail || '创建失败'}`);
+    },
+  });
+
   // 设置用户 VIP 状态
   const setVipMutation = useMutation({
     mutationFn: async ({ userId, isApproved }: { userId: number; isApproved: boolean }) => {
@@ -694,6 +713,13 @@ export default function AdminPage() {
                 className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
               >
                 搜索
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateUser(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
+              >
+                + 创建用户
               </button>
             </form>
           </div>
@@ -1487,6 +1513,89 @@ export default function AdminPage() {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {resetPasswordMutation.isPending ? '重置中...' : '确认重置'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 创建用户弹窗 */}
+      {showCreateUser && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowCreateUser(false); }}
+        >
+          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-white/20" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-white mb-4">+ 创建用户</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-purple-200 text-sm mb-1">用户名</label>
+                <input
+                  type="text"
+                  value={createUserForm.username}
+                  onChange={(e) => setCreateUserForm(f => ({ ...f, username: e.target.value }))}
+                  placeholder="用户名（登录用）"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-purple-200 text-sm mb-1">邮箱</label>
+                <input
+                  type="email"
+                  value={createUserForm.email}
+                  onChange={(e) => setCreateUserForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="邮箱地址"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-purple-200 text-sm mb-1">姓名</label>
+                <input
+                  type="text"
+                  value={createUserForm.name}
+                  onChange={(e) => setCreateUserForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="显示名称"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-purple-200 text-sm mb-1">密码（至少6位）</label>
+                <input
+                  type="text"
+                  value={createUserForm.password}
+                  onChange={(e) => setCreateUserForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder="初始密码"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={createUserForm.is_approved}
+                  onChange={(e) => setCreateUserForm(f => ({ ...f, is_approved: e.target.checked }))}
+                  className="rounded"
+                />
+                <label className="text-purple-200 text-sm">VIP 用户</label>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                onClick={() => setShowCreateUser(false)}
+                className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  const { username, email, password, name } = createUserForm;
+                  if (!username || !email || !password || !name) { alert('请填写所有字段'); return; }
+                  if (password.length < 6) { alert('密码至少6位'); return; }
+                  createUserMutation.mutate(createUserForm);
+                }}
+                disabled={createUserMutation.isPending}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                {createUserMutation.isPending ? '创建中...' : '确认创建'}
               </button>
             </div>
           </div>
