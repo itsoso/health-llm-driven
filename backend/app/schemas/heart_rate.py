@@ -1,7 +1,7 @@
 """心率数据Schema"""
 from datetime import date, datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HeartRatePoint(BaseModel):
@@ -36,9 +36,8 @@ class DailyHeartRateResponse(BaseModel):
     
     # 分析数据
     zones: Optional[Dict[str, int]] = Field(None, description="心率区间分布（分钟）")
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HeartRateTrendResponse(BaseModel):
@@ -53,7 +52,6 @@ class HeartRateTrendResponse(BaseModel):
     avg_hrv: Optional[float] = Field(None, description="平均HRV")
     max_heart_rate: Optional[int] = Field(None, description="最高心率")
     min_heart_rate: Optional[int] = Field(None, description="最低心率")
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 

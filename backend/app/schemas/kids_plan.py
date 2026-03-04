@@ -1,7 +1,7 @@
 """Kids每日计划 schemas"""
 from datetime import date
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class PlanItemSchema(BaseModel):
@@ -24,8 +24,7 @@ class KidsPlanResponse(BaseModel):
     points_awarded: int = 0  # 本次请求新增的积分
     total_kids_points: int = 0  # 用户当前总积分
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KidsPlanCopyRequest(BaseModel):

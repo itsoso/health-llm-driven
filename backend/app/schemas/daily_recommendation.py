@@ -1,5 +1,5 @@
 """每日建议Schema"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
 from typing import Optional, Dict, Any
 
@@ -23,7 +23,6 @@ class DailyRecommendationResponse(BaseModel):
     seven_day_recommendation: Optional[Dict[str, Any]]
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 

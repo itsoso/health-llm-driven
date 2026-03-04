@@ -1,7 +1,7 @@
 """单词本相关 Schema"""
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class VocabularyWordResponse(BaseModel):
@@ -23,8 +23,7 @@ class VocabularyWordResponse(BaseModel):
     is_mastered: bool = False
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VocabularyListResponse(BaseModel):

@@ -1,7 +1,7 @@
 """Schemas for kids dog space."""
 from datetime import datetime
 from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class KidsPetAdoptRequest(BaseModel):
@@ -32,8 +32,7 @@ class KidsPetState(BaseModel):
     last_decay_at: Optional[datetime] = None
     last_interaction_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KidsPetResponse(BaseModel):

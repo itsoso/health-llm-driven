@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlanItemResponse(BaseModel):
@@ -16,8 +16,7 @@ class PlanItemResponse(BaseModel):
     completed_at: Optional[datetime] = None
     sort_order: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WeeklyPlanResponse(BaseModel):
@@ -36,8 +35,7 @@ class WeeklyPlanResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WeeklyPlanListItem(BaseModel):
@@ -51,8 +49,7 @@ class WeeklyPlanListItem(BaseModel):
     completed_count: int = 0
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GeneratePlanRequest(BaseModel):
@@ -82,8 +79,7 @@ class PeriodGoalMetricResponse(BaseModel):
     milestones: Optional[list] = None
     strategy: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PeriodGoalResponse(BaseModel):
@@ -101,8 +97,7 @@ class PeriodGoalResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PeriodGoalListItem(BaseModel):
@@ -117,8 +112,7 @@ class PeriodGoalListItem(BaseModel):
     metric_count: int = 0
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GenerateGoalRequest(BaseModel):

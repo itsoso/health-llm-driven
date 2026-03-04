@@ -7,7 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.database import get_db
 from app.models.user import User
@@ -42,8 +42,7 @@ class ApiKeyResponse(BaseModel):
     last_used_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecommendationCreate(BaseModel):
@@ -65,8 +64,7 @@ class RecommendationResponse(BaseModel):
     recommendation_date: date
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HealthDataResponse(BaseModel):

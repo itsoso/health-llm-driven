@@ -1,5 +1,5 @@
 """补剂管理 Schemas"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import date, time, datetime
 
@@ -35,8 +35,7 @@ class SupplementDefinitionResponse(SupplementDefinitionBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 补剂打卡记录
@@ -58,8 +57,7 @@ class SupplementRecordResponse(SupplementRecordBase):
     user_id: int
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 批量打卡请求

@@ -1,7 +1,7 @@
 """活动状态 Schemas"""
 from datetime import datetime
 from typing import Optional, List, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ActivityStatusCreate(BaseModel):
@@ -30,8 +30,7 @@ class ActivityStatusResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActivityTimelineItem(BaseModel):

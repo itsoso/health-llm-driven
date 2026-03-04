@@ -1,5 +1,5 @@
 """饮食记录模式"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, time
 import enum
@@ -60,8 +60,7 @@ class DietRecordResponse(DietRecordBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DailyDietSummary(BaseModel):

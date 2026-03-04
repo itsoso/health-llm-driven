@@ -1,5 +1,5 @@
 """习惯追踪 Schemas"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import date, datetime
 
@@ -37,8 +37,7 @@ class HabitDefinitionResponse(HabitDefinitionBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 习惯打卡记录
@@ -59,8 +58,7 @@ class HabitRecordResponse(HabitRecordBase):
     user_id: int
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 批量打卡请求

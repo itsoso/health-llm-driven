@@ -3,7 +3,7 @@
 """
 from datetime import date, datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # =====================================================
@@ -63,8 +63,7 @@ class TripItemResponse(TripItemBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =====================================================
@@ -101,8 +100,7 @@ class TripListResponse(TripBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TripResponse(TripBase):
@@ -113,5 +111,4 @@ class TripResponse(TripBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

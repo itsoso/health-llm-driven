@@ -1,5 +1,5 @@
 """AI 洞察相关的 Schema"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
 from typing import Optional, Dict, Any
 
@@ -26,8 +26,7 @@ class AIInsightResponse(AIInsightBase):
     generated_at: datetime
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIInsightListResponse(BaseModel):
@@ -65,8 +64,7 @@ class RealtimeRecommendationResponse(RealtimeRecommendationBase):
     expires_at: Optional[datetime] = None
     is_active: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ========== 请求模型 ==========

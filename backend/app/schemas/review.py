@@ -1,7 +1,7 @@
 """
 复盘相关的 Pydantic Schema
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 from enum import Enum
@@ -106,8 +106,7 @@ class DailyReviewResponse(DailyReviewBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ========== 周期复盘 ==========
@@ -182,8 +181,7 @@ class PeriodReviewResponse(PeriodReviewBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ========== 复盘数据汇总 ==========
@@ -245,6 +243,5 @@ class ReviewListItem(BaseModel):
     is_completed: bool
     mood_score: Optional[int] = None
     summary_preview: Optional[str] = None  # 总结预览（前50字）
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)

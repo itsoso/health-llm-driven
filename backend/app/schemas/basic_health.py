@@ -1,5 +1,5 @@
 """基础健康数据Schema"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date
 from typing import Optional
 
@@ -42,6 +42,5 @@ class BasicHealthDataResponse(BaseModel):
     record_date: date
     notes: Optional[str]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 

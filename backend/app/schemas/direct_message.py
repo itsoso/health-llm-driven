@@ -1,7 +1,7 @@
 """私信消息 schemas"""
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DMSendRequest(BaseModel):
@@ -19,8 +19,7 @@ class DMResponse(BaseModel):
     sender_name: Optional[str] = None
     sender_avatar: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DMConversationItem(BaseModel):

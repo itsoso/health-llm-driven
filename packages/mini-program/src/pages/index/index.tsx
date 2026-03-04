@@ -649,7 +649,7 @@ export default function Index() {
                 <Text className="quick-card-emoji">💬</Text>
               </View>
               <View className="quick-card-info">
-                <Text className="quick-card-title">健康问答</Text>
+                <Text className="quick-card-title">智能助理</Text>
                 <Text className="quick-card-desc">私人顾问</Text>
               </View>
             </View>

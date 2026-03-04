@@ -29,8 +29,8 @@ limiter = Limiter(key_func=get_remote_address)
 @limiter.limit("5/hour")
 def export_health_data(
     request: Request,
-    format: str = Query(default="csv", regex="^(csv|json)$"),
-    data_type: str = Query(default="garmin", regex="^(garmin|diet|water|weight|blood_pressure|checkin|all)$"),
+    format: str = Query(default="csv", pattern="^(csv|json)$"),
+    data_type: str = Query(default="garmin", pattern="^(garmin|diet|water|weight|blood_pressure|checkin|all)$"),
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     current_user: User = Depends(get_current_user_required),

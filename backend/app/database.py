@@ -1,7 +1,7 @@
 """数据库配置"""
 import logging
 from sqlalchemy import create_engine, event
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 

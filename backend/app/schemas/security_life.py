@@ -1,5 +1,5 @@
 """资产防御与布局 - Pydantic 校验模型"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from datetime import datetime
 
@@ -28,8 +28,7 @@ class ProfileResponse(ProfileBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Asset (两层资产) ────────────────────────────────────
@@ -70,8 +69,7 @@ class PropertyResponse(PropertyBase):
     user_id: int
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AssetResponse(AssetBase):
@@ -82,8 +80,7 @@ class AssetResponse(AssetBase):
     second_layer_share: Optional[float] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Basket (资产篮子) ──────────────────────────────────
@@ -102,8 +99,7 @@ class BasketResponse(BaseModel):
     custom_min_percent: Optional[float] = None
     custom_max_percent: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BasketListResponse(BaseModel):
@@ -128,8 +124,7 @@ class CashLayerResponse(CashLayerItem):
     id: int
     user_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Checklist (90天清单) ───────────────────────────────
@@ -164,8 +159,7 @@ class ChecklistItemResponse(ChecklistItemBase):
     sort_order: int = 0
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChecklistListResponse(BaseModel):
@@ -191,8 +185,7 @@ class RedLineResponse(BaseModel):
     value_json: Optional[str] = None
     checked_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Dashboard (总览) ───────────────────────────────────

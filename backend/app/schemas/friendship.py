@@ -1,7 +1,7 @@
 """好友关系和PK挑战 Schemas"""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ===== 好友关系 =====
@@ -24,8 +24,7 @@ class FriendRequestResponse(BaseModel):
     friend_name: Optional[str] = None
     friend_avatar: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FriendInfo(BaseModel):
@@ -68,8 +67,7 @@ class ParticipantInfo(BaseModel):
     points: int = 0
     joined_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PKChallengeResponse(BaseModel):
@@ -89,8 +87,7 @@ class PKChallengeResponse(BaseModel):
     participants: List[ParticipantInfo] = Field(default_factory=list)
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PKChallengeDetail(PKChallengeResponse):

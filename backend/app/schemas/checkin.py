@@ -3,7 +3,7 @@
 """
 from datetime import date, datetime, time
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # =====================================================
@@ -88,8 +88,7 @@ class CheckinTemplateResponse(CheckinTemplateBase):
     completion_rate_week: Optional[float] = Field(None, description="本周完成率")
     completion_rate_month: Optional[float] = Field(None, description="本月完成率")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CheckinTemplateListResponse(BaseModel):
@@ -173,8 +172,7 @@ class CheckinRecordResponse(CheckinRecordBase):
     template_icon: Optional[str] = Field(None, description="模板图标")
     template_category: Optional[str] = Field(None, description="模板分类")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =====================================================

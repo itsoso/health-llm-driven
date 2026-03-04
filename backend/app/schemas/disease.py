@@ -1,5 +1,5 @@
 """疾病记录Schema"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date
 from typing import Optional
 
@@ -44,6 +44,5 @@ class DiseaseRecordResponse(BaseModel):
     follow_up_notes: Optional[str]
     notes: Optional[str]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 

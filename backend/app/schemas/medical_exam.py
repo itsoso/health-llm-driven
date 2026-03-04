@@ -1,5 +1,5 @@
 """体检数据Schema"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
 from typing import Optional, List, Any
 
@@ -49,9 +49,8 @@ class MedicalExamItemResponse(BaseModel):
     result: Optional[str] = None
     is_abnormal: Optional[str] = None
     notes: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MedicalExamResponse(BaseModel):
@@ -72,7 +71,6 @@ class MedicalExamResponse(BaseModel):
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
     items: List[MedicalExamItemResponse] = []
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 

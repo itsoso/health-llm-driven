@@ -3,7 +3,7 @@
 """
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # =====================================================
@@ -165,8 +165,7 @@ class UserProfileResponse(UserProfileBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =====================================================
@@ -215,6 +214,5 @@ class HealthGoalResponse(HealthGoalBase):
     # 计算字段
     progress_percentage: Optional[float] = Field(None, description="完成百分比")
     days_remaining: Optional[int] = Field(None, description="剩余天数")
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/groups", tags=["群聊"])
 
 class GroupCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    member_ids: List[int] = Field(..., min_items=1)  # 被邀请的好友 id 列表
+    member_ids: List[int] = Field(..., min_length=1)  # 被邀请的好友 id 列表
 
 
 class GroupUpdateRequest(BaseModel):
@@ -46,8 +46,7 @@ class MemberInfo(BaseModel):
     role: str
     joined_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GroupMsgResponse(BaseModel):
@@ -59,8 +58,7 @@ class GroupMsgResponse(BaseModel):
     content: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GroupListItem(BaseModel):

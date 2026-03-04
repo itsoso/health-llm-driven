@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 import json
@@ -38,9 +38,8 @@ class InvitationCodeResponse(BaseModel):
     expires_at: Optional[datetime]
     created_at: datetime
     creator_name: Optional[str]
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvitationCodeVerify(BaseModel):
@@ -90,9 +89,8 @@ class UserApplicationResponse(BaseModel):
     created_at: datetime
     reviewed_at: Optional[datetime]
     reviewer_name: Optional[str]
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ApplicationReview(BaseModel):

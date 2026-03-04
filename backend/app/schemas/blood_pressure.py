@@ -1,5 +1,5 @@
 """血压追踪模式"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import date, datetime, time
 
@@ -41,8 +41,7 @@ class BloodPressureRecordResponse(BloodPressureRecordBase):
     # 血压分类
     category: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BloodPressureStats(BaseModel):

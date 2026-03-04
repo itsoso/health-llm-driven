@@ -1,5 +1,5 @@
 """日常健康记录Schema"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date, time
 from typing import Optional
 
@@ -100,8 +100,7 @@ class GarminDataResponse(BaseModel):
     floors_goal: Optional[int] = None
     distance_meters: Optional[float] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExerciseRecordCreate(BaseModel):

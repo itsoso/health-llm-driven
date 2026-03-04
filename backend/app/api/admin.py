@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.database import get_db
 from app.models.user import User, GarminCredential
@@ -39,8 +39,7 @@ class AdminUserResponse(BaseModel):
     health_records_count: int
     medical_exams_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AdminStatsResponse(BaseModel):

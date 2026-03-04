@@ -1,5 +1,5 @@
 """认证相关Schema"""
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional
 from datetime import datetime, date
 
@@ -48,8 +48,7 @@ class UserResponse(BaseModel):
     kids_points: int = 0
     onboarding_completed: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserUpdate(BaseModel):
@@ -99,9 +98,8 @@ class GarminCredentialResponse(BaseModel):
     requires_mfa: bool = False  # 是否需要两步验证
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GarminSyncRequest(BaseModel):

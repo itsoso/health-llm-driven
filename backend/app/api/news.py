@@ -7,7 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.database import get_db
 from app.models.news import NewsArticle, NewsApiKey, NewsComment
@@ -71,8 +71,7 @@ class ArticleResponse(BaseModel):
     source_created_at: Optional[datetime]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ArticleListItem(BaseModel):
@@ -91,8 +90,7 @@ class ArticleListItem(BaseModel):
     author_name: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ApiKeyCreate(BaseModel):
@@ -109,8 +107,7 @@ class ApiKeyResponse(BaseModel):
     last_used_at: Optional[datetime]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CommentCreate(BaseModel):
@@ -137,8 +134,7 @@ class CommentResponse(BaseModel):
     user: CommentUser
     replies: List["CommentResponse"] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 工具函数 ====================

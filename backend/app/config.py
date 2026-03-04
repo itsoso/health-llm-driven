@@ -1,5 +1,6 @@
 """应用配置"""
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional, List
 
 
@@ -138,10 +139,7 @@ class Settings(BaseSettings):
                     "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
                 )
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"  # 忽略额外的环境变量
+    model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 
 settings = Settings()

@@ -1,5 +1,5 @@
 """健康事件流 Schema"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Any
 from datetime import datetime
 from enum import Enum
@@ -48,8 +48,7 @@ class HealthEventResponse(BaseModel):
     created_at: Optional[datetime] = None
     confirmed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BatchConfirmRequest(BaseModel):
@@ -99,5 +98,4 @@ class EventSourceResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
