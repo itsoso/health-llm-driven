@@ -2,11 +2,35 @@
 from fastmcp import FastMCP
 
 from config import Config
+from tools.query import (
+    get_achievements,
+    get_blood_pressure_history,
+    get_checkin_status,
+    get_diet_records,
+    get_health_summary,
+    get_heart_rate,
+    get_sleep_data,
+    get_water_intake,
+    get_weight_history,
+    get_workout_history,
+)
 
 mcp = FastMCP(
     "Health Management",
     description="AI-powered health management system - query health data, record measurements, and get health analysis",
 )
+
+# ---- 查询工具 ----
+mcp.tool()(get_health_summary)
+mcp.tool()(get_weight_history)
+mcp.tool()(get_blood_pressure_history)
+mcp.tool()(get_water_intake)
+mcp.tool()(get_sleep_data)
+mcp.tool()(get_heart_rate)
+mcp.tool()(get_workout_history)
+mcp.tool()(get_diet_records)
+mcp.tool()(get_checkin_status)
+mcp.tool()(get_achievements)
 
 
 if __name__ == "__main__":
