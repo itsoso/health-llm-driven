@@ -70,6 +70,10 @@ from app.api import (
     smart_plan,  # AI 智能计划
     health_event,  # 健康事件流
     withings,  # Withings 设备集成
+    onboarding,  # 新手引导
+    achievement,  # 成就徽章
+    data_export,  # 数据导出
+    health_trend,  # 健康趋势预测
 )
 
 api_router = APIRouter()
@@ -156,3 +160,15 @@ api_router.include_router(health_event.router)  # prefix 已在 router 中定义
 
 # Withings 设备集成
 api_router.include_router(withings.router)  # prefix 已在 router 中定义
+
+# 新手引导
+api_router.include_router(onboarding.router)  # 新手引导流程
+
+# 成就徽章
+api_router.include_router(achievement.router)  # 成就徽章系统
+
+# 数据导出
+api_router.include_router(data_export.router)  # 健康数据导出
+
+# 健康趋势预测
+api_router.include_router(health_trend.router)  # 健康趋势预测
