@@ -1550,7 +1550,22 @@ export const groupApi = {
 
 export const onboardingApi = {
   getStatus: () =>
-    api.get<{ onboarding_completed: boolean; has_profile: boolean; has_health_goals: boolean; has_checkin_templates: boolean }>('/onboarding/status'),
+    api.get<{
+      onboarding_completed: boolean;
+      has_profile: boolean;
+      has_health_goals: boolean;
+      has_checkin_templates: boolean;
+      profile_data?: {
+        height_cm?: number;
+        current_weight_kg?: number;
+        gender?: string;
+        birth_date?: string;
+        target_steps: number;
+        target_sleep_hours: number;
+        target_water_ml: number;
+        target_exercise_minutes: number;
+      };
+    }>('/onboarding/status'),
   saveStep1: (data: { height_cm?: number; current_weight_kg?: number; gender?: string; birth_date?: string }) =>
     api.post('/onboarding/step1', data),
   saveStep2: (data: { target_steps?: number; target_sleep_hours?: number; target_water_ml?: number; target_exercise_minutes?: number }) =>

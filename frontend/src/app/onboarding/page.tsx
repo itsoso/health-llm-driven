@@ -48,11 +48,24 @@ export default function OnboardingPage() {
     new Set(DEFAULT_TEMPLATES.map(t => t.name))
   );
 
-  // Already completed → redirect
+  // Fetch existing profile data and pre-fill
   useEffect(() => {
     if (user?.onboarding_completed) {
       router.replace('/dashboard');
+      return;
     }
+    onboardingApi.getStatus().then(res => {
+      const p = res.data.profile_data;
+      if (!p) return;
+      if (p.height_cm) setHeightCm(String(p.height_cm));
+      if (p.current_weight_kg) setWeightKg(String(p.current_weight_kg));
+      if (p.gender) setGender(p.gender);
+      if (p.birth_date) setBirthDate(p.birth_date);
+      setTargetSteps(p.target_steps);
+      setTargetSleepHours(p.target_sleep_hours);
+      setTargetWaterMl(p.target_water_ml);
+      setTargetExerciseMinutes(p.target_exercise_minutes);
+    }).catch(() => {});
   }, [user, router]);
 
   const handleStep1 = async () => {

@@ -3,11 +3,24 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
+class ProfileData(BaseModel):
+    """已有的用户档案数据"""
+    height_cm: Optional[float] = None
+    current_weight_kg: Optional[float] = None
+    gender: Optional[str] = None
+    birth_date: Optional[str] = None
+    target_steps: int = 8000
+    target_sleep_hours: float = 7.5
+    target_water_ml: int = 2000
+    target_exercise_minutes: int = 30
+
+
 class OnboardingStatusResponse(BaseModel):
     onboarding_completed: bool
     has_profile: bool
     has_health_goals: bool
     has_checkin_templates: bool
+    profile_data: Optional[ProfileData] = None
 
 
 class OnboardingStep1Request(BaseModel):

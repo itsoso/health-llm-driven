@@ -13,6 +13,7 @@ from app.schemas.onboarding import (
     OnboardingStep1Request,
     OnboardingStep2Request,
     OnboardingCompleteRequest,
+    ProfileData,
 )
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -40,11 +41,26 @@ async def get_onboarding_status(
         .count()
         > 0
     )
+    # 返回已有的档案数据供前端预填
+    profile_data = None
+    if profile is not None:
+        profile_data = ProfileData(
+            height_cm=profile.height_cm,
+            current_weight_kg=profile.current_weight_kg,
+            gender=profile.gender,
+            birth_date=str(profile.birth_date) if profile.birth_date else None,
+            target_steps=profile.target_steps or 8000,
+            target_sleep_hours=profile.target_sleep_hours or 7.5,
+            target_water_ml=profile.target_water_ml or 2000,
+            target_exercise_minutes=profile.target_exercise_minutes or 30,
+        )
+
     return OnboardingStatusResponse(
         onboarding_completed=current_user.onboarding_completed or False,
         has_profile=has_profile,
         has_health_goals=has_health_goals,
         has_checkin_templates=has_checkin_templates,
+        profile_data=profile_data,
     )
 
 
