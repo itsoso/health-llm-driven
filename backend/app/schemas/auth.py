@@ -42,6 +42,7 @@ class UserResponse(BaseModel):
     gender: Optional[str] = None
     is_active: bool = True
     is_admin: bool = False
+    is_approved: bool = False
     created_at: Optional[datetime] = None
     has_garmin_credentials: bool = False
     avatar_url: Optional[str] = None

@@ -457,6 +457,36 @@ export default function SkillsPage() {
             </p>
           </div>
 
+          {/* 使用说明 */}
+          <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
+            <h2 className="text-sm font-semibold text-purple-300 mb-3">使用方法</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+                <div>
+                  <p className="text-white font-medium">创建 API Key</p>
+                  <p className="text-gray-400 mt-0.5">下方创建后自动绑定到 Skills</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+                <div>
+                  <p className="text-white font-medium">复制 SKILL.md</p>
+                  <p className="text-gray-400 mt-0.5">内容已包含你的 API 地址和 Token</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+                <div>
+                  <p className="text-white font-medium">粘贴到 OpenClaw</p>
+                  <p className="text-gray-400 mt-0.5">
+                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.openclaw/skills/</code>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* API Key 管理 */}
           <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -549,64 +579,6 @@ export default function SkillsPage() {
               </div>
             )}
 
-            {/* 手动输入 Token */}
-            <div className="mt-4 pt-4 border-t border-purple-900/20">
-              <label className="text-xs text-gray-400 block mb-1.5">当前绑定的 Token（创建时自动填入，也可手动粘贴）</label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={activeToken}
-                  onChange={(e) => {
-                    setActiveToken(e.target.value);
-                    localStorage.setItem('skills_active_token', e.target.value);
-                  }}
-                  placeholder="粘贴你的 API Key / JWT Token"
-                  className="flex-1 bg-[#0d0b14] border border-purple-900/30 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 font-mono"
-                />
-                <button
-                  onClick={() => {
-                    const shown = (document.querySelector('input[type="text"][data-token]') as HTMLInputElement);
-                    const input = document.querySelector('input[type="password"]') as HTMLInputElement;
-                    if (input) {
-                      input.type = input.type === 'password' ? 'text' : 'password';
-                    }
-                  }}
-                  className="px-3 py-2 bg-white/5 text-gray-400 hover:text-white rounded-lg text-sm transition-all"
-                >
-                  👁
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 使用说明 */}
-          <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
-            <h2 className="text-sm font-semibold text-purple-300 mb-3">使用方法</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
-                <div>
-                  <p className="text-white font-medium">创建 API Key</p>
-                  <p className="text-gray-400 mt-0.5">上方创建后自动绑定到 Skills</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
-                <div>
-                  <p className="text-white font-medium">复制 SKILL.md</p>
-                  <p className="text-gray-400 mt-0.5">内容已包含你的 API 地址和 Token</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
-                <div>
-                  <p className="text-white font-medium">粘贴到 OpenClaw</p>
-                  <p className="text-gray-400 mt-0.5">
-                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.openclaw/skills/</code>
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Skill Cards */}

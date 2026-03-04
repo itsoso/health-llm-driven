@@ -78,7 +78,6 @@ export default function Navigation() {
     { href: '/overview', label: '健康概览', icon: <LayoutDashboard className="w-4 h-4" /> },
     { href: '/daily-insights', label: '今日建议', icon: <Sparkles className="w-4 h-4" /> },
     { href: '/ai-assistant', label: '智能助理', icon: <MessageCircle className="w-4 h-4" /> },
-    { href: '/news', label: '资讯', icon: <Newspaper className="w-4 h-4" /> },
     { href: '/smart-plan', label: '智能计划', icon: <CalendarCheck className="w-4 h-4" /> },
   ];
 
@@ -145,16 +144,19 @@ export default function Navigation() {
       ],
     },
     {
-      label: '资产防御',
-      icon: <Shield className="w-4 h-4" />,
+      label: '资讯',
+      icon: <Newspaper className="w-4 h-4" />,
       items: [
-        { href: '/security-life', label: '总览', icon: <LayoutDashboard className="w-4 h-4" /> },
-        { href: '/security-life/assets', label: '两层资产', icon: <Database className="w-4 h-4" /> },
-        { href: '/security-life/baskets', label: '资产篮子', icon: <LineChart className="w-4 h-4" /> },
-        { href: '/security-life/checklist', label: '90天清单', icon: <ClipboardList className="w-4 h-4" /> },
-        { href: '/security-life/risk', label: '风险与应对', icon: <Shield className="w-4 h-4" /> },
-        { href: '/security-life/dont-list', label: '不要清单', icon: <X className="w-4 h-4" /> },
-        { href: '/security-life/profile', label: '防御设置', icon: <Settings className="w-4 h-4" /> },
+        { href: '/news', label: '健康资讯', icon: <Newspaper className="w-4 h-4" /> },
+        ...(user?.is_approved ? [
+          { href: '/security-life', label: '资产总览', icon: <LayoutDashboard className="w-4 h-4" /> },
+          { href: '/security-life/assets', label: '两层资产', icon: <Database className="w-4 h-4" /> },
+          { href: '/security-life/baskets', label: '资产篮子', icon: <LineChart className="w-4 h-4" /> },
+          { href: '/security-life/checklist', label: '90天清单', icon: <ClipboardList className="w-4 h-4" /> },
+          { href: '/security-life/risk', label: '风险与应对', icon: <Shield className="w-4 h-4" /> },
+          { href: '/security-life/dont-list', label: '不要清单', icon: <X className="w-4 h-4" /> },
+          { href: '/security-life/profile', label: '防御设置', icon: <Settings className="w-4 h-4" /> },
+        ] : []),
       ],
     },
   ];

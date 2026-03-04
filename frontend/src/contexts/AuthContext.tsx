@@ -14,6 +14,7 @@ interface User {
   gender: string | null;
   is_active: boolean;
   is_admin: boolean;
+  is_approved: boolean;
   has_garmin_credentials: boolean;
   avatar_url: string | null;
   kids_points?: number;

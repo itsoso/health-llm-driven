@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import {
   LayoutDashboard, Layers, PieChart, CheckSquare,
@@ -20,6 +22,26 @@ const navItems = [
 
 export default function SecurityLifeLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, isLoading } = useAuth()
+
+  // VIP 权限检查
+  useEffect(() => {
+    if (!isLoading && user && !user.is_approved) {
+      router.replace('/news')
+    }
+  }, [user, isLoading, router])
+
+  if (!isLoading && user && !user.is_approved) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-500 text-lg mb-2">此功能仅对 VIP 用户开放</p>
+          <Link href="/news" className="text-purple-600 hover:underline">返回资讯</Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <ProtectedRoute>
