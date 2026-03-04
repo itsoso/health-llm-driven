@@ -76,6 +76,12 @@ from app.models.direct_message import DirectMessage
 from app.models.health_event import HealthEvent, EventSource, EventStatus
 # 群聊模型
 from app.models.group_chat import GroupChat, GroupMember, GroupMessage
+# 健康异常预警
+from app.models.anomaly_alert import AnomalyAlert
+# 成就徽章
+from app.models.achievement import BadgeDefinition, UserBadge
+# 健康趋势预测
+from app.models.health_trend import HealthTrendReport
 
 __all__ = [
     "User",
@@ -181,5 +187,12 @@ __all__ = [
     "GroupChat",
     "GroupMember",
     "GroupMessage",
+    # 健康异常预警
+    "AnomalyAlert",
+    # 成就徽章
+    "BadgeDefinition",
+    "UserBadge",
+    # 健康趋势预测
+    "HealthTrendReport",
 ]
 
