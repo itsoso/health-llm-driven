@@ -91,6 +91,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 @app.on_event("startup")
 async def startup_event():
     settings.validate_required_security()
+    # 自动迁移：添加新列（如果不存在）
+    try:
+        from app.database import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        db.execute(text("ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT NULL"))
+        db.commit()
+        db.close()
+        logger.info("数据库迁移检查完成")
+    except Exception as e:
+        logger.warning(f"数据库迁移检查跳过: {e}")
     start_scheduler(app, use_daily_schedule=True)
 
 
