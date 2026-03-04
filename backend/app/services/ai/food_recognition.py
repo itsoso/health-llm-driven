@@ -1,6 +1,6 @@
 """
 AI 食物识别服务
-使用 GPT-4 Vision 识别食物图片并估算营养信息
+使用 LLM Provider 识别食物图片并估算营养信息
 """
 import base64
 import json
@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from app.config import settings
+from app.services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -49,35 +50,25 @@ def extract_json_from_text(text: str) -> str:
     logger.warning(f"无法提取JSON，返回原文, 长度: {len(text)}")
     return text
 
-# 尝试导入 OpenAI
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    logger.warning("OpenAI库未安装，AI食物识别功能将不可用")
-
-
 class FoodRecognitionService:
     """AI食物识别服务"""
-    
+
     def __init__(self):
-        self.client = None
-        self.model = "gpt-4o"  # 使用支持视觉的模型
-        
-        if OPENAI_AVAILABLE and settings.openai_api_key:
+        self._provider = None
+        logger.info("AI食物识别服务初始化成功（使用统一 LLM Provider）")
+
+    def _get_provider(self):
+        """懒加载获取 LLM Provider"""
+        if self._provider is None:
             try:
-                client_kwargs = {"api_key": settings.openai_api_key}
-                if settings.openai_base_url:
-                    client_kwargs["base_url"] = settings.openai_base_url
-                self.client = OpenAI(**client_kwargs)
-                logger.info("AI食物识别服务初始化成功")
+                self._provider = get_llm_provider()
             except Exception as e:
-                logger.error(f"AI食物识别服务初始化失败: {e}")
-    
+                logger.error(f"获取 LLM Provider 失败: {e}")
+        return self._provider
+
     def is_available(self) -> bool:
         """检查服务是否可用"""
-        return self.client is not None
+        return self._get_provider() is not None
     
     async def recognize_food_from_base64(
         self, 
@@ -107,15 +98,9 @@ class FoodRecognitionService:
         try:
             # 构建图片URL
             data_url = f"data:image/{image_type};base64,{image_base64}"
-            logger.info(f"调用GPT-4 Vision API, 模型: {self.model}")
-            
-            # 调用GPT-4 Vision
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """你是一个专业的营养师和食物识别专家。请分析用户上传的食物图片，识别出所有食物并估算营养信息。
+            logger.info(f"调用 LLM Vision API 识别食物")
+
+            system_prompt = """你是一个专业的营养师和食物识别专家。请分析用户上传的食物图片，识别出所有食物并估算营养信息。
 
 请严格按照以下JSON格式返回结果，不要有任何其他文字：
 {
@@ -144,30 +129,17 @@ class FoodRecognitionService:
 2. 营养估算基于中国常见食物的营养成分表
 3. 份量估算要尽可能准确，参考常见餐具大小
 4. 只返回JSON，不要有任何额外说明文字"""
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "请识别这张图片中的食物，并估算营养信息。"
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": data_url,
-                                    "detail": "high"
-                                }
-                            }
-                        ]
-                    }
+
+            provider = self._get_provider()
+            raw_content = await provider.chat_with_vision(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                 ],
+                image_url=data_url,
+                temperature=0.3,
                 max_tokens=1500,
-                temperature=0.3
             )
-            
-            # 解析响应
-            raw_content = response.choices[0].message.content
             if not raw_content:
                 logger.error("AI返回空内容")
                 return {
@@ -279,14 +251,9 @@ class FoodRecognitionService:
                 "error": "智能识别服务不可用",
                 "foods": []
             }
-        
+
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """你是一个专业的营养师和食物识别专家。请分析用户上传的食物图片，识别出所有食物并估算营养信息。
+            system_prompt = """你是一个专业的营养师和食物识别专家。请分析用户上传的食物图片，识别出所有食物并估算营养信息。
 
 请严格按照以下JSON格式返回结果：
 {
@@ -309,29 +276,18 @@ class FoodRecognitionService:
     "total_carbs": 总碳水,
     "total_fat": 总脂肪
 }"""
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "请识别这张图片中的食物，并估算营养信息。"
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url,
-                                    "detail": "high"
-                                }
-                            }
-                        ]
-                    }
+
+            provider = self._get_provider()
+            raw_content = await provider.chat_with_vision(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                 ],
+                image_url=image_url,
+                temperature=0.3,
                 max_tokens=1500,
-                temperature=0.3
             )
-            
-            raw_content = response.choices[0].message.content
+
             if not raw_content:
                 logger.error("AI返回空内容")
                 return {
@@ -370,10 +326,11 @@ class FoodRecognitionService:
     def estimate_nutrition_from_text(self, food_description: str) -> Dict[str, Any]:
         """
         根据文字描述估算营养信息（不使用图片）
-        
+        注意：此方法内部使用同步调用，兼容旧接口。
+
         Args:
             food_description: 食物描述文字
-            
+
         Returns:
             包含营养估算的字典
         """
@@ -383,14 +340,11 @@ class FoodRecognitionService:
                 "error": "智能识别服务不可用",
                 "foods": []
             }
-        
-        try:
-            response = self.client.chat.completions.create(
-                model=settings.openai_model or "gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """你是一个专业营养师。根据用户描述的食物，估算营养信息。
+
+        import asyncio
+
+        async def _do_estimate():
+            system_prompt = """你是一个专业营养师。根据用户描述的食物，估算营养信息。
 
 请严格按照JSON格式返回：
 {
@@ -413,22 +367,40 @@ class FoodRecognitionService:
 }
 
 只返回JSON，无其他文字。"""
-                    },
-                    {
-                        "role": "user",
-                        "content": f"请估算以下食物的营养信息：{food_description}"
-                    }
+
+            provider = self._get_provider()
+            content = await provider.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"请估算以下食物的营养信息：{food_description}"},
                 ],
-                max_tokens=1000,
                 temperature=0.3,
-                response_format={"type": "json_object"}
+                max_tokens=1000,
             )
-            
-            content = response.choices[0].message.content.strip()
-            result = json.loads(content)
+            return content
+
+        try:
+            # 尝试获取运行中的事件循环
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                # 在已有事件循环中，创建新线程执行
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    content = pool.submit(asyncio.run, _do_estimate()).result()
+            else:
+                content = asyncio.run(_do_estimate())
+
+            content = content.strip()
+            # 提取 JSON
+            json_content = extract_json_from_text(content)
+            result = json.loads(json_content)
             result["success"] = True
             return result
-            
+
         except Exception as e:
             logger.error(f"文字营养估算失败: {e}")
             return {

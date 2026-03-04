@@ -1,8 +1,8 @@
 """健康分析服务（基于LLM）"""
+import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
-from openai import OpenAI
 from app.config import settings
 from app.models.basic_health import BasicHealthData
 from app.models.medical_exam import MedicalExam, MedicalExamItem
@@ -10,6 +10,7 @@ from app.models.disease import DiseaseRecord
 from app.models.daily_health import GarminData
 from app.models.user import User
 from app.models.health_analysis_cache import HealthAnalysisCache
+from app.services.llm import get_llm_provider
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,17 +18,18 @@ logger = logging.getLogger(__name__)
 
 class HealthAnalysisService:
     """健康分析服务"""
-    
+
     def __init__(self):
-        if settings.openai_api_key:
-            # 支持代理配置
-            client_kwargs = {"api_key": settings.openai_api_key}
-            if settings.openai_base_url:
-                client_kwargs["base_url"] = settings.openai_base_url
-            self.client = OpenAI(**client_kwargs)
-        else:
-            self.client = None
-        self.model = settings.openai_model or "gpt-4o-mini"
+        self._provider = None
+
+    def _get_provider(self):
+        """懒加载获取 LLM Provider"""
+        if self._provider is None:
+            try:
+                self._provider = get_llm_provider()
+            except Exception as e:
+                logger.error(f"获取 LLM Provider 失败: {e}")
+        return self._provider
     
     def collect_user_health_data(
         self,
@@ -172,41 +174,41 @@ class HealthAnalysisService:
         
         # 生成新分析
         logger.info(f"生成新的健康分析（用户 {user_id}，日期 {today}）")
-        
-        if not self.client:
+
+        provider = self._get_provider()
+        if not provider:
             return {
-                "error": "OpenAI API未配置",
+                "error": "LLM Provider未配置",
                 "issues": [],
                 "recommendations": [],
-                "summary": "请配置OPENAI_API_KEY以使用健康分析功能",
+                "summary": "请配置LLM Provider以使用健康分析功能",
                 "cached": False,
                 "analysis_date": today.isoformat()
             }
-        
+
         # 收集数据
         health_data = self.collect_user_health_data(db, user_id)
-        
+
         # 构建提示词
         prompt = self._build_analysis_prompt(health_data)
-        
+
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一位专业的健康、营养专家，擅长分析个人健康数据，识别健康问题，并提供详细的健康指导建议。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.7,
-                timeout=60,  # 60秒超时
+            analysis_text = asyncio.run(
+                provider.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "你是一位专业的健康、营养专家，擅长分析个人健康数据，识别健康问题，并提供详细的健康指导建议。"
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=2000,
+                )
             )
-            
-            analysis_text = response.choices[0].message.content
             
             # 解析LLM返回的结果
             result = {
@@ -397,9 +399,10 @@ class HealthAnalysisService:
         checkin_date: date
     ) -> str:
         """为每日打卡生成个性化建议"""
-        if not self.client:
+        provider = self._get_provider()
+        if not provider:
             return "个性化建议服务暂不可用"
-        
+
         health_data = self.collect_user_health_data(db, user_id, days=7)
         
         # 检查是否有健康数据
@@ -435,24 +438,23 @@ class HealthAnalysisService:
 """
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一位专业的健康、营养专家，擅长提供每日个性化的健康建议。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=500,
-                timeout=60,  # 60秒超时
+            result = asyncio.run(
+                provider.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "你是一位专业的健康、营养专家，擅长提供每日个性化的健康建议。"
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=500,
+                )
             )
-            
-            return response.choices[0].message.content
+            return result
         except Exception as e:
             logger.error(f"生成个性化建议失败: {e}", exc_info=True)
             return f"生成建议时出现错误: {str(e)}"

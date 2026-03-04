@@ -1,5 +1,4 @@
 """AI 健康洞察服务 - 整合多维度数据生成个性化建议"""
-import httpx
 from datetime import datetime, date, timedelta
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
@@ -15,6 +14,7 @@ from app.schemas.ai_insights import (
     AIInsightCreate, RealtimeRecommendationCreate
 )
 from app.services.environment import weather_service
+from app.services.llm import get_llm_provider
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,9 +25,6 @@ class AIInsightsService:
 
     def __init__(self, db: Session):
         self.db = db
-        self.openclaw_url = settings.openclaw_base_url
-        self.openclaw_key = settings.openclaw_api_key
-        self.openclaw_model = settings.openclaw_model
 
     # ========== 数据聚合方法 ==========
 
@@ -161,42 +158,23 @@ class AIInsightsService:
             for d in diet_records
         ]
 
-    # ========== OpenClaw 调用方法 ==========
+    # ========== LLM 调用方法 ==========
 
     async def _call_openclaw(self, system_prompt: str, user_message: str) -> Optional[str]:
-        """调用 OpenClaw API 生成内容"""
-        if not self.openclaw_key:
-            logger.error("OpenClaw API key not configured")
-            return None
-
+        """调用 LLM Provider 生成内容"""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.openclaw_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.openclaw_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.openclaw_model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_message}
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 2000
-                    }
-                )
-
-                if response.status_code != 200:
-                    logger.error(f"OpenClaw API error: {response.status_code} - {response.text}")
-                    return None
-
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-
+            provider = get_llm_provider()
+            result = await provider.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+            )
+            return result
         except Exception as e:
-            logger.error(f"Failed to call OpenClaw API: {e}")
+            logger.error(f"Failed to call LLM Provider: {e}")
             return None
 
     # ========== 每日复盘生成 ==========

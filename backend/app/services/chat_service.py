@@ -1,6 +1,6 @@
 """
-聊天服务 - 通过 OpenClaw 提供 AI 对话能力
-利用 OpenClaw 的 OpenAI 兼容 API，注入用户健康上下文
+聊天服务 - 通过统一 LLM Provider 提供 AI 对话能力
+注入用户健康上下文
 """
 import json
 import logging
@@ -9,7 +9,6 @@ import asyncio
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 
-import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -35,17 +34,13 @@ from app.models.vocabulary import VocabularyWord
 from app.services.environment.weather_service import weather_service
 from app.services.ai.food_recognition import food_recognition_service
 from app.services.quark_search import get_search_client
+from app.services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
 # 天气数据模块级缓存（每个 worker 进程独立，8小时 TTL）
 _weather_cache: dict = {}  # key: city -> (timestamp, data)
 _WEATHER_CACHE_TTL = 8 * 3600  # 8 小时
-
-# OpenClaw 配置
-OPENCLAW_BASE_URL = settings.openclaw_base_url
-OPENCLAW_API_KEY = settings.openclaw_api_key or ""
-OPENCLAW_MODEL = settings.openclaw_model
 
 
 class ChatService:
@@ -1798,58 +1793,17 @@ class ChatService:
         return result
 
     async def _call_openclaw(self, messages: list) -> str:
-        """调用 OpenClaw 的 OpenAI 兼容 API"""
-        url = f"{OPENCLAW_BASE_URL}/chat/completions"
-
-        headers = {
-            "Content-Type": "application/json",
-        }
-        if OPENCLAW_API_KEY:
-            headers["Authorization"] = f"Bearer {OPENCLAW_API_KEY}"
-
-        payload = {
-            "model": OPENCLAW_MODEL,
-            "messages": messages,
-        }
-
-        async with httpx.AsyncClient(timeout=240.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-
-        choice = data.get("choices", [{}])[0]
-        return choice.get("message", {}).get("content", "").strip()
+        """调用 LLM Provider（非流式）"""
+        provider = get_llm_provider()
+        result = await provider.chat(messages=messages)
+        return result
 
     async def _call_openclaw_stream(self, messages: list):
-        """调用 OpenClaw 流式 API，逐 token yield"""
-        url = f"{OPENCLAW_BASE_URL}/chat/completions"
-        headers = {"Content-Type": "application/json"}
-        if OPENCLAW_API_KEY:
-            headers["Authorization"] = f"Bearer {OPENCLAW_API_KEY}"
-
-        payload = {
-            "model": OPENCLAW_MODEL,
-            "messages": messages,
-            "stream": True,
-        }
-
-        async with httpx.AsyncClient(timeout=240.0) as client:
-            async with client.stream("POST", url, json=payload, headers=headers) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                    except json.JSONDecodeError:
-                        continue
+        """调用 LLM Provider 流式 API，逐 token yield"""
+        provider = get_llm_provider()
+        stream = await provider.chat(messages=messages, stream=True)
+        async for token in stream:
+            yield token
 
     async def send_message_stream(
         self,

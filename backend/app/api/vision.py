@@ -1,6 +1,6 @@
 """
 视觉分析 API - 颜值测试、图片识别
-使用 GPT-4 Vision
+使用统一 LLM Provider
 每用户每天最多 10 次
 """
 import json
@@ -16,26 +16,12 @@ from app.database import get_db
 from app.models.user import User
 from app.models.vision_usage import VisionUsageLog
 from app.api.auth import get_current_user_required
+from app.services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/vision", tags=["vision"])
 
 DAILY_LIMIT = 10  # 每用户每天最多次数
-
-try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-
-
-def _get_client():
-    if not OPENAI_AVAILABLE or not settings.openai_api_key:
-        return None
-    kwargs = {"api_key": settings.openai_api_key}
-    if settings.openai_base_url:
-        kwargs["base_url"] = settings.openai_base_url
-    return OpenAI(**kwargs)
 
 
 def _extract_json(text: str) -> str:
@@ -130,18 +116,15 @@ async def analyze_beauty(
             remaining=0,
         )
 
-    client = _get_client()
-    if not client:
+    try:
+        provider = get_llm_provider()
+    except Exception:
         raise HTTPException(status_code=503, detail="AI 服务不可用")
 
     try:
         data_url = f"data:image/{req.image_type};base64,{req.image_base64}"
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a fun photography critique assistant for a children's game.
+
+        system_prompt = """You are a fun photography critique assistant for a children's game.
 Your task: analyze the PHOTOGRAPHY QUALITIES of the image — colors, lighting, composition, mood, energy.
 
 IMPORTANT RULES:
@@ -159,23 +142,16 @@ Return ONLY this JSON, no other text:
     "features": ["photography highlight 1 IN CHINESE", "highlight 2", "highlight 3"],
     "tips": "one warm encouraging message IN CHINESE"
 }"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Please analyze the photography qualities of this image for our fun kids game!"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_url, "detail": "low"}
-                        }
-                    ]
-                }
-            ],
-            max_tokens=500,
-            temperature=0.7,
-        )
 
-        raw = response.choices[0].message.content or ""
+        raw = await provider.chat_with_vision(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Please analyze the photography qualities of this image for our fun kids game!"},
+            ],
+            image_url=data_url,
+            temperature=0.7,
+            max_tokens=500,
+        ) or ""
         json_str = _extract_json(raw)
         result = json.loads(json_str)
 
@@ -216,18 +192,15 @@ async def recognize_image(
             remaining=0,
         )
 
-    client = _get_client()
-    if not client:
+    try:
+        provider = get_llm_provider()
+    except Exception:
         raise HTTPException(status_code=503, detail="AI 服务不可用")
 
     try:
         data_url = f"data:image/{req.image_type};base64,{req.image_base64}"
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are an image description assistant for a children's app.
+
+        system_prompt = """You are an image description assistant for a children's app.
 Describe the scene, objects, colors, and environment in the image using fun, child-friendly Chinese language.
 DO NOT identify, name, or describe any specific individuals.
 Only describe objects, scenes, animals, plants, colors, and environment.
@@ -237,23 +210,16 @@ Return ONLY this JSON:
     "description": "detailed description in Chinese (2-4 sentences)",
     "items": ["object/element 1 in Chinese", "element 2", ...]
 }"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Please describe the objects and scene in this image"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_url, "detail": "low"}
-                        }
-                    ]
-                }
-            ],
-            max_tokens=500,
-            temperature=0.3,
-        )
 
-        raw = response.choices[0].message.content or ""
+        raw = await provider.chat_with_vision(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Please describe the objects and scene in this image"},
+            ],
+            image_url=data_url,
+            temperature=0.3,
+            max_tokens=500,
+        ) or ""
         json_str = _extract_json(raw)
         result = json.loads(json_str)
 

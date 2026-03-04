@@ -11,7 +11,7 @@ from sqlalchemy import func as sa_func, desc
 from app.models.health_trend import HealthTrendReport
 from app.models.daily_health import GarminData
 from app.models.weight import WeightRecord
-from app.services.openclaw_analyze import OpenClawAnalyzeClient
+from app.services.llm import get_llm_provider
 from app.services.health_score_service import HealthScoreService
 
 logger = logging.getLogger(__name__)
@@ -361,7 +361,7 @@ class HealthTrendService:
             "overall": lambda: self._aggregate_overall_data(user_id, target_date, days=7),
         }
 
-        client = OpenClawAnalyzeClient()
+        provider = get_llm_provider()
         analyzed_dims = []
 
         for dimension, aggregator in aggregators.items():
@@ -372,7 +372,7 @@ class HealthTrendService:
                     continue
 
                 prompt = self._build_dimension_prompt(dimension, data)
-                raw_result = await client.analyze(prompt)
+                raw_result = await provider.multi_model_analyze(prompt)
                 parsed = self._parse_analysis_result(raw_result)
 
                 self._store_report(

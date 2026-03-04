@@ -6,7 +6,6 @@ from datetime import date, datetime, timedelta
 from calendar import monthrange
 from typing import Optional, Dict, Any, List
 
-import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -16,6 +15,7 @@ from app.models.smart_plan import WeeklyPlan
 from app.models.weight import WeightRecord
 from app.models.user_profile import UserProfile
 from app.services.chat_service import ChatService
+from app.services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -282,9 +282,7 @@ class PeriodGoalService:
         """调用 LLM，返回 (json_data, debug_info)"""
         llm_debug = {} if debug else None
 
-        if not settings.openclaw_api_key:
-            logger.error("OpenClaw API key not configured")
-            return None, llm_debug
+        provider = get_llm_provider()
 
         messages = [
             {"role": "system", "content": "你是一位专业的健康教练，擅长制定个性化健康目标。请严格按 JSON 格式输出。"},
@@ -295,35 +293,21 @@ class PeriodGoalService:
         for attempt in range(2):
             try:
                 call_start = time.time()
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
-                        f"{settings.openclaw_base_url}/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {settings.openclaw_api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": settings.openclaw_model,
-                            "messages": messages,
-                            "temperature": 0.7,
-                        }
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    call_time = (time.time() - call_start) * 1000
-                    content = data["choices"][0]["message"]["content"]
-                    usage = data.get("usage", {})
+                content = await provider.chat(
+                    messages=messages,
+                    temperature=0.7,
+                )
+                call_time = (time.time() - call_start) * 1000
 
-                    if llm_debug is not None:
-                        llm_debug["model"] = settings.openclaw_model
-                        llm_debug["attempt"] = attempt + 1
-                        llm_debug["api_call_ms"] = f"{call_time:.0f}ms"
-                        llm_debug["usage"] = usage
+                if llm_debug is not None:
+                    llm_debug["model"] = getattr(provider, 'model', 'unknown')
+                    llm_debug["attempt"] = attempt + 1
+                    llm_debug["api_call_ms"] = f"{call_time:.0f}ms"
 
-                    json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
-                    if json_match:
-                        return json.loads(json_match.group(1)), llm_debug
-                    return json.loads(content), llm_debug
+                json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+                if json_match:
+                    return json.loads(json_match.group(1)), llm_debug
+                return json.loads(content), llm_debug
 
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"LLM 响应解析失败 (attempt {attempt+1}): {e}")
