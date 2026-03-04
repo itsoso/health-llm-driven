@@ -104,6 +104,24 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.notifications.generate_daily_insights_for_all",
         "schedule": crontab(hour=20, minute=30),
     },
+
+    # 每日 23:00 健康异常检测
+    "daily-anomaly-check": {
+        "task": "app.tasks.notifications.daily_anomaly_check",
+        "schedule": crontab(hour=23, minute=0),
+    },
+
+    # 每日 22:00 健康趋势分析
+    "daily-trend-analysis": {
+        "task": "app.tasks.notifications.daily_trend_analysis",
+        "schedule": crontab(hour=22, minute=0),
+    },
+
+    # 每日 08:30 趋势摘要推送
+    "trend-morning-push": {
+        "task": "app.tasks.notifications.send_trend_morning_push",
+        "schedule": crontab(hour=8, minute=30),
+    },
 }
 
 logger.info("Celery 配置加载完成")

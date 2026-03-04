@@ -254,26 +254,14 @@ def send_plan_item_reminders():
                 if len(items) > 3:
                     body += f" 等{len(items)}项"
 
-                try:
-                    asyncio.get_event_loop().run_until_complete(
-                        push_service.send_notification(
-                            user_id=plan.user_id,
-                            notification_type="plan_reminder",
-                            title=f"{emoji} 计划提醒",
-                            content=body,
-                        )
+                asyncio.run(
+                    push_service.send_notification(
+                        user_id=plan.user_id,
+                        notification_type="plan_reminder",
+                        title=f"{emoji} 计划提醒",
+                        content=body,
                     )
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(
-                        push_service.send_notification(
-                            user_id=plan.user_id,
-                            notification_type="plan_reminder",
-                            title=f"{emoji} 计划提醒",
-                            content=body,
-                        )
-                    )
+                )
                 sent_count += 1
             except Exception as e:
                 logger.error(f"[分时提醒] 发送失败 (user_id={plan.user_id}): {e}")
@@ -385,21 +373,14 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
 
         # 调用 OpenClaw 多模型分析
         client = OpenClawAnalyzeClient()
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            analysis = loop.run_until_complete(client.analyze(prompt))
-        finally:
-            loop.close()
+        analysis = asyncio.run(client.analyze(prompt))
 
         # 推送通知
         aggregation = (analysis.get("aggregation") or "")[:200]
         content = aggregation or "今日健康数据已分析完成"
         push_service = PushService(db)
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(
+            asyncio.run(
                 push_service.send_notification(
                     user_id=user_id,
                     notification_type="daily_insights",
@@ -407,6 +388,139 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
                     content=content,
                 )
             )
-            loop.close()
         except Exception as e:
             logger.warning(f"[健康复盘] 推送失败 user={user_id}: {e}")
+
+
+@celery_app.task
+def daily_anomaly_check():
+    """
+    每日健康异常检测（23:00执行）
+    遍历活跃用户检测健康指标异常
+    """
+    logger.info("[异常检测] 开始每日健康异常检测")
+
+    from app.models.device_credential import DeviceCredential
+    from app.services.anomaly_detection_service import AnomalyDetectionService
+    from app.utils.timezone import get_china_today
+
+    with SessionLocal() as db:
+        # 获取有Garmin设备的活跃用户
+        credentials = db.query(DeviceCredential).filter(
+            DeviceCredential.device_type == "garmin",
+            DeviceCredential.is_active == True
+        ).all()
+        user_ids = [c.user_id for c in credentials]
+
+        today = get_china_today()
+        total_alerts = 0
+
+        for user_id in user_ids:
+            try:
+                svc = AnomalyDetectionService(db)
+                alerts = svc.detect_anomalies(user_id, today)
+                if alerts:
+                    total_alerts += len(alerts)
+                    logger.info(f"[异常检测] 用户 {user_id} 检测到 {len(alerts)} 个异常")
+                    try:
+                        asyncio.run(svc.send_alerts(user_id, alerts))
+                    except Exception as e:
+                        logger.warning(f"[异常检测] 推送失败 user={user_id}: {e}")
+            except Exception as e:
+                logger.error(f"[异常检测] 用户 {user_id} 检测失败: {e}")
+
+    logger.info(f"[异常检测] 完成，共检测 {len(user_ids)} 个用户，发现 {total_alerts} 个异常")
+
+
+@celery_app.task(time_limit=600)
+def daily_trend_analysis():
+    """
+    每日健康趋势分析（22:00执行）
+    为活跃用户生成各维度健康趋势报告。
+    """
+    from app.models.device_credential import DeviceCredential
+    from app.services.health_trend_service import HealthTrendService
+
+    logger.info("[趋势分析] 开始每日趋势分析")
+
+    with SessionLocal() as db:
+        credentials = db.query(DeviceCredential).filter(
+            DeviceCredential.device_type == "garmin",
+            DeviceCredential.is_active == True
+        ).all()
+        user_ids = [c.user_id for c in credentials]
+
+    logger.info(f"[趋势分析] 发现 {len(user_ids)} 个活跃用户")
+    analyzed_count = 0
+
+    for user_id in user_ids:
+        try:
+            with SessionLocal() as db:
+                svc = HealthTrendService(db)
+                dims = asyncio.run(svc.analyze_trends(user_id))
+                if dims:
+                    analyzed_count += 1
+                    logger.info(f"[趋势分析] 用户 {user_id} 完成: {dims}")
+        except Exception as e:
+            logger.error(f"[趋势分析] 用户 {user_id} 失败: {e}")
+
+    logger.info(f"[趋势分析] 完成，分析 {analyzed_count}/{len(user_ids)} 用户")
+    return {"analyzed_count": analyzed_count, "total_users": len(user_ids)}
+
+
+@celery_app.task
+def send_trend_morning_push():
+    """
+    早间趋势摘要推送（08:30执行）
+    推送昨日生成的趋势报告摘要。
+    """
+    from app.models.health_trend import HealthTrendReport
+
+    logger.info("[趋势推送] 开始早间推送")
+
+    with SessionLocal() as db:
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        reports = db.query(HealthTrendReport).filter(
+            HealthTrendReport.report_date == yesterday,
+            HealthTrendReport.period == "7d",
+        ).all()
+
+        user_reports = {}
+        for r in reports:
+            user_reports.setdefault(r.user_id, []).append(r)
+
+        push_service = PushService(db)
+        sent_count = 0
+
+        for user_id, user_rpts in user_reports.items():
+            try:
+                risk_items = [r for r in user_rpts if r.risk_alerts]
+                if risk_items:
+                    body = f"⚠️ {risk_items[0].risk_alerts[0]}"
+                else:
+                    improving = [r for r in user_rpts if r.trend_direction == "improving"]
+                    declining = [r for r in user_rpts if r.trend_direction == "declining"]
+                    dim_labels = {"weight": "体重", "sleep": "睡眠", "exercise": "运动", "overall": "综合"}
+                    parts = []
+                    if improving:
+                        parts.append("↑ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in improving))
+                    if declining:
+                        parts.append("↓ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in declining))
+                    body = " | ".join(parts) if parts else "各项指标平稳"
+
+                asyncio.run(
+                    push_service.send_notification(
+                        user_id=user_id,
+                        notification_type="trend_report",
+                        title="📈 健康趋势",
+                        content=body[:200],
+                    )
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"[趋势推送] 用户 {user_id} 推送失败: {e}")
+
+    logger.info(f"[趋势推送] 完成，推送 {sent_count} 条")
+    return {"sent_count": sent_count}
