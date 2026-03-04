@@ -470,14 +470,14 @@ function DashboardContent() {
         </div>
 
         {/* 健康趋势卡片 */}
-        {trendData?.data?.dimensions?.length > 0 && (
+        {(trendData?.data?.dimensions?.length ?? 0) > 0 && (
           <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-gray-800">健康趋势</h3>
               <a href="/health-trends" className="text-sm text-blue-500">查看详情 →</a>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {trendData.data.dimensions.map((dim: any) => {
+              {trendData?.data?.dimensions?.map((dim: any) => {
                 const icons: Record<string, string> = { weight: '⚖️', sleep: '😴', exercise: '🏃', overall: '💚' };
                 const labels: Record<string, string> = { weight: '体重', sleep: '睡眠', exercise: '运动', overall: '综合' };
                 const trendIcons: Record<string, string> = { improving: '↑', declining: '↓', stable: '→' };
@@ -493,8 +493,8 @@ function DashboardContent() {
                 );
               })}
             </div>
-            {trendData.data.dimensions[0]?.insights?.[0] && (
-              <p className="text-xs text-gray-500 mt-2">{trendData.data.dimensions[0].insights[0]}</p>
+            {trendData?.data?.dimensions?.[0]?.insights?.[0] && (
+              <p className="text-xs text-gray-500 mt-2">{trendData?.data?.dimensions?.[0]?.insights?.[0]}</p>
             )}
           </div>
         )}
