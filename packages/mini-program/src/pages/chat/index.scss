@@ -45,6 +45,33 @@ page {
   color: #fff;
 }
 
+.header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.mode-tabs {
+  display: flex;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 16px;
+  padding: 4px;
+}
+
+.mode-tab {
+  padding: 8px 20px;
+  border-radius: 12px;
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.2s;
+
+  &.active {
+    background: rgba(139, 92, 246, 0.4);
+    color: #fff;
+    font-weight: 600;
+  }
+}
+
 // 历史面板
 .history-panel {
   position: absolute;

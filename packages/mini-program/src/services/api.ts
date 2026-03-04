@@ -523,10 +523,11 @@ export async function getTodayExternalRecommendations(): Promise<TodayExternalRe
 
 // ===== OpenClaw AI 对话 =====
 
-export async function chatSend(message: string, conversationId?: number): Promise<any> {
+export async function chatSend(message: string, conversationId?: number, mode?: string): Promise<any> {
   return await post(API_ENDPOINTS.CHAT.SEND, {
     message,
     conversation_id: conversationId || undefined,
+    ...(mode ? { mode } : {}),
   });
 }
 

@@ -557,7 +557,11 @@ export default function AIAssistantPage() {
                     <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
                       conv.mode === 'proxy' ? 'bg-blue-600/30' : 'bg-purple-600/30'
                     }`}>
-                      {conv.mode === 'proxy' ? '🤖' : '💬'}
+                      {conv.mode === 'proxy' ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      ) : '💬'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-white line-clamp-2 mb-1 leading-snug">
@@ -720,7 +724,11 @@ export default function AIAssistantPage() {
             <div className="max-w-4xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
-                <div className="text-6xl">{chatMode === 'proxy' ? '🤖' : '💬'}</div>
+                <div className="text-6xl">{chatMode === 'proxy' ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                ) : '💬'}</div>
                 <h2 className="text-2xl font-bold text-white">
                   {chatMode === 'proxy' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
                 </h2>

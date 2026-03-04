@@ -19,6 +19,7 @@ interface Conversation {
   title: string;
   updated_at: string;
   last_message?: string;
+  mode?: string;
 }
 
 const QUICK_QUESTIONS = [
@@ -26,6 +27,13 @@ const QUICK_QUESTIONS = [
   { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
   { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量，有什么改善建议？' },
   { label: '饮食建议', text: '根据我的健康目标，今天的饮食应该注意什么？' },
+];
+
+const PROXY_QUICK_QUESTIONS = [
+  { label: '你好', text: '你好，你能做什么？' },
+  { label: '今日健康', text: '查一下我今天的健康数据' },
+  { label: '记录饮水', text: '记录喝水250ml' },
+  { label: '健康分析', text: '分析我最近的健康趋势' },
 ];
 
 export default function Chat() {
@@ -39,6 +47,7 @@ export default function Chat() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [chatMode, setChatMode] = useState<'health' | 'proxy'>('health');
   const itemsPerPage = 10;
   const [scrollTarget, setScrollTarget] = useState('msg-bottom');
   const scrollFlip = useRef(false);
@@ -61,11 +70,13 @@ export default function Chat() {
   }, []);
 
   // 加载指定对话的消息
-  const loadConversation = useCallback(async (convId: number) => {
+  const loadConversation = useCallback(async (convId: number, convMode?: string) => {
     try {
       const detail = await getChatMessages(convId);
       setMessages(detail.messages || []);
       setConversationId(convId);
+      // 恢复对话的模式
+      setChatMode(convMode === 'proxy' ? 'proxy' : detail.mode === 'proxy' ? 'proxy' : 'health');
       setShowHistory(false);
       // 延迟滚动到底部，等待消息渲染完成
       setTimeout(() => scrollToBottom(), 100);
@@ -98,7 +109,7 @@ export default function Chat() {
     setTimeout(() => scrollToBottom(), 50);
 
     try {
-      const result = await chatSend(msg, conversationId);
+      const result = await chatSend(msg, conversationId, chatMode === 'proxy' ? 'proxy' : undefined);
 
       // 更新会话 ID
       if (!conversationId && result.conversation_id) {
@@ -115,19 +126,19 @@ export default function Chat() {
       setMessages(prev => [...prev, aiMsg]);
       setTimeout(() => scrollToBottom(), 50);
 
-      // 显示活动记录通知
-      if (result.activities_saved && result.activities?.length > 0) {
-        const msgs = result.activities
-          .filter((a: any) => a.status !== 'already_exists')
-          .map((a: any) => a.message);
-        if (msgs.length > 0) {
-          Taro.showToast({ title: msgs.join('、'), icon: 'none', duration: 3000 });
+      // 健康助理模式下显示活动/饮食通知
+      if (chatMode === 'health') {
+        if (result.activities_saved && result.activities?.length > 0) {
+          const msgs = result.activities
+            .filter((a: any) => a.status !== 'already_exists')
+            .map((a: any) => a.message);
+          if (msgs.length > 0) {
+            Taro.showToast({ title: msgs.join('、'), icon: 'none', duration: 3000 });
+          }
         }
-      }
-
-      // 显示饮食记录通知
-      if (result.diet_saved) {
-        Taro.showToast({ title: '饮食已自动记录', icon: 'success', duration: 2000 });
+        if (result.diet_saved) {
+          Taro.showToast({ title: '饮食已自动记录', icon: 'success', duration: 2000 });
+        }
       }
     } catch (e: any) {
       const errorMsg: Message = {
@@ -147,6 +158,14 @@ export default function Chat() {
     setMessages([]);
     setConversationId(undefined);
     setShowHistory(false);
+  };
+
+  // 切换模式时新建对话
+  const handleModeSwitch = (mode: 'health' | 'proxy') => {
+    if (mode === chatMode) return;
+    setChatMode(mode);
+    setMessages([]);
+    setConversationId(undefined);
   };
 
   // 删除对话
@@ -386,7 +405,22 @@ export default function Chat() {
         <View className="header-left" onClick={toggleHistory}>
           <Text className="header-icon">{showHistory ? '✕' : '☰'}</Text>
         </View>
-        <Text className="header-title">智能助理</Text>
+        <View className="header-center">
+          <View className="mode-tabs">
+            <View
+              className={`mode-tab ${chatMode === 'health' ? 'active' : ''}`}
+              onClick={() => handleModeSwitch('health')}
+            >
+              <Text>健康助理</Text>
+            </View>
+            <View
+              className={`mode-tab ${chatMode === 'proxy' ? 'active' : ''}`}
+              onClick={() => handleModeSwitch('proxy')}
+            >
+              <Text>OpenClaw</Text>
+            </View>
+          </View>
+        </View>
         <View className="header-right" onClick={handleNewChat}>
           <Text className="header-icon">+</Text>
         </View>
@@ -426,10 +460,12 @@ export default function Chat() {
                 <View
                   key={conv.id}
                   className={`history-item ${conv.id === conversationId ? 'active' : ''}`}
-                  onClick={() => loadConversation(conv.id)}
+                  onClick={() => loadConversation(conv.id, conv.mode)}
                 >
                   <View className="history-item-content">
-                    <Text className="history-item-title">{conv.title}</Text>
+                    <Text className="history-item-title">
+                      {conv.mode === 'proxy' ? '⚡ ' : ''}{conv.title}
+                    </Text>
                     {conv.last_message && (
                       <Text className="history-item-preview">{conv.last_message}</Text>
                     )}
@@ -481,14 +517,18 @@ export default function Chat() {
         {messages.length === 0 && !loading && (
           <View className="welcome-area">
             <View className="welcome-icon-wrap">
-              <Text className="welcome-icon">💬</Text>
+              <Text className="welcome-icon">{chatMode === 'proxy' ? '⚡' : '💬'}</Text>
             </View>
-            <Text className="welcome-title">你好，我是你的智能助理</Text>
+            <Text className="welcome-title">
+              {chatMode === 'proxy' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
+            </Text>
             <Text className="welcome-desc">
-              我了解你的健康数据，可以为你提供个性化的健康建议
+              {chatMode === 'proxy'
+                ? 'OpenClaw 通过 Skills 自主访问健康数据，提供智能服务'
+                : '我了解你的健康数据，可以为你提供个性化的健康建议'}
             </Text>
             <View className="quick-questions">
-              {QUICK_QUESTIONS.map((q, idx) => (
+              {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
                 <View
                   key={idx}
                   className="quick-btn"
@@ -545,7 +585,7 @@ export default function Chat() {
       {messages.length > 0 && !loading && (
         <View className="quick-bar">
           <ScrollView scrollX className="quick-scroll">
-            {QUICK_QUESTIONS.map((q, idx) => (
+            {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
               <View
                 key={idx}
                 className="quick-chip"
@@ -560,12 +600,14 @@ export default function Chat() {
 
       {/* 输入区域 */}
       <View className="chat-input-area">
-        <View
-          className={`tool-btn ${imageUploading ? 'uploading' : ''}`}
-          onClick={handleImageChoose}
-        >
-          <Text className="tool-icon">📷</Text>
-        </View>
+        {chatMode === 'health' && (
+          <View
+            className={`tool-btn ${imageUploading ? 'uploading' : ''}`}
+            onClick={handleImageChoose}
+          >
+            <Text className="tool-icon">📷</Text>
+          </View>
+        )}
         <View
           className={`tool-btn ${isRecording ? 'recording' : ''}`}
           onClick={handleVoiceToggle}
