@@ -85,14 +85,22 @@ async def stream_message(
 
     async def generate():
         try:
-            async for event in service.send_message_stream(
-                user_id=current_user.id,
-                message=req.message.strip(),
-                conversation_id=req.conversation_id,
-                is_kids_mode=req.is_kids_mode or False,
-                image_base64=req.image_base64,
-                image_type=req.image_type,
-            ):
+            if req.mode == "proxy":
+                stream_gen = service.send_message_stream_proxy(
+                    user_id=current_user.id,
+                    message=req.message.strip(),
+                    conversation_id=req.conversation_id,
+                )
+            else:
+                stream_gen = service.send_message_stream(
+                    user_id=current_user.id,
+                    message=req.message.strip(),
+                    conversation_id=req.conversation_id,
+                    is_kids_mode=req.is_kids_mode or False,
+                    image_base64=req.image_base64,
+                    image_type=req.image_type,
+                )
+            async for event in stream_gen:
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"流式消息异常: {e}", exc_info=True)
@@ -129,7 +137,8 @@ async def list_conversations(
             title=c.title,
             created_at=c.created_at,
             updated_at=c.updated_at,
-            last_message=last_msg
+            last_message=last_msg,
+            mode=c.mode,
         ))
     return result
 
@@ -149,7 +158,8 @@ async def get_conversation(
     return ConversationDetailResponse(
         id=conv.id,
         title=conv.title,
-        messages=[ChatMessageResponse.model_validate(m) for m in conv.messages]
+        messages=[ChatMessageResponse.model_validate(m) for m in conv.messages],
+        mode=conv.mode,
     )
 
 

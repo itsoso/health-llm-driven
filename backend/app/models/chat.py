@@ -14,6 +14,7 @@ class ChatConversation(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(200), default="新对话")
+    mode = Column(String(20), nullable=True, default=None)  # None=健康助理, "proxy"=OpenClaw代理
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

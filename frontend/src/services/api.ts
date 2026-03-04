@@ -972,12 +972,14 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   last_message?: string;
+  mode?: string;
 }
 
 export interface ConversationDetail {
   id: number;
   title: string;
   messages: ChatMessage[];
+  mode?: string;
 }
 
 export interface DietSavedData {
@@ -1104,7 +1106,7 @@ export const chatApi = {
   recognizeFood: (imageBase64: string, imageType: string = 'image/jpeg') =>
     api.post<{ success: boolean; foods: any[]; meal_description: string; health_tips: string; totals: any }>('/diet/recognize', { image_base64: imageBase64, image_type: imageType }),
   // 流式发送消息 (SSE)
-  streamMessage: async function* (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string) {
+  streamMessage: async function* (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string, mode?: string) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
       method: 'POST',
@@ -1118,6 +1120,7 @@ export const chatApi = {
         is_kids_mode: isKidsMode || false,
         image_base64: imageBase64,
         image_type: imageType,
+        ...(mode ? { mode } : {}),
       }),
     });
 

@@ -23,6 +23,13 @@ const QUICK_QUESTIONS = [
   { label: '运动完成', text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出拉伸和恢复建议' },
 ];
 
+const PROXY_QUICK_QUESTIONS = [
+  { label: '你好', text: '你好，你能做什么？' },
+  { label: '今日健康', text: '查一下我今天的健康数据' },
+  { label: '记录饮水', text: '记录喝水250ml' },
+  { label: '健康分析', text: '分析我最近的健康趋势' },
+];
+
 export default function AIAssistantPage() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -39,6 +46,7 @@ export default function AIAssistantPage() {
   const [planCreatedNotification, setPlanCreatedNotification] = useState<{message: string; planId?: number} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading] = useState(false);
+  const [chatMode, setChatMode] = useState<'health' | 'proxy'>('health');
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,12 +75,12 @@ export default function AIAssistantPage() {
   }, []);
 
   // 加载指定对话的消息
-  const loadConversation = useCallback(async (convId: number) => {
+  const loadConversation = useCallback(async (convId: number, convMode?: string) => {
     try {
       const response = await chatApi.getConversation(convId);
       setMessages(response.data.messages || []);
       setConversationId(convId);
-      // 保持历史记录面板打开，不自动关闭
+      setChatMode(convMode === 'proxy' || response.data.mode === 'proxy' ? 'proxy' : 'health');
     } catch (e) {
       console.error('加载对话失败:', e);
       showToast('加载失败', 'error');
@@ -168,8 +176,8 @@ export default function AIAssistantPage() {
     setMessages(prev => [...prev, tempUserMsg]);
     setLoading(true);
 
-    // 检测运动完成意图 - 如果匹配，并行触发分析 API
-    const isWorkoutDone = isPostWorkoutMessage(msg);
+    // 检测运动完成意图 - 如果匹配，并行触发分析 API（仅健康助理模式）
+    const isWorkoutDone = chatMode === 'health' && isPostWorkoutMessage(msg);
     let workoutAnalysisPromise: Promise<any> | null = null;
     if (isWorkoutDone) {
       workoutAnalysisPromise = api.post('/workout/post-run-analyze?format=full').catch(() => {
@@ -192,7 +200,7 @@ export default function AIAssistantPage() {
 
       let gotDone = false;
       let firstToken = true;
-      for await (const event of chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType)) {
+      for await (const event of chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType, chatMode === 'proxy' ? 'proxy' : undefined)) {
         if (event.event === 'token') {
           if (firstToken) {
             firstToken = false;
@@ -223,7 +231,7 @@ export default function AIAssistantPage() {
               m.id === aiMsgId ? { ...m, id: result.message_id } : m
             ));
           }
-          handleDoneEvent(result);
+          if (chatMode === 'health') handleDoneEvent(result);
         } else if (event.event === 'error') {
           setMessages(prev => prev.map(m =>
             m.id === aiMsgId ? { ...m, content: event.data.message || '服务异常，请重试' } : m
@@ -546,8 +554,10 @@ export default function AIAssistantPage() {
                     }`}
                     onClick={() => loadConversation(conv.id)}
                   >
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600/30 flex items-center justify-center text-sm">
-                      💬
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                      conv.mode === 'proxy' ? 'bg-blue-600/30' : 'bg-purple-600/30'
+                    }`}>
+                      {conv.mode === 'proxy' ? '🤖' : '💬'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-white line-clamp-2 mb-1 leading-snug">
@@ -611,19 +621,47 @@ export default function AIAssistantPage() {
 
         {/* 主聊天区域 */}
         <div className="flex-1 flex flex-col relative">
-          {/* 切换侧边栏按钮 (仅当侧边栏关闭时显示) */}
-          {!showHistory && (
-            <button
-              onClick={toggleHistory}
-              className="absolute top-4 left-4 z-10 w-10 h-10 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-white/10 flex items-center justify-center text-purple-300 hover:text-purple-200 transition-all shadow-lg"
-              title="打开历史记录"
-            >
-              <span className="text-xl">💬</span>
-            </button>
-          )}
+          {/* 顶部栏：侧边栏按钮 + 模式切换 */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-slate-800/30">
+            <div className="flex items-center gap-2">
+              {!showHistory && (
+                <button
+                  onClick={toggleHistory}
+                  className="w-9 h-9 rounded-lg bg-slate-700/60 hover:bg-slate-600/80 border border-white/10 flex items-center justify-center text-purple-300 hover:text-purple-200 transition-all"
+                  title="打开历史记录"
+                >
+                  <span className="text-lg">💬</span>
+                </button>
+              )}
+            </div>
+            {/* 模式切换 */}
+            <div className="flex rounded-xl bg-slate-700/50 border border-white/10 p-0.5">
+              <button
+                onClick={() => { if (chatMode !== 'health') { setChatMode('health'); setMessages([]); setConversationId(undefined); } }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  chatMode === 'health'
+                    ? 'bg-purple-600 text-white shadow-lg'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                健康助理
+              </button>
+              <button
+                onClick={() => { if (chatMode !== 'proxy') { setChatMode('proxy'); setMessages([]); setConversationId(undefined); } }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  chatMode === 'proxy'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                OpenClaw
+              </button>
+            </div>
+            <div className="w-9" /> {/* spacer for centering */}
+          </div>
 
-          {/* 饮食记录保存通知 */}
-          {dietNotification && (
+          {/* 饮食记录保存通知 (仅健康助理模式) */}
+          {chatMode === 'health' && dietNotification && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300">
               <div className="bg-green-600/90 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
                 <span className="text-xl">🍽</span>
@@ -638,8 +676,8 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          {/* 活动记录通知 */}
-          {activityNotifications.length > 0 && (
+          {/* 活动记录通知 (仅健康助理模式) */}
+          {chatMode === 'health' && activityNotifications.length > 0 && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300">
               <div className="bg-emerald-600/90 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg">
                 <div className="flex items-center justify-between gap-3 mb-1">
@@ -655,8 +693,8 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          {/* 智能计划创建通知 */}
-          {planCreatedNotification && (
+          {/* 智能计划创建通知 (仅健康助理模式) */}
+          {chatMode === 'health' && planCreatedNotification && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300 w-80">
               <div className="bg-blue-600/95 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg">
                 <div className="flex items-center justify-between gap-3 mb-1">
@@ -682,13 +720,17 @@ export default function AIAssistantPage() {
             <div className="max-w-4xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
-                <div className="text-6xl">💬</div>
-                <h2 className="text-2xl font-bold text-white">你好，我是你的智能助理</h2>
+                <div className="text-6xl">{chatMode === 'proxy' ? '🤖' : '💬'}</div>
+                <h2 className="text-2xl font-bold text-white">
+                  {chatMode === 'proxy' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
+                </h2>
                 <p className="text-slate-400">
-                  我了解你的健康数据，可以为你提供个性化的健康建议
+                  {chatMode === 'proxy'
+                    ? '直接与 OpenClaw 对话，支持健康数据查询、记录和分析'
+                    : '我了解你的健康数据，可以为你提供个性化的健康建议'}
                 </p>
                 <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">
-                  {QUICK_QUESTIONS.map((q, idx) => (
+                  {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
@@ -804,7 +846,7 @@ export default function AIAssistantPage() {
             <div className="px-4 py-2 border-t border-white/10">
               <div className="max-w-4xl mx-auto overflow-x-auto">
                 <div className="flex gap-2">
-                  {QUICK_QUESTIONS.map((q, idx) => (
+                  {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
@@ -821,7 +863,7 @@ export default function AIAssistantPage() {
           {/* 输入区域 */}
           <div className="p-4 bg-slate-800/50 border-t border-white/10">
             <div className="max-w-4xl mx-auto flex gap-2 items-center">
-              {/* 图片按钮 */}
+              {/* 图片按钮 (仅健康助理模式) */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -829,19 +871,21 @@ export default function AIAssistantPage() {
                 className="hidden"
                 onChange={handleImageUpload}
               />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={imageUploading || loading}
-                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
-                }`}
-                title="拍照/上传食物图片"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
+              {chatMode === 'health' && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={imageUploading || loading}
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
+                    imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                  }`}
+                  title="拍照/上传食物图片"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+              )}
               {/* 语音按钮 */}
               <button
                 onClick={handleVoiceToggle}

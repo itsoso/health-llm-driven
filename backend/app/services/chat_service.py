@@ -2065,6 +2065,64 @@ class ChatService:
 
         yield {"event": "done", "data": result_data}
 
+    async def send_message_stream_proxy(
+        self,
+        user_id: int,
+        message: str,
+        conversation_id: Optional[int] = None,
+    ):
+        """OpenClaw 代理模式：直接转发消息，不构建健康上下文，不解析动作"""
+        # 获取或创建对话
+        if conversation_id:
+            conv = self.db.query(ChatConversation).filter(
+                ChatConversation.id == conversation_id,
+                ChatConversation.user_id == user_id
+            ).first()
+            if not conv:
+                yield {"event": "error", "data": {"message": "对话不存在"}}
+                return
+        else:
+            conv = ChatConversation(user_id=user_id, title=message[:50], mode="proxy")
+            self.db.add(conv)
+            self.db.commit()
+            self.db.refresh(conv)
+
+        # 保存用户消息
+        user_msg = ChatMessage(conversation_id=conv.id, role="user", content=message)
+        self.db.add(user_msg)
+        self.db.commit()
+
+        # 构建消息列表（无 system prompt，无健康上下文）
+        history = self.db.query(ChatMessage).filter(
+            ChatMessage.conversation_id == conv.id
+        ).order_by(ChatMessage.created_at.asc()).all()
+        recent = history[-20:] if len(history) > 20 else history
+
+        messages = [{"role": msg.role, "content": msg.content} for msg in recent]
+
+        # 直接流式转发到 OpenClaw
+        full_response = ""
+        try:
+            async for token in self._call_openclaw_stream(messages):
+                full_response += token
+                yield {"event": "token", "data": {"content": token}}
+        except Exception as e:
+            logger.error(f"OpenClaw Proxy 流式调用失败: {type(e).__name__}: {e}")
+            full_response = "抱歉，OpenClaw 暂时无法响应，请稍后再试。"
+            yield {"event": "token", "data": {"content": full_response}}
+
+        # 保存 AI 回复
+        ai_msg = ChatMessage(conversation_id=conv.id, role="assistant", content=full_response)
+        self.db.add(ai_msg)
+        conv.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(ai_msg)
+
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+        }}
+
     def get_conversations(self, user_id: int, limit: int = 20) -> List[ChatConversation]:
         """获取用户的对话列表"""
         return self.db.query(ChatConversation).filter(

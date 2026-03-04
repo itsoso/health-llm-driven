@@ -10,6 +10,7 @@ class ChatSendRequest(BaseModel):
     is_kids_mode: Optional[bool] = False
     image_base64: Optional[str] = None
     image_type: Optional[str] = "jpeg"
+    mode: Optional[str] = None  # None=健康助理, "proxy"=OpenClaw代理
 
 
 class ChatMessageResponse(BaseModel):
@@ -70,6 +71,7 @@ class ConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_message: Optional[str] = None
+    mode: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -78,5 +80,6 @@ class ConversationDetailResponse(BaseModel):
     id: int
     title: str
     messages: List[ChatMessageResponse]
+    mode: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
