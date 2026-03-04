@@ -927,10 +927,37 @@ class ChatService:
             except Exception as e:
                 logger.warning(f"获取环境信息失败: {type(e).__name__}: {e}")
 
+        # 健康趋势
+        trend_context = self._get_trend_context(user_id)
+        if trend_context:
+            parts.append(trend_context)
+
         if not parts:
             return ""
 
         return "以下是该用户的最新健康数据：\n" + "\n".join(parts)
+
+    def _get_trend_context(self, user_id: int) -> str:
+        """获取用户最新趋势数据，注入到聊天上下文"""
+        from app.models.health_trend import HealthTrendReport
+        reports = self.db.query(HealthTrendReport).filter(
+            HealthTrendReport.user_id == user_id,
+            HealthTrendReport.period == "7d",
+        ).order_by(HealthTrendReport.report_date.desc()).limit(4).all()
+
+        if not reports:
+            return ""
+
+        dim_labels = {"weight": "体重", "sleep": "睡眠", "exercise": "运动", "overall": "综合"}
+        lines = [f"\n## 健康趋势（{reports[0].report_date}）"]
+        for r in reports:
+            label = dim_labels.get(r.dimension, r.dimension)
+            direction_cn = {"improving": "改善中", "declining": "下降中", "stable": "平稳"}.get(r.trend_direction, "未知")
+            lines.append(f"- {label}: {direction_cn}")
+            if r.insights:
+                for insight in r.insights[:2]:
+                    lines.append(f"  - {insight}")
+        return "\n".join(lines)
 
     def _build_activity_context(self, user_id: int) -> str:
         """构建用户可记录的活动上下文（打卡模板、补剂、疾病档案）"""
