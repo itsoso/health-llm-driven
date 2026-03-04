@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi } from '@/services/api';
+import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi } from '@/services/api';
 import { format, subDays } from 'date-fns';
 import {
   LineChart,
@@ -41,7 +41,7 @@ function DashboardContent() {
   const { data: todayData, refetch: refetchToday, isFetching: isFetchingToday } = useQuery({
     queryKey: ['garmin-today', userId, today],
     queryFn: () => dailyHealthApi.getMyGarminData(today, today),
-    refetchInterval: 5 * 60 * 1000, // 每5分钟自动刷新
+    refetchInterval: 15 * 60 * 1000, // 每15分钟自动刷新
     enabled: !!userId,
   });
 
@@ -63,6 +63,13 @@ function DashboardContent() {
   const { data: comprehensive, refetch: refetchComprehensive } = useQuery({
     queryKey: ['garmin-comprehensive', userId, 7],
     queryFn: () => garminAnalysisApi.getMyComprehensive(7),
+    enabled: !!userId,
+  });
+
+  // 获取健康趋势数据
+  const { data: trendData } = useQuery({
+    queryKey: ['health-trends-latest', userId],
+    queryFn: () => healthTrendApi.getLatest(),
     enabled: !!userId,
   });
 
@@ -461,6 +468,36 @@ function DashboardContent() {
             })()}
           </div>
         </div>
+
+        {/* 健康趋势卡片 */}
+        {trendData?.data?.dimensions?.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-gray-800">健康趋势</h3>
+              <a href="/health-trends" className="text-sm text-blue-500">查看详情 →</a>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {trendData.data.dimensions.map((dim: any) => {
+                const icons: Record<string, string> = { weight: '⚖️', sleep: '😴', exercise: '🏃', overall: '💚' };
+                const labels: Record<string, string> = { weight: '体重', sleep: '睡眠', exercise: '运动', overall: '综合' };
+                const trendIcons: Record<string, string> = { improving: '↑', declining: '↓', stable: '→' };
+                const trendColors: Record<string, string> = { improving: 'text-green-600', declining: 'text-red-600', stable: 'text-blue-600' };
+                return (
+                  <div key={dim.dimension} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
+                    <span>{icons[dim.dimension] || '📊'}</span>
+                    <span className="text-sm text-gray-700">{labels[dim.dimension] || dim.dimension}</span>
+                    <span className={`ml-auto font-medium ${trendColors[dim.trend_direction || 'stable']}`}>
+                      {trendIcons[dim.trend_direction || 'stable']}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {trendData.data.dimensions[0]?.insights?.[0] && (
+              <p className="text-xs text-gray-500 mt-2">{trendData.data.dimensions[0].insights[0]}</p>
+            )}
+          </div>
+        )}
 
         {/* 基础健康数据 */}
         {basicHealth?.data && (
