@@ -290,20 +290,41 @@ function copyToClipboard(text: string) {
   }
 }
 
+// 将 OpenClaw 格式模板转为 Claude Code 格式
+function toClaudeCodeTemplate(skill: SkillDef): string {
+  // 移除 OpenClaw frontmatter，替换为 Claude Code frontmatter
+  const body = skill.template.replace(/^---[\s\S]*?---\n*/m, '');
+  const frontmatter = `---
+name: ${skill.id}
+description: ${skill.description}
+allowed-tools: Bash(curl *)
+---`;
+  return `${frontmatter}\n\n${body}`;
+}
+
+function getSkillPath(skillId: string, format: SkillFormat): string {
+  return format === 'openclaw'
+    ? `~/.openclaw/skills/${skillId}/SKILL.md`
+    : `~/.claude/skills/${skillId}/SKILL.md`;
+}
+
 function SkillCard({
   skill,
   token,
   isExpanded,
   onToggle,
+  format,
 }: {
   skill: SkillDef;
   token: string;
   isExpanded: boolean;
   onToggle: () => void;
+  format: SkillFormat;
 }) {
   const [copied, setCopied] = useState(false);
 
-  const content = skill.template
+  const raw = format === 'openclaw' ? skill.template : toClaudeCodeTemplate(skill);
+  const content = raw
     .replace(/\{\{API_URL\}\}/g, API_URL)
     .replace(/\{\{API_TOKEN\}\}/g, token || '<请先创建 API Key>');
 
@@ -354,7 +375,7 @@ function SkillCard({
       {isExpanded && (
         <div className="border-t border-purple-900/30 p-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-mono text-gray-500">~/.openclaw/skills/{skill.id}/SKILL.md</span>
+            <span className="text-xs font-mono text-gray-500">{getSkillPath(skill.id, format)}</span>
             <button onClick={handleCopy} className={`text-xs px-3 py-1.5 rounded-md transition-all ${copied ? 'bg-green-600/20 text-green-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               {copied ? '已复制 ✓' : '复制全部内容'}
             </button>
@@ -379,6 +400,8 @@ function SkillCard({
   );
 }
 
+type SkillFormat = 'openclaw' | 'claude-code';
+
 export default function SkillsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -388,6 +411,7 @@ export default function SkillsPage() {
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [configCopied, setConfigCopied] = useState(false);
+  const [skillFormat, setSkillFormat] = useState<SkillFormat>('openclaw');
 
   const loadApiKeys = useCallback(async () => {
     try {
@@ -482,13 +506,37 @@ export default function SkillsPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-white mb-2">AI Skills 管理</h1>
             <p className="text-gray-400">
-              管理 API Key，复制 SKILL.md 到 OpenClaw 即可用自然语言管理健康数据
+              管理 API Key，复制 SKILL.md 到 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'} 即可用自然语言管理健康数据
             </p>
           </div>
 
-          {/* 使用说明 */}
+          {/* 格式选择 + 使用说明 */}
           <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
-            <h2 className="text-sm font-semibold text-purple-300 mb-3">使用方法</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-purple-300">使用方法</h2>
+              <div className="flex items-center gap-1 bg-[#0d0b14] rounded-lg p-1 border border-purple-900/30">
+                <button
+                  onClick={() => setSkillFormat('openclaw')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    skillFormat === 'openclaw'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  OpenClaw 原始格式
+                </button>
+                <button
+                  onClick={() => setSkillFormat('claude-code')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    skillFormat === 'claude-code'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Claude Code 格式
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
@@ -507,9 +555,11 @@ export default function SkillsPage() {
               <div className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
                 <div>
-                  <p className="text-white font-medium">保存到 OpenClaw</p>
+                  <p className="text-white font-medium">保存到 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'}</p>
                   <p className="text-gray-400 mt-0.5">
-                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.openclaw/skills/</code>
+                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">
+                      {skillFormat === 'openclaw' ? '~/.openclaw/skills/' : '~/.claude/skills/'}
+                    </code>
                   </p>
                 </div>
               </div>
@@ -535,7 +585,7 @@ export default function SkillsPage() {
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateKey()}
-                placeholder="输入名称（如：OpenClaw、MCP Server）"
+                placeholder={`输入名称（如：${skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'}、MCP Server）`}
                 className="flex-1 bg-[#0d0b14] border border-purple-900/30 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
               />
               <button
@@ -577,7 +627,7 @@ export default function SkillsPage() {
               <div className="text-center text-gray-500 text-sm py-4">加载中...</div>
             ) : apiKeys.length === 0 ? (
               <div className="text-center text-gray-500 text-sm py-4">
-                暂无 API Key，请创建一个用于 OpenClaw Skills
+                暂无 API Key，请创建一个用于 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'} Skills
               </div>
             ) : (
               <div className="space-y-2">
@@ -619,6 +669,7 @@ export default function SkillsPage() {
                 token={activeToken}
                 isExpanded={expandedId === skill.id}
                 onToggle={() => setExpandedId(expandedId === skill.id ? null : skill.id)}
+                format={skillFormat}
               />
             ))}
           </div>
@@ -639,26 +690,43 @@ export default function SkillsPage() {
             </div>
           </div>
 
-          {/* openclaw.json 配置 */}
-          <div className="mt-4 bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-purple-300">openclaw.json 配置（已绑定你的 Token）</h2>
-              <button
-                onClick={handleCopyConfig}
-                className={`text-xs px-3 py-1.5 rounded-md transition-all ${
-                  configCopied ? 'bg-green-600/20 text-green-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {configCopied ? '已复制 ✓' : '复制配置'}
-              </button>
+          {/* 配置说明 */}
+          {skillFormat === 'openclaw' ? (
+            <div className="mt-4 bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-purple-300">openclaw.json 配置（已绑定你的 Token）</h2>
+                <button
+                  onClick={handleCopyConfig}
+                  className={`text-xs px-3 py-1.5 rounded-md transition-all ${
+                    configCopied ? 'bg-green-600/20 text-green-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {configCopied ? '已复制 ✓' : '复制配置'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mb-3">
+                合并到 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.openclaw/openclaw.json</code> 的 skills.entries 中，注入环境变量
+              </p>
+              <pre className="bg-[#0d0b14] rounded-lg p-4 overflow-x-auto text-sm text-gray-300 font-mono leading-relaxed border border-purple-900/20 max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+                {getOpenclawConfig()}
+              </pre>
             </div>
-            <p className="text-xs text-gray-400 mb-3">
-              合并到 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.openclaw/openclaw.json</code> 的 skills.entries 中，注入环境变量
-            </p>
-            <pre className="bg-[#0d0b14] rounded-lg p-4 overflow-x-auto text-sm text-gray-300 font-mono leading-relaxed border border-purple-900/20 max-h-[300px] overflow-y-auto whitespace-pre-wrap">
-              {getOpenclawConfig()}
-            </pre>
-          </div>
+          ) : (
+            <div className="mt-4 bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5">
+              <h2 className="text-sm font-semibold text-purple-300 mb-3">Claude Code 安装说明</h2>
+              <div className="space-y-3 text-sm text-gray-300">
+                <p>将上方每个 Skill 的 SKILL.md 文件保存到对应目录：</p>
+                <pre className="bg-[#0d0b14] rounded-lg p-4 text-xs font-mono leading-relaxed border border-purple-900/20 whitespace-pre-wrap">{`mkdir -p ~/.claude/skills/health-query
+mkdir -p ~/.claude/skills/health-record
+mkdir -p ~/.claude/skills/health-analysis
+
+# 分别将复制的内容保存到各目录的 SKILL.md`}</pre>
+                <p className="text-xs text-gray-400">
+                  Claude Code 会自动发现 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.claude/skills/</code> 下的 SKILL.md 文件并加载为可用 Skill
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </ProtectedRoute>

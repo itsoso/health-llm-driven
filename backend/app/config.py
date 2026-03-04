@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     openclaw_api_key: Optional[str] = None
     openclaw_model: str = "openclaw:main"
 
+    # OpenClaw Gateway
+    openclaw_gateway_url: str = ""  # e.g. http://47.237.191.17:3000
+
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token
 

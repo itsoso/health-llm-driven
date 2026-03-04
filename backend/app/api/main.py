@@ -74,6 +74,7 @@ from app.api import (
     achievement,  # 成就徽章
     data_export,  # 数据导出
     health_trend,  # 健康趋势预测
+    openclaw,  # OpenClaw Channel 代理
 )
 
 api_router = APIRouter()
@@ -172,3 +173,6 @@ api_router.include_router(data_export.router)  # 健康数据导出
 
 # 健康趋势预测
 api_router.include_router(health_trend.router)  # 健康趋势预测
+
+# OpenClaw Channel 代理
+api_router.include_router(openclaw.router)  # prefix 已在 router 中定义

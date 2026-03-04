@@ -1152,6 +1152,59 @@ export const chatApi = {
   },
 };
 
+// OpenClaw Channel API
+export const openclawApi = {
+  getConversations: (limit: number = 20) =>
+    api.get<Conversation[]>(`/openclaw/conversations?limit=${limit}`),
+
+  getConversation: (conversationId: number) =>
+    api.get<ConversationDetail>(`/openclaw/conversations/${conversationId}`),
+
+  deleteConversation: (conversationId: number) =>
+    api.delete(`/openclaw/conversations/${conversationId}`),
+
+  streamMessage: async function* (message: string, conversationId?: number) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(`${API_BASE_URL}/openclaw/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenClaw stream request failed: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (reader) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            yield data;
+          } catch {
+            // skip malformed JSON
+          }
+        }
+      }
+    }
+  },
+};
+
 // ===== 活动状态 API =====
 export interface ActivityStatusData {
   id: number;

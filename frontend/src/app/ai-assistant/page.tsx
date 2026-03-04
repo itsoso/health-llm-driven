@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, chatApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { api, chatApi, openclawApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -46,7 +46,7 @@ export default function AIAssistantPage() {
   const [planCreatedNotification, setPlanCreatedNotification] = useState<{message: string; planId?: number} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading] = useState(false);
-  const [chatMode, setChatMode] = useState<'health' | 'proxy'>('health');
+  const [chatMode, setChatMode] = useState<'health' | 'openclaw'>('health');
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,25 +67,30 @@ export default function AIAssistantPage() {
   // 加载对话列表
   const loadConversations = useCallback(async () => {
     try {
-      const response = await chatApi.getConversations();
+      const response = chatMode === 'openclaw'
+        ? await openclawApi.getConversations()
+        : await chatApi.getConversations();
       setConversations(response.data || []);
     } catch (e) {
       console.error('加载对话列表失败:', e);
     }
-  }, []);
+  }, [chatMode]);
 
   // 加载指定对话的消息
   const loadConversation = useCallback(async (convId: number, convMode?: string) => {
     try {
-      const response = await chatApi.getConversation(convId);
+      const isOpenClaw = convMode === 'openclaw' || chatMode === 'openclaw';
+      const response = isOpenClaw
+        ? await openclawApi.getConversation(convId)
+        : await chatApi.getConversation(convId);
       setMessages(response.data.messages || []);
       setConversationId(convId);
-      setChatMode(convMode === 'proxy' || response.data.mode === 'proxy' ? 'proxy' : 'health');
+      if (convMode) setChatMode(convMode as 'health' | 'openclaw');
     } catch (e) {
       console.error('加载对话失败:', e);
       showToast('加载失败', 'error');
     }
-  }, []);
+  }, [chatMode]);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -200,7 +205,10 @@ export default function AIAssistantPage() {
 
       let gotDone = false;
       let firstToken = true;
-      for await (const event of chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType, chatMode === 'proxy' ? 'proxy' : undefined)) {
+      const streamIterator = chatMode === 'openclaw'
+        ? openclawApi.streamMessage(msg, conversationId)
+        : chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType);
+      for await (const event of streamIterator) {
         if (event.event === 'token') {
           if (firstToken) {
             firstToken = false;
@@ -364,7 +372,8 @@ export default function AIAssistantPage() {
   // 删除对话
   const handleDeleteConversation = async (convId: number) => {
     try {
-      await chatApi.deleteConversation(convId);
+      const deleteApi = chatMode === 'openclaw' ? openclawApi : chatApi;
+      await deleteApi.deleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
       if (conversationId === convId) {
         handleNewChat();
@@ -555,9 +564,9 @@ export default function AIAssistantPage() {
                     onClick={() => loadConversation(conv.id)}
                   >
                     <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                      conv.mode === 'proxy' ? 'bg-blue-600/30' : 'bg-purple-600/30'
+                      chatMode === 'openclaw' ? 'bg-blue-600/30' : 'bg-purple-600/30'
                     }`}>
-                      {conv.mode === 'proxy' ? (
+                      {chatMode === 'openclaw' ? (
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
@@ -651,9 +660,9 @@ export default function AIAssistantPage() {
                 健康助理
               </button>
               <button
-                onClick={() => { if (chatMode !== 'proxy') { setChatMode('proxy'); setMessages([]); setConversationId(undefined); } }}
+                onClick={() => { if (chatMode !== 'openclaw') { setChatMode('openclaw'); setMessages([]); setConversationId(undefined); } }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  chatMode === 'proxy'
+                  chatMode === 'openclaw'
                     ? 'bg-blue-600 text-white shadow-lg'
                     : 'text-slate-300 hover:text-white'
                 }`}
@@ -724,21 +733,21 @@ export default function AIAssistantPage() {
             <div className="max-w-4xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
-                <div className="text-6xl">{chatMode === 'proxy' ? (
+                <div className="text-6xl">{chatMode === 'openclaw' ? (
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 ) : '💬'}</div>
                 <h2 className="text-2xl font-bold text-white">
-                  {chatMode === 'proxy' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
+                  {chatMode === 'openclaw' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
                 </h2>
                 <p className="text-slate-400">
-                  {chatMode === 'proxy'
+                  {chatMode === 'openclaw'
                     ? '直接与 OpenClaw 对话，支持健康数据查询、记录和分析'
                     : '我了解你的健康数据，可以为你提供个性化的健康建议'}
                 </p>
                 <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">
-                  {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
+                  {(chatMode === 'openclaw' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
@@ -854,7 +863,7 @@ export default function AIAssistantPage() {
             <div className="px-4 py-2 border-t border-white/10">
               <div className="max-w-4xl mx-auto overflow-x-auto">
                 <div className="flex gap-2">
-                  {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
+                  {(chatMode === 'openclaw' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}

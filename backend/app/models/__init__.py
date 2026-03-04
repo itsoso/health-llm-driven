@@ -82,6 +82,8 @@ from app.models.anomaly_alert import AnomalyAlert
 from app.models.achievement import BadgeDefinition, UserBadge
 # 健康趋势预测
 from app.models.health_trend import HealthTrendReport
+# OpenClaw Channel
+from app.models.openclaw import OpenClawConversation, OpenClawMessage
 
 __all__ = [
     "User",
@@ -194,5 +196,8 @@ __all__ = [
     "UserBadge",
     # 健康趋势预测
     "HealthTrendReport",
+    # OpenClaw Channel
+    "OpenClawConversation",
+    "OpenClawMessage",
 ]
 
