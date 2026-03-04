@@ -332,6 +332,7 @@ class TestOpenAIProvider:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "你好！"
+        mock_response.choices[0].message.tool_calls = None
         p._client = MagicMock()
 
         with patch(
@@ -693,3 +694,149 @@ class TestOpenClawProvider:
         assert isinstance(result[1]["content"], list)
         assert result[1]["content"][0]["type"] == "text"
         assert result[1]["content"][1]["type"] == "image_url"
+
+
+# ---- Function Calling / Tools Tests ----
+
+class TestOpenAIProviderTools:
+    """OpenAI Provider tools 参数测试"""
+
+    @pytest.fixture
+    def provider(self):
+        return OpenAIProvider(api_key="test-key", model="gpt-4o-mini")
+
+    @pytest.fixture
+    def sample_tools(self):
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "record_water",
+                    "description": "记录饮水量",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "amount_ml": {"type": "integer", "description": "饮水量(毫升)"}
+                        },
+                        "required": ["amount_ml"],
+                    },
+                },
+            }
+        ]
+
+    @patch("app.services.llm.providers.openai_provider.asyncio.to_thread")
+    @pytest.mark.asyncio
+    async def test_chat_with_tools_passes_to_sdk(self, mock_to_thread, provider, sample_tools):
+        """tools 参数应透传给 OpenAI SDK"""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "已记录"
+        mock_response.choices[0].message.tool_calls = None
+        mock_to_thread.return_value = mock_response
+
+        with patch.object(provider, "_get_client") as mock_client:
+            mock_client.return_value = MagicMock()
+            result = await provider.chat(
+                messages=[{"role": "user", "content": "喝水250"}],
+                tools=sample_tools,
+            )
+            # tools 应通过 **kwargs 透传
+            call_kwargs = mock_to_thread.call_args
+            assert "tools" in str(call_kwargs)
+
+
+class TestOpenClawProviderTools:
+    """OpenClaw Provider tools 参数测试"""
+
+    @pytest.fixture
+    def provider(self):
+        return OpenClawProvider(
+            base_url="https://test.com/v1",
+            api_key="test-key",
+        )
+
+    @pytest.fixture
+    def sample_tools(self):
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "record_water",
+                    "description": "记录饮水量",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "amount_ml": {"type": "integer"}
+                        },
+                        "required": ["amount_ml"],
+                    },
+                },
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_chat_with_tools_includes_in_payload(self, provider, sample_tools):
+        """tools 参数应包含在 HTTP payload 中"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "已记录", "tool_calls": None}}]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.AsyncClient") as MockClient:
+            mock_instance = AsyncMock()
+            mock_instance.post.return_value = mock_response
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=None)
+            MockClient.return_value = mock_instance
+
+            result = await provider.chat(
+                messages=[{"role": "user", "content": "喝水250"}],
+                tools=sample_tools,
+            )
+            # 验证 POST payload 包含 tools
+            post_call = mock_instance.post.call_args
+            payload = post_call.kwargs.get("json", {})
+            assert "tools" in payload
+            assert payload["tools"] == sample_tools
+
+    @pytest.mark.asyncio
+    async def test_chat_with_tool_calls_returns_dict(self, provider):
+        """当 LLM 返回 tool_calls 时，chat 应返回包含 tool_calls 的结构"""
+        tool_calls_data = [
+            {
+                "id": "call_123",
+                "type": "function",
+                "function": {"name": "record_water", "arguments": '{"amount_ml": 250}'},
+            }
+        ]
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": tool_calls_data,
+                    }
+                }
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.AsyncClient") as MockClient:
+            mock_instance = AsyncMock()
+            mock_instance.post.return_value = mock_response
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=None)
+            MockClient.return_value = mock_instance
+
+            result = await provider.chat(
+                messages=[{"role": "user", "content": "喝水250"}],
+                tools=[{"type": "function", "function": {"name": "record_water"}}],
+            )
+            # tool_calls 时返回 dict 而非 str
+            assert isinstance(result, dict)
+            assert "tool_calls" in result
+            assert result["tool_calls"][0]["function"]["name"] == "record_water"

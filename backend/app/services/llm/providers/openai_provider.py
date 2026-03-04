@@ -77,7 +77,23 @@ class OpenAIProvider(LLMProvider):
             stream=False,
             **kwargs,
         )
-        content = response.choices[0].message.content or ""
+        message = response.choices[0].message
+        if message.tool_calls:
+            return {
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in message.tool_calls
+                ],
+            }
+        content = message.content or ""
         return content.strip()
 
     async def _stream_chat(

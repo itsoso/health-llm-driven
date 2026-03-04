@@ -36,10 +36,10 @@ class LLMProvider(ABC):
             temperature: 温度参数 (0.0-2.0)
             max_tokens: 最大生成 token 数
             stream: 是否流式返回
-            **kwargs: 额外参数（各 provider 可自行扩展）
+            **kwargs: 额外参数（如 tools 用于 function calling）
 
         Returns:
-            stream=False: 返回完整的响应字符串
+            stream=False: 返回完整的响应字符串，或当 LLM 返回 tool_calls 时返回 dict
             stream=True: 返回 AsyncIterator[str]，逐 token yield
         """
         ...

@@ -73,6 +73,10 @@ class OpenClawProvider(LLMProvider):
             "stream": stream,
         }
 
+        tools = kwargs.get("tools")
+        if tools:
+            payload["tools"] = tools
+
         if stream:
             return self._stream_chat(payload)
 
@@ -82,7 +86,14 @@ class OpenClawProvider(LLMProvider):
             resp.raise_for_status()
             data = resp.json()
 
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        message = data.get("choices", [{}])[0].get("message", {})
+        tool_calls = message.get("tool_calls")
+        if tool_calls:
+            return {
+                "content": message.get("content"),
+                "tool_calls": tool_calls,
+            }
+        content = message.get("content", "")
         return content.strip()
 
     async def _stream_chat(self, payload: Dict[str, Any]) -> AsyncIterator[str]:
