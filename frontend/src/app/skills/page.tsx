@@ -37,11 +37,8 @@ const skillDefs: SkillDef[] = [
     toolCount: 13,
     template: `---
 name: health-query
-description: Query health data from the Health Management System - steps, heart rate, sleep, weight, blood pressure, workouts, diet, checkin status, and achievements.
-requires:
-  env:
-    - HEALTH_API_URL
-    - HEALTH_API_TOKEN
+description: Query health data from the Health Management System - steps, heart rate, sleep, weight, blood pressure, workouts, diet, checkin status, and achievements. Use when the user asks about their health metrics, fitness data, or daily stats.
+allowed-tools: Bash(curl *)
 ---
 
 You have access to a Health Management System API. Use curl to query health data.
@@ -133,11 +130,8 @@ curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/health-score/daily
     toolCount: 5,
     template: `---
 name: health-record
-description: Record health data - water intake, weight, blood pressure, checkins, and diet entries.
-requires:
-  env:
-    - HEALTH_API_URL
-    - HEALTH_API_TOKEN
+description: Record health data - water intake, weight, blood pressure, checkins, and diet entries. Use when the user wants to log drinking water, weight, blood pressure, checkins, or meals.
+allowed-tools: Bash(curl *)
 ---
 
 You can record health data via the Health Management System API.
@@ -206,11 +200,8 @@ meal_type: BREAKFAST / LUNCH / DINNER / EXTRA
     toolCount: 6,
     template: `---
 name: health-analysis
-description: Get AI health analysis, daily recommendations, health trend predictions, and health scores.
-requires:
-  env:
-    - HEALTH_API_URL
-    - HEALTH_API_TOKEN
+description: Get AI health analysis, daily recommendations, health trend predictions, and health scores. Use when the user asks for health advice, trend analysis, risk assessment, or wellness recommendations.
+allowed-tools: Bash(curl *)
 ---
 
 You can request health analysis and recommendations from the Health Management System.
@@ -342,7 +333,7 @@ function SkillCard({
       {isExpanded && (
         <div className="border-t border-purple-900/30 p-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-mono text-gray-500">openclaw-skills/{skill.id}/SKILL.md</span>
+            <span className="text-xs font-mono text-gray-500">~/.claude/skills/{skill.id}/SKILL.md</span>
             <button onClick={handleCopy} className={`text-xs px-3 py-1.5 rounded-md transition-all ${copied ? 'bg-green-600/20 text-green-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
               {copied ? '已复制 ✓' : '复制全部内容'}
             </button>
@@ -431,17 +422,21 @@ export default function SkillsPage() {
     }
   };
 
+  const generateInstallScript = useCallback(() => {
+    const tok = activeToken || '<你的API Key>';
+    const skills = skillDefs.map((s) => {
+      const content = s.template
+        .replace(/\{\{API_URL\}\}/g, API_URL)
+        .replace(/\{\{API_TOKEN\}\}/g, tok);
+      // Escape single quotes for shell heredoc
+      const escaped = content.replace(/'/g, "'\\''");
+      return `mkdir -p ~/.claude/skills/${s.id}\ncat > ~/.claude/skills/${s.id}/SKILL.md << 'SKILL_EOF'\n${escaped}\nSKILL_EOF`;
+    });
+    return `#!/bin/bash\n# Health Skills 一键安装脚本\n# 将 3 个 Skill 写入 ~/.claude/skills/\n\n${skills.join('\n\n')}\n\necho "Done! 3 Health Skills installed to ~/.claude/skills/"`;
+  }, [activeToken]);
+
   const handleCopyConfig = () => {
-    const config = JSON.stringify({
-      skills: {
-        entries: {
-          'health-query': { env: { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken || '<你的API Key>' } },
-          'health-record': { env: { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken || '<你的API Key>' } },
-          'health-analysis': { env: { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken || '<你的API Key>' } },
-        },
-      },
-    }, null, 2);
-    copyToClipboard(config);
+    copyToClipboard(generateInstallScript());
     setConfigCopied(true);
     setTimeout(() => setConfigCopied(false), 2000);
   };
@@ -454,7 +449,7 @@ export default function SkillsPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-white mb-2">AI Skills 管理</h1>
             <p className="text-gray-400">
-              管理 API Key，复制 SKILL.md 到 OpenClaw 即可在任意渠道管理健康数据
+              管理 API Key，复制 SKILL.md 到 Claude Code 即可用自然语言管理健康数据
             </p>
           </div>
 
@@ -479,9 +474,9 @@ export default function SkillsPage() {
               <div className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
                 <div>
-                  <p className="text-white font-medium">粘贴到 OpenClaw</p>
+                  <p className="text-white font-medium">保存到 Claude Code</p>
                   <p className="text-gray-400 mt-0.5">
-                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.openclaw/skills/</code>
+                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.claude/skills/</code>
                   </p>
                 </div>
               </div>
@@ -507,7 +502,7 @@ export default function SkillsPage() {
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateKey()}
-                placeholder="输入名称（如：OpenClaw、MCP Server）"
+                placeholder="输入名称（如：Claude Code、MCP Server）"
                 className="flex-1 bg-[#0d0b14] border border-purple-900/30 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
               />
               <button
@@ -549,7 +544,7 @@ export default function SkillsPage() {
               <div className="text-center text-gray-500 text-sm py-4">加载中...</div>
             ) : apiKeys.length === 0 ? (
               <div className="text-center text-gray-500 text-sm py-4">
-                暂无 API Key，请创建一个用于 OpenClaw Skills
+                暂无 API Key，请创建一个用于 Claude Code Skills
               </div>
             ) : (
               <div className="space-y-2">
@@ -611,29 +606,26 @@ export default function SkillsPage() {
             </div>
           </div>
 
-          {/* openclaw.json 配置 */}
+          {/* 一键安装脚本 */}
           <div className="mt-4 bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-purple-300">openclaw.json 配置（已绑定你的 Token）</h2>
+              <h2 className="text-sm font-semibold text-purple-300">一键安装（已绑定你的 Token）</h2>
               <button
                 onClick={handleCopyConfig}
                 className={`text-xs px-3 py-1.5 rounded-md transition-all ${
                   configCopied ? 'bg-green-600/20 text-green-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                {configCopied ? '已复制 ✓' : '复制配置'}
+                {configCopied ? '已复制 ✓' : '复制脚本'}
               </button>
             </div>
-            <pre className="bg-[#0d0b14] rounded-lg p-4 overflow-x-auto text-sm text-gray-300 font-mono leading-relaxed border border-purple-900/20">
-{JSON.stringify({
-  skills: {
-    entries: {
-      'health-query': { env: { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken || '<你的API Key>' } },
-      'health-record': { env: { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken || '<你的API Key>' } },
-      'health-analysis': { env: { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken || '<你的API Key>' } },
-    },
-  },
-}, null, 2)}
+            <p className="text-xs text-gray-400 mb-3">复制后在终端执行，自动创建 3 个 Skill 到 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">~/.claude/skills/</code></p>
+            <pre className="bg-[#0d0b14] rounded-lg p-4 overflow-x-auto text-sm text-gray-300 font-mono leading-relaxed border border-purple-900/20 max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+{`# 复制并在终端运行：
+bash <(pbpaste)
+
+# 或保存为文件运行：
+# pbpaste > install-health-skills.sh && bash install-health-skills.sh`}
             </pre>
           </div>
         </div>
