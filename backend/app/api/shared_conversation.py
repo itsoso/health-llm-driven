@@ -98,12 +98,12 @@ def create_share(
     else:
         # 显示名脱敏
         display_name = None
-        if current_user.nickname:
-            name = current_user.nickname
-            if len(name) > 1:
-                display_name = name[0] + "*" * (len(name) - 1)
+        raw_name = current_user.name or current_user.username
+        if raw_name:
+            if len(raw_name) > 1:
+                display_name = raw_name[0] + "*" * (len(raw_name) - 1)
             else:
-                display_name = name
+                display_name = raw_name
 
         shared = SharedConversation(
             user_id=current_user.id,
