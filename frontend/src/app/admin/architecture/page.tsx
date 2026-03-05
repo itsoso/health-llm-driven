@@ -39,7 +39,7 @@ export default function ArchitecturePage() {
 
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 p-6 md:p-10">
           <h1 className="text-3xl font-bold text-white mb-2">系统技术架构文档</h1>
-          <p className="text-purple-300 text-sm mb-10">最后更新: 2026-03-01</p>
+          <p className="text-purple-300 text-sm mb-10">最后更新: 2026-03-05</p>
 
           <div className="prose prose-invert prose-purple max-w-none space-y-10 text-[15px] leading-relaxed">
 
@@ -225,6 +225,107 @@ export default function ArchitecturePage() {
               </Card>
             </Section>
 
+            {/* 4.5 OpenClaw Channel 代理集成 */}
+            <Section title="4.5 OpenClaw Channel 代理集成">
+              <p>
+                系统作为 OpenClaw 的一个 <Hl>Channel</Hl>（类似飞书/钉钉集成），在 AI 助手页面新增独立的 OpenClaw tab，
+                前端通过后端代理连接 OpenClaw Gateway，OpenClaw Agent 通过 Skills 自主调用 Health API。
+              </p>
+
+              <Card title="架构模式: 后端代理 (方案 B)">
+                <div className="bg-black/20 rounded-lg p-4 font-mono text-sm text-purple-200">
+                  <pre>{`前端 /ai-assistant (OpenClaw tab)
+  → POST /api/v1/openclaw/stream (SSE)
+    → 后端 FastAPI (39.98.206.178)
+      → HTTPS POST bot.executor.life/v1/chat/completions
+        → OpenClaw Gateway (47.237.191.17:18789)
+          → Anthropic Claude Max
+            → 返回流式回复 (SSE)`}</pre>
+                </div>
+              </Card>
+
+              <Card title="为什么选择后端代理">
+                <ul className="space-y-1 text-sm text-purple-200">
+                  <li><Hl>安全:</Hl> Gateway 绑定 loopback，无需对外暴露端口</li>
+                  <li><Hl>可靠:</Hl> 消息实时存储到独立表，不丢失</li>
+                  <li><Hl>统一:</Hl> 共用 JWT 鉴权，和现有 SSE 架构一致</li>
+                </ul>
+              </Card>
+
+              <Card title="独立数据模型">
+                <div className="font-mono text-sm space-y-1">
+                  <div><span className="text-gray-400">会话表:</span> <span className="text-cyan-300">openclaw_conversations</span> <span className="text-gray-500">(独立于 chat_conversations)</span></div>
+                  <div><span className="text-gray-400">消息表:</span> <span className="text-cyan-300">openclaw_messages</span> <span className="text-gray-500">(独立于 chat_messages)</span></div>
+                  <div><span className="text-gray-400">Session Key:</span> <span className="text-cyan-300">{`health-{user_id}-{uuid}`}</span> <span className="text-gray-500">(传给 Gateway 维持会话)</span></div>
+                </div>
+              </Card>
+
+              <Card title="API 端点">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/20">
+                        <th className="text-left py-1 px-2 text-purple-200 font-medium">端点</th>
+                        <th className="text-left py-1 px-2 text-purple-200 font-medium">方法</th>
+                        <th className="text-left py-1 px-2 text-purple-200 font-medium">说明</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-purple-100">
+                      {[
+                        ['/openclaw/stream', 'POST', '流式对话 (SSE)'],
+                        ['/openclaw/conversations', 'GET', '对话列表'],
+                        ['/openclaw/conversations/:id', 'GET', '对话详情 + 消息'],
+                        ['/openclaw/conversations/:id', 'DELETE', '删除对话'],
+                      ].map(([endpoint, method, desc], i) => (
+                        <tr key={i} className="border-b border-white/5">
+                          <td className="py-1 px-2 font-mono text-cyan-300 text-xs">{endpoint}</td>
+                          <td className="py-1 px-2 text-xs">{method}</td>
+                          <td className="py-1 px-2 text-xs">{desc}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              <Card title="配置">
+                <div className="font-mono text-sm space-y-1">
+                  <div><span className="text-gray-400">OPENCLAW_GATEWAY_URL:</span> <span className="text-cyan-300">https://bot.executor.life</span></div>
+                  <div><span className="text-gray-400">OPENCLAW_API_KEY:</span> <span className="text-cyan-300">e89a...9d6d (Token Auth)</span></div>
+                  <div><span className="text-gray-400">OPENCLAW_MODEL:</span> <span className="text-cyan-300">openclaw:main</span></div>
+                </div>
+              </Card>
+
+              <Card title="与健康助理的区别">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/20">
+                        <th className="text-left py-1 px-2 text-purple-200 font-medium">功能</th>
+                        <th className="text-left py-1 px-2 text-purple-200 font-medium">健康助理</th>
+                        <th className="text-left py-1 px-2 text-purple-200 font-medium">OpenClaw</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-purple-100">
+                      {[
+                        ['API', '/chat/stream', '/openclaw/stream'],
+                        ['上下文', '12+ 健康数据源', 'OpenClaw Agent 自管'],
+                        ['Action 执行', '后端解析执行', 'Skills 自主调用'],
+                        ['图片上传', '支持', '不支持'],
+                        ['数据存储', 'chat_* 表', 'openclaw_* 表'],
+                      ].map(([feature, health, openclaw], i) => (
+                        <tr key={i} className="border-b border-white/5">
+                          <td className="py-1 px-2 text-white font-medium text-xs">{feature}</td>
+                          <td className="py-1 px-2 font-mono text-xs">{health}</td>
+                          <td className="py-1 px-2 font-mono text-cyan-300 text-xs">{openclaw}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </Section>
+
             {/* 5. 智能助理核心架构 */}
             <Section title="5. 智能助理 (ChatService) 核心架构">
               <p>
@@ -354,7 +455,7 @@ export default function ArchitecturePage() {
                   { title: '打卡与目标', models: 'HealthCheckin, CheckinTemplate, CheckinRecord, Goal, GoalProgress, HabitDefinition, HabitRecord' },
                   { title: '专项追踪', models: 'VisionRecord, DailyEyeHabit, MenstrualCycle, CycleSymptom, Medication, MedicationLog' },
                   { title: '生活记录', models: 'SleepRecord, ActivityStatus, IllnessEpisode, IllnessUpdate, ExcretionRecord, OutdoorActivity, Trip, TripItem' },
-                  { title: 'AI 与通知', models: 'ChatConversation, ChatMessage, DailyRecommendation, HealthAnalysisCache, AIInsight, RealtimeRecommendation' },
+                  { title: 'AI 与通知', models: 'ChatConversation, ChatMessage, OpenClawConversation, OpenClawMessage, DailyRecommendation, HealthAnalysisCache, AIInsight, RealtimeRecommendation' },
                   { title: '社交与通讯', models: 'Friendship, PKChallenge, ChallengeParticipant, DirectMessage, GroupChat, GroupMember, GroupMessage, VocabularyWord' },
                   { title: '复盘与报告', models: 'DailyReview, PeriodReview, HealthReport, NewsArticle' },
                 ].map((group, i) => (
@@ -381,7 +482,7 @@ export default function ArchitecturePage() {
                     {[
                       ['认证与用户', '/auth, /users, /user-profile, /user-merge, /invitation'],
                       ['核心健康', '/basic-health, /weight, /blood-pressure, /heart-rate, /body-composition'],
-                      ['AI 对话', '/chat (对话核心), /ai-insights, /daily-recommendation'],
+                      ['AI 对话', '/chat (对话核心), /openclaw (Channel代理), /ai-insights, /daily-recommendation'],
                       ['运动与活动', '/garmin-connect, /garmin-analysis, /workout, /activity-status'],
                       ['饮食与营养', '/diet, /diet-recommendation, /water, /supplements'],
                       ['打卡与目标', '/checkin, /goals, /daily-points'],

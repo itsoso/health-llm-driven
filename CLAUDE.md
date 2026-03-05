@@ -5,10 +5,20 @@
 ## 部署说明
 
 ### 服务器信息
-- **服务器IP**: `root@39.98.206.178`
+
+#### 健康系统服务器 (阿里云 ECS)
+- **服务器IP**: `root@39.98.206.178` (SSH 端口 22)
 - **项目路径**: `/opt/health-app`
 - **前端路径**: `/opt/health-app/frontend`
 - **后端路径**: `/opt/health-app/backend`
+- **域名**: `health.executor.life` (前端) / `health-api.executor.life` (API)
+
+#### OpenClaw 服务器
+- **服务器IP**: `root@47.237.191.17` (SSH 端口 22222)
+- **Gateway 进程**: `openclaw-gateway` (端口 18789, 绑定 loopback)
+- **域名**: `bot.executor.life` (Nginx SSL 代理 → 127.0.0.1:18789)
+- **配置文件**: `/root/.openclaw/openclaw.json`
+- **Nginx 配置**: `/etc/nginx/conf.d/openclaw.conf`
 
 ### 部署脚本使用
 
@@ -123,6 +133,59 @@ health-llm-driven/
 └── packages/                        # 小程序相关
     └── mini-program/                # Taro 小程序
 ```
+
+## OpenClaw 集成架构
+
+### OpenClaw Channel 代理模式 (2026-03-05)
+
+系统作为 OpenClaw 的一个 Channel（类似飞书/钉钉集成），在 AI 助手页面新增独立的 OpenClaw tab。
+
+**架构链路**:
+```
+前端 /ai-assistant (OpenClaw tab)
+  → POST /api/v1/openclaw/stream (SSE)
+    → FastAPI 后端 (39.98.206.178)
+      → HTTPS POST bot.executor.life/v1/chat/completions
+        → OpenClaw Gateway (47.237.191.17:18789, loopback)
+          → Anthropic Claude Max
+```
+
+**配置项** (`.env-online`):
+```
+OPENCLAW_GATEWAY_URL=https://bot.executor.life
+OPENCLAW_API_KEY=e89ad0759bb523b9cc56dbd52fb7993f86f545f19d6d4273
+OPENCLAW_MODEL=openclaw:main
+```
+
+**API 端点**:
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/openclaw/stream` | POST | 流式对话 (SSE) |
+| `/openclaw/conversations` | GET | 对话列表 |
+| `/openclaw/conversations/{id}` | GET | 对话详情 + 消息 |
+| `/openclaw/conversations/{id}` | DELETE | 删除对话 |
+
+**关键文件**:
+| 文件 | 说明 |
+|------|------|
+| `backend/app/models/openclaw.py` | OpenClawConversation + OpenClawMessage 模型 |
+| `backend/app/services/openclaw_service.py` | Gateway 流式调用 + 会话管理 |
+| `backend/app/api/openclaw.py` | 4 个 API 端点 |
+| `frontend/src/app/ai-assistant/page.tsx` | OpenClaw tab UI + 独立 API 路由 |
+| `frontend/src/services/api.ts` | openclawApi 服务对象 |
+
+**与健康助理的区别**:
+- 健康助理: 后端构建 12+ 健康上下文 → OpenClaw API → Action 解析执行
+- OpenClaw Channel: 纯粹代理 → OpenClaw Gateway 全权处理 → Skills 自主调用 Health API
+
+**诊断要点**:
+- Gateway 连通性: `curl https://bot.executor.life/v1/chat/completions -H 'Authorization: Bearer {key}'`
+- Gateway 进程: `ssh -p 22222 root@47.237.191.17 "ps aux | grep openclaw"`
+- Gateway 端口: `ssh -p 22222 root@47.237.191.17 "ss -tlnp | grep 18789"`
+- Nginx 配置: `ssh -p 22222 root@47.237.191.17 "cat /etc/nginx/conf.d/openclaw.conf"`
+- 后端日志: `ssh root@39.98.206.178 "journalctl -u health-backend -n 50 --no-pager | grep openclaw"`
+
+---
 
 ## 最近更新
 
@@ -410,4 +473,4 @@ pm2 monit
 
 ---
 
-*最后更新：2026-03-03*
+*最后更新：2026-03-05*

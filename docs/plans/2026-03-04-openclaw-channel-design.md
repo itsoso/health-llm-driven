@@ -25,8 +25,9 @@
 └──────────────┬───────────────────────────────────┘
                │ HTTP POST (stream)
 ┌──────────────▼───────────────────────────────────┐
-│ OpenClaw Gateway (47.237.191.17:PORT)             │
-│  /v1/chat/completions                             │
+│ OpenClaw Gateway (47.237.191.17:18789)             │
+│  Nginx SSL → bot.executor.life                    │
+│  /v1/chat/completions (Token Auth)                │
 │  Agent → Skills → curl Health API                 │
 └──────────────┬───────────────────────────────────┘
                │ curl (由 Skills 发起)
@@ -127,9 +128,25 @@ async def call_gateway_stream(messages, session_key):
 ### 配置项 (.env)
 
 ```
-OPENCLAW_GATEWAY_URL=http://47.237.191.17:PORT
-OPENCLAW_API_KEY=xxx
+# OpenClaw Gateway — 通过 Nginx SSL 代理访问，无需直连内网端口
+OPENCLAW_GATEWAY_URL=https://bot.executor.life
+OPENCLAW_API_KEY=e89ad0759bb523b9cc56dbd52fb7993f86f545f19d6d4273
+OPENCLAW_MODEL=openclaw:main
+
+# Gateway 实际部署: 47.237.191.17:18789 (loopback)
+# Nginx SSL 代理: bot.executor.life → 127.0.0.1:18789
+# Token 认证: Bearer {OPENCLAW_API_KEY}
 ```
+
+### 已完成部署状态
+
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| 后端 models/service/api | 已部署 | 39.98.206.178 |
+| 前端 OpenClaw tab | 已部署 | health.executor.life |
+| DB 表 (openclaw_conversations/messages) | 已创建 | PostgreSQL |
+| OPENCLAW_GATEWAY_URL | 已配置 | https://bot.executor.life |
+| Gateway 连通性 | 已验证 | 后端可正常调用 Gateway API |
 
 ## 前端 UI
 
