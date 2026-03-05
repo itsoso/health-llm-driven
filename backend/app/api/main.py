@@ -76,6 +76,7 @@ from app.api import (
     health_trend,  # 健康趋势预测
     openclaw,  # OpenClaw Channel 代理
     openclaw_skills,  # OpenClaw Skills 远程管理
+    shared_conversation,  # 对话分享
 )
 
 api_router = APIRouter()
@@ -180,3 +181,6 @@ api_router.include_router(openclaw.router)  # prefix 已在 router 中定义
 
 # OpenClaw Skills 远程管理
 api_router.include_router(openclaw_skills.router)  # prefix 已在 router 中定义
+
+# 对话分享
+api_router.include_router(shared_conversation.router)  # prefix 已在 router 中定义

@@ -86,6 +86,8 @@ from app.models.health_trend import HealthTrendReport
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
 # 对话记忆
 from app.models.conversation_memory import ConversationMemory
+# 对话分享
+from app.models.shared_conversation import SharedConversation
 
 __all__ = [
     "User",
@@ -203,5 +205,7 @@ __all__ = [
     "OpenClawMessage",
     # 对话记忆
     "ConversationMemory",
+    # 对话分享
+    "SharedConversation",
 ]
 

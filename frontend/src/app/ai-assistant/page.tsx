@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, chatApi, openclawApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { api, chatApi, openclawApi, sharedApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -396,6 +396,23 @@ export default function AIAssistantPage() {
     }
   };
 
+  // 分享对话
+  const handleShareConversation = async (convId: number) => {
+    try {
+      const sourceType = chatMode === 'openclaw' ? 'openclaw' : 'health';
+      const res = await sharedApi.createShare(convId, sourceType);
+      const url = res.data.share_url;
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        showToast('分享链接已复制到剪贴板', 'success');
+      } else {
+        prompt('分享链接：', url);
+      }
+    } catch (e) {
+      showToast('分享失败', 'error');
+    }
+  };
+
   // 切换历史面板
   const toggleHistory = () => {
     if (!showHistory) {
@@ -594,16 +611,30 @@ export default function AIAssistantPage() {
                         </div>
                       )}
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteConversation(conv.id);
-                      }}
-                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 ml-2 text-slate-400 hover:text-red-400 text-xl transition-opacity"
-                      title="删除对话"
-                    >
-                      ×
-                    </button>
+                    <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 ml-2 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleShareConversation(conv.id);
+                        }}
+                        className="text-slate-400 hover:text-blue-400 transition-colors"
+                        title="分享对话"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteConversation(conv.id);
+                        }}
+                        className="text-slate-400 hover:text-red-400 text-xl transition-colors"
+                        title="删除对话"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -682,7 +713,19 @@ export default function AIAssistantPage() {
                 OpenClaw
               </button>
             </div>
-            <div className="w-9" /> {/* spacer for centering */}
+            <div className="w-9 flex justify-end">
+              {conversationId && messages.length > 0 && (
+                <button
+                  onClick={() => handleShareConversation(conversationId)}
+                  className="w-8 h-8 rounded-lg bg-slate-700/60 hover:bg-blue-600/40 border border-white/10 flex items-center justify-center text-slate-400 hover:text-blue-300 transition-all"
+                  title="分享对话"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* 饮食记录保存通知 (仅健康助理模式) */}

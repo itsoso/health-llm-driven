@@ -1205,6 +1205,17 @@ export const openclawApi = {
   },
 };
 
+// ===== 对话分享 API =====
+export const sharedApi = {
+  createShare: (conversationId: number, sourceType: string = 'health') =>
+    api.post<{ share_token: string; share_url: string }>('/shared/create', {
+      conversation_id: conversationId,
+      source_type: sourceType,
+    }),
+  revokeShare: (shareToken: string) =>
+    api.delete(`/shared/${shareToken}`),
+};
+
 // ===== 活动状态 API =====
 export interface ActivityStatusData {
   id: number;
