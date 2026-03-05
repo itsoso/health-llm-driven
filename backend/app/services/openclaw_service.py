@@ -1,6 +1,7 @@
 """OpenClaw Channel 对话服务 — 代理连接 OpenClaw Gateway"""
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import AsyncGenerator, Dict, List, Optional
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.services.openclaw_skills_service import openclaw_skills_service
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,188 @@ class OpenClawService:
                     except (json.JSONDecodeError, IndexError, KeyError):
                         continue
 
+    # ── 技能管理命令 ────────────────────────────────────────
+
+    def _try_handle_skill_command(self, message: str, is_admin: bool) -> Optional[str]:
+        """检测并处理技能管理命令，返回响应文本或 None"""
+        if not is_admin:
+            return None
+
+        text = message.strip()
+
+        # 1. 检测 SKILL.md 内容安装（frontmatter 格式）
+        if text.startswith("---") and "\nname:" in text:
+            return self._install_skill_from_content(text)
+
+        # 2. "安装技能" + JSON 或文本描述
+        m = re.match(r'^安装技能[：:\s]*(.+)', text, re.DOTALL)
+        if m:
+            body = m.group(1).strip()
+            # 尝试解析为 JSON
+            try:
+                skill_data = json.loads(body)
+                return self._install_skill_from_json(skill_data)
+            except (json.JSONDecodeError, ValueError):
+                pass
+            # 如果是 frontmatter 格式
+            if body.startswith("---") and "\nname:" in body:
+                return self._install_skill_from_content(body)
+            return f"无法解析技能内容。请使用以下格式之一：\n\n**1. SKILL.md 格式**（推荐）：\n```\n---\nname: my-skill\ndescription: 技能描述\nversion: 1.0.0\n---\n\n技能指令内容...\n```\n\n**2. JSON 格式**：\n```json\n{{\"name\": \"my-skill\", \"description\": \"...\", \"skill_md_content\": \"...\"}}\n```"
+
+        # 3. 列出已安装技能
+        if re.match(r'^(列出|查看|显示)(已安装|所有)?(技能|skills?)', text, re.IGNORECASE):
+            return self._list_skills_response()
+
+        # 4. ClawHub 搜索
+        m = re.match(r'^(搜索|search)\s*(技能|skills?)?\s*(.+)', text, re.IGNORECASE)
+        if m:
+            return self._clawhub_search_response(m.group(3).strip())
+
+        # 5. ClawHub 安装 (slug 含斜杠)
+        m = re.match(r'^(从\s*clawhub\s*)?(安装|install)\s*(技能|skills?)?\s*(.+)', text, re.IGNORECASE)
+        if m:
+            slug = m.group(4).strip()
+            if "/" in slug:
+                return self._clawhub_install_response(slug)
+
+        # 6. 删除技能
+        m = re.match(r'^(删除|卸载|remove|uninstall)\s*(技能|skills?)?\s*(.+)', text, re.IGNORECASE)
+        if m:
+            return self._delete_skill_response(m.group(3).strip())
+
+        # 7. 启用/禁用技能
+        m = re.match(r'^(启用|enable)\s*(技能|skills?)?\s*(.+)', text, re.IGNORECASE)
+        if m:
+            return self._toggle_skill_response(m.group(3).strip(), True)
+        m = re.match(r'^(禁用|disable)\s*(技能|skills?)?\s*(.+)', text, re.IGNORECASE)
+        if m:
+            return self._toggle_skill_response(m.group(3).strip(), False)
+
+        # 8. 重启 Gateway
+        if re.match(r'^(重启|restart)\s*(gateway|网关)', text, re.IGNORECASE):
+            return self._restart_gateway_response()
+
+        # 9. Gateway 状态
+        if re.match(r'^(gateway|网关)\s*(状态|status)', text, re.IGNORECASE):
+            return self._gateway_status_response()
+
+        return None
+
+    def _install_skill_from_content(self, content: str) -> str:
+        """从 SKILL.md 内容安装技能"""
+        try:
+            info = openclaw_skills_service._parse_frontmatter(content)
+            name = info.get("name", "").strip()
+            if not name:
+                return "安装失败：SKILL.md 缺少 `name` 字段。请确保 frontmatter 中包含 `name: your-skill-name`。"
+            env = {}
+            if "HEALTH_API_URL" in content:
+                env["HEALTH_API_URL"] = "https://health.executor.life/api/v1"
+            if "HEALTH_API_TOKEN" in content:
+                env["HEALTH_API_TOKEN"] = "<需要在 Skills 页面配置 API Key>"
+            result = openclaw_skills_service.create_or_update_skill(
+                name=name, skill_md_content=content, enabled=True, env=env if env else None,
+            )
+            desc = info.get("description", "")
+            version = info.get("version", "")
+            lines = [f"技能 **{name}** 安装成功！"]
+            if desc:
+                lines.append(f"- 描述: {desc}")
+            if version:
+                lines.append(f"- 版本: {version}")
+            lines.append(f"- 状态: {'已启用' if result.get('enabled') else '已禁用'}")
+            lines.append('\n⚠️ 请**重启 Gateway** 使新技能生效（发送「重启 Gateway」）。')
+            return "\n".join(lines)
+        except Exception as e:
+            return f"安装失败: {e}"
+
+    def _install_skill_from_json(self, data: dict) -> str:
+        """从 JSON 数据安装技能"""
+        name = data.get("name", "").strip()
+        if not name:
+            return "安装失败：缺少 `name` 字段。"
+        desc = data.get("description", "")
+        skill_md = data.get("skill_md_content", "")
+        if not skill_md:
+            # 用 JSON 自动生成一个简单的 SKILL.md
+            skill_md = f"---\nname: {name}\ndescription: {desc}\nversion: 1.0.0\n---\n\n{json.dumps(data, indent=2, ensure_ascii=False)}"
+        env = data.get("env") or {}
+        api_key = data.get("api_key")
+        try:
+            result = openclaw_skills_service.create_or_update_skill(
+                name=name, skill_md_content=skill_md, enabled=True, env=env if env else None, api_key=api_key,
+            )
+            lines = [f"技能 **{name}** 安装成功！"]
+            if desc:
+                lines.append(f"- 描述: {desc}")
+            lines.append(f"- 状态: {'已启用' if result.get('enabled') else '已禁用'}")
+            lines.append('\n⚠️ 请**重启 Gateway** 使新技能生效（发送「重启 Gateway」）。')
+            return "\n".join(lines)
+        except Exception as e:
+            return f"安装失败: {e}"
+
+    def _list_skills_response(self) -> str:
+        try:
+            skills = openclaw_skills_service.list_skills()
+            if not skills:
+                return "当前没有已安装的技能。"
+            lines = [f"已安装 **{len(skills)}** 个技能：\n"]
+            for s in skills:
+                status = "✅ 启用" if s["enabled"] else "⏸️ 禁用"
+                lines.append(f"- **{s['name']}** {status}")
+                if s.get("description"):
+                    lines.append(f"  {s['description']}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"获取技能列表失败: {e}"
+
+    def _clawhub_search_response(self, query: str) -> str:
+        try:
+            result = openclaw_skills_service.clawhub_search(query)
+            return f"**ClawHub 搜索「{query}」结果：**\n\n```\n{result}\n```\n\n如需安装，发送：`安装 <slug>`（例如：`安装 author/skill-name`）"
+        except Exception as e:
+            return f"搜索失败: {e}"
+
+    def _clawhub_install_response(self, slug: str) -> str:
+        try:
+            result = openclaw_skills_service.clawhub_install(slug)
+            return f"**从 ClawHub 安装 `{slug}`：**\n\n```\n{result}\n```\n\n⚠️ 请**重启 Gateway** 使新技能生效（发送「重启 Gateway」）。"
+        except Exception as e:
+            return f"安装失败: {e}"
+
+    def _delete_skill_response(self, name: str) -> str:
+        try:
+            ok = openclaw_skills_service.delete_skill(name)
+            if ok:
+                return f"技能 **{name}** 已删除。\n\n⚠️ 请**重启 Gateway** 使变更生效。"
+            return f"技能 **{name}** 不存在。"
+        except Exception as e:
+            return f"删除失败: {e}"
+
+    def _toggle_skill_response(self, name: str, enabled: bool) -> str:
+        try:
+            ok = openclaw_skills_service.toggle_skill(name, enabled)
+            if ok:
+                status = "启用" if enabled else "禁用"
+                return f"技能 **{name}** 已{status}。\n\n⚠️ 请**重启 Gateway** 使变更生效。"
+            return f"技能 **{name}** 配置不存在。"
+        except Exception as e:
+            return f"操作失败: {e}"
+
+    def _restart_gateway_response(self) -> str:
+        try:
+            result = openclaw_skills_service.restart_gateway()
+            return f"Gateway 重启完成：{result}"
+        except Exception as e:
+            return f"重启失败: {e}"
+
+    def _gateway_status_response(self) -> str:
+        try:
+            status = openclaw_skills_service.get_gateway_status()
+            return f"**Gateway 状态**\n- 运行: {status['status']}\n- 启动时间: {status['uptime']}"
+        except Exception as e:
+            return f"获取状态失败: {e}"
+
     # ── 主流程 ────────────────────────────────────────────
 
     async def send_message_stream(
@@ -155,6 +339,7 @@ class OpenClawService:
         user_id: int,
         message: str,
         conversation_id: Optional[int] = None,
+        is_admin: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """流式发送消息到 OpenClaw Gateway 并实时转发"""
 
@@ -164,10 +349,20 @@ class OpenClawService:
         # 2. 保存用户消息
         self.save_message(conv.id, "user", message)
 
-        # 3. 构建 messages 列表
+        # 3. 检查是否为技能管理命令（管理员专属）
+        skill_response = self._try_handle_skill_command(message, is_admin)
+        if skill_response is not None:
+            yield {"event": "token", "data": {"content": skill_response}}
+            ai_msg = self.save_message(conv.id, "assistant", skill_response)
+            conv.updated_at = datetime.utcnow()
+            self.db.commit()
+            yield {"event": "done", "data": {"conversation_id": conv.id, "message_id": ai_msg.id}}
+            return
+
+        # 4. 构建 messages 列表
         messages = self.build_messages(conv.id, limit=20)
 
-        # 4. 流式调用 Gateway
+        # 5. 流式调用 Gateway
         full_reply = ""
         try:
             async for token in self._call_gateway_stream(messages, conv.session_key):
@@ -178,14 +373,14 @@ class OpenClawService:
             full_reply = "抱歉，OpenClaw 暂时无法响应，请稍后再试。"
             yield {"event": "token", "data": {"content": full_reply}}
 
-        # 5. 保存 AI 回复
+        # 6. 保存 AI 回复
         ai_msg = self.save_message(conv.id, "assistant", full_reply)
 
-        # 6. 更新会话时间
+        # 7. 更新会话时间
         conv.updated_at = datetime.utcnow()
         self.db.commit()
 
-        # 7. done 事件
+        # 8. done 事件
         yield {
             "event": "done",
             "data": {

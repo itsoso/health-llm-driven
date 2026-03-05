@@ -74,6 +74,7 @@ async def stream_message(
                 user_id=current_user.id,
                 message=req.message.strip(),
                 conversation_id=req.conversation_id,
+                is_admin=current_user.is_admin,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
