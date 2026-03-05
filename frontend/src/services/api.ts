@@ -1700,3 +1700,28 @@ export const healthTrendApi = {
   generate: () =>
     api.post<{ analyzed_dimensions: string[] }>('/health-trends/generate'),
 };
+
+// OpenClaw Skills 远程管理 (admin only)
+export const openclawSkillsApi = {
+  listInstalled: () =>
+    api.get<Array<{
+      name: string;
+      description: string;
+      version: string;
+      enabled: boolean;
+      has_env: boolean;
+      env_keys: string[];
+    }>>('/v1/openclaw/skills'),
+  install: (name: string, skill_md_content: string, enabled: boolean = true, env?: Record<string, string>, api_key?: string) =>
+    api.post<{ name: string; status: string; enabled: boolean }>('/v1/openclaw/skills', {
+      name, skill_md_content, enabled, env, api_key,
+    }),
+  remove: (name: string) =>
+    api.delete<{ ok: boolean; message: string }>(`/v1/openclaw/skills/${name}`),
+  toggle: (name: string, enabled: boolean) =>
+    api.put<{ ok: boolean; name: string; enabled: boolean }>(`/v1/openclaw/skills/${name}/toggle`, { enabled }),
+  gatewayStatus: () =>
+    api.get<{ status: string; uptime: string }>('/v1/openclaw/skills/gateway/status'),
+  restartGateway: () =>
+    api.post<{ ok: boolean; message: string }>('/v1/openclaw/skills/gateway/restart'),
+};

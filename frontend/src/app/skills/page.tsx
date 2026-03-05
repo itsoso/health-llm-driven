@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { api } from '@/services/api';
+import { api, openclawSkillsApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_URL = 'https://health.executor.life/api/v1';
 
@@ -24,6 +25,15 @@ interface SkillDef {
   color: string;
   toolCount: number;
   template: string;
+}
+
+interface InstalledSkill {
+  name: string;
+  description: string;
+  version: string;
+  enabled: boolean;
+  has_env: boolean;
+  env_keys: string[];
 }
 
 // SKILL.md 模板，用 {{API_URL}} 和 {{API_TOKEN}} 作占位符
@@ -403,12 +413,24 @@ function SkillCard({
   isExpanded,
   onToggle,
   format,
+  installed,
+  isAdmin,
+  onInstall,
+  onUninstall,
+  onToggleEnabled,
+  installing,
 }: {
   skill: SkillDef;
   token: string;
   isExpanded: boolean;
   onToggle: () => void;
   format: SkillFormat;
+  installed: InstalledSkill | null;
+  isAdmin: boolean;
+  onInstall: () => void;
+  onUninstall: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
+  installing: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -424,6 +446,25 @@ function SkillCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleInstall = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onInstall();
+  };
+
+  const handleUninstall = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm(`确定从 OpenClaw 服务器删除 ${skill.name}？`)) {
+      onUninstall();
+    }
+  };
+
+  const handleToggleEnabled = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (installed) {
+      onToggleEnabled(!installed.enabled);
+    }
+  };
+
   return (
     <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 overflow-hidden">
       <div
@@ -435,23 +476,71 @@ function SkillCard({
             {skill.icon}
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
+              {installed && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  installed.enabled
+                    ? 'bg-green-600/20 text-green-400 border border-green-500/30'
+                    : 'bg-gray-600/20 text-gray-400 border border-gray-500/30'
+                }`}>
+                  {installed.enabled ? '已启用' : '已禁用'}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-gray-400 mt-0.5">{skill.description}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-500 bg-white/5 px-2.5 py-1 rounded-full">
             {skill.toolCount} 个工具
           </span>
+          {/* 安装/管理按钮 (admin + openclaw mode) */}
+          {isAdmin && format === 'openclaw' && (
+            installed ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleToggleEnabled}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    installed.enabled
+                      ? 'bg-yellow-600/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-600/30'
+                      : 'bg-green-600/20 text-green-300 border border-green-500/30 hover:bg-green-600/30'
+                  }`}
+                >
+                  {installed.enabled ? '禁用' : '启用'}
+                </button>
+                <button
+                  onClick={handleUninstall}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-600/20 text-red-300 border border-red-500/30 hover:bg-red-600/30 transition-all"
+                >
+                  卸载
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleInstall}
+                disabled={installing || !token}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  installing
+                    ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30 cursor-wait'
+                    : !token
+                    ? 'bg-gray-600/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-500 shadow-lg shadow-purple-600/20'
+                }`}
+              >
+                {installing ? '安装中...' : '安装到 OpenClaw'}
+              </button>
+            )
+          )}
           <button
             onClick={handleCopy}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               copied
                 ? 'bg-green-600/20 text-green-400 border border-green-500/30'
-                : 'bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/30'
+                : 'bg-white/5 text-gray-400 border border-purple-900/30 hover:bg-white/10 hover:text-white'
             }`}
           >
-            {copied ? '已复制 ✓' : '复制 SKILL.md'}
+            {copied ? '已复制 ✓' : '复制'}
           </button>
           <svg
             className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
@@ -492,6 +581,9 @@ function SkillCard({
 type SkillFormat = 'openclaw' | 'claude-code';
 
 export default function SkillsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.is_admin ?? false;
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [activeToken, setActiveToken] = useState('');
@@ -501,6 +593,14 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [configCopied, setConfigCopied] = useState(false);
   const [skillFormat, setSkillFormat] = useState<SkillFormat>('openclaw');
+
+  // OpenClaw 远程管理 state
+  const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
+  const [gatewayStatus, setGatewayStatus] = useState<{ status: string; uptime: string } | null>(null);
+  const [installing, setInstalling] = useState<Record<string, boolean>>({});
+  const [needRestart, setNeedRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [loadingRemote, setLoadingRemote] = useState(false);
 
   const loadApiKeys = useCallback(async () => {
     try {
@@ -513,9 +613,30 @@ export default function SkillsPage() {
     }
   }, []);
 
+  const loadRemoteStatus = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadingRemote(true);
+    try {
+      const [skillsRes, gwRes] = await Promise.all([
+        openclawSkillsApi.listInstalled(),
+        openclawSkillsApi.gatewayStatus(),
+      ]);
+      setInstalledSkills(skillsRes.data);
+      setGatewayStatus(gwRes.data);
+    } catch {
+      // non-admin or server unreachable — silently ignore
+    } finally {
+      setLoadingRemote(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     loadApiKeys();
   }, [loadApiKeys]);
+
+  useEffect(() => {
+    loadRemoteStatus();
+  }, [loadRemoteStatus]);
 
   // 从 localStorage 恢复选中的 token
   useEffect(() => {
@@ -556,6 +677,73 @@ export default function SkillsPage() {
     }
   };
 
+  // 安装 Skill 到 OpenClaw
+  const handleInstallSkill = async (skill: SkillDef) => {
+    if (!activeToken) {
+      alert('请先创建 API Key');
+      return;
+    }
+    setInstalling((prev) => ({ ...prev, [skill.id]: true }));
+    try {
+      const skillContent = skill.template
+        .replace(/\{\{API_URL\}\}/g, API_URL)
+        .replace(/\{\{API_TOKEN\}\}/g, activeToken);
+      await openclawSkillsApi.install(
+        skill.id,
+        skillContent,
+        true,
+        { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken },
+        activeToken,
+      );
+      setNeedRestart(true);
+      await loadRemoteStatus();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '安装失败';
+      alert(`安装失败: ${msg}`);
+    } finally {
+      setInstalling((prev) => ({ ...prev, [skill.id]: false }));
+    }
+  };
+
+  // 卸载 Skill
+  const handleUninstallSkill = async (name: string) => {
+    try {
+      await openclawSkillsApi.remove(name);
+      setNeedRestart(true);
+      await loadRemoteStatus();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '卸载失败';
+      alert(`卸载失败: ${msg}`);
+    }
+  };
+
+  // 启用/禁用
+  const handleToggleSkill = async (name: string, enabled: boolean) => {
+    try {
+      await openclawSkillsApi.toggle(name, enabled);
+      setNeedRestart(true);
+      await loadRemoteStatus();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '操作失败';
+      alert(`操作失败: ${msg}`);
+    }
+  };
+
+  // 重启 Gateway
+  const handleRestartGateway = async () => {
+    setRestarting(true);
+    try {
+      await openclawSkillsApi.restartGateway();
+      setNeedRestart(false);
+      await loadRemoteStatus();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '重启失败';
+      alert(`重启失败: ${msg}`);
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   const getOpenclawConfig = useCallback(() => {
     const tok = activeToken || '<你的API Key>';
     return JSON.stringify({
@@ -587,6 +775,11 @@ export default function SkillsPage() {
     setTimeout(() => setConfigCopied(false), 2000);
   };
 
+  // 查找已安装信息
+  const getInstalledInfo = (skillId: string): InstalledSkill | null => {
+    return installedSkills.find((s) => s.name === skillId) || null;
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-[#13111a] text-white">
@@ -595,9 +788,54 @@ export default function SkillsPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-white mb-2">AI Skills 管理</h1>
             <p className="text-gray-400">
-              管理 API Key，复制 SKILL.md 到 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'} 即可用自然语言管理健康数据
+              管理 API Key，{isAdmin ? '一键安装 Skills 到 OpenClaw 服务器，或' : ''}复制 SKILL.md 到 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'} 即可用自然语言管理健康数据
             </p>
           </div>
+
+          {/* Gateway 状态 (admin only) */}
+          {isAdmin && skillFormat === 'openclaw' && (
+            <div className={`rounded-xl border p-4 mb-6 ${
+              needRestart
+                ? 'bg-amber-900/20 border-amber-500/30'
+                : 'bg-[#1e1a2e] border-purple-900/30'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">
+                    {loadingRemote ? '...' : gatewayStatus?.status === 'active' ? '🟢' : '🔴'}
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">OpenClaw Gateway</h2>
+                    <p className="text-xs text-gray-400">
+                      {loadingRemote
+                        ? '正在连接服务器...'
+                        : gatewayStatus
+                        ? `状态: ${gatewayStatus.status} · 已安装 ${installedSkills.length} 个 Skills`
+                        : '无法连接到 OpenClaw 服务器'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {needRestart && (
+                    <span className="text-xs text-amber-400 bg-amber-600/20 px-2.5 py-1 rounded-full border border-amber-500/30">
+                      需要重启生效
+                    </span>
+                  )}
+                  <button
+                    onClick={handleRestartGateway}
+                    disabled={restarting || loadingRemote}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      needRestart
+                        ? 'bg-amber-600 text-white hover:bg-amber-500 shadow-lg shadow-amber-600/20'
+                        : 'bg-white/5 text-gray-300 border border-purple-900/30 hover:bg-white/10'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {restarting ? '重启中...' : '重启 Gateway'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 格式选择 + 使用说明 */}
           <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
@@ -627,31 +865,59 @@ export default function SkillsPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
-                <div>
-                  <p className="text-white font-medium">创建 API Key</p>
-                  <p className="text-gray-400 mt-0.5">下方创建后自动绑定到 Skills</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
-                <div>
-                  <p className="text-white font-medium">复制 SKILL.md</p>
-                  <p className="text-gray-400 mt-0.5">内容已包含你的 API 地址和 Token</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
-                <div>
-                  <p className="text-white font-medium">保存到 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'}</p>
-                  <p className="text-gray-400 mt-0.5">
-                    保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">
-                      {skillFormat === 'openclaw' ? '~/.openclaw/skills/' : '~/.claude/skills/'}
-                    </code>
-                  </p>
-                </div>
-              </div>
+              {isAdmin && skillFormat === 'openclaw' ? (
+                <>
+                  <div className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+                    <div>
+                      <p className="text-white font-medium">创建 API Key</p>
+                      <p className="text-gray-400 mt-0.5">下方创建后自动绑定到 Skills</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+                    <div>
+                      <p className="text-white font-medium">一键安装</p>
+                      <p className="text-gray-400 mt-0.5">点击"安装到 OpenClaw"自动部署</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+                    <div>
+                      <p className="text-white font-medium">重启 Gateway</p>
+                      <p className="text-gray-400 mt-0.5">安装后需重启使配置生效</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+                    <div>
+                      <p className="text-white font-medium">创建 API Key</p>
+                      <p className="text-gray-400 mt-0.5">下方创建后自动绑定到 Skills</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+                    <div>
+                      <p className="text-white font-medium">复制 SKILL.md</p>
+                      <p className="text-gray-400 mt-0.5">内容已包含你的 API 地址和 Token</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+                    <div>
+                      <p className="text-white font-medium">保存到 {skillFormat === 'openclaw' ? 'OpenClaw' : 'Claude Code'}</p>
+                      <p className="text-gray-400 mt-0.5">
+                        保存至 <code className="text-purple-300 bg-purple-900/30 px-1 rounded">
+                          {skillFormat === 'openclaw' ? '~/.openclaw/skills/' : '~/.claude/skills/'}
+                        </code>
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -759,6 +1025,12 @@ export default function SkillsPage() {
                 isExpanded={expandedId === skill.id}
                 onToggle={() => setExpandedId(expandedId === skill.id ? null : skill.id)}
                 format={skillFormat}
+                installed={getInstalledInfo(skill.id)}
+                isAdmin={isAdmin}
+                onInstall={() => handleInstallSkill(skill)}
+                onUninstall={() => handleUninstallSkill(skill.id)}
+                onToggleEnabled={(enabled) => handleToggleSkill(skill.id, enabled)}
+                installing={installing[skill.id] || false}
               />
             ))}
           </div>
