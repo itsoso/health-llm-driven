@@ -45,9 +45,17 @@ async def send_message(
 
     service = ChatService(db)
     try:
+        # 如果有文件附件，提取文本内容并附加到消息中
+        message = req.message.strip()
+        if req.file_base64 and req.file_name:
+            from app.services.file_extract_service import extract_text_from_base64
+            file_text = extract_text_from_base64(req.file_base64, req.file_name)
+            if file_text:
+                message = f"{message}\n\n[附件: {req.file_name}]\n{file_text}"
+
         result = await service.send_message(
             user_id=current_user.id,
-            message=req.message.strip(),
+            message=message,
             conversation_id=req.conversation_id,
             is_kids_mode=req.is_kids_mode or False,
             image_base64=req.image_base64,
@@ -93,9 +101,17 @@ async def stream_message(
                     is_admin=current_user.is_admin,
                 )
             else:
+                # 如果有文件附件，提取文本内容并附加到消息中
+                message = req.message.strip()
+                if req.file_base64 and req.file_name:
+                    from app.services.file_extract_service import extract_text_from_base64
+                    file_text = extract_text_from_base64(req.file_base64, req.file_name)
+                    if file_text:
+                        message = f"{message}\n\n[附件: {req.file_name}]\n{file_text}"
+
                 stream_gen = service.send_message_stream(
                     user_id=current_user.id,
-                    message=req.message.strip(),
+                    message=message,
                     conversation_id=req.conversation_id,
                     is_kids_mode=req.is_kids_mode or False,
                     image_base64=req.image_base64,

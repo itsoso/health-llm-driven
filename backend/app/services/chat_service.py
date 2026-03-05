@@ -2152,8 +2152,10 @@ class ChatService:
                     activity_results.append(fc_r)
             logger.info(f"用户{user_id} Function Calling 执行了{len(fc_activity_results)}个工具")
 
-        # 图片消息后处理：从AI回复中提取饮食营养数据
-        if image_base64 and not diet_result and clean_reply:
+        # 图片消息后处理：仅当用户消息包含饮食相关意图时，才从AI回复中提取饮食营养数据
+        food_keywords = ["食", "吃", "喝", "餐", "饭", "菜", "营养", "热量", "卡路里", "蛋白", "碳水", "脂肪", "识别", "recognize"]
+        is_food_intent = image_base64 and any(kw in message for kw in food_keywords)
+        if is_food_intent and not diet_result and clean_reply:
             try:
                 nutrition_data = food_recognition_service.estimate_nutrition_from_text(clean_reply)
                 if nutrition_data.get("success") and nutrition_data.get("foods"):
@@ -2389,8 +2391,10 @@ class ChatService:
                 if workout_result:
                     activity_results.append(workout_result)
 
-        # 图片消息后处理：从AI回复中提取饮食营养数据
-        if image_base64 and not diet_result and clean_reply:
+        # 图片消息后处理：仅当用户消息包含饮食相关意图时，才从AI回复中提取饮食营养数据
+        food_keywords = ["食", "吃", "喝", "餐", "饭", "菜", "营养", "热量", "卡路里", "蛋白", "碳水", "脂肪", "识别", "recognize"]
+        is_food_intent = image_base64 and any(kw in message for kw in food_keywords)
+        if is_food_intent and not diet_result and clean_reply:
             try:
                 nutrition_data = food_recognition_service.estimate_nutrition_from_text(clean_reply)
                 if nutrition_data.get("success") and nutrition_data.get("foods"):

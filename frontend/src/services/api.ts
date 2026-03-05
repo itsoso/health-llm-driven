@@ -964,6 +964,8 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
+  image_preview?: string;
+  file_name?: string;
 }
 
 export interface Conversation {
@@ -1085,8 +1087,8 @@ export const womensHealthApi = {
 
 export const chatApi = {
   // 发送消息
-  sendMessage: (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string) =>
-    api.post<ChatSendResponse>('/chat/send', { message, conversation_id: conversationId, is_kids_mode: isKidsMode || false, image_base64: imageBase64, image_type: imageType }),
+  sendMessage: (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string, fileBase64?: string, fileName?: string) =>
+    api.post<ChatSendResponse>('/chat/send', { message, conversation_id: conversationId, is_kids_mode: isKidsMode || false, image_base64: imageBase64, image_type: imageType, file_base64: fileBase64, file_name: fileName }),
   // 获取对话列表
   getConversations: (limit: number = 20) =>
     api.get<Conversation[]>(`/chat/conversations?limit=${limit}`),
@@ -1106,7 +1108,7 @@ export const chatApi = {
   recognizeFood: (imageBase64: string, imageType: string = 'image/jpeg') =>
     api.post<{ success: boolean; foods: any[]; meal_description: string; health_tips: string; totals: any }>('/diet/recognize', { image_base64: imageBase64, image_type: imageType }),
   // 流式发送消息 (SSE)
-  streamMessage: async function* (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string, mode?: string) {
+  streamMessage: async function* (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string, mode?: string, fileBase64?: string, fileName?: string) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
       method: 'POST',
@@ -1121,6 +1123,7 @@ export const chatApi = {
         image_base64: imageBase64,
         image_type: imageType,
         ...(mode ? { mode } : {}),
+        ...(fileBase64 ? { file_base64: fileBase64, file_name: fileName } : {}),
       }),
     });
 

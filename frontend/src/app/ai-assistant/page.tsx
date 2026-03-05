@@ -45,7 +45,10 @@ export default function AIAssistantPage() {
   const [activityNotifications, setActivityNotifications] = useState<ActivitySavedData[]>([]);
   const [planCreatedNotification, setPlanCreatedNotification] = useState<{message: string; planId?: number} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [imageUploading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
+  const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   const [chatMode, setChatMode] = useState<'health' | 'openclaw'>('health');
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -167,22 +170,35 @@ export default function AIAssistantPage() {
   // 发送消息（流式优先，降级到非流式）
   const handleSend = async (text?: string, imageBase64?: string, imageType?: string) => {
     const msg = (text || inputText).trim();
-    if (!msg || loading) return;
+    const hasAttachment = pendingImage || pendingFile;
+    if (!msg && !hasAttachment) return;
+    if (loading) return;
+
+    // 如果有待发送图片但未传入参数，使用 pendingImage
+    const finalImageBase64 = imageBase64 || pendingImage?.base64;
+    const finalImageType = imageType || pendingImage?.type;
+    const finalFileBase64 = pendingFile?.base64;
+    const finalFileName = pendingFile?.name;
+    const finalMsg = msg || (finalImageBase64 ? '请看这张图片，帮我分析一下' : (finalFileBase64 ? `请分析这个文件：${finalFileName}` : ''));
+    if (!finalMsg) return;
 
     setInputText('');
+    clearPendingAttachment();
 
-    // 乐观更新：先显示用户消息
+    // 乐观更新：先显示用户消息（附带图片/文件预览）
     const tempUserMsg: ChatMessage = {
       id: Date.now(),
       role: 'user',
-      content: msg,
+      content: finalMsg,
       created_at: new Date().toISOString(),
+      image_preview: finalImageBase64 ? `data:image/${finalImageType || 'jpeg'};base64,${finalImageBase64}` : undefined,
+      file_name: finalFileName,
     };
     setMessages(prev => [...prev, tempUserMsg]);
     setLoading(true);
 
     // 检测运动完成意图 - 如果匹配，并行触发分析 API（仅健康助理模式）
-    const isWorkoutDone = chatMode === 'health' && isPostWorkoutMessage(msg);
+    const isWorkoutDone = chatMode === 'health' && isPostWorkoutMessage(finalMsg);
     let workoutAnalysisPromise: Promise<any> | null = null;
     if (isWorkoutDone) {
       workoutAnalysisPromise = api.post('/workout/post-run-analyze?format=full').catch(() => {
@@ -206,8 +222,8 @@ export default function AIAssistantPage() {
       let gotDone = false;
       let firstToken = true;
       const streamIterator = chatMode === 'openclaw'
-        ? openclawApi.streamMessage(msg, conversationId)
-        : chatApi.streamMessage(msg, conversationId, undefined, imageBase64, imageType);
+        ? openclawApi.streamMessage(finalMsg, conversationId)
+        : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
       for await (const event of streamIterator) {
         if (event.event === 'token') {
           if (firstToken) {
@@ -346,7 +362,7 @@ export default function AIAssistantPage() {
       // 先移除空的 AI 占位消息
       setMessages(prev => prev.filter(m => m.id !== aiMsgId));
       try {
-        const response = await chatApi.sendMessage(msg, conversationId, undefined, imageBase64, imageType);
+        const response = await chatApi.sendMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
         const result = response.data;
         if (!conversationId && result.conversation_id) {
           setConversationId(result.conversation_id);
@@ -505,7 +521,7 @@ export default function AIAssistantPage() {
     }
   };
 
-  // 图片上传处理 - 直接发送给 OpenClaw 识别
+  // 文件/图片上传处理
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -513,18 +529,33 @@ export default function AIAssistantPage() {
     // 重置 input 以便再次选择同一文件
     e.target.value = '';
 
+    const isImage = file.type.startsWith('image/');
+    setImageUploading(true);
     try {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const imgType = file.type?.replace('image/', '') || 'jpeg';
-        const msg = inputText.trim() || '请识别这张图片中的食物，帮我分析营养并记录';
-        handleSend(msg, base64, imgType);
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(',')[1];
+        if (isImage) {
+          const imgType = file.type.replace('image/', '') || 'jpeg';
+          setImagePreview(dataUrl);
+          setPendingImage({ base64, type: imgType });
+        } else {
+          setPendingFile({ base64, name: file.name });
+        }
+        setImageUploading(false);
       };
     } catch (err) {
-      console.error('读取图片失败:', err);
+      console.error('读取文件失败:', err);
+      setImageUploading(false);
     }
+  };
+
+  const clearPendingAttachment = () => {
+    setImagePreview(null);
+    setPendingImage(null);
+    setPendingFile(null);
   };
 
   return (
@@ -886,7 +917,24 @@ export default function AIAssistantPage() {
                       </ReactMarkdown>
                     </div>
                   ) : (
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    <div>
+                      {msg.image_preview && (
+                        <img
+                          src={msg.image_preview}
+                          alt="上传图片"
+                          className="max-w-xs max-h-48 rounded-lg mb-2 object-cover"
+                        />
+                      )}
+                      {msg.file_name && (
+                        <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-white/10 rounded-lg text-sm">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          <span className="truncate">{msg.file_name}</span>
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -932,32 +980,62 @@ export default function AIAssistantPage() {
             </div>
           )}
 
+          {/* 附件预览 */}
+          {(imagePreview || pendingFile) && (
+            <div className="px-4 py-2 bg-slate-800/50 border-t border-white/10">
+              <div className="max-w-4xl mx-auto flex items-center gap-3">
+                <div className="relative group">
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="待发送图片"
+                      className="w-16 h-16 object-cover rounded-lg border border-white/20"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-lg border border-white/20 bg-slate-700 flex flex-col items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[56px]">{pendingFile?.name.split('.').pop()}</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={clearPendingAttachment}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs hover:bg-red-400 transition-colors"
+                  >
+                    x
+                  </button>
+                </div>
+                <span className="text-sm text-slate-400">
+                  {imagePreview ? '图片已就绪' : pendingFile?.name} — 输入描述后发送（或直接发送）
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* 输入区域 */}
           <div className="p-4 bg-slate-800/50 border-t border-white/10">
             <div className="max-w-4xl mx-auto flex gap-2 items-center">
-              {/* 图片按钮 (仅健康助理模式) */}
+              {/* 上传按钮 */}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml"
                 className="hidden"
                 onChange={handleImageUpload}
               />
-              {chatMode === 'health' && (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={imageUploading || loading}
-                  className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                    imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
-                  }`}
-                  title="拍照/上传食物图片"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </button>
-              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={imageUploading || loading}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
+                  imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                }`}
+                title="上传图片或文件"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
               {/* 语音按钮 */}
               <button
                 onClick={handleVoiceToggle}
@@ -985,16 +1063,16 @@ export default function AIAssistantPage() {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isRecording ? '正在录音...' : '有什么可以帮你的...'}
+                placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '有什么可以帮你的...'}
                 className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 disabled={isRecording}
               />
               {/* 发送按钮 */}
               <button
                 onClick={() => handleSend()}
-                disabled={!inputText.trim() || loading}
+                disabled={(!inputText.trim() && !pendingImage && !pendingFile) || loading}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  inputText.trim() && !loading
+                  (inputText.trim() || pendingImage || pendingFile) && !loading
                     ? 'bg-purple-600 hover:bg-purple-500 text-white'
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 }`}
