@@ -228,6 +228,18 @@ export default function AIAssistantPage() {
           }
         } else if (event.event === 'done') {
           gotDone = true;
+          // 先刷新缓冲区（done 事件会更改 message id，必须在此之前刷新）
+          if (streamBufferRef.current) {
+            if (flushTimerRef.current) {
+              clearTimeout(flushTimerRef.current);
+              flushTimerRef.current = null;
+            }
+            const buffered = streamBufferRef.current;
+            streamBufferRef.current = '';
+            setMessages(prev => prev.map(m =>
+              m.id === aiMsgId ? { ...m, content: m.content + buffered } : m
+            ));
+          }
           const result = event.data;
           // 更新会话 ID
           if (!conversationId && result.conversation_id) {
