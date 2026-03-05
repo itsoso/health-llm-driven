@@ -261,6 +261,20 @@ class ChatService:
                 g_parts.append(f"压力水平:{garmin.stress_level}")
             if garmin.body_battery_most_charged:
                 g_parts.append(f"身体电量峰值:{garmin.body_battery_most_charged}")
+            if garmin.hrv:
+                hrv_info = f"HRV:{garmin.hrv}ms"
+                if garmin.hrv_status:
+                    hrv_info += f"({garmin.hrv_status})"
+                if garmin.hrv_7day_avg:
+                    hrv_info += f",7日均值:{garmin.hrv_7day_avg}ms"
+                g_parts.append(hrv_info)
+            if garmin.spo2_avg:
+                spo2_info = f"血氧SpO2:均值{garmin.spo2_avg}%"
+                if garmin.spo2_min:
+                    spo2_info += f",最低{garmin.spo2_min}%"
+                if garmin.spo2_max:
+                    spo2_info += f",最高{garmin.spo2_max}%"
+                g_parts.append(spo2_info)
             parts.append(", ".join(g_parts))
 
         # 睡眠/运动数据分析（GarminData 一次性查询30天，Python中过滤，减少数据库往返）
@@ -355,6 +369,38 @@ class ChatService:
                 avg_rem = sum(rem_sleeps) / len(rem_sleeps)
                 stats_30d.append(f"平均REM{avg_rem:.0f}min")
             parts.append(": ".join(stats_30d))
+
+        # HRV 7天趋势（复用已查询的 sleep_7days）
+        hrv_7days = [r for r in (sleep_7days or []) if r.hrv is not None]
+        if hrv_7days:
+            hrv_vals = [r.hrv for r in hrv_7days]
+            low_days = sum(1 for r in hrv_7days if r.hrv_status == "low")
+            hrv_avg = sum(hrv_vals) / len(hrv_vals)
+            hrv_trend_parts = [f"最近7天HRV趋势({len(hrv_7days)}天)"]
+            for r in hrv_7days[:5]:
+                status_tag = f"({r.hrv_status})" if r.hrv_status else ""
+                hrv_trend_parts.append(f"  {r.record_date}: {r.hrv}ms{status_tag}")
+            hrv_trend_parts.append(f"  均值:{hrv_avg:.1f}ms, 最高:{max(hrv_vals)}ms, 最低:{min(hrv_vals)}ms")
+            if low_days:
+                hrv_trend_parts.append(f"  ⚠️ 有{low_days}天HRV状态为low")
+            parts.append("\n".join(hrv_trend_parts))
+
+        # SpO2 7天趋势
+        spo2_7days = [r for r in (sleep_7days or []) if r.spo2_avg is not None]
+        if spo2_7days:
+            spo2_avgs = [r.spo2_avg for r in spo2_7days]
+            spo2_mins = [r.spo2_min for r in spo2_7days if r.spo2_min is not None]
+            below_95 = sum(1 for v in spo2_mins if v < 95) if spo2_mins else 0
+            spo2_trend_parts = [f"最近7天SpO2趋势({len(spo2_7days)}天)"]
+            for r in spo2_7days[:5]:
+                min_tag = f"(最低{r.spo2_min}%)" if r.spo2_min else ""
+                spo2_trend_parts.append(f"  {r.record_date}: 均值{r.spo2_avg}%{min_tag}")
+            spo2_trend_parts.append(f"  总均值:{sum(spo2_avgs)/len(spo2_avgs):.1f}%")
+            if spo2_mins:
+                spo2_trend_parts.append(f"  期间最低:{min(spo2_mins)}%")
+            if below_95:
+                spo2_trend_parts.append(f"  ⚠️ 有{below_95}天最低SpO2低于95%")
+            parts.append("\n".join(spo2_trend_parts))
 
         # 运动数据分析（复用上面查询的 GarminData）
         # 最近7天运动数据
@@ -1094,7 +1140,12 @@ class ChatService:
                 "- 了解用户今天的待办事项，提供针对性的建议\n"
                 "- 鼓励用户完成未完成的计划项\n"
                 "- 根据计划完成情况给出调整建议\n"
-                "- 回答关于计划进度的问题\n"
+                "- 回答关于计划进度的问题\n\n"
+                "## HRV与血氧主动提醒规则\n"
+                "- 当用户数据显示HRV状态为'low'时，在回答开头主动提醒用户注意休息和恢复\n"
+                "- 当用户数据显示SpO2最低值低于95%时，在回答开头提醒用户关注血氧，必要时就医\n"
+                "- HRV（心率变异性）越高通常代表身体恢复状态越好，持续低HRV可能提示过度训练或压力过大\n"
+                "- 正常SpO2范围为95-100%，低于95%需要关注，低于90%建议立即就医\n"
             )
 
         # 活动记录能力

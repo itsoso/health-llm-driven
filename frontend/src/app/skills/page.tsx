@@ -41,13 +41,13 @@ const skillDefs: SkillDef[] = [
   {
     id: 'health-query',
     name: '健康数据查询',
-    description: '查询步数、心率、睡眠、体重、血压、运动、饮食、打卡等健康数据',
+    description: '查询步数、心率、HRV、SpO2、睡眠、体重、血压、运动、饮食、打卡等健康数据',
     icon: '🔍',
     color: 'from-blue-500 to-cyan-500',
-    toolCount: 13,
+    toolCount: 15,
     template: `---
 name: health-query
-description: Query health data from the Health Management System - steps, heart rate, sleep, weight, blood pressure, workouts, diet, checkin status, and achievements. Use when the user asks about their health metrics, fitness data, or daily stats.
+description: Query health data from the Health Management System - steps, heart rate, HRV, SpO2, sleep, weight, blood pressure, workouts, diet, checkin status, and achievements. Use when the user asks about their health metrics, fitness data, or daily stats.
 version: 1.0.0
 metadata:
   openclaw:
@@ -86,6 +86,18 @@ curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/garmin-analysis/me
 \`\`\`bash
 curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/garmin-analysis/me/activity?days=7"
 \`\`\`
+
+### HRV心率变异性
+\`\`\`bash
+curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/garmin-analysis/me/hrv?days=7"
+\`\`\`
+返回：最新HRV、均值、趋势方向、低HRV天数、每日数据
+
+### 血氧SpO2
+\`\`\`bash
+curl -s -H "Authorization: Bearer {{API_TOKEN}}" "{{API_URL}}/garmin-analysis/me/spo2?days=7"
+\`\`\`
+返回：最新血氧、均值、最低值、低于95%天数、每日数据
 
 ### 体重记录
 \`\`\`bash

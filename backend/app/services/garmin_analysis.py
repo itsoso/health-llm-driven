@@ -239,6 +239,113 @@ class GarminAnalysisService:
             ]
         }
     
+    def analyze_hrv(
+        self,
+        db: Session,
+        user_id: int,
+        days: int = 7
+    ) -> Dict[str, Any]:
+        """分析 HRV（心率变异性）趋势"""
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days)
+
+        data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= start_date,
+            GarminData.record_date <= end_date,
+            GarminData.hrv.isnot(None)
+        ).order_by(GarminData.record_date.desc()).all()
+
+        if not data:
+            return {"status": "no_data", "message": "没有足够的HRV数据"}
+
+        hrv_vals = [d.hrv for d in data]
+        avg_hrv = sum(hrv_vals) / len(hrv_vals)
+        low_days = sum(1 for d in data if d.hrv_status == "low")
+
+        # 简单趋势：比较前半段和后半段均值
+        mid = len(hrv_vals) // 2
+        if mid > 0:
+            recent_avg = sum(hrv_vals[:mid]) / mid
+            older_avg = sum(hrv_vals[mid:]) / (len(hrv_vals) - mid)
+            diff_pct = (recent_avg - older_avg) / older_avg * 100 if older_avg else 0
+            trend = "rising" if diff_pct > 5 else "declining" if diff_pct < -5 else "stable"
+        else:
+            trend = "insufficient"
+
+        latest = data[0]
+        return {
+            "status": "success",
+            "days_analyzed": len(data),
+            "latest": {
+                "hrv": latest.hrv,
+                "hrv_status": latest.hrv_status,
+                "hrv_7day_avg": latest.hrv_7day_avg,
+                "date": latest.record_date.isoformat(),
+            },
+            "average_hrv": round(avg_hrv, 1),
+            "min_hrv": min(hrv_vals),
+            "max_hrv": max(hrv_vals),
+            "trend": trend,
+            "low_days": low_days,
+            "daily_data": [
+                {
+                    "date": d.record_date.isoformat(),
+                    "hrv": d.hrv,
+                    "hrv_status": d.hrv_status,
+                }
+                for d in data
+            ],
+        }
+
+    def analyze_spo2(
+        self,
+        db: Session,
+        user_id: int,
+        days: int = 7
+    ) -> Dict[str, Any]:
+        """分析血氧 SpO2 趋势"""
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days)
+
+        data = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= start_date,
+            GarminData.record_date <= end_date,
+            GarminData.spo2_avg.isnot(None)
+        ).order_by(GarminData.record_date.desc()).all()
+
+        if not data:
+            return {"status": "no_data", "message": "没有足够的血氧数据"}
+
+        spo2_avgs = [d.spo2_avg for d in data]
+        spo2_mins = [d.spo2_min for d in data if d.spo2_min is not None]
+        below_95 = sum(1 for v in spo2_mins if v < 95)
+
+        latest = data[0]
+        return {
+            "status": "success",
+            "days_analyzed": len(data),
+            "latest": {
+                "avg": latest.spo2_avg,
+                "min": latest.spo2_min,
+                "max": latest.spo2_max,
+                "date": latest.record_date.isoformat(),
+            },
+            "average_spo2": round(sum(spo2_avgs) / len(spo2_avgs), 1),
+            "min_spo2": min(spo2_mins) if spo2_mins else None,
+            "below_95_days": below_95,
+            "daily_data": [
+                {
+                    "date": d.record_date.isoformat(),
+                    "avg": d.spo2_avg,
+                    "min": d.spo2_min,
+                    "max": d.spo2_max,
+                }
+                for d in data
+            ],
+        }
+
     def get_comprehensive_analysis(
         self,
         db: Session,

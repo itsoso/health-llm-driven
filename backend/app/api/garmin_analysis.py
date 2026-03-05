@@ -121,3 +121,25 @@ def analyze_my_activity(
     service = GarminAnalysisService()
     return service.analyze_activity(db, current_user.id, days)
 
+
+@router.get("/me/hrv")
+def analyze_my_hrv(
+    days: int = 7,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """分析当前用户HRV心率变异性数据（需要登录）"""
+    service = GarminAnalysisService()
+    return service.analyze_hrv(db, current_user.id, days)
+
+
+@router.get("/me/spo2")
+def analyze_my_spo2(
+    days: int = 7,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """分析当前用户血氧SpO2数据（需要登录）"""
+    service = GarminAnalysisService()
+    return service.analyze_spo2(db, current_user.id, days)
+
