@@ -772,7 +772,7 @@ export default function AIAssistantPage() {
               </div>
             )}
 
-            {messages.map(msg => (
+            {messages.filter(m => !(m.role === 'assistant' && !m.content)).map(msg => (
               <div
                 key={msg.id}
                 className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
