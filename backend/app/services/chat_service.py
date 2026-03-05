@@ -2150,7 +2150,7 @@ class ChatService:
             lines.append(f"- 状态: {'已启用' if result.get('enabled') else '已禁用'}")
             if env:
                 lines.append(f"- 环境变量: {', '.join(env.keys())}")
-            lines.append("\n⚠️ 请**重启 Gateway** 使新技能生效（发送"重启 Gateway"）。")
+            lines.append('\n⚠️ 请**重启 Gateway** 使新技能生效（发送「重启 Gateway」）。')
             return "\n".join(lines)
         except Exception as e:
             return f"安装失败: {e}"
@@ -2183,7 +2183,7 @@ class ChatService:
         """从 ClawHub 安装"""
         try:
             result = openclaw_skills_service.clawhub_install(slug)
-            return f"**从 ClawHub 安装 `{slug}`：**\n\n```\n{result}\n```\n\n⚠️ 请**重启 Gateway** 使新技能生效（发送"重启 Gateway"）。"
+            return f"**从 ClawHub 安装 `{slug}`：**\n\n```\n{result}\n```\n\n⚠️ 请**重启 Gateway** 使新技能生效（发送「重启 Gateway」）。"
         except Exception as e:
             return f"安装失败: {e}"
 
