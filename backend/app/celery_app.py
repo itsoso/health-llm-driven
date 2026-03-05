@@ -122,6 +122,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.notifications.send_trend_morning_push",
         "schedule": crontab(hour=8, minute=30),
     },
+
+    # 每日 07:30 早安健康摘要
+    "morning-health-summary": {
+        "task": "app.tasks.notifications.send_morning_health_summary",
+        "schedule": crontab(hour=7, minute=30),
+    },
 }
 
 logger.info("Celery 配置加载完成")

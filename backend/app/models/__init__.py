@@ -84,6 +84,8 @@ from app.models.achievement import BadgeDefinition, UserBadge
 from app.models.health_trend import HealthTrendReport
 # OpenClaw Channel
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
+# 对话记忆
+from app.models.conversation_memory import ConversationMemory
 
 __all__ = [
     "User",
@@ -199,5 +201,7 @@ __all__ = [
     # OpenClaw Channel
     "OpenClawConversation",
     "OpenClawMessage",
+    # 对话记忆
+    "ConversationMemory",
 ]
 

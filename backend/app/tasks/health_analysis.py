@@ -61,11 +61,13 @@ def generate_weekly_reports():
         
         for user in users:
             try:
-                # TODO: 实现周报生成逻辑
-                # report = generate_weekly_health_report(db, user.id, week_start, today)
-                generated_count += 1
-                logger.info(f"用户 {user.id} 周报生成成功")
-                
+                from app.services.weekly_report_service import weekly_report_service
+                report = weekly_report_service.generate_report(db, user.id, week_start, today)
+                if report.get("days_with_data", 0) > 0:
+                    generated_count += 1
+                    logger.info(f"用户 {user.id} 周报生成成功: {report.get('days_with_data')}天数据")
+                else:
+                    logger.info(f"用户 {user.id} 本周无数据，跳过")
             except Exception as e:
                 logger.error(f"用户 {user.id} 周报生成失败: {e}")
     

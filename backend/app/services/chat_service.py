@@ -28,6 +28,7 @@ from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.disease_tracking import UserDiseaseProfile, SymptomLog
 from app.models.excretion import ExcretionRecord
 from app.models.sleep_record import SleepRecord
+from app.models.anomaly_alert import AnomalyAlert
 from app.models.activity_status import ActivityStatus
 from app.models.smart_plan import WeeklyPlan, PlanItem
 from app.models.vocabulary import VocabularyWord
@@ -91,7 +92,7 @@ class ChatService:
             logger.warning(f"天气API失败: {type(e).__name__}: {e}")
             return {}
 
-    async def _build_health_context(self, user_id: int) -> str:
+    async def _build_health_context(self, user_id: int, user_question: str = "") -> str:
         """构建用户健康上下文，注入为 system prompt"""
         parts = []
         now = datetime.now()
@@ -221,15 +222,6 @@ class ChatService:
                         med_names.append(str(m))
                 if med_names:
                     parts.append(f"用药: {', '.join(med_names)}")
-            goals = []
-            if profile.target_weight_kg:
-                goals.append(f"目标体重{profile.target_weight_kg}kg")
-            if profile.target_steps:
-                goals.append(f"目标步数{profile.target_steps}")
-            if profile.target_sleep_hours:
-                goals.append(f"目标睡眠{profile.target_sleep_hours}h")
-            if goals:
-                parts.append(f"健康目标: {', '.join(goals)}")
 
         # 最近体重
         weight = self.db.query(WeightRecord).filter(
@@ -276,6 +268,30 @@ class ChatService:
                     spo2_info += f",最高{garmin.spo2_max}%"
                 g_parts.append(spo2_info)
             parts.append(", ".join(g_parts))
+
+        # 健康目标与进度（在 garmin/weight 之后计算，可显示进度）
+        if profile:
+            goals = []
+            if profile.target_weight_kg:
+                g = f"目标体重{profile.target_weight_kg}kg"
+                if weight:
+                    diff = weight.weight - profile.target_weight_kg
+                    g += f"(当前{weight.weight}kg, {'超出' if diff > 0 else '还差'}{abs(diff):.1f}kg)"
+                goals.append(g)
+            if profile.target_steps:
+                g = f"目标步数{profile.target_steps}"
+                if garmin and garmin.steps:
+                    pct = round(garmin.steps / profile.target_steps * 100)
+                    g += f"(今日{garmin.steps}步, {pct}%)"
+                goals.append(g)
+            if profile.target_sleep_hours:
+                g = f"目标睡眠{profile.target_sleep_hours}h"
+                if garmin and garmin.total_sleep_duration:
+                    actual_h = garmin.total_sleep_duration / 60
+                    g += f"(昨晚{actual_h:.1f}h)"
+                goals.append(g)
+            if goals:
+                parts.append(f"健康目标与进度: {', '.join(goals)}")
 
         # 睡眠/运动数据分析（GarminData 一次性查询30天，Python中过滤，减少数据库往返）
         three_days_ago = today - timedelta(days=3)
@@ -741,6 +757,12 @@ class ChatService:
                     checkin_stats_30d.append(f"{stats['name']}:完成{stats['count']}天,平均{avg_val:.1f}{stats['unit']}")
                 parts.append("; ".join(checkin_stats_30d))
 
+        # 习惯洞察（基于30天打卡数据）
+        if checkins_30days:
+            habit_insights = self._analyze_checkin_patterns(checkins_30days)
+            if habit_insights:
+                parts.append(habit_insights)
+
         # 行程数据分析
         try:
             # 当前进行中的行程
@@ -975,10 +997,106 @@ class ChatService:
         if trend_context:
             parts.append(trend_context)
 
+        # 健康评分
+        score_context = self._get_health_score_context(user_id)
+        if score_context:
+            parts.append(score_context)
+
+        # 异常预警
+        alerts_context = self._get_anomaly_alerts_context(user_id)
+        if alerts_context:
+            parts.append(alerts_context)
+
+        # 对话记忆
+        try:
+            from app.services.conversation_memory_service import get_relevant_memories
+            memory_context = get_relevant_memories(self.db, user_id, limit=5)
+            if memory_context:
+                parts.append(memory_context)
+        except Exception as e:
+            logger.warning(f"获取对话记忆失败: {e}")
+
+        # 交叉分析
+        water_ml = sum(w.amount_ml or 0 for w in water_today) if water_today else 0
+        cross_context = self._build_cross_analysis_context(
+            garmin, sleep_7days, _diet_7d_all, water_ml, weight, profile
+        )
+        if cross_context:
+            parts.append(cross_context)
+
         if not parts:
             return ""
 
+        # 动态裁剪：根据用户问题聚焦相关板块
+        if user_question:
+            parts = self._trim_context_by_relevance(parts, user_question)
+
         return "以下是该用户的最新健康数据：\n" + "\n".join(parts)
+
+    SECTION_KEYWORDS = {
+        "sleep": ["睡眠", "sleep", "失眠", "入睡", "深睡", "做梦", "早起", "熬夜", "睡觉", "REM", "浅睡"],
+        "exercise": ["运动", "跑步", "健身", "步数", "训练", "锻炼", "游泳", "骑", "活动", "走路", "散步"],
+        "diet": ["饮食", "吃", "热量", "卡路里", "营养", "蛋白", "减脂", "早餐", "午餐", "晚餐", "碳水", "脂肪"],
+        "heart": ["心率", "HRV", "心脏", "血压", "血氧", "SpO2", "心跳"],
+        "water": ["喝水", "饮水", "水", "补水"],
+        "stress": ["压力", "焦虑", "放松", "恢复", "电量", "body battery"],
+        "weight": ["体重", "减肥", "增重", "BMI", "体脂"],
+        "checkin": ["打卡", "习惯", "坚持", "连续"],
+        "supplement": ["补剂", "维生素", "营养素"],
+    }
+
+    def _trim_context_by_relevance(self, parts: list, user_question: str) -> list:
+        """根据用户问题裁剪上下文，保留相关板块全文，其他截断为首行摘要"""
+        q = user_question.lower()
+
+        # 找出匹配的分类
+        matched_categories = set()
+        for cat, keywords in self.SECTION_KEYWORDS.items():
+            for kw in keywords:
+                if kw.lower() in q:
+                    matched_categories.add(cat)
+                    break
+
+        # 无匹配：不裁剪（通用问题如"我的健康状况"）
+        if not matched_categories:
+            return parts
+
+        # 分类→板块关键词映射
+        category_markers = {
+            "sleep": ["睡眠", "sleep", "深睡", "REM", "浅睡"],
+            "exercise": ["运动", "步数", "活动", "锻炼", "Garmin"],
+            "diet": ["饮食", "营养", "卡路里", "热量"],
+            "heart": ["心率", "HRV", "血压", "血氧", "SpO2"],
+            "water": ["饮水"],
+            "stress": ["压力", "电量", "body battery", "恢复就绪"],
+            "weight": ["体重"],
+            "checkin": ["打卡"],
+            "supplement": ["补剂"],
+        }
+
+        trimmed = []
+        for part in parts:
+            # 判断该板块是否属于匹配分类
+            is_relevant = False
+            for cat in matched_categories:
+                markers = category_markers.get(cat, [])
+                for marker in markers:
+                    if marker.lower() in part.lower():
+                        is_relevant = True
+                        break
+                if is_relevant:
+                    break
+
+            if is_relevant:
+                trimmed.append(part)  # 保留全文
+            else:
+                # 截断为首行摘要
+                first_line = part.split('\n')[0]
+                if len(first_line) > 80:
+                    first_line = first_line[:80] + "..."
+                trimmed.append(first_line)
+
+        return trimmed
 
     def _get_trend_context(self, user_id: int) -> str:
         """获取用户最新趋势数据，注入到聊天上下文"""
@@ -1001,6 +1119,194 @@ class ChatService:
                 for insight in r.insights[:2]:
                     lines.append(f"  - {insight}")
         return "\n".join(lines)
+
+    def _get_health_score_context(self, user_id: int) -> str:
+        """获取健康评分上下文"""
+        try:
+            from app.services.health_score_service import health_score_service
+            result = health_score_service.calculate_daily_score(self.db, user_id)
+            if result.get("status") != "ok":
+                return ""
+            score = result["total_score"]
+            grade = result["grade"]
+            dims = result.get("dimensions", [])
+            dim_strs = [f"{d['name']}{d['score']}" for d in dims if d.get("score")]
+            suggestions = result.get("suggestions", [])
+            line = f"今日健康评分: {score}分({grade})"
+            if dim_strs:
+                line += f" — {'/'.join(dim_strs)}"
+            if suggestions:
+                line += f" | 建议: {suggestions[0]}"
+            return line
+        except Exception as e:
+            logger.warning(f"获取健康评分失败: {e}")
+            return ""
+
+    def _get_anomaly_alerts_context(self, user_id: int) -> str:
+        """获取未确认的异常预警上下文"""
+        try:
+            seven_days_ago = date.today() - timedelta(days=7)
+            alerts = self.db.query(AnomalyAlert).filter(
+                AnomalyAlert.user_id == user_id,
+                AnomalyAlert.acknowledged == False,
+                AnomalyAlert.detection_date >= seven_days_ago
+            ).order_by(AnomalyAlert.detection_date.desc()).limit(5).all()
+            if not alerts:
+                return ""
+            severity_order = {"critical": 0, "warning": 1, "info": 2}
+            alerts.sort(key=lambda a: severity_order.get(a.severity, 9))
+            items = []
+            for a in alerts:
+                items.append(f"[{a.severity}] {a.detection_date.strftime('%m/%d')} {a.message}")
+            return f"近期健康预警({len(alerts)}条): " + " | ".join(items)
+        except Exception as e:
+            logger.warning(f"获取异常预警失败: {e}")
+            return ""
+
+    def _build_cross_analysis_context(self, garmin, sleep_7days, diet_7d, water_today_ml, weight, profile) -> str:
+        """构建跨数据交叉分析上下文"""
+        parts = []
+
+        # 睡眠↔运动关联
+        if sleep_7days and len(sleep_7days) >= 3:
+            active_deep = []
+            rest_deep = []
+            for r in sleep_7days:
+                if r.deep_sleep_duration is not None:
+                    is_active = (r.steps and r.steps > 8000) or (r.active_minutes and r.active_minutes > 30)
+                    if is_active:
+                        active_deep.append(r.deep_sleep_duration)
+                    else:
+                        rest_deep.append(r.deep_sleep_duration)
+            if active_deep and rest_deep:
+                avg_active = sum(active_deep) / len(active_deep)
+                avg_rest = sum(rest_deep) / len(rest_deep)
+                diff = avg_active - avg_rest
+                if abs(diff) > 5 and avg_rest > 0:
+                    pct = round(diff / avg_rest * 100)
+                    if diff > 0:
+                        parts.append(f"运动与睡眠: 活跃日平均深睡{avg_active:.0f}min, 比静息日多{diff:.0f}min(+{pct}%)")
+                    else:
+                        parts.append(f"运动与睡眠: 活跃日平均深睡{avg_active:.0f}min, 比静息日少{abs(diff):.0f}min({pct}%)")
+
+        # 恢复就绪度
+        if garmin:
+            recovery_parts = []
+            recovery_score = 0
+            has_data = False
+
+            if garmin.hrv and garmin.hrv_7day_avg and garmin.hrv_7day_avg > 0:
+                hrv_ratio = garmin.hrv / garmin.hrv_7day_avg
+                recovery_score += hrv_ratio * 40
+                recovery_parts.append(f"HRV{'正常' if 0.85 <= hrv_ratio <= 1.15 else '偏低' if hrv_ratio < 0.85 else '偏高'}")
+                has_data = True
+
+            if garmin.body_battery_most_charged:
+                battery = garmin.body_battery_most_charged
+                recovery_score += battery * 0.3
+                recovery_parts.append(f"电量{'充足' if battery >= 60 else '中等' if battery >= 30 else '不足'}")
+                has_data = True
+
+            if garmin.stress_level:
+                stress = garmin.stress_level
+                recovery_score += (100 - stress) * 0.3
+                recovery_parts.append(f"压力{'低' if stress < 40 else '中等' if stress < 60 else '偏高'}")
+                has_data = True
+
+            if has_data:
+                grade = "优秀" if recovery_score >= 80 else "良好" if recovery_score >= 60 else "一般" if recovery_score >= 40 else "较差"
+                suggestion = "适合高强度训练" if recovery_score >= 70 else "建议中等强度运动" if recovery_score >= 50 else "建议轻度活动或休息"
+                parts.append(f"恢复就绪度: {recovery_score:.0f}%({grade}) — {', '.join(recovery_parts)} → {suggestion}")
+
+        # 能量平衡
+        if diet_7d and weight and profile:
+            days_with_calories = {}
+            for r in diet_7d:
+                if r.calories:
+                    d = r.record_date
+                    days_with_calories[d] = days_with_calories.get(d, 0) + r.calories
+            if len(days_with_calories) >= 3:
+                avg_intake = sum(days_with_calories.values()) / len(days_with_calories)
+                if profile.height_cm and weight:
+                    w = weight.weight
+                    h = profile.height_cm
+                    age = None
+                    if profile.birth_date:
+                        age = (date.today() - profile.birth_date).days // 365
+                    if age:
+                        if profile.gender == 'male':
+                            bmr = 10 * w + 6.25 * h - 5 * age + 5
+                        else:
+                            bmr = 10 * w + 6.25 * h - 5 * age - 161
+                        tdee = bmr * 1.4
+                        gap = avg_intake - tdee
+                        parts.append(f"能量平衡: {len(days_with_calories)}日均摄入{avg_intake:.0f}kcal, 估算消耗{tdee:.0f}kcal → 日均{'盈余' if gap > 0 else '缺口'}{abs(gap):.0f}kcal")
+
+        # 饮水充足度
+        if water_today_ml and water_today_ml > 0:
+            target = 2000
+            if garmin and garmin.active_minutes and garmin.active_minutes > 30:
+                target = 2500
+                parts.append(f"饮水: 今日{water_today_ml}ml, 活跃日建议{target}ml, {'已达标' if water_today_ml >= target else f'还需{target - water_today_ml}ml'}")
+            elif water_today_ml < target:
+                parts.append(f"饮水提醒: 今日{water_today_ml}ml, 建议{target}ml, 还需{target - water_today_ml}ml")
+
+        if not parts:
+            return ""
+        return "\n## 交叉分析\n" + "\n".join(parts)
+
+    def _analyze_checkin_patterns(self, checkins_30d) -> str:
+        """分析30天打卡习惯模式"""
+        from collections import defaultdict
+        if not checkins_30d:
+            return ""
+
+        insights = []
+
+        # 计算当前连续打卡天数 (streak)
+        dates = sorted(set(r.checkin_date for r, _ in checkins_30d), reverse=True)
+        if dates:
+            streak = 1
+            for i in range(1, len(dates)):
+                if (dates[i - 1] - dates[i]).days == 1:
+                    streak += 1
+                else:
+                    break
+            if streak >= 3:
+                insights.append(f"当前连续打卡{streak}天")
+
+        # 星期模式
+        weekday_counts = defaultdict(int)
+        weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        for r, _ in checkins_30d:
+            weekday_counts[r.checkin_date.weekday()] += 1
+        if weekday_counts:
+            most_active = max(weekday_counts, key=weekday_counts.get)
+            least_active = min(weekday_counts, key=weekday_counts.get)
+            if weekday_counts[most_active] > weekday_counts[least_active] + 2:
+                insights.append(f"{weekday_names[most_active]}最活跃, {weekday_names[least_active]}最易中断")
+
+        # 数值趋势（按模板分组，比较前后两周）
+        template_values = defaultdict(list)
+        for r, t in checkins_30d:
+            if r.value:
+                template_values[t.name].append((r.checkin_date, r.value))
+        for name, values in template_values.items():
+            if len(values) < 6:
+                continue
+            values.sort(key=lambda x: x[0])
+            mid = len(values) // 2
+            first_half_avg = sum(v for _, v in values[:mid]) / mid
+            second_half_avg = sum(v for _, v in values[mid:]) / (len(values) - mid)
+            if first_half_avg > 0:
+                change_pct = (second_half_avg - first_half_avg) / first_half_avg * 100
+                if abs(change_pct) > 10:
+                    direction = "递增" if change_pct > 0 else "递减"
+                    insights.append(f"{name}近期{direction}({change_pct:+.0f}%)")
+
+        if not insights:
+            return ""
+        return "习惯洞察: " + ", ".join(insights)
 
     def _build_activity_context(self, user_id: int) -> str:
         """构建用户可记录的活动上下文（打卡模板、补剂、疾病档案）"""
@@ -1070,7 +1376,7 @@ class ChatService:
 
         return "\n\n".join(parts)
 
-    async def _get_system_prompt(self, user_id: int, is_kids_mode: bool = False) -> str:
+    async def _get_system_prompt(self, user_id: int, is_kids_mode: bool = False, user_question: str = "") -> str:
         """组装完整的 system prompt"""
         if is_kids_mode:
             base = (
@@ -1146,6 +1452,12 @@ class ChatService:
                 "- 当用户数据显示SpO2最低值低于95%时，在回答开头提醒用户关注血氧，必要时就医\n"
                 "- HRV（心率变异性）越高通常代表身体恢复状态越好，持续低HRV可能提示过度训练或压力过大\n"
                 "- 正常SpO2范围为95-100%，低于95%需要关注，低于90%建议立即就医\n"
+                "\n## 交叉分析与运动处方规则\n"
+                "- 恢复就绪度<50%时，主动建议降低运动强度或休息\n"
+                "- 恢复充分(≥70%)时，可推荐高强度训练\n"
+                "- 饮食热量持续盈余+体重上升时，主动提醒调整饮食\n"
+                "- 当用户数据中包含异常预警时，在回答中优先关注预警指标\n"
+                "- 健康评分低于60分时，主动提醒用户关注薄弱维度\n"
             )
 
         # 活动记录能力
@@ -1240,7 +1552,7 @@ class ChatService:
             "- \"游泳完了，同步一下\" → workout_analyze, workout_type=\"swimming\"\n"
         )
 
-        health_ctx = await self._build_health_context(user_id)
+        health_ctx = await self._build_health_context(user_id, user_question=user_question)
         prompt = base + activity_prompt + create_plan_prompt + workout_analyze_prompt
         if health_ctx:
             prompt += f"\n\n{health_ctx}"
@@ -1723,7 +2035,7 @@ class ChatService:
         # 只取最近 20 条消息避免超长
         recent = history[-20:] if len(history) > 20 else history
 
-        messages = [{"role": "system", "content": await self._get_system_prompt(user_id, is_kids_mode=is_kids_mode)}]
+        messages = [{"role": "system", "content": await self._get_system_prompt(user_id, is_kids_mode=is_kids_mode, user_question=message)}]
         for msg in recent:
             content = msg.content
             # 在最后一条用户消息中追加饮食上下文和搜索上下文
@@ -1859,6 +2171,13 @@ class ChatService:
         conv.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(ai_msg)
+
+        # 提取对话记忆
+        try:
+            from app.services.conversation_memory_service import extract_memories
+            extract_memories(message, clean_reply, user_id, conv.id, self.db)
+        except Exception as e:
+            logger.warning(f"提取对话记忆失败: {e}")
 
         result = {
             "conversation_id": conv.id,
@@ -2009,7 +2328,7 @@ class ChatService:
         ).order_by(ChatMessage.created_at.asc()).all()
         recent = history[-20:] if len(history) > 20 else history
 
-        messages = [{"role": "system", "content": await self._get_system_prompt(user_id, is_kids_mode=is_kids_mode)}]
+        messages = [{"role": "system", "content": await self._get_system_prompt(user_id, is_kids_mode=is_kids_mode, user_question=message)}]
         for msg in recent:
             content = msg.content
             if msg.id == user_msg.id:
@@ -2087,6 +2406,13 @@ class ChatService:
         conv.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(ai_msg)
+
+        # 提取对话记忆
+        try:
+            from app.services.conversation_memory_service import extract_memories
+            extract_memories(message, clean_reply, user_id, conv.id, self.db)
+        except Exception as e:
+            logger.warning(f"提取对话记忆失败: {e}")
 
         # 构建完成事件
         result_data = {

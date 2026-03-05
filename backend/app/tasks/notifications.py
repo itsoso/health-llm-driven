@@ -524,3 +524,73 @@ def send_trend_morning_push():
 
     logger.info(f"[趋势推送] 完成，推送 {sent_count} 条")
     return {"sent_count": sent_count}
+
+
+@celery_app.task
+def send_morning_health_summary():
+    """
+    每日早安健康摘要推送（07:30执行）
+    综合昨日健康评分+预警，给用户一条晨间健康问候。
+    """
+    from app.models.device_credential import DeviceCredential
+    from app.services.health_score_service import health_score_service
+    from app.models.anomaly_alert import AnomalyAlert
+
+    logger.info("[早安推送] 开始每日早安健康摘要")
+    yesterday = date.today() - timedelta(days=1)
+
+    with SessionLocal() as db:
+        credentials = db.query(DeviceCredential).filter(
+            DeviceCredential.device_type == "garmin",
+            DeviceCredential.is_active == True
+        ).all()
+        user_ids = [c.user_id for c in credentials]
+
+        push_service = PushService(db)
+        sent_count = 0
+
+        for user_id in user_ids:
+            try:
+                # 获取昨日健康评分
+                result = health_score_service.calculate_daily_score(db, user_id, target_date=yesterday)
+                score_part = ""
+                if result.get("status") == "ok":
+                    score_part = f"昨日健康评分 {result['total_score']}分({result['grade']})"
+
+                # 获取昨晚预警
+                alerts = db.query(AnomalyAlert).filter(
+                    AnomalyAlert.user_id == user_id,
+                    AnomalyAlert.detection_date == yesterday,
+                ).all()
+                alert_part = ""
+                critical = [a for a in alerts if a.severity == "critical"]
+                if critical:
+                    alert_part = f"⚠️ {critical[0].message}"
+                elif alerts:
+                    alert_part = f"有{len(alerts)}条健康提醒"
+
+                # 组合消息
+                parts = ["早安！"]
+                if score_part:
+                    parts.append(score_part)
+                if alert_part:
+                    parts.append(alert_part)
+                if not score_part and not alert_part:
+                    continue  # 无数据不推送
+
+                body = "，".join(parts) + "。"
+
+                asyncio.run(
+                    push_service.send_notification(
+                        user_id=user_id,
+                        notification_type="morning_summary",
+                        title="🌅 早安健康",
+                        content=body[:200],
+                    )
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"[早安推送] 用户 {user_id} 推送失败: {e}")
+
+    logger.info(f"[早安推送] 完成，推送 {sent_count} 条")
+    return {"sent_count": sent_count}
