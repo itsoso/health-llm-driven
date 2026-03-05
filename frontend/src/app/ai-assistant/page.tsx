@@ -24,10 +24,10 @@ const QUICK_QUESTIONS = [
 ];
 
 const PROXY_QUICK_QUESTIONS = [
-  { label: '你好', text: '你好，你能做什么？' },
   { label: '今日健康', text: '查一下我今天的健康数据' },
   { label: '记录饮水', text: '记录喝水250ml' },
   { label: '健康分析', text: '分析我最近的健康趋势' },
+  { label: '已装技能', text: '列出已安装技能' },
 ];
 
 export default function AIAssistantPage() {
@@ -743,7 +743,7 @@ export default function AIAssistantPage() {
                 </h2>
                 <p className="text-slate-400">
                   {chatMode === 'openclaw'
-                    ? '直接与 OpenClaw 对话，支持健康数据查询、记录和分析'
+                    ? '直接与 OpenClaw 对话，支持健康数据查询、记录、分析，也可安装/管理技能'
                     : '我了解你的健康数据，可以为你提供个性化的健康建议'}
                 </p>
                 <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">

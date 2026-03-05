@@ -90,6 +90,7 @@ async def stream_message(
                     user_id=current_user.id,
                     message=req.message.strip(),
                     conversation_id=req.conversation_id,
+                    is_admin=current_user.is_admin,
                 )
             else:
                 stream_gen = service.send_message_stream(
