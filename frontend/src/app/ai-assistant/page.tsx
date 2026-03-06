@@ -555,6 +555,30 @@ export default function AIAssistantPage() {
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        e.preventDefault();
+        const file = items[i].getAsFile();
+        if (!file) return;
+        setImageUploading(true);
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(',')[1];
+          const imgType = file.type.replace('image/', '') || 'png';
+          setImagePreview(dataUrl);
+          setPendingImage({ base64, type: imgType });
+          setImageUploading(false);
+        };
+        return;
+      }
+    }
+  };
+
   const clearPendingAttachment = () => {
     setImagePreview(null);
     setPendingImage(null);
@@ -1068,6 +1092,7 @@ export default function AIAssistantPage() {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '有什么可以帮你的...'}
                 className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 disabled={isRecording}
