@@ -96,18 +96,19 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
         name=user_data.name
     )
     
-    # 设置邀请码，邀请码注册自动通过审核
+    # 设置邀请码和审核状态
     user.invite_code = user_data.invite_code.upper()
-    user.is_approved = True
+    user.is_approved = False  # 需要管理员审核
     db.commit()
     db.refresh(user)
 
-    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 已自动通过")
+    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 待审核")
 
+    # 注册成功但不返回token，需要等待审核
     return {
-        "message": "注册成功！现在可以登录了。",
+        "message": "注册成功！请等待管理员审核通过后即可登录。",
         "user_id": user.id,
-        "is_approved": True
+        "is_approved": False
     }
 
 
