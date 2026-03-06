@@ -293,7 +293,8 @@ function SkillCard({
 export default function SkillsPage() {
   const { user } = useAuth();
   const isLoggedIn = !!user;
-  const isAdmin = user?.is_admin ?? false;
+  const isOwner = user?.email === 'itsoso@126.com';
+  const isAdmin = isOwner;
 
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, chatApi, openclawApi, sharedApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -32,7 +33,9 @@ const PROXY_QUICK_QUESTIONS = [
 
 export default function AIAssistantPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const { showToast } = useToast();
+  const isOwner = user?.email === 'itsoso@126.com';
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -721,7 +724,7 @@ export default function AIAssistantPage() {
                 </button>
               )}
             </div>
-            {/* 模式切换 */}
+            {/* 模式切换 - 仅管理员可见 OpenClaw */}
             <div className="flex rounded-xl bg-slate-700/50 border border-white/10 p-0.5">
               <button
                 onClick={() => { if (chatMode !== 'health') { setChatMode('health'); setMessages([]); setConversationId(undefined); } }}
@@ -733,16 +736,18 @@ export default function AIAssistantPage() {
               >
                 健康助理
               </button>
-              <button
-                onClick={() => { if (chatMode !== 'openclaw') { setChatMode('openclaw'); setMessages([]); setConversationId(undefined); } }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  chatMode === 'openclaw'
-                    ? 'bg-blue-600 text-white shadow-lg'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                OpenClaw
-              </button>
+              {isOwner && (
+                <button
+                  onClick={() => { if (chatMode !== 'openclaw') { setChatMode('openclaw'); setMessages([]); setConversationId(undefined); } }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    chatMode === 'openclaw'
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  OpenClaw
+                </button>
+              )}
             </div>
             <div className="w-9 flex justify-end">
               {conversationId && messages.length > 0 && (
