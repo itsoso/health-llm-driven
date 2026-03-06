@@ -4,7 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { api, openclawSkillsApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API_URL = 'https://health-api.executor.life/api/v1';
+// 后端 API 的公开直链（用于展示 Raw URL）
+const BACKEND_API_URL = 'https://health-api.executor.life/api/v1';
+// 前端代理路径（用于实际 fetch，避免跨域）
+const PROXY_PREFIX = '/api';
 
 interface ApiKey {
   id: number;
@@ -106,7 +109,7 @@ function SkillCard({
   useEffect(() => {
     if (isExpanded && !detail) {
       setLoadingDetail(true);
-      fetch(`${API_URL}/skills/${skill.slug}`)
+      fetch(`${PROXY_PREFIX}/skills/${skill.slug}`)
         .then(res => res.json())
         .then(data => setDetail(data))
         .catch(() => {})
@@ -114,7 +117,7 @@ function SkillCard({
     }
   }, [isExpanded, detail, skill.slug]);
 
-  const getRawUrl = () => `${API_URL}/skills/${skill.slug}/raw`;
+  const getRawUrl = () => `${BACKEND_API_URL}/skills/${skill.slug}/raw`;
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -243,7 +246,7 @@ function SkillCard({
         <div className="border-t border-purple-900/30 p-5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-mono text-gray-500">
-              Raw URL: {API_URL}/skills/{skill.slug}/raw
+              Raw URL: {BACKEND_API_URL}/skills/{skill.slug}/raw
             </span>
             <div className="flex items-center gap-2">
               <button onClick={handleCopyRawUrl} className="text-xs px-3 py-1.5 rounded-md bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-all">
@@ -313,7 +316,7 @@ export default function SkillsPage() {
 
   // 从后端 API 加载 Skills（公开，无需认证）
   useEffect(() => {
-    fetch(`${API_URL}/skills`)
+    fetch(`${PROXY_PREFIX}/skills`)
       .then(res => res.json())
       .then(data => setSkills(data))
       .catch(() => {})
@@ -403,13 +406,13 @@ export default function SkillsPage() {
     setInstalling((prev) => ({ ...prev, [skill.slug]: true }));
     try {
       // 获取原始 SKILL.md 内容
-      const res = await fetch(`${API_URL}/skills/${skill.slug}/raw`);
+      const res = await fetch(`${BACKEND_API_URL}/skills/${skill.slug}/raw`);
       const skillContent = await res.text();
       await openclawSkillsApi.install(
         skill.slug,
         skillContent,
         true,
-        { HEALTH_API_URL: API_URL, HEALTH_API_TOKEN: activeToken },
+        { HEALTH_API_URL: BACKEND_API_URL, HEALTH_API_TOKEN: activeToken },
         activeToken,
       );
       setNeedRestart(true);
@@ -583,7 +586,7 @@ export default function SkillsPage() {
               </h2>
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-                API: {API_URL}
+                API: {BACKEND_API_URL}
               </div>
             </div>
 
