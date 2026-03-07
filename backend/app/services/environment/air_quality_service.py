@@ -134,7 +134,7 @@ class AirQualityService:
         url = f"{self.qweather_air_base_url}/current/{lat:.2f}/{lon:.2f}"
         headers = {"X-QW-Api-Key": self.qweather_api_key}
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, headers=headers, timeout=10)
 
             if response.status_code == 403:
@@ -200,7 +200,7 @@ class AirQualityService:
         
         数据来源: 各地环保厅官方监测站
         """
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             # 城市名到 aqicn ID 的映射
             city_mapping = {
                 "杭州": "hangzhou",
@@ -287,7 +287,7 @@ class AirQualityService:
     
     async def _get_openmeteo_aqi(self, lat: float, lon: float) -> Dict[str, Any]:
         """使用 Open-Meteo API 获取空气质量"""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             params = {
                 "latitude": lat,
                 "longitude": lon,

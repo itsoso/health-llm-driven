@@ -394,11 +394,25 @@ class GarminConnectService:
                 self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
                 self.client.garth.load(tmpdir)
                 
-                # 验证 session 是否有效
+                # 验证 session 是否有效：检查 token 过期时间而非调用已废弃的 API
                 if self.client.garth.oauth2_token:
-                    # 尝试一个简单的 API 调用来验证 token
                     try:
-                        self.client.garth.connectapi("/userprofile-service/userprofile/profile")
+                        token = self.client.garth.oauth2_token
+                        # 检查 token 是否过期（garth token 有 expires_at 属性）
+                        token_expired = False
+                        if hasattr(token, 'expires_at') and token.expires_at:
+                            import datetime
+                            now = datetime.datetime.now(tz=token.expires_at.tzinfo) if token.expires_at.tzinfo else datetime.datetime.now()
+                            token_expired = now >= token.expires_at
+
+                        if token_expired:
+                            logger.info(f"{prefix} oauth2_token 已过期，需要重新登录")
+                            self._authenticated = False
+                            return False
+
+                        # token 未过期，尝试用轻量 API 验证连通性
+                        self.client.garth.connectapi("/usersummary-service/usersummary/daily/" +
+                                                      __import__('datetime').date.today().isoformat())
                         self._ensure_display_name()
                         self._authenticated = True
                         logger.info(f"{prefix} ✅ 从数据库加载 garth session 成功，无需重新登录")

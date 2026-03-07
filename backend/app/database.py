@@ -28,6 +28,7 @@ else:
         connect_args=connect_args,
         pool_size=10,  # 连接池大小
         max_overflow=20,  # 最大溢出连接数
+        pool_timeout=30,  # 获取连接超时 30 秒（防止连接池耗尽时无限等待）
         pool_pre_ping=True,  # 连接前ping，确保连接有效
         pool_recycle=3600,  # 1小时后回收连接
         echo=False  # 关闭SQL日志

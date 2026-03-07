@@ -167,7 +167,7 @@ class WeatherService:
         lon: float = None
     ) -> Dict[str, Any]:
         """使用和风天气 API 获取当前天气"""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             # 和风天气API需要Location ID或经纬度
             if city:
                 location = await self._city_to_location_id_async(city)
@@ -210,7 +210,7 @@ class WeatherService:
         days: int = 3
     ) -> Dict[str, Any]:
         """使用和风天气API获取天气预报"""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             # 和风天气API需要Location ID或经纬度
             if city:
                 location = await self._city_to_location_id_async(city)
@@ -266,7 +266,7 @@ class WeatherService:
 
     async def _get_openmeteo_current(self, lat: float, lon: float) -> Dict[str, Any]:
         """使用 Open-Meteo API 获取当前天气（免费，无需 API Key）"""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             url = f"{self.OPENMETEO_BASE_URL}/forecast"
             params = {
                 "latitude": lat,
@@ -296,7 +296,7 @@ class WeatherService:
     
     async def _get_openmeteo_forecast(self, lat: float, lon: float, days: int) -> Dict[str, Any]:
         """获取天气预报"""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             url = f"{self.OPENMETEO_BASE_URL}/forecast"
             params = {
                 "latitude": lat,
@@ -347,7 +347,7 @@ class WeatherService:
             return self._geo_cache[city]
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 url = f"{self.QWEATHER_GEO_URL}/city/lookup"
                 params = {
                     "location": city,
@@ -632,7 +632,7 @@ class WeatherService:
             return cached
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 # 和风天气API需要Location ID或经纬度
                 if city:
                     location = await self._city_to_location_id_async(city)
@@ -705,7 +705,7 @@ class WeatherService:
             return cached
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 if city:
                     location = await self._city_to_location_id_async(city)
                 else:

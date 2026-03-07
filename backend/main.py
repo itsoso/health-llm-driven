@@ -2,6 +2,7 @@
 import logging
 import time
 import uuid
+import asyncio
 import traceback
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -130,21 +131,62 @@ app.add_middleware(
     max_age=600,
 )
 
-# 全局异常处理中间件
+# 请求超时 + 慢请求日志中间件
+REQUEST_TIMEOUT = 120  # 普通请求超时 120 秒
+SLOW_REQUEST_THRESHOLD = 10  # 超过 10 秒记录慢请求警告
+# SSE/流式端点不受超时限制
+STREAMING_PATHS = {"/api/v1/openclaw/stream", "/api/v1/chat/stream"}
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = str(uuid.uuid4())[:8]
         start_time = time.time()
+        path = request.url.path
+        method = request.method
+        is_streaming = path in STREAMING_PATHS
+
         try:
-            response = await call_next(request)
+            if is_streaming:
+                response = await call_next(request)
+            else:
+                response = await asyncio.wait_for(
+                    call_next(request),
+                    timeout=REQUEST_TIMEOUT
+                )
+
+            duration = time.time() - start_time
+            duration_ms = duration * 1000
             response.headers["X-Request-ID"] = request_id
-            response.headers["X-Response-Time"] = f"{(time.time() - start_time)*1000:.0f}ms"
+            response.headers["X-Response-Time"] = f"{duration_ms:.0f}ms"
+
+            # 慢请求日志
+            if duration > SLOW_REQUEST_THRESHOLD:
+                logger.warning(
+                    f"[SLOW] [{request_id}] {method} {path} "
+                    f"took {duration_ms:.0f}ms (status={response.status_code})"
+                )
+
             return response
-        except Exception as e:
-            duration = (time.time() - start_time) * 1000
+
+        except asyncio.TimeoutError:
+            duration_ms = (time.time() - start_time) * 1000
             logger.error(
-                f"[{request_id}] {request.method} {request.url.path} "
-                f"failed after {duration:.0f}ms: {type(e).__name__}: {e}"
+                f"[TIMEOUT] [{request_id}] {method} {path} "
+                f"timed out after {duration_ms:.0f}ms (limit={REQUEST_TIMEOUT}s)"
+            )
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "detail": "请求处理超时，请稍后重试",
+                    "request_id": request_id,
+                },
+            )
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.error(
+                f"[ERROR] [{request_id}] {method} {path} "
+                f"failed after {duration_ms:.0f}ms: {type(e).__name__}: {e}"
             )
             return JSONResponse(
                 status_code=500,

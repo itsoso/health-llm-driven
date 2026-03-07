@@ -143,7 +143,7 @@ class WithingsHealthAdapter(DeviceAdapter):
 
     async def exchange_code_for_token(self, code: str, redirect_uri: str) -> Dict[str, Any]:
         """用授权码换取 access_token 和 refresh_token"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
             data = {
                 "action": "requesttoken",
                 "grant_type": "authorization_code",
@@ -174,7 +174,7 @@ class WithingsHealthAdapter(DeviceAdapter):
             return False
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 data = {
                     "action": "requesttoken",
                     "grant_type": "refresh_token",
@@ -353,7 +353,7 @@ class WithingsHealthAdapter(DeviceAdapter):
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/x-www-form-urlencoded",
         }
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
             async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.json()
 

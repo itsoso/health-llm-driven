@@ -164,7 +164,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
                 "token_type": "Bearer"
             }
         """
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
             data = {
                 "grant_type": "authorization_code",
                 "code": code,
@@ -202,7 +202,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             return False
         
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 data = {
                     "grant_type": "refresh_token",
                     "refresh_token": self.refresh_token,
@@ -262,7 +262,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             today = date.today()
             headers = self._get_auth_headers()
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 # 使用步数 API 测试连接
                 url = f"{self.api_base}/healthkit/v1/data/step/daily"
                 params = {
@@ -362,7 +362,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/heartrate/detail"
                 params = {
                     "startTime": start_ts,
@@ -415,7 +415,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/step/daily"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -445,7 +445,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/heartrate/daily"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -478,7 +478,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date - timedelta(days=1))
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/sleep/daily"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -512,7 +512,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/calories/daily"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -542,7 +542,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/stress/daily"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -572,7 +572,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/oxygen/daily"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -603,7 +603,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/weight/list"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 
@@ -635,7 +635,7 @@ class HuaweiHealthAdapter(DeviceAdapter):
             start_ts = self._date_to_timestamp(target_date)
             end_ts = self._date_to_timestamp(target_date + timedelta(days=1))
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15, connect=5)) as session:
                 url = f"{self.api_base}/healthkit/v1/data/bodyfat/list"
                 params = {"startTime": start_ts, "endTime": end_ts}
                 

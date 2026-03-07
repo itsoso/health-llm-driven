@@ -81,7 +81,7 @@ async def get_wechat_session(code: str) -> dict:
         "grant_type": "authorization_code"
     }
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(url, params=params)
         data = response.json()
     

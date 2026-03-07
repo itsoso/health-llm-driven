@@ -45,7 +45,7 @@ class GarminService:
         }
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 # 获取每日活动数据
                 activity_url = f"{self.base_url}/wellness-api/rest/dailySummary"
                 params = {
