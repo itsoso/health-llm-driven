@@ -231,6 +231,94 @@ def get_supplement_stats(
 
 # ========== /me 端点 ==========
 
+@router.get("/me/definitions", response_model=List[SupplementDefinitionResponse])
+def get_my_supplements(
+    active_only: bool = True,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的补剂列表（需要登录）"""
+    query = db.query(SupplementDefinition).filter(
+        SupplementDefinition.user_id == current_user.id
+    )
+    if active_only:
+        query = query.filter(SupplementDefinition.is_active == True)
+    return query.order_by(SupplementDefinition.sort_order, SupplementDefinition.id).all()
+
+
+@router.get("/me/records", response_model=List[SupplementRecordResponse])
+def get_my_records(
+    start_date: Optional[date] = Query(None, description="开始日期"),
+    end_date: Optional[date] = Query(None, description="结束日期"),
+    supplement_id: Optional[int] = Query(None, description="补剂ID筛选"),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的补剂打卡记录（需要登录，支持日期范围和补剂筛选）"""
+    query = db.query(SupplementRecord).filter(
+        SupplementRecord.user_id == current_user.id
+    )
+    if start_date:
+        query = query.filter(SupplementRecord.record_date >= start_date)
+    if end_date:
+        query = query.filter(SupplementRecord.record_date <= end_date)
+    if supplement_id:
+        query = query.filter(SupplementRecord.supplement_id == supplement_id)
+    return query.order_by(SupplementRecord.record_date.desc()).limit(limit).all()
+
+
+class CopyDayRequest(BaseModel):
+    from_date: date
+    to_date: date
+
+
+@router.post("/records/copy-day")
+def copy_day_records(
+    request: CopyDayRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """复制某天的补剂打卡记录到另一天（实现"补剂同昨天"）"""
+    # 获取源日期已服用的记录
+    source_records = db.query(SupplementRecord).filter(
+        SupplementRecord.user_id == current_user.id,
+        SupplementRecord.record_date == request.from_date,
+        SupplementRecord.taken == True
+    ).all()
+
+    if not source_records:
+        raise HTTPException(status_code=404, detail=f"{request.from_date} 没有补剂服用记录")
+
+    results = []
+    for src in source_records:
+        # 检查目标日期是否已有记录
+        existing = db.query(SupplementRecord).filter(
+            SupplementRecord.supplement_id == src.supplement_id,
+            SupplementRecord.record_date == request.to_date
+        ).first()
+
+        if existing:
+            existing.taken = True
+            results.append({"supplement_id": src.supplement_id, "action": "updated"})
+        else:
+            record = SupplementRecord(
+                supplement_id=src.supplement_id,
+                user_id=current_user.id,
+                record_date=request.to_date,
+                taken=True
+            )
+            db.add(record)
+            results.append({"supplement_id": src.supplement_id, "action": "created"})
+
+    db.commit()
+    return {
+        "message": f"已将 {request.from_date} 的 {len(results)} 条记录复制到 {request.to_date}",
+        "copied_count": len(results),
+        "results": results
+    }
+
+
 @router.get("/me/date/{record_date}", response_model=List[SupplementWithRecord])
 def get_my_supplements_with_records(
     record_date: date,
