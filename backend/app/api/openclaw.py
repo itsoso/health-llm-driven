@@ -22,6 +22,8 @@ router = APIRouter(prefix="/openclaw", tags=["openclaw"])
 class OpenClawSendRequest(BaseModel):
     message: str
     conversation_id: int | None = None
+    image_base64: str | None = None
+    image_type: str | None = "jpeg"
 
 
 class OpenClawConversationResponse(BaseModel):
@@ -75,6 +77,8 @@ async def stream_message(
                 message=req.message.strip(),
                 conversation_id=req.conversation_id,
                 is_admin=current_user.is_admin,
+                image_base64=req.image_base64,
+                image_type=req.image_type or "jpeg",
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:

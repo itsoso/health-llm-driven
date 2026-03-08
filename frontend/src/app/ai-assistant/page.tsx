@@ -225,7 +225,7 @@ export default function AIAssistantPage() {
       let gotDone = false;
       let firstToken = true;
       const streamIterator = chatMode === 'openclaw'
-        ? openclawApi.streamMessage(finalMsg, conversationId)
+        ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
         : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
       for await (const event of streamIterator) {
         if (event.event === 'token') {

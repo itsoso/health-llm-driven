@@ -1180,18 +1180,23 @@ export const openclawApi = {
   deleteConversation: (conversationId: number) =>
     api.delete(`/openclaw/conversations/${conversationId}`),
 
-  streamMessage: async function* (message: string, conversationId?: number) {
+  streamMessage: async function* (message: string, conversationId?: number, imageBase64?: string, imageType?: string) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const payload: Record<string, any> = {
+      message,
+      conversation_id: conversationId,
+    };
+    if (imageBase64) {
+      payload.image_base64 = imageBase64;
+      payload.image_type = imageType || 'jpeg';
+    }
     const response = await fetch(`${API_BASE_URL}/openclaw/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({
-        message,
-        conversation_id: conversationId,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

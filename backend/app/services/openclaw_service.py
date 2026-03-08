@@ -417,6 +417,8 @@ AI: {ai_reply}
         message: str,
         conversation_id: Optional[int] = None,
         is_admin: bool = False,
+        image_base64: Optional[str] = None,
+        image_type: str = "jpeg",
     ) -> AsyncGenerator[Dict, None]:
         """流式发送消息到 OpenClaw Gateway 并实时转发"""
 
@@ -438,6 +440,21 @@ AI: {ai_reply}
 
         # 4. 构建 messages 列表
         messages = self.build_messages(conv.id, limit=20)
+
+        # 4.5 如果有图片，将最后一条用户消息转为多模态格式
+        if image_base64 and messages:
+            last_msg = messages[-1]
+            if last_msg.get("role") == "user":
+                messages[-1] = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": last_msg["content"]},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/{image_type};base64,{image_base64}",
+                            "detail": "high",
+                        }},
+                    ],
+                }
 
         # 5. 流式调用 Gateway
         full_reply = ""
