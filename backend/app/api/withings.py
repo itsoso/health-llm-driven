@@ -100,6 +100,10 @@ async def withings_oauth_callback(
     if not credential:
         return HTMLResponse(content=_error_html("未找到授权请求"), status_code=404)
 
+    # 如果凭证已有效（前一个回调已成功），直接返回成功
+    if credential.is_valid:
+        return HTMLResponse(content=_success_html())
+
     config = credential.get_config()
     if config.get("oauth_state") != state:
         return HTMLResponse(content=_error_html("授权验证失败"), status_code=400)
