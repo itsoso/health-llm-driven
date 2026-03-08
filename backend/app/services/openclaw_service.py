@@ -106,6 +106,35 @@ class OpenClawService:
         recent = history[-limit:] if len(history) > limit else history
         return [{"role": m.role, "content": m.content} for m in recent]
 
+    # ── 图片压缩 ──────────────────────────────────────────
+
+    @staticmethod
+    def _compress_image_base64(base64_data: str, image_type: str = "jpeg", max_size: int = 1024, quality: int = 75) -> str:
+        """压缩 base64 图片，最大边不超过 max_size px，返回 JPEG base64"""
+        import base64
+        from io import BytesIO
+        try:
+            from PIL import Image
+            raw = base64.b64decode(base64_data)
+            img = Image.open(BytesIO(raw))
+            # RGBA → RGB
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            # 缩放
+            w, h = img.size
+            if max(w, h) > max_size:
+                ratio = max_size / max(w, h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+            # 压缩为 JPEG
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            compressed = base64.b64encode(buf.getvalue()).decode()
+            logger.info(f"图片压缩: {len(base64_data)//1024}KB → {len(compressed)//1024}KB, {img.size}")
+            return compressed
+        except Exception as e:
+            logger.warning(f"图片压缩失败，使用原图: {e}")
+            return base64_data
+
     # ── Gateway 流式调用 ──────────────────────────────────
 
     async def _call_gateway_stream(
@@ -441,16 +470,17 @@ AI: {ai_reply}
         # 4. 构建 messages 列表
         messages = self.build_messages(conv.id, limit=20)
 
-        # 4.5 如果有图片，将最后一条用户消息转为多模态格式
+        # 4.5 如果有图片，压缩后将最后一条用户消息转为多模态格式
         if image_base64 and messages:
             last_msg = messages[-1]
             if last_msg.get("role") == "user":
+                compressed = self._compress_image_base64(image_base64, image_type)
                 messages[-1] = {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": last_msg["content"]},
                         {"type": "image_url", "image_url": {
-                            "url": f"data:image/{image_type};base64,{image_base64}",
+                            "url": f"data:image/jpeg;base64,{compressed}",
                             "detail": "high",
                         }},
                     ],
