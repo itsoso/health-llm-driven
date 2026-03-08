@@ -146,16 +146,6 @@ def _convert_to_response(record) -> DietRecordResponse:
     )
 
 
-# 别名路由：OpenClaw 等外部 AI 可能猜测 /entries 而非 /records
-@router.post("/entries", response_model=DietRecordResponse, include_in_schema=False)
-def create_diet_record_alias(
-    record: DietRecordCreate,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
-):
-    """POST /entries → 转发到 /records"""
-    return create_diet_record(record, current_user, db)
-
 
 @router.get("/records/user/{user_id}", response_model=List[DietRecordResponse])
 def get_user_diet_records(
