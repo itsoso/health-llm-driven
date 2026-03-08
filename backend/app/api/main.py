@@ -113,6 +113,7 @@ api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
 api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
+api_router.include_router(withings.router)  # Withings（prefix 已在 router 中定义，必须在 devices 之前注册）
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  # 多设备管理
 api_router.include_router(upload.router, prefix="/upload", tags=["upload"])  # 文件上传
 
@@ -163,9 +164,6 @@ api_router.include_router(smart_plan.router)  # prefix 已在 router 中定义
 
 # 健康事件流
 api_router.include_router(health_event.router)  # prefix 已在 router 中定义
-
-# Withings 设备集成
-api_router.include_router(withings.router)  # prefix 已在 router 中定义
 
 # 新手引导
 api_router.include_router(onboarding.router)  # 新手引导流程
