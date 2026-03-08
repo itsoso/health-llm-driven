@@ -106,6 +106,33 @@ class OpenClawService:
         recent = history[-limit:] if len(history) > limit else history
         return [{"role": m.role, "content": m.content} for m in recent]
 
+    # ── 图片识别（Vision） ─────────────────────────────────
+
+    async def _describe_image(self, image_base64: str, image_type: str, user_text: str) -> Optional[str]:
+        """用 vision 模型识别图片内容，返回文字描述"""
+        try:
+            from app.services.llm import get_llm_provider
+            compressed = self._compress_image_base64(image_base64, image_type)
+            messages = [
+                {"role": "system", "content": "你是图片识别助手。请详细描述图片中的内容。如果是食物，请列出每种食物的名称和大概份量。"},
+                {"role": "user", "content": [
+                    {"type": "text", "text": user_text or "请描述这张图片"},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:image/jpeg;base64,{compressed}",
+                        "detail": "high",
+                    }},
+                ]},
+            ]
+            provider = get_llm_provider()
+            result = await provider.chat(messages=messages)
+            if result:
+                desc = result if isinstance(result, str) else str(result)
+                logger.info(f"图片识别结果: {desc[:100]}...")
+                return desc
+        except Exception as e:
+            logger.warning(f"图片识别失败: {e}")
+        return None
+
     # ── 图片压缩 ──────────────────────────────────────────
 
     @staticmethod
@@ -470,21 +497,17 @@ AI: {ai_reply}
         # 4. 构建 messages 列表
         messages = self.build_messages(conv.id, limit=20)
 
-        # 4.5 如果有图片，压缩后将最后一条用户消息转为多模态格式
+        # 4.5 如果有图片，先用 vision 模型识别内容，再把描述注入文本
+        #     OpenClaw Gateway 不支持多模态 image_url，只能传纯文本
         if image_base64 and messages:
             last_msg = messages[-1]
             if last_msg.get("role") == "user":
-                compressed = self._compress_image_base64(image_base64, image_type)
-                messages[-1] = {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": last_msg["content"]},
-                        {"type": "image_url", "image_url": {
-                            "url": f"data:image/jpeg;base64,{compressed}",
-                            "detail": "high",
-                        }},
-                    ],
-                }
+                image_desc = await self._describe_image(image_base64, image_type, last_msg["content"])
+                if image_desc:
+                    messages[-1] = {
+                        "role": "user",
+                        "content": f"{last_msg['content']}\n\n[图片内容识别结果]\n{image_desc}",
+                    }
 
         # 5. 流式调用 Gateway
         full_reply = ""
