@@ -78,6 +78,37 @@ def get_skill(skill_name: str):
     }
 
 
+@router.get("/manifest.json", summary="Skills 打包清单（一键安装/更新）")
+def get_skills_manifest():
+    """返回所有 Skills 的打包 JSON，供 OpenClaw 一键安装或更新"""
+    skills = []
+    if not SKILLS_DIR.exists():
+        return {"version": "1.0", "skills": skills}
+
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        content = skill_file.read_text(encoding="utf-8")
+        fm = _parse_frontmatter(content)
+        body = _get_body(content)
+        skills.append({
+            "name": fm.get("name", skill_dir.name),
+            "slug": skill_dir.name,
+            "description": fm.get("description", ""),
+            "version": fm.get("version", "1.0.0"),
+            "content": body.strip(),
+            "raw_url": f"/api/v1/skills/{skill_dir.name}/raw",
+        })
+
+    return {
+        "version": "1.0",
+        "base_url": "https://health.executor.life/api",
+        "auth_type": "Bearer Token",
+        "skills": skills,
+    }
+
+
 @router.get("/{skill_name}/raw", response_class=PlainTextResponse)
 def get_skill_raw(skill_name: str):
     """获取 Skill 原始 SKILL.md 内容（供 OpenClaw 直接安装）"""

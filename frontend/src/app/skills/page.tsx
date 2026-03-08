@@ -466,6 +466,15 @@ export default function SkillsPage() {
     return installedSkills.find((s) => s.name === slug) || null;
   };
 
+  const [manifestCopied, setManifestCopied] = useState(false);
+  const manifestUrl = `${PUBLIC_URL}/skills/manifest.json`;
+
+  const handleCopyManifest = () => {
+    copyToClipboard(manifestUrl);
+    setManifestCopied(true);
+    setTimeout(() => setManifestCopied(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-[#13111a] text-white">
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -474,6 +483,42 @@ export default function SkillsPage() {
           <h1 className="text-2xl font-bold text-white mb-2">OpenClaw Skills</h1>
           <p className="text-gray-400">
             Health Management System 的 AI Skills 目录。其他 Claw 可直接安装使用。
+          </p>
+        </div>
+
+        {/* Manifest URL - 一键安装 */}
+        <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-purple-300 flex items-center gap-2">
+              Skills Manifest
+            </h2>
+            <button
+              onClick={handleCopyManifest}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                manifestCopied
+                  ? 'bg-green-600/20 text-green-400 border border-green-500/30'
+                  : 'bg-purple-600 text-white hover:bg-purple-500'
+              }`}
+            >
+              {manifestCopied ? 'Copied' : 'Copy URL'}
+            </button>
+          </div>
+          <div className="bg-[#0d0b14] rounded-lg p-4 border border-purple-900/20 font-mono text-sm space-y-2">
+            <div className="flex items-start gap-3">
+              <span className="text-gray-500 w-28 flex-shrink-0">Manifest URL:</span>
+              <span className="text-purple-300 break-all cursor-pointer hover:text-purple-200 transition-colors" onClick={handleCopyManifest}>{manifestUrl}</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-gray-500 w-28 flex-shrink-0">Auth Type:</span>
+              <span className="text-gray-300">Bearer Token</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-gray-500 w-28 flex-shrink-0">API Key:</span>
+              <span className="text-gray-300">{activeToken ? activeToken : <span className="text-gray-500 italic">登录后创建 API Key</span>}</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            复制 Manifest URL 即可一键安装或更新所有 Skills。
           </p>
         </div>
 
