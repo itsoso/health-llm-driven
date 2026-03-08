@@ -538,6 +538,20 @@ export const deviceApi = {
   unbindDevice: (deviceType: string) => api.delete(`/devices/${deviceType}`),
 };
 
+// Withings 设备管理
+export const withingsApi = {
+  // 获取绑定状态
+  getStatus: () => api.get('/devices/withings/status'),
+  // 获取 OAuth 授权 URL
+  getOAuthUrl: () => api.get('/devices/withings/oauth/authorize'),
+  // 手动同步数据
+  syncData: (days: number = 7) => api.post(`/devices/withings/sync?days=${days}`),
+  // 查看 Webhook 订阅
+  listWebhooks: () => api.get('/devices/withings/webhooks/list'),
+  // 手动订阅 Webhook
+  subscribeWebhooks: () => api.post('/devices/withings/webhooks/subscribe'),
+};
+
 // 运动指导
 export const workoutGuidanceApi = {
   // 获取运动前指导
