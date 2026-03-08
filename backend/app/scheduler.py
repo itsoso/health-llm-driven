@@ -481,6 +481,31 @@ async def scheduler_loop(interval_minutes: int = 60):
         await asyncio.sleep(interval_minutes * 60)
 
 
+async def reminder_check_loop():
+    """每分钟检查到期提醒并触发通知"""
+    logger.info("Smart Reminder 调度器已启动，每60秒检查一次")
+    # 等待系统启动
+    await asyncio.sleep(30)
+
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                from app.services.reminder_service import ReminderService
+                service = ReminderService(db)
+                fired = await service.fire_all_due()
+                if fired > 0:
+                    logger.info(f"本轮触发了 {fired} 个提醒")
+                # 顺便清理过期提醒
+                service.expire_old_reminders()
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"提醒调度器出错: {e}")
+
+        await asyncio.sleep(60)
+
+
 def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = True):
     """
     在后台线程中启动异步调度器
@@ -504,10 +529,21 @@ def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = 
     # 使用守护线程，确保主程序退出时线程也退出
     thread = threading.Thread(target=run_async_loop, daemon=True)
     thread.start()
-    
+
     if use_daily_schedule:
-        logger.info("✅ 后台每日定时同步调度器线程已启动（每天08:01北京时间执行）")
+        logger.info("后台每日定时同步调度器线程已启动（每天08:01北京时间执行）")
     else:
-        logger.info(f"⚠️ 后台间隔同步调度器线程已启动（每{interval_minutes}分钟执行）")
-    
+        logger.info(f"后台间隔同步调度器线程已启动（每{interval_minutes}分钟执行）")
+
+    # 启动提醒调度器（独立线程）
+    def run_reminder_loop():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(reminder_check_loop())
+        loop.close()
+
+    reminder_thread = threading.Thread(target=run_reminder_loop, daemon=True)
+    reminder_thread.start()
+    logger.info("Smart Reminder 调度器线程已启动（每60秒检查）")
+
     return thread

@@ -133,6 +133,40 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "set_reminder",
+            "description": "设置提醒。当用户说'提醒我...'、'X点提醒我...'、'N分钟后提醒我...'时调用此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "提醒标题（简短概括，如'送孩子上课'、'吃药'）",
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "提醒详细内容（如'送孩子去金桂大厦上课 原力数学-403教室'）",
+                    },
+                    "remind_at": {
+                        "type": "string",
+                        "description": "提醒时间，ISO 8601 格式，如 '2026-03-08T09:50:00+08:00'。根据用户描述推断具体时间。",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "normal", "high", "urgent"],
+                        "description": "优先级：low=静默推送, normal=推送+声音, high=持续提醒, urgent=电话通知。根据事情重要程度判断。",
+                    },
+                    "recurrence": {
+                        "type": "string",
+                        "description": "周期性（可选）：'daily'=每天, 'weekdays'=工作日, 'weekly:1,3,5'=周一三五。不填则为一次性提醒。",
+                    },
+                },
+                "required": ["title", "message", "remind_at", "priority"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "workout_analyze",
             "description": "分析用户最近完成的运动",
             "parameters": {
@@ -281,6 +315,58 @@ async def _record_diet(args: Dict, db, user) -> Dict[str, Any]:
     return {"success": True, "message": f"已记录饮食: {args['foods']}"}
 
 
+async def _set_reminder(args: Dict, db, user) -> Dict[str, Any]:
+    """设置智能提醒"""
+    from app.models.smart_reminder import SmartReminder
+    from app.utils.timezone import get_china_now
+    from dateutil.parser import parse as parse_datetime
+
+    title = args["title"]
+    message = args.get("message", title)
+    priority = args.get("priority", "normal")
+    recurrence = args.get("recurrence")
+
+    try:
+        remind_at = parse_datetime(args["remind_at"])
+    except Exception:
+        return {"success": False, "message": f"无法解析提醒时间: {args['remind_at']}"}
+
+    now = get_china_now()
+    if remind_at.tzinfo is None:
+        from datetime import timezone, timedelta
+        remind_at = remind_at.replace(tzinfo=timezone(timedelta(hours=8)))
+
+    # 一次性提醒不能是过去的时间
+    if not recurrence and remind_at < now:
+        return {"success": False, "message": "提醒时间已过，请设置一个未来的时间"}
+
+    reminder = SmartReminder(
+        user_id=user.id,
+        title=title,
+        message=message,
+        remind_at=remind_at,
+        priority=priority,
+        recurrence=recurrence,
+        source="health_assistant",
+        status="pending",
+    )
+    db.add(reminder)
+    db.commit()
+
+    priority_desc = {
+        "low": "静默推送",
+        "normal": "推送+声音",
+        "high": "持续提醒",
+        "urgent": "电话+推送",
+    }
+    time_str = remind_at.strftime("%H:%M")
+    return {
+        "success": True,
+        "reminder_id": reminder.id,
+        "message": f"已设置提醒: {time_str} {title}（{priority_desc.get(priority, priority)}）",
+    }
+
+
 # 工具名称 → 执行函数映射
 TOOL_EXECUTORS = {
     "record_water": _record_water,
@@ -288,6 +374,7 @@ TOOL_EXECUTORS = {
     "record_blood_pressure": _record_blood_pressure,
     "record_checkin": _record_checkin,
     "record_diet": _record_diet,
+    "set_reminder": _set_reminder,
 }
 
 

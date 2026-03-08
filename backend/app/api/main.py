@@ -38,6 +38,7 @@ from app.api import (
     ai_scheduler,  # AI 日程编排引擎
     digital_twin,  # 数字孪生
     notification,  # 推送通知
+    smart_reminder,  # 智能提醒
     review,  # 每日复盘
     diet_recommendation,  # 智能饮食推荐
     performance,  # 性能监控
@@ -124,6 +125,7 @@ api_router.include_router(disease_tracking.router, tags=["disease-tracking"])  #
 api_router.include_router(ai_scheduler.router, tags=["ai-scheduler"])  # AI 日程编排引擎
 api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])  # 数字孪生
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
+api_router.include_router(smart_reminder.router, tags=["reminders"])  # 智能提醒
 api_router.include_router(review.router, tags=["review"])  # 每日复盘
 api_router.include_router(diet_recommendation.router)  # 智能饮食推荐（prefix 已在 router 中定义）
 api_router.include_router(performance.router)  # 性能监控（prefix 已在 router 中定义）

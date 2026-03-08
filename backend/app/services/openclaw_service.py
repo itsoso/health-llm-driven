@@ -332,6 +332,83 @@ class OpenClawService:
         except Exception as e:
             return f"获取状态失败: {e}"
 
+    # ── 提醒检测 ──────────────────────────────────────────
+
+    async def _try_create_reminder(self, user_id: int, user_msg: str, ai_reply: str):
+        """检测 OpenClaw 回复中的提醒意图，创建真实提醒"""
+        import re as _re
+        from app.utils.timezone import get_china_now
+
+        # 快速判断：用户消息或AI回复中是否包含提醒相关关键词
+        reminder_keywords = ["提醒", "闹钟", "别忘", "记得", "到时候"]
+        confirm_keywords = ["已设置", "已安排", "会提醒", "好的.*提醒", "设好了"]
+
+        user_has_intent = any(kw in user_msg for kw in reminder_keywords)
+        ai_confirmed = any(_re.search(kw, ai_reply) for kw in confirm_keywords)
+
+        if not (user_has_intent and ai_confirmed):
+            return
+
+        # 用 LLM 提取结构化提醒信息
+        now = get_china_now()
+        extract_prompt = f"""从以下对话中提取提醒信息，返回 JSON 格式。如果不是设置提醒的对话，返回 {{"is_reminder": false}}
+
+用户: {user_msg}
+AI: {ai_reply}
+当前时间: {now.strftime('%Y-%m-%d %H:%M')} (北京时间)
+
+请返回 JSON（不要 markdown 代码块）：
+{{"is_reminder": true/false, "title": "简短标题", "message": "详细内容", "remind_at": "YYYY-MM-DDTHH:MM:00+08:00", "priority": "low/normal/high/urgent"}}"""
+
+        try:
+            from app.services.llm import get_llm_provider
+            llm = get_llm_provider()
+            result_text = await llm.chat(
+                [{"role": "user", "content": extract_prompt}],
+                temperature=0,
+                max_tokens=300,
+            )
+
+            # 提取 JSON
+            json_match = _re.search(r'\{[^{}]+\}', result_text)
+            if not json_match:
+                return
+
+            import json as _json
+            data = _json.loads(json_match.group())
+
+            if not data.get("is_reminder"):
+                return
+
+            # 创建提醒
+            from app.models.smart_reminder import SmartReminder
+            from dateutil.parser import parse as parse_dt
+
+            remind_at = parse_dt(data["remind_at"])
+            if remind_at.tzinfo is None:
+                from datetime import timezone, timedelta
+                remind_at = remind_at.replace(tzinfo=timezone(timedelta(hours=8)))
+
+            if remind_at < now:
+                logger.info(f"OpenClaw 提醒时间已过，跳过: {data}")
+                return
+
+            reminder = SmartReminder(
+                user_id=user_id,
+                title=data.get("title", "提醒"),
+                message=data.get("message", user_msg),
+                remind_at=remind_at,
+                priority=data.get("priority", "normal"),
+                source="openclaw",
+                status="pending",
+            )
+            self.db.add(reminder)
+            self.db.commit()
+            logger.info(f"OpenClaw 自动创建提醒: user={user_id}, title='{reminder.title}', at={remind_at}")
+
+        except Exception as e:
+            logger.warning(f"OpenClaw 提醒提取失败: {e}")
+
     # ── 主流程 ────────────────────────────────────────────
 
     async def send_message_stream(
@@ -375,6 +452,12 @@ class OpenClawService:
 
         # 6. 保存 AI 回复
         ai_msg = self.save_message(conv.id, "assistant", full_reply)
+
+        # 6.5 检测提醒意图并创建真实提醒
+        try:
+            await self._try_create_reminder(user_id, message, full_reply)
+        except Exception as e:
+            logger.warning(f"OpenClaw 提醒检测失败: {e}")
 
         # 7. 更新会话时间
         conv.updated_at = datetime.utcnow()
