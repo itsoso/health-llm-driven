@@ -57,27 +57,6 @@ def list_skills():
     return skills
 
 
-@router.get("/{skill_name}")
-def get_skill(skill_name: str):
-    """获取 Skill 详情（结构化 JSON）"""
-    skill_file = SKILLS_DIR / skill_name / "SKILL.md"
-    if not skill_file.exists():
-        raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
-
-    content = skill_file.read_text(encoding="utf-8")
-    fm = _parse_frontmatter(content)
-    body = _get_body(content)
-
-    return {
-        "name": fm.get("name", skill_name),
-        "description": fm.get("description", ""),
-        "version": fm.get("version", "1.0.0"),
-        "slug": skill_name,
-        "content": body.strip(),
-        "raw_url": f"/api/v1/skills/{skill_name}/raw",
-    }
-
-
 @router.get("/manifest.json", summary="Skills 打包清单（一键安装/更新）")
 def get_skills_manifest():
     """返回所有 Skills 的打包 JSON，供 OpenClaw 一键安装或更新"""
@@ -106,6 +85,27 @@ def get_skills_manifest():
         "base_url": "https://health.executor.life/api",
         "auth_type": "Bearer Token",
         "skills": skills,
+    }
+
+
+@router.get("/{skill_name}")
+def get_skill(skill_name: str):
+    """获取 Skill 详情（结构化 JSON）"""
+    skill_file = SKILLS_DIR / skill_name / "SKILL.md"
+    if not skill_file.exists():
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+
+    content = skill_file.read_text(encoding="utf-8")
+    fm = _parse_frontmatter(content)
+    body = _get_body(content)
+
+    return {
+        "name": fm.get("name", skill_name),
+        "description": fm.get("description", ""),
+        "version": fm.get("version", "1.0.0"),
+        "slug": skill_name,
+        "content": body.strip(),
+        "raw_url": f"/api/v1/skills/{skill_name}/raw",
     }
 
 

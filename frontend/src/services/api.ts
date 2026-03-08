@@ -545,7 +545,7 @@ export const withingsApi = {
   // 获取 OAuth 授权 URL
   getOAuthUrl: () => api.get('/devices/withings/oauth/authorize'),
   // 手动同步数据
-  syncData: (days: number = 7) => api.post(`/devices/withings/sync?days=${days}`),
+  syncData: (days: number = 7) => api.post('/devices/withings/sync', null, { params: { days } }),
   // 查看 Webhook 订阅
   listWebhooks: () => api.get('/devices/withings/webhooks/list'),
   // 手动订阅 Webhook

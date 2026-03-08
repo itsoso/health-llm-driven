@@ -8,6 +8,13 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { deviceApi, withingsApi } from '@/services/api';
 import { formatDateTime } from '@/utils/timezone';
 
+function extractErrorMsg(error: any, fallback: string): string {
+  const detail = error?.response?.data?.detail;
+  if (!detail) return error?.message || fallback;
+  if (typeof detail === 'string') return detail;
+  return JSON.stringify(detail);
+}
+
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
 
@@ -194,8 +201,7 @@ function SettingsContent() {
       }
     },
     onError: (error: any) => {
-      const errorMsg = error.response?.data?.detail || error.message || '获取授权链接失败';
-      setMessage({ type: 'error', text: errorMsg });
+      setMessage({ type: 'error', text: extractErrorMsg(error, '获取授权链接失败') });
     },
   });
 
@@ -208,8 +214,7 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ['daily-health'] });
     },
     onError: (error: any) => {
-      const errorMsg = error.response?.data?.detail || error.message || '同步失败';
-      setMessage({ type: 'error', text: errorMsg });
+      setMessage({ type: 'error', text: extractErrorMsg(error, '同步失败') });
     },
   });
 
@@ -221,7 +226,7 @@ function SettingsContent() {
       refetchWithings();
     },
     onError: (error: any) => {
-      setMessage({ type: 'error', text: error.response?.data?.detail || '解绑失败' });
+      setMessage({ type: 'error', text: extractErrorMsg(error, '解绑失败') });
     },
   });
 
@@ -375,7 +380,7 @@ function SettingsContent() {
     },
     onError: (error: any) => {
       setAppleImportProgress({ isImporting: false, progress: 0, message: '' });
-      const errorMsg = error.response?.data?.detail || error.message || '导入失败，请重试';
+      const errorMsg = extractErrorMsg(error, '导入失败，请重试');
       setMessage({ type: 'error', text: errorMsg });
     },
   });
@@ -388,7 +393,7 @@ function SettingsContent() {
       refetchApple();
     },
     onError: (error: any) => {
-      const errorMsg = error.response?.data?.detail || error.message || '测试失败';
+      const errorMsg = extractErrorMsg(error, '测试失败');
       setMessage({ type: 'error', text: errorMsg });
     },
   });
@@ -402,7 +407,7 @@ function SettingsContent() {
       queryClient.invalidateQueries({ queryKey: ['daily-health'] });
     },
     onError: (error: any) => {
-      const errorMsg = error.response?.data?.detail || error.message || '同步失败';
+      const errorMsg = extractErrorMsg(error, '同步失败');
       setMessage({ type: 'error', text: errorMsg });
     },
   });
@@ -2014,7 +2019,7 @@ function SettingsContent() {
                         setMessage({ type: 'success', text: '已解绑 Apple Watch' });
                         refetchApple();
                       } catch (error: any) {
-                        setMessage({ type: 'error', text: error.response?.data?.detail || '解绑失败' });
+                        setMessage({ type: 'error', text: extractErrorMsg(error, '解绑失败') });
                       }
                     }
                   }}
