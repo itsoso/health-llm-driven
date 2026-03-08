@@ -22,6 +22,7 @@ from app.services.device_adapters.withings import (
     APPLI_WEIGHT, APPLI_PRESSURE, APPLI_SLEEP,
 )
 from app.services.health_event_service import HealthEventService
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,10 @@ async def get_withings_oauth_url(
     credential.set_config({"oauth_state": state, "redirect_uri": redirect_uri})
     db.commit()
 
-    adapter = WithingsHealthAdapter()
+    adapter = WithingsHealthAdapter(
+        client_id=settings.withings_client_id,
+        client_secret=settings.withings_client_secret,
+    )
     auth_url = adapter.get_oauth_url(redirect_uri, state)
 
     return {
@@ -102,7 +106,10 @@ async def withings_oauth_callback(
 
     # 换取 token
     try:
-        adapter = WithingsHealthAdapter()
+        adapter = WithingsHealthAdapter(
+            client_id=settings.withings_client_id,
+            client_secret=settings.withings_client_secret,
+        )
         token_result = await adapter.exchange_code_for_token(
             code, config.get("redirect_uri", "")
         )
@@ -188,6 +195,8 @@ async def withings_webhook(request: Request, db: Session = Depends(get_db)):
 
         # 创建适配器拉取实际数据
         adapter = WithingsHealthAdapter(
+            client_id=settings.withings_client_id,
+            client_secret=settings.withings_client_secret,
             access_token=target_credential.get_access_token(),
             refresh_token=target_credential.get_refresh_token(),
         )
@@ -248,6 +257,8 @@ async def sync_withings_data(
         raise HTTPException(status_code=404, detail="未绑定 Withings 设备")
 
     adapter = WithingsHealthAdapter(
+        client_id=settings.withings_client_id,
+        client_secret=settings.withings_client_secret,
         access_token=credential.get_access_token(),
         refresh_token=credential.get_refresh_token(),
     )
@@ -318,6 +329,8 @@ async def subscribe_webhooks(
         raise HTTPException(status_code=404, detail="未绑定 Withings 设备")
 
     adapter = WithingsHealthAdapter(
+        client_id=settings.withings_client_id,
+        client_secret=settings.withings_client_secret,
         access_token=credential.get_access_token(),
         refresh_token=credential.get_refresh_token(),
     )
@@ -352,6 +365,8 @@ async def list_webhooks(
         raise HTTPException(status_code=404, detail="未绑定 Withings 设备")
 
     adapter = WithingsHealthAdapter(
+        client_id=settings.withings_client_id,
+        client_secret=settings.withings_client_secret,
         access_token=credential.get_access_token(),
         refresh_token=credential.get_refresh_token(),
     )
