@@ -1215,16 +1215,24 @@ class WorkoutSyncService:
                             synced_count += 1
                             logger.info(f"{self._log_prefix()}更新活动: {parsed['workout_name']} ({parsed['workout_type']})")
                     else:
-                        # 创建新记录
+                        # 创建新记录（先 flush 检测唯一约束冲突）
                         db_record = WorkoutRecord(**parsed)
                         db.add(db_record)
-                        synced_count += 1
-                        logger.info(f"{self._log_prefix()}同步活动: {parsed['workout_name']} ({parsed['workout_type']})")
-                    
+                        try:
+                            db.flush()
+                            synced_count += 1
+                            logger.info(f"{self._log_prefix()}同步活动: {parsed['workout_name']} ({parsed['workout_type']})")
+                        except Exception as flush_err:
+                            db.rollback()
+                            if "uix_workout_user_external" in str(flush_err):
+                                logger.info(f"{self._log_prefix()}活动 {activity_id} 已存在(并发)，跳过")
+                            else:
+                                raise
+
                 except Exception as e:
                     logger.error(f"{self._log_prefix()}解析活动失败: {e}")
                     continue
-            
+
             db.commit()
             logger.info(f"{self._log_prefix()}同步完成，共 {synced_count} 条活动")
             

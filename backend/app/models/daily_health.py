@@ -1,5 +1,5 @@
 """日常健康记录模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -362,6 +362,8 @@ class WorkoutRecord(Base):
         Index('idx_workout_user_date', 'user_id', 'workout_date'),
         Index('idx_workout_user_type', 'user_id', 'workout_type'),
         Index('idx_workout_source_external', 'source', 'external_id'),
+        Index('uix_workout_user_external', 'user_id', 'external_id',
+              unique=True, postgresql_where=text("external_id IS NOT NULL")),
     )
 
 
