@@ -12,6 +12,7 @@ Siri 快捷指令 API - 为 Apple Shortcuts 提供语音健康记录接口
   https://health.executor.life/api/siri/shortcut?token=<你的JWT_Token>
   iOS 会自动提示导入到「快捷指令」App。
 """
+import asyncio
 import re
 import logging
 import plistlib
@@ -331,13 +332,21 @@ async def siri_say(
     # 使用专属 Siri 对话（不影响普通对话列表的排序）
     conversation_id = get_or_create_siri_conversation(current_user.id, db)
 
+    # Siri 快捷指令 HTTP 超时约 25-30s，必须在此之前返回
+    SIRI_TIMEOUT = 25
     chat_service = ChatService(db)
     try:
-        result = await chat_service.send_message(
-            user_id=current_user.id,
-            message=message,
-            conversation_id=conversation_id,
+        result = await asyncio.wait_for(
+            chat_service.send_message(
+                user_id=current_user.id,
+                message=message,
+                conversation_id=conversation_id,
+            ),
+            timeout=SIRI_TIMEOUT,
         )
+    except asyncio.TimeoutError:
+        logger.warning(f"Siri 请求超时 ({SIRI_TIMEOUT}s) user={current_user.id} msg={message[:60]}")
+        return SiriResponse(text="收到了，正在处理中。请稍后在 App 中查看结果。")
     except Exception as e:
         logger.error(f"Siri 请求处理失败 user={current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="处理失败，请稍后重试")

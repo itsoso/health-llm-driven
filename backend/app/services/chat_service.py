@@ -1988,7 +1988,9 @@ class ChatService:
         if self._is_food_message(message):
             logger.info(f"检测到饮食记录消息: {message[:80]}")
             try:
-                nutrition_data = food_recognition_service.estimate_nutrition_from_text(message)
+                nutrition_data = await asyncio.to_thread(
+                    food_recognition_service.estimate_nutrition_from_text, message
+                )
                 if nutrition_data.get("success"):
                     # 保存饮食记录
                     diet_result = self._process_diet_record(user_id, message, nutrition_data)
@@ -2157,7 +2159,9 @@ class ChatService:
         is_food_intent = image_base64 and any(kw in message for kw in food_keywords)
         if is_food_intent and not diet_result and clean_reply:
             try:
-                nutrition_data = food_recognition_service.estimate_nutrition_from_text(clean_reply)
+                nutrition_data = await asyncio.to_thread(
+                    food_recognition_service.estimate_nutrition_from_text, clean_reply
+                )
                 if nutrition_data.get("success") and nutrition_data.get("foods"):
                     diet_result = self._process_diet_record(user_id, message, nutrition_data)
                     if diet_result:
@@ -2293,7 +2297,9 @@ class ChatService:
         diet_context = ""
         if self._is_food_message(message):
             try:
-                nutrition_data = food_recognition_service.estimate_nutrition_from_text(message)
+                nutrition_data = await asyncio.to_thread(
+                    food_recognition_service.estimate_nutrition_from_text, message
+                )
                 if nutrition_data.get("success"):
                     diet_result = self._process_diet_record(user_id, message, nutrition_data)
                     if diet_result:
@@ -2396,7 +2402,9 @@ class ChatService:
         is_food_intent = image_base64 and any(kw in message for kw in food_keywords)
         if is_food_intent and not diet_result and clean_reply:
             try:
-                nutrition_data = food_recognition_service.estimate_nutrition_from_text(clean_reply)
+                nutrition_data = await asyncio.to_thread(
+                    food_recognition_service.estimate_nutrition_from_text, clean_reply
+                )
                 if nutrition_data.get("success") and nutrition_data.get("foods"):
                     diet_result = self._process_diet_record(user_id, message, nutrition_data)
                     if diet_result:

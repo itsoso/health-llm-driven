@@ -58,8 +58,6 @@ export default function AIAssistantPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const streamBufferRef = useRef('');
-  const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -175,8 +173,6 @@ export default function AIAssistantPage() {
     const msg = (text || inputText).trim();
     const hasAttachment = pendingImage || pendingFile;
     if (!msg && !hasAttachment) return;
-    if (loading) return;
-
     // 如果有待发送图片但未传入参数，使用 pendingImage
     const finalImageBase64 = imageBase64 || pendingImage?.base64;
     const finalImageType = imageType || pendingImage?.type;
@@ -224,6 +220,8 @@ export default function AIAssistantPage() {
 
       let gotDone = false;
       let firstToken = true;
+      // 每次调用独立的缓冲区，支持并行流
+      const buf = { content: '', timer: null as NodeJS.Timeout | null };
       const streamIterator = chatMode === 'openclaw'
         ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
         : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
@@ -234,12 +232,12 @@ export default function AIAssistantPage() {
             setLoading(false);
           }
           // 缓冲 token，批量更新减少渲染次数
-          streamBufferRef.current += event.data.content;
-          if (!flushTimerRef.current) {
-            flushTimerRef.current = setTimeout(() => {
-              const buffered = streamBufferRef.current;
-              streamBufferRef.current = '';
-              flushTimerRef.current = null;
+          buf.content += event.data.content;
+          if (!buf.timer) {
+            buf.timer = setTimeout(() => {
+              const buffered = buf.content;
+              buf.content = '';
+              buf.timer = null;
               setMessages(prev => prev.map(m =>
                 m.id === aiMsgId ? { ...m, content: m.content + buffered } : m
               ));
@@ -248,13 +246,13 @@ export default function AIAssistantPage() {
         } else if (event.event === 'done') {
           gotDone = true;
           // 先刷新缓冲区（done 事件会更改 message id，必须在此之前刷新）
-          if (streamBufferRef.current) {
-            if (flushTimerRef.current) {
-              clearTimeout(flushTimerRef.current);
-              flushTimerRef.current = null;
+          if (buf.content) {
+            if (buf.timer) {
+              clearTimeout(buf.timer);
+              buf.timer = null;
             }
-            const buffered = streamBufferRef.current;
-            streamBufferRef.current = '';
+            const buffered = buf.content;
+            buf.content = '';
             setMessages(prev => prev.map(m =>
               m.id === aiMsgId ? { ...m, content: m.content + buffered } : m
             ));
@@ -292,13 +290,13 @@ export default function AIAssistantPage() {
       }
 
       // 刷新剩余缓冲
-      if (streamBufferRef.current) {
-        if (flushTimerRef.current) {
-          clearTimeout(flushTimerRef.current);
-          flushTimerRef.current = null;
+      if (buf.content) {
+        if (buf.timer) {
+          clearTimeout(buf.timer);
+          buf.timer = null;
         }
-        const remaining = streamBufferRef.current;
-        streamBufferRef.current = '';
+        const remaining = buf.content;
+        buf.content = '';
         setMessages(prev => prev.map(m =>
           m.id === aiMsgId ? { ...m, content: m.content + remaining } : m
         ));
@@ -991,7 +989,7 @@ export default function AIAssistantPage() {
           </div>
 
           {/* 快捷提问栏 (对话进行中也显示) */}
-          {messages.length > 0 && !loading && (
+          {messages.length > 0 && (
             <div className="px-4 py-2 border-t border-white/10">
               <div className="max-w-4xl mx-auto overflow-x-auto">
                 <div className="flex gap-2">
@@ -1055,7 +1053,7 @@ export default function AIAssistantPage() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={imageUploading || loading}
+                disabled={imageUploading}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                   imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
                 }`}
@@ -1068,7 +1066,6 @@ export default function AIAssistantPage() {
               {/* 语音按钮 */}
               <button
                 onClick={handleVoiceToggle}
-                disabled={loading}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                   isRecording
                     ? 'bg-red-500 text-white animate-pulse'
@@ -1100,9 +1097,9 @@ export default function AIAssistantPage() {
               {/* 发送按钮 */}
               <button
                 onClick={() => handleSend()}
-                disabled={(!inputText.trim() && !pendingImage && !pendingFile) || loading}
+                disabled={!inputText.trim() && !pendingImage && !pendingFile}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  (inputText.trim() || pendingImage || pendingFile) && !loading
+                  (inputText.trim() || pendingImage || pendingFile)
                     ? 'bg-purple-600 hover:bg-purple-500 text-white'
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 }`}
