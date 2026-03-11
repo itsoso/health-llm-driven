@@ -27,9 +27,21 @@ class AssistantOpenClawService:
         self.db = db
         self.binding_service = AssistantOpenClawBindingService(db)
 
+    @staticmethod
+    def build_user_session_key(user_id: int) -> str:
+        """为智能助理专用 OpenClaw 生成用户级固定 session key"""
+        return f"assistant-openclaw-user-{user_id}"
+
+    @staticmethod
+    def _matches_fixed_session(current_session_key: Optional[str], fixed_session_key: str) -> bool:
+        if not current_session_key:
+            return False
+        return current_session_key == fixed_session_key or current_session_key.endswith(f":{fixed_session_key}")
+
     def get_or_create_conversation(
         self, user_id: int, conversation_id: Optional[int], title: str = "新对话"
     ) -> AssistantOpenClawConversation:
+        fixed_session_key = self.build_user_session_key(user_id)
         if conversation_id:
             conv = (
                 self.db.query(AssistantOpenClawConversation)
@@ -41,12 +53,16 @@ class AssistantOpenClawService:
             )
             if not conv:
                 raise ValueError("对话不存在")
+            if not self._matches_fixed_session(conv.session_key, fixed_session_key):
+                conv.session_key = fixed_session_key
+                self.db.commit()
+                self.db.refresh(conv)
             return conv
 
         conv = AssistantOpenClawConversation(
             user_id=user_id,
             title=title[:50],
-            session_key=f"assistant-openclaw-{user_id}-{uuid.uuid4().hex[:12]}",
+            session_key=fixed_session_key,
         )
         self.db.add(conv)
         self.db.commit()
