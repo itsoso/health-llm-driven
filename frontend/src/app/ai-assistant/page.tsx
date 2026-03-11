@@ -1064,14 +1064,14 @@ export default function AIAssistantPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 ) : '💬'}</div>
-                <h2 className="text-2xl font-bold text-white">
+                <h2 className="text-2xl font-bold text-slate-900">
                   {chatMode === 'assistant_openclaw'
                     ? '我的 OpenClaw'
                     : chatMode === 'openclaw'
                       ? 'OpenClaw 对话模式'
                       : '你好，我是你的智能助理'}
                 </h2>
-                <p className="text-slate-400">
+                <p className="text-slate-600">
                   {chatMode === 'assistant_openclaw'
                     ? '在这里通过你自己绑定的 OpenClaw 实例完成对话、查询和记录'
                     : chatMode === 'openclaw'
@@ -1079,20 +1079,20 @@ export default function AIAssistantPage() {
                     : '我了解你的健康数据，可以为你提供个性化的健康建议'}
                 </p>
                 {assistantModeLocked ? (
-                  <div className="max-w-xl mx-auto mt-8 rounded-2xl border border-cyan-500/20 bg-slate-800/60 p-6 text-left">
-                    <h3 className="text-lg font-semibold text-white mb-2">先绑定你的 OpenClaw 实例</h3>
-                    <p className="text-slate-300 text-sm leading-6">
+                  <div className="max-w-xl mx-auto mt-8 rounded-2xl border border-slate-200 bg-white/88 p-6 text-left shadow-sm">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">先绑定你的 OpenClaw 实例</h3>
+                    <p className="text-slate-600 text-sm leading-6">
                       到设置页填写地址和 Token，并完成连接测试后，这个模式才会启用。
                     </p>
-                    <div className="mt-4 space-y-2 text-sm text-slate-400">
+                    <div className="mt-4 space-y-2 text-sm text-slate-500">
                       <div>当前状态：{assistantBindingLoading ? '加载中...' : assistantBinding?.status || 'unconfigured'}</div>
                       {assistantBinding?.last_error && (
-                        <div className="text-amber-300">最近错误：{assistantBinding.last_error}</div>
+                        <div className="text-amber-600">最近错误：{assistantBinding.last_error}</div>
                       )}
                     </div>
                     <button
                       onClick={() => router.push('/settings#assistant-openclaw')}
-                      className="mt-5 inline-flex items-center px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
+                      className="mt-5 inline-flex items-center px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors"
                     >
                       前往设置
                     </button>
@@ -1103,9 +1103,9 @@ export default function AIAssistantPage() {
                       <button
                         key={idx}
                         onClick={() => handleSend(q.text)}
-                        className="px-4 py-3 bg-slate-700/50 hover:bg-slate-600/50 rounded-xl text-left transition-colors border border-white/10"
+                        className="px-4 py-3 bg-white/88 hover:bg-white rounded-xl text-left transition-colors border border-slate-200 shadow-sm"
                       >
-                        <div className="font-medium text-white">{q.label}</div>
+                        <div className="font-medium text-slate-800">{q.label}</div>
                       </button>
                     ))}
                   </div>
@@ -1236,14 +1236,14 @@ export default function AIAssistantPage() {
 
           {/* 快捷提问栏 (对话进行中也显示) */}
           {messages.length > 0 && (
-            <div className="px-4 py-2 border-t border-white/10">
+            <div className="px-4 py-2 border-t border-slate-200/80 bg-white/38 backdrop-blur-sm">
               <div className="max-w-4xl mx-auto overflow-x-auto">
                 <div className="flex gap-2">
                   {activeQuickQuestions.map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
-                      className="px-3 py-1.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-full text-sm whitespace-nowrap transition-colors border border-white/10 text-slate-200 hover:text-white"
+                      className="px-3 py-1.5 bg-white/88 hover:bg-white rounded-full text-sm whitespace-nowrap transition-colors border border-slate-200 text-slate-700 hover:text-slate-900"
                     >
                       {q.label}
                     </button>
