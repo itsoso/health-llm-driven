@@ -748,22 +748,25 @@ export default function AIAssistantPage() {
   }, [chatMode, clearPendingAttachment]);
 
   return (
-    <div className="fixed inset-0 top-16 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex overflow-hidden">
+    <div
+      className="fixed inset-0 top-16 flex overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f3f6fb 55%, #eef2f7 100%)' }}
+    >
       {/* 历史对话侧栏 */}
       {showHistory && (
-        <div className="w-80 bg-slate-800/80 border-r border-purple-500/30 flex flex-col shadow-lg">
+        <div className="w-80 bg-white/78 border-r border-slate-200/80 flex flex-col shadow-[0_18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl">
           {/* 侧边栏顶部 - 新建对话按钮 + 收起按钮 */}
-          <div className="p-3 border-b border-purple-500/30 bg-slate-900/50 flex items-center gap-2">
+          <div className="p-3 border-b border-slate-200/80 bg-white/68 flex items-center gap-2">
             <button
               onClick={handleNewChat}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 transition-all text-white font-medium shadow-lg"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 transition-all text-white font-medium shadow-sm"
             >
               <span className="text-xl">+</span>
               <span>新建对话</span>
             </button>
             <button
               onClick={toggleHistory}
-              className="w-10 h-10 rounded-lg bg-slate-700/60 hover:bg-slate-600/80 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all flex-shrink-0"
+              className="w-10 h-10 rounded-lg bg-white/80 hover:bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-all flex-shrink-0"
               title="收起侧边栏"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -773,8 +776,8 @@ export default function AIAssistantPage() {
           </div>
 
           {/* 搜索框 */}
-          <div className="p-4 border-b border-purple-500/30 bg-slate-900/50">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-3">
+          <div className="p-4 border-b border-slate-200/80 bg-white/68">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-3">
               <span>💬</span>
               <span>对话记录</span>
             </h2>
@@ -787,19 +790,19 @@ export default function AIAssistantPage() {
                   setCurrentPage(1); // 搜索时重置到第一页
                 }}
                 placeholder="搜索对话..."
-                className="w-full px-3 py-2 pl-9 rounded-lg bg-slate-700/50 border border-white/10 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                className="w-full px-3 py-2 pl-9 rounded-lg bg-white/82 border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
             </div>
           </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">
+                <div className="p-8 text-center text-slate-500">
                   <div className="text-4xl mb-3">📝</div>
                   <div>暂无对话记录</div>
                 </div>
               ) : paginatedConversations.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">
+                <div className="p-8 text-center text-slate-500">
                   <div className="text-4xl mb-3">🔍</div>
                   <div>未找到匹配的对话</div>
                 </div>
@@ -807,32 +810,32 @@ export default function AIAssistantPage() {
                 paginatedConversations.map(conv => (
                   <div
                     key={conv.id}
-                    className={`group flex items-start gap-3 p-4 border-b border-white/5 hover:bg-purple-900/20 cursor-pointer transition-all ${
-                      conv.id === conversationId ? 'bg-purple-900/30 border-l-4 border-l-purple-500' : 'border-l-4 border-l-transparent'
+                    className={`group flex items-start gap-3 p-4 border-b border-slate-200/70 hover:bg-slate-100/70 cursor-pointer transition-all ${
+                      conv.id === conversationId ? 'bg-blue-50/80 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'
                     }`}
                     onClick={() => loadConversation(conv.id)}
                   >
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full border flex items-center justify-center text-sm ${
                       chatMode === 'assistant_openclaw'
-                        ? 'bg-cyan-600/30'
+                        ? 'bg-blue-50 border-blue-200'
                         : chatMode === 'openclaw'
-                          ? 'bg-blue-600/30'
-                          : 'bg-purple-600/30'
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-slate-100 border-slate-200'
                     }`}>
                       {chatMode === 'assistant_openclaw' ? (
-                        <span className="text-cyan-300">🦀</span>
+                        <span className="text-blue-600">🦀</span>
                       ) : chatMode === 'openclaw' ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
                       ) : '💬'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-white line-clamp-2 mb-1 leading-snug">
+                      <div className="font-medium text-slate-900 line-clamp-2 mb-1 leading-snug">
                         {conv.title}
                       </div>
                       {conv.last_message && (
-                        <div className="text-xs text-slate-400 line-clamp-1">
+                        <div className="text-xs text-slate-500 line-clamp-1">
                           {conv.last_message}
                         </div>
                       )}
@@ -844,7 +847,7 @@ export default function AIAssistantPage() {
                             e.stopPropagation();
                             handleShareConversation(conv.id);
                           }}
-                          className="text-slate-400 hover:text-blue-400 transition-colors"
+                          className="text-slate-400 hover:text-blue-600 transition-colors"
                           title="分享对话"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -857,7 +860,7 @@ export default function AIAssistantPage() {
                           e.stopPropagation();
                           handleDeleteConversation(conv.id);
                         }}
-                        className="text-slate-400 hover:text-red-400 text-xl transition-colors"
+                        className="text-slate-400 hover:text-red-500 text-xl transition-colors"
                         title="删除对话"
                       >
                         ×
@@ -870,20 +873,20 @@ export default function AIAssistantPage() {
 
             {/* 分页控件 */}
             {filteredConversations.length > itemsPerPage && (
-              <div className="p-3 border-t border-purple-500/30 bg-slate-900/50">
+              <div className="p-3 border-t border-slate-200/80 bg-white/68">
                 <div className="flex items-center justify-between text-sm">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
                     className={`px-3 py-1.5 rounded-lg transition-colors ${
                       currentPage === 1
-                        ? 'text-slate-500 cursor-not-allowed'
-                        : 'text-purple-300 hover:bg-purple-600/20'
+                        ? 'text-slate-400 cursor-not-allowed'
+                        : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     ← 上一页
                   </button>
-                  <span className="text-slate-300">
+                  <span className="text-slate-500">
                     {currentPage} / {totalPages}
                   </span>
                   <button
@@ -891,8 +894,8 @@ export default function AIAssistantPage() {
                     disabled={currentPage === totalPages}
                     className={`px-3 py-1.5 rounded-lg transition-colors ${
                       currentPage === totalPages
-                        ? 'text-slate-500 cursor-not-allowed'
-                        : 'text-purple-300 hover:bg-purple-600/20'
+                        ? 'text-slate-400 cursor-not-allowed'
+                        : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     下一页 →
@@ -1125,12 +1128,15 @@ export default function AIAssistantPage() {
                 <div
                   className={`max-w-2xl rounded-2xl px-4 py-3 ${
                     msg.role === 'user'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-slate-700/50 text-white border border-white/10'
+                      ? 'text-white'
+                      : 'border border-slate-200 shadow-sm'
                   }`}
+                  style={msg.role === 'user'
+                    ? { background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)' }
+                    : { background: 'rgba(255,255,255,0.92)' }}
                 >
   {msg.role === 'assistant' ? (
-                    <div className="text-white text-sm leading-relaxed">
+                    <div className="text-[#0f172a] text-sm leading-relaxed">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
@@ -1138,40 +1144,40 @@ export default function AIAssistantPage() {
                           ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1.5">{children}</ul>,
                           ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1.5">{children}</ol>,
                           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                          h1: ({ children }) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0 text-purple-300">{children}</h1>,
-                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-4 first:mt-0 text-purple-300">{children}</h2>,
-                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0 text-purple-300">{children}</h3>,
-                          strong: ({ children }) => <strong className="font-bold text-purple-200">{children}</strong>,
-                          em: ({ children }) => <em className="italic text-slate-300">{children}</em>,
+                          h1: ({ children }) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0 text-slate-900">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-4 first:mt-0 text-slate-900">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0 text-slate-900">{children}</h3>,
+                          strong: ({ children }) => <strong className="font-bold text-slate-900">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-slate-600">{children}</em>,
                           code: ({ node, ...props }: any) => {
                             const inline = !props.className?.includes('language-');
                             return inline ? (
-                              <code className="px-1.5 py-0.5 bg-slate-800 rounded text-purple-300 font-mono text-xs" {...props} />
+                              <code className="px-1.5 py-0.5 bg-slate-100 rounded text-blue-700 font-mono text-xs" {...props} />
                             ) : (
-                              <code className="block px-4 py-3 bg-slate-800 rounded-lg overflow-x-auto font-mono text-xs my-2" {...props} />
+                              <code className="block px-4 py-3 bg-slate-900 rounded-lg overflow-x-auto font-mono text-xs my-2 text-slate-100" {...props} />
                             );
                           },
-                          pre: ({ children }) => <pre className="bg-slate-800 rounded-lg p-4 overflow-x-auto my-3">{children}</pre>,
+                          pre: ({ children }) => <pre className="bg-slate-900 rounded-lg p-4 overflow-x-auto my-3 text-slate-100">{children}</pre>,
                           blockquote: ({ children }) => (
-                            <blockquote className="border-l-4 border-purple-500 pl-4 py-2 my-3 italic text-slate-300 bg-slate-800/30 rounded-r">
+                            <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-3 italic text-slate-600 bg-slate-50 rounded-r-lg">
                               {children}
                             </blockquote>
                           ),
                           table: ({ children }) => (
                             <div className="overflow-x-auto my-3">
-                              <table className="min-w-full border-collapse border border-slate-600 rounded-lg overflow-hidden">
+                              <table className="min-w-full border-collapse border border-slate-200 rounded-lg overflow-hidden">
                                 {children}
                               </table>
                             </div>
                           ),
-                          thead: ({ children }) => <thead className="bg-slate-700">{children}</thead>,
-                          tbody: ({ children }) => <tbody className="bg-slate-800/30">{children}</tbody>,
-                          tr: ({ children }) => <tr className="border-b border-slate-600 last:border-0">{children}</tr>,
-                          th: ({ children }) => <th className="border border-slate-600 px-3 py-2 text-left font-semibold text-purple-300">{children}</th>,
-                          td: ({ children }) => <td className="border border-slate-600 px-3 py-2">{children}</td>,
-                          hr: () => <hr className="my-4 border-slate-600" />,
+                          thead: ({ children }) => <thead className="bg-slate-100">{children}</thead>,
+                          tbody: ({ children }) => <tbody className="bg-white">{children}</tbody>,
+                          tr: ({ children }) => <tr className="border-b border-slate-200 last:border-0">{children}</tr>,
+                          th: ({ children }) => <th className="border border-slate-200 px-3 py-2 text-left font-semibold text-slate-900">{children}</th>,
+                          td: ({ children }) => <td className="border border-slate-200 px-3 py-2">{children}</td>,
+                          hr: () => <hr className="my-4 border-slate-200" />,
                           a: ({ children, href }) => (
-                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline">
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-500 underline">
                               {children}
                             </a>
                           ),
@@ -1211,7 +1217,10 @@ export default function AIAssistantPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
                   </svg>
                 </div>
-                <div className="bg-slate-700/50 rounded-2xl px-4 py-3 border border-white/10">
+                <div
+                  className="rounded-2xl px-4 py-3 border border-slate-200 shadow-sm"
+                  style={{ background: 'rgba(255,255,255,0.92)' }}
+                >
                   <div className="flex gap-2">
                     <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
                     <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
@@ -1246,18 +1255,18 @@ export default function AIAssistantPage() {
 
           {/* 附件预览 */}
           {(imagePreview || pendingFile) && (
-            <div className="px-4 py-2 bg-slate-800/50 border-t border-white/10">
+            <div className="px-4 py-2 bg-white/56 border-t border-slate-200/80 backdrop-blur-sm">
               <div className="max-w-4xl mx-auto flex items-center gap-3">
                 <div className="relative group">
                   {imagePreview ? (
                     <img
                       src={imagePreview}
                       alt="待发送图片"
-                      className="w-16 h-16 object-cover rounded-lg border border-white/20"
+                      className="w-16 h-16 object-cover rounded-lg border border-slate-200"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-lg border border-white/20 bg-slate-700 flex flex-col items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <div className="w-16 h-16 rounded-lg border border-slate-200 bg-white flex flex-col items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                       </svg>
                       <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[56px]">{pendingFile?.name.split('.').pop()}</span>
@@ -1270,7 +1279,7 @@ export default function AIAssistantPage() {
                     x
                   </button>
                 </div>
-                <span className="text-sm text-slate-400">
+                <span className="text-sm text-slate-600">
                   {imagePreview ? '图片已就绪' : pendingFile?.name} — 输入描述后发送（或直接发送）
                 </span>
               </div>
@@ -1278,7 +1287,7 @@ export default function AIAssistantPage() {
           )}
 
           {/* 输入区域 */}
-          <div className="p-4 bg-slate-800/50 border-t border-white/10">
+          <div className="p-4 bg-white/62 border-t border-slate-200/80 backdrop-blur-xl">
             <div className="max-w-4xl mx-auto flex gap-2 items-center">
               {/* 上传按钮 */}
               <input
@@ -1293,10 +1302,10 @@ export default function AIAssistantPage() {
                 disabled={imageUploading || assistantModeLocked || chatMode === 'assistant_openclaw'}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                   imageUploading
-                    ? 'bg-purple-600/50 animate-pulse'
+                    ? 'bg-blue-500/50 text-white animate-pulse'
                     : (assistantModeLocked || chatMode === 'assistant_openclaw')
                       ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
-                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                      : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-900'
                 }`}
                 title="上传图片或文件"
               >
@@ -1313,7 +1322,7 @@ export default function AIAssistantPage() {
                     ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
                     : isRecording
                     ? 'bg-red-500 text-white animate-pulse'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                    : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-900'
                 }`}
                 title={isRecording ? '停止录音' : '语音输入'}
               >
@@ -1341,7 +1350,7 @@ export default function AIAssistantPage() {
                     : (pendingImage || pendingFile)
                       ? '输入描述或问题（可直接发送）'
                       : '有什么可以帮你的...'}
-                className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isRecording || assistantModeLocked}
               />
               {/* 发送按钮 */}
@@ -1350,8 +1359,8 @@ export default function AIAssistantPage() {
                 disabled={assistantModeLocked || (!inputText.trim() && !pendingImage && !pendingFile)}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                   (!assistantModeLocked && (inputText.trim() || pendingImage || pendingFile))
-                    ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 }`}
               >
                 <span className="text-xl">↑</span>
