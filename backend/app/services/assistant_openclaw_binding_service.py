@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.assistant_openclaw import AssistantOpenClawBinding
+from app.services.assistant_openclaw_gateway_client import (
+    AssistantOpenClawGatewayAuthError,
+    AssistantOpenClawGatewayClient,
+    AssistantOpenClawGatewayError,
+)
 
 
 class AssistantOpenClawBindingService:
@@ -199,35 +204,30 @@ class AssistantOpenClawBindingService:
 
     async def _probe_gateway(self, gateway_url: str, gateway_token: str) -> dict:
         start = time.perf_counter()
-        url = f"{gateway_url.rstrip('/')}/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {gateway_token}"}
-        payload = {
-            "model": "default",
-            "messages": [{"role": "user", "content": "ping"}],
-            "stream": False,
-            "user": "assistant-openclaw-binding-test",
-        }
+        client = AssistantOpenClawGatewayClient(gateway_url, gateway_token)
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=3.0)) as client:
-                response = await client.post(url, json=payload, headers=headers)
-            latency_ms = int((time.perf_counter() - start) * 1000)
-
-            if response.status_code in {401, 403}:
+            status_code, payload = await client.check_health()
+            if status_code != 200:
                 return {
                     "reachable": True,
                     "authenticated": False,
                     "status": "invalid",
-                    "latency_ms": latency_ms,
-                    "message": "Token 无效或无权访问该 OpenClaw 实例",
+                    "latency_ms": int((time.perf_counter() - start) * 1000),
+                    "message": f"OpenClaw 返回异常状态: {status_code}",
                 }
-            if response.status_code >= 400:
+
+            async with client:
+                pass
+
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            if not isinstance(payload, dict) or payload.get("ok") is not True:
                 return {
                     "reachable": True,
-                    "authenticated": False,
-                    "status": "invalid",
+                    "authenticated": True,
+                    "status": "active",
                     "latency_ms": latency_ms,
-                    "message": f"OpenClaw 返回异常状态: {response.status_code}",
+                    "message": "连接成功",
                 }
 
             return {
@@ -236,6 +236,22 @@ class AssistantOpenClawBindingService:
                 "status": "active",
                 "latency_ms": latency_ms,
                 "message": "连接成功",
+            }
+        except AssistantOpenClawGatewayAuthError:
+            return {
+                "reachable": True,
+                "authenticated": False,
+                "status": "invalid",
+                "latency_ms": int((time.perf_counter() - start) * 1000),
+                "message": "Gateway 鉴权失败，请检查 OpenClaw Token",
+            }
+        except AssistantOpenClawGatewayError as exc:
+            return {
+                "reachable": True,
+                "authenticated": False,
+                "status": "invalid",
+                "latency_ms": int((time.perf_counter() - start) * 1000),
+                "message": f"Gateway 调用失败: {exc}",
             }
         except httpx.ConnectTimeout:
             return {
