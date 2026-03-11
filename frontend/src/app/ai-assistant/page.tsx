@@ -2,7 +2,19 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, chatApi, openclawApi, sharedApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import {
+  api,
+  assistantOpenclawApi,
+  assistantOpenclawBindingApi,
+  AssistantOpenClawBindingStatus,
+  chatApi,
+  openclawApi,
+  sharedApi,
+  ChatMessage,
+  Conversation,
+  DietSavedData,
+  ActivitySavedData,
+} from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
@@ -31,6 +43,15 @@ const PROXY_QUICK_QUESTIONS = [
   { label: '已装技能', text: '列出已安装技能' },
 ];
 
+const ASSISTANT_OPENCLAW_QUICK_QUESTIONS = [
+  { label: '最近运动', text: '帮我看一下最近7天的运动数据' },
+  { label: '记录饮水', text: '帮我记录喝水250ml' },
+  { label: '健康趋势', text: '结合我最近的数据分析健康趋势' },
+  { label: '睡眠分析', text: '分析一下我最近的睡眠情况' },
+];
+
+type ChatMode = 'health' | 'openclaw' | 'assistant_openclaw';
+
 export default function AIAssistantPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -52,12 +73,21 @@ export default function AIAssistantPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
-  const [chatMode, setChatMode] = useState<'health' | 'openclaw'>('health');
+  const [chatMode, setChatMode] = useState<ChatMode>('health');
+  const [assistantBinding, setAssistantBinding] = useState<AssistantOpenClawBindingStatus | null>(null);
+  const [assistantBindingLoading, setAssistantBindingLoading] = useState(false);
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  const isAssistantOpenClawActive = !!(
+    assistantBinding?.configured &&
+    assistantBinding.enabled &&
+    assistantBinding.status === 'active'
+  );
+  const assistantModeLocked = chatMode === 'assistant_openclaw' && !isAssistantOpenClawActive;
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -68,9 +98,31 @@ export default function AIAssistantPage() {
     scrollToBottom();
   }, [messages]);
 
+  const loadAssistantBinding = useCallback(async () => {
+    try {
+      setAssistantBindingLoading(true);
+      const response = await assistantOpenclawBindingApi.getMe();
+      setAssistantBinding(response.data);
+    } catch (e) {
+      console.error('加载智能助理 OpenClaw 绑定失败:', e);
+      setAssistantBinding(null);
+    } finally {
+      setAssistantBindingLoading(false);
+    }
+  }, []);
+
   // 加载对话列表
   const loadConversations = useCallback(async () => {
     try {
+      if (chatMode === 'assistant_openclaw') {
+        if (!isAssistantOpenClawActive) {
+          setConversations([]);
+          return;
+        }
+        const response = await assistantOpenclawApi.getConversations();
+        setConversations(response.data || []);
+        return;
+      }
       const response = chatMode === 'openclaw'
         ? await openclawApi.getConversations()
         : await chatApi.getConversations();
@@ -78,23 +130,36 @@ export default function AIAssistantPage() {
     } catch (e) {
       console.error('加载对话列表失败:', e);
     }
-  }, [chatMode]);
+  }, [chatMode, isAssistantOpenClawActive]);
 
   // 加载指定对话的消息
   const loadConversation = useCallback(async (convId: number, convMode?: string) => {
     try {
-      const isOpenClaw = convMode === 'openclaw' || chatMode === 'openclaw';
+      const mode = (convMode as ChatMode | undefined) || chatMode;
+      if (mode === 'assistant_openclaw') {
+        if (!isAssistantOpenClawActive) {
+          showToast('请先前往设置页绑定并测试你的 OpenClaw', 'warning');
+          return;
+        }
+        const response = await assistantOpenclawApi.getConversation(convId);
+        setMessages(response.data.messages || []);
+        setConversationId(convId);
+        if (convMode) setChatMode(mode);
+        return;
+      }
+
+      const isOpenClaw = mode === 'openclaw';
       const response = isOpenClaw
         ? await openclawApi.getConversation(convId)
         : await chatApi.getConversation(convId);
       setMessages(response.data.messages || []);
       setConversationId(convId);
-      if (convMode) setChatMode(convMode as 'health' | 'openclaw');
+      if (convMode) setChatMode(mode);
     } catch (e) {
       console.error('加载对话失败:', e);
       showToast('加载失败', 'error');
     }
-  }, [chatMode]);
+  }, [chatMode, isAssistantOpenClawActive, showToast]);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -102,8 +167,9 @@ export default function AIAssistantPage() {
       router.push('/login');
       return;
     }
+    loadAssistantBinding();
     loadConversations();
-  }, [loadConversations, router]);
+  }, [loadAssistantBinding, loadConversations, router]);
 
   // 检测是否是运动完成意图
   const isPostWorkoutMessage = (msg: string): boolean => {
@@ -170,8 +236,17 @@ export default function AIAssistantPage() {
 
   // 发送消息（流式优先，降级到非流式）
   const handleSend = async (text?: string, imageBase64?: string, imageType?: string) => {
+    if (chatMode === 'assistant_openclaw' && !isAssistantOpenClawActive) {
+      showToast('请先在设置页绑定并测试你的 OpenClaw', 'warning');
+      router.push('/settings#assistant-openclaw');
+      return;
+    }
     const msg = (text || inputText).trim();
     const hasAttachment = pendingImage || pendingFile;
+    if (chatMode === 'assistant_openclaw' && hasAttachment) {
+      showToast('我的 OpenClaw 暂不支持图片或文件附件', 'warning');
+      return;
+    }
     if (!msg && !hasAttachment) return;
     // 如果有待发送图片但未传入参数，使用 pendingImage
     const finalImageBase64 = imageBase64 || pendingImage?.base64;
@@ -222,9 +297,11 @@ export default function AIAssistantPage() {
       let firstToken = true;
       // 每次调用独立的缓冲区，支持并行流
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
-      const streamIterator = chatMode === 'openclaw'
-        ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
-        : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
+      const streamIterator = chatMode === 'assistant_openclaw'
+        ? assistantOpenclawApi.streamMessage(finalMsg, conversationId)
+        : chatMode === 'openclaw'
+          ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
+          : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
       for await (const event of streamIterator) {
         if (event.event === 'token') {
           if (firstToken) {
@@ -362,6 +439,16 @@ export default function AIAssistantPage() {
       console.warn('流式请求失败，降级到非流式模式:', e);
       // 先移除空的 AI 占位消息
       setMessages(prev => prev.filter(m => m.id !== aiMsgId));
+      if (chatMode === 'assistant_openclaw') {
+        const errorMsg: ChatMessage = {
+          id: Date.now() + 3,
+          role: 'assistant',
+          content: '你的 OpenClaw 暂时不可用，请检查绑定状态或稍后重试。',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, errorMsg]);
+        return;
+      }
       try {
         const response = await chatApi.sendMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
         const result = response.data;
@@ -401,7 +488,11 @@ export default function AIAssistantPage() {
   // 删除对话
   const handleDeleteConversation = async (convId: number) => {
     try {
-      const deleteApi = chatMode === 'openclaw' ? openclawApi : chatApi;
+      const deleteApi = chatMode === 'assistant_openclaw'
+        ? assistantOpenclawApi
+        : chatMode === 'openclaw'
+          ? openclawApi
+          : chatApi;
       await deleteApi.deleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
       if (conversationId === convId) {
@@ -415,6 +506,10 @@ export default function AIAssistantPage() {
 
   // 分享对话
   const handleShareConversation = async (convId: number) => {
+    if (chatMode === 'assistant_openclaw') {
+      showToast('我的 OpenClaw 对话暂不支持分享', 'warning');
+      return;
+    }
     try {
       const sourceType = chatMode === 'openclaw' ? 'openclaw' : 'health';
       const res = await sharedApi.createShare(convId, sourceType);
@@ -451,6 +546,11 @@ export default function AIAssistantPage() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+  const activeQuickQuestions = chatMode === 'assistant_openclaw'
+    ? ASSISTANT_OPENCLAW_QUICK_QUESTIONS
+    : chatMode === 'openclaw'
+      ? PROXY_QUICK_QUESTIONS
+      : QUICK_QUESTIONS;
 
   // 按 Enter 发送消息（忽略中文输入法组合阶段）
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -524,6 +624,11 @@ export default function AIAssistantPage() {
 
   // 文件/图片上传处理
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (chatMode === 'assistant_openclaw') {
+      showToast('我的 OpenClaw 暂不支持图片或文件附件', 'warning');
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -554,6 +659,14 @@ export default function AIAssistantPage() {
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
+    if (chatMode === 'assistant_openclaw') {
+      const items = e.clipboardData?.items;
+      if (items && Array.from(items).some(item => item.type.startsWith('image/'))) {
+        e.preventDefault();
+        showToast('我的 OpenClaw 暂不支持图片粘贴', 'warning');
+      }
+      return;
+    }
     const items = e.clipboardData?.items;
     if (!items) return;
     for (let i = 0; i < items.length; i++) {
@@ -577,11 +690,15 @@ export default function AIAssistantPage() {
     }
   };
 
-  const clearPendingAttachment = () => {
+  const clearPendingAttachment = useCallback(() => {
     setImagePreview(null);
     setPendingImage(null);
     setPendingFile(null);
-  };
+  }, []);
+
+  useEffect(() => {
+    clearPendingAttachment();
+  }, [chatMode, clearPendingAttachment]);
 
   return (
     <div className="fixed inset-0 top-16 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex overflow-hidden">
@@ -649,9 +766,15 @@ export default function AIAssistantPage() {
                     onClick={() => loadConversation(conv.id)}
                   >
                     <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                      chatMode === 'openclaw' ? 'bg-blue-600/30' : 'bg-purple-600/30'
+                      chatMode === 'assistant_openclaw'
+                        ? 'bg-cyan-600/30'
+                        : chatMode === 'openclaw'
+                          ? 'bg-blue-600/30'
+                          : 'bg-purple-600/30'
                     }`}>
-                      {chatMode === 'openclaw' ? (
+                      {chatMode === 'assistant_openclaw' ? (
+                        <span className="text-cyan-300">🦀</span>
+                      ) : chatMode === 'openclaw' ? (
                         <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
@@ -668,18 +791,20 @@ export default function AIAssistantPage() {
                       )}
                     </div>
                     <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 ml-2 transition-opacity">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleShareConversation(conv.id);
-                        }}
-                        className="text-slate-400 hover:text-blue-400 transition-colors"
-                        title="分享对话"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                        </svg>
-                      </button>
+                      {chatMode !== 'assistant_openclaw' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleShareConversation(conv.id);
+                          }}
+                          className="text-slate-400 hover:text-blue-400 transition-colors"
+                          title="分享对话"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                          </svg>
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -746,7 +871,7 @@ export default function AIAssistantPage() {
                 </button>
               )}
             </div>
-            {/* 模式切换 - 仅管理员可见 OpenClaw */}
+            {/* 模式切换 */}
             <div className="flex rounded-xl bg-slate-700/50 border border-white/10 p-0.5">
               <button
                 onClick={() => { if (chatMode !== 'health') { setChatMode('health'); setMessages([]); setConversationId(undefined); } }}
@@ -770,9 +895,32 @@ export default function AIAssistantPage() {
                   OpenClaw
                 </button>
               )}
+              <button
+                onClick={() => {
+                  if (chatMode !== 'assistant_openclaw') {
+                    setChatMode('assistant_openclaw');
+                    setMessages([]);
+                    setConversationId(undefined);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  chatMode === 'assistant_openclaw'
+                    ? 'bg-cyan-600 text-white shadow-lg'
+                    : isAssistantOpenClawActive
+                      ? 'text-slate-300 hover:text-white'
+                      : 'text-slate-500 hover:text-slate-300'
+                }`}
+                title={assistantBindingLoading
+                  ? '正在加载绑定状态'
+                  : isAssistantOpenClawActive
+                    ? '使用你绑定的 OpenClaw 实例'
+                    : '请先前往设置页绑定你的 OpenClaw'}
+              >
+                我的 OpenClaw
+              </button>
             </div>
             <div className="w-9 flex justify-end">
-              {conversationId && messages.length > 0 && (
+              {conversationId && messages.length > 0 && chatMode !== 'assistant_openclaw' && (
                 <button
                   onClick={() => handleShareConversation(conversationId)}
                   className="w-8 h-8 rounded-lg bg-slate-700/60 hover:bg-blue-600/40 border border-white/10 flex items-center justify-center text-slate-400 hover:text-blue-300 transition-all"
@@ -846,30 +994,59 @@ export default function AIAssistantPage() {
             <div className="max-w-4xl mx-auto space-y-4">
             {messages.length === 0 && !loading && (
               <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
-                <div className="text-6xl">{chatMode === 'openclaw' ? (
+                <div className="text-6xl">{chatMode === 'assistant_openclaw' ? (
+                  '🦀'
+                ) : chatMode === 'openclaw' ? (
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 ) : '💬'}</div>
                 <h2 className="text-2xl font-bold text-white">
-                  {chatMode === 'openclaw' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
+                  {chatMode === 'assistant_openclaw'
+                    ? '我的 OpenClaw'
+                    : chatMode === 'openclaw'
+                      ? 'OpenClaw 对话模式'
+                      : '你好，我是你的智能助理'}
                 </h2>
                 <p className="text-slate-400">
-                  {chatMode === 'openclaw'
+                  {chatMode === 'assistant_openclaw'
+                    ? '在这里通过你自己绑定的 OpenClaw 实例完成对话、查询和记录'
+                    : chatMode === 'openclaw'
                     ? '直接与 OpenClaw 对话，支持健康数据查询、记录、分析，也可安装/管理技能'
                     : '我了解你的健康数据，可以为你提供个性化的健康建议'}
                 </p>
-                <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">
-                  {(chatMode === 'openclaw' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
+                {assistantModeLocked ? (
+                  <div className="max-w-xl mx-auto mt-8 rounded-2xl border border-cyan-500/20 bg-slate-800/60 p-6 text-left">
+                    <h3 className="text-lg font-semibold text-white mb-2">先绑定你的 OpenClaw 实例</h3>
+                    <p className="text-slate-300 text-sm leading-6">
+                      到设置页填写地址和 Token，并完成连接测试后，这个模式才会启用。
+                    </p>
+                    <div className="mt-4 space-y-2 text-sm text-slate-400">
+                      <div>当前状态：{assistantBindingLoading ? '加载中...' : assistantBinding?.status || 'unconfigured'}</div>
+                      {assistantBinding?.last_error && (
+                        <div className="text-amber-300">最近错误：{assistantBinding.last_error}</div>
+                      )}
+                    </div>
                     <button
-                      key={idx}
-                      onClick={() => handleSend(q.text)}
-                      className="px-4 py-3 bg-slate-700/50 hover:bg-slate-600/50 rounded-xl text-left transition-colors border border-white/10"
+                      onClick={() => router.push('/settings#assistant-openclaw')}
+                      className="mt-5 inline-flex items-center px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
                     >
-                      <div className="font-medium text-white">{q.label}</div>
+                      前往设置
                     </button>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">
+                    {activeQuickQuestions.map((q, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(q.text)}
+                        className="px-4 py-3 bg-slate-700/50 hover:bg-slate-600/50 rounded-xl text-left transition-colors border border-white/10"
+                      >
+                        <div className="font-medium text-white">{q.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -993,7 +1170,7 @@ export default function AIAssistantPage() {
             <div className="px-4 py-2 border-t border-white/10">
               <div className="max-w-4xl mx-auto overflow-x-auto">
                 <div className="flex gap-2">
-                  {(chatMode === 'openclaw' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
+                  {activeQuickQuestions.map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(q.text)}
@@ -1053,9 +1230,13 @@ export default function AIAssistantPage() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={imageUploading}
+                disabled={imageUploading || assistantModeLocked || chatMode === 'assistant_openclaw'}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  imageUploading ? 'bg-purple-600/50 animate-pulse' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
+                  imageUploading
+                    ? 'bg-purple-600/50 animate-pulse'
+                    : (assistantModeLocked || chatMode === 'assistant_openclaw')
+                      ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
                 }`}
                 title="上传图片或文件"
               >
@@ -1066,8 +1247,11 @@ export default function AIAssistantPage() {
               {/* 语音按钮 */}
               <button
                 onClick={handleVoiceToggle}
+                disabled={assistantModeLocked}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  isRecording
+                  assistantModeLocked
+                    ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                    : isRecording
                     ? 'bg-red-500 text-white animate-pulse'
                     : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'
                 }`}
@@ -1090,16 +1274,22 @@ export default function AIAssistantPage() {
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '有什么可以帮你的...'}
+                placeholder={assistantModeLocked
+                  ? '请先在设置页绑定并测试你的 OpenClaw'
+                  : isRecording
+                    ? '正在录音...'
+                    : (pendingImage || pendingFile)
+                      ? '输入描述或问题（可直接发送）'
+                      : '有什么可以帮你的...'}
                 className="flex-1 px-4 py-3 rounded-xl bg-slate-700 border border-white/10 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                disabled={isRecording}
+                disabled={isRecording || assistantModeLocked}
               />
               {/* 发送按钮 */}
               <button
                 onClick={() => handleSend()}
-                disabled={!inputText.trim() && !pendingImage && !pendingFile}
+                disabled={assistantModeLocked || (!inputText.trim() && !pendingImage && !pendingFile)}
                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  (inputText.trim() || pendingImage || pendingFile)
+                  (!assistantModeLocked && (inputText.trim() || pendingImage || pendingFile))
                     ? 'bg-purple-600 hover:bg-purple-500 text-white'
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 }`}

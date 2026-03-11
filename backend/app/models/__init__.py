@@ -84,6 +84,12 @@ from app.models.achievement import BadgeDefinition, UserBadge
 from app.models.health_trend import HealthTrendReport
 # OpenClaw Channel
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
+# 智能助理专用 OpenClaw
+from app.models.assistant_openclaw import (
+    AssistantOpenClawBinding,
+    AssistantOpenClawConversation,
+    AssistantOpenClawMessage,
+)
 # 对话记忆
 from app.models.conversation_memory import ConversationMemory
 # 对话分享
@@ -203,9 +209,12 @@ __all__ = [
     # OpenClaw Channel
     "OpenClawConversation",
     "OpenClawMessage",
+    # 智能助理专用 OpenClaw
+    "AssistantOpenClawBinding",
+    "AssistantOpenClawConversation",
+    "AssistantOpenClawMessage",
     # 对话记忆
     "ConversationMemory",
     # 对话分享
     "SharedConversation",
 ]
-

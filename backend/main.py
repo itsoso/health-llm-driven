@@ -136,7 +136,11 @@ app.add_middleware(
 REQUEST_TIMEOUT = 120  # 普通请求超时 120 秒
 SLOW_REQUEST_THRESHOLD = 10  # 超过 10 秒记录慢请求警告
 # SSE/流式端点不受超时限制
-STREAMING_PATHS = {"/api/v1/openclaw/stream", "/api/v1/chat/stream"}
+STREAMING_PATHS = {
+    "/api/v1/openclaw/stream",
+    "/api/v1/chat/stream",
+    "/api/v1/assistant-openclaw/stream",
+}
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

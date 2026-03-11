@@ -998,6 +998,32 @@ export interface ConversationDetail {
   mode?: string;
 }
 
+export interface AssistantOpenClawBindingStatus {
+  configured: boolean;
+  enabled: boolean;
+  display_name: string;
+  gateway_url: string | null;
+  gateway_token_last4: string | null;
+  status: 'unconfigured' | 'active' | 'invalid' | 'disabled';
+  last_tested_at: string | null;
+  last_error: string | null;
+}
+
+export interface AssistantOpenClawBindingUpdateRequest {
+  display_name: string;
+  gateway_url: string;
+  gateway_token?: string;
+  enabled: boolean;
+}
+
+export interface AssistantOpenClawBindingTestResult {
+  reachable: boolean;
+  authenticated: boolean;
+  status: 'active' | 'invalid';
+  latency_ms: number | null;
+  message: string;
+}
+
 export interface DietSavedData {
   record_id: number;
   food_items: string;
@@ -1201,6 +1227,79 @@ export const openclawApi = {
 
     if (!response.ok) {
       throw new Error(`OpenClaw stream request failed: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (reader) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            yield data;
+          } catch {
+            // skip malformed JSON
+          }
+        }
+      }
+    }
+  },
+};
+
+export const assistantOpenclawBindingApi = {
+  getMe: () =>
+    api.get<AssistantOpenClawBindingStatus>('/assistant-openclaw/binding/me'),
+
+  update: (data: AssistantOpenClawBindingUpdateRequest) =>
+    api.put<{
+      ok: boolean;
+      configured: boolean;
+      enabled: boolean;
+      status: string;
+      gateway_token_last4: string;
+      message: string;
+    }>('/assistant-openclaw/binding/me', data),
+
+  test: (data?: { gateway_url?: string; gateway_token?: string }) =>
+    api.post<AssistantOpenClawBindingTestResult>('/assistant-openclaw/binding/me/test', data || {}),
+
+  remove: () =>
+    api.delete<{ ok: boolean }>('/assistant-openclaw/binding/me'),
+};
+
+export const assistantOpenclawApi = {
+  getConversations: (limit: number = 20) =>
+    api.get<Conversation[]>(`/assistant-openclaw/conversations?limit=${limit}`),
+
+  getConversation: (conversationId: number) =>
+    api.get<ConversationDetail>(`/assistant-openclaw/conversations/${conversationId}`),
+
+  deleteConversation: (conversationId: number) =>
+    api.delete(`/assistant-openclaw/conversations/${conversationId}`),
+
+  streamMessage: async function* (message: string, conversationId?: number) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(`${API_BASE_URL}/assistant-openclaw/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Assistant OpenClaw stream request failed: ${response.status}`);
     }
 
     const reader = response.body?.getReader();

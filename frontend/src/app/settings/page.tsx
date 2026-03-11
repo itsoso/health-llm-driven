@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { deviceApi, withingsApi } from '@/services/api';
+import {
+  assistantOpenclawBindingApi,
+  AssistantOpenClawBindingStatus,
+  deviceApi,
+  withingsApi,
+} from '@/services/api';
 import { formatDateTime } from '@/utils/timezone';
 
 function extractErrorMsg(error: any, fallback: string): string {
@@ -31,6 +36,7 @@ function SettingsContent() {
   const { user, token, isAuthenticated, isLoading: authLoading, logout, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const garminSectionRef = useRef<HTMLDivElement>(null);
+  const assistantOpenclawSectionRef = useRef<HTMLDivElement>(null);
 
   const [garminForm, setGarminForm] = useState({
     garmin_email: '',
@@ -42,6 +48,13 @@ function SettingsContent() {
   const [syncDays, setSyncDays] = useState(1);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [highlightGarmin, setHighlightGarmin] = useState(false);
+  const [highlightAssistantOpenClaw, setHighlightAssistantOpenClaw] = useState(false);
+  const [assistantOpenclawForm, setAssistantOpenclawForm] = useState({
+    display_name: '我的 OpenClaw',
+    gateway_url: 'http://127.0.0.1:28789',
+    gateway_token: '',
+    enabled: false,
+  });
   
   // MFA 两步验证状态
   const [showMFA, setShowMFA] = useState(false);
@@ -158,6 +171,15 @@ function SettingsContent() {
     enabled: !!token,
   });
 
+  const { data: assistantBinding, isLoading: assistantBindingLoading, refetch: refetchAssistantBinding } = useQuery({
+    queryKey: ['assistant-openclaw-binding'],
+    queryFn: async () => {
+      const res = await assistantOpenclawBindingApi.getMe();
+      return res.data as AssistantOpenClawBindingStatus;
+    },
+    enabled: !!token,
+  });
+
   // 获取 Apple Watch 设备信息
   const { data: appleDevice, isLoading: appleLoading, refetch: refetchApple } = useQuery({
     queryKey: ['apple-device'],
@@ -215,6 +237,85 @@ function SettingsContent() {
     },
     onError: (error: any) => {
       setMessage({ type: 'error', text: extractErrorMsg(error, '同步失败') });
+    },
+  });
+
+  useEffect(() => {
+    if (!assistantBinding) return;
+    setAssistantOpenclawForm(prev => ({
+      ...prev,
+      display_name: assistantBinding.display_name || '我的 OpenClaw',
+      gateway_url: assistantBinding.gateway_url || 'http://127.0.0.1:28789',
+      gateway_token: '',
+      enabled: assistantBinding.enabled,
+    }));
+  }, [assistantBinding]);
+
+  const saveAssistantOpenclawMutation = useMutation({
+    mutationFn: async () => {
+      const payload: {
+        display_name: string;
+        gateway_url: string;
+        enabled: boolean;
+        gateway_token?: string;
+      } = {
+        display_name: assistantOpenclawForm.display_name.trim() || '我的 OpenClaw',
+        gateway_url: assistantOpenclawForm.gateway_url.trim(),
+        enabled: assistantOpenclawForm.enabled,
+      };
+      if (assistantOpenclawForm.gateway_token.trim()) {
+        payload.gateway_token = assistantOpenclawForm.gateway_token.trim();
+      }
+      return assistantOpenclawBindingApi.update(payload);
+    },
+    onSuccess: async (res) => {
+      setMessage({ type: 'success', text: res.data.message || 'OpenClaw 绑定已保存' });
+      setAssistantOpenclawForm(prev => ({ ...prev, gateway_token: '' }));
+      await refetchAssistantBinding();
+    },
+    onError: (error: any) => {
+      setMessage({ type: 'error', text: extractErrorMsg(error, '保存 OpenClaw 绑定失败') });
+    },
+  });
+
+  const testAssistantOpenclawMutation = useMutation({
+    mutationFn: async () => {
+      const payload: { gateway_url?: string; gateway_token?: string } = {};
+      if (assistantOpenclawForm.gateway_url.trim()) {
+        payload.gateway_url = assistantOpenclawForm.gateway_url.trim();
+      }
+      if (assistantOpenclawForm.gateway_token.trim()) {
+        payload.gateway_token = assistantOpenclawForm.gateway_token.trim();
+      }
+      return assistantOpenclawBindingApi.test(payload);
+    },
+    onSuccess: (res) => {
+      const result = res.data;
+      setMessage({
+        type: result.status === 'active' ? 'success' : 'error',
+        text: `${result.message}${result.latency_ms ? `（${result.latency_ms}ms）` : ''}`,
+      });
+      refetchAssistantBinding();
+    },
+    onError: (error: any) => {
+      setMessage({ type: 'error', text: extractErrorMsg(error, '测试 OpenClaw 连接失败') });
+    },
+  });
+
+  const deleteAssistantOpenclawMutation = useMutation({
+    mutationFn: async () => assistantOpenclawBindingApi.remove(),
+    onSuccess: async () => {
+      setMessage({ type: 'success', text: '已解绑智能助理专用 OpenClaw' });
+      setAssistantOpenclawForm({
+        display_name: '我的 OpenClaw',
+        gateway_url: 'http://127.0.0.1:28789',
+        gateway_token: '',
+        enabled: false,
+      });
+      await refetchAssistantBinding();
+    },
+    onError: (error: any) => {
+      setMessage({ type: 'error', text: extractErrorMsg(error, '解绑 OpenClaw 失败') });
     },
   });
 
@@ -920,7 +1021,8 @@ function SettingsContent() {
 
   // 处理 URL hash 滚动到 Garmin 设置
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash === '#garmin') {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash === '#garmin') {
       // 等待页面渲染完成后滚动
       const timer = setTimeout(() => {
         garminSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -928,6 +1030,14 @@ function SettingsContent() {
         setHighlightGarmin(true);
         // 3秒后取消高亮
         setTimeout(() => setHighlightGarmin(false), 3000);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+    if (window.location.hash === '#assistant-openclaw') {
+      const timer = setTimeout(() => {
+        assistantOpenclawSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightAssistantOpenClaw(true);
+        setTimeout(() => setHighlightAssistantOpenClaw(false), 3000);
       }, 500);
       return () => clearTimeout(timer);
     }
@@ -1227,6 +1337,145 @@ function SettingsContent() {
             >
               退出登录
             </button>
+          </div>
+        </div>
+
+        <div
+          ref={assistantOpenclawSectionRef}
+          id="assistant-openclaw"
+          className={`bg-white rounded-xl shadow-lg p-6 mb-6 border transition-all duration-500 ${
+            highlightAssistantOpenClaw
+              ? 'border-cyan-400 ring-4 ring-cyan-100 shadow-xl'
+              : 'border-gray-100'
+          }`}
+        >
+          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            🦀 智能助理专用 OpenClaw
+            {highlightAssistantOpenClaw && (
+              <span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 text-xs rounded-full animate-pulse">
+                请在此配置
+              </span>
+            )}
+          </h2>
+
+          <p className="text-gray-600 text-sm mb-4">
+            该绑定仅作用于「智能助理」中的「我的 OpenClaw」模式，不会影响系统现有的 OpenClaw 功能。
+          </p>
+
+          <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4 text-sm text-cyan-900 mb-4 space-y-1">
+            <div>允许地址：`127.0.0.1`、`localhost` 或系统白名单中的可信域名。</div>
+            <div>推荐你当前使用：`http://127.0.0.1:28789`</div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">显示名称</label>
+              <input
+                type="text"
+                value={assistantOpenclawForm.display_name}
+                onChange={(e) => setAssistantOpenclawForm(prev => ({ ...prev, display_name: e.target.value }))}
+                className="w-full p-3 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                placeholder="我的 OpenClaw"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">网关地址</label>
+              <input
+                type="text"
+                value={assistantOpenclawForm.gateway_url}
+                onChange={(e) => setAssistantOpenclawForm(prev => ({ ...prev, gateway_url: e.target.value }))}
+                className="w-full p-3 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                placeholder="http://127.0.0.1:28789"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">OpenClaw Token</label>
+              <input
+                type="password"
+                value={assistantOpenclawForm.gateway_token}
+                onChange={(e) => setAssistantOpenclawForm(prev => ({ ...prev, gateway_token: e.target.value }))}
+                className="w-full p-3 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                placeholder={assistantBinding?.configured ? '留空表示保留当前 Token' : '请输入你的 OpenClaw Token'}
+              />
+              {assistantBinding?.configured && assistantBinding.gateway_token_last4 && (
+                <p className="mt-2 text-xs text-gray-500">当前已保存 Token 后四位：{assistantBinding.gateway_token_last4}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-5">
+            <label className="inline-flex items-center gap-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={assistantOpenclawForm.enabled}
+                onChange={(e) => setAssistantOpenclawForm(prev => ({ ...prev, enabled: e.target.checked }))}
+                className="w-4 h-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+              />
+              启用「我的 OpenClaw」模式
+            </label>
+            <div className="text-sm text-gray-600">
+              当前状态：
+              <span className={`ml-2 inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                assistantBinding?.status === 'active'
+                  ? 'bg-green-100 text-green-700'
+                  : assistantBinding?.status === 'invalid'
+                    ? 'bg-red-100 text-red-700'
+                    : assistantBinding?.status === 'disabled'
+                      ? 'bg-gray-100 text-gray-700'
+                      : 'bg-amber-100 text-amber-700'
+              }`}>
+                {assistantBindingLoading
+                  ? '加载中'
+                  : assistantBinding?.status === 'active'
+                    ? '可用'
+                    : assistantBinding?.status === 'invalid'
+                      ? '连接异常'
+                      : assistantBinding?.status === 'disabled'
+                        ? '已停用'
+                        : '未配置'}
+              </span>
+            </div>
+          </div>
+
+          {(assistantBinding?.last_error || assistantBinding?.last_tested_at) && (
+            <div className="mb-4 rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-700 space-y-1">
+              {assistantBinding.last_tested_at && (
+                <div>最近测试时间：{formatDateTime(assistantBinding.last_tested_at)}</div>
+              )}
+              {assistantBinding.last_error && (
+                <div className="text-red-600">最近错误：{assistantBinding.last_error}</div>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => testAssistantOpenclawMutation.mutate()}
+              disabled={!assistantOpenclawForm.gateway_url.trim() || testAssistantOpenclawMutation.isPending}
+              className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50"
+            >
+              {testAssistantOpenclawMutation.isPending ? '测试中...' : '测试连接'}
+            </button>
+            <button
+              onClick={() => saveAssistantOpenclawMutation.mutate()}
+              disabled={!assistantOpenclawForm.gateway_url.trim() || saveAssistantOpenclawMutation.isPending}
+              className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50"
+            >
+              {saveAssistantOpenclawMutation.isPending ? '保存中...' : '保存绑定'}
+            </button>
+            {assistantBinding?.configured && (
+              <button
+                onClick={() => {
+                  if (confirm('确定要解绑这个智能助理专用 OpenClaw 吗？')) {
+                    deleteAssistantOpenclawMutation.mutate();
+                  }
+                }}
+                disabled={deleteAssistantOpenclawMutation.isPending}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              >
+                {deleteAssistantOpenclawMutation.isPending ? '解绑中...' : '解绑'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -2420,4 +2669,3 @@ export default function SettingsPage() {
     </ProtectedRoute>
   );
 }
-

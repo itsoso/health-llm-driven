@@ -76,6 +76,7 @@ from app.api import (
     data_export,  # 数据导出
     health_trend,  # 健康趋势预测
     openclaw,  # OpenClaw Channel 代理
+    assistant_openclaw,  # 智能助理专用 OpenClaw
     openclaw_skills,  # OpenClaw Skills 远程管理
     shared_conversation,  # 对话分享
     skills,  # Skills 公开目录
@@ -179,6 +180,9 @@ api_router.include_router(health_trend.router)  # 健康趋势预测
 
 # OpenClaw Channel 代理
 api_router.include_router(openclaw.router)  # prefix 已在 router 中定义
+
+# 智能助理专用 OpenClaw
+api_router.include_router(assistant_openclaw.router)  # prefix 已在 router 中定义
 
 # OpenClaw Skills 远程管理
 api_router.include_router(openclaw_skills.router)  # prefix 已在 router 中定义
