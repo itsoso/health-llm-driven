@@ -51,6 +51,7 @@ const ASSISTANT_OPENCLAW_QUICK_QUESTIONS = [
 ];
 
 type ChatMode = 'health' | 'openclaw' | 'assistant_openclaw';
+const ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY = 'assistant_openclaw_last_conversation_id';
 
 export default function AIAssistantPage() {
   const router = useRouter();
@@ -81,6 +82,7 @@ export default function AIAssistantPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const assistantConversationRestoredRef = useRef(false);
 
   const isAssistantOpenClawActive = !!(
     assistantBinding?.configured &&
@@ -144,6 +146,9 @@ export default function AIAssistantPage() {
         const response = await assistantOpenclawApi.getConversation(convId);
         setMessages(response.data.messages || []);
         setConversationId(convId);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY, String(convId));
+        }
         if (convMode) setChatMode(mode);
         return;
       }
@@ -170,6 +175,36 @@ export default function AIAssistantPage() {
     loadAssistantBinding();
     loadConversations();
   }, [loadAssistantBinding, loadConversations, router]);
+
+  useEffect(() => {
+    if (chatMode !== 'assistant_openclaw') {
+      assistantConversationRestoredRef.current = false;
+      return;
+    }
+    if (!isAssistantOpenClawActive || conversations.length === 0 || conversationId || messages.length > 0) {
+      return;
+    }
+    if (assistantConversationRestoredRef.current) {
+      return;
+    }
+
+    assistantConversationRestoredRef.current = true;
+
+    const storedId = typeof window !== 'undefined'
+      ? Number(localStorage.getItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY) || '')
+      : NaN;
+    const targetConversation = conversations.find((conv) => conv.id === storedId) || conversations[0];
+    if (targetConversation) {
+      loadConversation(targetConversation.id, 'assistant_openclaw');
+    }
+  }, [
+    chatMode,
+    conversationId,
+    conversations,
+    isAssistantOpenClawActive,
+    loadConversation,
+    messages.length,
+  ]);
 
   // 检测是否是运动完成意图
   const isPostWorkoutMessage = (msg: string): boolean => {
@@ -338,6 +373,9 @@ export default function AIAssistantPage() {
           // 更新会话 ID
           if (!conversationId && result.conversation_id) {
             setConversationId(result.conversation_id);
+            if (chatMode === 'assistant_openclaw' && typeof window !== 'undefined') {
+              localStorage.setItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY, String(result.conversation_id));
+            }
           }
           // 更新消息 ID 为真实数据库 ID
           if (result.message_id) {
@@ -483,6 +521,9 @@ export default function AIAssistantPage() {
     setMessages([]);
     setConversationId(undefined);
     setShowHistory(false);
+    if (chatMode === 'assistant_openclaw') {
+      assistantConversationRestoredRef.current = true;
+    }
   };
 
   // 删除对话
@@ -495,6 +536,12 @@ export default function AIAssistantPage() {
           : chatApi;
       await deleteApi.deleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
+      if (chatMode === 'assistant_openclaw' && typeof window !== 'undefined') {
+        const storedId = Number(localStorage.getItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY) || '');
+        if (storedId === convId) {
+          localStorage.removeItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY);
+        }
+      }
       if (conversationId === convId) {
         handleNewChat();
       }
@@ -874,7 +921,13 @@ export default function AIAssistantPage() {
             {/* 模式切换 */}
             <div className="flex rounded-xl bg-slate-700/50 border border-white/10 p-0.5">
               <button
-                onClick={() => { if (chatMode !== 'health') { setChatMode('health'); setMessages([]); setConversationId(undefined); } }}
+                onClick={() => {
+                  if (chatMode !== 'health') {
+                    setChatMode('health');
+                    setMessages([]);
+                    setConversationId(undefined);
+                  }
+                }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   chatMode === 'health'
                     ? 'bg-purple-600 text-white shadow-lg'
@@ -885,7 +938,13 @@ export default function AIAssistantPage() {
               </button>
               {isOwner && (
                 <button
-                  onClick={() => { if (chatMode !== 'openclaw') { setChatMode('openclaw'); setMessages([]); setConversationId(undefined); } }}
+                  onClick={() => {
+                    if (chatMode !== 'openclaw') {
+                      setChatMode('openclaw');
+                      setMessages([]);
+                      setConversationId(undefined);
+                    }
+                  }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     chatMode === 'openclaw'
                       ? 'bg-blue-600 text-white shadow-lg'
@@ -901,6 +960,7 @@ export default function AIAssistantPage() {
                     setChatMode('assistant_openclaw');
                     setMessages([]);
                     setConversationId(undefined);
+                    assistantConversationRestoredRef.current = false;
                   }
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
