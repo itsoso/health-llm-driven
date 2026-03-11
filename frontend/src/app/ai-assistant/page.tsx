@@ -909,12 +909,12 @@ export default function AIAssistantPage() {
         {/* 主聊天区域 */}
         <div className="flex-1 flex flex-col relative">
           {/* 顶部栏：侧边栏按钮 + 模式切换 */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-slate-800/30">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-slate-300/70 bg-slate-100/78 backdrop-blur-sm">
             <div className="flex items-center gap-2">
               {!showHistory && (
                 <button
                   onClick={toggleHistory}
-                  className="w-9 h-9 rounded-lg bg-slate-700/60 hover:bg-slate-600/80 border border-white/10 flex items-center justify-center text-purple-300 hover:text-purple-200 transition-all"
+                  className="w-9 h-9 rounded-lg bg-white/72 hover:bg-white border border-slate-300/70 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all"
                   title="打开历史记录"
                 >
                   <span className="text-lg">💬</span>
@@ -922,7 +922,7 @@ export default function AIAssistantPage() {
               )}
             </div>
             {/* 模式切换 */}
-            <div className="flex rounded-xl bg-slate-700/50 border border-white/10 p-0.5">
+            <div className="flex rounded-xl bg-white/72 border border-slate-300/70 p-0.5 shadow-sm">
               <button
                 onClick={() => {
                   if (chatMode !== 'health') {
@@ -933,8 +933,8 @@ export default function AIAssistantPage() {
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   chatMode === 'health'
-                    ? 'bg-purple-600 text-white shadow-lg'
-                    : 'text-slate-300 hover:text-white'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-white/80'
                 }`}
               >
                 健康助理
@@ -950,8 +950,8 @@ export default function AIAssistantPage() {
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     chatMode === 'openclaw'
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : 'text-slate-300 hover:text-white'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-blue-700 hover:text-blue-900 hover:bg-blue-50/80'
                   }`}
                 >
                   OpenClaw
@@ -968,10 +968,10 @@ export default function AIAssistantPage() {
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   chatMode === 'assistant_openclaw'
-                    ? 'bg-cyan-600 text-white shadow-lg'
+                    ? 'bg-cyan-600 text-white shadow-sm'
                     : isAssistantOpenClawActive
-                      ? 'text-slate-300 hover:text-white'
-                      : 'text-slate-500 hover:text-slate-300'
+                      ? 'text-slate-700 hover:text-slate-900 hover:bg-white/80'
+                      : 'text-slate-600 hover:text-slate-800 hover:bg-white/80'
                 }`}
                 title={assistantBindingLoading
                   ? '正在加载绑定状态'
@@ -986,7 +986,7 @@ export default function AIAssistantPage() {
               {conversationId && messages.length > 0 && chatMode !== 'assistant_openclaw' && (
                 <button
                   onClick={() => handleShareConversation(conversationId)}
-                  className="w-8 h-8 rounded-lg bg-slate-700/60 hover:bg-blue-600/40 border border-white/10 flex items-center justify-center text-slate-400 hover:text-blue-300 transition-all"
+                  className="w-8 h-8 rounded-lg bg-white/72 hover:bg-white border border-slate-300/70 flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all"
                   title="分享对话"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
