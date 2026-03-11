@@ -281,11 +281,22 @@ function SettingsContent() {
   const testAssistantOpenclawMutation = useMutation({
     mutationFn: async () => {
       const payload: { gateway_url?: string; gateway_token?: string } = {};
-      if (assistantOpenclawForm.gateway_url.trim()) {
-        payload.gateway_url = assistantOpenclawForm.gateway_url.trim();
-      }
-      if (assistantOpenclawForm.gateway_token.trim()) {
-        payload.gateway_token = assistantOpenclawForm.gateway_token.trim();
+      const normalizedUrl = assistantOpenclawForm.gateway_url.trim();
+      const normalizedToken = assistantOpenclawForm.gateway_token.trim();
+      const hasSavedBinding = !!assistantBinding?.configured;
+      const savedUrl = assistantBinding?.gateway_url?.trim() || '';
+      const usingSavedConfig =
+        hasSavedBinding &&
+        !normalizedToken &&
+        normalizedUrl === savedUrl;
+
+      if (!usingSavedConfig) {
+        if (normalizedUrl) {
+          payload.gateway_url = normalizedUrl;
+        }
+        if (normalizedToken) {
+          payload.gateway_token = normalizedToken;
+        }
       }
       return assistantOpenclawBindingApi.test(payload);
     },
