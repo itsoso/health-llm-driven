@@ -83,6 +83,7 @@ export default function AIAssistantPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const assistantConversationRestoredRef = useRef(false);
+  const defaultModeInitializedRef = useRef(false);
 
   const isAssistantOpenClawActive = !!(
     assistantBinding?.configured &&
@@ -175,6 +176,16 @@ export default function AIAssistantPage() {
     loadAssistantBinding();
     loadConversations();
   }, [loadAssistantBinding, loadConversations, router]);
+
+  useEffect(() => {
+    if (defaultModeInitializedRef.current) {
+      return;
+    }
+    if (isOwner) {
+      setChatMode('openclaw');
+    }
+    defaultModeInitializedRef.current = true;
+  }, [isOwner]);
 
   useEffect(() => {
     if (chatMode !== 'assistant_openclaw') {
@@ -923,22 +934,6 @@ export default function AIAssistantPage() {
             </div>
             {/* 模式切换 */}
             <div className="flex rounded-xl bg-white/72 border border-slate-300/70 p-0.5 shadow-sm">
-              <button
-                onClick={() => {
-                  if (chatMode !== 'health') {
-                    setChatMode('health');
-                    setMessages([]);
-                    setConversationId(undefined);
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  chatMode === 'health'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-700 hover:text-slate-900 hover:bg-white/80'
-                }`}
-              >
-                健康助理
-              </button>
               {isOwner && (
                 <button
                   onClick={() => {
@@ -980,6 +975,22 @@ export default function AIAssistantPage() {
                     : '请先前往设置页绑定你的 OpenClaw'}
               >
                 我的 OpenClaw
+              </button>
+              <button
+                onClick={() => {
+                  if (chatMode !== 'health') {
+                    setChatMode('health');
+                    setMessages([]);
+                    setConversationId(undefined);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  chatMode === 'health'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                健康助理
               </button>
             </div>
             <div className="w-9 flex justify-end">

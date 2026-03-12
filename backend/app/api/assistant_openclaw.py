@@ -44,7 +44,7 @@ async def get_my_binding(
     db: Session = Depends(get_db),
 ):
     service = AssistantOpenClawBindingService(db)
-    return service.get_binding_response(current_user.id)
+    return await service.get_binding_response_with_refresh(current_user.id)
 
 
 @router.put("/binding/me", summary="保存当前账号的智能助理 OpenClaw 绑定")

@@ -136,7 +136,7 @@ class AssistantOpenClawService:
         message: str,
         conversation_id: Optional[int] = None,
     ) -> AsyncGenerator[dict, None]:
-        gateway_url, gateway_token = self.binding_service.get_active_connection(user_id)
+        gateway_url, gateway_token = await self.binding_service.get_active_connection_checked(user_id)
 
         conv = self.get_or_create_conversation(user_id, conversation_id, title=message)
         self.save_message(conv.id, "user", message)

@@ -3,7 +3,7 @@ import base64
 import hashlib
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -51,6 +51,55 @@ class AssistantOpenClawBindingService:
             .first()
         )
 
+    @staticmethod
+    def _utcnow() -> datetime:
+        return datetime.utcnow()
+
+    def _health_check_ttl(self) -> timedelta:
+        ttl_seconds = max(int(getattr(settings, "assistant_openclaw_health_check_ttl_seconds", 60) or 0), 0)
+        return timedelta(seconds=ttl_seconds)
+
+    def _should_refresh_binding(self, binding: AssistantOpenClawBinding, *, force: bool = False) -> bool:
+        if not binding.enabled:
+            return False
+        if force:
+            return True
+        if binding.status != "active":
+            return True
+        if binding.last_tested_at is None:
+            return True
+        return self._utcnow() - binding.last_tested_at >= self._health_check_ttl()
+
+    def _persist_probe_result(
+        self,
+        binding: AssistantOpenClawBinding,
+        result: dict,
+    ) -> AssistantOpenClawBinding:
+        binding.last_tested_at = self._utcnow()
+        binding.last_error = None if result["status"] == "active" else result["message"]
+        binding.status = result["status"] if binding.enabled else "disabled"
+        self.db.commit()
+        self.db.refresh(binding)
+        return binding
+
+    async def _refresh_binding_result(self, binding: AssistantOpenClawBinding) -> dict:
+        gateway_token = self.decrypt_token(binding.gateway_token_encrypted)
+        result = await self._probe_gateway(binding.gateway_url, gateway_token)
+        self._persist_probe_result(binding, result)
+        return result
+
+    def _build_binding_response(self, binding: AssistantOpenClawBinding) -> dict:
+        return {
+            "configured": True,
+            "enabled": binding.enabled,
+            "display_name": binding.display_name,
+            "gateway_url": binding.gateway_url,
+            "gateway_token_last4": binding.gateway_token_last4,
+            "status": binding.status,
+            "last_tested_at": binding.last_tested_at.isoformat() if binding.last_tested_at else None,
+            "last_error": binding.last_error,
+        }
+
     def get_binding_response(self, user_id: int) -> dict:
         binding = self.get_binding(user_id)
         if not binding:
@@ -65,16 +114,15 @@ class AssistantOpenClawBindingService:
                 "last_error": None,
             }
 
-        return {
-            "configured": True,
-            "enabled": binding.enabled,
-            "display_name": binding.display_name,
-            "gateway_url": binding.gateway_url,
-            "gateway_token_last4": binding.gateway_token_last4,
-            "status": binding.status,
-            "last_tested_at": binding.last_tested_at.isoformat() if binding.last_tested_at else None,
-            "last_error": binding.last_error,
-        }
+        return self._build_binding_response(binding)
+
+    async def get_binding_response_with_refresh(self, user_id: int) -> dict:
+        binding = self.get_binding(user_id)
+        if not binding:
+            return self.get_binding_response(user_id)
+        if self._should_refresh_binding(binding):
+            await self._refresh_binding_result(binding)
+        return self._build_binding_response(binding)
 
     def validate_gateway_url(self, gateway_url: str) -> str:
         parsed = urlparse(gateway_url.strip())
@@ -182,13 +230,14 @@ class AssistantOpenClawBindingService:
 
         result = await self._probe_gateway(normalized_url, clean_token)
 
-        if persist_result and binding and not gateway_url and not gateway_token:
-            binding.last_tested_at = datetime.utcnow()
-            binding.last_error = None if result["status"] == "active" else result["message"]
-            if binding.enabled:
-                binding.status = result["status"]
-            self.db.commit()
-            self.db.refresh(binding)
+        should_persist_existing_binding = (
+            persist_result
+            and binding is not None
+            and binding.gateway_url == normalized_url
+            and not gateway_token
+        )
+        if should_persist_existing_binding:
+            self._persist_probe_result(binding, result)
 
         return result
 
@@ -200,6 +249,21 @@ class AssistantOpenClawBindingService:
             raise ValueError("当前账号的 OpenClaw 已停用，请前往设置页启用")
         if binding.status != "active":
             raise ValueError("当前账号的 OpenClaw 尚未通过连接测试，请前往设置页测试连接")
+        return binding.gateway_url, self.decrypt_token(binding.gateway_token_encrypted)
+
+    async def get_active_connection_checked(self, user_id: int) -> tuple[str, str]:
+        binding = self.get_binding(user_id)
+        if not binding:
+            raise ValueError("当前账号尚未绑定 OpenClaw，请先前往设置页完成绑定")
+        if not binding.enabled:
+            raise ValueError("当前账号的 OpenClaw 已停用，请前往设置页启用")
+
+        if self._should_refresh_binding(binding):
+            await self._refresh_binding_result(binding)
+
+        if binding.status != "active":
+            raise ValueError(binding.last_error or "当前账号的 OpenClaw 暂时不可用，请稍后重试")
+
         return binding.gateway_url, self.decrypt_token(binding.gateway_token_encrypted)
 
     async def _probe_gateway(self, gateway_url: str, gateway_token: str) -> dict:

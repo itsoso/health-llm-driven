@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     openclaw_gateway_url: str = ""  # e.g. http://47.237.191.17:3000
     openclaw_runtime_base_dir: str = "/srv/health-platform/tenants"
     assistant_openclaw_allowed_hosts: str = "127.0.0.1,localhost,bot.executor.life"
+    assistant_openclaw_health_check_ttl_seconds: int = 60
 
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token

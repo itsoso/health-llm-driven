@@ -88,3 +88,81 @@ async def test_test_binding_persists_saved_result(db, monkeypatch):
     assert db_binding.status == "active"
     assert db_binding.last_error is None
     assert db_binding.last_tested_at is not None
+
+
+@pytest.mark.asyncio
+async def test_test_binding_persists_when_saved_url_is_provided(db, monkeypatch):
+    user = create_user(db, username="assistant-binding-user-3")
+    service = AssistantOpenClawBindingService(db)
+    service.upsert_binding(
+        user_id=user.id,
+        display_name="我的 OpenClaw",
+        gateway_url="http://127.0.0.1:28789",
+        gateway_token="secret-token-9012",
+        enabled=True,
+    )
+
+    async def fake_probe(gateway_url: str, gateway_token: str):
+        assert gateway_url == "http://127.0.0.1:28789"
+        assert gateway_token == "secret-token-9012"
+        return {
+            "reachable": False,
+            "authenticated": False,
+            "status": "invalid",
+            "latency_ms": 21,
+            "message": "无法连接到 OpenClaw，请检查反向隧道或网关地址",
+        }
+
+    monkeypatch.setattr(service, "_probe_gateway", fake_probe)
+    result = await service.test_binding(
+        user.id,
+        gateway_url="http://127.0.0.1:28789",
+        persist_result=True,
+    )
+
+    db_binding = db.query(AssistantOpenClawBinding).filter_by(user_id=user.id).first()
+    assert result["status"] == "invalid"
+    assert db_binding is not None
+    assert db_binding.status == "invalid"
+    assert db_binding.last_error == "无法连接到 OpenClaw，请检查反向隧道或网关地址"
+    assert db_binding.last_tested_at is not None
+
+
+@pytest.mark.asyncio
+async def test_get_active_connection_checked_refreshes_stale_binding(db, monkeypatch):
+    user = create_user(db, username="assistant-binding-user-4")
+    service = AssistantOpenClawBindingService(db)
+    service.upsert_binding(
+        user_id=user.id,
+        display_name="我的 OpenClaw",
+        gateway_url="http://127.0.0.1:28789",
+        gateway_token="secret-token-3456",
+        enabled=True,
+    )
+
+    binding = db.query(AssistantOpenClawBinding).filter_by(user_id=user.id).first()
+    assert binding is not None
+    binding.status = "active"
+    binding.last_tested_at = None
+    db.commit()
+
+    async def fake_probe(gateway_url: str, gateway_token: str):
+        assert gateway_url == "http://127.0.0.1:28789"
+        assert gateway_token == "secret-token-3456"
+        return {
+            "reachable": True,
+            "authenticated": True,
+            "status": "active",
+            "latency_ms": 9,
+            "message": "连接成功",
+        }
+
+    monkeypatch.setattr(service, "_probe_gateway", fake_probe)
+    gateway_url, token = await service.get_active_connection_checked(user.id)
+
+    db_binding = db.query(AssistantOpenClawBinding).filter_by(user_id=user.id).first()
+    assert gateway_url == "http://127.0.0.1:28789"
+    assert token == "secret-token-3456"
+    assert db_binding is not None
+    assert db_binding.status == "active"
+    assert db_binding.last_tested_at is not None
