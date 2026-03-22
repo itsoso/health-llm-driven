@@ -81,6 +81,7 @@ from app.api import (
     shared_conversation,  # 对话分享
     skills,  # Skills 公开目录
     feedback,  # 交互反馈 & Skill 性能追踪
+    nfc,  # NFC 碰触快速记录
 )
 
 api_router = APIRouter()
@@ -196,3 +197,6 @@ api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 
 # 交互反馈 & Skill 性能追踪（OpenClaw Native 自优化基础设施）
 api_router.include_router(feedback.router)
+
+# NFC 碰触快速记录
+api_router.include_router(nfc.router)
