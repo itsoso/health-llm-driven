@@ -1,7 +1,6 @@
 """Skill 注册表 — 版本管理 + metrics 追踪 + 自动优化调度"""
 import json
 import logging
-import os
 import re
 import shutil
 from datetime import datetime
@@ -11,6 +10,15 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
+
+# Skill 名称只允许字母、数字、连字符、下划线
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _validate_skill_name(name: str) -> None:
+    """校验 skill 名称，防止路径遍历"""
+    if not name or not _SAFE_NAME_RE.match(name):
+        raise ValueError(f"非法的 Skill 名称: {name!r}（仅允许字母、数字、连字符、下划线）")
 
 
 def _parse_frontmatter(content: str) -> dict:
@@ -46,34 +54,45 @@ class SkillRegistry:
         for skill_dir in sorted(self.skills_dir.iterdir()):
             if not skill_dir.is_dir():
                 continue
-            info = self._read_skill_info(skill_dir)
-            if info:
-                results.append(info)
+            try:
+                info = self._read_skill_info(skill_dir)
+                if info:
+                    results.append(info)
+            except Exception as e:
+                logger.warning(f"读取 Skill {skill_dir.name} 失败: {e}")
         return results
 
     def get_skill(self, name: str) -> Optional[dict]:
         """获取单个 Skill 的详细信息"""
+        _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         if not skill_dir.exists():
             return None
-        return self._read_skill_info(skill_dir)
+        try:
+            return self._read_skill_info(skill_dir)
+        except Exception as e:
+            logger.error(f"读取 Skill {name} 失败: {e}")
+            return None
 
     def get_skill_content(self, name: str, version: Optional[str] = None) -> Optional[str]:
         """获取 Skill 内容（指定版本或当前版本）"""
+        _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         if version:
             path = skill_dir / f"SKILL.v{version}.md"
-            if not path.exists():
-                return None
-            return path.read_text(encoding="utf-8")
         else:
             path = skill_dir / "SKILL.md"
-            if not path.exists():
-                return None
+        if not path.exists():
+            return None
+        try:
             return path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.error(f"读取 {path} 失败: {e}")
+            return None
 
     def save_new_version(self, name: str, content: str, changelog: str = "") -> dict:
         """保存新版本的 Skill（当前版本存档，新内容写入 SKILL.md）"""
+        _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         current_path = skill_dir / "SKILL.md"
 
@@ -84,6 +103,9 @@ class SkillRegistry:
         current_content = current_path.read_text(encoding="utf-8")
         current_fm = _parse_frontmatter(current_content)
         current_version = current_fm.get("version", "1.0.0")
+
+        # 先读取 manifest（必须在写入新内容之前，否则初始化会读到新版本）
+        manifest = self._read_manifest(skill_dir)
 
         # 存档当前版本
         archive_path = skill_dir / f"SKILL.v{current_version}.md"
@@ -96,11 +118,11 @@ class SkillRegistry:
 
         # 更新 frontmatter 中的版本号
         new_fm = _parse_frontmatter(content)
-        if new_fm.get("version") and new_fm["version"] != new_version:
-            # 内容已包含版本号，使用它
+        if new_fm.get("version") and new_fm["version"] != current_version:
+            # 内容已包含一个不同于当前版本的版本号，使用它
             new_version = new_fm["version"]
         else:
-            # 替换或插入版本号
+            # 替换 frontmatter 中的版本号为自动 bump 的新版本
             content = re.sub(
                 r"(version:\s*)\S+",
                 f"version: {new_version}",
@@ -112,7 +134,6 @@ class SkillRegistry:
         current_path.write_text(content, encoding="utf-8")
 
         # 更新 manifest
-        manifest = self._read_manifest(skill_dir)
         manifest["versions"].append({
             "version": new_version,
             "created_at": datetime.utcnow().isoformat(),
@@ -136,8 +157,19 @@ class SkillRegistry:
 
     def promote_version(self, name: str, version: str) -> bool:
         """将 canary 版本升级为 production"""
+        _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         manifest = self._read_manifest(skill_dir)
+
+        # 验证目标版本存在
+        found = False
+        for v in manifest["versions"]:
+            if v["version"] == version:
+                found = True
+                break
+        if not found:
+            raise ValueError(f"版本 {version} 不存在于 Skill {name} 中")
+
         for v in manifest["versions"]:
             if v["version"] == version:
                 v["status"] = "production"
@@ -150,6 +182,7 @@ class SkillRegistry:
 
     def rollback_version(self, name: str) -> Optional[str]:
         """回滚到上一个 production 版本"""
+        _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         manifest = self._read_manifest(skill_dir)
 
@@ -167,8 +200,11 @@ class SkillRegistry:
 
         # 恢复存档的 SKILL.md
         archive_path = skill_dir / f"SKILL.v{target_version}.md"
-        if archive_path.exists():
-            shutil.copy2(archive_path, skill_dir / "SKILL.md")
+        if not archive_path.exists():
+            raise FileNotFoundError(
+                f"存档文件 SKILL.v{target_version}.md 不存在，无法回滚"
+            )
+        shutil.copy2(archive_path, skill_dir / "SKILL.md")
 
         # 标记当前版本为 rolled_back
         for v in manifest["versions"]:
@@ -208,7 +244,10 @@ class SkillRegistry:
     def _read_manifest(self, skill_dir: Path) -> dict:
         manifest_path = skill_dir / "manifest.json"
         if manifest_path.exists():
-            return json.loads(manifest_path.read_text(encoding="utf-8"))
+            try:
+                return json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(f"manifest.json 损坏，重新初始化: {e}")
         # 初始化 manifest
         skill_path = skill_dir / "SKILL.md"
         fm = _parse_frontmatter(skill_path.read_text(encoding="utf-8")) if skill_path.exists() else {}

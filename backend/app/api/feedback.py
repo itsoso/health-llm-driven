@@ -98,7 +98,10 @@ async def get_skill_detail(
     """获取单个 Skill 的详细信息"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="仅管理员可查看")
-    info = skill_registry.get_skill(name)
+    try:
+        info = skill_registry.get_skill(name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not info:
         raise HTTPException(status_code=404, detail=f"Skill {name} 不存在")
     return info
@@ -113,7 +116,10 @@ async def promote_skill_version(
     """将 canary 版本升级为 production"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="仅管理员操作")
-    skill_registry.promote_version(name, version)
+    try:
+        skill_registry.promote_version(name, version)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"status": "promoted", "skill": name, "version": version}
 
 
@@ -125,7 +131,10 @@ async def rollback_skill(
     """回滚 Skill 到上一个稳定版本"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="仅管理员操作")
-    version = skill_registry.rollback_version(name)
+    try:
+        version = skill_registry.rollback_version(name)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not version:
         raise HTTPException(status_code=400, detail="没有可回滚的版本")
     return {"status": "rolled_back", "skill": name, "version": version}

@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, case
 from sqlalchemy.orm import Session
 
 from app.models.interaction_feedback import InteractionFeedback, SkillMetrics, SkillOptimizationLog
@@ -78,17 +78,17 @@ class FeedbackService:
         ).first()
 
         if existing:
-            if skill_used:
+            if skill_used is not None:
                 existing.skill_used = skill_used
-            if skill_version:
+            if skill_version is not None:
                 existing.skill_version = skill_version
-            if implicit_signal:
+            if implicit_signal is not None:
                 existing.implicit_signal = implicit_signal
             if success is not None:
                 existing.success = success
-            if error_type:
+            if error_type is not None:
                 existing.error_type = error_type
-            if response_time_ms:
+            if response_time_ms is not None:
                 existing.response_time_ms = response_time_ms
             db.commit()
             db.refresh(existing)
@@ -126,12 +126,12 @@ class FeedbackService:
             InteractionFeedback.skill_used,
             InteractionFeedback.skill_version,
             func.count().label("total"),
-            func.sum(func.cast(InteractionFeedback.success == True, Integer)).label("success_cnt"),
-            func.sum(func.cast(InteractionFeedback.success == False, Integer)).label("fail_cnt"),
+            func.sum(case((InteractionFeedback.success == True, 1), else_=0)).label("success_cnt"),
+            func.sum(case((InteractionFeedback.success == False, 1), else_=0)).label("fail_cnt"),
             func.count(InteractionFeedback.rating).label("rated"),
             func.avg(InteractionFeedback.rating).label("avg_rat"),
-            func.sum(func.cast(InteractionFeedback.rating == 5, Integer)).label("up"),
-            func.sum(func.cast(InteractionFeedback.rating == 1, Integer)).label("down"),
+            func.sum(case((InteractionFeedback.rating == 5, 1), else_=0)).label("up"),
+            func.sum(case((InteractionFeedback.rating == 1, 1), else_=0)).label("down"),
             func.avg(InteractionFeedback.response_time_ms).label("avg_rt"),
         ).filter(
             InteractionFeedback.skill_used.isnot(None),
