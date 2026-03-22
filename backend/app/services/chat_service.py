@@ -2272,6 +2272,9 @@ class ChatService:
         image_type: Optional[str] = "jpeg",
     ):
         """流式发送消息，yield SSE 事件字典"""
+        import time as _time_mod
+        _stream_start = _time_mod.time()
+
         # 获取或创建对话
         if conversation_id:
             conv = self.db.query(ChatConversation).filter(
@@ -2452,6 +2455,21 @@ class ChatService:
                         "content": analysis_content,
                     }
                 break
+
+        # 记录隐式反馈
+        try:
+            from app.services.feedback_service import feedback_service
+            feedback_service.record_implicit(
+                db=self.db,
+                user_id=user_id,
+                conversation_type="chat",
+                conversation_id=conv.id,
+                message_id=ai_msg.id,
+                success=True,
+                response_time_ms=int((_time_mod.time() - _stream_start) * 1000),
+            )
+        except Exception as e:
+            logger.warning(f"记录隐式反馈失败: {e}")
 
         yield {"event": "done", "data": result_data}
 

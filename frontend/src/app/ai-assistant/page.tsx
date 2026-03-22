@@ -212,6 +212,7 @@ export default function AIAssistantPage() {
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   const [chatMode, setChatMode] = useState<'health' | 'openclaw'>('openclaw');
   const [messageFeedback, setMessageFeedback] = useState<Record<number, 1 | 5>>({});
+  const [doneMessageIds, setDoneMessageIds] = useState<Set<number>>(new Set());
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -246,7 +247,10 @@ export default function AIAssistantPage() {
       const response = isOpenClaw
         ? await openclawApi.getConversation(convId)
         : await chatApi.getConversation(convId);
-      setMessages(response.data.messages || []);
+      const msgs = response.data.messages || [];
+      setMessages(msgs);
+      // 历史消息都有真实 DB ID，标记为 done
+      setDoneMessageIds(new Set(msgs.filter((m: ChatMessage) => m.role === 'assistant').map((m: ChatMessage) => m.id)));
       setConversationId(convId);
       if (convMode) setChatMode(convMode as 'health' | 'openclaw');
     } catch (e) {
@@ -426,6 +430,7 @@ export default function AIAssistantPage() {
             setMessages(prev => prev.map(m =>
               m.id === aiMsgId ? { ...m, id: result.message_id } : m
             ));
+            setDoneMessageIds(prev => new Set(prev).add(result.message_id));
           }
           if (chatMode === 'health') handleDoneEvent(result);
         } else if (event.event === 'error') {
@@ -1189,7 +1194,7 @@ export default function AIAssistantPage() {
                           </div>
                         )}
                       </div>
-                      {msg.role === 'assistant' && msg.content && !loading && (
+                      {msg.role === 'assistant' && msg.content && doneMessageIds.has(msg.id) && (
                         <div className="ml-1 mt-1 flex items-center gap-1 self-end">
                           <button
                             onClick={() => handleFeedback(msg.id, 5)}

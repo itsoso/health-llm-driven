@@ -477,6 +477,8 @@ AI: {ai_reply}
         image_type: str = "jpeg",
     ) -> AsyncGenerator[Dict, None]:
         """流式发送消息到 OpenClaw Gateway 并实时转发"""
+        import time
+        _stream_start = time.time()
 
         # 1. 获取或创建会话
         conv = self.get_or_create_conversation(user_id, conversation_id, title=message)
@@ -533,7 +535,23 @@ AI: {ai_reply}
         conv.updated_at = datetime.utcnow()
         self.db.commit()
 
-        # 8. done 事件
+        # 8. 记录隐式反馈（skill 调用、成功/失败、响应时间）
+        try:
+            from app.services.feedback_service import feedback_service
+            elapsed_ms = int((time.time() - _stream_start) * 1000)
+            feedback_service.record_implicit(
+                db=self.db,
+                user_id=user_id,
+                conversation_type="openclaw",
+                conversation_id=conv.id,
+                message_id=ai_msg.id,
+                success=bool(full_reply and not full_reply.startswith("抱歉")),
+                response_time_ms=elapsed_ms,
+            )
+        except Exception as e:
+            logger.warning(f"记录隐式反馈失败: {e}")
+
+        # 9. done 事件
         yield {
             "event": "done",
             "data": {

@@ -40,7 +40,11 @@ class InteractionFeedback(Base):
     __table_args__ = (
         Index("ix_feedback_skill_version", "skill_used", "skill_version"),
         Index("ix_feedback_created", "created_at"),
-        Index("ix_feedback_conv", "conversation_type", "conversation_id", "message_id"),
+        Index(
+            "ix_feedback_user_msg_unique",
+            "user_id", "conversation_type", "conversation_id", "message_id",
+            unique=True,
+        ),
     )
 
 

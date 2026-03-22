@@ -177,7 +177,11 @@ class SkillRegistry:
                 v["status"] = "archived"
         manifest["current_version"] = version
         self._write_manifest(skill_dir, manifest)
-        logger.info(f"Skill {name}: 升级 {version} 为 production")
+
+        # 同步到远程 OpenClaw Gateway
+        self._sync_to_gateway(name)
+
+        logger.info(f"Skill {name}: 升级 {version} 为 production，已同步到 Gateway")
         return True
 
     def rollback_version(self, name: str) -> Optional[str]:
@@ -214,8 +218,27 @@ class SkillRegistry:
         manifest["current_version"] = target_version
         self._write_manifest(skill_dir, manifest)
 
-        logger.info(f"Skill {name}: 回滚到 {target_version}")
+        # 同步到远程 OpenClaw Gateway
+        self._sync_to_gateway(name)
+
+        logger.info(f"Skill {name}: 回滚到 {target_version}，已同步到 Gateway")
         return target_version
+
+    def _sync_to_gateway(self, name: str):
+        """将本地 SKILL.md 同步到远程 OpenClaw Gateway"""
+        try:
+            from app.services.openclaw_skills_service import openclaw_skills_service
+            content = self.get_skill_content(name)
+            if content:
+                openclaw_skills_service.create_or_update_skill(
+                    name=name,
+                    skill_md_content=content,
+                    enabled=True,
+                )
+                logger.info(f"Skill {name} 已同步到远程 Gateway")
+        except Exception as e:
+            logger.error(f"同步 Skill {name} 到 Gateway 失败: {e}")
+            raise
 
     # ---- 内部方法 ----
 

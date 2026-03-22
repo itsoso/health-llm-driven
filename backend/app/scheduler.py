@@ -506,6 +506,29 @@ async def reminder_check_loop():
         await asyncio.sleep(60)
 
 
+async def skill_metrics_aggregation_loop():
+    """每天凌晨 02:05（北京时间）聚合前一天的 Skill 性能指标"""
+    logger.info("Skill Metrics 每日聚合调度器已启动，每天 02:05 执行")
+    await asyncio.sleep(60)  # 等待系统启动
+
+    while True:
+        wait_seconds = get_seconds_until_next_sync(2, 5)
+        await asyncio.sleep(wait_seconds)
+
+        try:
+            db = SessionLocal()
+            try:
+                from app.services.feedback_service import feedback_service
+                feedback_service.aggregate_daily_metrics(db)
+                logger.info("Skill Metrics 每日聚合完成")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Skill Metrics 聚合出错: {e}", exc_info=True)
+
+        await asyncio.sleep(60)  # 避免同一分钟重复触发
+
+
 def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = True):
     """
     在后台线程中启动异步调度器
@@ -545,5 +568,16 @@ def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = 
     reminder_thread = threading.Thread(target=run_reminder_loop, daemon=True)
     reminder_thread.start()
     logger.info("Smart Reminder 调度器线程已启动（每60秒检查）")
+
+    # 启动 Skill Metrics 每日聚合调度器（凌晨 2:05 北京时间）
+    def run_metrics_loop():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(skill_metrics_aggregation_loop())
+        loop.close()
+
+    metrics_thread = threading.Thread(target=run_metrics_loop, daemon=True)
+    metrics_thread.start()
+    logger.info("Skill Metrics 每日聚合调度器线程已启动（每天02:05北京时间）")
 
     return thread
