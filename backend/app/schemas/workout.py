@@ -1,5 +1,5 @@
 """运动训练记录 Schemas"""
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import date, datetime
 from typing import Optional, List
 from enum import Enum
@@ -158,6 +158,16 @@ class WorkoutRecordCreate(WorkoutRecordBase):
     elevation_data: Optional[List[ElevationPoint]] = None
     route_data: Optional[List[RoutePoint]] = None
     lap_data: Optional[List[LapData]] = None
+
+    @model_validator(mode="after")
+    def require_minimal_data(self):
+        """手动创建的运动记录至少需要时长或距离"""
+        has_duration = self.duration_seconds is not None
+        has_distance = self.distance_meters is not None
+        has_calories = self.calories is not None
+        if not (has_duration or has_distance or has_calories):
+            raise ValueError("运动记录至少需要填写 duration_seconds、distance_meters 或 calories 中的一项")
+        return self
 
 
 class WorkoutRecordUpdate(BaseModel):
