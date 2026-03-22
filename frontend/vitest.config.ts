@@ -1,3 +1,4 @@
+// @ts-nocheck — vitest 是 devDependency，next build 时不可用
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
