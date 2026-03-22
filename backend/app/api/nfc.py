@@ -33,6 +33,7 @@ class NfcTapRequest(BaseModel):
     action: str = Field(..., pattern="^(water|bowel|urine)$")
     amount_ml: Optional[int] = Field(250, ge=50, le=2000)  # 仅 water 使用
     drink_type: Optional[str] = "水"  # 仅 water 使用
+    on_behalf_of: Optional[int] = None  # 代记：目标用户 ID（需当前用户为管理员或好友）
 
 
 class NfcTapResponse(BaseModel):
@@ -54,22 +55,37 @@ async def nfc_tap(
     - water: 直接记录饮水（默认 250ml）
     - bowel: 第一次碰触开始计时，第二次碰触结束并记录
     - urine: 直接记录小便
+    - on_behalf_of: 代记其他用户（需管理员权限）
     """
+    # 确定目标用户
+    target_user_id = current_user.id
+    behalf_label = ""
+    if req.on_behalf_of and req.on_behalf_of != current_user.id:
+        if not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="仅管理员可代记其他用户")
+        target_user = db.query(User).filter(User.id == req.on_behalf_of).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail=f"用户 {req.on_behalf_of} 不存在")
+        target_user_id = req.on_behalf_of
+        behalf_label = f"（为{target_user.name or target_user.username}）"
+
     now_utc = datetime.now(timezone.utc)
     now_beijing = now_utc.astimezone(BEIJING_TZ)
     today = now_beijing.date()
     current_time = now_beijing.time()
 
     if req.action == "water":
-        return _record_water(db, current_user.id, today, current_time, req.amount_ml or 250, req.drink_type or "水")
-
+        resp = _record_water(db, target_user_id, today, current_time, req.amount_ml or 250, req.drink_type or "水")
     elif req.action == "bowel":
-        return _handle_bowel(db, current_user.id, today, current_time, now_utc)
-
+        resp = _handle_bowel(db, target_user_id, today, current_time, now_utc)
     elif req.action == "urine":
-        return _record_urine(db, current_user.id, today, current_time)
+        resp = _record_urine(db, target_user_id, today, current_time)
+    else:
+        raise HTTPException(status_code=400, detail=f"未知动作: {req.action}")
 
-    raise HTTPException(status_code=400, detail=f"未知动作: {req.action}")
+    if behalf_label:
+        resp.message += behalf_label
+    return resp
 
 
 @router.get("/bowel-status")
