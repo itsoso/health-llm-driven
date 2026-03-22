@@ -499,6 +499,20 @@ AI: {ai_reply}
         # 4. 构建 messages 列表
         messages = self.build_messages(conv.id, limit=20)
 
+        # 4.1 注入轻量健康上下文（让 OpenClaw 感知用户健康状态）
+        try:
+            from app.services.health_context_lite_service import (
+                build_lite_health_context, OPENCLAW_HEALTH_SYSTEM_RULES,
+            )
+            health_ctx = await build_lite_health_context(self.db, user_id)
+            if health_ctx:
+                messages.insert(0, {
+                    "role": "system",
+                    "content": OPENCLAW_HEALTH_SYSTEM_RULES + "\n" + health_ctx,
+                })
+        except Exception as e:
+            logger.warning(f"健康上下文注入失败(不影响对话): {e}")
+
         # 4.5 如果有图片，先用 vision 模型识别内容，再把描述注入文本
         #     OpenClaw Gateway 不支持多模态 image_url，只能传纯文本
         if image_base64 and messages:
