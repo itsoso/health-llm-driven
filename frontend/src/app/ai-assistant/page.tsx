@@ -168,7 +168,7 @@ const MODE_COPY: Record<ChatMode, {
     accentTextClass: 'text-blue-200',
     accentBorderClass: 'border-blue-400/20',
     chipClass: 'border border-blue-400/15 bg-blue-400/10 text-blue-50',
-    subtleClass: 'text-blue-100/75',
+    subtleClass: 'text-blue-100',
   },
 };
 
@@ -1053,7 +1053,7 @@ export default function AIAssistantPage() {
                           <h1 className="text-4xl leading-tight text-white md:text-5xl" style={{ fontFamily: DISPLAY_FONT_STACK }}>
                             {modeCopy.title}
                           </h1>
-                          <p className="mt-4 max-w-2xl text-base leading-8 text-slate-200/85">
+                          <p className="mt-4 max-w-2xl text-base leading-8 text-slate-100">
                             {modeCopy.description}
                           </p>
                         </div>
