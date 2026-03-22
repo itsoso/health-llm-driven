@@ -2,19 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  api,
-  assistantOpenclawApi,
-  assistantOpenclawBindingApi,
-  AssistantOpenClawBindingStatus,
-  chatApi,
-  openclawApi,
-  sharedApi,
-  ChatMessage,
-  Conversation,
-  DietSavedData,
-  ActivitySavedData,
-} from '@/services/api';
+import { api, chatApi, openclawApi, sharedApi, feedbackApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
@@ -28,30 +16,178 @@ declare global {
   }
 }
 
-const QUICK_QUESTIONS = [
-  { label: '分析打卡', text: '请分析一下我今天的打卡完成情况，给出建议' },
-  { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
-  { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量，有什么改善建议？' },
-  { label: '饮食建议', text: '根据我的健康目标，今天的饮食应该注意什么？' },
-  { label: '运动完成', text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出拉伸和恢复建议' },
+type ChatMode = 'health' | 'openclaw';
+
+type QuickQuestion = {
+  label: string;
+  text: string;
+  eyebrow: string;
+  summary: string;
+};
+
+const DISPLAY_FONT_STACK = '"Iowan Old Style", "Noto Serif SC", "Songti SC", serif';
+const UI_FONT_STACK = '"Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+
+const QUICK_QUESTIONS: QuickQuestion[] = [
+  {
+    label: '分析打卡',
+    text: '请分析一下我今天的打卡完成情况，给出建议',
+    eyebrow: '今日复盘',
+    summary: '快速对齐今天已经完成了什么，哪些动作最值得补。',
+  },
+  {
+    label: '运动建议',
+    text: '根据我的身体数据，今天适合做什么运动？',
+    eyebrow: '训练安排',
+    summary: '结合恢复、心率和最近状态，给出今天最合适的训练强度。',
+  },
+  {
+    label: '睡眠分析',
+    text: '帮我分析一下最近的睡眠质量，有什么改善建议？',
+    eyebrow: '恢复质量',
+    summary: '把睡眠、压力和日间表现放到同一个结论里看。',
+  },
+  {
+    label: '饮食建议',
+    text: '根据我的健康目标，今天的饮食应该注意什么？',
+    eyebrow: '营养策略',
+    summary: '围绕目标控制热量、蛋白质和进餐节奏，而不是只看单点数据。',
+  },
+  {
+    label: '运动完成',
+    text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出拉伸和恢复建议',
+    eyebrow: '即时分析',
+    summary: '一句话触发 Garmin 同步、训练总结和恢复建议。',
+  },
 ];
 
-const PROXY_QUICK_QUESTIONS = [
-  { label: '今日健康', text: '查一下我今天的健康数据' },
-  { label: '记录饮水', text: '记录喝水250ml' },
-  { label: '健康分析', text: '分析我最近的健康趋势' },
-  { label: '已装技能', text: '列出已安装技能' },
+const PROXY_QUICK_QUESTIONS: QuickQuestion[] = [
+  {
+    label: '今日健康',
+    text: '查一下我今天的健康数据',
+    eyebrow: '实时查询',
+    summary: '直接让 OpenClaw 拉取今天的关键数据和状态。',
+  },
+  {
+    label: '记录饮水',
+    text: '记录喝水250ml',
+    eyebrow: '直接执行',
+    summary: '通过技能触发记录动作，减少跳页面操作。',
+  },
+  {
+    label: '健康分析',
+    text: '分析我最近的健康趋势',
+    eyebrow: '跨技能汇总',
+    summary: '让代理模式把查询和分析串成一次完整回答。',
+  },
+  {
+    label: '已装技能',
+    text: '列出已安装技能',
+    eyebrow: '能力检查',
+    summary: '确认当前 OpenClaw 的可用工具和连接状态。',
+  },
 ];
 
-const ASSISTANT_OPENCLAW_QUICK_QUESTIONS = [
-  { label: '最近运动', text: '帮我看一下最近7天的运动数据' },
-  { label: '记录饮水', text: '帮我记录喝水250ml' },
-  { label: '健康趋势', text: '结合我最近的数据分析健康趋势' },
-  { label: '睡眠分析', text: '分析一下我最近的睡眠情况' },
-];
+const MODE_METRICS: Record<ChatMode, Array<{ label: string; value: string; description: string }>> = {
+  health: [
+    {
+      label: '恢复状态',
+      value: '睡眠 + 压力 + 训练',
+      description: '先判断今天该恢复还是推进，再决定后续建议。',
+    },
+    {
+      label: '数据记录',
+      value: '语音 / 图片 / 文件',
+      description: '同一输入栏就能完成记录、分析和补充说明。',
+    },
+    {
+      label: '行动建议',
+      value: '饮食 / 运动 / 节奏',
+      description: '把建议收敛成可执行动作，而不是泛泛健康话术。',
+    },
+  ],
+  openclaw: [
+    {
+      label: '技能路由',
+      value: '查询 / 记录 / 分析',
+      description: '代理模式适合需要自主调用技能的复杂任务。',
+    },
+    {
+      label: '会话控制',
+      value: '独立上下文',
+      description: '与健康助理分离，便于测试技能链路和代理行为。',
+    },
+    {
+      label: '执行方式',
+      value: '自然语言驱动',
+      description: '一句话描述目标，让 OpenClaw 自己选择工具和流程。',
+    },
+  ],
+};
 
-type ChatMode = 'health' | 'openclaw' | 'assistant_openclaw';
-const ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY = 'assistant_openclaw_last_conversation_id';
+const MODE_COPY: Record<ChatMode, {
+  eyebrow: string;
+  title: string;
+  description: string;
+  support: string;
+  subSupport: string;
+  panelClass: string;
+  badgeClass: string;
+  bubbleClass: string;
+  userBubbleClass: string;
+  accentTextClass: string;
+  accentBorderClass: string;
+  chipClass: string;
+  subtleClass: string;
+}> = {
+  health: {
+    eyebrow: 'Health cockpit',
+    title: '健康工作台',
+    description: '把记录、分析、提醒和训练恢复收拢到一个会话里，用最少的跳转完成今天的健康决策。',
+    support: '支持图片、文件、语音',
+    subSupport: '也可以直接说“我刚运动完”，自动触发 Garmin 同步和恢复分析。',
+    panelClass: 'from-slate-950/95 via-slate-900/90 to-emerald-950/80',
+    badgeClass: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
+    bubbleClass: 'bg-slate-900/80 border border-emerald-400/15 text-white shadow-[0_24px_80px_rgba(4,120,87,0.12)]',
+    userBubbleClass: 'bg-gradient-to-br from-emerald-500 via-cyan-500 to-sky-500 text-white shadow-[0_20px_50px_rgba(20,184,166,0.35)]',
+    accentTextClass: 'text-emerald-200',
+    accentBorderClass: 'border-emerald-400/20',
+    chipClass: 'border border-emerald-400/15 bg-emerald-400/10 text-emerald-50',
+    subtleClass: 'text-emerald-100/75',
+  },
+  openclaw: {
+    eyebrow: 'OpenClaw console',
+    title: 'OpenClaw 控制台',
+    description: '把技能调用、数据查询和代理式对话放在一个更清晰的工作界面里，便于调试和直接执行任务。',
+    support: '支持技能调用与代理对话',
+    subSupport: '适合测试技能装载、调用链路和独立会话上下文。',
+    panelClass: 'from-slate-950/95 via-slate-900/90 to-blue-950/75',
+    badgeClass: 'border-blue-400/30 bg-blue-400/10 text-blue-100',
+    bubbleClass: 'bg-slate-900/80 border border-blue-400/15 text-white shadow-[0_24px_80px_rgba(37,99,235,0.15)]',
+    userBubbleClass: 'bg-gradient-to-br from-blue-500 via-indigo-500 to-cyan-500 text-white shadow-[0_20px_50px_rgba(59,130,246,0.35)]',
+    accentTextClass: 'text-blue-200',
+    accentBorderClass: 'border-blue-400/20',
+    chipClass: 'border border-blue-400/15 bg-blue-400/10 text-blue-50',
+    subtleClass: 'text-blue-100/75',
+  },
+};
+
+function ModeSpark({ mode, className = 'w-5 h-5' }: { mode: ChatMode; className?: string }) {
+  if (mode === 'openclaw') {
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 2.75v7.5h6.25L11 21.25v-7.5H4.75L13 2.75z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12a4.5 4.5 0 019-0" opacity="0.4" />
+    </svg>
+  );
+}
 
 export default function AIAssistantPage() {
   const router = useRouter();
@@ -74,23 +210,13 @@ export default function AIAssistantPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
-  const [chatMode, setChatMode] = useState<ChatMode>('health');
-  const [assistantBinding, setAssistantBinding] = useState<AssistantOpenClawBindingStatus | null>(null);
-  const [assistantBindingLoading, setAssistantBindingLoading] = useState(false);
+  const [chatMode, setChatMode] = useState<'health' | 'openclaw'>('openclaw');
+  const [messageFeedback, setMessageFeedback] = useState<Record<number, 1 | 5>>({});
   const itemsPerPage = 10;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const assistantConversationRestoredRef = useRef(false);
-  const defaultModeInitializedRef = useRef(false);
-
-  const isAssistantOpenClawActive = !!(
-    assistantBinding?.configured &&
-    assistantBinding.enabled &&
-    assistantBinding.status === 'active'
-  );
-  const assistantModeLocked = chatMode === 'assistant_openclaw' && !isAssistantOpenClawActive;
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -101,31 +227,9 @@ export default function AIAssistantPage() {
     scrollToBottom();
   }, [messages]);
 
-  const loadAssistantBinding = useCallback(async () => {
-    try {
-      setAssistantBindingLoading(true);
-      const response = await assistantOpenclawBindingApi.getMe();
-      setAssistantBinding(response.data);
-    } catch (e) {
-      console.error('加载智能助理 OpenClaw 绑定失败:', e);
-      setAssistantBinding(null);
-    } finally {
-      setAssistantBindingLoading(false);
-    }
-  }, []);
-
   // 加载对话列表
   const loadConversations = useCallback(async () => {
     try {
-      if (chatMode === 'assistant_openclaw') {
-        if (!isAssistantOpenClawActive) {
-          setConversations([]);
-          return;
-        }
-        const response = await assistantOpenclawApi.getConversations();
-        setConversations(response.data || []);
-        return;
-      }
       const response = chatMode === 'openclaw'
         ? await openclawApi.getConversations()
         : await chatApi.getConversations();
@@ -133,39 +237,23 @@ export default function AIAssistantPage() {
     } catch (e) {
       console.error('加载对话列表失败:', e);
     }
-  }, [chatMode, isAssistantOpenClawActive]);
+  }, [chatMode]);
 
   // 加载指定对话的消息
   const loadConversation = useCallback(async (convId: number, convMode?: string) => {
     try {
-      const mode = (convMode as ChatMode | undefined) || chatMode;
-      if (mode === 'assistant_openclaw') {
-        if (!isAssistantOpenClawActive) {
-          showToast('请先前往设置页绑定并测试你的 OpenClaw', 'warning');
-          return;
-        }
-        const response = await assistantOpenclawApi.getConversation(convId);
-        setMessages(response.data.messages || []);
-        setConversationId(convId);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY, String(convId));
-        }
-        if (convMode) setChatMode(mode);
-        return;
-      }
-
-      const isOpenClaw = mode === 'openclaw';
+      const isOpenClaw = convMode === 'openclaw' || chatMode === 'openclaw';
       const response = isOpenClaw
         ? await openclawApi.getConversation(convId)
         : await chatApi.getConversation(convId);
       setMessages(response.data.messages || []);
       setConversationId(convId);
-      if (convMode) setChatMode(mode);
+      if (convMode) setChatMode(convMode as 'health' | 'openclaw');
     } catch (e) {
       console.error('加载对话失败:', e);
       showToast('加载失败', 'error');
     }
-  }, [chatMode, isAssistantOpenClawActive, showToast]);
+  }, [chatMode]);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -173,49 +261,8 @@ export default function AIAssistantPage() {
       router.push('/login');
       return;
     }
-    loadAssistantBinding();
     loadConversations();
-  }, [loadAssistantBinding, loadConversations, router]);
-
-  useEffect(() => {
-    if (defaultModeInitializedRef.current) {
-      return;
-    }
-    if (isOwner) {
-      setChatMode('openclaw');
-    }
-    defaultModeInitializedRef.current = true;
-  }, [isOwner]);
-
-  useEffect(() => {
-    if (chatMode !== 'assistant_openclaw') {
-      assistantConversationRestoredRef.current = false;
-      return;
-    }
-    if (!isAssistantOpenClawActive || conversations.length === 0 || conversationId || messages.length > 0) {
-      return;
-    }
-    if (assistantConversationRestoredRef.current) {
-      return;
-    }
-
-    assistantConversationRestoredRef.current = true;
-
-    const storedId = typeof window !== 'undefined'
-      ? Number(localStorage.getItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY) || '')
-      : NaN;
-    const targetConversation = conversations.find((conv) => conv.id === storedId) || conversations[0];
-    if (targetConversation) {
-      loadConversation(targetConversation.id, 'assistant_openclaw');
-    }
-  }, [
-    chatMode,
-    conversationId,
-    conversations,
-    isAssistantOpenClawActive,
-    loadConversation,
-    messages.length,
-  ]);
+  }, [loadConversations, router]);
 
   // 检测是否是运动完成意图
   const isPostWorkoutMessage = (msg: string): boolean => {
@@ -282,17 +329,8 @@ export default function AIAssistantPage() {
 
   // 发送消息（流式优先，降级到非流式）
   const handleSend = async (text?: string, imageBase64?: string, imageType?: string) => {
-    if (chatMode === 'assistant_openclaw' && !isAssistantOpenClawActive) {
-      showToast('请先在设置页绑定并测试你的 OpenClaw', 'warning');
-      router.push('/settings#assistant-openclaw');
-      return;
-    }
     const msg = (text || inputText).trim();
     const hasAttachment = pendingImage || pendingFile;
-    if (chatMode === 'assistant_openclaw' && hasAttachment) {
-      showToast('我的 OpenClaw 暂不支持图片或文件附件', 'warning');
-      return;
-    }
     if (!msg && !hasAttachment) return;
     // 如果有待发送图片但未传入参数，使用 pendingImage
     const finalImageBase64 = imageBase64 || pendingImage?.base64;
@@ -343,11 +381,9 @@ export default function AIAssistantPage() {
       let firstToken = true;
       // 每次调用独立的缓冲区，支持并行流
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
-      const streamIterator = chatMode === 'assistant_openclaw'
-        ? assistantOpenclawApi.streamMessage(finalMsg, conversationId)
-        : chatMode === 'openclaw'
-          ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
-          : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
+      const streamIterator = chatMode === 'openclaw'
+        ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
+        : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
       for await (const event of streamIterator) {
         if (event.event === 'token') {
           if (firstToken) {
@@ -384,9 +420,6 @@ export default function AIAssistantPage() {
           // 更新会话 ID
           if (!conversationId && result.conversation_id) {
             setConversationId(result.conversation_id);
-            if (chatMode === 'assistant_openclaw' && typeof window !== 'undefined') {
-              localStorage.setItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY, String(result.conversation_id));
-            }
           }
           // 更新消息 ID 为真实数据库 ID
           if (result.message_id) {
@@ -488,16 +521,6 @@ export default function AIAssistantPage() {
       console.warn('流式请求失败，降级到非流式模式:', e);
       // 先移除空的 AI 占位消息
       setMessages(prev => prev.filter(m => m.id !== aiMsgId));
-      if (chatMode === 'assistant_openclaw') {
-        const errorMsg: ChatMessage = {
-          id: Date.now() + 3,
-          role: 'assistant',
-          content: '你的 OpenClaw 暂时不可用，请检查绑定状态或稍后重试。',
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, errorMsg]);
-        return;
-      }
       try {
         const response = await chatApi.sendMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
         const result = response.data;
@@ -532,27 +555,14 @@ export default function AIAssistantPage() {
     setMessages([]);
     setConversationId(undefined);
     setShowHistory(false);
-    if (chatMode === 'assistant_openclaw') {
-      assistantConversationRestoredRef.current = true;
-    }
   };
 
   // 删除对话
   const handleDeleteConversation = async (convId: number) => {
     try {
-      const deleteApi = chatMode === 'assistant_openclaw'
-        ? assistantOpenclawApi
-        : chatMode === 'openclaw'
-          ? openclawApi
-          : chatApi;
+      const deleteApi = chatMode === 'openclaw' ? openclawApi : chatApi;
       await deleteApi.deleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
-      if (chatMode === 'assistant_openclaw' && typeof window !== 'undefined') {
-        const storedId = Number(localStorage.getItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY) || '');
-        if (storedId === convId) {
-          localStorage.removeItem(ASSISTANT_OPENCLAW_LAST_CONVERSATION_KEY);
-        }
-      }
       if (conversationId === convId) {
         handleNewChat();
       }
@@ -564,10 +574,6 @@ export default function AIAssistantPage() {
 
   // 分享对话
   const handleShareConversation = async (convId: number) => {
-    if (chatMode === 'assistant_openclaw') {
-      showToast('我的 OpenClaw 对话暂不支持分享', 'warning');
-      return;
-    }
     try {
       const sourceType = chatMode === 'openclaw' ? 'openclaw' : 'health';
       const res = await sharedApi.createShare(convId, sourceType);
@@ -604,11 +610,6 @@ export default function AIAssistantPage() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
-  const activeQuickQuestions = chatMode === 'assistant_openclaw'
-    ? ASSISTANT_OPENCLAW_QUICK_QUESTIONS
-    : chatMode === 'openclaw'
-      ? PROXY_QUICK_QUESTIONS
-      : QUICK_QUESTIONS;
 
   // 按 Enter 发送消息（忽略中文输入法组合阶段）
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -682,11 +683,6 @@ export default function AIAssistantPage() {
 
   // 文件/图片上传处理
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (chatMode === 'assistant_openclaw') {
-      showToast('我的 OpenClaw 暂不支持图片或文件附件', 'warning');
-      e.target.value = '';
-      return;
-    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -717,14 +713,6 @@ export default function AIAssistantPage() {
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
-    if (chatMode === 'assistant_openclaw') {
-      const items = e.clipboardData?.items;
-      if (items && Array.from(items).some(item => item.type.startsWith('image/'))) {
-        e.preventDefault();
-        showToast('我的 OpenClaw 暂不支持图片粘贴', 'warning');
-      }
-      return;
-    }
     const items = e.clipboardData?.items;
     if (!items) return;
     for (let i = 0; i < items.length; i++) {
@@ -748,637 +736,637 @@ export default function AIAssistantPage() {
     }
   };
 
-  const clearPendingAttachment = useCallback(() => {
+  const clearPendingAttachment = () => {
     setImagePreview(null);
     setPendingImage(null);
     setPendingFile(null);
-  }, []);
+  };
 
-  useEffect(() => {
-    clearPendingAttachment();
-  }, [chatMode, clearPendingAttachment]);
+  const modeCopy = MODE_COPY[chatMode];
+  const activeQuickQuestions = chatMode === 'openclaw' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS;
+  const activeMetrics = MODE_METRICS[chatMode];
+  const handleFeedback = async (msgId: number, rating: 1 | 5) => {
+    if (!conversationId) return;
+    const prev = messageFeedback[msgId];
+    if (prev === rating) return; // 已经点过相同的
+    setMessageFeedback(f => ({ ...f, [msgId]: rating }));
+    try {
+      await feedbackApi.submit({
+        conversation_type: chatMode === 'health' ? 'chat' : 'openclaw',
+        conversation_id: conversationId,
+        message_id: msgId,
+        rating,
+      });
+    } catch {
+      // 静默失败，不影响用户体验
+    }
+  };
+
+  const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content));
+  const modeButtonBase = 'px-3 py-2 rounded-2xl text-xs font-semibold tracking-[0.2em] uppercase transition-all';
 
   return (
-    <div
-      className="fixed inset-0 top-16 flex overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f3f6fb 55%, #eef2f7 100%)' }}
-    >
-      {/* 历史对话侧栏 */}
-      {showHistory && (
-        <div className="w-80 bg-white/78 border-r border-slate-200/80 flex flex-col shadow-[0_18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-          {/* 侧边栏顶部 - 新建对话按钮 + 收起按钮 */}
-          <div className="p-3 border-b border-slate-200/80 bg-white/68 flex items-center gap-2">
-            <button
-              onClick={handleNewChat}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 transition-all text-white font-medium shadow-sm"
-            >
-              <span className="text-xl">+</span>
-              <span>新建对话</span>
-            </button>
-            <button
-              onClick={toggleHistory}
-              className="w-10 h-10 rounded-lg bg-white/80 hover:bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-all flex-shrink-0"
-              title="收起侧边栏"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
+    <div className="fixed inset-x-0 bottom-0 top-16 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
+      <div className={`absolute inset-0 bg-gradient-to-br ${chatMode === 'openclaw' ? 'from-[#07111f] via-[#0a1730] to-[#081628]' : 'from-[#04111f] via-[#0b1b24] to-[#041428]'}`} />
+      <div
+        className="absolute inset-0 opacity-70"
+        style={{
+          backgroundImage: chatMode === 'openclaw'
+            ? 'radial-gradient(circle at 15% 15%, rgba(59,130,246,0.28), transparent 32%), radial-gradient(circle at 82% 18%, rgba(96,165,250,0.18), transparent 28%), linear-gradient(to right, rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)'
+            : 'radial-gradient(circle at 16% 14%, rgba(16,185,129,0.24), transparent 30%), radial-gradient(circle at 86% 16%, rgba(45,212,191,0.18), transparent 30%), linear-gradient(to right, rgba(148,163,184,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.07) 1px, transparent 1px)',
+          backgroundSize: 'auto, auto, 56px 56px, 56px 56px',
+        }}
+      />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
 
-          {/* 搜索框 */}
-          <div className="p-4 border-b border-slate-200/80 bg-white/68">
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-3">
-              <span>💬</span>
-              <span>对话记录</span>
-            </h2>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1); // 搜索时重置到第一页
-                }}
-                placeholder="搜索对话..."
-                className="w-full px-3 py-2 pl-9 rounded-lg bg-white/82 border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+      <div className="relative flex h-full overflow-hidden">
+        {showHistory && (
+          <aside className="flex w-[330px] shrink-0 flex-col border-r border-white/10 bg-slate-950/65 backdrop-blur-2xl">
+            <div className="border-b border-white/10 px-4 py-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleNewChat}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/15"
+                >
+                  <span className="text-lg leading-none">+</span>
+                  新建对话
+                </button>
+                <button
+                  onClick={toggleHistory}
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+                  title="收起侧边栏"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mt-5">
+                <div className={`mb-1 text-[10px] uppercase tracking-[0.32em] ${modeCopy.accentTextClass}`}>Conversation archive</div>
+                <h2 className="text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>会话档案</h2>
+                <p className="mt-1 text-sm text-slate-400">按标题或最后一条消息快速回到上下文。</p>
+              </div>
             </div>
-          </div>
-            <div className="flex-1 overflow-y-auto">
+
+            <div className="border-b border-white/10 px-4 py-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="搜索对话..."
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 pl-11 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
+                />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-3">
               {conversations.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  <div className="text-4xl mb-3">📝</div>
-                  <div>暂无对话记录</div>
+                <div className="rounded-[28px] border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center text-slate-400">
+                  <div className="text-4xl">◌</div>
+                  <div className="mt-3 text-sm">还没有历史对话</div>
                 </div>
               ) : paginatedConversations.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  <div className="text-4xl mb-3">🔍</div>
-                  <div>未找到匹配的对话</div>
+                <div className="rounded-[28px] border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center text-slate-400">
+                  <div className="text-4xl">⌕</div>
+                  <div className="mt-3 text-sm">没有找到匹配结果</div>
                 </div>
               ) : (
-                paginatedConversations.map(conv => (
-                  <div
-                    key={conv.id}
-                    className={`group flex items-start gap-3 p-4 border-b border-slate-200/70 hover:bg-slate-100/70 cursor-pointer transition-all ${
-                      conv.id === conversationId ? 'bg-blue-50/80 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'
-                    }`}
-                    onClick={() => loadConversation(conv.id)}
-                  >
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full border flex items-center justify-center text-sm ${
-                      chatMode === 'assistant_openclaw'
-                        ? 'bg-blue-50 border-blue-200'
-                        : chatMode === 'openclaw'
-                          ? 'bg-blue-50 border-blue-200'
-                          : 'bg-slate-100 border-slate-200'
-                    }`}>
-                      {chatMode === 'assistant_openclaw' ? (
-                        <span className="text-blue-600">🦀</span>
-                      ) : chatMode === 'openclaw' ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                      ) : '💬'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-slate-900 line-clamp-2 mb-1 leading-snug">
-                        {conv.title}
-                      </div>
-                      {conv.last_message && (
-                        <div className="text-xs text-slate-500 line-clamp-1">
-                          {conv.last_message}
+                <div className="space-y-2">
+                  {paginatedConversations.map(conv => (
+                    <button
+                      key={conv.id}
+                      onClick={() => loadConversation(conv.id)}
+                      className={`group w-full rounded-[26px] border px-4 py-4 text-left transition-all ${
+                        conv.id === conversationId
+                          ? `border-white/15 bg-white/10 shadow-[0_20px_50px_rgba(15,23,42,0.35)] ${modeCopy.accentTextClass}`
+                          : 'border-transparent bg-white/[0.03] hover:border-white/10 hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${modeCopy.badgeClass}`}>
+                          <ModeSpark mode={chatMode} className="h-4 w-4" />
                         </div>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 ml-2 transition-opacity">
-                      {chatMode !== 'assistant_openclaw' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleShareConversation(conv.id);
-                          }}
-                          className="text-slate-400 hover:text-blue-600 transition-colors"
-                          title="分享对话"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                          </svg>
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteConversation(conv.id);
-                        }}
-                        className="text-slate-400 hover:text-red-500 text-xl transition-colors"
-                        title="删除对话"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                ))
+                        <div className="min-w-0 flex-1">
+                          <div className="line-clamp-2 text-sm font-medium leading-6 text-white">{conv.title}</div>
+                          {conv.last_message && (
+                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">{conv.last_message}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                          #{conv.id}
+                        </span>
+                        <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShareConversation(conv.id);
+                            }}
+                            className="text-xs text-slate-400 transition-colors hover:text-white"
+                            title="分享对话"
+                          >
+                            分享
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteConversation(conv.id);
+                            }}
+                            className="text-xs text-slate-400 transition-colors hover:text-red-300"
+                            title="删除对话"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
-            {/* 分页控件 */}
             {filteredConversations.length > itemsPerPage && (
-              <div className="p-3 border-t border-slate-200/80 bg-white/68">
-                <div className="flex items-center justify-between text-sm">
+              <div className="border-t border-white/10 px-4 py-3">
+                <div className="flex items-center justify-between text-xs text-slate-400">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className={`px-3 py-1.5 rounded-lg transition-colors ${
-                      currentPage === 1
-                        ? 'text-slate-400 cursor-not-allowed'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className="rounded-full border border-white/10 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    ← 上一页
+                    上一页
                   </button>
-                  <span className="text-slate-500">
-                    {currentPage} / {totalPages}
-                  </span>
+                  <span>{currentPage} / {totalPages}</span>
                   <button
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className={`px-3 py-1.5 rounded-lg transition-colors ${
-                      currentPage === totalPages
-                        ? 'text-slate-400 cursor-not-allowed'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className="rounded-full border border-white/10 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    下一页 →
+                    下一页
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </aside>
         )}
 
-        {/* 主聊天区域 */}
-        <div className="flex-1 flex flex-col relative">
-          {/* 顶部栏：侧边栏按钮 + 模式切换 */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-slate-300/70 bg-slate-100/78 backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              {!showHistory && (
+        <section className="relative flex min-w-0 flex-1 flex-col">
+          <div className="border-b border-white/10 bg-slate-950/45 backdrop-blur-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                {!showHistory && (
+                  <button
+                    onClick={toggleHistory}
+                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+                    title="打开历史记录"
+                  >
+                    <span className="text-lg leading-none">☰</span>
+                  </button>
+                )}
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
+                  <ModeSpark mode={chatMode} className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className={`mb-1 text-[10px] uppercase tracking-[0.34em] ${modeCopy.accentTextClass}`}>{modeCopy.eyebrow}</div>
+                  <div className="truncate text-sm text-white">{modeCopy.description}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={toggleHistory}
-                  className="w-9 h-9 rounded-lg bg-white/72 hover:bg-white border border-slate-300/70 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all"
-                  title="打开历史记录"
+                  onClick={handleNewChat}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition-all hover:bg-white/10"
                 >
-                  <span className="text-lg">💬</span>
+                  新对话
                 </button>
-              )}
-            </div>
-            {/* 模式切换 */}
-            <div className="flex rounded-xl bg-white/72 border border-slate-300/70 p-0.5 shadow-sm">
-              {isOwner && (
-                <button
-                  onClick={() => {
-                    if (chatMode !== 'openclaw') {
-                      setChatMode('openclaw');
-                      setMessages([]);
-                      setConversationId(undefined);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    chatMode === 'openclaw'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-blue-700 hover:text-blue-900 hover:bg-blue-50/80'
-                  }`}
-                >
-                  OpenClaw
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  if (chatMode !== 'assistant_openclaw') {
-                    setChatMode('assistant_openclaw');
-                    setMessages([]);
-                    setConversationId(undefined);
-                    assistantConversationRestoredRef.current = false;
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  chatMode === 'assistant_openclaw'
-                    ? 'bg-cyan-600 text-white shadow-sm'
-                    : isAssistantOpenClawActive
-                      ? 'text-slate-700 hover:text-slate-900 hover:bg-white/80'
-                      : 'text-slate-600 hover:text-slate-800 hover:bg-white/80'
-                }`}
-                title={assistantBindingLoading
-                  ? '正在加载绑定状态'
-                  : isAssistantOpenClawActive
-                    ? '使用你绑定的 OpenClaw 实例'
-                    : '请先前往设置页绑定你的 OpenClaw'}
-              >
-                我的 OpenClaw
-              </button>
-              <button
-                onClick={() => {
-                  if (chatMode !== 'health') {
-                    setChatMode('health');
-                    setMessages([]);
-                    setConversationId(undefined);
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  chatMode === 'health'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-700 hover:text-slate-900 hover:bg-white/80'
-                }`}
-              >
-                健康助理
-              </button>
-            </div>
-            <div className="w-9 flex justify-end">
-              {conversationId && messages.length > 0 && chatMode !== 'assistant_openclaw' && (
-                <button
-                  onClick={() => handleShareConversation(conversationId)}
-                  className="w-8 h-8 rounded-lg bg-white/72 hover:bg-white border border-slate-300/70 flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all"
-                  title="分享对话"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                </button>
-              )}
+                <div className="flex rounded-[20px] border border-white/10 bg-white/5 p-1">
+                  <button
+                    onClick={() => { if (chatMode !== 'health') { setChatMode('health'); setMessages([]); setConversationId(undefined); } }}
+                    className={`${modeButtonBase} ${chatMode === 'health' ? 'bg-white text-slate-950 shadow-md' : 'text-slate-300 hover:text-white'}`}
+                  >
+                    健康助理
+                  </button>
+                  {isOwner && (
+                    <button
+                      onClick={() => { if (chatMode !== 'openclaw') { setChatMode('openclaw'); setMessages([]); setConversationId(undefined); } }}
+                      className={`${modeButtonBase} ${chatMode === 'openclaw' ? 'bg-white text-slate-950 shadow-md' : 'text-slate-300 hover:text-white'}`}
+                    >
+                      OpenClaw
+                    </button>
+                  )}
+                </div>
+                {conversationId && visibleMessages.length > 0 && (
+                  <button
+                    onClick={() => handleShareConversation(conversationId)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition-all hover:bg-white/10"
+                    title="分享对话"
+                  >
+                    分享
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* 饮食记录保存通知 (仅健康助理模式) */}
           {chatMode === 'health' && dietNotification && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300">
-              <div className="bg-green-600/90 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
-                <span className="text-xl">🍽</span>
-                <div>
-                  <div className="font-medium text-sm">饮食已自动记录</div>
-                  <div className="text-xs text-green-100">
-                    {dietNotification.total_calories ? `${Math.round(dietNotification.total_calories)} kcal` : ''} · {{'breakfast': '早餐', 'lunch': '午餐', 'dinner': '晚餐', 'snack': '加餐'}[dietNotification.meal_type] || '加餐'}
+            <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
+              <div className="rounded-[24px] border border-emerald-300/20 bg-emerald-500/90 px-5 py-4 text-white shadow-2xl backdrop-blur-xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold">饮食已自动记录</div>
+                    <div className="mt-1 text-xs text-emerald-50/90">
+                      {dietNotification.total_calories ? `${Math.round(dietNotification.total_calories)} kcal` : ''} · {{ breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' }[dietNotification.meal_type] || '加餐'}
+                    </div>
                   </div>
+                  <button onClick={() => setDietNotification(null)} className="text-emerald-50/80 transition-colors hover:text-white">×</button>
                 </div>
-                <button onClick={() => setDietNotification(null)} className="ml-2 text-green-200 hover:text-white">×</button>
               </div>
             </div>
           )}
 
-          {/* 活动记录通知 (仅健康助理模式) */}
           {chatMode === 'health' && activityNotifications.length > 0 && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300">
-              <div className="bg-emerald-600/90 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg">
-                <div className="flex items-center justify-between gap-3 mb-1">
-                  <div className="font-medium text-sm">已自动记录</div>
-                  <button onClick={() => setActivityNotifications([])} className="text-emerald-200 hover:text-white text-lg leading-none">×</button>
-                </div>
-                <div className="space-y-0.5">
-                  {activityNotifications.map((a, idx) => (
-                    <div key={idx} className="text-xs text-emerald-100">{a.message}</div>
-                  ))}
+            <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
+              <div className="rounded-[24px] border border-cyan-300/20 bg-cyan-500/90 px-5 py-4 text-white shadow-2xl backdrop-blur-xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold">已自动记录</div>
+                    <div className="mt-1 space-y-1 text-xs text-cyan-50/90">
+                      {activityNotifications.map((a, idx) => (
+                        <div key={idx}>{a.message}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setActivityNotifications([])} className="text-cyan-50/80 transition-colors hover:text-white">×</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 智能计划创建通知 (仅健康助理模式) */}
           {chatMode === 'health' && planCreatedNotification && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top duration-300 w-80">
-              <div className="bg-blue-600/95 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-lg">
-                <div className="flex items-center justify-between gap-3 mb-1">
-                  <div className="font-medium text-sm flex items-center gap-2">
-                    <span>📋</span>
-                    智能计划已生成
+            <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
+              <div className="rounded-[24px] border border-blue-300/20 bg-blue-500/95 px-5 py-4 text-white shadow-2xl backdrop-blur-xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold">智能计划已生成</div>
+                    <div className="mt-1 text-xs text-blue-50/90">{planCreatedNotification.message}</div>
                   </div>
-                  <button onClick={() => setPlanCreatedNotification(null)} className="text-blue-200 hover:text-white text-lg leading-none">×</button>
+                  <button onClick={() => setPlanCreatedNotification(null)} className="text-blue-50/80 transition-colors hover:text-white">×</button>
                 </div>
-                <div className="text-xs text-blue-100 mb-2">{planCreatedNotification.message}</div>
                 <button
                   onClick={() => { setPlanCreatedNotification(null); router.push('/smart-plan'); }}
-                  className="w-full text-xs py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-center font-medium transition-colors"
+                  className="mt-3 w-full rounded-2xl bg-white/15 px-3 py-2 text-sm font-medium text-white transition-all hover:bg-white/20"
                 >
-                  前往「智能计划」查看 →
+                  前往智能计划
                 </button>
               </div>
             </div>
           )}
 
-          {/* 消息列表 */}
           <div className="flex-1 overflow-y-auto px-4 py-6">
-            <div className="max-w-4xl mx-auto space-y-4">
-            {messages.length === 0 && !loading && (
-              <div className="max-w-3xl mx-auto text-center space-y-6 mt-20">
-                <div className="text-6xl">{chatMode === 'assistant_openclaw' ? (
-                  '🦀'
-                ) : chatMode === 'openclaw' ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                ) : '💬'}</div>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  {chatMode === 'assistant_openclaw'
-                    ? '我的 OpenClaw'
-                    : chatMode === 'openclaw'
-                      ? 'OpenClaw 对话模式'
-                      : '你好，我是你的智能助理'}
-                </h2>
-                <p className="text-slate-600">
-                  {chatMode === 'assistant_openclaw'
-                    ? '在这里通过你自己绑定的 OpenClaw 实例完成对话、查询和记录'
-                    : chatMode === 'openclaw'
-                    ? '直接与 OpenClaw 对话，支持健康数据查询、记录、分析，也可安装/管理技能'
-                    : '我了解你的健康数据，可以为你提供个性化的健康建议'}
-                </p>
-                {assistantModeLocked ? (
-                  <div className="max-w-xl mx-auto mt-8 rounded-2xl border border-slate-200 bg-white/88 p-6 text-left shadow-sm">
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">先绑定你的 OpenClaw 实例</h3>
-                    <p className="text-slate-600 text-sm leading-6">
-                      到设置页填写地址和 Token，并完成连接测试后，这个模式才会启用。
-                    </p>
-                    <div className="mt-4 space-y-2 text-sm text-slate-500">
-                      <div>当前状态：{assistantBindingLoading ? '加载中...' : assistantBinding?.status || 'unconfigured'}</div>
-                      {assistantBinding?.last_error && (
-                        <div className="text-amber-600">最近错误：{assistantBinding.last_error}</div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => router.push('/settings#assistant-openclaw')}
-                      className="mt-5 inline-flex items-center px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-                    >
-                      前往设置
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto mt-8">
-                    {activeQuickQuestions.map((q, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleSend(q.text)}
-                        className="px-4 py-3 bg-white/88 hover:bg-white rounded-xl text-left transition-colors border border-slate-200 shadow-sm"
-                      >
-                        <div className="font-medium text-slate-800">{q.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="mx-auto max-w-6xl">
+              {visibleMessages.length === 0 && !loading ? (
+                <div className="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
+                  <div className={`relative overflow-hidden rounded-[34px] border border-white/10 bg-gradient-to-br ${modeCopy.panelClass} p-8 shadow-[0_35px_120px_rgba(2,6,23,0.55)]`}>
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.14),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_32%)]" />
+                    <div className="relative">
+                      <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] ${modeCopy.badgeClass}`}>
+                        <ModeSpark mode={chatMode} className="h-3.5 w-3.5" />
+                        {modeCopy.eyebrow}
+                      </div>
 
-            {messages.filter(m => !(m.role === 'assistant' && !m.content)).map(msg => (
-              <div
-                key={msg.id}
-                className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {msg.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-                    </svg>
-                  </div>
-                )}
-                <div
-                  className={`max-w-2xl rounded-2xl px-4 py-3 ${
-                    msg.role === 'user'
-                      ? 'text-white'
-                      : 'border border-slate-200 shadow-sm'
-                  }`}
-                  style={msg.role === 'user'
-                    ? { background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)' }
-                    : { background: 'rgba(255,255,255,0.92)' }}
-                >
-  {msg.role === 'assistant' ? (
-                    <div className="text-[#0f172a] text-sm leading-relaxed">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p className="mb-3 last:mb-0 whitespace-pre-wrap">{children}</p>,
-                          ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1.5">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1.5">{children}</ol>,
-                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                          h1: ({ children }) => <h1 className="text-xl font-bold mb-3 mt-4 first:mt-0 text-slate-900">{children}</h1>,
-                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-4 first:mt-0 text-slate-900">{children}</h2>,
-                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-3 first:mt-0 text-slate-900">{children}</h3>,
-                          strong: ({ children }) => <strong className="font-bold text-slate-900">{children}</strong>,
-                          em: ({ children }) => <em className="italic text-slate-600">{children}</em>,
-                          code: ({ node, ...props }: any) => {
-                            const inline = !props.className?.includes('language-');
-                            return inline ? (
-                              <code className="px-1.5 py-0.5 bg-slate-100 rounded text-blue-700 font-mono text-xs" {...props} />
-                            ) : (
-                              <code className="block px-4 py-3 bg-slate-900 rounded-lg overflow-x-auto font-mono text-xs my-2 text-slate-100" {...props} />
-                            );
-                          },
-                          pre: ({ children }) => <pre className="bg-slate-900 rounded-lg p-4 overflow-x-auto my-3 text-slate-100">{children}</pre>,
-                          blockquote: ({ children }) => (
-                            <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-3 italic text-slate-600 bg-slate-50 rounded-r-lg">
-                              {children}
-                            </blockquote>
-                          ),
-                          table: ({ children }) => (
-                            <div className="overflow-x-auto my-3">
-                              <table className="min-w-full border-collapse border border-slate-200 rounded-lg overflow-hidden">
-                                {children}
-                              </table>
-                            </div>
-                          ),
-                          thead: ({ children }) => <thead className="bg-slate-100">{children}</thead>,
-                          tbody: ({ children }) => <tbody className="bg-white">{children}</tbody>,
-                          tr: ({ children }) => <tr className="border-b border-slate-200 last:border-0">{children}</tr>,
-                          th: ({ children }) => <th className="border border-slate-200 px-3 py-2 text-left font-semibold text-slate-900">{children}</th>,
-                          td: ({ children }) => <td className="border border-slate-200 px-3 py-2">{children}</td>,
-                          hr: () => <hr className="my-4 border-slate-200" />,
-                          a: ({ children, href }) => (
-                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-500 underline">
-                              {children}
-                            </a>
-                          ),
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
+                      <div className="mt-7 flex items-start gap-4">
+                        <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] ${modeCopy.badgeClass}`}>
+                          <ModeSpark mode={chatMode} className="h-7 w-7" />
+                        </div>
+                        <div>
+                          <h1 className="text-4xl leading-tight text-white md:text-5xl" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                            {modeCopy.title}
+                          </h1>
+                          <p className="mt-4 max-w-2xl text-base leading-8 text-slate-200/85">
+                            {modeCopy.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-7 flex flex-wrap gap-3">
+                        <span className={`rounded-full px-4 py-2 text-sm ${modeCopy.chipClass}`}>{modeCopy.support}</span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">一屏完成记录、提问和复盘</span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">历史会话可回溯</span>
+                      </div>
+
+                      <p className={`mt-4 text-sm leading-7 ${modeCopy.subtleClass}`}>{modeCopy.subSupport}</p>
+
+                      <div className="mt-8 grid gap-3 md:grid-cols-2">
+                        {activeQuickQuestions.map((q) => (
+                          <button
+                            key={q.label}
+                            onClick={() => handleSend(q.text)}
+                            className="group rounded-[26px] border border-white/10 bg-white/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/10"
+                          >
+                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{q.eyebrow}</div>
+                            <div className="mt-3 text-lg text-white">{q.label}</div>
+                            <div className="mt-2 text-sm leading-6 text-slate-300">{q.summary}</div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ) : (
-                    <div>
-                      {msg.image_preview && (
-                        <img
-                          src={msg.image_preview}
-                          alt="上传图片"
-                          className="max-w-xs max-h-48 rounded-lg mb-2 object-cover"
-                        />
-                      )}
-                      {msg.file_name && (
-                        <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-white/10 rounded-lg text-sm">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                          </svg>
-                          <span className="truncate">{msg.file_name}</span>
+                  </div>
+
+                  <div className="grid gap-4 content-start">
+                    {activeMetrics.map((metric) => (
+                      <div key={metric.label} className="rounded-[30px] border border-white/10 bg-slate-950/60 p-5 shadow-[0_20px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+                        <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>
+                        <div className="mt-3 text-2xl leading-tight text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                          {metric.value}
+                        </div>
+                        <div className="mt-3 text-sm leading-7 text-slate-400">{metric.description}</div>
+                      </div>
+                    ))}
+
+                    <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                      <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>会话方式</div>
+                      <div className="mt-3 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                        先问结果，再追细节
+                      </div>
+                      <div className="mt-3 text-sm leading-7 text-slate-400">
+                        例如先问“今天状态如何”，再继续追问“为什么”和“下一步做什么”。
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mx-auto max-w-5xl space-y-5">
+                  {visibleMessages.map(msg => (
+                    <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      {msg.role === 'assistant' && (
+                        <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
+                          <ModeSpark mode={chatMode} className="h-[18px] w-[18px]" />
                         </div>
                       )}
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                      <div
+                        className={`max-w-[min(100%,48rem)] rounded-[28px] px-5 py-4 ${
+                          msg.role === 'user' ? modeCopy.userBubbleClass : modeCopy.bubbleClass
+                        }`}
+                      >
+                        {msg.role === 'assistant' ? (
+                          <div className="text-sm leading-8 text-white">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                p: ({ children }) => <p className="mb-3 last:mb-0 whitespace-pre-wrap">{children}</p>,
+                                ul: ({ children }) => <ul className="mb-3 ml-5 list-disc space-y-1.5">{children}</ul>,
+                                ol: ({ children }) => <ol className="mb-3 ml-5 list-decimal space-y-1.5">{children}</ol>,
+                                li: ({ children }) => <li className="leading-7">{children}</li>,
+                                h1: ({ children }) => <h1 className={`mb-3 mt-4 text-xl first:mt-0 ${modeCopy.accentTextClass}`} style={{ fontFamily: DISPLAY_FONT_STACK }}>{children}</h1>,
+                                h2: ({ children }) => <h2 className={`mb-2 mt-4 text-lg first:mt-0 ${modeCopy.accentTextClass}`} style={{ fontFamily: DISPLAY_FONT_STACK }}>{children}</h2>,
+                                h3: ({ children }) => <h3 className={`mb-2 mt-3 text-base first:mt-0 ${modeCopy.accentTextClass}`} style={{ fontFamily: DISPLAY_FONT_STACK }}>{children}</h3>,
+                                strong: ({ children }) => <strong className={`font-semibold ${modeCopy.accentTextClass}`}>{children}</strong>,
+                                em: ({ children }) => <em className="italic text-slate-200/80">{children}</em>,
+                                code: ({ ...props }: any) => {
+                                  const inline = !props.className?.includes('language-');
+                                  return inline ? (
+                                    <code className={`rounded bg-slate-950/80 px-1.5 py-0.5 font-mono text-xs ${modeCopy.accentTextClass}`} {...props} />
+                                  ) : (
+                                    <code className="my-2 block overflow-x-auto rounded-2xl bg-slate-950/90 px-4 py-3 font-mono text-xs" {...props} />
+                                  );
+                                },
+                                pre: ({ children }) => <pre className="my-3 overflow-x-auto rounded-2xl bg-slate-950/90 p-4">{children}</pre>,
+                                blockquote: ({ children }) => (
+                                  <blockquote className={`my-3 rounded-r-2xl border-l-4 ${modeCopy.accentBorderClass} bg-white/[0.03] py-2 pl-4 italic text-slate-200/80`}>
+                                    {children}
+                                  </blockquote>
+                                ),
+                                table: ({ children }) => (
+                                  <div className="my-3 overflow-x-auto">
+                                    <table className="min-w-full overflow-hidden rounded-2xl border border-white/10">{children}</table>
+                                  </div>
+                                ),
+                                thead: ({ children }) => <thead className="bg-white/[0.06]">{children}</thead>,
+                                tbody: ({ children }) => <tbody className="bg-slate-950/30">{children}</tbody>,
+                                tr: ({ children }) => <tr className="border-b border-white/10 last:border-0">{children}</tr>,
+                                th: ({ children }) => <th className={`border border-white/10 px-3 py-2 text-left text-sm font-medium ${modeCopy.accentTextClass}`}>{children}</th>,
+                                td: ({ children }) => <td className="border border-white/10 px-3 py-2 text-sm">{children}</td>,
+                                hr: () => <hr className="my-4 border-white/10" />,
+                                a: ({ children, href }) => (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`${modeCopy.accentTextClass} underline transition-colors hover:text-white`}
+                                  >
+                                    {children}
+                                  </a>
+                                ),
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          <div>
+                            {msg.image_preview && (
+                              <img
+                                src={msg.image_preview}
+                                alt="上传图片"
+                                className="mb-3 max-h-56 max-w-xs rounded-2xl object-cover"
+                              />
+                            )}
+                            {msg.file_name && (
+                              <div className="mb-3 flex items-center gap-2 rounded-2xl bg-white/10 px-3 py-2 text-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <span className="truncate">{msg.file_name}</span>
+                              </div>
+                            )}
+                            <div className="whitespace-pre-wrap leading-7">{msg.content}</div>
+                          </div>
+                        )}
+                      </div>
+                      {msg.role === 'assistant' && msg.content && !loading && (
+                        <div className="ml-1 mt-1 flex items-center gap-1 self-end">
+                          <button
+                            onClick={() => handleFeedback(msg.id, 5)}
+                            className={`rounded-full p-1.5 transition-all ${
+                              messageFeedback[msg.id] === 5
+                                ? 'bg-white/20 text-emerald-300'
+                                : 'text-white/30 hover:bg-white/10 hover:text-white/60'
+                            }`}
+                            title="helpful"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleFeedback(msg.id, 1)}
+                            className={`rounded-full p-1.5 transition-all ${
+                              messageFeedback[msg.id] === 1
+                                ? 'bg-white/20 text-red-300'
+                                : 'text-white/30 hover:bg-white/10 hover:text-white/60'
+                            }`}
+                            title="not helpful"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {loading && (
+                    <div className="flex gap-4">
+                      <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
+                        <ModeSpark mode={chatMode} className="h-[18px] w-[18px]" />
+                      </div>
+                      <div className={`rounded-[28px] px-5 py-4 ${modeCopy.bubbleClass}`}>
+                        <div className="flex gap-2">
+                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full ${chatMode === 'openclaw' ? 'bg-blue-300' : 'bg-emerald-300'}`} style={{ animationDelay: '0ms' }} />
+                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full ${chatMode === 'openclaw' ? 'bg-blue-300' : 'bg-emerald-300'}`} style={{ animationDelay: '150ms' }} />
+                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full ${chatMode === 'openclaw' ? 'bg-blue-300' : 'bg-emerald-300'}`} style={{ animationDelay: '300ms' }} />
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-            ))}
+              )}
 
-            {loading && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-                  </svg>
-                </div>
-                <div
-                  className="rounded-2xl px-4 py-3 border border-slate-200 shadow-sm"
-                  style={{ background: 'rgba(255,255,255,0.92)' }}
-                >
-                  <div className="flex gap-2">
-                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
             </div>
           </div>
 
-          {/* 快捷提问栏 (对话进行中也显示) */}
-          {messages.length > 0 && (
-            <div className="px-4 py-2 border-t border-slate-200/80 bg-white/38 backdrop-blur-sm">
-              <div className="max-w-4xl mx-auto overflow-x-auto">
-                <div className="flex gap-2">
-                  {activeQuickQuestions.map((q, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSend(q.text)}
-                      className="px-3 py-1.5 bg-white/88 hover:bg-white rounded-full text-sm whitespace-nowrap transition-colors border border-slate-200 text-slate-700 hover:text-slate-900"
-                    >
-                      {q.label}
-                    </button>
-                  ))}
-                </div>
+          {visibleMessages.length > 0 && (
+            <div className="border-t border-white/10 bg-slate-950/35 px-4 py-3 backdrop-blur-xl">
+              <div className="mx-auto flex max-w-5xl items-center gap-3 overflow-x-auto">
+                <span className={`shrink-0 text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>继续推进</span>
+                {activeQuickQuestions.map((q) => (
+                  <button
+                    key={q.label}
+                    onClick={() => handleSend(q.text)}
+                    className="shrink-0 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 transition-all hover:bg-white/10 hover:text-white"
+                  >
+                    {q.label}
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
-          {/* 附件预览 */}
           {(imagePreview || pendingFile) && (
-            <div className="px-4 py-2 bg-white/56 border-t border-slate-200/80 backdrop-blur-sm">
-              <div className="max-w-4xl mx-auto flex items-center gap-3">
-                <div className="relative group">
+            <div className="border-t border-white/10 bg-slate-950/50 px-4 py-3 backdrop-blur-xl">
+              <div className="mx-auto flex max-w-5xl items-center gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] px-4 py-3">
+                <div className="relative">
                   {imagePreview ? (
                     <img
                       src={imagePreview}
                       alt="待发送图片"
-                      className="w-16 h-16 object-cover rounded-lg border border-slate-200"
+                      className="h-16 w-16 rounded-2xl border border-white/10 object-cover"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-lg border border-slate-200 bg-white flex flex-col items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <div className="flex h-16 w-16 flex-col items-center justify-center rounded-2xl border border-white/10 bg-slate-900">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                       </svg>
-                      <span className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[56px]">{pendingFile?.name.split('.').pop()}</span>
                     </div>
                   )}
                   <button
                     onClick={clearPendingAttachment}
-                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs hover:bg-red-400 transition-colors"
+                    className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs text-white transition-colors hover:bg-red-400"
                   >
-                    x
+                    ×
                   </button>
                 </div>
-                <span className="text-sm text-slate-600">
-                  {imagePreview ? '图片已就绪' : pendingFile?.name} — 输入描述后发送（或直接发送）
-                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-white">{imagePreview ? '图片已就绪' : pendingFile?.name}</div>
+                  <div className="mt-1 text-xs text-slate-400">补一句目标或上下文后直接发送，AI 会结合附件内容理解你的需求。</div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* 输入区域 */}
-          <div className="p-4 bg-white/62 border-t border-slate-200/80 backdrop-blur-xl">
-            <div className="max-w-4xl mx-auto flex gap-2 items-center">
-              {/* 上传按钮 */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={imageUploading || assistantModeLocked || chatMode === 'assistant_openclaw'}
-                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  imageUploading
-                    ? 'bg-blue-500/50 text-white animate-pulse'
-                    : (assistantModeLocked || chatMode === 'assistant_openclaw')
-                      ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
-                      : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-900'
-                }`}
-                title="上传图片或文件"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-              </button>
-              {/* 语音按钮 */}
-              <button
-                onClick={handleVoiceToggle}
-                disabled={assistantModeLocked}
-                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  assistantModeLocked
-                    ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
-                    : isRecording
-                    ? 'bg-red-500 text-white animate-pulse'
-                    : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-900'
-                }`}
-                title={isRecording ? '停止录音' : '语音输入'}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  {isRecording ? (
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  ) : (
-                    <>
+          <div className="border-t border-white/10 bg-slate-950/55 px-4 py-4 backdrop-blur-2xl">
+            <div className="mx-auto max-w-5xl rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
+                <div>
+                  <div className={`text-[10px] uppercase tracking-[0.32em] ${modeCopy.accentTextClass}`}>{modeCopy.support}</div>
+                  <div className="mt-1 text-xs text-slate-400">{modeCopy.subSupport}</div>
+                </div>
+                <div className="text-xs text-slate-500">Enter 发送</div>
+              </div>
+
+              <div className="flex items-center gap-3 px-4 py-4">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                />
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={imageUploading}
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
+                    imageUploading ? 'bg-white/15 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                  title="上传图片或文件"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={handleVoiceToggle}
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
+                    isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                  title={isRecording ? '停止录音' : '语音输入'}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    {isRecording ? (
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    ) : (
                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" />
-                    </>
-                  )}
-                </svg>
-              </button>
-              {/* 文本输入 */}
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                placeholder={assistantModeLocked
-                  ? '请先在设置页绑定并测试你的 OpenClaw'
-                  : isRecording
-                    ? '正在录音...'
-                    : (pendingImage || pendingFile)
-                      ? '输入描述或问题（可直接发送）'
-                      : '有什么可以帮你的...'}
-                className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isRecording || assistantModeLocked}
-              />
-              {/* 发送按钮 */}
-              <button
-                onClick={() => handleSend()}
-                disabled={assistantModeLocked || (!inputText.trim() && !pendingImage && !pendingFile)}
-                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                  (!assistantModeLocked && (inputText.trim() || pendingImage || pendingFile))
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                <span className="text-xl">↑</span>
-              </button>
+                    )}
+                  </svg>
+                </button>
+
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '用一句完整目标开始，例如：分析今天状态，或帮我安排训练恢复'}
+                  className="flex-1 bg-transparent px-2 py-3 text-[15px] text-white placeholder:text-slate-500 focus:outline-none"
+                  disabled={isRecording}
+                />
+
+                <button
+                  onClick={() => handleSend()}
+                  disabled={!inputText.trim() && !pendingImage && !pendingFile}
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all ${
+                    (inputText.trim() || pendingImage || pendingFile)
+                      ? 'bg-white text-slate-950 hover:scale-[1.02]'
+                      : 'bg-white/8 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <span className="text-xl leading-none">↑</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </section>
+      </div>
     </div>
   );
 }

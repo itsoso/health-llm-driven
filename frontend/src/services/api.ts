@@ -1857,3 +1857,14 @@ export const openclawSkillsApi = {
   restartGateway: () =>
     api.post<{ ok: boolean; message: string }>('/v1/openclaw/skills/gateway/restart'),
 };
+
+// ===== 交互反馈 API（OpenClaw Native 自优化） =====
+export const feedbackApi = {
+  submit: (data: {
+    conversation_type: 'chat' | 'openclaw';
+    conversation_id: number;
+    message_id: number;
+    rating: 1 | 5;
+    feedback_text?: string;
+  }) => api.post<{ id: number; rating: number }>('/feedback', data),
+};

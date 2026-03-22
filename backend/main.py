@@ -19,6 +19,7 @@ from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
+import app.models.interaction_feedback  # noqa: F401 - OpenClaw Native 反馈系统
 
 # 设置日志，使用北京时间
 setup_beijing_logging()

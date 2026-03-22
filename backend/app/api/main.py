@@ -80,6 +80,7 @@ from app.api import (
     openclaw_skills,  # OpenClaw Skills 远程管理
     shared_conversation,  # 对话分享
     skills,  # Skills 公开目录
+    feedback,  # 交互反馈 & Skill 性能追踪
 )
 
 api_router = APIRouter()
@@ -192,3 +193,6 @@ api_router.include_router(shared_conversation.router)  # prefix 已在 router �
 
 # Skills 公开目录（无需认证）
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
+
+# 交互反馈 & Skill 性能追踪（OpenClaw Native 自优化基础设施）
+api_router.include_router(feedback.router)
