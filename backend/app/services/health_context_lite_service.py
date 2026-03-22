@@ -53,7 +53,7 @@ def _get_time_period() -> tuple[str, str]:
     return now.strftime("%H:%M"), period
 
 
-async def build_lite_health_context(db: Session, user_id: int) -> Optional[str]:
+def build_lite_health_context(db: Session, user_id: int) -> Optional[str]:
     """构建轻量健康上下文（~200 tokens）
 
     数据来源：

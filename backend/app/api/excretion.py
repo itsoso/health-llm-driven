@@ -333,10 +333,9 @@ def _analyze_urine(records: list, num_days: int) -> dict:
     # 高峰时段（前 3 个小时）
     peak_hours = [h for h, _ in hour_counts.most_common(3)]
 
-    # 夜间排尿（22:00 - 06:00）
+    # 夜间排尿（22:00 - 06:00），除以总天数而非有夜尿的天数
     nighttime = [r for r in records if r.record_time and (r.record_time.hour >= 22 or r.record_time.hour < 6)]
-    night_dates = set(r.record_date for r in nighttime)
-    nighttime_avg = round(len(nighttime) / max(len(night_dates), 1), 1) if nighttime else 0
+    nighttime_avg = round(len(nighttime) / num_days, 1) if nighttime else 0
 
     return {
         "total_count": len(records),

@@ -504,7 +504,7 @@ AI: {ai_reply}
             from app.services.health_context_lite_service import (
                 build_lite_health_context, OPENCLAW_HEALTH_SYSTEM_RULES,
             )
-            health_ctx = await build_lite_health_context(self.db, user_id)
+            health_ctx = build_lite_health_context(self.db, user_id)
             if health_ctx:
                 messages.insert(0, {
                     "role": "system",

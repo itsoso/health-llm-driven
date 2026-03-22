@@ -1,5 +1,4 @@
 """轻量健康上下文服务测试"""
-import asyncio
 import pytest
 from datetime import date, timedelta
 from app.models.user import User
@@ -82,9 +81,7 @@ class TestHealthContextLite:
     def test_basic_context(self, db, test_user, test_profile, test_garmin):
         """有完整数据时输出包含所有关键信息"""
         from app.services.health_context_lite_service import build_lite_health_context
-        ctx = asyncio.get_event_loop().run_until_complete(
-            build_lite_health_context(db, test_user.id)
-        )
+        ctx = build_lite_health_context(db, test_user.id)
         assert ctx is not None
 
         # 用户信息
@@ -115,9 +112,7 @@ class TestHealthContextLite:
     def test_empty_user(self, db, test_user):
         """无 profile/garmin 时不崩溃，返回最小上下文"""
         from app.services.health_context_lite_service import build_lite_health_context
-        ctx = asyncio.get_event_loop().run_until_complete(
-            build_lite_health_context(db, test_user.id)
-        )
+        ctx = build_lite_health_context(db, test_user.id)
         assert ctx is not None
         assert "张三" in ctx
         # 不应崩溃，即使没有 Garmin 数据
@@ -127,18 +122,14 @@ class TestHealthContextLite:
         """5 分钟内第二次调用返回缓存"""
         from app.services.health_context_lite_service import build_lite_health_context, _context_cache
 
-        ctx1 = asyncio.get_event_loop().run_until_complete(
-            build_lite_health_context(db, test_user.id)
-        )
+        ctx1 = build_lite_health_context(db, test_user.id)
         assert test_user.id in _context_cache
 
         # 修改用户名（但不应反映在缓存结果中）
         test_user.name = "李四"
         db.commit()
 
-        ctx2 = asyncio.get_event_loop().run_until_complete(
-            build_lite_health_context(db, test_user.id)
-        )
+        ctx2 = build_lite_health_context(db, test_user.id)
         # 应该返回缓存的内容（仍然是张三）
         assert ctx1 == ctx2
         assert "张三" in ctx2
@@ -157,9 +148,7 @@ class TestHealthContextLite:
         db.add(illness)
         db.commit()
 
-        ctx = asyncio.get_event_loop().run_until_complete(
-            build_lite_health_context(db, test_user.id)
-        )
+        ctx = build_lite_health_context(db, test_user.id)
         assert "口腔溃疡" in ctx
         assert "第3天" in ctx
         assert "6/10" in ctx
@@ -168,9 +157,7 @@ class TestHealthContextLite:
         """没有 Garmin 设备时优雅降级"""
         from app.services.health_context_lite_service import build_lite_health_context
 
-        ctx = asyncio.get_event_loop().run_until_complete(
-            build_lite_health_context(db, test_user.id)
-        )
+        ctx = build_lite_health_context(db, test_user.id)
         assert ctx is not None
         # 应该有用户信息，但没有 Garmin 行
         assert "张三" in ctx
