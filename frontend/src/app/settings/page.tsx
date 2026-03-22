@@ -2667,6 +2667,21 @@ function SettingsContent() {
             </div>
           )}
         </div>
+        {/* NFC 快速记录指南 */}
+        <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">
+          <a href="/settings/nfc-guide" className="flex items-center justify-between group">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{'\u{1F4F1}'}</span>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">NFC 快速记录</h2>
+                <p className="text-sm text-gray-600">通过 NFC 标签碰一下手机，自动记录饮水和排泄数据</p>
+              </div>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+        </div>
       </div>
     </main>
   );
