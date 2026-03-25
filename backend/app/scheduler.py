@@ -176,14 +176,16 @@ async def sync_user_garmin_data(
         result["success_count"] = sync_result.get("success_count", 0)
         result["error_count"] = sync_result.get("error_count", 0)
         
-        # 同步运动活动数据
+        # 同步运动活动数据（复用已认证的 client，避免重复登录触发限流）
         try:
             from app.services.workout_sync import WorkoutSyncService
+            workout_client = service.client if hasattr(service, 'client') and service._authenticated else None
             workout_sync_service = WorkoutSyncService(
                 email=email,
                 password=password,
                 is_cn=is_cn,
-                user_id=user_id
+                user_id=user_id,
+                client=workout_client
             )
             workout_result = await workout_sync_service.sync_activities(db, user_id, days)
             result["activities_count"] = workout_result.get("synced_count", 0)
@@ -192,8 +194,9 @@ async def sync_user_garmin_data(
             # 从运动记录中提取最新的 VO2Max 并更新到每日数据
             _update_vo2max_from_workouts(db, user_id, days)
         except Exception as e:
-            logger.warning(f"用户 {user_id} 运动活动同步失败: {e}")
-        
+            logger.warning(f"用户 {user_id} 运动活动同步失败: {e}", exc_info=True)
+            result["activities_error"] = str(e)
+
         result["message"] = f"同步完成: 健康数据 {result['success_count']} 天"
         if result["activities_count"] > 0:
             result["message"] += f", 运动活动 {result['activities_count']} 条"
