@@ -174,7 +174,23 @@ deploy_backend() {
         echo '安装依赖...' && \
         pip install -r requirements.txt -q && \
         echo '重启后端服务...' && \
-        systemctl restart health-backend
+        systemctl restart health-backend && \
+        echo '同步 Skills 到 OpenClaw Gateway...' && \
+        python3 -c '
+from app.services.openclaw_skills_service import openclaw_skills_service
+from pathlib import Path
+skills_dir = Path(\"skills\")
+if skills_dir.exists():
+    for d in sorted(skills_dir.iterdir()):
+        skill_md = d / \"SKILL.md\"
+        if skill_md.exists():
+            try:
+                content = skill_md.read_text()
+                openclaw_skills_service.create_or_update_skill(name=d.name, skill_md_content=content, enabled=True)
+                print(f\"  ✓ {d.name}\")
+            except Exception as e:
+                print(f\"  ✗ {d.name}: {e}\")
+' 2>&1 || echo '  ⚠ Skills 同步跳过（Gateway 可能不可用）'
     "
 
     print_success "后端部署完成"
