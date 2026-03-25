@@ -463,8 +463,10 @@ class AppleHealthAdapter(DeviceAdapter):
         """计算睡眠评分（简化算法）"""
         if not sleep_records:
             return None
-        
+
         total_sleep = self._calculate_total_sleep(sleep_records)
+        if total_sleep is None:
+            return None
         if total_sleep < 360:  # 少于 6 小时
             return 50
         elif total_sleep < 420:  # 6-7 小时
@@ -474,14 +476,25 @@ class AppleHealthAdapter(DeviceAdapter):
         else:  # 超过 9 小时
             return 80
     
+    # Apple Health 睡眠类型中算作「实际睡眠」的值
+    _SLEEP_ASLEEP_TYPES = {
+        "ASLEEP",
+        "HKCategoryValueSleepAnalysisAsleep",
+        "HKCategoryValueSleepAnalysisAsleepCore",
+        "HKCategoryValueSleepAnalysisAsleepDeep",
+        "HKCategoryValueSleepAnalysisAsleepREM",
+        "HKCategoryValueSleepAnalysisAsleepUnspecified",
+        "HKCategoryValueSleepAnalysisInBed",
+    }
+
     def _calculate_total_sleep(self, sleep_records: List[Dict]) -> Optional[int]:
         """计算总睡眠时长（分钟）"""
         if not sleep_records:
             return None
-        
+
         total = 0
         for record in sleep_records:
-            if record.get("type") == "ASLEEP":
+            if record.get("type") in self._SLEEP_ASLEEP_TYPES:
                 total += record.get("duration_minutes", 0)
         return total if total > 0 else None
     
