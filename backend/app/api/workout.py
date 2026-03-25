@@ -873,13 +873,25 @@ async def sync_garmin_activities(
         )
     
     try:
-        sync_service = WorkoutSyncService(
+        # 先用 GarminConnectService 登录（优先从 DB 加载缓存的 OAuth Token）
+        from app.services.data_collection.garmin_connect import GarminConnectService
+        garmin_service = GarminConnectService(
             email=credentials["email"],
             password=credentials["password"],
             is_cn=credentials.get("is_cn", False),
             user_id=current_user.id
         )
-        
+        garmin_service._ensure_authenticated(db)
+
+        # 复用已认证的 client，避免重复登录触发 Garmin 限流
+        sync_service = WorkoutSyncService(
+            email=credentials["email"],
+            password=credentials["password"],
+            is_cn=credentials.get("is_cn", False),
+            user_id=current_user.id,
+            client=garmin_service.client if garmin_service._authenticated else None
+        )
+
         result = await sync_service.sync_activities(db, current_user.id, days)
         
         return {
