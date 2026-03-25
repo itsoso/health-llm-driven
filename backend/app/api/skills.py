@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from typing import List, Dict, Any
+from app.config import settings
 
 router = APIRouter()
 
@@ -82,7 +83,7 @@ def get_skills_manifest():
 
     return {
         "version": "1.0",
-        "base_url": "https://health.executor.life/api",
+        "base_url": f"{settings.site_base_url}/api",
         "auth_type": "Bearer Token",
         "skills": skills,
     }

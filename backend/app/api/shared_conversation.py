@@ -118,7 +118,8 @@ def create_share(
         db.refresh(shared)
         share_token = shared.share_token
 
-    share_url = f"https://health.executor.life/shared/{share_token}"
+    from app.config import settings as _cfg
+    share_url = f"{_cfg.site_base_url}/shared/{share_token}"
     logger.info(f"[分享] 用户 {current_user.id} 分享对话 {req.source_type}:{req.conversation_id} -> {share_token}")
     return ShareResponse(share_token=share_token, share_url=share_url)
 
