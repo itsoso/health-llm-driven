@@ -17,7 +17,23 @@ from sqlalchemy import or_, and_
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/groups", tags=["群聊"])
+# 仅允许访问群聊功能的用户白名单
+_GROUP_CHAT_ALLOWED_EMAILS = {"itsoso@126.com"}
+
+
+async def _require_group_chat_access(
+    current_user: User = Depends(get_current_user_required),
+):
+    """群聊功能访问控制：仅白名单用户可访问"""
+    if current_user.email not in _GROUP_CHAT_ALLOWED_EMAILS:
+        raise HTTPException(status_code=403, detail="群聊功能暂未开放")
+
+
+router = APIRouter(
+    prefix="/groups",
+    tags=["群聊"],
+    dependencies=[Depends(_require_group_chat_access)],
+)
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
