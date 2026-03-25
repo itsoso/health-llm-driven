@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # JWT配置
 SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 365 * 100  # 100年
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30天
 
 # Garmin密码加密密钥（必须独立配置，不从SECRET_KEY派生）
 GARMIN_ENCRYPTION_KEY = settings.garmin_encryption_key

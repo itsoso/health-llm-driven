@@ -758,7 +758,8 @@ async def sync_garmin_data_stream(
 @router.post("/garmin/test-connection", response_model=GarminTestConnectionResponse, summary="测试Garmin连接")
 async def test_garmin_connection(
     credentials: GarminCredentialCreate,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
 ):
     """
     测试Garmin凭证是否有效（不保存）
@@ -791,14 +792,11 @@ async def test_garmin_connection(
         
         # 如果检测到需要MFA，更新数据库中的requires_mfa字段
         if result.get("mfa_required"):
-            db = next(get_db())
             try:
                 garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=True)
                 logger.info(f"已更新用户 {current_user.id} 的MFA状态为需要MFA")
             except Exception as e:
                 logger.warning(f"更新MFA状态失败: {e}")
-            finally:
-                db.close()
         
         return GarminTestConnectionResponse(
             success=result.get("success", False),
@@ -846,7 +844,8 @@ async def test_garmin_connection(
 @router.post("/garmin/verify-mfa", response_model=GarminMFAVerifyResponse, summary="验证Garmin两步验证码")
 async def verify_garmin_mfa(
     mfa_request: GarminMFAVerifyRequest,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
 ):
     """
     使用两步验证码完成Garmin登录验证
@@ -870,14 +869,11 @@ async def verify_garmin_mfa(
         
         # 如果验证成功，更新数据库中的requires_mfa字段为True
         if result.get("success") and result.get("session_id"):
-            db = next(get_db())
             try:
                 garmin_credential_service.update_mfa_status(db, current_user.id, requires_mfa=True)
                 logger.info(f"MFA验证成功，已更新用户 {current_user.id} 的MFA状态为需要MFA")
             except Exception as e:
                 logger.warning(f"更新MFA状态失败: {e}")
-            finally:
-                db.close()
         
         return GarminMFAVerifyResponse(
             success=result.get("success", False),
