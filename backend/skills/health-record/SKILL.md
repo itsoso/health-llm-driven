@@ -154,3 +154,16 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/supplement
 - 多个补剂同时记录时，优先用批量打卡接口
 - "吃了NAC两粒" → 找到NAC的supplement_id，记录taken=true
 - "吃了甘氨酸锌" → 先查列表，不存在则创建定义，然后打卡
+
+## 同步 Garmin 数据
+
+当用户说"同步Garmin数据"、"更新运动数据"、"拉取最新数据"时，触发 Garmin 数据同步：
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/auth/garmin/sync" -d '{"days": 1}'
+```
+- `days`: 同步最近N天的数据（默认1天，最多730天）
+- 返回同步成功的天数和运动记录数
+- 如果返回404说明用户未配置 Garmin 凭证，提示去设置页面配置
+- 同步完成后可以用 health-query 技能查询最新数据
