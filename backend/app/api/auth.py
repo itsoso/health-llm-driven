@@ -448,6 +448,7 @@ async def sync_garmin_data(
         
         # 同步运动活动数据
         synced_activities = 0
+        activities_error = None
         try:
             # 复用已认证的garmin_service的client（如果可用）
             workout_client = garmin_service.client if hasattr(garmin_service, 'client') and garmin_service.client else None
@@ -470,22 +471,27 @@ async def sync_garmin_data(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。"
                 ) from e
-            logger.warning(f"[用户 {current_user.id}] 运动活动同步失败: {e}")
-        
+            logger.warning(f"[用户 {current_user.id}] 运动活动同步失败: {e}", exc_info=True)
+            activities_error = str(e)
+
         # 更新同步状态
         garmin_credential_service.update_sync_status(db, current_user.id)
-        
+
         message = f"同步完成：健康数据 {synced_days} 天"
         if synced_activities > 0:
             message += f"，运动活动 {synced_activities} 条"
         if failed_days > 0:
             message += f"，失败 {failed_days} 天"
-        
+        if activities_error:
+            message += f"，运动同步异常: {activities_error}"
+
         return GarminSyncResponse(
             success=True,
             message=message,
             synced_days=synced_days,
-            failed_days=failed_days
+            failed_days=failed_days,
+            activities_count=synced_activities,
+            activities_error=activities_error
         )
         
     except HTTPException:

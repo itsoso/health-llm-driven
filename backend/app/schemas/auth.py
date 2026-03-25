@@ -115,6 +115,8 @@ class GarminSyncResponse(BaseModel):
     message: str
     synced_days: int = 0
     failed_days: int = 0
+    activities_count: int = 0
+    activities_error: Optional[str] = None
 
 
 class GarminTestConnectionResponse(BaseModel):
