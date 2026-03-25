@@ -118,3 +118,25 @@ def get_skill_raw(skill_name: str):
         raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
 
     return skill_file.read_text(encoding="utf-8")
+
+
+@router.get("/{skill_name}/install-command", response_class=PlainTextResponse)
+def get_install_command(skill_name: str):
+    """生成 OpenClaw 一键安装/更新命令
+
+    在任意 OpenClaw 对话中粘贴返回的内容即可安装或更新此 Skill。
+    """
+    skill_file = SKILLS_DIR / skill_name / "SKILL.md"
+    if not skill_file.exists():
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+
+    content = skill_file.read_text(encoding="utf-8")
+    fm = _parse_frontmatter(content)
+    name = fm.get("name", skill_name)
+    version = fm.get("version", "")
+
+    return (
+        f"# 安装/更新 {name} v{version}\n"
+        f"# 将以下内容完整粘贴到 OpenClaw 对话中发送即可\n\n"
+        f"安装技能\n{content}"
+    )
