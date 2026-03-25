@@ -486,6 +486,32 @@ export default function SkillsPage() {
           </p>
         </div>
 
+        {/* 使用说明 */}
+        <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
+          <h2 className="text-sm font-semibold text-purple-300 mb-3">使用说明</h2>
+          <div className="space-y-3 text-sm text-gray-300 leading-7">
+            <div className="flex items-start gap-3">
+              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-600/30 text-xs text-purple-300">1</span>
+              <div><span className="text-white font-medium">安装到本系统</span> — 点击下方 Skill 卡片的「安装」按钮，自动部署到 OpenClaw Gateway。</div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-600/30 text-xs text-purple-300">2</span>
+              <div><span className="text-white font-medium">安装到其他 OpenClaw</span> — 复制 Skill 内容（点「查看内容」后复制），粘贴到目标 OpenClaw 对话中发送即可。</div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-600/30 text-xs text-purple-300">3</span>
+              <div><span className="text-white font-medium">批量安装/更新</span> — 复制下方 Manifest URL，在 OpenClaw 中使用即可获取全部 Skills。</div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-600/30 text-xs text-purple-300">4</span>
+              <div><span className="text-white font-medium">API 获取</span> — <code className="rounded bg-[#0d0b14] px-1.5 py-0.5 text-purple-300 text-xs">GET /api/v1/skills/{'{name}'}/raw</code> 返回完整 SKILL.md 内容，<code className="rounded bg-[#0d0b14] px-1.5 py-0.5 text-purple-300 text-xs">GET /api/v1/skills/{'{name}'}/install-command</code> 返回一键安装命令。</div>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            Skills 在每次后端部署时自动同步到 Gateway，无需手动更新。
+          </p>
+        </div>
+
         {/* Manifest URL - 一键安装 */}
         <div className="bg-[#1e1a2e] rounded-xl border border-purple-900/30 p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
