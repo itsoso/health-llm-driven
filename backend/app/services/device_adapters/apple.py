@@ -229,28 +229,29 @@ class AppleHealthAdapter(DeviceAdapter):
     @staticmethod
     def parse_health_xml(xml_content: str) -> Dict[str, Any]:
         """
-        解析 Apple Health 导出的 XML 文件
-        
+        解析 Apple Health 导出的 XML 文件（流式解析，支持大文件）
+
         Args:
-            xml_content: XML 文件内容
-            
+            xml_content: XML 文件内容或文件路径
+
         Returns:
-            按日期组织的数据字典：
-            {
-                "2024-01-01": {
-                    "steps": 10000,
-                    "heart_rate_samples": [...],
-                    "sleep": [...],
-                    ...
-                }
-            }
+            按日期组织的数据字典
         """
-        try:
-            root = ET.fromstring(xml_content)
-        except ET.ParseError as e:
-            logger.error(f"XML 解析失败: {e}")
-            raise ValueError(f"无效的 XML 文件: {e}")
-        
+        import io
+
+        # 支持的 Record 类型
+        SUPPORTED_TYPES = {
+            "HKQuantityTypeIdentifierStepCount",
+            "HKQuantityTypeIdentifierHeartRate",
+            "HKQuantityTypeIdentifierActiveEnergyBurned",
+            "HKQuantityTypeIdentifierBasalEnergyBurned",
+            "HKQuantityTypeIdentifierDistanceWalkingRunning",
+            "HKCategoryTypeIdentifierSleepAnalysis",
+            "HKQuantityTypeIdentifierOxygenSaturation",
+            "HKQuantityTypeIdentifierRespiratoryRate",
+            "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        }
+
         # 按日期组织数据
         daily_data = defaultdict(lambda: {
             "steps": 0,
@@ -264,127 +265,140 @@ class AppleHealthAdapter(DeviceAdapter):
             "respiration_samples": [],
             "hrv_samples": []
         })
-        
-        # 解析记录
-        for record in root.findall(".//Record"):
-            record_type = record.get("type")
-            value = record.get("value")
-            start_date = record.get("startDate")
-            end_date = record.get("endDate")
-            
-            if not start_date:
-                continue
-            
-            try:
-                # 解析日期（Apple Health 格式: "2023-07-05 23:23:11 +0800"）
-                start_dt = _parse_apple_date(start_date)
-                date_key = start_dt.date().isoformat()
-                
-                if record_type == "HKQuantityTypeIdentifierStepCount":
-                    # 步数（累加）
-                    if value:
-                        daily_data[date_key]["steps"] += int(float(value))
-                
-                elif record_type == "HKQuantityTypeIdentifierHeartRate":
-                    # 心率采样
-                    if value:
-                        daily_data[date_key]["heart_rate_samples"].append({
-                            "timestamp": start_date,
-                            "value": int(float(value))
-                        })
-                
-                elif record_type == "HKQuantityTypeIdentifierActiveEnergyBurned":
-                    # 活动卡路里（累加）
-                    if value:
-                        daily_data[date_key]["calories_active"] += float(value)
-                
-                elif record_type == "HKQuantityTypeIdentifierBasalEnergyBurned":
-                    # 基础代谢卡路里（累加）
-                    if value:
-                        daily_data[date_key]["calories_total"] += float(value)
-                
-                elif record_type == "HKQuantityTypeIdentifierDistanceWalkingRunning":
-                    # 步行/跑步距离（累加）
-                    if value:
-                        daily_data[date_key]["distance_meters"] += float(value) * 1000  # 转换为米
-                
-                elif record_type == "HKCategoryTypeIdentifierSleepAnalysis":
-                    # 睡眠分析
-                    sleep_value = record.get("value")
-                    if sleep_value and end_date:
+
+        # 使用 iterparse 流式解析，避免一次性加载整个 DOM
+        try:
+            source = io.StringIO(xml_content)
+            context = ET.iterparse(source, events=["end"])
+        except Exception as e:
+            logger.error(f"XML 解析初始化失败: {e}")
+            raise ValueError(f"无效的 XML 文件: {e}")
+
+        record_count = 0
+        workout_count = 0
+
+        for event, elem in context:
+            if elem.tag == "Record":
+                record_type = elem.get("type")
+                if record_type not in SUPPORTED_TYPES:
+                    elem.clear()
+                    continue
+
+                value = elem.get("value")
+                start_date = elem.get("startDate")
+                end_date = elem.get("endDate")
+
+                if not start_date:
+                    elem.clear()
+                    continue
+
+                try:
+                    start_dt = _parse_apple_date(start_date)
+                    date_key = start_dt.date().isoformat()
+
+                    if record_type == "HKQuantityTypeIdentifierStepCount":
+                        if value:
+                            daily_data[date_key]["steps"] += int(float(value))
+
+                    elif record_type == "HKQuantityTypeIdentifierHeartRate":
+                        if value:
+                            daily_data[date_key]["heart_rate_samples"].append({
+                                "timestamp": start_date,
+                                "value": int(float(value))
+                            })
+
+                    elif record_type == "HKQuantityTypeIdentifierActiveEnergyBurned":
+                        if value:
+                            daily_data[date_key]["calories_active"] += float(value)
+
+                    elif record_type == "HKQuantityTypeIdentifierBasalEnergyBurned":
+                        if value:
+                            daily_data[date_key]["calories_total"] += float(value)
+
+                    elif record_type == "HKQuantityTypeIdentifierDistanceWalkingRunning":
+                        if value:
+                            daily_data[date_key]["distance_meters"] += float(value) * 1000
+
+                    elif record_type == "HKCategoryTypeIdentifierSleepAnalysis":
+                        sleep_value = elem.get("value")
+                        if sleep_value and end_date:
+                            end_dt = _parse_apple_date(end_date)
+                            duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+                            daily_data[date_key]["sleep"].append({
+                                "type": sleep_value,
+                                "start": start_date,
+                                "end": end_date,
+                                "duration_minutes": duration_minutes
+                            })
+
+                    elif record_type == "HKQuantityTypeIdentifierOxygenSaturation":
+                        if value:
+                            daily_data[date_key]["spo2_samples"].append({
+                                "timestamp": start_date,
+                                "value": float(value) * 100
+                            })
+
+                    elif record_type == "HKQuantityTypeIdentifierRespiratoryRate":
+                        if value:
+                            daily_data[date_key]["respiration_samples"].append({
+                                "timestamp": start_date,
+                                "value": float(value)
+                            })
+
+                    elif record_type == "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
+                        if value:
+                            daily_data[date_key]["hrv_samples"].append({
+                                "timestamp": start_date,
+                                "value": float(value) * 1000
+                            })
+
+                    record_count += 1
+                except Exception as e:
+                    logger.warning(f"解析记录失败 (type={record_type}): {e}")
+
+                elem.clear()
+
+            elif elem.tag == "Workout":
+                workout_type = elem.get("workoutActivityType")
+                start_date = elem.get("startDate")
+
+                if not start_date:
+                    elem.clear()
+                    continue
+
+                try:
+                    start_dt = _parse_apple_date(start_date)
+                    date_key = start_dt.date().isoformat()
+
+                    end_date = elem.get("endDate")
+                    duration = 0
+                    if end_date:
                         end_dt = _parse_apple_date(end_date)
-                        duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
-                        
-                        daily_data[date_key]["sleep"].append({
-                            "type": sleep_value,  # "ASLEEP", "AWAKE", "INBED"
-                            "start": start_date,
-                            "end": end_date,
-                            "duration_minutes": duration_minutes
-                        })
-                
-                elif record_type == "HKQuantityTypeIdentifierOxygenSaturation":
-                    # 血氧饱和度
-                    if value:
-                        daily_data[date_key]["spo2_samples"].append({
-                            "timestamp": start_date,
-                            "value": float(value) * 100  # 转换为百分比
-                        })
-                
-                elif record_type == "HKQuantityTypeIdentifierRespiratoryRate":
-                    # 呼吸频率
-                    if value:
-                        daily_data[date_key]["respiration_samples"].append({
-                            "timestamp": start_date,
-                            "value": float(value)
-                        })
-                
-                elif record_type == "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
-                    # HRV (SDNN)
-                    if value:
-                        daily_data[date_key]["hrv_samples"].append({
-                            "timestamp": start_date,
-                            "value": float(value) * 1000  # 转换为毫秒
-                        })
-            
-            except Exception as e:
-                logger.warning(f"解析记录失败 (type={record_type}): {e}")
-                continue
-        
-        # 解析运动记录
-        for workout in root.findall(".//Workout"):
-            workout_type = workout.get("workoutActivityType")
-            start_date = workout.get("startDate")
-            
-            if not start_date:
-                continue
-            
-            try:
-                start_dt = _parse_apple_date(start_date)
-                date_key = start_dt.date().isoformat()
-                
-                end_date = workout.get("endDate")
-                duration = 0
-                if end_date:
-                    end_dt = _parse_apple_date(end_date)
-                    duration = int((end_dt - start_dt).total_seconds())
-                
-                # 提取运动数据
-                total_energy = workout.find(".//MetadataEntry[@key='HKTotalEnergyBurned']")
-                total_distance = workout.find(".//MetadataEntry[@key='HKTotalDistance']")
-                
-                daily_data[date_key]["workouts"].append({
-                    "id": workout.get("sourceName", ""),
-                    "type": AppleHealthAdapter._map_workout_type(workout_type),
-                    "start": start_date,
-                    "end": end_date,
-                    "duration": duration,
-                    "calories": float(total_energy.get("value")) if total_energy is not None else None,
-                    "distance": float(total_distance.get("value")) * 1000 if total_distance is not None else None,  # 转换为米
-                })
-            
-            except Exception as e:
-                logger.warning(f"解析运动记录失败: {e}")
-                continue
+                        duration = int((end_dt - start_dt).total_seconds())
+
+                    total_energy = elem.find(".//MetadataEntry[@key='HKTotalEnergyBurned']")
+                    total_distance = elem.find(".//MetadataEntry[@key='HKTotalDistance']")
+
+                    daily_data[date_key]["workouts"].append({
+                        "id": elem.get("sourceName", ""),
+                        "type": AppleHealthAdapter._map_workout_type(workout_type),
+                        "start": start_date,
+                        "end": end_date,
+                        "duration": duration,
+                        "calories": float(total_energy.get("value")) if total_energy is not None else None,
+                        "distance": float(total_distance.get("value")) * 1000 if total_distance is not None else None,
+                    })
+                    workout_count += 1
+                except Exception as e:
+                    logger.warning(f"解析运动记录失败: {e}")
+
+                elem.clear()
+            else:
+                # 清理不需要的顶层元素，释放内存
+                if elem.tag in ("ExportDate", "Me"):
+                    elem.clear()
+
+        logger.info(f"Apple Health XML 解析完成: {record_count} 条记录, {workout_count} 条运动, {len(daily_data)} 天数据")
         
         # 聚合每日数据
         result = {}
