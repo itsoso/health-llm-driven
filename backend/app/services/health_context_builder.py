@@ -423,9 +423,20 @@ class HealthContextBuilder:
         if exercise_7days:
             steps_list = [r.steps for r in exercise_7days if r.steps is not None]
             calories_list = [r.calories_burned for r in exercise_7days if r.calories_burned is not None]
-            active_mins = [r.vigorous_intensity_minutes + r.moderate_intensity_minutes
-                          for r in exercise_7days
-                          if r.vigorous_intensity_minutes is not None and r.moderate_intensity_minutes is not None]
+            # 活动时长：优先用 workout_records 的实际运动时间（而非 Garmin 强度分钟数）
+            _workout_7d = self.db.query(WorkoutRecord).filter(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.workout_date >= date.today() - timedelta(days=7),
+            ).all()
+            _workout_dur_7d = defaultdict(int)
+            for w in _workout_7d:
+                if w.duration_seconds:
+                    _workout_dur_7d[w.workout_date] += w.duration_seconds // 60
+            active_mins = []
+            for r in exercise_7days:
+                garmin_active = (r.vigorous_intensity_minutes or 0) + (r.moderate_intensity_minutes or 0)
+                workout_active = _workout_dur_7d.get(r.record_date, 0)
+                active_mins.append(max(garmin_active, workout_active))
 
             exercise_stats_7d = [f"最近7天运动统计({len(exercise_7days)}天)"]
             if steps_list:

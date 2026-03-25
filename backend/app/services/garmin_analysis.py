@@ -3,7 +3,8 @@ from typing import List, Dict, Any, Optional
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models.daily_health import GarminData
+from app.models.daily_health import GarminData, WorkoutRecord
+from collections import defaultdict
 
 
 class GarminAnalysisService:
@@ -218,6 +219,49 @@ class GarminAnalysisService:
         total_active_minutes = sum(active_minutes_list)
         avg_active_minutes = total_active_minutes / len(active_minutes_list) if active_minutes_list else 0
         
+        # 查询同期 workout_records，按日汇总运动时长和距离
+        workouts = db.query(WorkoutRecord).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= start_date,
+            WorkoutRecord.workout_date <= end_date,
+        ).all()
+
+        workout_by_date = defaultdict(lambda: {"duration_min": 0, "distance_km": 0, "names": []})
+        for w in workouts:
+            d = w.workout_date
+            if w.duration_seconds:
+                workout_by_date[d]["duration_min"] += w.duration_seconds / 60
+            if w.distance_meters:
+                workout_by_date[d]["distance_km"] += w.distance_meters / 1000
+            if w.workout_name:
+                workout_by_date[d]["names"].append(w.workout_name)
+
+        # 活动时长 = max(Garmin 强度分钟数, workout 总时长)，取较大值
+        daily_data = []
+        effective_active_list = []
+        for d in activity_data:
+            garmin_active = d.active_minutes or 0
+            workout_info = workout_by_date.get(d.record_date, {})
+            workout_min = round(workout_info.get("duration_min", 0))
+            effective_active = max(garmin_active, workout_min)
+            effective_active_list.append(effective_active)
+
+            entry = {
+                "date": d.record_date.isoformat(),
+                "steps": d.steps,
+                "calories_burned": d.calories_burned,
+                "active_minutes": effective_active,
+            }
+            # 如果当天有 workout，附加距离和名称
+            if workout_info.get("distance_km"):
+                entry["distance_km"] = round(workout_info["distance_km"], 2)
+            if workout_info.get("names"):
+                entry["workout"] = ", ".join(workout_info["names"][:2])
+            daily_data.append(entry)
+
+        total_effective_active = sum(effective_active_list)
+        avg_effective_active = total_effective_active / len(effective_active_list) if effective_active_list else 0
+
         return {
             "status": "success",
             "days_analyzed": len(activity_data),
@@ -225,18 +269,10 @@ class GarminAnalysisService:
             "average_steps_per_day": round(avg_steps, 0),
             "total_calories_burned": total_calories,
             "average_calories_per_day": round(avg_calories, 0),
-            "total_active_minutes": total_active_minutes,
-            "average_active_minutes_per_day": round(avg_active_minutes, 1),
-            "assessment": self._assess_activity(avg_steps, avg_active_minutes),
-            "daily_data": [
-                {
-                    "date": d.record_date.isoformat(),
-                    "steps": d.steps,
-                    "calories_burned": d.calories_burned,
-                    "active_minutes": d.active_minutes,
-                }
-                for d in activity_data
-            ]
+            "total_active_minutes": total_effective_active,
+            "average_active_minutes_per_day": round(avg_effective_active, 1),
+            "assessment": self._assess_activity(avg_steps, avg_effective_active),
+            "daily_data": daily_data,
         }
     
     def analyze_hrv(
