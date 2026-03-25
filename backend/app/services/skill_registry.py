@@ -1,6 +1,7 @@
 """Skill 注册表 — 版本管理 + metrics 追踪 + 自动优化调度"""
 import json
 import logging
+import os
 import re
 import shutil
 from datetime import datetime
@@ -13,12 +14,20 @@ SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 
 # Skill 名称只允许字母、数字、连字符、下划线
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+# 版本号只允许 semver 格式或简单数字点分格式（如 1.0.0, 2.1.0-beta）
+_SAFE_VERSION_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 def _validate_skill_name(name: str) -> None:
     """校验 skill 名称，防止路径遍历"""
     if not name or not _SAFE_NAME_RE.match(name):
         raise ValueError(f"非法的 Skill 名称: {name!r}（仅允许字母、数字、连字符、下划线）")
+
+
+def _validate_version(version: str) -> None:
+    """校验版本号，防止路径遍历"""
+    if not version or not _SAFE_VERSION_RE.match(version):
+        raise ValueError(f"非法的版本号: {version!r}（仅允许字母、数字、点、连字符、下划线）")
 
 
 def _parse_frontmatter(content: str) -> dict:
@@ -79,9 +88,13 @@ class SkillRegistry:
         _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         if version:
+            _validate_version(version)
             path = skill_dir / f"SKILL.v{version}.md"
         else:
             path = skill_dir / "SKILL.md"
+        # 防御性检查：确保路径在 skills 目录内
+        if not str(path.resolve()).startswith(str(self.skills_dir.resolve())):
+            raise ValueError("路径遍历检测: 拒绝访问 skills 目录之外的文件")
         if not path.exists():
             return None
         try:
@@ -107,10 +120,6 @@ class SkillRegistry:
         # 先读取 manifest（必须在写入新内容之前，否则初始化会读到新版本）
         manifest = self._read_manifest(skill_dir)
 
-        # 存档当前版本
-        archive_path = skill_dir / f"SKILL.v{current_version}.md"
-        shutil.copy2(current_path, archive_path)
-
         # 计算新版本号（patch bump）
         parts = current_version.split(".")
         parts[-1] = str(int(parts[-1]) + 1)
@@ -130,22 +139,40 @@ class SkillRegistry:
                 count=1,
             )
 
-        # 写入新内容
-        current_path.write_text(content, encoding="utf-8")
-
-        # 更新 manifest
-        manifest["versions"].append({
+        # 准备新 manifest
+        import copy
+        new_manifest = copy.deepcopy(manifest)
+        new_manifest["versions"].append({
             "version": new_version,
             "created_at": datetime.utcnow().isoformat(),
             "changelog": changelog,
             "status": "canary",  # 新版本先作为 canary
         })
-        # 把之前的 production 保留标记
-        for v in manifest["versions"]:
+        for v in new_manifest["versions"]:
             if v["version"] == current_version:
                 v["status"] = "archived"
-        manifest["current_version"] = new_version
-        self._write_manifest(skill_dir, manifest)
+        new_manifest["current_version"] = new_version
+
+        # 原子写入：先写临时文件，再 rename（同文件系统上 os.replace 是原子的）
+        archive_path = skill_dir / f"SKILL.v{current_version}.md"
+        tmp_skill = skill_dir / "SKILL.md.tmp"
+        tmp_manifest = skill_dir / "manifest.json.tmp"
+        try:
+            shutil.copy2(current_path, archive_path)
+            tmp_skill.write_text(content, encoding="utf-8")
+            tmp_manifest.write_text(
+                json.dumps(new_manifest, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            # 原子替换
+            os.replace(str(tmp_skill), str(current_path))
+            os.replace(str(tmp_manifest), str(skill_dir / "manifest.json"))
+        except Exception:
+            # 回滚：清理临时文件和存档
+            archive_path.unlink(missing_ok=True)
+            tmp_skill.unlink(missing_ok=True)
+            tmp_manifest.unlink(missing_ok=True)
+            raise
 
         logger.info(f"Skill {name}: {current_version} → {new_version} (canary)")
         return {
@@ -158,6 +185,7 @@ class SkillRegistry:
     def promote_version(self, name: str, version: str) -> bool:
         """将 canary 版本升级为 production"""
         _validate_skill_name(name)
+        _validate_version(version)
         skill_dir = self.skills_dir / name
         manifest = self._read_manifest(skill_dir)
 
