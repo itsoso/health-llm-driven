@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/devices/withings", tags=["withings"])
 
-WEBHOOK_BASE = "https://health.executor.life/api/devices/withings/webhook"
+WEBHOOK_BASE = f"{settings.site_base_url}/api/devices/withings/webhook"
 
 
 # ========== OAuth 授权流程 ==========
@@ -36,7 +36,7 @@ WEBHOOK_BASE = "https://health.executor.life/api/devices/withings/webhook"
 @router.get("/oauth/authorize", summary="获取 Withings 授权 URL")
 async def get_withings_oauth_url(
     redirect_uri: str = Query(
-        default="https://health.executor.life/api/devices/withings/oauth/callback",
+        default=f"{settings.site_base_url}/api/devices/withings/oauth/callback",
         description="授权后的回调地址",
     ),
     current_user: User = Depends(get_current_user_required),

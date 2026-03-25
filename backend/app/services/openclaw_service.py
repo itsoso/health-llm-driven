@@ -282,7 +282,7 @@ class OpenClawService:
                 return "安装失败：SKILL.md 缺少 `name` 字段。请确保 frontmatter 中包含 `name: your-skill-name`。"
             env = {}
             if "HEALTH_API_URL" in content:
-                env["HEALTH_API_URL"] = "https://health.executor.life/api/v1"
+                env["HEALTH_API_URL"] = settings.health_api_base_url
             if "HEALTH_API_TOKEN" in content:
                 env["HEALTH_API_TOKEN"] = "<需要在 Skills 页面配置 API Key>"
             result = openclaw_skills_service.create_or_update_skill(

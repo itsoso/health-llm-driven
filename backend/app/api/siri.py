@@ -28,6 +28,7 @@ from app.models.user import User
 from app.models.chat import ChatConversation
 from app.api.deps import get_current_user_required
 from app.services.chat_service import ChatService
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/siri", tags=["Siri快捷指令"])
@@ -36,7 +37,7 @@ router = APIRouter(prefix="/siri", tags=["Siri快捷指令"])
 SIRI_CONVERSATION_TITLE = "🎙️ Siri快捷指令"
 
 # API 基础 URL（写入快捷指令文件）
-_API_BASE = "https://health.executor.life/api"
+_API_BASE = f"{settings.site_base_url}/api"
 
 
 def strip_markdown(text: str) -> str:
@@ -429,7 +430,7 @@ async def token_hint(
     return {
         "user": current_user.name or current_user.username,
         "hint": "你的 Authorization Header 中的 Bearer Token 即为 Shortcuts 所需的 token。",
-        "shortcut_url": "POST https://health.executor.life/api/siri/say",
+        "shortcut_url": f"POST {_API_BASE}/siri/say",
         "shortcut_download": f"{_API_BASE}/siri/shortcut?token=<your_token>",
         "body_example": {"message": "记录我刚吃了三个西红柿和5颗花生"},
     }

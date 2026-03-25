@@ -11,8 +11,8 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # OpenClaw 服务器配置
-OPENCLAW_SSH_HOST = "47.237.191.17"
-OPENCLAW_SSH_PORT = 22222
+OPENCLAW_SSH_HOST = settings.openclaw_ssh_host
+OPENCLAW_SSH_PORT = settings.openclaw_ssh_port
 OPENCLAW_SSH_USER = "root"
 OPENCLAW_SKILLS_DIR = "/root/.openclaw/skills"
 OPENCLAW_CONFIG_PATH = "/root/.openclaw/openclaw.json"

@@ -28,13 +28,16 @@ class OpenClawProvider(LLMProvider):
 
     def __init__(
         self,
-        base_url: str = "https://bot.executor.life/v1",
+        base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: str = "openclaw:main",
         analyze_url: Optional[str] = None,
         analyze_api_key: Optional[str] = None,
         kim_user_id: Optional[str] = None,
     ):
+        if base_url is None:
+            from app.config import settings
+            base_url = settings.openclaw_base_url
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
