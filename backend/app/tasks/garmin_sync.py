@@ -3,50 +3,92 @@ Garmin 数据同步任务
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from app.celery_app import celery_app
 from app.database import SessionLocal
-from app.models.user import User
-from app.models.device_credential import DeviceCredential
 from app.models.daily_health import WorkoutRecord, WorkoutAnalysisResult
-from app.services.data_collection.garmin_connect import GarminConnectService
 
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, max_retries=3)
-def sync_user_garmin_data(self, user_id: int):
+def sync_user_garmin_data(self, user_id: int, days: int = 1):
     """
-    同步单个用户的 Garmin 数据
+    同步单个用户的 Garmin 数据（健康数据 + 运动活动）
     """
-    logger.info(f"开始同步用户 {user_id} 的 Garmin 数据")
-    
+    logger.info(f"开始同步用户 {user_id} 的 Garmin 数据 (最近 {days} 天)")
+
     try:
         with SessionLocal() as db:
-            credential = db.query(DeviceCredential).filter(
-                DeviceCredential.user_id == user_id,
-                DeviceCredential.device_type == "garmin"
+            # 使用 GarminCredential 获取凭据（与 scheduler/auth 保持一致）
+            from app.models.user import GarminCredential
+            from app.services.auth import garmin_credential_service
+
+            credential = db.query(GarminCredential).filter(
+                GarminCredential.user_id == user_id,
+                GarminCredential.sync_enabled == True,
+                GarminCredential.credentials_valid == True
             ).first()
-            
+
             if not credential:
-                logger.warning(f"用户 {user_id} 没有 Garmin 凭据")
+                logger.warning(f"用户 {user_id} 没有有效的 Garmin 凭据")
                 return {"status": "skipped", "reason": "no_credentials"}
-            
-            # 获取凭证
-            creds = credential.get_credentials()
-            
-            # 创建服务并同步
+
+            # 解密密码
+            try:
+                password = garmin_credential_service.decrypt_password(credential.encrypted_password)
+            except Exception as e:
+                logger.error(f"用户 {user_id} Garmin 凭据解密失败: {e}")
+                return {"status": "error", "reason": "decrypt_failed"}
+
+            email = credential.garmin_email
+            is_cn = credential.is_cn if hasattr(credential, 'is_cn') else True
+
+            # 创建服务并同步健康数据
+            from app.services.data_collection.garmin_connect import GarminConnectService
+
             service = GarminConnectService(
-                email=creds.get("email"),
-                password=creds.get("password"),
+                email=email,
+                password=password,
+                is_cn=is_cn,
                 user_id=user_id
             )
-            
-            result = service.sync_all_data(db, days=1)
 
-            logger.info(f"用户 {user_id} Garmin 同步完成: {result}")
+            end_date = date.today()
+            start_date = end_date - timedelta(days=days - 1)
+            sync_result = service.sync_date_range(db, user_id, start_date, end_date)
 
-            # 检测最近 12 小时内新同步且未分析的运动，触发自动分析
+            success_count = sync_result.get("success_count", 0)
+            error_count = sync_result.get("error_count", 0)
+            logger.info(f"用户 {user_id} 健康数据同步完成: 成功 {success_count} 天, 失败 {error_count} 天")
+
+            # 同步运动活动数据（复用已认证的 client）
+            synced_activities = 0
+            try:
+                from app.services.workout_sync import WorkoutSyncService
+
+                workout_client = service.client if hasattr(service, 'client') and service._authenticated else None
+                workout_sync_service = WorkoutSyncService(
+                    email=email,
+                    password=password,
+                    is_cn=is_cn,
+                    user_id=user_id,
+                    client=workout_client
+                )
+                workout_result = asyncio.run(workout_sync_service.sync_activities(db, user_id, days))
+                synced_activities = workout_result.get("synced_count", 0)
+                logger.info(f"用户 {user_id} 运动活动同步完成: {synced_activities} 条")
+
+                # 从运动记录中提取 VO2Max 更新到每日数据
+                try:
+                    from app.scheduler import _update_vo2max_from_workouts
+                    _update_vo2max_from_workouts(db, user_id, days)
+                except Exception as e:
+                    logger.warning(f"用户 {user_id} VO2Max 更新失败: {e}")
+            except Exception as e:
+                logger.warning(f"用户 {user_id} 运动活动同步失败: {e}", exc_info=True)
+
+            # 检测新同步的运动并触发自动分析
             try:
                 twelve_hours_ago = datetime.utcnow() - timedelta(hours=12)
                 analyzed_workout_ids = {
@@ -54,11 +96,15 @@ def sync_user_garmin_data(self, user_id: int):
                         WorkoutAnalysisResult.user_id == user_id
                     ).all()
                 }
-                new_workouts = db.query(WorkoutRecord).filter(
+                new_workouts_query = db.query(WorkoutRecord).filter(
                     WorkoutRecord.user_id == user_id,
                     WorkoutRecord.created_at >= twelve_hours_ago,
-                    ~WorkoutRecord.id.in_(analyzed_workout_ids) if analyzed_workout_ids else True
-                ).all()
+                )
+                if analyzed_workout_ids:
+                    new_workouts_query = new_workouts_query.filter(
+                        ~WorkoutRecord.id.in_(analyzed_workout_ids)
+                    )
+                new_workouts = new_workouts_query.all()
                 for w in new_workouts:
                     logger.info(f"触发自动分析: user={user_id} workout={w.id} ({w.activity_type})")
                     auto_analyze_workout.delay(user_id, w.id)
@@ -76,34 +122,44 @@ def sync_user_garmin_data(self, user_id: int):
             except Exception as e:
                 logger.warning(f"健康异常检测失败: {e}")
 
-            return {"status": "success", "result": result}
-            
+            # 更新同步状态
+            garmin_credential_service.update_sync_status(db, user_id)
+
+            return {
+                "status": "success",
+                "success_count": success_count,
+                "error_count": error_count,
+                "activities_count": synced_activities
+            }
+
     except Exception as e:
-        logger.error(f"用户 {user_id} Garmin 同步失败: {e}")
+        logger.error(f"用户 {user_id} Garmin 同步失败: {e}", exc_info=True)
         raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
 
 
 @celery_app.task
 def sync_all_users_garmin():
     """
-    同步所有用户的 Garmin 数据（每小时执行）
+    同步所有用户的 Garmin 数据（定时任务）
     """
     logger.info("开始批量同步所有用户 Garmin 数据")
-    
+
     with SessionLocal() as db:
-        credentials = db.query(DeviceCredential).filter(
-            DeviceCredential.device_type == "garmin",
-            DeviceCredential.is_active == True
+        from app.models.user import GarminCredential
+
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True
         ).all()
-        
+
         user_ids = [c.user_id for c in credentials]
-    
+
     logger.info(f"发现 {len(user_ids)} 个活跃的 Garmin 账户")
-    
+
     # 为每个用户创建异步任务
     for user_id in user_ids:
         sync_user_garmin_data.delay(user_id)
-    
+
     return {"status": "dispatched", "count": len(user_ids)}
 
 

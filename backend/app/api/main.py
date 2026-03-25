@@ -13,7 +13,7 @@ from app.api import (
     data_collection,
     health_analysis,
     garmin_analysis,
-    garmin_connect,
+    # garmin_connect,  # 已废弃，功能由 auth.garmin/sync 和 scheduler 提供
     daily_recommendation,
     supplements,
     # habits,  # 已废弃，模块已移除
@@ -106,7 +106,7 @@ api_router.include_router(goals.router, prefix="/goals", tags=["goals"])
 api_router.include_router(data_collection.router, prefix="/data-collection", tags=["data-collection"])
 api_router.include_router(health_analysis.router, prefix="/analysis", tags=["analysis"])
 api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tags=["garmin-analysis"])
-api_router.include_router(garmin_connect.router, prefix="/garmin-connect", tags=["garmin-connect"])
+# api_router.include_router(garmin_connect.router, prefix="/garmin-connect", tags=["garmin-connect"])  # 已废弃
 api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
 api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
 # api_router.include_router(habits.router, prefix="/habits", tags=["habits"])  # 已废弃，模块已移除

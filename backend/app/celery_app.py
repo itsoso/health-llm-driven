@@ -57,11 +57,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=6, minute=0),
     },
     
-    # 每6小时同步 Garmin 数据（降低频率，避免被封）
-    "sync-garmin-6hourly": {
-        "task": "app.tasks.garmin_sync.sync_all_users_garmin",
-        "schedule": crontab(hour="*/6", minute=0),  # 0:00, 6:00, 12:00, 18:00
-    },
+    # Garmin 定时同步已由 scheduler.py 统一管理（每日 08:01），
+    # 禁用 Celery beat 避免重复同步和 Garmin 限流
+    # "sync-garmin-6hourly": {
+    #     "task": "app.tasks.garmin_sync.sync_all_users_garmin",
+    #     "schedule": crontab(hour="*/6", minute=0),
+    # },
     
     # 每日 22:00 发送睡眠提醒
     "sleep-reminder": {

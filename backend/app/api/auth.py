@@ -616,15 +616,9 @@ async def sync_garmin_data_stream(
 
                 # 其他错误，继续尝试同步（可能是测试连接的问题，实际同步可能成功）
                 logger.warning(f"测试连接失败，继续尝试同步: {test_error}")
-            
-            # 创建Garmin服务实例（如果测试连接成功，这个实例应该已经认证）
-            garmin_service = GarminConnectService(
-                email=credentials["email"],
-                password=credentials["password"],
-                is_cn=credentials.get("is_cn", False),
-                user_id=current_user.id,
-                mfa_session_id=mfa_session_id  # 传递MFA会话ID以复用认证状态
-            )
+
+            # 复用 test_service（已通过测试连接完成认证），避免重复登录触发 Garmin 限流
+            garmin_service = test_service
             
             yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
             
