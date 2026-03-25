@@ -24,6 +24,7 @@ Apple Health 适配器
 - 通过 Apple Health Records API
 """
 
+import re
 import xml.etree.ElementTree as ET
 import logging
 from datetime import date, datetime, time, timedelta
@@ -41,6 +42,15 @@ from .base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_apple_date(date_str: str) -> datetime:
+    """解析 Apple Health 日期格式（如 '2023-07-05 23:23:11 +0800'）"""
+    s = date_str.replace("Z", "+00:00")
+    # 修复时区: +0800 → +08:00
+    if len(s) >= 5 and s[-5] in ('+', '-') and ':' not in s[-5:]:
+        s = s[:-2] + ':' + s[-2:]
+    return datetime.fromisoformat(s)
 
 
 class AppleHealthAdapter(DeviceAdapter):
@@ -174,7 +184,7 @@ class AppleHealthAdapter(DeviceAdapter):
         samples = []
         for hr_data in day_data.get("heart_rate_samples", []):
             try:
-                timestamp = datetime.fromisoformat(hr_data["timestamp"].replace("Z", "+00:00"))
+                timestamp = _parse_apple_date(hr_data["timestamp"])
                 samples.append(HeartRateSample(
                     timestamp=timestamp,
                     heart_rate=hr_data["value"],
@@ -266,8 +276,8 @@ class AppleHealthAdapter(DeviceAdapter):
                 continue
             
             try:
-                # 解析日期
-                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                # 解析日期（Apple Health 格式: "2023-07-05 23:23:11 +0800"）
+                start_dt = _parse_apple_date(start_date)
                 date_key = start_dt.date().isoformat()
                 
                 if record_type == "HKQuantityTypeIdentifierStepCount":
@@ -302,7 +312,7 @@ class AppleHealthAdapter(DeviceAdapter):
                     # 睡眠分析
                     sleep_value = record.get("value")
                     if sleep_value and end_date:
-                        end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                        end_dt = _parse_apple_date(end_date)
                         duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
                         
                         daily_data[date_key]["sleep"].append({
@@ -349,13 +359,13 @@ class AppleHealthAdapter(DeviceAdapter):
                 continue
             
             try:
-                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                start_dt = _parse_apple_date(start_date)
                 date_key = start_dt.date().isoformat()
                 
                 end_date = workout.get("endDate")
                 duration = 0
                 if end_date:
-                    end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                    end_dt = _parse_apple_date(end_date)
                     duration = int((end_dt - start_dt).total_seconds())
                 
                 # 提取运动数据
@@ -388,7 +398,7 @@ class AppleHealthAdapter(DeviceAdapter):
                 data["min_heart_rate"] = min(hr_values)
                 # 静息心率通常是最小值或早上的平均值
                 morning_hrs = [s["value"] for s in hr_samples 
-                              if datetime.fromisoformat(s["timestamp"].replace("Z", "+00:00")).hour < 8]
+                              if _parse_apple_date(s["timestamp"]).hour < 8]
                 data["resting_heart_rate"] = int(sum(morning_hrs) / len(morning_hrs)) if morning_hrs else min(hr_values)
             
             # 计算血氧统计
@@ -497,7 +507,7 @@ class AppleHealthAdapter(DeviceAdapter):
         
         earliest = min(asleep_records, key=lambda x: x.get("start", ""))
         try:
-            dt = datetime.fromisoformat(earliest["start"].replace("Z", "+00:00"))
+            dt = _parse_apple_date(earliest["start"])
             return dt.time()
         except:
             return None
@@ -513,7 +523,7 @@ class AppleHealthAdapter(DeviceAdapter):
         
         latest = max(asleep_records, key=lambda x: x.get("end", ""))
         try:
-            dt = datetime.fromisoformat(latest["end"].replace("Z", "+00:00"))
+            dt = _parse_apple_date(latest["end"])
             return dt.time()
         except:
             return None
