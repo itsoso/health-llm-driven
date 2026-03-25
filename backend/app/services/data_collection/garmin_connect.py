@@ -401,8 +401,7 @@ class GarminConnectService:
                         # 检查 token 是否过期（garth token 有 expires_at 属性）
                         token_expired = False
                         if hasattr(token, 'expires_at') and token.expires_at:
-                            import datetime
-                            now = datetime.datetime.now(tz=token.expires_at.tzinfo) if token.expires_at.tzinfo else datetime.datetime.now()
+                            now = datetime.now(tz=token.expires_at.tzinfo) if token.expires_at.tzinfo else datetime.now()
                             token_expired = now >= token.expires_at
 
                         if token_expired:
@@ -412,7 +411,7 @@ class GarminConnectService:
 
                         # token 未过期，尝试用轻量 API 验证连通性
                         self.client.garth.connectapi("/usersummary-service/usersummary/daily/" +
-                                                      __import__('datetime').date.today().isoformat())
+                                                      date.today().isoformat())
                         self._ensure_display_name()
                         self._authenticated = True
                         logger.info(f"{prefix} ✅ 从数据库加载 garth session 成功，无需重新登录")
