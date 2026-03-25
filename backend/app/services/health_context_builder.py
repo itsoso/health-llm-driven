@@ -428,10 +428,10 @@ class HealthContextBuilder:
                 WorkoutRecord.user_id == user_id,
                 WorkoutRecord.workout_date >= date.today() - timedelta(days=7),
             ).all()
-            _workout_dur_7d = defaultdict(int)
+            _workout_dur_7d = {}
             for w in _workout_7d:
                 if w.duration_seconds:
-                    _workout_dur_7d[w.workout_date] += w.duration_seconds // 60
+                    _workout_dur_7d[w.workout_date] = _workout_dur_7d.get(w.workout_date, 0) + w.duration_seconds // 60
             active_mins = []
             for r in exercise_7days:
                 garmin_active = (r.vigorous_intensity_minutes or 0) + (r.moderate_intensity_minutes or 0)
