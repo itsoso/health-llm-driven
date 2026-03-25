@@ -1,7 +1,8 @@
 """日常健康记录Schema"""
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import date, time
 from typing import Optional
+import math
 
 
 class GarminDataCreate(BaseModel):
@@ -52,7 +53,18 @@ class GarminDataCreate(BaseModel):
     distance_meters: Optional[float] = None
 
 
-class GarminDataResponse(BaseModel):
+class _CoerceIntMixin:
+    """自动将 float 字段截断为 int（解决 SQLite 不强制类型的问题）"""
+    @field_validator("*", mode="before")
+    @classmethod
+    def coerce_float_to_int(cls, v, info):
+        field = cls.model_fields.get(info.field_name)
+        if field and field.annotation in (Optional[int], int) and isinstance(v, float):
+            return int(v)
+        return v
+
+
+class GarminDataResponse(_CoerceIntMixin, BaseModel):
     """Garmin数据响应"""
     id: int
     user_id: int
@@ -99,7 +111,7 @@ class GarminDataResponse(BaseModel):
     floors_climbed: Optional[int] = None
     floors_goal: Optional[int] = None
     distance_meters: Optional[float] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
