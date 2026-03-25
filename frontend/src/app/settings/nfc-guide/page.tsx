@@ -9,7 +9,7 @@ export default function NfcGuidePage() {
   const { user } = useAuth();
   const [copied, setCopied] = useState<string | null>(null);
 
-  const apiBase = 'https://health-api.executor.life/api/v1';
+  const apiBase = 'https://health.executor.life/api/v1';
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => {
