@@ -545,3 +545,36 @@ def _categorize_indicator(name: str) -> str:
         if any(kw in name_lower for kw in keywords):
             return cat
     return "other"
+
+
+# ══════════════════════════════════════════════════════════
+# 每日家庭健康巡检
+# ══════════════════════════════════════════════════════════
+
+@router.get("/daily-check", summary="家庭每日健康巡检", tags=["family-daily-check"])
+async def family_daily_check(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    执行家庭健康巡检，返回所有成员的健康状态、待办和预警。
+    可手动调用，也由每日定时任务自动执行。
+    """
+    from app.services.family_daily_check import run_family_daily_check
+    return run_family_daily_check(db, current_user.id)
+
+
+@router.post("/daily-check/send", summary="发送家庭健康日报", tags=["family-daily-check"])
+async def send_family_daily_check(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """执行巡检并推送日报给管理员和家庭成员"""
+    from app.services.family_daily_check import send_family_daily_brief
+    report = await send_family_daily_brief(db, current_user.id)
+    return {
+        "message": "家庭健康日报已发送",
+        "admin_summary": report["admin_summary"],
+        "alert_count": report["admin_alert_count"],
+        "members_checked": len(report["member_reports"]),
+    }

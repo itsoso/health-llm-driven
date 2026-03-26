@@ -647,4 +647,47 @@ def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = 
     metrics_thread.start()
     logger.info("Skill Metrics 每日聚合调度器线程已启动（每天02:05北京时间）")
 
+    # 启动家庭每日健康巡检调度器（每天 08:30 北京时间）
+    def run_family_check_loop():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_family_daily_check_loop())
+        loop.close()
+
+    family_thread = threading.Thread(target=run_family_check_loop, daemon=True)
+    family_thread.start()
+    logger.info("家庭健康巡检调度器线程已启动（每天08:30北京时间）")
+
+
+async def _family_daily_check_loop():
+    """每天 08:30 北京时间执行家庭健康巡检"""
+    while True:
+        try:
+            now = get_china_now()
+            target = now.replace(hour=8, minute=30, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
+            wait_seconds = (target - now).total_seconds()
+            logger.info(f"家庭巡检: 下次执行 {target.strftime('%Y-%m-%d %H:%M')}，等待 {wait_seconds/3600:.1f} 小时")
+            await asyncio.sleep(wait_seconds)
+
+            # 查找所有有家庭组的 owner
+            db = SessionLocal()
+            try:
+                from app.models.family import FamilyGroup
+                from app.services.family_daily_check import send_family_daily_brief
+                owners = db.query(FamilyGroup.owner_id).distinct().all()
+                for (owner_id,) in owners:
+                    try:
+                        await send_family_daily_brief(db, owner_id)
+                        logger.info(f"家庭巡检完成: owner_id={owner_id}")
+                    except Exception as e:
+                        logger.warning(f"家庭巡检失败 owner_id={owner_id}: {e}")
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"家庭巡检调度异常: {e}", exc_info=True)
+            await asyncio.sleep(60)
+
     return thread
