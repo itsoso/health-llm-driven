@@ -32,15 +32,22 @@ function ReportsContent() {
   };
 
   const uploadReport = async () => {
-    if (selectedFiles.length === 0) { alert('请选择报告图片'); return; }
+    if (selectedFiles.length === 0) { alert('请选择报告文件'); return; }
     setUploading(true);
     try {
-      const base64List = await Promise.all(selectedFiles.map(fileToBase64));
+      // 分离 PDF 和图片
+      const pdfFiles = selectedFiles.filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+      const imageFiles = selectedFiles.filter(f => !f.type.includes('pdf') && !f.name.endsWith('.pdf'));
+
+      const imageBase64List = imageFiles.length > 0 ? await Promise.all(imageFiles.map(fileToBase64)) : undefined;
+      const pdfBase64 = pdfFiles.length > 0 ? await fileToBase64(pdfFiles[0]) : undefined;
+
       const res = await familyApi.uploadReport({
         report_date: uploadForm.report_date,
         hospital: uploadForm.hospital || undefined,
         title: uploadForm.title || undefined,
-        image_base64_list: base64List,
+        image_base64_list: imageBase64List,
+        pdf_base64: pdfBase64,
       });
       setUploadResult(res.data);
       setShowUpload(false);
@@ -79,9 +86,9 @@ function ReportsContent() {
             <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="报告标题" value={uploadForm.title} onChange={e => setUploadForm({ ...uploadForm, title: e.target.value })} />
             <div>
               <button onClick={() => fileRef.current?.click()} className="border border-dashed rounded-lg px-4 py-6 w-full text-gray-400 text-sm hover:border-blue-400">
-                {selectedFiles.length > 0 ? `已选 ${selectedFiles.length} 张图片` : '点击选择报告图片（支持多张）'}
+                {selectedFiles.length > 0 ? `已选 ${selectedFiles.length} 个文件` : '点击选择报告（支持图片和 PDF）'}
               </button>
-              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { if (e.target.files) setSelectedFiles(Array.from(e.target.files)); }} />
+              <input ref={fileRef} type="file" accept="image/*,.pdf,application/pdf" multiple className="hidden" onChange={e => { if (e.target.files) setSelectedFiles(Array.from(e.target.files)); }} />
             </div>
             <div className="flex gap-2">
               <button onClick={() => { setShowUpload(false); setSelectedFiles([]); }} className="flex-1 border rounded-lg py-2 text-sm">取消</button>

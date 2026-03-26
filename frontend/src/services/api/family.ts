@@ -22,7 +22,7 @@ export const familyApi = {
   sendDailyCheck: () => api.post('/family-health/daily-check/send'),
 
   // 体检报告
-  uploadReport: (data: { report_date: string; hospital?: string; report_type?: string; title?: string; image_base64_list?: string[] }) =>
+  uploadReport: (data: { report_date: string; hospital?: string; report_type?: string; title?: string; image_base64_list?: string[]; pdf_base64?: string }) =>
     api.post('/family-health/medical-reports/upload', data),
   getReports: (limit?: number) => api.get('/family-health/medical-reports/me', { params: { limit } }),
   getReportDetail: (id: number) => api.get(`/family-health/medical-reports/${id}`),

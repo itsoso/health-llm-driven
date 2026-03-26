@@ -30,6 +30,7 @@ class ReportUploadRequest(BaseModel):
     report_type: str = "general"
     title: Optional[str] = None
     image_base64_list: Optional[List[str]] = Field(None, description="Base64 编码的报告图片列表")
+    pdf_base64: Optional[str] = Field(None, description="Base64 编码的 PDF 文件（会自动转为图片再提取）")
 
 
 @router.post("/medical-reports/upload", summary="上传体检报告（AI 提取）", tags=["medical-reports"])
@@ -53,18 +54,32 @@ async def upload_medical_report(
     db.add(report)
     db.flush()
 
-    # AI 提取（异步，先返回 report ID）
+    # PDF → 图片转换
+    image_list = list(req.image_base64_list or [])
+    if req.pdf_base64:
+        try:
+            pdf_images = _pdf_to_images_base64(req.pdf_base64)
+            image_list.extend(pdf_images)
+            logger.info(f"PDF 转换为 {len(pdf_images)} 页图片")
+        except Exception as e:
+            logger.error(f"PDF 转图片失败: {e}", exc_info=True)
+            report.status = "failed"
+            report.ai_summary = f"PDF 解析失败: {str(e)}"
+            db.commit()
+            return {"id": report.id, "status": "failed", "extracted_count": 0, "abnormal_count": 0, "ai_summary": report.ai_summary, "abnormal_items": []}
+
+    # AI 提取
     extracted_items = []
     abnormal_items = []
     ai_summary = ""
 
-    if req.image_base64_list:
+    if image_list:
         try:
             from app.services.llm import get_llm_provider
             llm = get_llm_provider()
 
             all_text = []
-            for i, img_b64 in enumerate(req.image_base64_list):
+            for i, img_b64 in enumerate(image_list):
                 messages = [
                     {"role": "system", "content": (
                         "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
@@ -529,6 +544,46 @@ async def complete_review(
 # ══════════════════════════════════════════════════════════
 # 辅助函数
 # ══════════════════════════════════════════════════════════
+
+def _pdf_to_images_base64(pdf_base64: str, max_pages: int = 30, dpi: int = 200) -> List[str]:
+    """将 Base64 编码的 PDF 转为每页的 Base64 JPEG 图片列表"""
+    import base64
+    import io
+
+    pdf_bytes = base64.b64decode(pdf_base64)
+
+    # 优先用 pymupdf (fitz)，速度快
+    try:
+        import fitz  # pymupdf
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images = []
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("jpeg")
+            images.append(base64.b64encode(img_bytes).decode())
+        doc.close()
+        return images
+    except ImportError:
+        pass
+
+    # 备选：pdf2image（需要 poppler）
+    try:
+        from pdf2image import convert_from_bytes
+        pil_images = convert_from_bytes(pdf_bytes, dpi=dpi, last_page=max_pages)
+        images = []
+        for img in pil_images:
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            images.append(base64.b64encode(buf.getvalue()).decode())
+        return images
+    except ImportError:
+        pass
+
+    raise ImportError("需要安装 pymupdf 或 pdf2image 来解析 PDF。运行: pip install pymupdf")
+
 
 def _categorize_indicator(name: str) -> str:
     """根据指标名称自动分类"""
