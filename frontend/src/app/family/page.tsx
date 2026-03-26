@@ -258,10 +258,11 @@ function FamilyContent() {
             <h1 className="text-lg font-bold">{groupName}</h1>
             <p className="text-gray-500 text-xs">{members.length} 位家庭成员</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={() => router.push('/family/medications')} className="text-xs bg-green-50 text-green-700 px-3 py-1.5 rounded-lg">💊 用药</button>
             <button onClick={() => router.push('/family/reports')} className="text-xs bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg">📋 体检</button>
             <button onClick={() => router.push('/family/calendar')} className="text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg">📅 复查</button>
+            <button onClick={() => router.push('/family/bot-test')} className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg">🤖 Bot测试</button>
           </div>
         </div>
       </div>

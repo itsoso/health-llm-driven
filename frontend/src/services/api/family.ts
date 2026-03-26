@@ -40,4 +40,15 @@ export const familyApi = {
     api.post('/family-health/review-calendar', data),
   getReviewCalendar: () => api.get('/family-health/review-calendar/me'),
   completeReview: (id: number) => api.post(`/family-health/review-calendar/${id}/complete`),
+
+  // 周报
+  getWeeklyDigest: () => api.get('/family-health/weekly-digest'),
+  sendWeeklyDigest: () => api.post('/family-health/weekly-digest/send'),
+
+  // 医疗文本解析（测试）
+  parseMedicalText: (text: string) => api.post('/family-health/parse-medical-text', { text }),
+
+  // 微信 Bot 消息（测试）
+  sendBotMessage: (msgType: string, content: string, wechatOpenid?: string) =>
+    api.post('/family-health/wechat-bot/message', { msg_type: msgType, content, wechat_openid: wechatOpenid }),
 };
