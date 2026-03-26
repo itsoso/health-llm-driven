@@ -312,10 +312,22 @@ async def submit_application(
     )
     
     db.add(application)
-    
-    # 更新邀请码使用次数
-    invitation.used_count += 1
-    
+
+    # 原子递增邀请码使用次数（防止并发超额）
+    from sqlalchemy import and_
+    updated = db.query(InvitationCode).filter(
+        and_(
+            InvitationCode.id == invitation.id,
+            InvitationCode.used_count < InvitationCode.max_uses
+        )
+    ).update(
+        {InvitationCode.used_count: InvitationCode.used_count + 1},
+        synchronize_session=False
+    )
+    if updated == 0:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="邀请码已达到使用上限")
+
     db.commit()
     db.refresh(application)
     

@@ -9,10 +9,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
 from pydantic import BaseModel, ConfigDict
 
+from fastapi import Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.database import get_db
 from app.models.news import NewsArticle, NewsApiKey, NewsComment
 from app.models.user import User
 from app.api.deps import get_current_user_required, get_current_user
+
+limiter = Limiter(key_func=get_remote_address)
 from app.utils.timezone import CHINA_TIMEZONE
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -150,7 +155,7 @@ def parse_json_field(value: Optional[str]) -> Optional[List[str]]:
         return None
     try:
         return json.loads(value)
-    except:
+    except (json.JSONDecodeError, TypeError):
         return None
 
 
@@ -302,8 +307,11 @@ async def get_article(
         if article.visibility != "public":
             raise HTTPException(status_code=403, detail="该文章为私密文章")
 
-    # 增加阅读次数
-    article.view_count += 1
+    # 增加阅读次数（原子操作，防止并发丢失更新）
+    db.query(NewsArticle).filter(NewsArticle.id == article.id).update(
+        {NewsArticle.view_count: NewsArticle.view_count + 1},
+        synchronize_session=False
+    )
     db.commit()
 
     # 获取作者名
@@ -410,7 +418,9 @@ async def delete_article(
 # ==================== 公开 API（无需认证）====================
 
 @router.get("/public/feed/{user_id}")
+@limiter.limit("30/minute")
 async def get_public_user_feed(
+    request: Request,
     user_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),

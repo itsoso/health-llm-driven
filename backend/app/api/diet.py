@@ -119,7 +119,7 @@ def _convert_to_response(record) -> DietRecordResponse:
         if isinstance(record.meal_time, str):
             try:
                 meal_time = datetime.strptime(record.meal_time, '%H:%M').time()
-            except:
+            except (ValueError, TypeError):
                 meal_time = None
         elif isinstance(record.meal_time, time):
             meal_time = record.meal_time
@@ -154,6 +154,7 @@ def get_user_diet_records(
     end_date: Optional[date] = None,
     meal_type: Optional[str] = None,
     limit: int = Query(default=50, le=500),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取用户饮食记录"""
@@ -174,6 +175,7 @@ def get_user_diet_records(
 def get_daily_diet_summary(
     user_id: int,
     record_date: date,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取某日饮食汇总"""
@@ -204,6 +206,7 @@ def get_daily_diet_summary(
 def get_diet_stats(
     user_id: int,
     days: int = Query(default=7, le=90),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """获取饮食统计"""
