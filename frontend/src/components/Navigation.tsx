@@ -29,6 +29,7 @@ import {
   Database,
   ChevronDown,
   User,
+  Users,
   LogOut,
   Shield,
   Ticket,
@@ -79,6 +80,7 @@ export default function Navigation() {
     { href: '/daily-insights', label: '今日建议', icon: <Sparkles className="w-4 h-4" /> },
     { href: '/ai-assistant', label: '智能助理', icon: <MessageCircle className="w-4 h-4" /> },
     { href: '/smart-plan', label: '智能计划', icon: <CalendarCheck className="w-4 h-4" /> },
+    { href: '/family', label: '家庭管理', icon: <Users className="w-4 h-4" /> },
   ];
 
   // 分组下拉菜单
