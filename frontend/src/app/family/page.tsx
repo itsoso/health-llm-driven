@@ -263,6 +263,7 @@ function FamilyContent() {
             <button onClick={() => router.push('/family/reports')} className="text-xs bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg">📋 体检</button>
             <button onClick={() => router.push('/family/calendar')} className="text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg">📅 复查</button>
             <button onClick={() => router.push('/family/bot-test')} className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg">🤖 Bot测试</button>
+            <button onClick={() => router.push('/family/invite')} className="text-xs bg-orange-50 text-orange-700 px-3 py-1.5 rounded-lg">📨 邀请</button>
           </div>
         </div>
       </div>
@@ -467,9 +468,20 @@ function DailyCheckTab({ report, onRun, onSend, sending }: { report: DailyCheckR
       <div className="flex gap-2">
         <button onClick={onRun} className="flex-1 border rounded-lg py-2 text-sm text-gray-500">刷新巡检</button>
         <button onClick={onSend} disabled={sending} className="flex-1 bg-blue-500 text-white rounded-lg py-2 text-sm disabled:opacity-50">
-          {sending ? '发送中...' : '📨 发送日报给家人'}
+          {sending ? '发送中...' : '📨 发送日报'}
         </button>
       </div>
+      <button
+        onClick={async () => {
+          try {
+            const res = await (await import('@/services/api')).familyApi.getWeeklyDigest();
+            alert(res.data.digest_text || '暂无周报数据');
+          } catch { alert('获取周报失败'); }
+        }}
+        className="w-full border border-blue-200 text-blue-600 rounded-lg py-2 text-sm"
+      >
+        📊 查看本周健康周报
+      </button>
     </div>
   );
 }

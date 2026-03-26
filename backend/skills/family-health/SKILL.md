@@ -127,6 +127,38 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/family-hea
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/family-health/daily-check/send"
 ```
 
+## 每周健康周报
+
+### 查看本周家庭健康周报
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/family-health/weekly-digest"
+```
+返回每个家庭成员本周的：步数、睡眠、饮水、用药依从率、复查到期、体检异常。
+包含口语化的 `digest_text` 摘要。
+
+### 发送周报给家人
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/family-health/weekly-digest/send"
+```
+
+## 微信 Bot 消息处理
+
+### 解析医疗文本
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/family-health/parse-medical-text" -d '{"text": "血压135/85"}'
+```
+支持：血压、体重、血糖、心率、体温、饮水、服药、症状描述。
+返回结构化数据 + 对应的 API 操作映射。
+
+### 模拟微信消息
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/family-health/wechat-bot/message" \
+  -d '{"msg_type": "text", "content": "今天血压150/95"}'
+```
+支持 msg_type: text（文字）、image（图片base64）、voice（语音识别文字）。
+
 ## 回复规则
 
 1. 查询家庭成员健康时，先调用 `/family/dashboard` 获取概览
