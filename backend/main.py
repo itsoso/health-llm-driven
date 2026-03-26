@@ -108,23 +108,40 @@ async def startup_event():
         logger.info("数据库迁移检查完成")
     except Exception as e:
         logger.warning(f"数据库迁移检查跳过: {e}")
-    # Scheduler 只在一个 worker 中运行（用文件锁竞争 leader，兼容 uvicorn/gunicorn 多 worker）
-    import os, fcntl
-    scheduler_started = False
-    lock_file_path = "/tmp/health-scheduler.lock"
+    # Scheduler 只在一个 worker 中运行（DB 原子操作竞争 leader）
+    import os
+    from sqlalchemy import text as sa_text
+    worker_pid = str(os.getpid())
+    is_leader = False
     try:
-        lock_fd = open(lock_file_path, "w")
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # 获取锁成功 → 此 worker 成为 scheduler leader
-        lock_fd.write(str(os.getpid()))
-        lock_fd.flush()
+        leader_db = SessionLocal()
+        # 创建 leader 表（如果不存在）
+        leader_db.execute(sa_text(
+            "CREATE TABLE IF NOT EXISTS scheduler_leader ("
+            "  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),"
+            "  worker_pid VARCHAR(50),"
+            "  acquired_at TIMESTAMPTZ DEFAULT NOW()"
+            ")"
+        ))
+        # 原子性竞争：只有当无 leader 或 leader 已过期（5分钟）时才能获取
+        leader_db.execute(sa_text(
+            "INSERT INTO scheduler_leader (id, worker_pid, acquired_at) VALUES (1, :pid, NOW()) "
+            "ON CONFLICT (id) DO UPDATE SET worker_pid = :pid, acquired_at = NOW() "
+            "WHERE scheduler_leader.acquired_at < NOW() - INTERVAL '5 minutes'"
+        ), {"pid": worker_pid})
+        leader_db.commit()
+        # 检查是否真的是自己
+        row = leader_db.execute(sa_text("SELECT worker_pid FROM scheduler_leader WHERE id = 1")).fetchone()
+        is_leader = row and row[0] == worker_pid
+        leader_db.close()
+    except Exception as e:
+        logger.warning(f"Scheduler leader election failed: {e}")
+
+    if is_leader:
         start_scheduler(app, use_daily_schedule=True)
-        scheduler_started = True
-        logger.info(f"✅ Scheduler leader (PID {os.getpid()})")
-        # 注意：不关闭 lock_fd，持有锁直到进程退出
-    except (IOError, OSError):
-        # 另一个 worker 已持有锁
-        logger.info(f"⏭️ 非 scheduler worker，跳过 (PID {os.getpid()})")
+        logger.info(f"✅ Scheduler leader (PID {worker_pid})")
+    else:
+        logger.info(f"⏭️ 非 scheduler worker，跳过 (PID {worker_pid})")
 
 
 # 配置CORS - 严格限制跨域访问
