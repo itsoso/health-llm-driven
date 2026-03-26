@@ -36,8 +36,9 @@ class GarminLoginLockedError(Exception):
 
 
 # 登录失败阈值和锁定时间配置
-LOGIN_FAIL_THRESHOLD = 3  # 连续失败次数阈值
-LOGIN_LOCK_MINUTES = 30  # 锁定时间（分钟）
+LOGIN_FAIL_THRESHOLD = 2  # 连续失败次数阈值（429 立即触发，其他错误 2 次后锁定）
+# 指数退避锁定时间（分钟）：第1次30分钟, 第2次2小时, 第3次8小时, 第4次+24小时
+LOGIN_LOCK_MINUTES_SCHEDULE = [30, 120, 480, 1440]
 
 
 class GarminMFARequiredError(Exception):
@@ -465,12 +466,15 @@ class GarminConnectService:
 
             if cred and cred.login_locked_until:
                 now = datetime.utcnow()
-                if cred.login_locked_until > now:
+                locked_until = cred.login_locked_until
+                # 统一为 naive datetime 比较，避免 offset-naive vs offset-aware 错误
+                if locked_until.tzinfo is not None:
+                    locked_until = locked_until.replace(tzinfo=None)
+                if locked_until > now:
                     return cred.login_locked_until
                 else:
-                    # 锁定已过期，清除锁定状态
+                    # 锁定已过期，清除锁定状态（但保留 error_count 用于指数退避计算）
                     cred.login_locked_until = None
-                    cred.error_count = 0
                     db.commit()
         except Exception as e:
             logger.warning(f"{self._log_prefix()} 检查登录锁定失败: {e}")
@@ -499,14 +503,23 @@ class GarminConnectService:
 
             if cred:
                 cred.error_count = (cred.error_count or 0) + 1
-                cred.last_error = error_msg[:500] if error_msg else None  # 限制错误信息长度
+                cred.last_error = error_msg[:500] if error_msg else None
                 cred.credentials_valid = False
 
-                # 超过阈值，设置锁定时间
-                if cred.error_count >= LOGIN_FAIL_THRESHOLD:
-                    lock_until = datetime.utcnow() + timedelta(minutes=LOGIN_LOCK_MINUTES)
+                is_rate_limited = '429' in (error_msg or '') or 'Too Many Requests' in (error_msg or '')
+
+                # 429 立即锁定，其他错误达到阈值后锁定
+                should_lock = is_rate_limited or cred.error_count >= LOGIN_FAIL_THRESHOLD
+                if should_lock:
+                    # 指数退避：根据累计失败次数选择锁定时长
+                    lock_index = min(cred.error_count - 1, len(LOGIN_LOCK_MINUTES_SCHEDULE) - 1)
+                    lock_minutes = LOGIN_LOCK_MINUTES_SCHEDULE[lock_index]
+                    lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
                     cred.login_locked_until = lock_until
-                    logger.warning(f"{prefix} ⚠️ 登录失败次数达到 {cred.error_count}，锁定到 {lock_until}")
+                    logger.warning(
+                        f"{prefix} ⚠️ {'429限流' if is_rate_limited else '登录失败'}，"
+                        f"累计失败 {cred.error_count} 次，锁定 {lock_minutes} 分钟到 {lock_until}"
+                    )
                 else:
                     logger.info(f"{prefix} 登录失败，当前失败次数: {cred.error_count}/{LOGIN_FAIL_THRESHOLD}")
 
