@@ -33,6 +33,10 @@ class User(Base):
     phone = Column(String, nullable=True)  # 手机号
     kids_points = Column(Integer, nullable=False, default=0)  # 儿童模式积分
     onboarding_completed = Column(Boolean, default=False)  # 是否完成新手引导
+
+    # 家庭代管（shadow user，不需要登录凭据，由管理员代管）
+    is_managed = Column(Boolean, default=False)
+    managed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

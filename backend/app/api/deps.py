@@ -34,9 +34,23 @@ async def get_current_user(
         payload = auth_service.decode_token(token)
         if payload:
             user_id = payload.get("sub")
+            acting_as = payload.get("acting_as")
+            original_user = payload.get("original_user")
+
             if user_id:
+                # 家庭代管模式：JWT 包含 acting_as 和 original_user
+                if acting_as and original_user:
+                    target_user = auth_service.get_user_by_id(db, int(acting_as))
+                    if target_user:
+                        request.state.original_user_id = int(original_user)
+                        request.state.is_proxy_mode = True
+                        logger.debug(f"[Auth] 家庭代管模式: 原始用户 {original_user} → 代管 {acting_as} ({target_user.name})")
+                        return target_user
+
+                # 正常模式
                 user = auth_service.get_user_by_id(db, int(user_id))
                 if user:
+                    request.state.is_proxy_mode = False
                     logger.debug(f"[Auth] JWT认证成功: 用户 {user.id} ({user.username})")
                     return user
                 logger.warning(f"[Auth] 用户ID {user_id} 不存在")

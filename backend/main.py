@@ -94,6 +94,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # 启动后台同步调度器（每天08:01北京时间同步一次，避免频繁登录导致账户锁定）
 @app.on_event("startup")
 async def startup_event():
+    import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     settings.validate_required_security()
     # 自动迁移：添加新列（如果不存在）
     try:
@@ -104,6 +105,8 @@ async def startup_event():
         db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_in_progress BOOLEAN DEFAULT false"))
         db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_started_at TIMESTAMPTZ DEFAULT NULL"))
         db.execute(text("ALTER TABLE openclaw_messages ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT NULL"))
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_managed BOOLEAN DEFAULT false"))
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS managed_by INTEGER DEFAULT NULL"))
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")

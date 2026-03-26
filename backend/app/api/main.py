@@ -82,6 +82,7 @@ from app.api import (
     skills,  # Skills 公开目录
     feedback,  # 交互反馈 & Skill 性能追踪
     nfc,  # NFC 碰触快速记录
+    family,  # 家庭健康管理
 )
 
 api_router = APIRouter()
@@ -200,3 +201,6 @@ api_router.include_router(feedback.router)
 
 # NFC 碰触快速记录
 api_router.include_router(nfc.router)
+
+# 家庭健康管理
+api_router.include_router(family.router)
