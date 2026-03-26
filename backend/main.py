@@ -108,13 +108,22 @@ async def startup_event():
         logger.info("数据库迁移检查完成")
     except Exception as e:
         logger.warning(f"数据库迁移检查跳过: {e}")
-    # Scheduler 只在一个 worker 中运行（由 gunicorn.conf.py post_fork 设置环境变量）
-    # 本地开发（uvicorn 单进程）时默认启用
-    import os
-    if os.environ.get("SCHEDULER_ENABLED", "1") == "1":
+    # Scheduler 只在一个 worker 中运行（用文件锁竞争 leader，兼容 uvicorn/gunicorn 多 worker）
+    import os, fcntl
+    scheduler_started = False
+    lock_file_path = "/tmp/health-scheduler.lock"
+    try:
+        lock_fd = open(lock_file_path, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # 获取锁成功 → 此 worker 成为 scheduler leader
+        lock_fd.write(str(os.getpid()))
+        lock_fd.flush()
         start_scheduler(app, use_daily_schedule=True)
-        logger.info(f"✅ Scheduler 已启动 (PID {os.getpid()})")
-    else:
+        scheduler_started = True
+        logger.info(f"✅ Scheduler leader (PID {os.getpid()})")
+        # 注意：不关闭 lock_fd，持有锁直到进程退出
+    except (IOError, OSError):
+        # 另一个 worker 已持有锁
         logger.info(f"⏭️ 非 scheduler worker，跳过 (PID {os.getpid()})")
 
 
