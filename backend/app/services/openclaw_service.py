@@ -500,15 +500,26 @@ AI: {ai_reply}
         messages = self.build_messages(conv.id, limit=20)
 
         # 4.1 注入轻量健康上下文（让 OpenClaw 感知用户健康状态）
+        health_ctx = None
         try:
             from app.services.health_context_lite_service import (
                 build_lite_health_context, OPENCLAW_HEALTH_SYSTEM_RULES,
             )
             health_ctx = build_lite_health_context(self.db, user_id)
             if health_ctx:
+                system_content = OPENCLAW_HEALTH_SYSTEM_RULES + "\n" + health_ctx
+                # 新对话首条消息：追加主动提醒指令
+                is_new_conversation = len([m for m in messages if m["role"] == "assistant"]) == 0
+                if is_new_conversation:
+                    system_content += (
+                        "\n\n[主动提醒] 这是新对话的第一条消息。"
+                        "请在回复用户问题的同时，根据健康档案中的数据，"
+                        "简要提醒 1-2 条最重要的待办事项（如未完成的饮水/打卡/补剂、健康预警等）。"
+                        "提醒要自然融入回复，不要生硬罗列。如果用户明确问了具体问题，优先回答问题。"
+                    )
                 messages.insert(0, {
                     "role": "system",
-                    "content": OPENCLAW_HEALTH_SYSTEM_RULES + "\n" + health_ctx,
+                    "content": system_content,
                 })
         except Exception as e:
             logger.warning(f"健康上下文注入失败(不影响对话): {e}")
