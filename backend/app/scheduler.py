@@ -658,6 +658,50 @@ def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = 
     family_thread.start()
     logger.info("家庭健康巡检调度器线程已启动（每天08:30北京时间）")
 
+    # 启动家庭每周健康周报调度器（每周日 20:00 北京时间）
+    def run_family_digest_loop():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_family_weekly_digest_loop())
+        loop.close()
+
+    digest_thread = threading.Thread(target=run_family_digest_loop, daemon=True)
+    digest_thread.start()
+    logger.info("家庭周报调度器线程已启动（每周日20:00北京时间）")
+
+
+async def _family_weekly_digest_loop():
+    """每周日 20:00 北京时间发送家庭健康周报"""
+    while True:
+        try:
+            now = get_china_now()
+            # 找到下一个周日 20:00
+            days_until_sunday = (6 - now.weekday()) % 7
+            if days_until_sunday == 0 and now.hour >= 20:
+                days_until_sunday = 7
+            target = (now + timedelta(days=days_until_sunday)).replace(hour=20, minute=0, second=0, microsecond=0)
+            wait_seconds = (target - now).total_seconds()
+            logger.info(f"家庭周报: 下次发送 {target.strftime('%Y-%m-%d %H:%M')}，等待 {wait_seconds/3600:.1f} 小时")
+            await asyncio.sleep(wait_seconds)
+
+            db = SessionLocal()
+            try:
+                from app.models.family import FamilyGroup
+                from app.services.family_weekly_digest import send_weekly_digest
+                owners = db.query(FamilyGroup.owner_id).distinct().all()
+                for (owner_id,) in owners:
+                    try:
+                        await send_weekly_digest(db, owner_id)
+                        logger.info(f"家庭周报已发送: owner_id={owner_id}")
+                    except Exception as e:
+                        logger.warning(f"家庭周报发送失败 owner_id={owner_id}: {e}")
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"家庭周报调度异常: {e}", exc_info=True)
+            await asyncio.sleep(60)
+
 
 async def _family_daily_check_loop():
     """每天 08:30 北京时间执行家庭健康巡检"""

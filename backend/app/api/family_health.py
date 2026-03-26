@@ -463,6 +463,77 @@ async def complete_review(
 
 
 # ══════════════════════════════════════════════════════════
+# 每周健康摘要
+# ══════════════════════════════════════════════════════════
+
+@router.get("/weekly-digest", summary="生成家庭健康周报", tags=["family-weekly-digest"])
+async def get_weekly_digest(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.family_weekly_digest import generate_weekly_digest
+    return generate_weekly_digest(db, current_user.id)
+
+
+@router.post("/weekly-digest/send", summary="发送家庭健康周报", tags=["family-weekly-digest"])
+async def send_weekly_digest_endpoint(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.family_weekly_digest import send_weekly_digest
+    digest = await send_weekly_digest(db, current_user.id)
+    return {"message": "周报已发送", "concerns": digest.get("total_concerns", 0)}
+
+
+# ══════════════════════════════════════════════════════════
+# 医疗文本解析（测试端点）
+# ══════════════════════════════════════════════════════════
+
+class ParseTextRequest(BaseModel):
+    text: str = Field(..., description="待解析的医疗文本（如'血压150/95'）")
+
+@router.post("/parse-medical-text", summary="解析医疗文本", tags=["wechat-bot"])
+async def parse_medical_text_endpoint(
+    req: ParseTextRequest,
+    current_user: User = Depends(get_current_user_required),
+):
+    """测试端点：将自然语言转为结构化健康数据"""
+    from app.services.medical_text_parser import parse_and_route
+    result = await parse_and_route(req.text)
+    return result
+
+
+# ══════════════════════════════════════════════════════════
+# 微信 Bot 消息 Webhook
+# ══════════════════════════════════════════════════════════
+
+class WeChatMessageRequest(BaseModel):
+    msg_type: str = Field(..., description="消息类型: text/image/voice")
+    content: str = Field(..., description="消息内容（文字/图片base64/语音识别文字）")
+    wechat_openid: Optional[str] = Field(None, description="发送者微信 OpenID")
+
+@router.post("/wechat-bot/message", summary="微信 Bot 消息入口", tags=["wechat-bot"])
+async def handle_wechat_message(
+    req: WeChatMessageRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    微信 Bot 消息处理入口。
+    当前通过 JWT 认证（测试阶段），未来接入企业微信 webhook 后改为签名验证。
+    """
+    from app.services.wechat_bot import WeChatBotHandler
+    handler = WeChatBotHandler(db)
+    result = await handler.handle_message({
+        "msg_type": req.msg_type,
+        "content": req.content,
+        "wechat_openid": req.wechat_openid,
+        "user_id": current_user.id,
+    })
+    return result
+
+
+# ══════════════════════════════════════════════════════════
 # 辅助函数
 # ══════════════════════════════════════════════════════════
 
