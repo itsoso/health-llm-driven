@@ -5,11 +5,13 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.api.deps import get_current_user_required
 from app.database import get_db
+from app.models.openclaw import OpenClawMessage, OpenClawConversation
 from app.models.user import User
 from app.services.openclaw_service import OpenClawService
 
@@ -40,6 +42,7 @@ class OpenClawMessageResponse(BaseModel):
     id: int
     role: str
     content: str
+    rating: int | None = None
     created_at: str
 
     class Config:
@@ -53,6 +56,17 @@ class OpenClawConversationDetailResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class RateMessageRequest(BaseModel):
+    rating: int
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v: int) -> int:
+        if v not in (1, -1):
+            raise ValueError("rating must be 1 (thumbs up) or -1 (thumbs down)")
+        return v
 
 
 # ── Endpoints ─────────────────────────────────────────────
@@ -134,6 +148,7 @@ async def get_conversation(
                 "id": m.id,
                 "role": m.role,
                 "content": m.content,
+                "rating": m.rating,
                 "created_at": str(m.created_at),
             }
             for m in conv.messages
@@ -152,3 +167,56 @@ async def delete_conversation(
     if not ok:
         raise HTTPException(status_code=404, detail="对话不存在")
     return {"ok": True}
+
+
+@router.post("/messages/{message_id}/rate", summary="评价 OpenClaw 消息质量")
+async def rate_message(
+    message_id: int,
+    req: RateMessageRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """对 OpenClaw 助手消息进行 thumbs up/down 评价"""
+    message = (
+        db.query(OpenClawMessage)
+        .join(OpenClawConversation, OpenClawMessage.conversation_id == OpenClawConversation.id)
+        .filter(
+            OpenClawMessage.id == message_id,
+            OpenClawConversation.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not message:
+        raise HTTPException(status_code=404, detail="消息不存在")
+
+    message.rating = req.rating
+    db.commit()
+    return {"ok": True, "message_id": message_id, "rating": req.rating}
+
+
+@router.get("/rating-stats", summary="OpenClaw 消息评价统计")
+async def get_rating_stats(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的 OpenClaw 消息评价统计"""
+    base_query = (
+        db.query(OpenClawMessage)
+        .join(OpenClawConversation, OpenClawMessage.conversation_id == OpenClawConversation.id)
+        .filter(
+            OpenClawConversation.user_id == current_user.id,
+            OpenClawMessage.rating.isnot(None),
+        )
+    )
+
+    total_rated = base_query.count()
+    thumbs_up = base_query.filter(OpenClawMessage.rating == 1).count()
+    thumbs_down = base_query.filter(OpenClawMessage.rating == -1).count()
+    satisfaction_rate = round(thumbs_up / total_rated, 2) if total_rated > 0 else 0.0
+
+    return {
+        "total_rated": total_rated,
+        "thumbs_up": thumbs_up,
+        "thumbs_down": thumbs_down,
+        "satisfaction_rate": satisfaction_rate,
+    }

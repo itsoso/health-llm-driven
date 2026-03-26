@@ -10,7 +10,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Any
-from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError
+from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError, probe_sso_availability
 from app.services.auth import garmin_credential_service
 from app.services.garmin_session_manager import get_session_manager, AccountStatus
 from app.models.user import GarminCredential
@@ -148,6 +148,7 @@ async def sync_user_garmin_data(
         return result
 
     # 1b. 检查 DB 登录锁定（与 API 路径共享，跨 worker 生效）
+    _was_previously_locked = False
     try:
         cred = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
         if cred and cred.login_locked_until:
@@ -161,8 +162,39 @@ async def sync_user_garmin_data(
                 result["message"] = f"跳过同步: 登录锁定中，剩余 {remaining} 分钟"
                 logger.warning(f"⏸️ 用户 {user_id} 跳过同步: DB 登录锁定到 {cred.login_locked_until}")
                 return result
+            else:
+                # 锁定已到期，标记为曾被锁定，后续需要探测 SSO
+                _was_previously_locked = True
+                logger.info(f"🔓 用户 {user_id} DB 登录锁定已到期，将探测 SSO 可用性")
     except Exception as e:
         logger.warning(f"检查用户 {user_id} DB 登录锁定失败: {e}")
+
+    # 1b-probe. 锁定刚到期时，先探测 SSO 是否仍在限流
+    if _was_previously_locked:
+        if not probe_sso_availability(is_cn=is_cn):
+            # SSO 仍在限流，重新锁定但不增加 error_count
+            try:
+                cred = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+                if cred:
+                    # 使用当前 error_count 计算下一次锁定时长（不递增 error_count）
+                    from app.services.data_collection.garmin_connect import LOGIN_LOCK_MINUTES_SCHEDULE
+                    lock_index = min((cred.error_count or 1) - 1, len(LOGIN_LOCK_MINUTES_SCHEDULE) - 1)
+                    lock_minutes = LOGIN_LOCK_MINUTES_SCHEDULE[max(lock_index, 0)]
+                    lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
+                    cred.login_locked_until = lock_until
+                    db.commit()
+                    logger.warning(
+                        f"⏸️ 用户 {user_id} SSO 探测仍返回 429，"
+                        f"重新锁定 {lock_minutes} 分钟到 {lock_until}（不增加 error_count）"
+                    )
+            except Exception as e:
+                logger.warning(f"用户 {user_id} 更新探测锁定状态失败: {e}")
+
+            result["skipped"] = True
+            result["message"] = "跳过同步: SSO 探测仍在限流，已重新锁定"
+            return result
+        else:
+            logger.info(f"✅ 用户 {user_id} SSO 探测通过，继续正常同步")
 
     # 1c. 获取同步锁（防止多入口并发同步同一用户）
     from app.services.sync_lock import acquire_sync_lock, release_sync_lock
@@ -230,10 +262,14 @@ async def sync_user_garmin_data(
         
         # 更新最后同步时间（会重置错误状态）
         garmin_credential_service.update_sync_status(db, user_id)
-        
+
         # 4. 记录成功
         session_manager.record_success(user_id, email)
-        
+
+        # 如果是从锁定状态恢复的，记录恢复日志
+        if _was_previously_locked:
+            logger.info(f"🔓✅ 用户 {user_id} 从限流锁定中恢复成功！error_count 已重置为 0")
+
         logger.info(f"✅ 用户 {user_id} Garmin数据同步成功: {result['message']}")
         
     except GarminAuthenticationError as e:

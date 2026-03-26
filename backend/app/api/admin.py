@@ -620,6 +620,26 @@ async def get_all_users_sync_status(
         else:
             invalid_count += 1
         
+        # 限流/锁定状态
+        login_locked = False
+        lock_remaining_minutes = 0
+        if hasattr(cred, 'login_locked_until') and cred.login_locked_until:
+            from datetime import datetime
+            now = datetime.utcnow()
+            locked_until = cred.login_locked_until
+            if hasattr(locked_until, 'tzinfo') and locked_until.tzinfo is not None:
+                locked_until = locked_until.replace(tzinfo=None)
+            if locked_until > now:
+                login_locked = True
+                lock_remaining_minutes = int((locked_until - now).total_seconds() / 60) + 1
+
+        # Token 缓存状态
+        has_cached_token = bool(cred.garth_session) if hasattr(cred, 'garth_session') else False
+        token_expires_at = cred.session_expires_at.isoformat() if hasattr(cred, 'session_expires_at') and cred.session_expires_at else None
+
+        # 同步锁状态
+        sync_in_progress = getattr(cred, 'sync_in_progress', False) or False
+
         result.append({
             "user_id": cred.user_id,
             "username": user.username if user else None,
@@ -629,6 +649,11 @@ async def get_all_users_sync_status(
             "credentials_valid": credentials_valid,
             "last_error": getattr(cred, 'last_error', None),
             "error_count": getattr(cred, 'error_count', 0) or 0,
+            "login_locked": login_locked,
+            "lock_remaining_minutes": lock_remaining_minutes,
+            "has_cached_token": has_cached_token,
+            "token_expires_at": token_expires_at,
+            "sync_in_progress": sync_in_progress,
             "last_sync_at": cred.last_sync_at.isoformat() if cred.last_sync_at else None,
             "latest_data_date": latest_data.record_date.isoformat() if latest_data else None,
             "total_records": data_count

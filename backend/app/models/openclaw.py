@@ -41,6 +41,7 @@ class OpenClawMessage(Base):
     )
     role = Column(String(20), nullable=False)  # user / assistant
     content = Column(Text, nullable=False)
+    rating = Column(Integer, nullable=True)  # 1=thumbs up, -1=thumbs down, NULL=unrated
     created_at = Column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("OpenClawConversation", back_populates="messages")
