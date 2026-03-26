@@ -49,10 +49,29 @@ function ReportsContent() {
         image_base64_list: imageBase64List,
         pdf_base64: pdfBase64,
       });
-      setUploadResult(res.data);
       setShowUpload(false);
       setSelectedFiles([]);
-      await loadReports();
+
+      // 异步处理模式：轮询状态直到完成
+      if (res.data.status === 'processing' && res.data.id) {
+        setUploadResult({ ...res.data, ai_summary: 'AI 正在后台提取指标，请稍候...' });
+        const reportId = res.data.id;
+        const poll = setInterval(async () => {
+          try {
+            const detail = await familyApi.getReportDetail(reportId);
+            if (detail.data.status !== 'processing') {
+              clearInterval(poll);
+              setUploadResult(detail.data);
+              await loadReports();
+            }
+          } catch { clearInterval(poll); }
+        }, 3000); // 每 3 秒轮询
+        // 最长轮询 5 分钟
+        setTimeout(() => clearInterval(poll), 300000);
+      } else {
+        setUploadResult(res.data);
+        await loadReports();
+      }
     } catch (e: any) {
       alert('上传失败: ' + (e.response?.data?.detail || e.message));
     } finally { setUploading(false); }

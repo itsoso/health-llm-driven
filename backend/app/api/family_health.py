@@ -33,16 +33,27 @@ class ReportUploadRequest(BaseModel):
     pdf_base64: Optional[str] = Field(None, description="Base64 编码的 PDF 文件（会自动转为图片再提取）")
 
 
-@router.post("/medical-reports/upload", summary="上传体检报告（AI 提取）", tags=["medical-reports"])
+@router.post("/medical-reports/upload", summary="上传体检报告（AI 异步提取）", tags=["medical-reports"])
 async def upload_medical_report(
     req: ReportUploadRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """
-    上传体检报告照片/PDF，AI 自动提取指标并建立趋势。
-    支持一次上传多张图片（如多页报告）。
+    上传体检报告照片/PDF。立即返回 report ID，AI 在后台异步提取指标。
+    前端通过 GET /medical-reports/{id} 轮询状态。
     """
+    # PDF → 图片转换（同步，速度快）
+    image_list = list(req.image_base64_list or [])
+    if req.pdf_base64:
+        try:
+            pdf_images = _pdf_to_images_base64(req.pdf_base64)
+            image_list.extend(pdf_images)
+            logger.info(f"PDF 转换为 {len(pdf_images)} 页图片")
+        except Exception as e:
+            logger.error(f"PDF 转图片失败: {e}", exc_info=True)
+            return {"id": 0, "status": "failed", "message": f"PDF 解析失败: {str(e)}"}
+
     report = MedicalReport(
         user_id=current_user.id,
         report_date=req.report_date,
@@ -52,117 +63,27 @@ async def upload_medical_report(
         status="processing",
     )
     db.add(report)
-    db.flush()
-
-    # PDF → 图片转换
-    image_list = list(req.image_base64_list or [])
-    if req.pdf_base64:
-        try:
-            pdf_images = _pdf_to_images_base64(req.pdf_base64)
-            image_list.extend(pdf_images)
-            logger.info(f"PDF 转换为 {len(pdf_images)} 页图片")
-        except Exception as e:
-            logger.error(f"PDF 转图片失败: {e}", exc_info=True)
-            report.status = "failed"
-            report.ai_summary = f"PDF 解析失败: {str(e)}"
-            db.commit()
-            return {"id": report.id, "status": "failed", "extracted_count": 0, "abnormal_count": 0, "ai_summary": report.ai_summary, "abnormal_items": []}
-
-    # AI 提取
-    extracted_items = []
-    abnormal_items = []
-    ai_summary = ""
-
-    if image_list:
-        try:
-            from app.services.llm import get_llm_provider
-            llm = get_llm_provider()
-
-            all_text = []
-            for i, img_b64 in enumerate(image_list):
-                messages = [
-                    {"role": "system", "content": (
-                        "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
-                        "提取所有检查指标。对每个指标，返回 JSON 数组格式：\n"
-                        '[{"name": "指标名", "value": 数值, "unit": "单位", '
-                        '"reference_low": 下限, "reference_high": 上限, '
-                        '"is_abnormal": true/false, "severity": "normal/mild/moderate/severe"}]\n'
-                        "只返回 JSON，不要其他文字。如果图片不清晰或不是体检报告，返回空数组 []。"
-                    )},
-                    {"role": "user", "content": [
-                        {"type": "text", "text": f"这是体检报告第 {i+1} 页，请提取所有指标："},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}},
-                    ]},
-                ]
-                resp = await llm.chat(messages, temperature=0.1)
-                all_text.append(resp)
-
-            # 解析 AI 返回的 JSON
-            for resp_text in all_text:
-                try:
-                    # 尝试提取 JSON
-                    text = resp_text.strip()
-                    if text.startswith("```"):
-                        text = text.split("```")[1].strip()
-                        if text.startswith("json"):
-                            text = text[4:].strip()
-                    items = json.loads(text)
-                    if isinstance(items, list):
-                        extracted_items.extend(items)
-                except (json.JSONDecodeError, IndexError):
-                    logger.warning(f"体检报告 AI 解析失败，原始文本: {resp_text[:200]}")
-
-            # 筛选异常指标
-            abnormal_items = [item for item in extracted_items if item.get("is_abnormal")]
-
-            # 生成总结
-            if extracted_items:
-                summary_messages = [
-                    {"role": "system", "content": "你是健康管理专家。根据以下体检指标，用中文简要总结：1）主要异常项及风险 2）需要关注的趋势 3）建议的后续检查。100字以内。"},
-                    {"role": "user", "content": json.dumps(extracted_items, ensure_ascii=False)},
-                ]
-                ai_summary = await llm.chat(summary_messages, temperature=0.3)
-
-            report.extracted_items = extracted_items
-            report.abnormal_items = abnormal_items
-            report.ai_summary = ai_summary
-            report.status = "completed"
-
-            # 将指标写入时间线表
-            for item in extracted_items:
-                if item.get("value") is not None:
-                    try:
-                        indicator = MedicalIndicator(
-                            user_id=current_user.id,
-                            report_id=report.id,
-                            name=item["name"],
-                            category=_categorize_indicator(item["name"]),
-                            value=float(item["value"]),
-                            unit=item.get("unit"),
-                            reference_low=item.get("reference_low"),
-                            reference_high=item.get("reference_high"),
-                            is_abnormal=item.get("is_abnormal", False),
-                            severity=item.get("severity", "normal"),
-                            record_date=req.report_date,
-                        )
-                        db.add(indicator)
-                    except (ValueError, TypeError):
-                        pass
-
-        except Exception as e:
-            logger.error(f"体检报告 AI 提取失败: {e}", exc_info=True)
-            report.status = "failed"
-            report.ai_summary = f"AI 提取失败: {str(e)}"
-
     db.commit()
+    db.refresh(report)
+
+    report_id = report.id
+    user_id = current_user.id
+    report_date = req.report_date
+
+    # 后台线程执行 AI 提取（不阻塞请求）
+    if image_list:
+        import threading
+        threading.Thread(
+            target=_process_report_background,
+            args=(report_id, user_id, report_date, image_list),
+            daemon=True,
+        ).start()
 
     return {
-        "id": report.id,
-        "status": report.status,
-        "extracted_count": len(extracted_items),
-        "abnormal_count": len(abnormal_items),
-        "ai_summary": ai_summary,
-        "abnormal_items": abnormal_items,
+        "id": report_id,
+        "status": "processing",
+        "pages": len(image_list),
+        "message": f"报告已上传（{len(image_list)} 页），AI 正在后台提取指标...",
     }
 
 
@@ -544,6 +465,116 @@ async def complete_review(
 # ══════════════════════════════════════════════════════════
 # 辅助函数
 # ══════════════════════════════════════════════════════════
+
+def _process_report_background(report_id: int, user_id: int, report_date, image_list: List[str]):
+    """后台线程：AI 提取体检报告指标"""
+    import asyncio
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        report = db.query(MedicalReport).filter(MedicalReport.id == report_id).first()
+        if not report:
+            return
+
+        extracted_items = []
+        try:
+            from app.services.llm import get_llm_provider
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            llm = loop.run_until_complete(_get_llm())
+
+            for i, img_b64 in enumerate(image_list):
+                try:
+                    messages = [
+                        {"role": "system", "content": (
+                            "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
+                            "提取所有检查指标。对每个指标，返回 JSON 数组格式：\n"
+                            '[{"name": "指标名", "value": 数值, "unit": "单位", '
+                            '"reference_low": 下限, "reference_high": 上限, '
+                            '"is_abnormal": true/false, "severity": "normal/mild/moderate/severe"}]\n'
+                            "只返回 JSON，不要其他文字。如果图片不清晰或不是体检报告，返回空数组 []。"
+                        )},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": f"这是体检报告第 {i+1}/{len(image_list)} 页，请提取所有指标："},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}},
+                        ]},
+                    ]
+                    resp = loop.run_until_complete(llm.chat(messages, temperature=0.1))
+
+                    text = resp.strip()
+                    if text.startswith("```"):
+                        text = text.split("```")[1].strip()
+                        if text.startswith("json"):
+                            text = text[4:].strip()
+                    items = json.loads(text)
+                    if isinstance(items, list):
+                        extracted_items.extend(items)
+                    logger.info(f"报告 {report_id} 第 {i+1}/{len(image_list)} 页提取 {len(items)} 项指标")
+                except Exception as e:
+                    logger.warning(f"报告 {report_id} 第 {i+1} 页提取失败: {e}")
+
+            # 异常指标
+            abnormal_items = [item for item in extracted_items if item.get("is_abnormal")]
+
+            # AI 总结
+            ai_summary = ""
+            if extracted_items:
+                try:
+                    summary_msg = [
+                        {"role": "system", "content": "你是健康管理专家。根据以下体检指标，用中文简要总结：1）主要异常项及风险 2）需要关注的趋势 3）建议的后续检查。150字以内。"},
+                        {"role": "user", "content": json.dumps(extracted_items, ensure_ascii=False)},
+                    ]
+                    ai_summary = loop.run_until_complete(llm.chat(summary_msg, temperature=0.3))
+                except Exception as e:
+                    logger.warning(f"报告 {report_id} AI 总结失败: {e}")
+
+            loop.close()
+
+            # 更新报告
+            report.extracted_items = extracted_items
+            report.abnormal_items = abnormal_items
+            report.ai_summary = ai_summary
+            report.status = "completed"
+
+            # 写入指标时间线
+            for item in extracted_items:
+                if item.get("value") is not None:
+                    try:
+                        indicator = MedicalIndicator(
+                            user_id=user_id,
+                            report_id=report_id,
+                            name=item["name"],
+                            category=_categorize_indicator(item["name"]),
+                            value=float(item["value"]),
+                            unit=item.get("unit"),
+                            reference_low=item.get("reference_low"),
+                            reference_high=item.get("reference_high"),
+                            is_abnormal=item.get("is_abnormal", False),
+                            severity=item.get("severity", "normal"),
+                            record_date=report_date,
+                        )
+                        db.add(indicator)
+                    except (ValueError, TypeError):
+                        pass
+
+            db.commit()
+            logger.info(f"报告 {report_id} AI 提取完成：{len(extracted_items)} 项指标，{len(abnormal_items)} 项异常")
+
+        except Exception as e:
+            logger.error(f"报告 {report_id} AI 提取失败: {e}", exc_info=True)
+            report.status = "failed"
+            report.ai_summary = f"AI 提取失败: {str(e)}"
+            db.commit()
+
+    finally:
+        db.close()
+
+
+async def _get_llm():
+    from app.services.llm import get_llm_provider
+    return get_llm_provider()
+
 
 def _pdf_to_images_base64(pdf_base64: str, max_pages: int = 30, dpi: int = 200) -> List[str]:
     """将 Base64 编码的 PDF 转为每页的 Base64 JPEG 图片列表"""
