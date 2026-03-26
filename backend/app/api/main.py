@@ -83,6 +83,7 @@ from app.api import (
     feedback,  # 交互反馈 & Skill 性能追踪
     nfc,  # NFC 碰触快速记录
     family,  # 家庭健康管理
+    family_health,  # 体检报告 + 用药管理 + 复查日历
 )
 
 api_router = APIRouter()
@@ -204,3 +205,6 @@ api_router.include_router(nfc.router)
 
 # 家庭健康管理
 api_router.include_router(family.router)
+
+# 体检报告 + 用药管理 + 复查日历
+api_router.include_router(family_health.router, prefix="/family-health", tags=["family-health"])

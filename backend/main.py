@@ -95,6 +95,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 @app.on_event("startup")
 async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
+    import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
     # 自动迁移：添加新列（如果不存在）
     try:
