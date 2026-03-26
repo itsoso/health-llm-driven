@@ -69,6 +69,10 @@ class GarminCredential(Base):
     error_count = Column(Integer, default=0)  # 连续错误次数
     login_locked_until = Column(DateTime(timezone=True), nullable=True)  # 登录锁定截止时间（防止频繁登录导致 Garmin 账号被锁）
     
+    # 同步去重锁 - 防止多个入口并发同步同一用户
+    sync_in_progress = Column(Boolean, default=False, server_default="false")
+    sync_started_at = Column(DateTime(timezone=True), nullable=True)
+
     # OAuth Token 缓存 - 防止频繁登录导致账号锁定
     garth_session = Column(Text, nullable=True)  # 序列化的 garth session (JSON)
     session_expires_at = Column(DateTime(timezone=True), nullable=True)  # session 过期时间

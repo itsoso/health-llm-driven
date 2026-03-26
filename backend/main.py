@@ -101,12 +101,21 @@ async def startup_event():
         from sqlalchemy import text
         db = SessionLocal()
         db.execute(text("ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT NULL"))
+        db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_in_progress BOOLEAN DEFAULT false"))
+        db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_started_at TIMESTAMPTZ DEFAULT NULL"))
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")
     except Exception as e:
         logger.warning(f"数据库迁移检查跳过: {e}")
-    start_scheduler(app, use_daily_schedule=True)
+    # Scheduler 只在一个 worker 中运行（由 gunicorn.conf.py post_fork 设置环境变量）
+    # 本地开发（uvicorn 单进程）时默认启用
+    import os
+    if os.environ.get("SCHEDULER_ENABLED", "1") == "1":
+        start_scheduler(app, use_daily_schedule=True)
+        logger.info(f"✅ Scheduler 已启动 (PID {os.getpid()})")
+    else:
+        logger.info(f"⏭️ 非 scheduler worker，跳过 (PID {os.getpid()})")
 
 
 # 配置CORS - 严格限制跨域访问

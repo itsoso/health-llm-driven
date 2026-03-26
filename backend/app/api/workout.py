@@ -872,6 +872,11 @@ async def sync_garmin_activities(
             detail="请先在设置中配置Garmin账号"
         )
     
+    # 获取同步锁（防止并发同步）
+    from app.services.sync_lock import acquire_sync_lock, release_sync_lock
+    if not acquire_sync_lock(db, current_user.id):
+        raise HTTPException(status_code=409, detail="同步正在进行中，请稍后再试")
+
     try:
         # 先用 GarminConnectService 登录（优先从 DB 加载缓存的 OAuth Token）
         from app.services.data_collection.garmin_connect import GarminConnectService
@@ -902,6 +907,8 @@ async def sync_garmin_activities(
     except Exception as e:
         logger.error(f"Garmin活动同步失败: {e}")
         raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
+    finally:
+        release_sync_lock(db, current_user.id)
 
 
 # ========== 运动前指导 ==========

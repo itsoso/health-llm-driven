@@ -131,6 +131,7 @@ Group=root
 WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$BACKEND_DIR/venv/bin"
 ExecStart=$BACKEND_DIR/venv/bin/gunicorn main:app \\
+  --config $BACKEND_DIR/gunicorn.conf.py \\
   --workers 4 \\
   --worker-class uvicorn.workers.UvicornWorker \\
   --bind 0.0.0.0:8000 \\

@@ -408,12 +408,17 @@ async def sync_garmin_data(
             detail="未配置Garmin凭证，请先在设置中配置"
         )
     
+    # 获取同步锁（防止并发同步）
+    from app.services.sync_lock import acquire_sync_lock, release_sync_lock
+    if not acquire_sync_lock(db, current_user.id):
+        raise HTTPException(status_code=409, detail="同步正在进行中，请稍后再试")
+
     # 执行同步
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService
         from app.services.workout_sync import WorkoutSyncService
         from datetime import date, timedelta
-        
+
         # 创建Garmin服务实例（传入凭证，会自动登录）
         # 如果有mfa_session_id，传递给服务以复用已认证的会话
         garmin_service = GarminConnectService(
@@ -502,6 +507,8 @@ async def sync_garmin_data(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"同步失败: {str(e)}"
         )
+    finally:
+        release_sync_lock(db, current_user.id)
 
 
 @router.get("/garmin/sync-stream", summary="流式同步Garmin数据（带进度）")

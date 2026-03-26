@@ -139,17 +139,42 @@ async def sync_user_garmin_data(
         "retried": retry_count  # 重试次数
     }
     
-    # 1. 检查账户状态（账户保护机制）
+    # 1. 检查账户状态（内存级保护机制）
     can_sync, reason = session_manager.can_sync(user_id, email)
     if not can_sync:
         result["skipped"] = True
         result["message"] = f"跳过同步: {reason}"
         logger.warning(f"⏸️ 用户 {user_id} 跳过同步: {reason}")
         return result
-    
+
+    # 1b. 检查 DB 登录锁定（与 API 路径共享，跨 worker 生效）
+    try:
+        cred = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if cred and cred.login_locked_until:
+            now = datetime.utcnow()
+            locked_until = cred.login_locked_until
+            if locked_until.tzinfo is not None:
+                locked_until = locked_until.replace(tzinfo=None)
+            if locked_until > now:
+                remaining = int((locked_until - now).total_seconds() / 60) + 1
+                result["skipped"] = True
+                result["message"] = f"跳过同步: 登录锁定中，剩余 {remaining} 分钟"
+                logger.warning(f"⏸️ 用户 {user_id} 跳过同步: DB 登录锁定到 {cred.login_locked_until}")
+                return result
+    except Exception as e:
+        logger.warning(f"检查用户 {user_id} DB 登录锁定失败: {e}")
+
+    # 1c. 获取同步锁（防止多入口并发同步同一用户）
+    from app.services.sync_lock import acquire_sync_lock, release_sync_lock
+    if not acquire_sync_lock(db, user_id):
+        result["skipped"] = True
+        result["message"] = "跳过同步: 另一个同步正在进行中"
+        logger.warning(f"⏸️ 用户 {user_id} 跳过同步: 同步去重")
+        return result
+
     try:
         server_type = "中国版" if is_cn else "国际版"
-        
+
         # 2. 尝试复用缓存的会话（OAuth令牌缓存）
         cached_client = session_manager.get_cached_session(email)
         if cached_client:
@@ -266,10 +291,13 @@ async def sync_user_garmin_data(
             await asyncio.sleep(retry_delay)
             # 清除缓存的会话，强制重新登录
             session_manager.invalidate_session(email)
+            release_sync_lock(db, user_id)
             return await sync_user_garmin_data(
                 db, user_id, email, password, days, is_cn, retry_count + 1
             )
-    
+    finally:
+        release_sync_lock(db, user_id)
+
     return result
 
 
