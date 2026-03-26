@@ -21,3 +21,4 @@ export * from './api/devices';
 export * from './api/ai';
 export * from './api/social';
 export * from './api/content';
+export * from './api/family';
