@@ -1,8 +1,9 @@
-"""轻量健康上下文服务 — 为 OpenClaw 模式提供精简的用户健康摘要
+"""轻量健康上下文服务 — 为 OpenClaw 模式提供用户健康摘要
 
 设计目标：
-- 200-300 tokens 输出，5 次 DB 查询
+- 400-500 tokens 输出，~10 次 DB 查询
 - 5 分钟内存缓存，命中 0ms
+- 包含可执行建议（未完成目标、异常预警、待办提醒）
 - 任何失败优雅降级，不影响对话
 """
 import logging
@@ -24,11 +25,13 @@ OPENCLAW_HEALTH_SYSTEM_RULES = (
     "你是用户的AI健康助理，具备通过Skills查询数据和执行操作的能力。"
     "以下是用户的实时健康档案，请据此提供个性化、科学的建议。\n\n"
     "关键规则：\n"
-    "1. HRV状态为low或SpO2<95%时，在回复中主动提醒用户注意休息或就医\n"
-    "2. 回答需考虑用户的慢性病史和当前用药\n"
-    "3. 运动建议需参考用户年龄对应的最大心率\n"
-    "4. 严重健康问题务必建议就医，不要自行诊断\n"
-    "5. 用中文回复，简洁务实"
+    "1. 有⚠️健康预警时，必须优先提醒用户，给出具体建议\n"
+    "2. 注意用户今日的饮水、打卡、补剂完成情况，适时提醒未完成项目\n"
+    "3. 运动建议需参考最近运动记录和用户年龄对应的最大心率\n"
+    "4. 回答需考虑用户的慢性病史和当前用药\n"
+    "5. HRV状态为low或SpO2<95%时，主动建议休息或就医\n"
+    "6. 严重健康问题务必建议就医，不要自行诊断\n"
+    "7. 用中文回复，简洁务实，基于档案数据给出可执行的具体建议"
 )
 
 
@@ -231,5 +234,106 @@ def _build_context(db: Session, user_id: int) -> str:
             days = (today - ill.start_date).days if ill.start_date else 0
             illness_strs.append(f"{ill.name}(第{days}天, {ill.severity}/10)")
         parts.append(f"当前病症: {', '.join(illness_strs)}")
+
+    # ── 5. 今日饮水进度 ────────────────────────────────
+    try:
+        from app.models.daily_health import WaterIntake
+        water_today = db.query(WaterIntake).filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date == today
+        ).all()
+        total_ml = sum(w.amount_ml or 0 for w in water_today)
+        if total_ml > 0:
+            parts.append(f"今日饮水: {total_ml}ml / 2000ml ({total_ml * 100 // 2000}%)")
+        else:
+            parts.append("今日饮水: 尚未记录")
+    except Exception:
+        pass
+
+    # ── 6. 最近运动 ────────────────────────────────────
+    try:
+        from app.models.daily_health import WorkoutRecord
+        latest_workout = db.query(WorkoutRecord).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= today - timedelta(days=7)
+        ).order_by(WorkoutRecord.workout_date.desc()).first()
+
+        if latest_workout:
+            w = latest_workout
+            days_ago = (today - w.workout_date).days
+            when = "今天" if days_ago == 0 else f"{days_ago}天前"
+            w_parts = [f"{w.workout_type or '运动'}({when})"]
+            if w.duration_seconds:
+                w_parts.append(f"{w.duration_seconds // 60}分钟")
+            if w.distance_meters and w.distance_meters > 0:
+                w_parts.append(f"{w.distance_meters / 1000:.1f}km")
+            if w.avg_heart_rate:
+                w_parts.append(f"均心率{w.avg_heart_rate}")
+            parts.append(f"最近运动: {', '.join(w_parts)}")
+    except Exception:
+        pass
+
+    # ── 7. 健康异常预警（未读） ─────────────────────────
+    try:
+        from app.models.anomaly_alert import AnomalyAlert
+        recent_alerts = db.query(AnomalyAlert).filter(
+            AnomalyAlert.user_id == user_id,
+            AnomalyAlert.detection_date >= today - timedelta(days=3),
+            AnomalyAlert.acknowledged == False
+        ).order_by(AnomalyAlert.detection_date.desc()).limit(3).all()
+
+        if recent_alerts:
+            alert_strs = []
+            for a in recent_alerts:
+                severity_icon = "🔴" if a.severity == "critical" else "🟡"
+                alert_strs.append(f"{severity_icon}{a.message or a.alert_type}")
+            parts.append(f"⚠️ 健康预警: {'; '.join(alert_strs)}")
+    except Exception:
+        pass
+
+    # ── 8. 今日打卡进度 ────────────────────────────────
+    try:
+        from app.models.checkin import CheckinRecord, CheckinTemplate
+        checkins_today = db.query(CheckinRecord, CheckinTemplate).join(
+            CheckinTemplate, CheckinRecord.template_id == CheckinTemplate.id
+        ).filter(
+            CheckinRecord.user_id == user_id,
+            CheckinRecord.checkin_date == today
+        ).all()
+
+        total_templates = db.query(CheckinTemplate).filter(
+            CheckinTemplate.user_id == user_id,
+            CheckinTemplate.is_active == True
+        ).count()
+
+        if total_templates > 0:
+            completed = len(checkins_today)
+            names = [t.name for _, t in checkins_today]
+            if completed > 0:
+                parts.append(f"今日打卡: {completed}/{total_templates} ({', '.join(names[:3])})")
+            else:
+                parts.append(f"今日打卡: 0/{total_templates}，尚未开始")
+    except Exception:
+        pass
+
+    # ── 9. 补剂提醒 ────────────────────────────────────
+    try:
+        from app.models.supplement import SupplementDefinition, SupplementRecord
+        active_supps = db.query(SupplementDefinition).filter(
+            SupplementDefinition.user_id == user_id,
+            SupplementDefinition.is_active == True
+        ).all()
+
+        if active_supps:
+            taken_ids = {r.supplement_id for r in db.query(SupplementRecord).filter(
+                SupplementRecord.user_id == user_id,
+                SupplementRecord.record_date == today,
+                SupplementRecord.taken == True
+            ).all()}
+            not_taken = [s.name for s in active_supps if s.id not in taken_ids]
+            if not_taken:
+                parts.append(f"未服用补剂: {', '.join(not_taken[:5])}")
+    except Exception:
+        pass
 
     return "\n".join(parts)
