@@ -484,35 +484,53 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
             asyncio.set_event_loop(loop)
             llm = loop.run_until_complete(_get_llm())
 
-            for i, img_b64 in enumerate(image_list):
-                try:
-                    messages = [
-                        {"role": "system", "content": (
-                            "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
-                            "提取所有检查指标。对每个指标，返回 JSON 数组格式：\n"
-                            '[{"name": "指标名", "value": 数值, "unit": "单位", '
-                            '"reference_low": 下限, "reference_high": 上限, '
-                            '"is_abnormal": true/false, "severity": "normal/mild/moderate/severe"}]\n'
-                            "只返回 JSON，不要其他文字。如果图片不清晰或不是体检报告，返回空数组 []。"
-                        )},
-                        {"role": "user", "content": [
-                            {"type": "text", "text": f"这是体检报告第 {i+1}/{len(image_list)} 页，请提取所有指标："},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}},
-                        ]},
-                    ]
-                    resp = loop.run_until_complete(llm.chat(messages, temperature=0.1))
+            import time as _time
 
-                    text = resp.strip()
-                    if text.startswith("```"):
-                        text = text.split("```")[1].strip()
-                        if text.startswith("json"):
-                            text = text[4:].strip()
-                    items = json.loads(text)
-                    if isinstance(items, list):
-                        extracted_items.extend(items)
-                    logger.info(f"报告 {report_id} 第 {i+1}/{len(image_list)} 页提取 {len(items)} 项指标")
-                except Exception as e:
-                    logger.warning(f"报告 {report_id} 第 {i+1} 页提取失败: {e}")
+            for i, img_b64 in enumerate(image_list):
+                # 页间限速：避免 OpenAI TPM 限流
+                if i > 0:
+                    _time.sleep(3)
+
+                # 压缩图片降低 token 消耗
+                compressed = _compress_image_base64(img_b64)
+
+                for attempt in range(3):  # 最多重试 3 次
+                    try:
+                        messages = [
+                            {"role": "system", "content": (
+                                "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
+                                "提取所有检查指标。对每个指标，返回 JSON 数组格式：\n"
+                                '[{"name": "指标名", "value": 数值, "unit": "单位", '
+                                '"reference_low": 下限, "reference_high": 上限, '
+                                '"is_abnormal": true/false, "severity": "normal/mild/moderate/severe"}]\n'
+                                "只返回 JSON，不要其他文字。如果图片不清晰或不是体检报告，返回空数组 []。"
+                            )},
+                            {"role": "user", "content": [
+                                {"type": "text", "text": f"这是体检报告第 {i+1}/{len(image_list)} 页，请提取所有指标："},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{compressed}", "detail": "low"}},
+                            ]},
+                        ]
+                        resp = loop.run_until_complete(llm.chat(messages, temperature=0.1))
+
+                        text = resp.strip()
+                        if text.startswith("```"):
+                            text = text.split("```")[1].strip()
+                            if text.startswith("json"):
+                                text = text[4:].strip()
+                        items = json.loads(text)
+                        if isinstance(items, list):
+                            extracted_items.extend(items)
+                        logger.info(f"报告 {report_id} 第 {i+1}/{len(image_list)} 页提取 {len(items)} 项指标")
+                        break  # 成功，退出重试
+                    except Exception as e:
+                        err_str = str(e)
+                        if '429' in err_str and attempt < 2:
+                            wait = (attempt + 1) * 5  # 5s, 10s
+                            logger.warning(f"报告 {report_id} 第 {i+1} 页 429 限流，等待 {wait}s 后重试")
+                            _time.sleep(wait)
+                        else:
+                            logger.warning(f"报告 {report_id} 第 {i+1} 页提取失败: {e}")
+                            break
 
             # 异常指标
             abnormal_items = [item for item in extracted_items if item.get("is_abnormal")]
@@ -569,6 +587,27 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
 
     finally:
         db.close()
+
+
+def _compress_image_base64(img_b64: str, max_size: int = 1024) -> str:
+    """压缩 base64 图片到合理尺寸，降低 Vision API token 消耗"""
+    import base64
+    import io
+    try:
+        from PIL import Image
+        img_bytes = base64.b64decode(img_b64)
+        img = Image.open(io.BytesIO(img_bytes))
+
+        # 缩小到 max_size x max_size 以内
+        if max(img.size) > max_size:
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+
+        # 转为 JPEG
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=75)
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return img_b64  # 压缩失败返回原图
 
 
 async def _get_llm():
