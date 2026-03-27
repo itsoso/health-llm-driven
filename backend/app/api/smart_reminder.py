@@ -1,11 +1,12 @@
 """智能提醒 API"""
 import logging
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from dateutil.parser import parse as parse_datetime
 
 from app.database import get_db
 from app.api.deps import get_current_user_required
@@ -27,6 +28,61 @@ class ReminderResponse(BaseModel):
     status: str
     source: Optional[str]
     created_at: Optional[str]
+
+
+class ReminderCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200, description="提醒标题")
+    message: Optional[str] = Field(default=None, max_length=500, description="提醒详情")
+    remind_at: str = Field(..., description="提醒时间 (ISO 8601)")
+    priority: str = Field(default="normal", description="优先级: low/normal/high/urgent")
+    recurrence: Optional[str] = Field(default=None, description="重复: daily/weekdays/weekly:1,3,5")
+
+
+@router.post("/me", summary="创建提醒", status_code=201)
+async def create_reminder(
+    request: ReminderCreateRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """创建一个智能提醒"""
+    if request.priority not in ("low", "normal", "high", "urgent"):
+        raise HTTPException(status_code=400, detail="priority 必须是 low/normal/high/urgent")
+
+    try:
+        remind_at = parse_datetime(request.remind_at)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"无法解析提醒时间: {request.remind_at}")
+
+    if remind_at.tzinfo is None:
+        remind_at = remind_at.replace(tzinfo=timezone(timedelta(hours=8)))
+
+    now = get_china_now()
+    if not request.recurrence and remind_at < now:
+        raise HTTPException(status_code=400, detail="提醒时间已过，请设置一个未来的时间")
+
+    reminder = SmartReminder(
+        user_id=current_user.id,
+        title=request.title,
+        message=request.message or request.title,
+        remind_at=remind_at,
+        priority=request.priority,
+        recurrence=request.recurrence,
+        source="openclaw_skill",
+        status="pending",
+    )
+    db.add(reminder)
+    db.commit()
+
+    return {
+        "id": reminder.id,
+        "title": reminder.title,
+        "message": reminder.message,
+        "remind_at": remind_at.isoformat(),
+        "priority": reminder.priority,
+        "recurrence": reminder.recurrence,
+        "status": "pending",
+        "created_at": reminder.created_at.isoformat() if reminder.created_at else None,
+    }
 
 
 @router.get("/me", summary="获取我的提醒列表")

@@ -12,7 +12,7 @@ from sqlalchemy import func
 from app.config import settings
 from app.models.smart_plan import WeeklyPlan, PlanItem
 from app.models.checkin import CheckinTemplate
-from app.services.chat_service import ChatService
+from app.services.health_context_lite_service import build_lite_health_context
 from app.services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 class SmartPlanService:
     def __init__(self, db: Session):
         self.db = db
-        self.chat_service = ChatService(db)
 
     def _init_debug_info(self) -> Dict[str, Any]:
         return {
@@ -512,7 +511,7 @@ class SmartPlanService:
 
         # Step 3: 获取健康上下文
         step_start = time.time()
-        health_context = await self.chat_service._build_health_context(user_id)
+        health_context = build_lite_health_context(self.db, user_id) or ""
         self._add_step(debug_info, "获取用户健康数据上下文", step_start)
         self._add_reasoning(debug_info, f"健康上下文长度: {len(health_context)} 字符", "data")
         self._add_data(debug_info, "health_context", health_context[:2000] + ("..." if len(health_context) > 2000 else ""))

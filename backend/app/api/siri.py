@@ -27,7 +27,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.chat import ChatConversation
 from app.api.deps import get_current_user_required
-from app.services.chat_service import ChatService
+from app.services.openclaw_service import OpenClawService
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -333,42 +333,38 @@ async def siri_say(
     # 使用专属 Siri 对话（不影响普通对话列表的排序）
     conversation_id = get_or_create_siri_conversation(current_user.id, db)
 
-    # Siri 快捷指令 HTTP 超时约 25-30s，必须在此之前返回
+    # Siri 快捷指令 HTTP 超时约 25-30s，通过 OpenClaw stream 收集完整回复
     SIRI_TIMEOUT = 25
-    chat_service = ChatService(db)
+    openclaw_service = OpenClawService(db)
     try:
-        result = await asyncio.wait_for(
-            chat_service.send_message(
+        full_reply = ""
+        async def collect_reply():
+            nonlocal full_reply
+            async for event in openclaw_service.send_message_stream(
                 user_id=current_user.id,
                 message=message,
                 conversation_id=conversation_id,
-            ),
-            timeout=SIRI_TIMEOUT,
-        )
+            ):
+                if event.get("event") == "token":
+                    full_reply += event.get("data", {}).get("content", "")
+        await asyncio.wait_for(collect_reply(), timeout=SIRI_TIMEOUT)
     except asyncio.TimeoutError:
         logger.warning(f"Siri 请求超时 ({SIRI_TIMEOUT}s) user={current_user.id} msg={message[:60]}")
+        if full_reply:
+            return SiriResponse(text=strip_markdown(full_reply))
         return SiriResponse(text="收到了，正在处理中。请稍后在 App 中查看结果。")
     except Exception as e:
         logger.error(f"Siri 请求处理失败 user={current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="处理失败，请稍后重试")
 
-    reply = result.get("reply", "收到了，请稍后查看记录。")
-    clean_text = strip_markdown(reply)
-
-    # 提取提醒信息
-    reminder = result.get("reminder")
-    reminder_minutes = 0
-    reminder_message = ""
-    if reminder:
-        reminder_minutes = reminder.get("reminder_minutes", 0)
-        reminder_message = reminder.get("reminder_message", "")
+    clean_text = strip_markdown(full_reply or "收到了，请稍后查看记录。")
 
     return SiriResponse(
         text=clean_text,
-        diet_saved=bool(result.get("diet_saved")),
-        activities_saved=bool(result.get("activities_saved")),
-        reminder_minutes=reminder_minutes,
-        reminder_message=reminder_message,
+        diet_saved=False,
+        activities_saved=False,
+        reminder_minutes=0,
+        reminder_message="",
     )
 
 

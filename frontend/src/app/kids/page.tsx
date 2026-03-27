@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { chatApi, dmApi, ChatMessage, Conversation } from '@/services/api';
+import { chatApi, openclawApi, dmApi, ChatMessage, Conversation } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
 import KidsChatBubble from '@/components/kids/KidsChatBubble';
@@ -71,14 +71,14 @@ export default function KidsChatPage() {
 
   const loadConversations = useCallback(async () => {
     try {
-      const response = await chatApi.getConversations();
+      const response = await openclawApi.getConversations();
       setConversations(response.data || []);
     } catch { /* ignore */ }
   }, []);
 
   const loadConversation = useCallback(async (convId: number) => {
     try {
-      const response = await chatApi.getConversation(convId);
+      const response = await openclawApi.getConversation(convId);
       setMessages(response.data.messages || []);
       setConversationId(convId);
     } catch { /* ignore */ }
@@ -87,11 +87,11 @@ export default function KidsChatPage() {
   useEffect(() => {
     const loadLastConversation = async () => {
       try {
-        const res = await chatApi.getConversations(1);
+        const res = await openclawApi.getConversations(1);
         const convs = res.data;
         if (convs && convs.length > 0) {
           const lastConv = convs[0];
-          const detailRes = await chatApi.getConversation(lastConv.id);
+          const detailRes = await openclawApi.getConversation(lastConv.id);
           if (detailRes.data?.messages?.length > 0) {
             setConversationId(lastConv.id);
             setMessages(detailRes.data.messages);
@@ -115,26 +115,23 @@ export default function KidsChatPage() {
     setLoading(true);
 
     try {
-      const response = await chatApi.sendMessage(msg, conversationId, true);
-      const result = response.data;
-      if (!conversationId && result.conversation_id) setConversationId(result.conversation_id);
+      let fullReply = '';
+      let resultConvId = conversationId;
+      let resultMsgId = Date.now() + 1;
+      for await (const event of openclawApi.streamMessage(msg, conversationId)) {
+        if (event.event === 'token') {
+          fullReply += event.data.content;
+        } else if (event.event === 'done') {
+          if (event.data.conversation_id) resultConvId = event.data.conversation_id;
+          if (event.data.message_id) resultMsgId = event.data.message_id;
+        }
+      }
+      if (!conversationId && resultConvId) setConversationId(resultConvId);
       const aiMsg: ChatMessage = {
-        id: result.message_id, role: 'assistant', content: result.reply,
+        id: resultMsgId, role: 'assistant', content: fullReply || '收到了~',
         created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, aiMsg]);
-
-      // 设置休息提醒（浏览器通知）
-      if (result.reminder && result.reminder.reminder_minutes > 0) {
-        const { reminder_minutes, reminder_message, activity_name } = result.reminder;
-        if ('Notification' in window && Notification.permission === 'granted') {
-          setTimeout(() => {
-            new Notification(`${activity_name} - 休息提醒`, { body: reminder_message });
-          }, reminder_minutes * 60 * 1000);
-        } else if ('Notification' in window && Notification.permission !== 'denied') {
-          Notification.requestPermission();
-        }
-      }
 
       loadConversations();
     } catch {
@@ -157,7 +154,7 @@ export default function KidsChatPage() {
 
   const handleDeleteConversation = async (convId: number) => {
     try {
-      await chatApi.deleteConversation(convId);
+      await openclawApi.deleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
       if (conversationId === convId) { setMessages([]); setConversationId(undefined); }
     } catch { /* ignore */ }

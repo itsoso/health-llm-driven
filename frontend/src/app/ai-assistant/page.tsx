@@ -16,8 +16,6 @@ declare global {
   }
 }
 
-type ChatMode = 'health' | 'openclaw';
-
 type QuickQuestion = {
   label: string;
   text: string;
@@ -30,16 +28,16 @@ const UI_FONT_STACK = '"Avenir Next", "PingFang SC", "Hiragino Sans GB", "Micros
 
 const QUICK_QUESTIONS: QuickQuestion[] = [
   {
-    label: '分析打卡',
-    text: '请分析一下我今天的打卡完成情况，给出建议',
-    eyebrow: '今日复盘',
-    summary: '快速对齐今天已经完成了什么，哪些动作最值得补。',
+    label: '今日概览',
+    text: '查一下我今天的健康数据概览',
+    eyebrow: '实时查询',
+    summary: '拉取今天的关键数据、打卡状态和待办提醒。',
   },
   {
     label: '运动建议',
-    text: '根据我的身体数据，今天适合做什么运动？',
+    text: '根据我的身体数据和天气，今天适合做什么运动？',
     eyebrow: '训练安排',
-    summary: '结合恢复、心率和最近状态，给出今天最合适的训练强度。',
+    summary: '结合恢复状态、天气和最近训练，给出今天最合适的建议。',
   },
   {
     label: '睡眠分析',
@@ -49,151 +47,62 @@ const QUICK_QUESTIONS: QuickQuestion[] = [
   },
   {
     label: '饮食建议',
-    text: '根据我的健康目标，今天的饮食应该注意什么？',
+    text: '根据我的健康目标，今天午餐吃什么好？',
     eyebrow: '营养策略',
-    summary: '围绕目标控制热量、蛋白质和进餐节奏，而不是只看单点数据。',
-  },
-  {
-    label: '运动完成',
-    text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出拉伸和恢复建议',
-    eyebrow: '即时分析',
-    summary: '一句话触发 Garmin 同步、训练总结和恢复建议。',
-  },
-];
-
-const PROXY_QUICK_QUESTIONS: QuickQuestion[] = [
-  {
-    label: '今日健康',
-    text: '查一下我今天的健康数据',
-    eyebrow: '实时查询',
-    summary: '直接让 OpenClaw 拉取今天的关键数据和状态。',
+    summary: '围绕目标和今日已摄入，推荐具体的餐食方案。',
   },
   {
     label: '记录饮水',
     text: '记录喝水250ml',
-    eyebrow: '直接执行',
-    summary: '通过技能触发记录动作，减少跳页面操作。',
+    eyebrow: '快速记录',
+    summary: '一句话完成记录，不用跳页面。',
   },
   {
-    label: '健康分析',
-    text: '分析我最近的健康趋势',
-    eyebrow: '跨技能汇总',
-    summary: '让代理模式把查询和分析串成一次完整回答。',
-  },
-  {
-    label: '已装技能',
-    text: '列出已安装技能',
-    eyebrow: '能力检查',
-    summary: '确认当前 OpenClaw 的可用工具和连接状态。',
+    label: '运动完成',
+    text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出恢复建议',
+    eyebrow: '即时分析',
+    summary: '触发 Garmin 同步、训练总结和恢复建议。',
   },
 ];
 
-const MODE_METRICS: Record<ChatMode, Array<{ label: string; value: string; description: string }>> = {
-  health: [
-    {
-      label: '恢复状态',
-      value: '睡眠 + 压力 + 训练',
-      description: '先判断今天该恢复还是推进，再决定后续建议。',
-    },
-    {
-      label: '数据记录',
-      value: '语音 / 图片 / 文件',
-      description: '同一输入栏就能完成记录、分析和补充说明。',
-    },
-    {
-      label: '行动建议',
-      value: '饮食 / 运动 / 节奏',
-      description: '把建议收敛成可执行动作，而不是泛泛健康话术。',
-    },
-  ],
-  openclaw: [
-    {
-      label: '技能路由',
-      value: '查询 / 记录 / 分析',
-      description: '代理模式适合需要自主调用技能的复杂任务。',
-    },
-    {
-      label: '会话控制',
-      value: '独立上下文',
-      description: '与健康助理分离，便于测试技能链路和代理行为。',
-    },
-    {
-      label: '执行方式',
-      value: '自然语言驱动',
-      description: '一句话描述目标，让 OpenClaw 自己选择工具和流程。',
-    },
-  ],
-};
-
-const MODE_COPY: Record<ChatMode, {
-  eyebrow: string;
-  title: string;
-  description: string;
-  support: string;
-  subSupport: string;
-  panelClass: string;
-  badgeClass: string;
-  bubbleClass: string;
-  userBubbleClass: string;
-  accentTextClass: string;
-  accentBorderClass: string;
-  chipClass: string;
-  subtleClass: string;
-}> = {
-  health: {
-    eyebrow: 'Health cockpit',
-    title: '健康工作台',
-    description: '把记录、分析、提醒和训练恢复收拢到一个会话里，用最少的跳转完成今天的健康决策。',
-    support: '支持图片、文件、语音',
-    subSupport: '也可以直接说“我刚运动完”，自动触发 Garmin 同步和恢复分析。',
-    panelClass: 'from-slate-950/95 via-slate-900/90 to-emerald-950/80',
-    badgeClass: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
-    bubbleClass: 'bg-slate-900/80 border border-emerald-400/15 text-white shadow-[0_24px_80px_rgba(4,120,87,0.12)]',
-    userBubbleClass: 'bg-gradient-to-br from-emerald-500 via-cyan-500 to-sky-500 text-white shadow-[0_20px_50px_rgba(20,184,166,0.35)]',
-    accentTextClass: 'text-emerald-200',
-    accentBorderClass: 'border-emerald-400/20',
-    chipClass: 'border border-emerald-400/15 bg-emerald-400/10 text-emerald-50',
-    subtleClass: 'text-emerald-100/75',
+const UNIFIED_METRICS = [
+  {
+    label: '技能驱动',
+    value: '查询 / 记录 / 分析',
+    description: '一句话描述目标，AI 自动选择合适的技能组合完成任务。',
   },
-  openclaw: {
-    eyebrow: 'OpenClaw console',
-    title: 'OpenClaw 控制台',
-    description: '把技能调用、数据查询和代理式对话放在一个更清晰的工作界面里，便于调试和直接执行任务。',
-    support: '支持技能调用与代理对话',
-    subSupport: '适合测试技能装载、调用链路和独立会话上下文。',
-    panelClass: 'from-slate-950/95 via-slate-900/90 to-blue-950/75',
-    badgeClass: 'border-blue-400/30 bg-blue-400/10 text-blue-100',
-    bubbleClass: 'bg-slate-900/80 border border-blue-400/15 text-white shadow-[0_24px_80px_rgba(37,99,235,0.15)]',
-    userBubbleClass: 'bg-gradient-to-br from-blue-500 via-indigo-500 to-cyan-500 text-white shadow-[0_20px_50px_rgba(59,130,246,0.35)]',
-    accentTextClass: 'text-blue-200',
-    accentBorderClass: 'border-blue-400/20',
-    chipClass: 'border border-blue-400/15 bg-blue-400/10 text-blue-50',
-    subtleClass: 'text-blue-100',
+  {
+    label: '数据感知',
+    value: '语音 / 图片 / 文件',
+    description: '同一输入栏就能完成记录、分析和补充说明。',
   },
+  {
+    label: '行动建议',
+    value: '饮食 / 运动 / 节奏',
+    description: '把建议收敛成可执行动作，而不是泛泛健康话术。',
+  },
+];
+
+const STYLE = {
+  eyebrow: 'Health AI',
+  title: '健康助理',
+  description: '把记录、分析、提醒和训练恢复收拢到一个会话里，用最少的跳转完成今天的健康决策。',
+  support: '支持图片、文件、语音',
+  subSupport: '也可以直接说”我刚运动完”，自动触发 Garmin 同步和恢复分析。',
+  panelClass: 'from-slate-950/95 via-slate-900/90 to-emerald-950/80',
+  badgeClass: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
+  bubbleClass: 'bg-slate-900/80 border border-emerald-400/15 text-white shadow-[0_24px_80px_rgba(4,120,87,0.12)]',
+  userBubbleClass: 'bg-gradient-to-br from-emerald-500 via-cyan-500 to-sky-500 text-white shadow-[0_20px_50px_rgba(20,184,166,0.35)]',
+  accentTextClass: 'text-emerald-200',
+  accentBorderClass: 'border-emerald-400/20',
+  chipClass: 'border border-emerald-400/15 bg-emerald-400/10 text-emerald-50',
+  subtleClass: 'text-emerald-100/75',
 };
-
-function ModeSpark({ mode, className = 'w-5 h-5' }: { mode: ChatMode; className?: string }) {
-  if (mode === 'openclaw') {
-    return (
-      <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M13 2.75v7.5h6.25L11 21.25v-7.5H4.75L13 2.75z" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12a4.5 4.5 0 019-0" opacity="0.4" />
-    </svg>
-  );
-}
 
 export default function AIAssistantPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
-  const isOwner = user?.email === 'itsoso@126.com';
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -210,7 +119,7 @@ export default function AIAssistantPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
-  const [chatMode, setChatMode] = useState<'health' | 'openclaw'>('openclaw');
+  // Unified OpenClaw mode — no more dual mode switching
   const [messageFeedback, setMessageFeedback] = useState<Record<number, 1 | 5>>({});
   const [doneMessageIds, setDoneMessageIds] = useState<Set<number>>(new Set());
   const itemsPerPage = 10;
@@ -231,33 +140,26 @@ export default function AIAssistantPage() {
   // 加载对话列表
   const loadConversations = useCallback(async () => {
     try {
-      const response = chatMode === 'openclaw'
-        ? await openclawApi.getConversations()
-        : await chatApi.getConversations();
+      const response = await openclawApi.getConversations();
       setConversations(response.data || []);
     } catch (e) {
       console.error('加载对话列表失败:', e);
     }
-  }, [chatMode]);
+  }, []);
 
   // 加载指定对话的消息
-  const loadConversation = useCallback(async (convId: number, convMode?: string) => {
+  const loadConversation = useCallback(async (convId: number, _convMode?: string) => {
     try {
-      const isOpenClaw = convMode === 'openclaw' || chatMode === 'openclaw';
-      const response = isOpenClaw
-        ? await openclawApi.getConversation(convId)
-        : await chatApi.getConversation(convId);
+      const response = await openclawApi.getConversation(convId);
       const msgs = response.data.messages || [];
       setMessages(msgs);
-      // 历史消息都有真实 DB ID，标记为 done
       setDoneMessageIds(new Set(msgs.filter((m: ChatMessage) => m.role === 'assistant').map((m: ChatMessage) => m.id)));
       setConversationId(convId);
-      if (convMode) setChatMode(convMode as 'health' | 'openclaw');
     } catch (e) {
       console.error('加载对话失败:', e);
       showToast('加载失败', 'error');
     }
-  }, [chatMode]);
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -360,7 +262,7 @@ export default function AIAssistantPage() {
     setLoading(true);
 
     // 检测运动完成意图 - 如果匹配，并行触发分析 API（仅健康助理模式）
-    const isWorkoutDone = chatMode === 'health' && isPostWorkoutMessage(finalMsg);
+    const isWorkoutDone = isPostWorkoutMessage(finalMsg);
     let workoutAnalysisPromise: Promise<any> | null = null;
     if (isWorkoutDone) {
       workoutAnalysisPromise = api.post('/workout/post-run-analyze?format=full').catch(() => {
@@ -385,9 +287,7 @@ export default function AIAssistantPage() {
       let firstToken = true;
       // 每次调用独立的缓冲区，支持并行流
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
-      const streamIterator = chatMode === 'openclaw'
-        ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType)
-        : chatApi.streamMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, undefined, finalFileBase64, finalFileName);
+      const streamIterator = openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
       for await (const event of streamIterator) {
         if (event.event === 'token') {
           if (firstToken) {
@@ -432,7 +332,7 @@ export default function AIAssistantPage() {
             ));
             setDoneMessageIds(prev => new Set(prev).add(result.message_id));
           }
-          if (chatMode === 'health') handleDoneEvent(result);
+          handleDoneEvent(result);
         } else if (event.event === 'error') {
           setMessages(prev => prev.map(m =>
             m.id === aiMsgId ? { ...m, content: event.data.message || '服务异常，请重试' } : m
@@ -522,34 +422,10 @@ export default function AIAssistantPage() {
       // 重新加载对话列表
       loadConversations();
     } catch (e: any) {
-      // 流式失败 → 降级到非流式
-      console.warn('流式请求失败，降级到非流式模式:', e);
-      // 先移除空的 AI 占位消息
-      setMessages(prev => prev.filter(m => m.id !== aiMsgId));
-      try {
-        const response = await chatApi.sendMessage(finalMsg, conversationId, undefined, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
-        const result = response.data;
-        if (!conversationId && result.conversation_id) {
-          setConversationId(result.conversation_id);
-        }
-        const aiMsg: ChatMessage = {
-          id: result.message_id,
-          role: 'assistant',
-          content: result.reply,
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, aiMsg]);
-        handleDoneEvent(result);
-        loadConversations();
-      } catch {
-        const errorMsg: ChatMessage = {
-          id: Date.now() + 3,
-          role: 'assistant',
-          content: '抱歉，请求失败了，请稍后再试。',
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, errorMsg]);
-      }
+      console.warn('流式请求失败:', e);
+      setMessages(prev => prev.map(m =>
+        m.id === aiMsgId ? { ...m, content: '抱歉，请求失败了，请稍后再试。' } : m
+      ));
     } finally {
       setLoading(false);
     }
@@ -565,8 +441,7 @@ export default function AIAssistantPage() {
   // 删除对话
   const handleDeleteConversation = async (convId: number) => {
     try {
-      const deleteApi = chatMode === 'openclaw' ? openclawApi : chatApi;
-      await deleteApi.deleteConversation(convId);
+      await openclawApi.deleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
       if (conversationId === convId) {
         handleNewChat();
@@ -580,7 +455,7 @@ export default function AIAssistantPage() {
   // 分享对话
   const handleShareConversation = async (convId: number) => {
     try {
-      const sourceType = chatMode === 'openclaw' ? 'openclaw' : 'health';
+      const sourceType = 'openclaw';
       const res = await sharedApi.createShare(convId, sourceType);
       const url = res.data.share_url;
       if (navigator.clipboard) {
@@ -747,9 +622,9 @@ export default function AIAssistantPage() {
     setPendingFile(null);
   };
 
-  const modeCopy = MODE_COPY[chatMode];
-  const activeQuickQuestions = chatMode === 'openclaw' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS;
-  const activeMetrics = MODE_METRICS[chatMode];
+  const modeCopy = STYLE;
+  const activeQuickQuestions = QUICK_QUESTIONS;
+  const activeMetrics = UNIFIED_METRICS;
   const handleFeedback = async (msgId: number, rating: 1 | 5) => {
     if (!conversationId) return;
     const prev = messageFeedback[msgId];
@@ -757,7 +632,7 @@ export default function AIAssistantPage() {
     setMessageFeedback(f => ({ ...f, [msgId]: rating }));
     try {
       await feedbackApi.submit({
-        conversation_type: chatMode === 'health' ? 'chat' : 'openclaw',
+        conversation_type: 'openclaw',
         conversation_id: conversationId,
         message_id: msgId,
         rating,
@@ -768,17 +643,14 @@ export default function AIAssistantPage() {
   };
 
   const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content));
-  const modeButtonBase = 'px-3 py-2 rounded-2xl text-xs font-semibold tracking-[0.2em] uppercase transition-all';
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-16 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
-      <div className={`absolute inset-0 bg-gradient-to-br ${chatMode === 'openclaw' ? 'from-[#07111f] via-[#0a1730] to-[#081628]' : 'from-[#04111f] via-[#0b1b24] to-[#041428]'}`} />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#04111f] via-[#0b1b24] to-[#041428]" />
       <div
         className="absolute inset-0 opacity-70"
         style={{
-          backgroundImage: chatMode === 'openclaw'
-            ? 'radial-gradient(circle at 15% 15%, rgba(59,130,246,0.28), transparent 32%), radial-gradient(circle at 82% 18%, rgba(96,165,250,0.18), transparent 28%), linear-gradient(to right, rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)'
-            : 'radial-gradient(circle at 16% 14%, rgba(16,185,129,0.24), transparent 30%), radial-gradient(circle at 86% 16%, rgba(45,212,191,0.18), transparent 30%), linear-gradient(to right, rgba(148,163,184,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.07) 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle at 16% 14%, rgba(16,185,129,0.24), transparent 30%), radial-gradient(circle at 86% 16%, rgba(45,212,191,0.18), transparent 30%), linear-gradient(to right, rgba(148,163,184,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.07) 1px, transparent 1px)',
           backgroundSize: 'auto, auto, 56px 56px, 56px 56px',
         }}
       />
@@ -855,7 +727,7 @@ export default function AIAssistantPage() {
                     >
                       <div className="flex items-start gap-3">
                         <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${modeCopy.badgeClass}`}>
-                          <ModeSpark mode={chatMode} className="h-4 w-4" />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="line-clamp-2 text-sm font-medium leading-6 text-white">{conv.title}</div>
@@ -935,7 +807,7 @@ export default function AIAssistantPage() {
                   </button>
                 )}
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
-                  <ModeSpark mode={chatMode} className="h-5 w-5" />
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12a4.5 4.5 0 019-0" opacity="0.4" /></svg>
                 </div>
                 <div className="min-w-0">
                   <div className={`mb-1 text-[10px] uppercase tracking-[0.34em] ${modeCopy.accentTextClass}`}>{modeCopy.eyebrow}</div>
@@ -950,22 +822,6 @@ export default function AIAssistantPage() {
                 >
                   新对话
                 </button>
-                <div className="flex rounded-[20px] border border-white/10 bg-white/5 p-1">
-                  <button
-                    onClick={() => { if (chatMode !== 'health') { setChatMode('health'); setMessages([]); setConversationId(undefined); } }}
-                    className={`${modeButtonBase} ${chatMode === 'health' ? 'bg-white text-slate-950 shadow-md' : 'text-slate-300 hover:text-white'}`}
-                  >
-                    健康助理
-                  </button>
-                  {isOwner && (
-                    <button
-                      onClick={() => { if (chatMode !== 'openclaw') { setChatMode('openclaw'); setMessages([]); setConversationId(undefined); } }}
-                      className={`${modeButtonBase} ${chatMode === 'openclaw' ? 'bg-white text-slate-950 shadow-md' : 'text-slate-300 hover:text-white'}`}
-                    >
-                      OpenClaw
-                    </button>
-                  )}
-                </div>
                 {conversationId && visibleMessages.length > 0 && (
                   <button
                     onClick={() => handleShareConversation(conversationId)}
@@ -979,7 +835,7 @@ export default function AIAssistantPage() {
             </div>
           </div>
 
-          {chatMode === 'health' && dietNotification && (
+          {dietNotification && (
             <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
               <div className="rounded-[24px] border border-emerald-300/20 bg-emerald-500/90 px-5 py-4 text-white shadow-2xl backdrop-blur-xl">
                 <div className="flex items-start justify-between gap-4">
@@ -995,7 +851,7 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          {chatMode === 'health' && activityNotifications.length > 0 && (
+          {activityNotifications.length > 0 && (
             <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
               <div className="rounded-[24px] border border-cyan-300/20 bg-cyan-500/90 px-5 py-4 text-white shadow-2xl backdrop-blur-xl">
                 <div className="flex items-start justify-between gap-4">
@@ -1013,7 +869,7 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          {chatMode === 'health' && planCreatedNotification && (
+          {planCreatedNotification && (
             <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
               <div className="rounded-[24px] border border-blue-300/20 bg-blue-500/95 px-5 py-4 text-white shadow-2xl backdrop-blur-xl">
                 <div className="flex items-start justify-between gap-4">
@@ -1041,13 +897,13 @@ export default function AIAssistantPage() {
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.14),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_32%)]" />
                     <div className="relative">
                       <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] ${modeCopy.badgeClass}`}>
-                        <ModeSpark mode={chatMode} className="h-3.5 w-3.5" />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
                         {modeCopy.eyebrow}
                       </div>
 
                       <div className="mt-7 flex items-start gap-4">
                         <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] ${modeCopy.badgeClass}`}>
-                          <ModeSpark mode={chatMode} className="h-7 w-7" />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12a4.5 4.5 0 019-0" opacity="0.4" /></svg>
                         </div>
                         <div>
                           <h1 className="text-4xl leading-tight text-white md:text-5xl" style={{ fontFamily: DISPLAY_FONT_STACK }}>
@@ -1111,7 +967,7 @@ export default function AIAssistantPage() {
                     <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {msg.role === 'assistant' && (
                         <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
-                          <ModeSpark mode={chatMode} className="h-[18px] w-[18px]" />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
                         </div>
                       )}
                       <div
@@ -1230,13 +1086,13 @@ export default function AIAssistantPage() {
                   {loading && (
                     <div className="flex gap-4">
                       <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
-                        <ModeSpark mode={chatMode} className="h-[18px] w-[18px]" />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
                       </div>
                       <div className={`rounded-[28px] px-5 py-4 ${modeCopy.bubbleClass}`}>
                         <div className="flex gap-2">
-                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full ${chatMode === 'openclaw' ? 'bg-blue-300' : 'bg-emerald-300'}`} style={{ animationDelay: '0ms' }} />
-                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full ${chatMode === 'openclaw' ? 'bg-blue-300' : 'bg-emerald-300'}`} style={{ animationDelay: '150ms' }} />
-                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full ${chatMode === 'openclaw' ? 'bg-blue-300' : 'bg-emerald-300'}`} style={{ animationDelay: '300ms' }} />
+                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-300`} style={{ animationDelay: '0ms' }} />
+                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-300`} style={{ animationDelay: '150ms' }} />
+                          <div className={`h-2.5 w-2.5 animate-bounce rounded-full bg-emerald-300`} style={{ animationDelay: '300ms' }} />
                         </div>
                       </div>
                     </div>

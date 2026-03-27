@@ -272,6 +272,42 @@ def get_my_recommendation_by_date(
     }
 
 
+@router.get("/me/sleep-insights", summary="获取我的睡眠洞察")
+def get_my_sleep_insights(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的详细睡眠分析"""
+    return get_sleep_insights(current_user.id, db)
+
+
+@router.get("/me/activity-insights", summary="获取我的活动洞察")
+def get_my_activity_insights(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的详细活动分析"""
+    return get_activity_insights(current_user.id, db)
+
+
+@router.get("/me/heart-insights", summary="获取我的心率洞察")
+def get_my_heart_insights(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的详细心率分析"""
+    return get_heart_insights(current_user.id, db)
+
+
+@router.get("/me/recovery-status", summary="获取我的恢复状态")
+def get_my_recovery_status(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的恢复状态分析"""
+    return get_recovery_status(current_user.id, db)
+
+
 @router.get("/user/{user_id}/recommendations")
 async def get_recommendations(
     user_id: int,

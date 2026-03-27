@@ -26,6 +26,8 @@ class OpenClawSendRequest(BaseModel):
     conversation_id: int | None = None
     image_base64: str | None = None
     image_type: str | None = "jpeg"
+    file_base64: str | None = None
+    file_name: str | None = None
 
 
 class OpenClawConversationResponse(BaseModel):
@@ -82,13 +84,24 @@ async def stream_message(
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="消息不能为空")
 
+    # 文件附件：提取文本并注入消息
+    message = req.message.strip()
+    if req.file_base64 and req.file_name:
+        try:
+            from app.services.file_extract_service import extract_text_from_base64
+            file_text = extract_text_from_base64(req.file_base64, req.file_name)
+            if file_text:
+                message = f"{message}\n\n[附件: {req.file_name}]\n{file_text}"
+        except Exception as e:
+            logger.warning(f"文件提取失败: {e}")
+
     service = OpenClawService(db)
 
     async def generate():
         try:
             async for event in service.send_message_stream(
                 user_id=current_user.id,
-                message=req.message.strip(),
+                message=message,
                 conversation_id=req.conversation_id,
                 is_admin=current_user.is_admin,
                 image_base64=req.image_base64,

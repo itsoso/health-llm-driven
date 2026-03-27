@@ -44,7 +44,7 @@ from app.api import (
     performance,  # 性能监控
     news,  # 资讯系统
     user_api_key,  # 用户 API Key 管理 & 外部系统接口
-    chat,  # OpenClaw AI 对话
+    speech,  # 语音转文字 + 语音指令（原 chat.py 分离）
     ai_insights,  # AI 健康洞察（每日复盘+实时建议）
     mood,  # 情绪追踪
     health_report,  # 健康报告
@@ -84,6 +84,8 @@ from app.api import (
     nfc,  # NFC 碰触快速记录
     family,  # 家庭健康管理
     family_health,  # 体检报告 + 用药管理 + 复查日历
+    anomaly_alert,  # 健康异常预警
+    health_context,  # 健康上下文（交叉分析）
 )
 
 api_router = APIRouter()
@@ -137,7 +139,7 @@ api_router.include_router(diet_recommendation.router)  # 智能饮食推荐（pr
 api_router.include_router(performance.router)  # 性能监控（prefix 已在 router 中定义）
 api_router.include_router(news.router)  # 资讯系统（prefix 已在 router 中定义）
 api_router.include_router(user_api_key.router, tags=["user-api-key"])  # 用户 API Key & 外部接口
-api_router.include_router(chat.router)  # OpenClaw AI 对话
+api_router.include_router(speech.router)  # 语音转文字 + 语音指令
 api_router.include_router(ai_insights.router, prefix="/ai-insights", tags=["ai-insights"])  # AI 健康洞察
 api_router.include_router(mood.router)  # 情绪追踪
 api_router.include_router(health_report.router)  # 健康报告
@@ -208,3 +210,9 @@ api_router.include_router(family.router)
 
 # 体检报告 + 用药管理 + 复查日历
 api_router.include_router(family_health.router, prefix="/family-health", tags=["family-health"])
+
+# 健康异常预警
+api_router.include_router(anomaly_alert.router)
+
+# 健康上下文（交叉分析供 Skills 调用）
+api_router.include_router(health_context.router)

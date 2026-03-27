@@ -14,7 +14,7 @@ from app.models.health_goal_plan import PeriodGoal, PeriodGoalMetric
 from app.models.smart_plan import WeeklyPlan
 from app.models.weight import WeightRecord
 from app.models.user_profile import UserProfile
-from app.services.chat_service import ChatService
+from app.services.health_context_lite_service import build_lite_health_context
 from app.services.llm import get_llm_provider
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 class PeriodGoalService:
     def __init__(self, db: Session):
         self.db = db
-        self.chat_service = ChatService(db)
 
     def _get_latest_body_metrics(self, user_id: int) -> Dict[str, Any]:
         """获取用户最新身体指标"""
@@ -152,7 +151,7 @@ class PeriodGoalService:
             debug_info["data_sources"]["weight_trend_count"] = len(weight_trend)
 
         # Step 6: 获取健康上下文
-        health_context = await self.chat_service._build_health_context(user_id)
+        health_context = build_lite_health_context(self.db, user_id) or ""
         if debug_info:
             debug_info["steps"].append("5. 获取健康上下文")
 
