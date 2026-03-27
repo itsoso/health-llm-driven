@@ -117,73 +117,12 @@ export interface VocabularyWord {
 }
 
 export const chatApi = {
-  // 发送消息
-  sendMessage: (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string, fileBase64?: string, fileName?: string) =>
-    api.post<ChatSendResponse>('/chat/send', { message, conversation_id: conversationId, is_kids_mode: isKidsMode || false, image_base64: imageBase64, image_type: imageType, file_base64: fileBase64, file_name: fileName }),
-  // 获取对话列表
-  getConversations: (limit: number = 20) =>
-    api.get<Conversation[]>(`/chat/conversations?limit=${limit}`),
-  // 获取对话详情
-  getConversation: (conversationId: number) =>
-    api.get<ConversationDetail>(`/chat/conversations/${conversationId}`),
-  // 删除对话
-  deleteConversation: (conversationId: number) =>
-    api.delete(`/chat/conversations/${conversationId}`),
-  // 语音转文字
+  // 语音转文字（via speech.py，保留 /chat 前缀兼容前端）
   transcribe: (audioBase64: string, audioFormat: string = 'webm') =>
     api.post<{ text: string }>('/chat/transcribe', { audio_base64: audioBase64, audio_format: audioFormat }),
   // 语音指令快速执行
   voiceCommand: (text: string) =>
     api.post<{ matched: boolean; command_type?: string; message?: string; data?: any }>('/chat/voice-command', { text }),
-  // 食物图片识别（保留兼容）
-  recognizeFood: (imageBase64: string, imageType: string = 'image/jpeg') =>
-    api.post<{ success: boolean; foods: any[]; meal_description: string; health_tips: string; totals: any }>('/diet/recognize', { image_base64: imageBase64, image_type: imageType }),
-  // 流式发送消息 (SSE)
-  streamMessage: async function* (message: string, conversationId?: number, isKidsMode?: boolean, imageBase64?: string, imageType?: string, mode?: string, fileBase64?: string, fileName?: string) {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    const response = await fetch(`${API_BASE_URL}/chat/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        message,
-        conversation_id: conversationId,
-        is_kids_mode: isKidsMode || false,
-        image_base64: imageBase64,
-        image_type: imageType,
-        ...(mode ? { mode } : {}),
-        ...(fileBase64 ? { file_base64: fileBase64, file_name: fileName } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Stream request failed: ${response.status}`);
-    }
-
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {
-            // skip malformed JSON
-          }
-        }
-      }
-    }
-  },
 };
 
 // OpenClaw Channel API
