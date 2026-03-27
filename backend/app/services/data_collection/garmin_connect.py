@@ -436,11 +436,18 @@ class GarminConnectService:
                             token_expired = now >= token.expires_at
 
                         if token_expired:
-                            logger.info(f"{prefix} oauth2_token 已过期，需要重新登录")
-                            self._authenticated = False
-                            return False
+                            logger.info(f"{prefix} oauth2_token 已过期，尝试用 oauth1 refresh...")
+                            try:
+                                self.client.garth.refresh_oauth2()
+                                logger.info(f"{prefix} ✅ oauth2_token refresh 成功，无需重新登录")
+                                # refresh 成功后重新保存到 DB
+                                self._save_session_to_db(db)
+                            except Exception as refresh_err:
+                                logger.warning(f"{prefix} oauth2 refresh 失败: {refresh_err}")
+                                self._authenticated = False
+                                return False
 
-                        # token 未过期，尝试用轻量 API 验证连通性
+                        # token 有效或已 refresh，验证连通性
                         self.client.garth.connectapi("/usersummary-service/usersummary/daily/" +
                                                       date.today().isoformat())
                         self._ensure_display_name()
@@ -448,7 +455,7 @@ class GarminConnectService:
                         logger.info(f"{prefix} ✅ 从数据库加载 garth session 成功，无需重新登录")
                         return True
                     except Exception as e:
-                        logger.warning(f"{prefix} 缓存的 session 无效，需要重新登录: {e}")
+                        logger.warning(f"{prefix} 缓存的 session 无效: {e}")
                         self._authenticated = False
                         return False
                         
