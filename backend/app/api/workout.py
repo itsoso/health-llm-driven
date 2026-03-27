@@ -905,7 +905,8 @@ async def sync_garmin_activities(
             "message": f"成功同步 {result['synced_count']} 条运动记录"
         }
     except Exception as e:
-        logger.error(f"Garmin活动同步失败: {e}")
+        import traceback
+        logger.error(f"Garmin活动同步失败: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
     finally:
         release_sync_lock(db, current_user.id)
