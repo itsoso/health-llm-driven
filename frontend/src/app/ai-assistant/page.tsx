@@ -26,43 +26,14 @@ type QuickQuestion = {
 const DISPLAY_FONT_STACK = '"Iowan Old Style", "Noto Serif SC", "Songti SC", serif';
 const UI_FONT_STACK = '"Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
 
-const QUICK_QUESTIONS: QuickQuestion[] = [
-  {
-    label: '今日概览',
-    text: '查一下我今天的健康数据概览',
-    eyebrow: '实时查询',
-    summary: '拉取今天的关键数据、打卡状态和待办提醒。',
-  },
-  {
-    label: '运动建议',
-    text: '根据我的身体数据和天气，今天适合做什么运动？',
-    eyebrow: '训练安排',
-    summary: '结合恢复状态、天气和最近训练，给出今天最合适的建议。',
-  },
-  {
-    label: '睡眠分析',
-    text: '帮我分析一下最近的睡眠质量，有什么改善建议？',
-    eyebrow: '恢复质量',
-    summary: '把睡眠、压力和日间表现放到同一个结论里看。',
-  },
-  {
-    label: '饮食建议',
-    text: '根据我的健康目标，今天午餐吃什么好？',
-    eyebrow: '营养策略',
-    summary: '围绕目标和今日已摄入，推荐具体的餐食方案。',
-  },
-  {
-    label: '记录饮水',
-    text: '记录喝水250ml',
-    eyebrow: '快速记录',
-    summary: '一句话完成记录，不用跳页面。',
-  },
-  {
-    label: '运动完成',
-    text: '我刚运动完，帮我同步Garmin数据并分析本次训练，给出恢复建议',
-    eyebrow: '即时分析',
-    summary: '触发 Garmin 同步、训练总结和恢复建议。',
-  },
+// 静态 fallback（API 加载前或失败时使用）
+const DEFAULT_QUESTIONS: QuickQuestion[] = [
+  { label: '今日概览', text: '查一下我今天的健康数据概览', eyebrow: '实时查询', summary: '拉取今天的关键数据、打卡状态和待办提醒。' },
+  { label: '运动建议', text: '根据我的身体数据和天气，今天适合做什么运动？', eyebrow: '训练安排', summary: '结合恢复状态、天气和最近训练，给出最合适的建议。' },
+  { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量', eyebrow: '恢复质量', summary: '把睡眠、压力和日间表现放到同一个结论里看。' },
+  { label: '饮食建议', text: '根据我的健康目标，今天午餐吃什么好？', eyebrow: '营养策略', summary: '围绕目标和今日已摄入，推荐具体的餐食方案。' },
+  { label: '记录饮水', text: '记录喝水250ml', eyebrow: '快速记录', summary: '一句话完成记录，不用跳页面。' },
+  { label: '运动完成', text: '我刚运动完，帮我同步Garmin数据并分析本次训练', eyebrow: '即时分析', summary: '触发 Garmin 同步和恢复建议。' },
 ];
 
 const UNIFIED_METRICS = [
@@ -623,7 +594,18 @@ export default function AIAssistantPage() {
   };
 
   const modeCopy = STYLE;
-  const activeQuickQuestions = QUICK_QUESTIONS;
+  const [dynamicQuestions, setDynamicQuestions] = useState<QuickQuestion[]>(DEFAULT_QUESTIONS);
+
+  // 加载动态快速问题（基于用户当前状态）
+  useEffect(() => {
+    api.get('/quick-questions/me?limit=6').then(res => {
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        setDynamicQuestions(res.data);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const activeQuickQuestions = dynamicQuestions;
   const activeMetrics = UNIFIED_METRICS;
   const handleFeedback = async (msgId: number, rating: 1 | 5) => {
     if (!conversationId) return;

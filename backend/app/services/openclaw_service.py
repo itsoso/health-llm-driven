@@ -499,16 +499,37 @@ AI: {ai_reply}
         # 4. 构建 messages 列表
         messages = self.build_messages(conv.id, limit=20)
 
-        # 4.1 注入轻量健康上下文（让 OpenClaw 感知用户健康状态）
-        health_ctx = None
+        # 4.1 注入健康上下文 + 对话记忆 + 时段感知
         try:
             from app.services.health_context_lite_service import (
-                build_lite_health_context, OPENCLAW_HEALTH_SYSTEM_RULES,
+                build_lite_health_context, OPENCLAW_HEALTH_SYSTEM_RULES, _get_time_period,
             )
+            from app.services.conversation_memory_service import get_relevant_memories
+
             health_ctx = build_lite_health_context(self.db, user_id)
             if health_ctx:
                 system_content = OPENCLAW_HEALTH_SYSTEM_RULES + "\n" + health_ctx
-                # 新对话首条消息：追加主动提醒指令
+
+                # 4.1.1 注入跨会话记忆（用户偏好、医嘱、过敏等）
+                memories = get_relevant_memories(self.db, user_id, limit=5)
+                if memories:
+                    system_content += "\n\n" + memories
+
+                # 4.1.2 时段感知指令
+                _, period = _get_time_period()
+                period_hints = {
+                    "清晨": "[时段: 清晨] 重点关注昨晚睡眠恢复、今日能量状态、晨起建议。语气温和鼓励。",
+                    "上午": "[时段: 上午] 适合规划今日目标和运动安排。如果恢复状态好，建议上午运动。",
+                    "中午": "[时段: 午间] 关注午餐营养和上午活动量。提醒饮水。",
+                    "下午": "[时段: 下午] 检查今日目标进度。适合补充活动或完成打卡。",
+                    "晚上": "[时段: 晚上] 回顾全天数据：步数、饮食、饮水是否达标。给出晚间恢复建议。",
+                    "深夜": "[时段: 深夜] 简短回复即可。建议用户休息，关注睡眠准备。",
+                }
+                hint = period_hints.get(period, "")
+                if hint:
+                    system_content += "\n\n" + hint
+
+                # 4.1.3 新对话首条消息：主动健康评估
                 is_new_conversation = len([m for m in messages if m["role"] == "assistant"]) == 0
                 if is_new_conversation:
                     system_content += (
@@ -520,6 +541,7 @@ AI: {ai_reply}
                         "5. 如果用户问了具体问题，优先回答问题，健康提醒作为补充\n"
                         "6. 如果需要更详细的数据来回答，主动调用对应的 Skill 获取"
                     )
+
                 messages.insert(0, {
                     "role": "system",
                     "content": system_content,
@@ -558,6 +580,13 @@ AI: {ai_reply}
             await self._try_create_reminder(user_id, message, full_reply)
         except Exception as e:
             logger.warning(f"OpenClaw 提醒检测失败: {e}")
+
+        # 6.6 提取对话记忆（用户偏好、医嘱、过敏等持久性事实）
+        try:
+            from app.services.conversation_memory_service import extract_memories
+            extract_memories(message, full_reply, user_id, conv.id, self.db)
+        except Exception as e:
+            logger.debug(f"记忆提取跳过: {e}")
 
         # 7. 更新会话时间
         conv.updated_at = datetime.utcnow()
