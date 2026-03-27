@@ -1,9 +1,10 @@
-"""轻量健康上下文服务 — 为 OpenClaw 模式提供用户健康摘要
+"""健康上下文服务 — 为 OpenClaw Native 模式提供丰富的用户健康摘要
 
 设计目标：
-- 400-500 tokens 输出，~10 次 DB 查询
+- 800-1200 tokens 输出，~15 次 DB 查询
 - 5 分钟内存缓存，命中 0ms
-- 包含可执行建议（未完成目标、异常预警、待办提醒）
+- 包含：实时数据 + 7 日趋势 + 目标进度 + 饮食概况 + 预警 + 待办
+- 注入 Skill 路由表，让 LLM 知道有哪些能力可用
 - 任何失败优雅降级，不影响对话
 """
 import logging
@@ -20,19 +21,37 @@ logger = logging.getLogger(__name__)
 _context_cache: dict[int, tuple[float, str]] = {}  # user_id -> (timestamp, context_str)
 _CACHE_TTL = 300  # 5 分钟
 
-# ── 系统规则（注入到 system message） ────────────────────
-OPENCLAW_HEALTH_SYSTEM_RULES = (
-    "你是用户的AI健康助理，具备通过Skills查询数据和执行操作的能力。"
-    "以下是用户的实时健康档案，请据此提供个性化、科学的建议。\n\n"
-    "关键规则：\n"
-    "1. 有⚠️健康预警时，必须优先提醒用户，给出具体建议\n"
-    "2. 注意用户今日的饮水、打卡、补剂完成情况，适时提醒未完成项目\n"
-    "3. 运动建议需参考最近运动记录和用户年龄对应的最大心率\n"
-    "4. 回答需考虑用户的慢性病史和当前用药\n"
-    "5. HRV状态为low或SpO2<95%时，主动建议休息或就医\n"
-    "6. 严重健康问题务必建议就医，不要自行诊断\n"
-    "7. 用中文回复，简洁务实，基于档案数据给出可执行的具体建议"
-)
+# ── 系统规则 + Skill 路由表（注入到 system message） ─────
+OPENCLAW_HEALTH_SYSTEM_RULES = """你是用户的 AI 健康助理，能通过 Skills 查询数据、记录健康信息和执行分析。
+
+## 你的能力（Skills）
+
+| 场景 | 用哪个 Skill | 示例 |
+|------|-------------|------|
+| 查步数/心率/睡眠/血压/体重/饮水/打卡/运动/补剂/情绪/病症/异常预警 | health-query | "我最近睡得怎么样" |
+| 记录饮水/体重/血压/打卡/饮食/病症/排泄/情绪/提醒 | health-record | "记录喝水250ml" |
+| 健康评分/趋势分析/睡眠洞察/心率洞察/恢复状态/风险因素 | health-analysis | "分析我的健康趋势" |
+| 运动前指导/运动后分析/恢复评估 | workout-coach | "今天适合跑步吗" |
+| 饮食建议/营养分析/热量估算 | nutrition-advisor | "午餐吃什么好" |
+| 补剂推荐/服用提醒/交互检查 | supplement-advisor | "推荐补剂" |
+| 周计划生成/今日计划/完成追踪 | weekly-planner | "帮我制定本周计划" |
+| 天气/空气质量/户外运动适宜度/早间简报 | environment-health | "今天空气质量如何" |
+
+## 行为准则
+
+1. **主动分析**：不要只回答问题，要结合档案数据主动发现问题和机会
+   - 看到恢复状态好 + 近期运动少 → 主动建议运动
+   - 看到饮水不足 → 顺带提醒
+   - 看到 HRV 偏低/SpO2<95% → 优先建议休息
+2. **数据驱动**：给建议时引用具体数据（"你的 HRV 45ms 低于 7 日均值 52ms"），不要空泛
+3. **先看档案再调 Skill**：档案里已有的数据直接用，需要更详细信息时再调 Skill
+4. **慢性病 & 用药**：给运动/饮食/补剂建议时必须考虑用户的慢性病和当前用药
+5. **严重问题**：HRV 持续偏低、SpO2<92%、血压异常、胸痛等 → 务必建议就医
+6. **中文回复**：简洁务实，给出可执行的具体建议，不要泛泛而谈
+7. **⚠️ 预警优先**：有未确认的健康预警时，必须在回复开头提醒
+
+以下是用户的实时健康档案：
+"""
 
 
 def _get_time_period() -> tuple[str, str]:
@@ -57,16 +76,7 @@ def _get_time_period() -> tuple[str, str]:
 
 
 def build_lite_health_context(db: Session, user_id: int) -> Optional[str]:
-    """构建轻量健康上下文（~200 tokens）
-
-    数据来源：
-    1. User + UserProfile — 基本信息
-    2. GarminData latest — 今日实时数据
-    3. GarminData 7 天 — 趋势均值
-    4. WeightRecord latest — 最新体重
-    5. IllnessEpisode active — 活跃病症
-    """
-    # 缓存检查
+    """构建健康上下文（~800-1200 tokens）"""
     cached = _context_cache.get(user_id)
     if cached and (time.time() - cached[0]) < _CACHE_TTL:
         return cached[1]
@@ -76,15 +86,15 @@ def build_lite_health_context(db: Session, user_id: int) -> Optional[str]:
         _context_cache[user_id] = (time.time(), context)
         return context
     except Exception as e:
-        logger.error(f"构建轻量健康上下文失败(user={user_id}): {e}", exc_info=True)
+        logger.error(f"构建健康上下文失败(user={user_id}): {e}", exc_info=True)
         return None
 
 
 def _build_context(db: Session, user_id: int) -> str:
-    """同步构建上下文（由 async 包装器调用）"""
+    """构建完整上下文"""
     from app.models.user import User
     from app.models.user_profile import UserProfile
-    from app.models.daily_health import GarminData
+    from app.models.daily_health import GarminData, WaterIntake, WorkoutRecord, DietRecord
     from app.models.weight import WeightRecord
     from app.models.illness import IllnessEpisode
 
@@ -100,29 +110,27 @@ def _build_context(db: Session, user_id: int) -> str:
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
 
     name = user.name or user.username or "用户"
-    parts.append(f"[用户健康档案]")
+    parts.append("[用户健康档案]")
 
-    # 时间 + 位置
     city = ""
     if profile:
         city = profile.manual_city or getattr(profile, "detected_city", "") or ""
     location_str = f" | 位置: {city}" if city else ""
     parts.append(f"时间: {time_str} ({period}){location_str}")
 
-    # 个人信息
     age_str = ""
-    max_hr_str = ""
+    max_hr = 0
     if profile and profile.age:
         age = profile.age
         age_str = f", {age}岁"
         max_hr = 220 - age
-        max_hr_str = f", 最大心率{max_hr}bpm"
 
     gender_map = {"male": "男", "female": "女"}
     gender = gender_map.get(profile.gender, "") if profile else ""
     if gender:
         gender = f", {gender}"
 
+    max_hr_str = f", 最大心率{max_hr}bpm" if max_hr else ""
     parts.append(f"用户: {name}{gender}{age_str}{max_hr_str}")
 
     # 身体数据
@@ -131,7 +139,6 @@ def _build_context(db: Session, user_id: int) -> str:
         if profile.height_cm:
             body_parts.append(f"{profile.height_cm:.0f}cm")
 
-        # 体重：优先用最新称重记录
         weight_val = None
         latest_weight = db.query(WeightRecord).filter(
             WeightRecord.user_id == user_id
@@ -145,7 +152,8 @@ def _build_context(db: Session, user_id: int) -> str:
             target = profile.target_weight_kg
             w_str = f"{weight_val:.1f}kg"
             if target:
-                w_str += f"(目标{target:.0f}kg)"
+                diff = weight_val - target
+                w_str += f"(目标{target:.0f}kg, {'需减' if diff > 0 else '需增'}{abs(diff):.1f}kg)"
             body_parts.append(w_str)
 
         if weight_val and profile.height_cm:
@@ -186,8 +194,8 @@ def _build_context(db: Session, user_id: int) -> str:
             garmin_items.append(f"睡眠{g.sleep_score}分{sleep_h}")
         if g.stress_level is not None:
             garmin_items.append(f"压力{g.stress_level}")
-        if g.body_battery_current is not None:
-            garmin_items.append(f"电量{g.body_battery_current}")
+        if g.body_battery_most_charged is not None:
+            garmin_items.append(f"电量{g.body_battery_most_charged}")
         if g.hrv is not None:
             status = f"({g.hrv_status})" if g.hrv_status else ""
             garmin_items.append(f"HRV{g.hrv:.0f}ms{status}")
@@ -198,31 +206,102 @@ def _build_context(db: Session, user_id: int) -> str:
             date_label = "今日" if g.record_date == today else f"{g.record_date}"
             parts.append(f"{date_label}: {', '.join(garmin_items)}")
 
-    # ── 3. 7 日趋势 ─────────────────────────────────────
+    # ── 3. 7 日趋势 + 变化方向 ─────────────────────────
     week_ago = today - timedelta(days=7)
     garmin_7d = db.query(GarminData).filter(
         GarminData.user_id == user_id,
         GarminData.record_date >= week_ago,
-    ).all()
+    ).order_by(GarminData.record_date).all()
 
-    if len(garmin_7d) >= 3:  # 至少 3 天数据才有意义
+    if len(garmin_7d) >= 3:
         steps_list = [g.steps for g in garmin_7d if g.steps is not None]
         sleep_list = [g.total_sleep_duration for g in garmin_7d if g.total_sleep_duration is not None]
         rhr_list = [g.resting_heart_rate for g in garmin_7d if g.resting_heart_rate is not None]
+        stress_list = [g.stress_level for g in garmin_7d if g.stress_level is not None]
+        hrv_list = [g.hrv for g in garmin_7d if g.hrv is not None]
+        deep_list = [g.deep_sleep_duration for g in garmin_7d if g.deep_sleep_duration is not None]
 
         trend_parts = []
         if steps_list:
-            trend_parts.append(f"步数{sum(steps_list) // len(steps_list)}")
+            avg = sum(steps_list) // len(steps_list)
+            trend_parts.append(f"步数{avg}")
         if sleep_list:
             avg_h = sum(sleep_list) / len(sleep_list) / 60
             trend_parts.append(f"睡眠{avg_h:.1f}h")
+        if deep_list:
+            avg_deep = sum(deep_list) // len(deep_list)
+            trend_parts.append(f"深睡{avg_deep}min")
         if rhr_list:
             trend_parts.append(f"静息心率{sum(rhr_list) // len(rhr_list)}")
+        if stress_list:
+            trend_parts.append(f"压力{sum(stress_list) // len(stress_list)}")
+        if hrv_list:
+            avg_hrv = sum(hrv_list) / len(hrv_list)
+            trend_parts.append(f"HRV{avg_hrv:.0f}ms")
 
         if trend_parts:
             parts.append(f"7日均值: {', '.join(trend_parts)}")
 
-    # ── 4. 活跃病症 ─────────────────────────────────────
+        # 趋势方向：对比前 3 天 vs 后 3 天
+        if len(garmin_7d) >= 6:
+            first_half = garmin_7d[:3]
+            second_half = garmin_7d[-3:]
+            changes = []
+
+            def _trend(items_early, items_late, field, label, reverse=False):
+                vals_e = [getattr(g, field) for g in items_early if getattr(g, field) is not None]
+                vals_l = [getattr(g, field) for g in items_late if getattr(g, field) is not None]
+                if vals_e and vals_l:
+                    avg_e = sum(vals_e) / len(vals_e)
+                    avg_l = sum(vals_l) / len(vals_l)
+                    if avg_e > 0:
+                        pct = (avg_l - avg_e) / avg_e * 100
+                        if abs(pct) > 10:
+                            direction = "↑" if pct > 0 else "↓"
+                            good = (pct > 0) != reverse
+                            icon = "✅" if good else "⚠️"
+                            changes.append(f"{icon}{label}{direction}{abs(pct):.0f}%")
+
+            _trend(first_half, second_half, "steps", "步数")
+            _trend(first_half, second_half, "total_sleep_duration", "睡眠")
+            _trend(first_half, second_half, "deep_sleep_duration", "深睡")
+            _trend(first_half, second_half, "resting_heart_rate", "静息心率", reverse=True)
+            _trend(first_half, second_half, "stress_level", "压力", reverse=True)
+
+            if changes:
+                parts.append(f"趋势: {', '.join(changes)}")
+
+    # ── 4. 恢复就绪度 ─────────────────────────────────
+    if latest_garmin:
+        g = latest_garmin
+        recovery_parts = []
+        score = 0
+        has_data = False
+
+        if g.hrv and hasattr(g, 'hrv_7day_avg') and g.hrv_7day_avg and g.hrv_7day_avg > 0:
+            ratio = g.hrv / g.hrv_7day_avg
+            score += ratio * 40
+            recovery_parts.append(f"HRV{'正常' if 0.85 <= ratio <= 1.15 else '偏低' if ratio < 0.85 else '偏高'}")
+            has_data = True
+
+        if g.body_battery_most_charged:
+            battery = g.body_battery_most_charged
+            score += battery * 0.3
+            recovery_parts.append(f"电量{'充足' if battery >= 60 else '中等' if battery >= 30 else '不足'}")
+            has_data = True
+
+        if g.stress_level:
+            stress = g.stress_level
+            score += (100 - stress) * 0.3
+            recovery_parts.append(f"压力{'低' if stress < 40 else '中等' if stress < 60 else '高'}")
+            has_data = True
+
+        if has_data:
+            grade = "优秀" if score >= 80 else "良好" if score >= 60 else "一般" if score >= 40 else "较差"
+            suggestion = "适合高强度训练" if score >= 70 else "建议中等强度运动" if score >= 50 else "建议轻度活动或休息"
+            parts.append(f"恢复就绪: {score:.0f}分({grade}) — {', '.join(recovery_parts)} → {suggestion}")
+
+    # ── 5. 活跃病症 ─────────────────────────────────────
     illnesses = db.query(IllnessEpisode).filter(
         IllnessEpisode.user_id == user_id,
         IllnessEpisode.status != "resolved",
@@ -235,14 +314,13 @@ def _build_context(db: Session, user_id: int) -> str:
             illness_strs.append(f"{ill.name}(第{days}天, {ill.severity}/10)")
         parts.append(f"当前病症: {', '.join(illness_strs)}")
 
-    # ── 5. 今日饮水进度 ────────────────────────────────
+    # ── 6. 今日饮水 ─────────────────────────────────────
     try:
-        from app.models.daily_health import WaterIntake
         water_today = db.query(WaterIntake).filter(
             WaterIntake.user_id == user_id,
             WaterIntake.record_date == today
         ).all()
-        total_ml = sum(w.amount_ml or 0 for w in water_today)
+        total_ml = sum(w.amount_ml or w.amount or 0 for w in water_today)
         if total_ml > 0:
             parts.append(f"今日饮水: {total_ml}ml / 2000ml ({total_ml * 100 // 2000}%)")
         else:
@@ -250,30 +328,47 @@ def _build_context(db: Session, user_id: int) -> str:
     except Exception:
         pass
 
-    # ── 6. 最近运动 ────────────────────────────────────
+    # ── 7. 今日饮食概况 ──────────────────────────────────
     try:
-        from app.models.daily_health import WorkoutRecord
-        latest_workout = db.query(WorkoutRecord).filter(
-            WorkoutRecord.user_id == user_id,
-            WorkoutRecord.workout_date >= today - timedelta(days=7)
-        ).order_by(WorkoutRecord.workout_date.desc()).first()
-
-        if latest_workout:
-            w = latest_workout
-            days_ago = (today - w.workout_date).days
-            when = "今天" if days_ago == 0 else f"{days_ago}天前"
-            w_parts = [f"{w.workout_type or '运动'}({when})"]
-            if w.duration_seconds:
-                w_parts.append(f"{w.duration_seconds // 60}分钟")
-            if w.distance_meters and w.distance_meters > 0:
-                w_parts.append(f"{w.distance_meters / 1000:.1f}km")
-            if w.avg_heart_rate:
-                w_parts.append(f"均心率{w.avg_heart_rate}")
-            parts.append(f"最近运动: {', '.join(w_parts)}")
+        diet_today = db.query(DietRecord).filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date == today
+        ).all()
+        if diet_today:
+            total_cal = sum(d.calories or 0 for d in diet_today)
+            total_protein = sum(d.protein or 0 for d in diet_today)
+            meals = len(diet_today)
+            parts.append(f"今日饮食: {meals}餐, {total_cal:.0f}kcal, 蛋白质{total_protein:.0f}g")
+        else:
+            parts.append("今日饮食: 尚未记录")
     except Exception:
         pass
 
-    # ── 7. 健康异常预警（未读） ─────────────────────────
+    # ── 8. 最近运动 ─────────────────────────────────────
+    try:
+        recent_workouts = db.query(WorkoutRecord).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= today - timedelta(days=7)
+        ).order_by(WorkoutRecord.workout_date.desc()).limit(3).all()
+
+        if recent_workouts:
+            w_strs = []
+            for w in recent_workouts:
+                days_ago = (today - w.workout_date).days
+                when = "今天" if days_ago == 0 else f"{days_ago}天前"
+                w_info = f"{w.workout_type or '运动'}({when})"
+                if w.duration_seconds:
+                    w_info += f" {w.duration_seconds // 60}min"
+                if w.distance_meters and w.distance_meters > 0:
+                    w_info += f" {w.distance_meters / 1000:.1f}km"
+                w_strs.append(w_info)
+            parts.append(f"近期运动: {' | '.join(w_strs)}")
+        else:
+            parts.append("近7天无运动记录")
+    except Exception:
+        pass
+
+    # ── 9. 健康预警（未读） ──────────────────────────────
     try:
         from app.models.anomaly_alert import AnomalyAlert
         recent_alerts = db.query(AnomalyAlert).filter(
@@ -291,7 +386,7 @@ def _build_context(db: Session, user_id: int) -> str:
     except Exception:
         pass
 
-    # ── 8. 今日打卡进度 ────────────────────────────────
+    # ── 10. 打卡进度 ────────────────────────────────────
     try:
         from app.models.checkin import CheckinRecord, CheckinTemplate
         checkins_today = db.query(CheckinRecord, CheckinTemplate).join(
@@ -316,7 +411,7 @@ def _build_context(db: Session, user_id: int) -> str:
     except Exception:
         pass
 
-    # ── 9. 补剂提醒 ────────────────────────────────────
+    # ── 11. 补剂提醒 ────────────────────────────────────
     try:
         from app.models.supplement import SupplementDefinition, SupplementRecord
         active_supps = db.query(SupplementDefinition).filter(
@@ -330,9 +425,26 @@ def _build_context(db: Session, user_id: int) -> str:
                 SupplementRecord.record_date == today,
                 SupplementRecord.taken == True
             ).all()}
+            taken = len(taken_ids)
+            total = len(active_supps)
             not_taken = [s.name for s in active_supps if s.id not in taken_ids]
             if not_taken:
-                parts.append(f"未服用补剂: {', '.join(not_taken[:5])}")
+                parts.append(f"补剂: {taken}/{total}已服, 未服: {', '.join(not_taken[:5])}")
+            else:
+                parts.append(f"补剂: {total}/{total}已全部服用 ✅")
+    except Exception:
+        pass
+
+    # ── 12. 健康目标 ────────────────────────────────────
+    try:
+        from app.models.smart_plan import WeeklyPlan
+        current_plan = db.query(WeeklyPlan).filter(
+            WeeklyPlan.user_id == user_id,
+            WeeklyPlan.week_start <= today,
+            WeeklyPlan.week_end >= today,
+        ).first()
+        if current_plan and current_plan.completion_pct is not None:
+            parts.append(f"本周计划完成度: {current_plan.completion_pct:.0f}%")
     except Exception:
         pass
 
