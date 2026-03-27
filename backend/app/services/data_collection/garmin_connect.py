@@ -674,7 +674,9 @@ class GarminConnectService:
         if db and self.user_id:
             locked_until = self._check_login_lock(db)
             if locked_until:
-                remaining_minutes = int((locked_until - datetime.utcnow()).total_seconds() / 60) + 1
+                # 统一为 naive datetime 比较
+                locked_naive = locked_until.replace(tzinfo=None) if locked_until.tzinfo else locked_until
+                remaining_minutes = int((locked_naive - datetime.utcnow()).total_seconds() / 60) + 1
                 error_msg = f"⏳ 登录已被暂停，请 {remaining_minutes} 分钟后再试。连续登录失败会导致 Garmin 账号被锁定，请先确认密码正确。"
                 logger.warning(f"{prefix} {error_msg}")
                 raise GarminLoginLockedError(error_msg, locked_until)
