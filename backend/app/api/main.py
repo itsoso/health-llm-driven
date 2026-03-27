@@ -86,6 +86,7 @@ from app.api import (
     family_health,  # 体检报告 + 用药管理 + 复查日历
     anomaly_alert,  # 健康异常预警
     health_context,  # 健康上下文（交叉分析）
+    garmin_import,  # Garmin 数据批量导入
 )
 
 api_router = APIRouter()
@@ -216,3 +217,6 @@ api_router.include_router(anomaly_alert.router)
 
 # 健康上下文（交叉分析供 Skills 调用）
 api_router.include_router(health_context.router)
+
+# Garmin 数据批量导入（本地 Cookie 同步）
+api_router.include_router(garmin_import.router)
