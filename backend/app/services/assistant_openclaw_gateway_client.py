@@ -155,7 +155,7 @@ class AssistantOpenClawGatewayClient:
         *,
         session_key: str,
         run_id: str,
-        timeout: float = 120,
+        timeout: float = 300,
     ) -> AsyncGenerator[dict[str, Any], None]:
         while True:
             event = await self.next_event(timeout=timeout)
@@ -176,7 +176,7 @@ class AssistantOpenClawGatewayClient:
             if state in {"final", "error", "aborted"}:
                 break
 
-    async def next_event(self, timeout: float = 120) -> dict[str, Any]:
+    async def next_event(self, timeout: float = 300) -> dict[str, Any]:
         if self._event_queue:
             return self._event_queue.popleft()
 

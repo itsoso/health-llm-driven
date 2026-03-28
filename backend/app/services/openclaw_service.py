@@ -184,7 +184,8 @@ class OpenClawService:
             "user": session_key,
         }
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        # 多模型分析场景下首次响应可能需要 2-3 分钟（Gateway 需先调多个 LLM）
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()
