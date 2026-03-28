@@ -220,8 +220,8 @@ class OpenClawService:
         if text.startswith("---") and "\nname:" in text:
             return self._install_skill_from_content(text)
 
-        # 2. "安装技能" + JSON 或文本描述
-        m = re.match(r'^安装技能[：:\s]*(.+)', text, re.DOTALL)
+        # 2. "安装技能" + JSON 或文本描述（支持前缀文字，如"基于...安装技能"）
+        m = re.match(r'^.*?安装技能[：:\s]*(.+)', text, re.DOTALL)
         if m:
             body = m.group(1).strip()
             # 尝试解析为 JSON
@@ -271,6 +271,18 @@ class OpenClawService:
         # 9. Gateway 状态
         if re.match(r'^(gateway|网关)\s*(状态|status)', text, re.IGNORECASE):
             return self._gateway_status_response()
+
+        # 10. 兜底：消息中包含技能 JSON 定义（含 name + description 字段）
+        json_match = re.search(r'\{[^{}]*"name"\s*:\s*"[^"]+"[^{}]*"description"\s*:\s*"[^"]+".+?\}', text, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r'\{[^{}]*"description"\s*:\s*"[^"]+"[^{}]*"name"\s*:\s*"[^"]+".+?\}', text, re.DOTALL)
+        if json_match:
+            try:
+                skill_data = json.loads(json_match.group())
+                if 'name' in skill_data and 'description' in skill_data:
+                    return self._install_skill_from_json(skill_data)
+            except (json.JSONDecodeError, ValueError):
+                pass
 
         return None
 
