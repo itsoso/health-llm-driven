@@ -155,7 +155,7 @@ class AssistantOpenClawGatewayClient:
         *,
         session_key: str,
         run_id: str,
-        timeout: float = 300,
+        timeout: float = 900,
     ) -> AsyncGenerator[dict[str, Any], None]:
         while True:
             event = await self.next_event(timeout=timeout)
