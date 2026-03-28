@@ -551,6 +551,42 @@ export async function recognizeFood(imageBase64: string, imageType: string = 'im
   return await post(API_ENDPOINTS.DIET_AI.RECOGNIZE, { image_base64: imageBase64, image_type: imageType });
 }
 
+// ===== OpenClaw API =====
+
+export async function openclawSend(message: string, conversationId?: number, imageBase64?: string, imageType?: string): Promise<{ reply: string; conversation_id: number; message_id: number }> {
+  return await post(API_ENDPOINTS.OPENCLAW.SEND, {
+    message,
+    conversation_id: conversationId || undefined,
+    image_base64: imageBase64 || undefined,
+    image_type: imageType || undefined,
+  });
+}
+
+export async function openclawGetConversations(limit: number = 20): Promise<any[]> {
+  return await get(`${API_ENDPOINTS.OPENCLAW.CONVERSATIONS}?limit=${limit}`);
+}
+
+export async function openclawGetConversation(conversationId: number): Promise<any> {
+  return await get(`${API_ENDPOINTS.OPENCLAW.CONVERSATIONS}/${conversationId}`);
+}
+
+export async function openclawDeleteConversation(conversationId: number): Promise<void> {
+  return await del(`${API_ENDPOINTS.OPENCLAW.CONVERSATIONS}/${conversationId}`);
+}
+
+export async function openclawRateMessage(messageId: number, rating: 1 | -1): Promise<{ ok: boolean }> {
+  return await post(`${API_ENDPOINTS.OPENCLAW.RATE}/${messageId}/rate`, { rating });
+}
+
+export async function getQuickQuestions(limit: number = 6): Promise<{ id: number; question: string }[]> {
+  try {
+    return await get(`${API_ENDPOINTS.OPENCLAW.QUICK_QUESTIONS}?limit=${limit}`);
+  } catch (e) {
+    console.error('获取快捷问题失败:', e);
+    return [];
+  }
+}
+
 // ===== 情绪追踪 =====
 
 import type { MoodRecord, MoodStats } from '../types';

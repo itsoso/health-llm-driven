@@ -404,6 +404,13 @@ export const API_ENDPOINTS = {
     CONVERSATIONS: '/chat/conversations',
     TRANSCRIBE: '/chat/transcribe',
   },
+  OPENCLAW: {
+    SEND: '/openclaw/send',
+    STREAM: '/openclaw/stream',
+    CONVERSATIONS: '/openclaw/conversations',
+    RATE: '/openclaw/messages',
+    QUICK_QUESTIONS: '/quick-questions/me',
+  },
   DIET_AI: {
     RECOGNIZE: '/diet/recognize',
   },

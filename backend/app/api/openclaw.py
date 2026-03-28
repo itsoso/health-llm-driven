@@ -124,6 +124,61 @@ async def stream_message(
     )
 
 
+@router.post("/send", summary="OpenClaw 非流式对话")
+async def send_message(
+    req: OpenClawSendRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """非流式发送消息到 OpenClaw Gateway，收集完整回复后一次性返回（适用于不支持 SSE 的客户端）"""
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
+    # 文件附件：提取文本并注入消息
+    message = req.message.strip()
+    if req.file_base64 and req.file_name:
+        try:
+            from app.services.file_extract_service import extract_text_from_base64
+            file_text = extract_text_from_base64(req.file_base64, req.file_name)
+            if file_text:
+                message = f"{message}\n\n[附件: {req.file_name}]\n{file_text}"
+        except Exception as e:
+            logger.warning(f"文件提取失败: {e}")
+
+    service = OpenClawService(db)
+
+    full_reply = ""
+    conversation_id = None
+    message_id = None
+
+    try:
+        async for event in service.send_message_stream(
+            user_id=current_user.id,
+            message=message,
+            conversation_id=req.conversation_id,
+            is_admin=current_user.is_admin,
+            image_base64=req.image_base64,
+            image_type=req.image_type or "jpeg",
+        ):
+            evt_type = event.get("event")
+            if evt_type == "token":
+                content = event.get("data", {}).get("content", "")
+                full_reply += content
+            elif evt_type == "done":
+                conversation_id = event.get("data", {}).get("conversation_id")
+                message_id = event.get("data", {}).get("message_id")
+    except Exception as e:
+        logger.error(f"OpenClaw 非流式调用异常: {e}", exc_info=True)
+        if not full_reply:
+            full_reply = "抱歉，OpenClaw 暂时无法响应，请稍后再试。"
+
+    return {
+        "reply": full_reply,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+    }
+
+
 @router.get("/conversations", summary="OpenClaw 对话列表")
 async def list_conversations(
     limit: int = Query(20, ge=1, le=50),

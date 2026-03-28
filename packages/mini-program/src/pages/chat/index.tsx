@@ -1,10 +1,19 @@
 /**
- * 健康问答对话页面 - OpenClaw 集成
+ * 健康问答对话页面 - OpenClaw 智能助理
  */
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Taro from '@tarojs/taro';
-import { chatSend, getChatConversations, getChatMessages, deleteChatConversation, chatTranscribe, recognizeFood } from '../../services/api';
+import {
+  openclawSend,
+  openclawGetConversations,
+  openclawGetConversation,
+  openclawDeleteConversation,
+  openclawRateMessage,
+  getQuickQuestions,
+  chatTranscribe,
+  recognizeFood,
+} from '../../services/api';
 import './index.scss';
 
 interface Message {
@@ -12,6 +21,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
+  rating?: number | null;
 }
 
 interface Conversation {
@@ -19,21 +29,20 @@ interface Conversation {
   title: string;
   updated_at: string;
   last_message?: string;
-  mode?: string;
 }
 
-const QUICK_QUESTIONS = [
-  { label: '分析打卡', text: '请分析一下我今天的打卡完成情况，给出建议' },
-  { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
-  { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量，有什么改善建议？' },
-  { label: '饮食建议', text: '根据我的健康目标，今天的饮食应该注意什么？' },
-];
+interface QuickQuestion {
+  label: string;
+  text: string;
+}
 
-const PROXY_QUICK_QUESTIONS = [
+const FALLBACK_QUICK_QUESTIONS: QuickQuestion[] = [
   { label: '你好', text: '你好，你能做什么？' },
   { label: '今日健康', text: '查一下我今天的健康数据' },
   { label: '记录饮水', text: '记录喝水250ml' },
-  { label: '健康分析', text: '分析我最近的健康趋势' },
+  { label: '运动建议', text: '根据我的身体数据，今天适合做什么运动？' },
+  { label: '睡眠分析', text: '帮我分析一下最近的睡眠质量' },
+  { label: '饮食建议', text: '根据我的健康目标，今天的饮食应该注意什么？' },
 ];
 
 export default function Chat() {
@@ -47,7 +56,7 @@ export default function Chat() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isRecording, setIsRecording] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
-  const [chatMode, setChatMode] = useState<'health' | 'proxy'>('health');
+  const [quickQuestions, setQuickQuestions] = useState<QuickQuestion[]>(FALLBACK_QUICK_QUESTIONS);
   const itemsPerPage = 10;
   const [scrollTarget, setScrollTarget] = useState('msg-bottom');
   const scrollFlip = useRef(false);
@@ -62,7 +71,7 @@ export default function Chat() {
   // 加载对话列表
   const loadConversations = useCallback(async () => {
     try {
-      const list = await getChatConversations();
+      const list = await openclawGetConversations();
       setConversations(list || []);
     } catch (e) {
       console.error('加载对话列表失败:', e);
@@ -70,13 +79,11 @@ export default function Chat() {
   }, []);
 
   // 加载指定对话的消息
-  const loadConversation = useCallback(async (convId: number, convMode?: string) => {
+  const loadConversation = useCallback(async (convId: number) => {
     try {
-      const detail = await getChatMessages(convId);
+      const detail = await openclawGetConversation(convId);
       setMessages(detail.messages || []);
       setConversationId(convId);
-      // 恢复对话的模式
-      setChatMode(convMode === 'proxy' ? 'proxy' : detail.mode === 'proxy' ? 'proxy' : 'health');
       setShowHistory(false);
       // 延迟滚动到底部，等待消息渲染完成
       setTimeout(() => scrollToBottom(), 100);
@@ -86,9 +93,22 @@ export default function Chat() {
     }
   }, [scrollToBottom]);
 
+  // 加载动态快捷问题
+  const loadQuickQuestions = useCallback(async () => {
+    try {
+      const result = await getQuickQuestions(6);
+      if (result && result.length > 0) {
+        setQuickQuestions(result.map(q => ({ label: q.question.slice(0, 6), text: q.question })));
+      }
+    } catch (e) {
+      // 使用静态 fallback，无需处理
+    }
+  }, []);
+
   useEffect(() => {
     loadConversations();
-  }, [loadConversations]);
+    loadQuickQuestions();
+  }, [loadConversations, loadQuickQuestions]);
 
   // 发送消息
   const handleSend = async (text?: string) => {
@@ -109,7 +129,7 @@ export default function Chat() {
     setTimeout(() => scrollToBottom(), 50);
 
     try {
-      const result = await chatSend(msg, conversationId, chatMode === 'proxy' ? 'proxy' : undefined);
+      const result = await openclawSend(msg, conversationId);
 
       // 更新会话 ID
       if (!conversationId && result.conversation_id) {
@@ -122,24 +142,10 @@ export default function Chat() {
         role: 'assistant',
         content: result.reply,
         created_at: new Date().toISOString(),
+        rating: null,
       };
       setMessages(prev => [...prev, aiMsg]);
       setTimeout(() => scrollToBottom(), 50);
-
-      // 健康助理模式下显示活动/饮食通知
-      if (chatMode === 'health') {
-        if (result.activities_saved && result.activities?.length > 0) {
-          const msgs = result.activities
-            .filter((a: any) => a.status !== 'already_exists')
-            .map((a: any) => a.message);
-          if (msgs.length > 0) {
-            Taro.showToast({ title: msgs.join('、'), icon: 'none', duration: 3000 });
-          }
-        }
-        if (result.diet_saved) {
-          Taro.showToast({ title: '饮食已自动记录', icon: 'success', duration: 2000 });
-        }
-      }
     } catch (e: any) {
       const errorMsg: Message = {
         id: Date.now() + 1,
@@ -160,18 +166,10 @@ export default function Chat() {
     setShowHistory(false);
   };
 
-  // 切换模式时新建对话
-  const handleModeSwitch = (mode: 'health' | 'proxy') => {
-    if (mode === chatMode) return;
-    setChatMode(mode);
-    setMessages([]);
-    setConversationId(undefined);
-  };
-
   // 删除对话
   const handleDeleteConversation = async (convId: number) => {
     try {
-      await deleteChatConversation(convId);
+      await openclawDeleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
       if (conversationId === convId) {
         handleNewChat();
@@ -179,6 +177,18 @@ export default function Chat() {
       Taro.showToast({ title: '已删除', icon: 'success' });
     } catch (e) {
       Taro.showToast({ title: '删除失败', icon: 'none' });
+    }
+  };
+
+  // 消息评价
+  const handleRateMessage = async (messageId: number, rating: 1 | -1) => {
+    try {
+      await openclawRateMessage(messageId, rating);
+      setMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, rating: m.rating === rating ? null : rating } : m
+      ));
+    } catch (e) {
+      Taro.showToast({ title: '评价失败', icon: 'none' });
     }
   };
 
@@ -406,20 +416,7 @@ export default function Chat() {
           <Text className="header-icon">{showHistory ? '✕' : '☰'}</Text>
         </View>
         <View className="header-center">
-          <View className="mode-tabs">
-            <View
-              className={`mode-tab ${chatMode === 'health' ? 'active' : ''}`}
-              onClick={() => handleModeSwitch('health')}
-            >
-              <Text>健康助理</Text>
-            </View>
-            <View
-              className={`mode-tab ${chatMode === 'proxy' ? 'active' : ''}`}
-              onClick={() => handleModeSwitch('proxy')}
-            >
-              <Text>OpenClaw</Text>
-            </View>
-          </View>
+          <Text className="header-title">OpenClaw</Text>
         </View>
         <View className="header-right" onClick={handleNewChat}>
           <Text className="header-icon">+</Text>
@@ -460,11 +457,11 @@ export default function Chat() {
                 <View
                   key={conv.id}
                   className={`history-item ${conv.id === conversationId ? 'active' : ''}`}
-                  onClick={() => loadConversation(conv.id, conv.mode)}
+                  onClick={() => loadConversation(conv.id)}
                 >
                   <View className="history-item-content">
                     <Text className="history-item-title">
-                      {conv.mode === 'proxy' ? '⚡ ' : ''}{conv.title}
+                      {conv.title}
                     </Text>
                     {conv.last_message && (
                       <Text className="history-item-preview">{conv.last_message}</Text>
@@ -517,18 +514,14 @@ export default function Chat() {
         {messages.length === 0 && !loading && (
           <View className="welcome-area">
             <View className="welcome-icon-wrap">
-              <Text className="welcome-icon">{chatMode === 'proxy' ? '⚡' : '💬'}</Text>
+              <Text className="welcome-icon">🐾</Text>
             </View>
-            <Text className="welcome-title">
-              {chatMode === 'proxy' ? 'OpenClaw 对话模式' : '你好，我是你的智能助理'}
-            </Text>
+            <Text className="welcome-title">OpenClaw 智能助理</Text>
             <Text className="welcome-desc">
-              {chatMode === 'proxy'
-                ? 'OpenClaw 通过 Skills 自主访问健康数据，提供智能服务'
-                : '我了解你的健康数据，可以为你提供个性化的健康建议'}
+              通过 Skills 自主访问你的健康数据，提供个性化的智能健康服务
             </Text>
             <View className="quick-questions">
-              {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
+              {quickQuestions.map((q, idx) => (
                 <View
                   key={idx}
                   className="quick-btn"
@@ -545,19 +538,37 @@ export default function Chat() {
           <View key={msg.id} className={`msg-row ${msg.role}`}>
             {msg.role === 'assistant' && (
               <View className="msg-avatar ai">
-                <Text>💬</Text>
+                <Text>🐾</Text>
               </View>
             )}
-            <View
-              className={`msg-bubble ${msg.role}`}
-              onLongPress={() => {
-                Taro.setClipboardData({
-                  data: msg.content,
-                  success: () => Taro.showToast({ title: '已复制', icon: 'success', duration: 1500 }),
-                });
-              }}
-            >
-              {renderContent(msg.content)}
+            <View className="msg-bubble-wrap">
+              <View
+                className={`msg-bubble ${msg.role}`}
+                onLongPress={() => {
+                  Taro.setClipboardData({
+                    data: msg.content,
+                    success: () => Taro.showToast({ title: '已复制', icon: 'success', duration: 1500 }),
+                  });
+                }}
+              >
+                {renderContent(msg.content)}
+              </View>
+              {msg.role === 'assistant' && msg.id > 1000 && (
+                <View className="msg-feedback">
+                  <View
+                    className={`feedback-btn ${msg.rating === 1 ? 'active' : ''}`}
+                    onClick={() => handleRateMessage(msg.id, 1)}
+                  >
+                    <Text>👍</Text>
+                  </View>
+                  <View
+                    className={`feedback-btn ${msg.rating === -1 ? 'active' : ''}`}
+                    onClick={() => handleRateMessage(msg.id, -1)}
+                  >
+                    <Text>👎</Text>
+                  </View>
+                </View>
+              )}
             </View>
           </View>
         ))}
@@ -565,7 +576,7 @@ export default function Chat() {
         {loading && (
           <View className="msg-row assistant">
             <View className="msg-avatar ai">
-              <Text>💬</Text>
+              <Text>🐾</Text>
             </View>
             <View className="msg-bubble assistant typing">
               <View className="typing-dots">
@@ -585,7 +596,7 @@ export default function Chat() {
       {messages.length > 0 && !loading && (
         <View className="quick-bar">
           <ScrollView scrollX className="quick-scroll">
-            {(chatMode === 'proxy' ? PROXY_QUICK_QUESTIONS : QUICK_QUESTIONS).map((q, idx) => (
+            {quickQuestions.map((q, idx) => (
               <View
                 key={idx}
                 className="quick-chip"
@@ -600,14 +611,12 @@ export default function Chat() {
 
       {/* 输入区域 */}
       <View className="chat-input-area">
-        {chatMode === 'health' && (
-          <View
-            className={`tool-btn ${imageUploading ? 'uploading' : ''}`}
-            onClick={handleImageChoose}
-          >
-            <Text className="tool-icon">📷</Text>
-          </View>
-        )}
+        <View
+          className={`tool-btn ${imageUploading ? 'uploading' : ''}`}
+          onClick={handleImageChoose}
+        >
+          <Text className="tool-icon">📷</Text>
+        </View>
         <View
           className={`tool-btn ${isRecording ? 'recording' : ''}`}
           onClick={handleVoiceToggle}

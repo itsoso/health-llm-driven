@@ -316,7 +316,7 @@ page {
 }
 
 .msg-bubble {
-  max-width: 80%;
+  max-width: 100%;
   padding: 20px 24px;
   border-radius: 24px;
   font-size: 28px;
@@ -599,6 +599,43 @@ page {
 
   &.active {
     background: linear-gradient(145deg, #6d28d9, #4f46e5);
+  }
+}
+
+// 消息气泡包装（含反馈按钮）
+.msg-bubble-wrap {
+  max-width: 80%;
+  display: flex;
+  flex-direction: column;
+}
+
+// 消息反馈按钮
+.msg-feedback {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.feedback-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  opacity: 0.5;
+  transition: all 0.2s;
+
+  &:active {
+    opacity: 1;
+  }
+
+  &.active {
+    opacity: 1;
+    background: rgba(139, 92, 246, 0.2);
   }
 }
 
