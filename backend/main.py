@@ -28,8 +28,12 @@ setup_beijing_logging()
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
 
-# 配置请求频率限制器
-limiter = Limiter(key_func=get_remote_address)
+# 配置请求频率限制器（使用 Redis 存储，支持多实例部署）
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.redis_url,
+    default_limits=["200/minute"],
+)
 
 app = FastAPI(
     title="健康管理系统 API",
@@ -174,6 +178,22 @@ app.add_middleware(
     max_age=600,
 )
 
+# 安全响应头中间件
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if not request.url.path.startswith("/api/docs"):
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # 请求超时 + 慢请求日志中间件
 REQUEST_TIMEOUT = 120  # 普通请求超时 120 秒
 SLOW_REQUEST_THRESHOLD = 10  # 超过 10 秒记录慢请求警告
@@ -316,7 +336,7 @@ def health_check():
     if redis_status == "error":
         overall = "degraded"
 
-    return {
+    result = {
         "status": overall,
         "services": {
             "api": "running",
@@ -325,3 +345,8 @@ def health_check():
             "celery": celery_status,
         }
     }
+
+    if overall != "healthy":
+        return JSONResponse(status_code=503, content=result)
+
+    return result

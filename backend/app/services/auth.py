@@ -209,6 +209,16 @@ class GarminCredentialService:
             return None
     
     @staticmethod
+    def update_mfa_status(db: Session, user_id: int, requires_mfa: bool) -> bool:
+        """更新 MFA 状态"""
+        credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
+        if credential:
+            credential.requires_mfa = requires_mfa
+            db.commit()
+            return True
+        return False
+
+    @staticmethod
     def delete_credentials(db: Session, user_id: int) -> bool:
         """删除Garmin凭证"""
         credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()

@@ -75,10 +75,20 @@ def get_garmin_session() -> requests.Session:
     except Exception as e:
         log.warning(f"获取 CSRF token 失败: {e}")
 
-    # 验证 session
-    r = session.get(f"{GARMIN_BASE}/gc-api/usersummary-service/usersummary/daily?calendarDate={date.today().isoformat()}")
-    if r.status_code != 200:
-        log.error(f"Garmin session 无效 (status={r.status_code})，请在 Chrome 中重新登录 connect.garmin.com")
+    # 验证 session（尝试多种 API 路径）
+    test_date = date.today().isoformat()
+    test_urls = [
+        f"{GARMIN_BASE}/proxy/usersummary-service/usersummary/daily/{test_date}",
+        f"{GARMIN_BASE}/proxy/usersummary-service/usersummary/daily/{test_date}",
+    ]
+    session_valid = False
+    for url in test_urls:
+        r = session.get(url)
+        if r.status_code == 200:
+            session_valid = True
+            break
+    if not session_valid:
+        log.error(f"Garmin session 无效 (最后 status={r.status_code})，请在 Chrome 中重新登录 connect.garmin.com")
         sys.exit(1)
 
     log.info("Garmin session 有效")
@@ -91,7 +101,7 @@ def fetch_daily_summaries(session: requests.Session, days: int) -> list:
     for i in range(days):
         d = (date.today() - timedelta(days=i)).isoformat()
         try:
-            r = session.get(f"{GARMIN_BASE}/gc-api/usersummary-service/usersummary/daily?calendarDate={d}")
+            r = session.get(f"{GARMIN_BASE}/proxy/usersummary-service/usersummary/daily/{d}")
             if r.status_code == 200:
                 data = r.json()
                 summary = {
@@ -109,7 +119,7 @@ def fetch_daily_summaries(session: requests.Session, days: int) -> list:
                 }
 
                 # 睡眠数据
-                sr = session.get(f"{GARMIN_BASE}/gc-api/sleep-service/sleep/dailySleepData?date={d}")
+                sr = session.get(f"{GARMIN_BASE}/proxy/sleep-service/sleep/dailySleepData?date={d}")
                 if sr.status_code == 200:
                     sleep = sr.json().get("dailySleepDTO", {})
                     scores = sleep.get("sleepScores", {})
@@ -138,7 +148,7 @@ def fetch_activities(session: requests.Session, days: int) -> list:
     """拉取运动记录"""
     results = []
     try:
-        r = session.get(f"{GARMIN_BASE}/gc-api/activitylist-service/activities/search/activities?limit=50&start=0")
+        r = session.get(f"{GARMIN_BASE}/proxy/activitylist-service/activities/search/activities?limit=50&start=0")
         if r.status_code != 200:
             log.warning(f"活动列表获取失败: HTTP {r.status_code}")
             return results

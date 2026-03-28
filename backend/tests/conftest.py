@@ -3,6 +3,7 @@ import os
 import uuid
 import tempfile
 import pytest
+from datetime import date
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -47,7 +48,7 @@ def client(db):
             yield db
         finally:
             pass
-    
+
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         yield test_client
@@ -62,6 +63,37 @@ def sample_user_data():
         "birth_date": "1990-01-01",
         "gender": "男"
     }
+
+
+def create_authenticated_user(db):
+    """创建一个已认证的测试用户，返回 (user, token)"""
+    from app.models.user import User
+    from app.services.auth import auth_service
+
+    user = User(
+        username=f"testuser_{uuid.uuid4().hex[:8]}",
+        email=f"test_{uuid.uuid4().hex[:8]}@example.com",
+        hashed_password="hashed_password",
+        name="测试用户",
+        birth_date=date(1990, 1, 1),
+        gender="男",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = auth_service.create_access_token({"sub": str(user.id)})
+    return user, token
+
+
+@pytest.fixture
+def auth_user_and_headers(db):
+    """创建已认证用户，返回 (user, headers)"""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+    return user, headers
 
 
 @pytest.fixture

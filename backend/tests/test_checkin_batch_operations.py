@@ -14,7 +14,8 @@ def test_user(db):
         email="checkinbatch@example.com",
         hashed_password="hashed_password",
         name="打卡批量测试用户",
-        is_active=True
+        is_active=True,
+        is_approved=True
     )
     db.add(user)
     db.commit()

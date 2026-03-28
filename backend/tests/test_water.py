@@ -12,7 +12,8 @@ def test_user(db):
         email="water@example.com",
         hashed_password="hashed_password",
         name="饮水测试用户",
-        is_active=True
+        is_active=True,
+        is_approved=True
     )
     db.add(user)
     db.commit()
@@ -29,9 +30,10 @@ def auth_headers(client, test_user):
 
 
 @pytest.fixture
-def sample_water_data():
+def sample_water_data(test_user):
     """示例饮水数据"""
     return {
+        "user_id": test_user.id,
         "record_date": str(date.today()),
         "amount": 250,
         "drink_type": "water",
@@ -55,9 +57,10 @@ class TestWaterAPI:
         assert data["drink_type"] == "water"
         assert "id" in data
     
-    def test_create_water_record_minimal(self, client, auth_headers):
+    def test_create_water_record_minimal(self, client, auth_headers, test_user):
         """测试创建最小饮水记录"""
         minimal_data = {
+            "user_id": test_user.id,
             "record_date": str(date.today()),
             "amount": 200
         }
@@ -73,7 +76,7 @@ class TestWaterAPI:
     def test_quick_add_water(self, client, auth_headers):
         """测试快速添加饮水"""
         response = client.post(
-            "/api/v1/water/records/me/quick?amount=300",
+            "/api/v1/water/records/quick?amount=300",
             headers=auth_headers
         )
         assert response.status_code == 200
@@ -103,7 +106,7 @@ class TestWaterAPI:
         """测试获取我的每日饮水汇总"""
         # 创建多条记录
         client.post("/api/v1/water/records", json=sample_water_data, headers=auth_headers)
-        client.post("/api/v1/water/records/me/quick?amount=300", headers=auth_headers)
+        client.post("/api/v1/water/records/quick?amount=300", headers=auth_headers)
         
         # 获取汇总
         today = str(date.today())
@@ -165,9 +168,10 @@ class TestWaterAPI:
 class TestWaterValidation:
     """饮水记录验证测试"""
     
-    def test_zero_amount(self, client, auth_headers):
+    def test_zero_amount(self, client, auth_headers, test_user):
         """测试零量饮水"""
         data = {
+            "user_id": test_user.id,
             "record_date": str(date.today()),
             "amount": 0
         }
@@ -179,12 +183,13 @@ class TestWaterValidation:
         # 根据业务需求可能允许或不允许
         assert response.status_code in [200, 422]
     
-    def test_drink_types(self, client, auth_headers):
+    def test_drink_types(self, client, auth_headers, test_user):
         """测试不同饮品类型"""
         drink_types = ["water", "tea", "coffee", "juice", "milk", "other"]
-        
+
         for drink_type in drink_types:
             data = {
+                "user_id": test_user.id,
                 "record_date": str(date.today()),
                 "amount": 200,
                 "drink_type": drink_type

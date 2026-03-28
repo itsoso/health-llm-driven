@@ -13,7 +13,8 @@ def test_user(db):
         email="test@example.com",
         hashed_password="hashed_password",
         name="测试用户",
-        is_active=True
+        is_active=True,
+        is_approved=True
     )
     db.add(user)
     db.commit()

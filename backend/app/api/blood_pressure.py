@@ -63,11 +63,12 @@ def create_blood_pressure_record(
         record_data["measured_at"] = datetime.combine(record_date, record_time)
     elif "record_date" in record_data:
         # 如果没有时间，使用当前时间
+        record_data.pop("record_time", None)
         record_data["measured_at"] = datetime.combine(
             record_data["record_date"],
             datetime.now().time()
         )
-    
+
     # 移除数据库中不存在的字段
     record_data.pop("measurement_position", None)
     record_data.pop("arm", None)

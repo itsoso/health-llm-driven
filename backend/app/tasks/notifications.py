@@ -1,7 +1,6 @@
 """
 通知推送任务
 """
-import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from app.celery_app import celery_app
@@ -11,6 +10,7 @@ from app.models.notification import UserNotificationSetting
 from app.models.smart_plan import WeeklyPlan
 from app.services.notification.push_service import PushService
 from app.utils.timezone import get_china_now
+from app.utils.async_helpers import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +40,15 @@ def send_sleep_reminders():
         
         push_service = PushService(db)
         sent_count = 0
-        
+
         for setting in settings_list:
             try:
-                push_service.send_notification(
+                run_async(push_service.send_notification(
                     user_id=setting.user_id,
+                    notification_type="reminder",
                     title="💤 睡眠提醒",
-                    body="该准备睡觉了，保证充足睡眠，明天精神饱满！"
-                )
+                    content="该准备睡觉了，保证充足睡眠，明天精神饱满！"
+                ))
                 sent_count += 1
             except Exception as e:
                 logger.error(f"发送睡眠提醒失败 (user_id={setting.user_id}): {e}")
@@ -63,12 +64,13 @@ def send_water_reminder(user_id: int):
     """
     with SessionLocal() as db:
         push_service = PushService(db)
-        push_service.send_notification(
+        run_async(push_service.send_notification(
             user_id=user_id,
+            notification_type="reminder",
             title="💧 喝水提醒",
-            body="别忘了喝水，保持身体水分充足！"
-        )
-    
+            content="别忘了喝水，保持身体水分充足！"
+        ))
+
     return {"user_id": user_id, "type": "water_reminder"}
 
 
@@ -79,12 +81,13 @@ def send_exercise_reminder(user_id: int):
     """
     with SessionLocal() as db:
         push_service = PushService(db)
-        push_service.send_notification(
+        run_async(push_service.send_notification(
             user_id=user_id,
+            notification_type="reminder",
             title="🏃 运动提醒",
-            body="是时候活动一下了，去完成今天的运动目标吧！"
-        )
-    
+            content="是时候活动一下了，去完成今天的运动目标吧！"
+        ))
+
     return {"user_id": user_id, "type": "exercise_reminder"}
 
 
@@ -95,12 +98,13 @@ def send_custom_notification(user_id: int, title: str, body: str):
     """
     with SessionLocal() as db:
         push_service = PushService(db)
-        push_service.send_notification(
+        run_async(push_service.send_notification(
             user_id=user_id,
+            notification_type="custom",
             title=title,
-            body=body
-        )
-    
+            content=body
+        ))
+
     return {"user_id": user_id, "title": title}
 
 
@@ -254,14 +258,12 @@ def send_plan_item_reminders():
                 if len(items) > 3:
                     body += f" 等{len(items)}项"
 
-                asyncio.run(
-                    push_service.send_notification(
-                        user_id=plan.user_id,
-                        notification_type="plan_reminder",
-                        title=f"{emoji} 计划提醒",
-                        content=body,
-                    )
-                )
+                run_async(push_service.send_notification(
+                    user_id=plan.user_id,
+                    notification_type="plan_reminder",
+                    title=f"{emoji} 计划提醒",
+                    content=body,
+                ))
                 sent_count += 1
             except Exception as e:
                 logger.error(f"[分时提醒] 发送失败 (user_id={plan.user_id}): {e}")
@@ -373,21 +375,19 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
 
         # 调用 OpenClaw 多模型分析
         client = OpenClawAnalyzeClient()
-        analysis = asyncio.run(client.analyze(prompt))
+        analysis = run_async(client.analyze(prompt))
 
         # 推送通知
         aggregation = (analysis.get("aggregation") or "")[:200]
         content = aggregation or "今日健康数据已分析完成"
         push_service = PushService(db)
         try:
-            asyncio.run(
-                push_service.send_notification(
-                    user_id=user_id,
-                    notification_type="daily_insights",
-                    title="📊 今日健康复盘",
-                    content=content,
-                )
-            )
+            run_async(push_service.send_notification(
+                user_id=user_id,
+                notification_type="daily_insights",
+                title="📊 今日健康复盘",
+                content=content,
+            ))
         except Exception as e:
             logger.warning(f"[健康复盘] 推送失败 user={user_id}: {e}")
 
@@ -423,7 +423,7 @@ def daily_anomaly_check():
                     total_alerts += len(alerts)
                     logger.info(f"[异常检测] 用户 {user_id} 检测到 {len(alerts)} 个异常")
                     try:
-                        asyncio.run(svc.send_alerts(user_id, alerts))
+                        run_async(svc.send_alerts(user_id, alerts))
                     except Exception as e:
                         logger.warning(f"[异常检测] 推送失败 user={user_id}: {e}")
             except Exception as e:
@@ -457,7 +457,7 @@ def daily_trend_analysis():
         try:
             with SessionLocal() as db:
                 svc = HealthTrendService(db)
-                dims = asyncio.run(svc.analyze_trends(user_id))
+                dims = run_async(svc.analyze_trends(user_id))
                 if dims:
                     analyzed_count += 1
                     logger.info(f"[趋势分析] 用户 {user_id} 完成: {dims}")
@@ -510,14 +510,12 @@ def send_trend_morning_push():
                         parts.append("↓ " + "、".join(dim_labels.get(r.dimension, r.dimension) for r in declining))
                     body = " | ".join(parts) if parts else "各项指标平稳"
 
-                asyncio.run(
-                    push_service.send_notification(
-                        user_id=user_id,
-                        notification_type="trend_report",
-                        title="📈 健康趋势",
-                        content=body[:200],
-                    )
-                )
+                run_async(push_service.send_notification(
+                    user_id=user_id,
+                    notification_type="trend_report",
+                    title="📈 健康趋势",
+                    content=body[:200],
+                ))
                 sent_count += 1
             except Exception as e:
                 logger.error(f"[趋势推送] 用户 {user_id} 推送失败: {e}")
@@ -580,14 +578,12 @@ def send_morning_health_summary():
 
                 body = "，".join(parts) + "。"
 
-                asyncio.run(
-                    push_service.send_notification(
-                        user_id=user_id,
-                        notification_type="morning_summary",
-                        title="🌅 早安健康",
-                        content=body[:200],
-                    )
-                )
+                run_async(push_service.send_notification(
+                    user_id=user_id,
+                    notification_type="morning_summary",
+                    title="🌅 早安健康",
+                    content=body[:200],
+                ))
                 sent_count += 1
             except Exception as e:
                 logger.error(f"[早安推送] 用户 {user_id} 推送失败: {e}")

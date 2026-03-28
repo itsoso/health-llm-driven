@@ -12,7 +12,8 @@ def test_user(db):
         email="weight@example.com",
         hashed_password="hashed_password",
         name="体重测试用户",
-        is_active=True
+        is_active=True,
+        is_approved=True
     )
     db.add(user)
     db.commit()
@@ -34,7 +35,7 @@ def sample_weight_data():
     return {
         "record_date": str(date.today()),
         "weight": 70.5,
-        "body_fat": 18.5,
+        "body_fat_percentage": 18.5,
         "muscle_mass": 35.0,
         "notes": "晨起测量"
     }
@@ -53,7 +54,7 @@ class TestWeightAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["weight"] == 70.5
-        assert data["body_fat"] == 18.5
+        assert data["body_fat_percentage"] == 18.5
         assert "id" in data
     
     def test_create_weight_record_minimal(self, client, auth_headers):
@@ -70,7 +71,7 @@ class TestWeightAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["weight"] == 68.0
-        assert data["body_fat"] is None
+        assert data["body_fat_percentage"] is None
     
     def test_update_same_day_record(self, client, auth_headers, sample_weight_data):
         """测试同一天更新记录（应覆盖）"""
@@ -209,7 +210,7 @@ class TestWeightValidation:
         data = {
             "record_date": str(date.today()),
             "weight": 70.0,
-            "body_fat": 25.0
+            "body_fat_percentage": 25.0
         }
         response = client.post(
             "/api/v1/weight/records",

@@ -12,7 +12,8 @@ def test_user(db):
         email="supp@example.com",
         hashed_password="hashed_password",
         name="补剂测试用户",
-        is_active=True
+        is_active=True,
+        is_approved=True
     )
     db.add(user)
     db.commit()
@@ -35,9 +36,8 @@ def sample_supplement_definition(test_user):
         "user_id": test_user.id,
         "name": "维生素D",
         "dosage": "1000IU",
-        "frequency": "daily",
-        "take_time": "早餐后",
-        "notes": "促进钙吸收",
+        "timing": "morning",
+        "description": "促进钙吸收",
         "is_active": True
     }
 
@@ -103,7 +103,7 @@ class TestSupplementDefinitionAPI:
         
         # 获取列表
         response = client.get(
-            "/api/v1/supplements/definitions/me",
+            "/api/v1/supplements/me/definitions",
             headers=auth_headers
         )
         assert response.status_code == 200
@@ -155,7 +155,7 @@ class TestSupplementDefinitionAPI:
 class TestSupplementRecordAPI:
     """补剂记录API测试类"""
     
-    def test_create_supplement_record(self, client, auth_headers, sample_supplement_definition):
+    def test_create_supplement_record(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试创建补剂打卡记录"""
         # 先创建补剂
         create_response = client.post(
@@ -164,10 +164,11 @@ class TestSupplementRecordAPI:
             headers=auth_headers
         )
         supplement_id = create_response.json()["id"]
-        
+
         # 创建打卡记录
         record_data = {
             "supplement_id": supplement_id,
+            "user_id": test_user.id,
             "record_date": str(date.today()),
             "taken": True,
             "notes": "按时服用"
@@ -199,7 +200,7 @@ class TestSupplementRecordAPI:
         batch_data = {
             "user_id": test_user.id,
             "record_date": str(date.today()),
-            "supplement_ids": supplements
+            "checkins": [{"supplement_id": sid, "taken": True} for sid in supplements]
         }
         response = client.post(
             "/api/v1/supplements/records/batch",
@@ -208,7 +209,7 @@ class TestSupplementRecordAPI:
         )
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 3
+        assert len(data["results"]) == 3
     
     def test_get_supplements_with_status(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试获取补剂及打卡状态"""
@@ -219,10 +220,11 @@ class TestSupplementRecordAPI:
             headers=auth_headers
         )
         supplement_id = create_response.json()["id"]
-        
+
         # 打卡
         record_data = {
             "supplement_id": supplement_id,
+            "user_id": test_user.id,
             "record_date": str(date.today()),
             "taken": True
         }
@@ -262,7 +264,7 @@ class TestSupplementRecordAPI:
 class TestSupplementValidation:
     """补剂验证测试"""
     
-    def test_duplicate_record_same_day(self, client, auth_headers, sample_supplement_definition):
+    def test_duplicate_record_same_day(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试同一天重复打卡（应更新或忽略）"""
         # 创建补剂
         create_response = client.post(
@@ -271,10 +273,11 @@ class TestSupplementValidation:
             headers=auth_headers
         )
         supplement_id = create_response.json()["id"]
-        
+
         # 第一次打卡
         record_data = {
             "supplement_id": supplement_id,
+            "user_id": test_user.id,
             "record_date": str(date.today()),
             "taken": True
         }
@@ -303,7 +306,7 @@ class TestSupplementValidation:
             data = {
                 "user_id": test_user.id,
                 "name": name,
-                "frequency": "daily"
+                "timing": "morning"
             }
             response = client.post(
                 "/api/v1/supplements/definitions",
@@ -314,7 +317,7 @@ class TestSupplementValidation:
         
         # 验证全部创建成功
         response = client.get(
-            "/api/v1/supplements/definitions/me",
+            "/api/v1/supplements/me/definitions",
             headers=auth_headers
         )
         assert len(response.json()) >= 5
