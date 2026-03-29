@@ -1036,11 +1036,16 @@ export default function AIAssistantPage() {
               ) : (
                 <div className="mx-auto max-w-5xl space-y-5">
                   {visibleMessages.map(msg => (
-                    <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div key={msg.id} className={`group flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {msg.role === 'assistant' && (
                         <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
                         </div>
+                      )}
+                      {msg.role === 'user' && msg.created_at && (
+                        <span className="self-center text-[11px] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 select-none shrink-0">
+                          {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                        </span>
                       )}
                       <div
                         className={`max-w-[min(100%,48rem)] rounded-[28px] px-5 py-4 ${
@@ -1122,6 +1127,11 @@ export default function AIAssistantPage() {
                           </div>
                         )}
                       </div>
+                      {msg.role === 'assistant' && msg.created_at && (
+                        <span className="self-end text-[11px] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 select-none shrink-0 ml-1 mb-1">
+                          {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                        </span>
+                      )}
                       {msg.role === 'assistant' && msg.content && doneMessageIds.has(msg.id) && (
                         <div className="ml-1 mt-1 flex items-center gap-1 self-end">
                           <button
