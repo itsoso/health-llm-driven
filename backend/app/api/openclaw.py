@@ -317,14 +317,32 @@ async def get_rating_stats(
 import re
 from datetime import date, datetime
 
-_DIET_USER_KEYWORDS = re.compile(r"记录.{0,4}(早餐|午餐|晚餐|加餐|饮食|吃了)", re.IGNORECASE)
-_DIET_AI_CONFIRM = re.compile(r"(已.{0,4}记录|已为你记录|已帮你记录|记录.*✅)", re.IGNORECASE)
 _MEAL_MAP = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack", "宵夜": "snack"}
+
+# 用户必须明确表达"记录某餐 + 食物内容"，排除投诉/询问
+_DIET_RECORD_PATTERN = re.compile(
+    r"记录\s*(早餐|午餐|晚餐|加餐|宵夜)\s*[：:．]?\s*(.+)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ATE_PATTERN = re.compile(
+    r"(?:刚)?吃了\s*[：:．]?\s*(.+)",
+    re.IGNORECASE | re.DOTALL,
+)
+# 排除词：如果消息包含这些词，不是记录意图
+_EXCLUDE_KEYWORDS = ["问题", "没有", "为什么", "怎么", "错误", "bug", "失败", "查询", "查看", "分析"]
 
 
 def _is_diet_record_intent(user_msg: str, ai_reply: str) -> bool:
-    """检测用户意图是记录饮食，且 AI 声称已记录"""
-    return bool(_DIET_USER_KEYWORDS.search(user_msg) and _DIET_AI_CONFIRM.search(ai_reply))
+    """检测用户意图是记录饮食（严格匹配）"""
+    msg = user_msg.strip()
+    # 排除投诉/询问
+    if any(kw in msg for kw in _EXCLUDE_KEYWORDS):
+        return False
+    # 必须匹配"记录午餐：xxx"或"吃了xxx"格式
+    has_record = bool(_DIET_RECORD_PATTERN.search(msg) or _ATE_PATTERN.search(msg))
+    # AI 必须声称已记录
+    ai_confirmed = bool(re.search(r"(已.{0,4}记录|记录.*✅|补记为)", ai_reply))
+    return has_record and ai_confirmed
 
 
 def _detect_meal_type(user_msg: str) -> str:
@@ -344,38 +362,67 @@ def _detect_meal_type(user_msg: str) -> str:
     return "snack"
 
 
-def _extract_food_items(user_msg: str) -> str:
-    """从用户消息提取食物描述"""
-    # 去掉"记录午餐："等前缀
-    cleaned = re.sub(r"^.*?(记录|吃了).{0,4}[：:]?\s*", "", user_msg)
-    return cleaned.strip() or user_msg
+def _extract_food_and_calories(user_msg: str, ai_reply: str) -> tuple[str, float | None]:
+    """从用户消息提取食物描述，从 AI 回复中提取热量"""
+    # 食物：从"记录午餐：xxx"或"吃了xxx"中提取
+    m = _DIET_RECORD_PATTERN.search(user_msg)
+    if m:
+        food = m.group(2).strip()
+    else:
+        m2 = _ATE_PATTERN.search(user_msg)
+        food = m2.group(1).strip() if m2 else user_msg
+    # 清理多余的标点
+    food = re.sub(r"[，。！？]$", "", food).strip()
+
+    # 热量：从 AI 回复中提取 "= 653 kcal" 或 "约550kcal" 或 "热量：400"
+    calories = None
+    cal_match = re.search(r"[=≈约]\s*([\d,.]+)\s*(?:kcal|千卡|大卡|cal)", ai_reply, re.IGNORECASE)
+    if cal_match:
+        try:
+            calories = float(cal_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    if not calories:
+        cal_match2 = re.search(r"([\d,.]+)\s*(?:kcal|千卡)", ai_reply, re.IGNORECASE)
+        if cal_match2:
+            try:
+                calories = float(cal_match2.group(1).replace(",", ""))
+                # 排除太大的数字（可能是总热量统计而非单餐）
+                if calories > 3000:
+                    calories = None
+            except ValueError:
+                pass
+
+    return food, calories
 
 
 def _auto_save_diet_if_missing(db, user_id: int, user_msg: str, ai_reply: str) -> dict | None:
-    """检查今天是否已有对应餐次记录，没有则自动补录"""
+    """检查今天是否已有对应餐次记录，没有则自动补录（含热量）"""
     from app.models.daily_health import DietRecord
+    from datetime import timedelta
 
     meal_type = _detect_meal_type(user_msg)
     today = date.today()
 
-    # 检查今天该餐次是否已有记录（最近 60 秒内创建的跳过，说明 Skill 确实调用了 API）
+    # 检查最近 90 秒内是否已有记录（Skill 可能已调用 API）
     existing = db.query(DietRecord).filter(
         DietRecord.user_id == user_id,
         DietRecord.record_date == today,
         DietRecord.meal_type == meal_type,
-        DietRecord.created_at >= datetime.now() - __import__("datetime").timedelta(seconds=60),
+        DietRecord.created_at >= datetime.now() - timedelta(seconds=90),
     ).first()
 
     if existing:
         return None  # Skill 已经正确记录了
 
-    # 自动补录
-    food_items = _extract_food_items(user_msg)
+    food_items, calories = _extract_food_and_calories(user_msg, ai_reply)
+
     record = DietRecord(
         user_id=user_id,
         record_date=today,
         meal_type=meal_type,
         food_items=food_items,
+        calories=calories,
     )
     db.add(record)
     db.commit()
@@ -385,5 +432,6 @@ def _auto_save_diet_if_missing(db, user_id: int, user_msg: str, ai_reply: str) -
         "id": record.id,
         "meal_type": meal_type,
         "food_items": food_items,
+        "calories": calories,
         "record_date": str(today),
     }
