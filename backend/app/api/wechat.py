@@ -205,10 +205,11 @@ async def wechat_login(
             merged_user_id = pc_user.id
             logger.info(f"✅ 已合并微信用户到PC用户 {pc_user.id}")
         else:
-            # 没有匹配的用户，创建新用户（未审核状态）
+            # 没有匹配的用户，创建新用户
+            # 邀请码已验证有效，自动审核通过
             is_new_user = True
             nickname = login_request.nickname or f"微信用户_{openid[-6:]}"
-            
+
             user = User(
                 wechat_openid=openid,
                 wechat_unionid=unionid,
@@ -216,14 +217,14 @@ async def wechat_login(
                 name=nickname,
                 avatar_url=login_request.avatar_url,
                 is_active=True,
-                is_approved=False,  # 需要管理员审核
+                is_approved=True,  # 邀请码有效，自动审核通过
                 invite_code=login_request.invite_code.upper()
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-            
-            logger.info(f"创建新微信用户: {user.id} ({nickname}), 邀请码: {user.invite_code}, 待审核")
+
+            logger.info(f"创建新微信用户: {user.id} ({nickname}), 邀请码: {user.invite_code}, 自动审核通过")
     else:
         # 已存在的微信用户 - 更新信息
         user.wechat_session_key = session_key

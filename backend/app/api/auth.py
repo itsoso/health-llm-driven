@@ -65,29 +65,46 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
     限流：每小时最多3次注册尝试
     """
     from app.config import settings
-    
-    # 验证邀请码
-    if user_data.invite_code.upper() != settings.default_invite_code.upper():
+    from app.models.invitation import InvitationCode
+
+    # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
+    invite_code_upper = user_data.invite_code.upper()
+    invite_valid = False
+
+    # 查找数据库中的邀请码
+    db_invite = db.query(InvitationCode).filter(
+        InvitationCode.code == invite_code_upper
+    ).first()
+
+    if db_invite and db_invite.is_valid:
+        invite_valid = True
+        db_invite.used_count += 1
+        logger.info(f"使用数据库邀请码: {invite_code_upper}, 已使用 {db_invite.used_count}/{db_invite.max_uses}")
+    elif invite_code_upper == settings.default_invite_code.upper():
+        invite_valid = True
+        logger.info(f"使用默认邀请码: {invite_code_upper}")
+
+    if not invite_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="邀请码错误"
+            detail="邀请码无效或已过期"
         )
-    
+
     # 检查用户名是否已存在
     if auth_service.get_user_by_username(db, user_data.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户名已被注册"
         )
-    
+
     # 检查邮箱是否已存在
     if auth_service.get_user_by_email(db, user_data.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱已被注册"
         )
-    
-    # 创建用户（未审核状态）
+
+    # 创建用户（邀请码有效，自动审核通过）
     user = auth_service.create_user(
         db=db,
         username=user_data.username,
@@ -95,20 +112,23 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
         password=user_data.password,
         name=user_data.name
     )
-    
-    # 设置邀请码和审核状态
-    user.invite_code = user_data.invite_code.upper()
-    user.is_approved = False  # 需要管理员审核
+
+    # 设置邀请码和审核状态 — 有效邀请码自动通过
+    user.invite_code = invite_code_upper
+    user.is_approved = True
     db.commit()
     db.refresh(user)
 
-    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 待审核")
+    logger.info(f"新用户注册: {user.id} ({user.username}), 邀请码: {user.invite_code}, 自动审核通过")
 
-    # 注册成功但不返回token，需要等待审核
+    # 邀请码有效，自动通过，直接返回token
+    access_token = auth_service.create_access_token({"sub": str(user.id)})
     return {
-        "message": "注册成功！请等待管理员审核通过后即可登录。",
+        "message": "注册成功！邀请码验证通过，可以直接使用。",
         "user_id": user.id,
-        "is_approved": False
+        "is_approved": True,
+        "access_token": access_token,
+        "token_type": "bearer"
     }
 
 

@@ -10,6 +10,7 @@ import json
 from app.database import get_db
 from app.models.invitation import InvitationCode, UserApplication, ApplicationStatus
 from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.api.users import get_current_user_required
 from app.services.auth import AuthService
 
@@ -328,9 +329,53 @@ async def submit_application(
         db.rollback()
         raise HTTPException(status_code=400, detail="邀请码已达到使用上限")
 
+    # 邀请码已验证有效，自动创建用户账号并审核通过
+    new_user = User(
+        email=data.email,
+        name=data.name,
+        phone=data.phone,
+        hashed_password=hashed_password,
+        is_active=True,
+        is_approved=True,
+        invite_code=data.invitation_code.upper(),
+    )
+    db.add(new_user)
+    db.flush()  # 获取 user id
+
+    application.status = ApplicationStatus.APPROVED.value
+    application.user_id = new_user.id
+    application.reviewed_at = datetime.now(timezone.utc)
+    application.review_note = "邀请码有效，自动审核通过"
+
+    # 同步健康问卷数据到 UserProfile
+    if data.health_questionnaire:
+        q = data.health_questionnaire
+        from datetime import date as date_type
+        birth_date = None
+        if q.age:
+            # 根据年龄推算大致出生日期
+            today = date_type.today()
+            birth_date = today.replace(year=today.year - q.age)
+
+        profile = UserProfile(
+            user_id=new_user.id,
+            gender=q.gender,
+            birth_date=birth_date,
+            height_cm=q.height_cm,
+            current_weight_kg=q.weight_kg,
+            chronic_conditions=q.chronic_conditions or [],
+            devices=q.wearable_devices or [],
+            exercise_frequency=q.exercise_frequency,
+        )
+        db.add(profile)
+
+        # 同步 gender 到 User 表
+        if q.gender:
+            new_user.gender = q.gender
+
     db.commit()
     db.refresh(application)
-    
+
     return UserApplicationResponse(
         id=application.id,
         email=application.email,
