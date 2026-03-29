@@ -146,6 +146,13 @@ export default function Chat() {
       };
       setMessages(prev => [...prev, aiMsg]);
       setTimeout(() => scrollToBottom(), 50);
+
+      // 饮食自动补录通知
+      if (result.diet_saved && result.diet_data) {
+        const mealNames: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
+        const mealName = mealNames[result.diet_data.meal_type] || '饮食';
+        Taro.showToast({ title: `${mealName}已自动记录`, icon: 'success', duration: 2000 });
+      }
     } catch (e: any) {
       const errorMsg: Message = {
         id: Date.now() + 1,

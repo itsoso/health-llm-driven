@@ -98,6 +98,7 @@ async def stream_message(
     service = OpenClawService(db)
 
     async def generate():
+        full_reply = ""
         try:
             async for event in service.send_message_stream(
                 user_id=current_user.id,
@@ -107,6 +108,16 @@ async def stream_message(
                 image_base64=req.image_base64,
                 image_type=req.image_type or "jpeg",
             ):
+                if event.get("event") == "token":
+                    full_reply += event.get("data", {}).get("content", "")
+                elif event.get("event") == "done":
+                    # 饮食自动补录
+                    if _is_diet_record_intent(message, full_reply):
+                        diet_data = _auto_save_diet_if_missing(db, current_user.id, message, full_reply)
+                        if diet_data:
+                            event["data"]["diet_saved"] = True
+                            event["data"]["diet_data"] = diet_data
+                            logger.info(f"[OpenClaw 流式补录] 用户 {current_user.id} 饮食: {diet_data.get('food_items', '')[:50]}")
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"OpenClaw 流式异常: {e}", exc_info=True)
@@ -172,10 +183,21 @@ async def send_message(
         if not full_reply:
             full_reply = "抱歉，OpenClaw 暂时无法响应，请稍后再试。"
 
+    # 饮食记录自动补录：AI 可能声称"已记录"但实际未调用 API
+    diet_saved = False
+    diet_data = None
+    if full_reply and _is_diet_record_intent(req.message, full_reply):
+        diet_data = _auto_save_diet_if_missing(db, current_user.id, req.message, full_reply)
+        if diet_data:
+            diet_saved = True
+            logger.info(f"[OpenClaw 补录] 用户 {current_user.id} 饮食自动补录成功: {diet_data.get('food_items', '')[:50]}")
+
     return {
         "reply": full_reply,
         "conversation_id": conversation_id,
         "message_id": message_id,
+        "diet_saved": diet_saved,
+        "diet_data": diet_data,
     }
 
 
@@ -287,4 +309,81 @@ async def get_rating_stats(
         "thumbs_up": thumbs_up,
         "thumbs_down": thumbs_down,
         "satisfaction_rate": satisfaction_rate,
+    }
+
+
+# ── 饮食记录自动补录工具函数 ────────────────────────────
+
+import re
+from datetime import date, datetime
+
+_DIET_USER_KEYWORDS = re.compile(r"记录.{0,4}(早餐|午餐|晚餐|加餐|饮食|吃了)", re.IGNORECASE)
+_DIET_AI_CONFIRM = re.compile(r"(已.{0,4}记录|已为你记录|已帮你记录|记录.*✅)", re.IGNORECASE)
+_MEAL_MAP = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack", "宵夜": "snack"}
+
+
+def _is_diet_record_intent(user_msg: str, ai_reply: str) -> bool:
+    """检测用户意图是记录饮食，且 AI 声称已记录"""
+    return bool(_DIET_USER_KEYWORDS.search(user_msg) and _DIET_AI_CONFIRM.search(ai_reply))
+
+
+def _detect_meal_type(user_msg: str) -> str:
+    """从用户消息推断餐次"""
+    for cn, en in _MEAL_MAP.items():
+        if cn in user_msg:
+            return en
+    hour = datetime.now().hour
+    if 5 <= hour < 10:
+        return "breakfast"
+    elif 10 <= hour < 14:
+        return "lunch"
+    elif 14 <= hour < 17:
+        return "snack"
+    elif 17 <= hour < 21:
+        return "dinner"
+    return "snack"
+
+
+def _extract_food_items(user_msg: str) -> str:
+    """从用户消息提取食物描述"""
+    # 去掉"记录午餐："等前缀
+    cleaned = re.sub(r"^.*?(记录|吃了).{0,4}[：:]?\s*", "", user_msg)
+    return cleaned.strip() or user_msg
+
+
+def _auto_save_diet_if_missing(db, user_id: int, user_msg: str, ai_reply: str) -> dict | None:
+    """检查今天是否已有对应餐次记录，没有则自动补录"""
+    from app.models.daily_health import DietRecord
+
+    meal_type = _detect_meal_type(user_msg)
+    today = date.today()
+
+    # 检查今天该餐次是否已有记录（最近 60 秒内创建的跳过，说明 Skill 确实调用了 API）
+    existing = db.query(DietRecord).filter(
+        DietRecord.user_id == user_id,
+        DietRecord.record_date == today,
+        DietRecord.meal_type == meal_type,
+        DietRecord.created_at >= datetime.now() - __import__("datetime").timedelta(seconds=60),
+    ).first()
+
+    if existing:
+        return None  # Skill 已经正确记录了
+
+    # 自动补录
+    food_items = _extract_food_items(user_msg)
+    record = DietRecord(
+        user_id=user_id,
+        record_date=today,
+        meal_type=meal_type,
+        food_items=food_items,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    return {
+        "id": record.id,
+        "meal_type": meal_type,
+        "food_items": food_items,
+        "record_date": str(today),
     }
