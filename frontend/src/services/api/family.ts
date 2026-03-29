@@ -27,6 +27,8 @@ export const familyApi = {
   getReports: (limit?: number) => api.get('/family-health/medical-reports/me', { params: { limit } }),
   getReportDetail: (id: number) => api.get(`/family-health/medical-reports/${id}`),
   getIndicatorTrend: (name: string) => api.get(`/family-health/medical-indicators/trend/${encodeURIComponent(name)}`),
+  compareReports: (reportIds: number[]) => api.get(`/family-health/medical-reports/compare?report_ids=${reportIds.join(',')}`),
+  getIndicatorAnalysis: (category?: string) => api.get(`/family-health/medical-indicators/analysis${category ? '?category=' + category : ''}`),
 
   // 用药
   recognizeMedication: (imageBase64: string) => api.post('/family-health/medications/recognize', { image_base64: imageBase64 }),

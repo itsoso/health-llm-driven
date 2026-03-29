@@ -4,13 +4,14 @@ import logging
 from datetime import date, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.database import get_db
 from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.models.family_health import MedicalReport, MedicalIndicator, ReviewSchedule
 from app.models.medication import Medication, MedicationLog
 from app.api.deps import get_current_user_required
@@ -159,6 +160,249 @@ async def get_indicator_trend(
             "reference_high": r.reference_high,
         } for r in records],
         "total_records": len(records),
+    }
+
+
+# ══════════════════════════════════════════════════════════
+# 多报告对比 & 趋势分析
+# ══════════════════════════════════════════════════════════
+
+@router.get("/medical-reports/compare", summary="多份体检报告对比", tags=["medical-reports"])
+async def compare_reports(
+    report_ids: str = Query(..., description="逗号分隔的报告 ID，如 '1,2,3'"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    对比多份体检报告，分析各指标变化趋势。
+    按报告日期排序，计算每个指标的改善/恶化/稳定情况。
+    """
+    # 解析 report_ids
+    try:
+        id_list = [int(rid.strip()) for rid in report_ids.split(",") if rid.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="report_ids 格式错误，需逗号分隔的整数")
+
+    if len(id_list) < 2:
+        raise HTTPException(status_code=400, detail="至少需要 2 份报告才能对比")
+    if len(id_list) > 10:
+        raise HTTPException(status_code=400, detail="最多支持 10 份报告对比")
+
+    # 查询报告并验证归属
+    reports = db.query(MedicalReport).filter(
+        MedicalReport.id.in_(id_list),
+        MedicalReport.user_id == current_user.id,
+    ).order_by(MedicalReport.report_date).all()
+
+    if len(reports) != len(id_list):
+        found_ids = {r.id for r in reports}
+        missing = [rid for rid in id_list if rid not in found_ids]
+        raise HTTPException(status_code=404, detail=f"报告不存在或无权访问: {missing}")
+
+    report_id_set = {r.id for r in reports}
+    report_date_map = {r.id: str(r.report_date) for r in reports}
+
+    # 查询所有相关指标
+    indicators = db.query(MedicalIndicator).filter(
+        MedicalIndicator.report_id.in_(id_list),
+        MedicalIndicator.user_id == current_user.id,
+    ).order_by(MedicalIndicator.record_date).all()
+
+    # 按指标名称分组
+    indicator_groups = {}
+    for ind in indicators:
+        if ind.name not in indicator_groups:
+            indicator_groups[ind.name] = []
+        indicator_groups[ind.name].append(ind)
+
+    # 构建对比结果
+    indicators_result = {}
+    improved = []
+    worsened = []
+    stable = []
+    new_abnormal = []
+
+    for name, records in indicator_groups.items():
+        values = []
+        for rec in records:
+            values.append({
+                "report_id": rec.report_id,
+                "date": str(rec.record_date),
+                "value": rec.value,
+                "unit": rec.unit,
+                "is_abnormal": rec.is_abnormal,
+            })
+
+        # 计算趋势：比较首末记录
+        trend = "stable"
+        change = None
+        if len(records) >= 2:
+            first_val = records[0].value
+            last_val = records[-1].value
+            first_abnormal = records[0].is_abnormal
+            last_abnormal = records[-1].is_abnormal
+
+            if first_val and first_val != 0:
+                pct = ((last_val - first_val) / abs(first_val)) * 100
+                change = f"{pct:+.0f}%" if abs(pct) >= 1 else "0%"
+
+                # 判断趋势方向
+                if last_abnormal and not first_abnormal:
+                    trend = "worsening"
+                elif first_abnormal and not last_abnormal:
+                    trend = "improving"
+                elif first_abnormal and last_abnormal:
+                    # 都异常时，看参考范围方向
+                    ref_low = records[0].reference_low
+                    ref_high = records[0].reference_high
+                    if ref_high is not None and first_val > ref_high:
+                        # 偏高类指标，值降低=改善
+                        trend = "improving" if last_val < first_val else "worsening"
+                    elif ref_low is not None and first_val < ref_low:
+                        # 偏低类指标，值升高=改善
+                        trend = "improving" if last_val > first_val else "worsening"
+                    else:
+                        trend = "stable"
+                else:
+                    trend = "stable"
+
+            # 分类
+            if trend == "improving":
+                improved.append(name)
+            elif trend == "worsening":
+                worsened.append(name)
+            else:
+                stable.append(name)
+
+            # 新增异常：第一份正常，最后一份异常
+            if not first_abnormal and last_abnormal:
+                new_abnormal.append(name)
+
+        indicators_result[name] = {
+            "values": values,
+            "trend": trend,
+            "change": change,
+        }
+
+    return {
+        "reports": [{
+            "id": r.id,
+            "report_date": str(r.report_date),
+            "hospital": r.hospital,
+            "title": r.title,
+            "report_type": r.report_type,
+        } for r in reports],
+        "indicators": indicators_result,
+        "summary": {
+            "improved": improved,
+            "worsened": worsened,
+            "stable": stable,
+            "new_abnormal": new_abnormal,
+        },
+    }
+
+
+@router.get("/medical-indicators/analysis", summary="指标分类趋势分析", tags=["medical-reports"])
+async def get_indicators_analysis(
+    category: Optional[str] = Query(None, description="指标分类：blood/liver/kidney/lipid/glucose/thyroid/other"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    按分类聚合指标趋势数据。返回每个指标的历史值、当前状态、异常持续时间和严重度趋势。
+    不传 category 则返回全部分类。
+    """
+    query = db.query(MedicalIndicator).filter(
+        MedicalIndicator.user_id == current_user.id,
+    )
+    if category:
+        query = query.filter(MedicalIndicator.category == category)
+
+    records = query.order_by(MedicalIndicator.name, MedicalIndicator.record_date).all()
+
+    if not records:
+        return {
+            "category": category,
+            "indicators": [],
+        }
+
+    # 按指标名分组
+    grouped = {}
+    for rec in records:
+        if rec.name not in grouped:
+            grouped[rec.name] = []
+        grouped[rec.name].append(rec)
+
+    indicators_result = []
+    for name, recs in grouped.items():
+        latest = recs[-1]
+        history = [{
+            "date": str(r.record_date),
+            "value": r.value,
+            "is_abnormal": r.is_abnormal,
+        } for r in recs]
+
+        # 计算异常持续月数
+        months_abnormal = 0
+        if latest.is_abnormal and len(recs) >= 2:
+            # 从最近记录往前找，连续异常的时间跨度
+            for i in range(len(recs) - 1, -1, -1):
+                if recs[i].is_abnormal:
+                    months_abnormal = (latest.record_date - recs[i].record_date).days // 30
+                else:
+                    break
+            # 至少算1个月（如果最新异常）
+            if months_abnormal == 0 and latest.is_abnormal:
+                months_abnormal = 1
+
+        # 严重度趋势
+        severity_order = {"normal": 0, "mild": 1, "moderate": 2, "severe": 3}
+        severity_trend = "stable"
+        if len(recs) >= 2:
+            first_sev = severity_order.get(recs[0].severity or "normal", 0)
+            last_sev = severity_order.get(latest.severity or "normal", 0)
+            if last_sev > first_sev:
+                severity_trend = "increasing"
+            elif last_sev < first_sev:
+                severity_trend = "decreasing"
+
+        # 整体值趋势
+        trend = "stable"
+        if len(recs) >= 2:
+            first_val = recs[0].value
+            last_val = latest.value
+            if first_val and first_val != 0:
+                pct = ((last_val - first_val) / abs(first_val)) * 100
+                if latest.is_abnormal and recs[0].is_abnormal:
+                    ref_high = recs[0].reference_high
+                    ref_low = recs[0].reference_low
+                    if ref_high is not None and first_val > ref_high:
+                        trend = "improving" if last_val < first_val else "worsening"
+                    elif ref_low is not None and first_val < ref_low:
+                        trend = "improving" if last_val > first_val else "worsening"
+                elif not recs[0].is_abnormal and latest.is_abnormal:
+                    trend = "worsening"
+                elif recs[0].is_abnormal and not latest.is_abnormal:
+                    trend = "improving"
+
+        indicators_result.append({
+            "name": name,
+            "category": latest.category,
+            "current_value": latest.value,
+            "unit": latest.unit,
+            "is_abnormal": latest.is_abnormal,
+            "reference_low": latest.reference_low,
+            "reference_high": latest.reference_high,
+            "trend": trend,
+            "history": history,
+            "months_abnormal": months_abnormal,
+            "severity_trend": severity_trend,
+            "total_records": len(recs),
+        })
+
+    return {
+        "category": category,
+        "indicators": indicators_result,
     }
 
 
@@ -618,12 +862,68 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
                 except Exception as e:
                     logger.warning(f"报告 {report_id} AI 总结失败: {e}")
 
+            # AI 建议（基于异常指标 + 用户画像）
+            ai_suggestions_list = []
+            if abnormal_items:
+                try:
+                    # 获取用户画像信息
+                    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                    user_context = ""
+                    if profile:
+                        age = profile.age
+                        gender_map = {"male": "男性", "female": "女性", "other": "其他"}
+                        gender = gender_map.get(profile.gender, "未知")
+                        parts = []
+                        if age:
+                            parts.append(f"年龄：{age}岁")
+                        if profile.gender:
+                            parts.append(f"性别：{gender}")
+                        if profile.chronic_conditions:
+                            parts.append(f"慢性病史：{', '.join(profile.chronic_conditions)}")
+                        if profile.family_history:
+                            parts.append(f"家族病史：{', '.join(profile.family_history)}")
+                        if parts:
+                            user_context = f"\n\n患者信息：{'; '.join(parts)}"
+
+                    suggestions_msg = [
+                        {"role": "system", "content": (
+                            "你是资深临床医学专家。根据以下体检异常指标，为每个异常项生成具体的就医建议。"
+                            "必须返回 JSON 数组格式，每个元素包含：\n"
+                            '{"indicator": "指标名称", "status": "偏高/偏低/异常", '
+                            '"risk": "具体风险描述", "action": "具体可执行的建议（饮食、运动、生活方式）", '
+                            '"timeline": "复查时间建议", "specialist": "推荐就诊科室"}\n\n'
+                            "要求：\n"
+                            "1. 建议必须具体可执行，不要泛泛而谈\n"
+                            "2. 结合患者个人信息（如有）给出个性化建议\n"
+                            "3. 风险描述要准确，不夸大也不淡化\n"
+                            "4. 只返回 JSON 数组，不要其他文字"
+                        )},
+                        {"role": "user", "content": (
+                            f"异常指标：{json.dumps(abnormal_items, ensure_ascii=False)}"
+                            f"{user_context}"
+                        )},
+                    ]
+                    suggestions_resp = loop.run_until_complete(llm.chat(suggestions_msg, temperature=0.3))
+
+                    text = suggestions_resp.strip()
+                    if text.startswith("```"):
+                        text = text.split("```")[1].strip()
+                        if text.startswith("json"):
+                            text = text[4:].strip()
+                    ai_suggestions_list = json.loads(text)
+                    if not isinstance(ai_suggestions_list, list):
+                        ai_suggestions_list = []
+                    logger.info(f"报告 {report_id} AI 生成 {len(ai_suggestions_list)} 条建议")
+                except Exception as e:
+                    logger.warning(f"报告 {report_id} AI 建议生成失败: {e}")
+
             loop.close()
 
             # 更新报告
             report.extracted_items = extracted_items
             report.abnormal_items = abnormal_items
             report.ai_summary = ai_summary
+            report.ai_suggestions = ai_suggestions_list
             report.status = "completed"
 
             # 写入指标时间线
