@@ -539,26 +539,34 @@ class GarminConnectService:
             ).first()
 
             if cred:
-                cred.error_count = (cred.error_count or 0) + 1
                 cred.last_error = error_msg[:500] if error_msg else None
-                cred.credentials_valid = False
 
                 is_rate_limited = '429' in (error_msg or '') or 'Too Many Requests' in (error_msg or '')
+                is_cloudflare = 'cloudflare' in (error_msg or '').lower() or 'challenge' in (error_msg or '').lower()
 
-                # 429 立即锁定，其他错误达到阈值后锁定
-                should_lock = is_rate_limited or cred.error_count >= LOGIN_FAIL_THRESHOLD
-                if should_lock:
-                    # 指数退避：根据累计失败次数选择锁定时长
-                    lock_index = min(cred.error_count - 1, len(LOGIN_LOCK_MINUTES_SCHEDULE) - 1)
-                    lock_minutes = LOGIN_LOCK_MINUTES_SCHEDULE[lock_index]
+                if is_rate_limited or is_cloudflare:
+                    # Cloudflare/429: 短锁定但不累加 error_count（不是密码错误）
+                    lock_minutes = 30
                     lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
                     cred.login_locked_until = lock_until
+                    # 保持 credentials_valid=True（密码没错，只是被限流）
                     logger.warning(
-                        f"{prefix} ⚠️ {'429限流' if is_rate_limited else '登录失败'}，"
-                        f"累计失败 {cred.error_count} 次，锁定 {lock_minutes} 分钟到 {lock_until}"
+                        f"{prefix} ⚠️ Cloudflare/429 限流，锁定 {lock_minutes} 分钟（不累加错误计数）"
                     )
                 else:
-                    logger.info(f"{prefix} 登录失败，当前失败次数: {cred.error_count}/{LOGIN_FAIL_THRESHOLD}")
+                    # 真正的登录失败（密码错、账号问题等）
+                    cred.error_count = (cred.error_count or 0) + 1
+                    cred.credentials_valid = False
+                    if cred.error_count >= LOGIN_FAIL_THRESHOLD:
+                        lock_index = min(cred.error_count - 1, len(LOGIN_LOCK_MINUTES_SCHEDULE) - 1)
+                        lock_minutes = LOGIN_LOCK_MINUTES_SCHEDULE[lock_index]
+                        lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
+                        cred.login_locked_until = lock_until
+                        logger.warning(
+                            f"{prefix} ⚠️ 登录失败，累计 {cred.error_count} 次，锁定 {lock_minutes} 分钟"
+                        )
+                    else:
+                        logger.info(f"{prefix} 登录失败，当前失败次数: {cred.error_count}/{LOGIN_FAIL_THRESHOLD}")
 
                 db.commit()
         except Exception as e:

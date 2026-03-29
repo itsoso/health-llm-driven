@@ -160,7 +160,8 @@ async def get_performance_overview(
     获取性能概览
     需要管理员权限
     """
-    # TODO: 添加管理员权限检查
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     
     start_time = datetime.now() - timedelta(hours=hours)
     

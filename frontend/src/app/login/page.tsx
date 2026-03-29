@@ -17,6 +17,7 @@ function LoginForm() {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showResetHint, setShowResetHint] = useState(false);
 
   // 如果已登录，重定向到目标页面
   if (isAuthenticated) {
@@ -101,7 +102,22 @@ function LoginForm() {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowResetHint(prev => !prev)}
+              className="text-sm text-gray-400 hover:text-indigo-600 transition"
+            >
+              忘记密码？
+            </button>
+            {showResetHint && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                请联系管理员重置密码，或通过微信小程序使用微信登录。
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 text-center">
             <p className="text-gray-600">
               还没有账号？{' '}
               <Link href="/register" className="text-indigo-600 hover:text-indigo-700 font-semibold">
