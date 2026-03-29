@@ -34,8 +34,8 @@ def send_sleep_reminders():
     with SessionLocal() as db:
         # 获取启用了睡眠提醒的用户
         settings_list = db.query(UserNotificationSetting).filter(
-            UserNotificationSetting.enable_sleep_reminder == True,
-            UserNotificationSetting.enable_push_notifications == True
+            UserNotificationSetting.reminder_enabled == True,
+            UserNotificationSetting.enabled == True
         ).all()
         
         push_service = PushService(db)
