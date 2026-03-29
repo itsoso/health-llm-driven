@@ -14,12 +14,19 @@
 
 set -euo pipefail
 
-# 配置
-DB_NAME="health_db"
-DB_USER="health_user"
+# 配置（从 .env 读取或使用默认值）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/../.env"
+
+if [ -f "$ENV_FILE" ]; then
+    DATABASE_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
+fi
+DATABASE_URL="${DATABASE_URL:-postgresql://health_user:health2026@localhost:5432/health_db}"
+
 BACKUP_DIR="/opt/health-app/backups"
-KEEP_DAYS=7
+KEEP_DAYS=30
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
+DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||')
 BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.sql.gz"
 
 # 确保备份目录存在
@@ -27,8 +34,8 @@ mkdir -p "$BACKUP_DIR"
 
 echo "[$(date)] 开始备份 ${DB_NAME}..."
 
-# 执行备份（压缩）
-if pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_FILE"; then
+# 执行备份（压缩，使用 DATABASE_URL 连接）
+if pg_dump "$DATABASE_URL" | gzip > "$BACKUP_FILE"; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "[$(date)] ✅ 备份成功: ${BACKUP_FILE} (${SIZE})"
 else
