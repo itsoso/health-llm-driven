@@ -86,6 +86,166 @@ class VariantResponse(BaseModel):
 
 
 # ══════════════════════════════════════════════════════════
+# PDF 上传 + AI 自动提取
+# ══════════════════════════════════════════════════════════
+
+class GeneticPdfUploadRequest(BaseModel):
+    test_provider: str = Field(..., description="检测机构")
+    test_date: date = Field(..., description="检测日期")
+    pdf_base64: str = Field(..., description="PDF 文件 base64")
+    notes: Optional[str] = None
+
+
+@router.post("/profiles/upload-pdf", summary="上传基因检测 PDF，AI 自动提取基因位点")
+def upload_genetic_pdf(
+    req: GeneticPdfUploadRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """上传基因检测 PDF 报告，AI 后台异步提取基因位点数据"""
+    # 1. 创建档案
+    profile = GeneticProfile(
+        user_id=current_user.id,
+        test_provider=req.test_provider,
+        test_date=req.test_date,
+        notes=req.notes or "PDF 自动提取",
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    # 2. 后台提取
+    import threading
+    threading.Thread(
+        target=_extract_genetic_from_pdf,
+        args=(profile.id, current_user.id, req.pdf_base64),
+        daemon=True,
+    ).start()
+
+    return {
+        "id": profile.id,
+        "status": "processing",
+        "message": "PDF 已上传，AI 正在后台提取基因位点...",
+    }
+
+
+def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
+    """后台线程：PDF → 图片 → LLM 提取基因位点 → 保存"""
+    import asyncio
+    import json
+    import base64
+    import re
+
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        # PDF 转图片
+        from app.api.family_health import _pdf_to_images_base64
+        images = _pdf_to_images_base64(pdf_base64)
+        logger.info(f"[基因PDF] profile={profile_id} PDF 转换为 {len(images)} 页")
+
+        all_variants = []
+
+        # 逐页 LLM 提取
+        from app.services.llm_provider import get_llm_provider
+        import time
+
+        prompt = """请从这份基因检测报告页面中提取所有基因位点信息。
+
+对每个基因位点，返回 JSON 数组：
+```json
+[
+  {
+    "category": "nutrition/exercise/drug_sensitivity/disease_risk/sleep/other",
+    "gene_name": "基因名称（如 MTHFR）",
+    "variant_name": "变异位点（如 C677T）",
+    "genotype": "检测结果（如 CT）",
+    "result_label": "中文结果描述（如 叶酸代谢轻度减弱）",
+    "risk_level": "low/medium/high/info",
+    "description": "简短说明"
+  }
+]
+```
+
+category 分类规则：
+- nutrition: 营养代谢相关（叶酸、咖啡因、乳糖、酒精、维生素等）
+- exercise: 运动能力相关（肌肉类型、耐力、有氧能力等）
+- drug_sensitivity: 药物敏感性（药物代谢酶、过敏风险等）
+- disease_risk: 疾病风险（心血管、糖尿病、肿瘤等）
+- sleep: 睡眠相关（昼夜节律、深度睡眠等）
+- other: 其他
+
+如果页面中没有基因位点信息，返回空数组 []。只返回 JSON，不要其他文字。"""
+
+        provider = get_llm_provider()
+
+        for i, img_b64 in enumerate(images):
+            try:
+                # 压缩图片
+                from app.services.openclaw_service import OpenClawService
+                compressed = OpenClawService._compress_image_static(img_b64)
+
+                loop = asyncio.new_event_loop()
+                result = loop.run_until_complete(
+                    provider.chat_with_vision(prompt, compressed, "jpeg")
+                )
+                loop.close()
+
+                # 解析 JSON
+                text = result if isinstance(result, str) else str(result)
+                json_match = re.search(r'\[.*\]', text, re.DOTALL)
+                if json_match:
+                    variants = json.loads(json_match.group())
+                    all_variants.extend(variants)
+                    logger.info(f"[基因PDF] 第{i+1}页提取到 {len(variants)} 个位点")
+
+                time.sleep(2)  # 限流
+            except Exception as e:
+                logger.warning(f"[基因PDF] 第{i+1}页提取失败: {e}")
+                continue
+
+        # 保存提取的位点
+        saved = 0
+        for v in all_variants:
+            try:
+                variant = GeneticVariant(
+                    user_id=user_id,
+                    profile_id=profile_id,
+                    category=v.get("category", "other"),
+                    gene_name=v.get("gene_name", ""),
+                    variant_name=v.get("variant_name", ""),
+                    genotype=v.get("genotype", ""),
+                    result_label=v.get("result_label", ""),
+                    risk_level=v.get("risk_level", "info"),
+                    description=v.get("description", ""),
+                )
+                db.add(variant)
+                saved += 1
+            except Exception as e:
+                logger.warning(f"[基因PDF] 保存位点失败: {e}")
+
+        # 更新档案备注
+        profile = db.query(GeneticProfile).get(profile_id)
+        if profile:
+            profile.notes = f"PDF 自动提取完成，共 {saved} 个位点"
+        db.commit()
+        logger.info(f"[基因PDF] profile={profile_id} 完成，提取 {saved} 个位点")
+
+    except Exception as e:
+        logger.error(f"[基因PDF] profile={profile_id} 处理失败: {e}", exc_info=True)
+        try:
+            profile = db.query(GeneticProfile).get(profile_id)
+            if profile:
+                profile.notes = f"PDF 提取失败: {str(e)[:100]}"
+            db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════
 # 基因档案 CRUD
 # ══════════════════════════════════════════════════════════
 

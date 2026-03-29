@@ -136,6 +136,8 @@ function GeneticContent() {
   const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
   const [selectedGenotype, setSelectedGenotype] = useState<string | null>(null);
   const [showProfileForm, setShowProfileForm] = useState(false);
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState('');
   const [profileForm, setProfileForm] = useState({ test_provider: '', test_date: '', report_id: '', notes: '' });
   const [crossAnalysis, setCrossAnalysis] = useState<string | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -267,18 +269,87 @@ function GeneticContent() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
               </div>
             </div>
+            {/* PDF 上传区 */}
+            <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+              <p className="text-sm font-medium text-gray-700 mb-2">📄 上传 PDF 报告（可选）</p>
+              <p className="text-xs text-gray-500 mb-3">上传基因检测 PDF，AI 自动提取所有基因位点。也可以跳过，稍后手动录入。</p>
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (!profileForm.test_provider || !profileForm.test_date) {
+                    alert('请先选择检测机构和日期');
+                    return;
+                  }
+                  const reader = new FileReader();
+                  reader.onload = async () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    setPdfUploading(true);
+                    try {
+                      const res = await api.post('/genetic/profiles/upload-pdf', {
+                        test_provider: profileForm.test_provider,
+                        test_date: profileForm.test_date,
+                        pdf_base64: base64,
+                        notes: profileForm.notes,
+                      });
+                      setPdfStatus(`正在提取... (ID: ${res.data.id})`);
+                      // 轮询状态
+                      const pollId = res.data.id;
+                      const poll = setInterval(async () => {
+                        try {
+                          const detail = await api.get(`/genetic/profiles/${pollId}`);
+                          const variants = detail.data.variants || [];
+                          if (variants.length > 0 || (detail.data.notes && detail.data.notes.includes('完成'))) {
+                            clearInterval(poll);
+                            setPdfUploading(false);
+                            setPdfStatus(`提取完成！发现 ${variants.length} 个基因位点`);
+                            setShowProfileForm(false);
+                            queryClient.invalidateQueries({ queryKey: ['genetic-profiles'] });
+                            queryClient.invalidateQueries({ queryKey: ['genetic-variants'] });
+                          } else if (detail.data.notes && detail.data.notes.includes('失败')) {
+                            clearInterval(poll);
+                            setPdfUploading(false);
+                            setPdfStatus('提取失败: ' + detail.data.notes);
+                          }
+                        } catch { /* continue polling */ }
+                      }, 3000);
+                      // 最多轮询 5 分钟
+                      setTimeout(() => { clearInterval(poll); setPdfUploading(false); }, 300000);
+                    } catch (err: any) {
+                      setPdfUploading(false);
+                      setPdfStatus('上传失败: ' + (err.response?.data?.detail || err.message));
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                }}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+                disabled={pdfUploading}
+              />
+              {pdfUploading && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-teal-700">
+                  <div className="animate-spin h-4 w-4 border-2 border-teal-500 border-t-transparent rounded-full" />
+                  {pdfStatus || 'AI 正在提取基因位点...'}
+                </div>
+              )}
+              {!pdfUploading && pdfStatus && (
+                <p className="mt-2 text-sm text-teal-700">{pdfStatus}</p>
+              )}
+            </div>
+
             <div className="flex gap-2 mt-4">
               <button onClick={() => createProfileMutation.mutate(profileForm)}
-                disabled={!profileForm.test_provider || !profileForm.test_date || createProfileMutation.isPending}
+                disabled={!profileForm.test_provider || !profileForm.test_date || createProfileMutation.isPending || pdfUploading}
                 className="px-5 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition">
-                {createProfileMutation.isPending ? '保存中...' : '保存档案'}
+                {createProfileMutation.isPending ? '保存中...' : '手动录入模式'}
               </button>
               <button onClick={() => setShowProfileForm(false)}
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
                 取消
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-3">保存后，在下方各分类标签中选择你报告中对应的基因位点结果。</p>
+            <p className="text-xs text-gray-400 mt-3">上传 PDF 自动提取，或点"手动录入模式"逐项选择。</p>
           </div>
         )}
 
