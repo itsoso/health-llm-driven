@@ -110,7 +110,7 @@ export default function OnboardingPage() {
         selected_template_names: Array.from(selectedTemplates),
       });
       await refreshUser();
-      router.replace('/dashboard');
+      setStep(4); // 进入探索页
     } catch {
       showToast('完成引导失败，请重试', 'error');
     } finally {
@@ -147,18 +147,20 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-8">
         {/* Progress */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          {[1, 2, 3].map(s => (
-            <div key={s} className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                s === step ? 'bg-indigo-600 text-white' : s < step ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
-              }`}>
-                {s < step ? '✓' : s}
+        {step <= 3 && (
+          <div className="flex items-center justify-center gap-2 mb-8">
+            {[1, 2, 3].map(s => (
+              <div key={s} className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  s === step ? 'bg-indigo-600 text-white' : s < step ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
+                }`}>
+                  {s < step ? '✓' : s}
+                </div>
+                {s < 3 && <div className={`w-8 h-0.5 ${s < step ? 'bg-green-500' : 'bg-gray-200'}`} />}
               </div>
-              {s < 3 && <div className={`w-8 h-0.5 ${s < step ? 'bg-green-500' : 'bg-gray-200'}`} />}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Step 1: Basic Info */}
         {step === 1 && (
@@ -375,12 +377,82 @@ export default function OnboardingPage() {
           </div>
         )}
 
+        {/* Step 4: 开始探索 */}
+        {step === 4 && (
+          <div>
+            <div className="text-center mb-6">
+              <div className="text-4xl mb-3">🎉</div>
+              <h2 className="text-xl font-bold mb-2">设置完成！</h2>
+              <p className="text-gray-500 text-sm">接下来，连接你的数据让 AI 更懂你</p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => router.push('/settings#garmin')}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition text-left"
+              >
+                <span className="text-2xl">⌚</span>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900">连接 Garmin 手表</div>
+                  <div className="text-xs text-gray-500">自动同步运动、睡眠、心率数据</div>
+                </div>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => router.push('/family/reports')}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition text-left"
+              >
+                <span className="text-2xl">📋</span>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900">上传体检报告</div>
+                  <div className="text-xs text-gray-500">AI 智能分析异常指标和健康趋势</div>
+                </div>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => router.push('/ai-assistant')}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition text-left"
+              >
+                <span className="text-2xl">🤖</span>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900">和 AI 助理对话</div>
+                  <div className="text-xs text-gray-500">问任何健康问题，获取个性化建议</div>
+                </div>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => router.push('/diet')}
+                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition text-left"
+              >
+                <span className="text-2xl">🍽️</span>
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900">记录饮食</div>
+                  <div className="text-xs text-gray-500">拍照识别食物，AI 计算热量</div>
+                </div>
+                <span className="text-gray-400">→</span>
+              </button>
+            </div>
+
+            <button
+              onClick={() => router.replace('/dashboard')}
+              className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700"
+            >
+              进入主页
+            </button>
+          </div>
+        )}
+
         {/* Skip link */}
-        <div className="mt-4 text-center">
-          <button onClick={handleSkip} className="text-xs text-gray-400 hover:text-gray-600">
-            跳过引导，稍后设置
-          </button>
-        </div>
+        {step <= 3 && (
+          <div className="mt-4 text-center">
+            <button onClick={handleSkip} className="text-xs text-gray-400 hover:text-gray-600">
+              跳过引导，稍后设置
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
