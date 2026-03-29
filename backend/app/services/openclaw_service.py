@@ -401,6 +401,82 @@ class OpenClawService:
         except Exception as e:
             return f"获取状态失败: {e}"
 
+    # ── 食物图片自动保存 ──────────────────────────────────
+
+    def _try_auto_save_diet(self, user_id: int, user_msg: str, ai_reply: str) -> Optional[dict]:
+        """如果用户发了食物图片且 AI 回复包含营养信息，自动保存饮食记录（best-effort）"""
+        import re as _re
+        from datetime import date as _date, datetime as _dt, timedelta as _td
+
+        # 检测 AI 回复中是否包含食物/营养关键词
+        food_keywords = ["kcal", "热量", "蛋白质", "碳水", "千卡", "大卡", "卡路里"]
+        if not any(kw in ai_reply for kw in food_keywords):
+            return None
+
+        try:
+            from app.models.daily_health import DietRecord
+
+            # 推断餐次
+            hour = _dt.now().hour
+            if 5 <= hour < 10:
+                meal_type = "breakfast"
+            elif 10 <= hour < 14:
+                meal_type = "lunch"
+            elif 14 <= hour < 17:
+                meal_type = "snack"
+            elif 17 <= hour < 21:
+                meal_type = "dinner"
+            else:
+                meal_type = "snack"
+
+            today = _date.today()
+
+            # 检查最近 90 秒是否已有同类记录（避免重复）
+            existing = self.db.query(DietRecord).filter(
+                DietRecord.user_id == user_id,
+                DietRecord.record_date == today,
+                DietRecord.meal_type == meal_type,
+                DietRecord.created_at >= _dt.now() - _td(seconds=90),
+            ).first()
+            if existing:
+                return None
+
+            # 提取食物描述（取 AI 回复前 200 字符作为摘要）
+            food_items = ai_reply[:200].replace("\n", " ").strip()
+
+            # 提取热量
+            calories = None
+            cal_match = _re.search(r"[=≈约共合计总]?\s*([\d,.]+)\s*(?:kcal|千卡|大卡|cal|卡路里)", ai_reply, _re.IGNORECASE)
+            if cal_match:
+                try:
+                    val = float(cal_match.group(1).replace(",", ""))
+                    if val <= 3000:
+                        calories = val
+                except ValueError:
+                    pass
+
+            record = DietRecord(
+                user_id=user_id,
+                record_date=today,
+                meal_type=meal_type,
+                food_items=food_items,
+                calories=calories,
+            )
+            self.db.add(record)
+            self.db.commit()
+            self.db.refresh(record)
+
+            logger.info(f"食物图片自动保存: user={user_id}, meal={meal_type}, cal={calories}")
+            return {
+                "id": record.id,
+                "meal_type": meal_type,
+                "food_items": food_items[:80],
+                "calories": calories,
+            }
+        except Exception as e:
+            logger.warning(f"食物图片自动保存失败: {e}")
+            return None
+
     # ── 提醒检测 ──────────────────────────────────────────
 
     async def _try_create_reminder(self, user_id: int, user_msg: str, ai_reply: str):
@@ -594,7 +670,15 @@ AI: {ai_reply}
         except Exception as e:
             logger.warning(f"OpenClaw 提醒检测失败: {e}")
 
-        # 6.6 提取对话记忆（用户偏好、医嘱、过敏等持久性事实）
+        # 6.6 食物图片自动保存
+        diet_auto_saved = None
+        if image_base64:
+            try:
+                diet_auto_saved = self._try_auto_save_diet(user_id, message, full_reply)
+            except Exception as e:
+                logger.warning(f"食物图片自动保存异常: {e}")
+
+        # 6.7 提取对话记忆（用户偏好、医嘱、过敏等持久性事实）
         try:
             from app.services.conversation_memory_service import extract_memories
             extract_memories(message, full_reply, user_id, conv.id, self.db)
@@ -622,10 +706,13 @@ AI: {ai_reply}
             logger.warning(f"记录隐式反馈失败: {e}")
 
         # 9. done 事件
+        done_data = {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+        }
+        if diet_auto_saved:
+            done_data["diet_auto_saved"] = diet_auto_saved
         yield {
             "event": "done",
-            "data": {
-                "conversation_id": conv.id,
-                "message_id": ai_msg.id,
-            },
+            "data": done_data,
         }
