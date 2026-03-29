@@ -252,19 +252,19 @@ function GeneticContent() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">检测日期 *</label>
                 <input type="date" value={profileForm.test_date}
                   onChange={e => setProfileForm({...profileForm, test_date: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">报告编号</label>
                 <input type="text" placeholder="选填" value={profileForm.report_id}
                   onChange={e => setProfileForm({...profileForm, report_id: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">备注</label>
                 <input type="text" placeholder="选填" value={profileForm.notes}
                   onChange={e => setProfileForm({...profileForm, notes: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
               </div>
             </div>
             <div className="flex gap-2 mt-4">
