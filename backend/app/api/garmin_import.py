@@ -35,7 +35,16 @@ class DailySummary(BaseModel):
     light_sleep_duration: Optional[int] = None
     awake_duration: Optional[int] = None
     hrv: Optional[int] = None
-    spo2_avg: Optional[int] = None
+    spo2_avg: Optional[float] = None
+    spo2_min: Optional[float] = None
+    spo2_max: Optional[float] = None
+    moderate_intensity_minutes: Optional[int] = None
+    vigorous_intensity_minutes: Optional[int] = None
+    intensity_minutes_goal: Optional[int] = None
+    lowest_respiration: Optional[float] = None
+    highest_respiration: Optional[float] = None
+    avg_respiration_awake: Optional[float] = None
+    avg_respiration_sleep: Optional[float] = None
 
 
 class ActivityData(BaseModel):
