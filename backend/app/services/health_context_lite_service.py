@@ -12,7 +12,7 @@ import time
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ OPENCLAW_HEALTH_SYSTEM_RULES = """你是用户的 AI 健康助理，能通过 Sk
 | 补剂推荐/服用提醒/交互检查 | supplement-advisor | "推荐补剂" |
 | 周计划生成/今日计划/完成追踪 | weekly-planner | "帮我制定本周计划" |
 | 天气/空气质量/户外运动适宜度/早间简报 | environment-health | "今天空气质量如何" |
+| 基因数据查询/基因风险分析/营养运动药物基因交叉分析 | genetic-analysis | "我的基因检测结果" |
 
 ## 行为准则
 
@@ -513,6 +514,21 @@ def _build_context(db: Session, user_id: int) -> str:
         ).first()
         if current_plan and current_plan.completion_pct is not None:
             parts.append(f"本周计划完成度: {current_plan.completion_pct:.0f}%")
+    except Exception:
+        pass
+
+    # ── 13. 基因特征 ────────────────────────────────────
+    try:
+        from app.models.genetic_data import GeneticVariant
+        genetic_variants = db.query(GeneticVariant).filter(
+            GeneticVariant.user_id == user_id
+        ).order_by(
+            case((GeneticVariant.risk_level == "high", 0), (GeneticVariant.risk_level == "medium", 1), else_=2)
+        ).limit(8).all()
+
+        if genetic_variants:
+            gene_items = [f"{v.gene_name} {v.genotype}({v.result_label})" for v in genetic_variants]
+            parts.append(f"基因特征: {' | '.join(gene_items)}")
     except Exception:
         pass
 

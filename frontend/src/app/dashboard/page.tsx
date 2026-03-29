@@ -475,6 +475,7 @@ function DashboardContent() {
             { icon: '🤖', label: 'AI助理', path: '/ai-assistant' },
             { icon: '📋', label: '体检报告', path: '/family/reports' },
             { icon: '🏃', label: '运动', path: '/workout' },
+            { icon: '🧬', label: '基因', path: '/genetic' },
             { icon: '📊', label: '总览', path: '/overview' },
           ].map(item => (
             <button
