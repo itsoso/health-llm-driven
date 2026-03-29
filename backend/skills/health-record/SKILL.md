@@ -141,6 +141,7 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/supplement
 - Parse blood pressure: "血压120/80" → systolic=120, diastolic=80
 - Always respond in Chinese
 - **严格使用上面定义的 API 端点路径，不要自行猜测或构造其他路径**
+- **执行后验证**: 每次记录操作后，调用对应的查询接口验证数据已保存。如果验证失败，告知用户并建议重试。不要假设操作成功。
 
 ### 饮食记录特殊规则
 - 用户发送食物图片时，使用 `/diet/recognize-and-save` 一键识别并保存
@@ -154,6 +155,26 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/supplement
 - 多个补剂同时记录时，优先用批量打卡接口
 - "吃了NAC两粒" → 找到NAC的supplement_id，记录taken=true
 - "吃了甘氨酸锌" → 先查列表，不存在则创建定义，然后打卡
+
+## 执行验证
+
+记录完成后，必须调用查询接口确认数据已保存：
+
+### 验证饮水记录
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/water/records/me/daily-summary?date=$(date +%Y-%m-%d)"
+```
+检查 total_amount 是否增加了。
+
+### 验证饮食记录
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/records/me/date/$(date +%Y-%m-%d)"
+```
+检查是否有新增的记录。
+
+### 验证规则
+- 如果验证失败（数据未增加），告知用户记录可能未成功，建议重试
+- 不要假装记录成功 — 必须通过验证确认
 
 ## 同步 Garmin 数据
 
