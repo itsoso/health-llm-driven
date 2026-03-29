@@ -1,5 +1,5 @@
 """健康分析API"""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import date
 from app.database import get_db
@@ -47,15 +47,12 @@ def get_my_personalized_advice(
 def analyze_health_issues(
     user_id: int,
     force_refresh: bool = Query(default=False, description="是否强制刷新缓存"),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """
-    分析健康问题（带缓存）
-    
-    - 默认使用当天缓存的分析结果
-    - 第二天自动重新分析
-    - 可通过 force_refresh=true 强制刷新
-    """
+    """分析健康问题（需要登录，只能查看自己或被管理用户的数据）"""
+    if current_user.id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权访问")
     service = HealthAnalysisService()
     return service.analyze_health_issues(db, user_id, force_refresh)
 
@@ -64,9 +61,12 @@ def analyze_health_issues(
 def get_personalized_advice(
     user_id: int,
     checkin_date: date,
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """获取个性化建议"""
+    """获取个性化建议（需要登录，只能查看自己或被管理用户的数据）"""
+    if current_user.id != user_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="无权访问")
     service = HealthAnalysisService()
     advice = service.generate_personalized_advice(db, user_id, checkin_date)
     return {"advice": advice}
