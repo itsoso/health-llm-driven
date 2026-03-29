@@ -4,6 +4,10 @@ import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { StatsTab } from './components/StatsTab';
+import { UploadTab } from './components/UploadTab';
+import { SearchTab } from './components/SearchTab';
+import { AskTab } from './components/AskTab';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -42,6 +46,26 @@ interface RAGResponse {
   error?: string;
 }
 
+// 分类选项
+const categories = [
+  { value: 'general', label: '通用' },
+  { value: 'sleep', label: '睡眠' },
+  { value: 'exercise', label: '运动' },
+  { value: 'nutrition', label: '营养' },
+  { value: 'mental_health', label: '心理健康' },
+  { value: 'chronic_disease', label: '慢性病' },
+  { value: 'children_health', label: '儿童健康' },
+  { value: 'heart_health', label: '心血管' },
+  { value: 'weight_management', label: '体重管理' },
+  { value: 'cardio_training', label: '心肺训练' },
+  { value: 'strength_training', label: '力量训练' },
+  { value: 'exercise_physiology', label: '运动生理学' },
+  { value: 'recovery', label: '恢复策略' },
+  { value: 'goal_setting', label: '目标设定' },
+  { value: 'injury_prevention', label: '损伤预防' },
+  { value: 'performance', label: '运动表现' },
+];
+
 function KnowledgeManagement() {
   const { user, token } = useAuth();
   const queryClient = useQueryClient();
@@ -59,6 +83,20 @@ function KnowledgeManagement() {
   const [textSource, setTextSource] = useState('manual_input');
   const [uploadSource, setUploadSource] = useState('');
   const [uploadCategory, setUploadCategory] = useState('general');
+
+  // 课程上传状态
+  const [courseContent, setCourseContent] = useState('');
+  const [courseTitle, setCourseTitle] = useState('');
+  const [courseAuthor, setCourseAuthor] = useState('张展晖');
+  const [courseSource, setCourseSource] = useState('');
+  const [courseDifficulty, setCourseDifficulty] = useState('intermediate');
+  const [courseTargetAudience, setCourseTargetAudience] = useState<string[]>([]);
+  const [audienceInput, setAudienceInput] = useState('');
+
+  // 文件上传状态
+  const [uploadMode, setUploadMode] = useState<'text' | 'files'>('text');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const courseFileInputRef = useRef<HTMLInputElement>(null);
 
   // 获取知识库统计
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery<KnowledgeStats>({
@@ -236,7 +274,6 @@ function KnowledgeManagement() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['knowledgeStats'] });
       alert(`✅ 课程上传成功！\n\n添加了 ${data.documents_added} 个文档块\n向量化了 ${data.embeddings_added} 个文档`);
-      // 清空表单
       setCourseContent('');
       setCourseTitle('');
       setCourseSource('');
@@ -255,13 +292,9 @@ function KnowledgeManagement() {
       }
 
       const formData = new FormData();
-      
-      // 添加所有文件
       selectedFiles.forEach(file => {
         formData.append('files', file);
       });
-      
-      // 添加其他字段
       formData.append('source', courseSource);
       formData.append('title', courseTitle);
       formData.append('author', courseAuthor);
@@ -284,32 +317,31 @@ function KnowledgeManagement() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['knowledgeStats'] });
-      
+
       const successFiles = data.files.filter((f: any) => f.success);
       const failedFiles = data.files.filter((f: any) => !f.success);
-      
+
       let message = `✅ 文件上传成功！\n\n`;
       message += `成功: ${successFiles.length} 个文件\n`;
       message += `总文档块: ${data.total_chunks}\n`;
       message += `已添加: ${data.added_count} 个文档块\n\n`;
-      
+
       if (successFiles.length > 0) {
         message += `成功的文件:\n`;
         successFiles.forEach((f: any) => {
           message += `  • ${f.filename} (${f.chunks} 块, ${f.size_kb} KB)\n`;
         });
       }
-      
+
       if (failedFiles.length > 0) {
         message += `\n失败的文件:\n`;
         failedFiles.forEach((f: any) => {
           message += `  • ${f.filename}: ${f.error}\n`;
         });
       }
-      
+
       alert(message);
-      
-      // 清空表单
+
       setSelectedFiles([]);
       setCourseTitle('');
       setCourseSource('');
@@ -357,7 +389,6 @@ function KnowledgeManagement() {
     }
   };
 
-  // 添加目标人群
   const addAudience = () => {
     if (audienceInput.trim() && !courseTargetAudience.includes(audienceInput.trim())) {
       setCourseTargetAudience([...courseTargetAudience, audienceInput.trim()]);
@@ -365,44 +396,9 @@ function KnowledgeManagement() {
     }
   };
 
-  // 移除目标人群
   const removeAudience = (audience: string) => {
     setCourseTargetAudience(courseTargetAudience.filter(a => a !== audience));
   };
-
-  // 课程上传状态
-  const [courseContent, setCourseContent] = useState('');
-  const [courseTitle, setCourseTitle] = useState('');
-  const [courseAuthor, setCourseAuthor] = useState('张展晖');
-  const [courseSource, setCourseSource] = useState('');
-  const [courseDifficulty, setCourseDifficulty] = useState('intermediate');
-  const [courseTargetAudience, setCourseTargetAudience] = useState<string[]>([]);
-  const [audienceInput, setAudienceInput] = useState('');
-  
-  // 文件上传状态
-  const [uploadMode, setUploadMode] = useState<'text' | 'files'>('text');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const courseFileInputRef = useRef<HTMLInputElement>(null);
-
-  // 分类选项
-  const categories = [
-    { value: 'general', label: '通用' },
-    { value: 'sleep', label: '睡眠' },
-    { value: 'exercise', label: '运动' },
-    { value: 'nutrition', label: '营养' },
-    { value: 'mental_health', label: '心理健康' },
-    { value: 'chronic_disease', label: '慢性病' },
-    { value: 'children_health', label: '儿童健康' },
-    { value: 'heart_health', label: '心血管' },
-    { value: 'weight_management', label: '体重管理' },
-    { value: 'cardio_training', label: '心肺训练' },
-    { value: 'strength_training', label: '力量训练' },
-    { value: 'exercise_physiology', label: '运动生理学' },
-    { value: 'recovery', label: '恢复策略' },
-    { value: 'goal_setting', label: '目标设定' },
-    { value: 'injury_prevention', label: '损伤预防' },
-    { value: 'performance', label: '运动表现' },
-  ];
 
   // 检查是否是管理员
   if (!user?.is_admin) {
@@ -452,762 +448,62 @@ function KnowledgeManagement() {
           ))}
         </div>
 
-        {/* 统计概览 */}
         {activeTab === 'stats' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">知识库状态</h2>
-              
-              {statsLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto"></div>
-                  <p className="text-gray-500 mt-2">加载中...</p>
-                </div>
-              ) : stats?.available ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl p-4">
-                    <div className="text-3xl font-bold text-indigo-600">{stats.total_documents}</div>
-                    <div className="text-sm text-indigo-700">文档总数</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4">
-                    <div className="text-lg font-semibold text-purple-600 truncate">{stats.collection_name}</div>
-                    <div className="text-sm text-purple-700">集合名称</div>
-                  </div>
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
-                    <div className="text-lg font-semibold text-blue-600 truncate">{stats.embedding_model}</div>
-                    <div className="text-sm text-blue-700">嵌入模型</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
-                  知识库服务不可用: {stats?.error || '未知错误'}
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-3 mt-6">
-                <button
-                  onClick={() => initBasicsMutation.mutate()}
-                  disabled={initBasicsMutation.isPending}
-                  className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 disabled:opacity-50 transition-all"
-                >
-                  {initBasicsMutation.isPending ? '初始化中...' : '🌱 初始化基础健康知识'}
-                </button>
-                <button
-                  onClick={() => refetchStats()}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all"
-                >
-                  🔄 刷新统计
-                </button>
-                <button
-                  onClick={() => clearAllMutation.mutate()}
-                  disabled={clearAllMutation.isPending}
-                  className="px-4 py-2 bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 disabled:opacity-50 transition-all"
-                >
-                  {clearAllMutation.isPending ? '清空中...' : '🗑️ 清空知识库'}
-                </button>
-              </div>
-            </div>
-
-            {/* 预置知识说明 */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">预置健康知识</h2>
-              <p className="text-gray-600 mb-4">点击"初始化基础健康知识"将导入以下内容：</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  '😴 睡眠的重要性',
-                  '🏃 有氧运动指南',
-                  '❤️ 静息心率与健康',
-                  '📊 心率变异性(HRV)解读',
-                  '🧘 压力管理与身体电量',
-                  '👃 慢性鼻炎的日常管理',
-                  '💧 健康饮水指南',
-                  '🚶 步数与健康',
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3">
-                    <span className="text-gray-800 font-medium">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <StatsTab
+            stats={stats}
+            statsLoading={statsLoading}
+            initBasicsMutation={initBasicsMutation}
+            clearAllMutation={clearAllMutation}
+            refetchStats={refetchStats}
+          />
         )}
 
-        {/* 上传内容 */}
         {activeTab === 'upload' && (
-          <div className="space-y-6">
-            {/* 上传课程（增强版） */}
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-2xl shadow-lg p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-3xl">🎓</span>
-                <div>
-                  <h2 className="text-xl font-bold text-indigo-900">上传专业课程</h2>
-                  <p className="text-sm text-indigo-700">专为运动科学课程优化，支持完整的 Markdown 层级结构</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                {/* 基本信息 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-indigo-900 mb-1">
-                      课程标题 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={courseTitle}
-                      onChange={(e) => setCourseTitle(e.target.value)}
-                      placeholder="例如：心率区间训练法"
-                      className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-indigo-900 mb-1">
-                      作者
-                    </label>
-                    <input
-                      type="text"
-                      value={courseAuthor}
-                      onChange={(e) => setCourseAuthor(e.target.value)}
-                      placeholder="张展晖"
-                      className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-indigo-900 mb-1">
-                      来源标识 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={courseSource}
-                      onChange={(e) => setCourseSource(e.target.value)}
-                      placeholder="例如：zhang_zhanhui_01"
-                      className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                    />
-                    <p className="text-xs text-indigo-600 mt-1">用于标识和检索，建议使用英文+数字</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-indigo-900 mb-1">
-                      难度级别
-                    </label>
-                    <select
-                      value={courseDifficulty}
-                      onChange={(e) => setCourseDifficulty(e.target.value)}
-                      className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                    >
-                      <option value="beginner">初级 (Beginner)</option>
-                      <option value="intermediate">中级 (Intermediate)</option>
-                      <option value="advanced">高级 (Advanced)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* 目标人群 */}
-                <div>
-                  <label className="block text-sm font-medium text-indigo-900 mb-1">
-                    目标人群
-                  </label>
-                  <div className="flex gap-2 mb-2">
-                    <input
-                      type="text"
-                      value={audienceInput}
-                      onChange={(e) => setAudienceInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addAudience())}
-                      placeholder="输入目标人群，按回车添加"
-                      className="flex-1 px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                    />
-                    <button
-                      onClick={addAudience}
-                      className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors"
-                    >
-                      添加
-                    </button>
-                  </div>
-                  {courseTargetAudience.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {courseTargetAudience.map((audience, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm"
-                        >
-                          {audience}
-                          <button
-                            onClick={() => removeAudience(audience)}
-                            className="hover:text-indigo-900"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-xs text-indigo-600 mt-1">
-                    例如：跑步爱好者、减脂人群、马拉松备赛者
-                  </p>
-                </div>
-
-                {/* 上传模式切换 */}
-                <div className="border-t-2 border-indigo-200 pt-4">
-                  <label className="block text-sm font-medium text-indigo-900 mb-3">
-                    📝 上传方式
-                  </label>
-                  <div className="flex gap-4 mb-4">
-                    <button
-                      onClick={() => setUploadMode('text')}
-                      className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
-                        uploadMode === 'text'
-                          ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg'
-                          : 'bg-white text-indigo-600 border-2 border-indigo-200 hover:border-indigo-400'
-                      }`}
-                    >
-                      📄 粘贴文本
-                    </button>
-                    <button
-                      onClick={() => setUploadMode('files')}
-                      className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
-                        uploadMode === 'files'
-                          ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg'
-                          : 'bg-white text-indigo-600 border-2 border-indigo-200 hover:border-indigo-400'
-                      }`}
-                    >
-                      📁 上传文件
-                    </button>
-                  </div>
-                </div>
-
-                {/* 文本输入模式 */}
-                {uploadMode === 'text' && (
-                  <div>
-                  <label className="block text-sm font-medium text-indigo-900 mb-1">
-                    课程内容 (Markdown 格式) <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={courseContent}
-                    onChange={(e) => setCourseContent(e.target.value)}
-                    placeholder="粘贴 Markdown 格式的课程内容...&#10;&#10;支持：&#10;# 一级标题&#10;## 二级标题&#10;### 三级标题&#10;&#10;系统会自动：&#10;✓ 保留标题层级结构&#10;✓ 生成面包屑导航&#10;✓ 提取关键概念&#10;✓ 智能分块（1800-2000字符）"
-                    rows={12}
-                    className="w-full px-4 py-3 border-2 border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none font-mono text-sm bg-white"
-                  />
-                  <div className="flex items-center justify-between mt-2">
-                    <p className="text-xs text-indigo-600">
-                      {courseContent.length} 字符
-                      {courseContent.length > 0 && ` (预计生成 ${Math.ceil(courseContent.length / 1800)} 个文档块)`}
-                    </p>
-                  </div>
-                </div>
-                )}
-
-                {/* 文件上传模式 */}
-                {uploadMode === 'files' && (
-                  <div>
-                    <label className="block text-sm font-medium text-indigo-900 mb-1">
-                      选择 Markdown 文件 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      ref={courseFileInputRef}
-                      type="file"
-                      multiple
-                      accept=".md,.markdown"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        console.log('✅ 文件选择变化:', files.length, '个文件');
-                        files.forEach((f, i) => {
-                          console.log(`  ${i+1}. ${f.name} (${(f.size/1024).toFixed(1)} KB)`);
-                        });
-                        setSelectedFiles(files);
-                      }}
-                      className="hidden"
-                      id="course-file-upload"
-                    />
-                    <div 
-                      className="border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center hover:border-indigo-500 hover:bg-indigo-50/50 transition-all"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log('📥 拖拽文件', e.dataTransfer.files.length, '个');
-                        const droppedFiles = Array.from(e.dataTransfer.files).filter(
-                          file => file.name.endsWith('.md') || file.name.endsWith('.markdown')
-                        );
-                        if (droppedFiles.length > 0) {
-                          console.log('✅ 有效的 Markdown 文件:', droppedFiles.length, '个');
-                          setSelectedFiles(droppedFiles);
-                        } else {
-                          console.log('❌ 没有有效的 Markdown 文件');
-                          alert('请拖拽 .md 或 .markdown 文件');
-                        }
-                      }}
-                    >
-                      <div className="text-4xl mb-2">📁</div>
-                      <p className="text-indigo-900 font-medium mb-2">
-                        点击下方按钮选择文件或拖拽文件到此处
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('🖱️ 点击选择文件按钮');
-                          document.getElementById('course-file-upload')?.click();
-                        }}
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors inline-block"
-                      >
-                        📂 选择文件
-                      </button>
-                      <p className="text-sm text-indigo-600 mt-2">
-                        支持多个 .md 或 .markdown 文件
-                      </p>
-                    </div>
-                    
-                    {selectedFiles.length > 0 && (
-                      <div className="mt-4 space-y-2">
-                        <p className="text-sm font-medium text-indigo-900">
-                          已选择 {selectedFiles.length} 个文件:
-                        </p>
-                        <div className="bg-white rounded-lg border-2 border-indigo-200 p-3 max-h-40 overflow-y-auto">
-                          {selectedFiles.map((file, i) => (
-                            <div key={i} className="flex items-center justify-between py-2 border-b border-indigo-100 last:border-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-indigo-600">📄</span>
-                                <span className="text-sm text-indigo-900">{file.name}</span>
-                                <span className="text-xs text-indigo-500">
-                                  ({(file.size / 1024).toFixed(1)} KB)
-                                </span>
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedFiles(files => files.filter((_, idx) => idx !== i));
-                                }}
-                                className="text-red-500 hover:text-red-700 font-bold"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-indigo-600">
-                          总大小: {(selectedFiles.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(1)} KB
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 功能说明 */}
-                <div className="bg-white/50 rounded-lg p-4 border border-indigo-200">
-                  <h4 className="font-medium text-indigo-900 mb-2">✨ 增强版特性</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-indigo-700">
-                    <div className="flex items-start gap-2">
-                      <span>✓</span>
-                      <span>保留 Markdown 标题层级结构</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span>✓</span>
-                      <span>自动生成面包屑导航</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span>✓</span>
-                      <span>智能提取关键概念</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span>✓</span>
-                      <span>更大的分块大小（1800-2000字符）</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span>✓</span>
-                      <span>丰富的元数据（作者、难度、人群）</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span>✓</span>
-                      <span>运动科学专用分类识别</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 上传按钮 */}
-                <div className="flex gap-3">
-                  {uploadMode === 'text' ? (
-                    <>
-                      <button
-                        onClick={() => uploadCourseMutation.mutate()}
-                        disabled={!courseContent.trim() || !courseTitle.trim() || !courseSource.trim() || uploadCourseMutation.isPending}
-                        className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
-                      >
-                        {uploadCourseMutation.isPending ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
-                            上传中...
-                          </span>
-                        ) : (
-                          '🚀 上传课程'
-                        )}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setCourseContent('');
-                          setCourseTitle('');
-                          setCourseSource('');
-                          setCourseTargetAudience([]);
-                        }}
-                        className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all"
-                      >
-                        清空
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => uploadCourseFilesMutation.mutate()}
-                        disabled={selectedFiles.length === 0 || !courseTitle.trim() || !courseSource.trim() || uploadCourseFilesMutation.isPending}
-                        className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
-                      >
-                        {uploadCourseFilesMutation.isPending ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
-                            上传中...
-                          </span>
-                        ) : (
-                          `🚀 上传 ${selectedFiles.length} 个文件`
-                        )}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedFiles([]);
-                          setCourseTitle('');
-                          setCourseSource('');
-                          setCourseTargetAudience([]);
-                          if (courseFileInputRef.current) {
-                            courseFileInputRef.current.value = '';
-                          }
-                        }}
-                        className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all"
-                      >
-                        清空
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 上传文件 */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">📁 上传文件</h2>
-              <p className="text-gray-600 mb-4">支持 .txt, .md, .json 格式</p>
-              
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">来源标识</label>
-                    <input
-                      type="text"
-                      value={uploadSource}
-                      onChange={(e) => setUploadSource(e.target.value)}
-                      placeholder="例如：冯雪健康课程"
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
-                    <select
-                      value={uploadCategory}
-                      onChange={(e) => setUploadCategory(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                      {categories.map((cat) => (
-                        <option key={cat.value} value={cat.value}>{cat.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-indigo-400 transition-colors">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".txt,.md,.json"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <div className="text-4xl mb-2">📄</div>
-                    <p className="text-gray-600">点击选择文件或拖拽到此处</p>
-                    <p className="text-sm text-gray-400 mt-1">支持 .txt, .md, .json</p>
-                  </label>
-                </div>
-                
-                {uploadFileMutation.isPending && (
-                  <div className="text-center text-indigo-600">
-                    <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                    上传中...
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 添加文本 */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">✍️ 添加文本</h2>
-              
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
-                    <input
-                      type="text"
-                      value={textTitle}
-                      onChange={(e) => setTextTitle(e.target.value)}
-                      placeholder="知识点标题"
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
-                    <select
-                      value={textCategory}
-                      onChange={(e) => setTextCategory(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                      {categories.map((cat) => (
-                        <option key={cat.value} value={cat.value}>{cat.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">来源</label>
-                    <input
-                      type="text"
-                      value={textSource}
-                      onChange={(e) => setTextSource(e.target.value)}
-                      placeholder="内容来源"
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">内容</label>
-                  <textarea
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    placeholder="输入健康知识内容..."
-                    rows={8}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                  />
-                </div>
-                
-                <button
-                  onClick={() => addTextMutation.mutate()}
-                  disabled={!textInput.trim() || addTextMutation.isPending}
-                  className="px-6 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg font-medium hover:from-indigo-600 hover:to-purple-600 disabled:opacity-50 transition-all"
-                >
-                  {addTextMutation.isPending ? '添加中...' : '添加到知识库'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <UploadTab
+            courseTitle={courseTitle} setCourseTitle={setCourseTitle}
+            courseAuthor={courseAuthor} setCourseAuthor={setCourseAuthor}
+            courseSource={courseSource} setCourseSource={setCourseSource}
+            courseDifficulty={courseDifficulty} setCourseDifficulty={setCourseDifficulty}
+            courseTargetAudience={courseTargetAudience} setCourseTargetAudience={setCourseTargetAudience}
+            audienceInput={audienceInput} setAudienceInput={setAudienceInput}
+            addAudience={addAudience} removeAudience={removeAudience}
+            uploadMode={uploadMode} setUploadMode={setUploadMode}
+            courseContent={courseContent} setCourseContent={setCourseContent}
+            uploadCourseMutation={uploadCourseMutation}
+            selectedFiles={selectedFiles} setSelectedFiles={setSelectedFiles}
+            courseFileInputRef={courseFileInputRef}
+            uploadCourseFilesMutation={uploadCourseFilesMutation}
+            fileInputRef={fileInputRef}
+            uploadSource={uploadSource} setUploadSource={setUploadSource}
+            uploadCategory={uploadCategory} setUploadCategory={setUploadCategory}
+            uploadFileMutation={uploadFileMutation}
+            handleFileUpload={handleFileUpload}
+            textInput={textInput} setTextInput={setTextInput}
+            textTitle={textTitle} setTextTitle={setTextTitle}
+            textCategory={textCategory} setTextCategory={setTextCategory}
+            textSource={textSource} setTextSource={setTextSource}
+            addTextMutation={addTextMutation}
+            categories={categories}
+          />
         )}
 
-        {/* 搜索测试 */}
         {activeTab === 'search' && (
-          <div className="bg-white rounded-2xl shadow-lg p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">🔍 知识搜索</h2>
-            
-            <div className="flex gap-3 mb-6">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && searchMutation.mutate()}
-                placeholder="输入搜索内容，如：如何改善睡眠"
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-              <button
-                onClick={() => searchMutation.mutate()}
-                disabled={!searchQuery.trim() || searchMutation.isPending}
-                className="px-6 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg font-medium hover:from-indigo-600 hover:to-purple-600 disabled:opacity-50 transition-all"
-              >
-                {searchMutation.isPending ? '搜索中...' : '搜索'}
-              </button>
-            </div>
-
-            {searchResults.length > 0 ? (
-              <div className="space-y-4">
-                <p className="text-sm text-gray-500">找到 {searchResults.length} 条相关内容</p>
-                {searchResults.map((result, index) => (
-                  <div key={index} className="border border-gray-200 rounded-xl p-4 hover:border-indigo-300 transition-colors">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-800">{result.metadata.title || '无标题'}</span>
-                      <span className="text-sm px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full">
-                        相关度: {(result.relevance_score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="flex gap-2 mb-2">
-                      {result.metadata.category && (
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                          {categories.find(c => c.value === result.metadata.category)?.label || result.metadata.category}
-                        </span>
-                      )}
-                      {result.metadata.source && (
-                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded">
-                          {result.metadata.source}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-gray-600 text-sm line-clamp-3">{result.content}</p>
-                  </div>
-                ))}
-              </div>
-            ) : searchMutation.isSuccess ? (
-              <div className="text-center py-8 text-gray-500">
-                <span className="text-4xl block mb-2">🔍</span>
-                未找到相关内容
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-400">
-                <span className="text-4xl block mb-2">💡</span>
-                输入关键词搜索知识库内容
-              </div>
-            )}
-          </div>
+          <SearchTab
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            searchResults={searchResults}
+            searchMutation={searchMutation}
+            categories={categories}
+          />
         )}
 
-        {/* 问答测试 */}
         {activeTab === 'ask' && (
-          <div className="bg-white rounded-2xl shadow-lg p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">💬 RAG 问答</h2>
-            <p className="text-gray-600 mb-4">基于知识库和您的个人画像，获取专业健康建议</p>
-            
-            <div className="flex gap-3 mb-6">
-              <input
-                type="text"
-                value={askQuestion}
-                onChange={(e) => setAskQuestion(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && askMutation.mutate()}
-                placeholder="输入您的健康问题，如：我最近睡眠不好怎么办？"
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-              <button
-                onClick={() => askMutation.mutate()}
-                disabled={!askQuestion.trim() || askMutation.isPending}
-                className="px-6 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg font-medium hover:from-indigo-600 hover:to-purple-600 disabled:opacity-50 transition-all"
-              >
-                {askMutation.isPending ? '思考中...' : '提问'}
-              </button>
-            </div>
-
-            {askMutation.isPending && (
-              <div className="text-center py-8">
-                <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                <p className="text-indigo-600">AI 正在结合知识库生成回答...</p>
-              </div>
-            )}
-
-            {askResponse && (
-              <div className="space-y-4">
-                {askResponse.success ? (
-                  <>
-                    {/* 主要回答 */}
-                    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5">
-                      <div className="flex items-start gap-3">
-                        <span className="text-2xl">✨</span>
-                        <div className="flex-1">
-                          <p className="text-gray-800 whitespace-pre-wrap">{askResponse.answer}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 要点 */}
-                    {askResponse.key_points && askResponse.key_points.length > 0 && (
-                      <div className="bg-blue-50 rounded-xl p-4">
-                        <h3 className="font-medium text-blue-800 mb-2">📌 关键要点</h3>
-                        <ul className="space-y-1">
-                          {askResponse.key_points.map((point, i) => (
-                            <li key={i} className="text-blue-700 text-sm flex items-start gap-2">
-                              <span className="text-blue-400">•</span>
-                              {point}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* 行动建议 */}
-                    {askResponse.action_items && askResponse.action_items.length > 0 && (
-                      <div className="bg-green-50 rounded-xl p-4">
-                        <h3 className="font-medium text-green-800 mb-2">✅ 行动建议</h3>
-                        <ul className="space-y-1">
-                          {askResponse.action_items.map((item, i) => (
-                            <li key={i} className="text-green-700 text-sm flex items-start gap-2">
-                              <span className="text-green-400">{i + 1}.</span>
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* 来源和元信息 */}
-                    <div className="flex flex-wrap items-center gap-3 text-sm">
-                      {askResponse.knowledge_used && (
-                        <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full">
-                          ✓ 使用了知识库
-                        </span>
-                      )}
-                      {askResponse.confidence && (
-                        <span className={`px-2 py-1 rounded-full ${
-                          askResponse.confidence === 'high' 
-                            ? 'bg-green-100 text-green-700'
-                            : askResponse.confidence === 'medium'
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          置信度: {askResponse.confidence === 'high' ? '高' : askResponse.confidence === 'medium' ? '中' : '低'}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 免责声明 */}
-                    {askResponse.disclaimer && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
-                        <p className="text-yellow-800 text-sm">⚠️ {askResponse.disclaimer}</p>
-                      </div>
-                    )}
-
-                    {/* 知识来源 */}
-                    {askResponse.sources && askResponse.sources.length > 0 && (
-                      <div className="border-t border-gray-200 pt-4">
-                        <h4 className="text-sm font-medium text-gray-600 mb-2">📚 参考来源</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {askResponse.sources.map((source, i) => (
-                            <span key={i} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                              {source.title || '未知来源'}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
-                    回答生成失败: {askResponse.error}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!askMutation.isPending && !askResponse && (
-              <div className="text-center py-8 text-gray-400">
-                <span className="text-4xl block mb-2">💬</span>
-                输入健康问题，AI 将结合知识库为您解答
-              </div>
-            )}
-          </div>
+          <AskTab
+            askQuestion={askQuestion}
+            setAskQuestion={setAskQuestion}
+            askResponse={askResponse}
+            askMutation={askMutation}
+          />
         )}
       </div>
     </div>
