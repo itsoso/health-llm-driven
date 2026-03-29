@@ -302,7 +302,14 @@ function GeneticContent() {
         ) : variants.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-xl border border-gray-200 mb-4">
             <p className="text-gray-400 text-lg mb-2">暂无{CATEGORIES.find(c => c.key === activeTab)?.label}数据</p>
-            <p className="text-gray-400 text-sm">请点击下方按钮从模板添加</p>
+            {latestProfile ? (
+              <button onClick={() => { setShowAddTemplate(true); setSelectedTemplate(null); setSelectedGenotype(null); }}
+                className="mt-2 px-5 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition">
+                + 从报告中录入
+              </button>
+            ) : (
+              <p className="text-gray-400 text-sm">请先在上方创建基因档案</p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
