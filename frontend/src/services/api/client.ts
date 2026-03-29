@@ -45,8 +45,12 @@ api.interceptors.response.use(
       // token过期或无效，清除本地存储并跳转登录
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token');
-        // 如果不在登录页，跳转到登录页
+        // 如果不在登录页，保存当前路径后跳转到登录页
         if (!window.location.pathname.includes('/login')) {
+          const destination = window.location.pathname + window.location.search;
+          if (destination && destination !== '/') {
+            sessionStorage.setItem('redirect_after_login', destination);
+          }
           window.location.href = '/login';
         }
       }

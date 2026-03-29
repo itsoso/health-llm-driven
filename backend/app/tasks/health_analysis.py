@@ -3,9 +3,11 @@
 """
 import logging
 from datetime import date, timedelta
+from sqlalchemy import func as sa_func
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.user import User
+from app.models.daily_health import GarminData
 from app.services.ai_scheduler import AIScheduler
 from app.utils.timezone import get_china_today
 
@@ -81,9 +83,61 @@ def analyze_health_trends(user_id: int, days: int = 30):
     分析用户健康趋势
     """
     logger.info(f"分析用户 {user_id} 最近 {days} 天的健康趋势")
-    
+
     with SessionLocal() as db:
-        # TODO: 实现趋势分析逻辑
-        pass
-    
-    return {"user_id": user_id, "days": days, "status": "completed"}
+        today = get_china_today()
+        metrics = {
+            "steps": GarminData.steps,
+            "sleep_score": GarminData.sleep_score,
+            "resting_heart_rate": GarminData.resting_heart_rate,
+        }
+
+        trends = {}
+        for metric_name, metric_col in metrics.items():
+            # 7-day average
+            seven_days_ago = today - timedelta(days=7)
+            avg_7d_row = db.query(sa_func.avg(metric_col)).filter(
+                GarminData.user_id == user_id,
+                GarminData.record_date > seven_days_ago,
+                GarminData.record_date <= today,
+                metric_col.isnot(None)
+            ).scalar()
+
+            # 30-day average
+            thirty_days_ago = today - timedelta(days=30)
+            avg_30d_row = db.query(sa_func.avg(metric_col)).filter(
+                GarminData.user_id == user_id,
+                GarminData.record_date > thirty_days_ago,
+                GarminData.record_date <= today,
+                metric_col.isnot(None)
+            ).scalar()
+
+            if avg_7d_row is not None and avg_30d_row is not None and avg_30d_row != 0:
+                avg_7d = float(avg_7d_row)
+                avg_30d = float(avg_30d_row)
+                change_pct = (avg_7d - avg_30d) / abs(avg_30d) * 100
+
+                # For resting_heart_rate, lower is better (invert direction)
+                if metric_name == "resting_heart_rate":
+                    direction = "improving" if change_pct < -15 else ("declining" if change_pct > 15 else "stable")
+                else:
+                    direction = "improving" if change_pct > 15 else ("declining" if change_pct < -15 else "stable")
+
+                trends[metric_name] = {
+                    "avg_7d": round(avg_7d, 1),
+                    "avg_30d": round(avg_30d, 1),
+                    "change_pct": round(change_pct, 1),
+                    "direction": direction,
+                }
+            else:
+                trends[metric_name] = {
+                    "avg_7d": round(float(avg_7d_row), 1) if avg_7d_row is not None else None,
+                    "avg_30d": round(float(avg_30d_row), 1) if avg_30d_row is not None else None,
+                    "change_pct": None,
+                    "direction": "insufficient_data",
+                }
+
+        flagged = [name for name, t in trends.items() if t["direction"] in ("improving", "declining")]
+        logger.info(f"用户 {user_id} 趋势分析完成，标记指标: {flagged}")
+
+    return {"user_id": user_id, "days": days, "status": "completed", "trends": trends}

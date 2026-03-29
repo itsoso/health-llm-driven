@@ -60,9 +60,33 @@ class ActivityData(BaseModel):
     max_speed_kmh: Optional[float] = None
     avg_heart_rate: Optional[int] = None
     max_heart_rate: Optional[int] = None
+    min_heart_rate: Optional[int] = None
     calories: Optional[int] = None
     steps: Optional[int] = None
     elevation_gain_meters: Optional[float] = None
+    elevation_loss_meters: Optional[float] = None
+    min_elevation_meters: Optional[float] = None
+    max_elevation_meters: Optional[float] = None
+    avg_pace_seconds_per_km: Optional[int] = None
+    best_pace_seconds_per_km: Optional[int] = None
+    avg_cadence: Optional[int] = None
+    max_cadence: Optional[int] = None
+    avg_stride_length_cm: Optional[float] = None
+    hr_zone_1_seconds: Optional[int] = None
+    hr_zone_2_seconds: Optional[int] = None
+    hr_zone_3_seconds: Optional[int] = None
+    hr_zone_4_seconds: Optional[int] = None
+    hr_zone_5_seconds: Optional[int] = None
+    training_effect_aerobic: Optional[float] = None
+    training_effect_anaerobic: Optional[float] = None
+    vo2max: Optional[float] = None
+    training_load: Optional[int] = None
+    # JSON 时间序列数据（字符串格式）
+    heart_rate_data: Optional[str] = None   # [{"time":0,"hr":120},...]
+    pace_data: Optional[str] = None         # [{"time":0,"pace":360},...]
+    elevation_data: Optional[str] = None    # [{"distance":0,"elevation":100},...]
+    route_data: Optional[str] = None        # [{"lat":39.9,"lng":116.4,"ele":100,"time":0},...]
+    lap_data: Optional[str] = None          # [{"lap":1,"distance":1000,"duration":300,...},...]
 
 
 class GarminImportRequest(BaseModel):
@@ -98,24 +122,30 @@ async def bulk_import(
             db.add(record)
             daily_imported += 1
 
-    # 导入运动记录
+    # 导入运动记录（upsert：已存在则更新，不存在则新建）
+    activity_updated = 0
     for a in req.activities:
         existing = db.query(WorkoutRecord).filter(
             WorkoutRecord.user_id == current_user.id,
-            WorkoutRecord.garmin_activity_id == a.garmin_activity_id,
+            WorkoutRecord.external_id == a.garmin_activity_id,
         ).first()
 
-        if existing:
-            activity_skipped += 1
-            continue
+        data = a.model_dump(exclude_none=True)
+        data["external_id"] = data.pop("garmin_activity_id")  # 映射字段名
 
-        record = WorkoutRecord(
-            user_id=current_user.id,
-            source="garmin_cookie_sync",
-            **a.model_dump(exclude_none=True),
-        )
-        db.add(record)
-        activity_imported += 1
+        if existing:
+            for field, val in data.items():
+                if val is not None and field not in ("workout_date", "external_id"):
+                    setattr(existing, field, val)
+            activity_updated += 1
+        else:
+            record = WorkoutRecord(
+                user_id=current_user.id,
+                source="garmin_cookie_sync",
+                **data,
+            )
+            db.add(record)
+            activity_imported += 1
 
     db.commit()
 
@@ -124,5 +154,6 @@ async def bulk_import(
         "daily_imported": daily_imported,
         "daily_updated": daily_updated,
         "activity_imported": activity_imported,
+        "activity_updated": activity_updated,
         "activity_skipped": activity_skipped,
     }

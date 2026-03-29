@@ -314,7 +314,7 @@ function WaterContent() {
           </div>
 
           {/* 趋势图 */}
-          {chartData.length > 0 && (
+          {chartData.length > 0 ? (
             <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
               <h3 className="text-lg font-bold text-gray-900 mb-4">📈 饮水趋势</h3>
               <ResponsiveContainer width="100%" height={180}>
@@ -334,6 +334,17 @@ function WaterContent() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200 text-center py-10">
+              <p className="text-4xl mb-3">📈</p>
+              <p className="text-gray-500 mb-4">暂无记录</p>
+              <button
+                onClick={() => setShowForm(true)}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-semibold rounded-lg hover:from-cyan-600 hover:to-blue-600 shadow-md transition-all"
+              >
+                记录第一条
+              </button>
+            </div>
           )}
         </div>
 
@@ -343,7 +354,13 @@ function WaterContent() {
           {!dailySummary?.records?.length ? (
             <div className="text-center py-10 text-gray-500">
               <p className="text-4xl mb-2">💧</p>
-              <p>今天还没有饮水记录</p>
+              <p className="mb-4">今天还没有饮水记录</p>
+              <button
+                onClick={() => setShowForm(true)}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-semibold rounded-lg hover:from-cyan-600 hover:to-blue-600 shadow-md transition-all"
+              >
+                记录第一条
+              </button>
             </div>
           ) : (
             <div className="space-y-2">

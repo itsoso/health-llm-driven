@@ -417,6 +417,18 @@ def get_my_habit_stats(
         completed_count = sum(1 for r in records if r.completed)
         current_streak = calculate_streak(db, habit.id, end_date)
         
+        # 计算最长连续打卡
+        longest_streak = 0
+        current_run = 0
+        for i in range(days):
+            check_date = start_date + timedelta(days=i)
+            record = next((r for r in records if r.record_date == check_date), None)
+            if record and record.completed:
+                current_run += 1
+                longest_streak = max(longest_streak, current_run)
+            else:
+                current_run = 0
+
         stats.append(HabitStats(
             habit_id=habit.id,
             habit_name=habit.name,
@@ -424,7 +436,7 @@ def get_my_habit_stats(
             completed_days=completed_count,
             completion_rate=round(completed_count / days * 100, 1),
             current_streak=current_streak,
-            longest_streak=0  # TODO: 计算最佳连续天数
+            longest_streak=longest_streak
         ))
     
     return stats

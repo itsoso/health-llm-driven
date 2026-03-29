@@ -33,7 +33,13 @@ function LoginForm() {
     const result = await login(formData.username, formData.password);
 
     if (result.success) {
-      router.push(redirectTo);
+      const savedRedirect = sessionStorage.getItem('redirect_after_login');
+      if (savedRedirect) {
+        sessionStorage.removeItem('redirect_after_login');
+        router.push(savedRedirect);
+      } else {
+        router.push(redirectTo);
+      }
     } else {
       setError(result.error || '登录失败');
     }

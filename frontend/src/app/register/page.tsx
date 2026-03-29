@@ -41,6 +41,7 @@ export default function RegisterPage() {
   });
   
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({ password: '', confirmPassword: '' });
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [inviteCodeStatus, setInviteCodeStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
@@ -87,20 +88,38 @@ export default function RegisterPage() {
     return () => clearTimeout(timer);
   }, [formData.inviteCode]);
 
+  const validatePasswordFields = () => {
+    const errors = { password: '', confirmPassword: '' };
+    let valid = true;
+    if (formData.password.length > 0 && formData.password.length < 6) {
+      errors.password = '密码至少需要6个字符';
+      valid = false;
+    }
+    if (formData.confirmPassword.length > 0 && formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = '密码不一致';
+      valid = false;
+    }
+    setFieldErrors(errors);
+    return valid;
+  };
+
   const handleStep1Submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // 验证密码
-    if (formData.password !== formData.confirmPassword) {
-      setError('两次输入的密码不一致');
-      return;
-    }
-
+    // Inline validation
+    const errors = { password: '', confirmPassword: '' };
+    let hasError = false;
     if (formData.password.length < 6) {
-      setError('密码至少需要6个字符');
-      return;
+      errors.password = '密码至少需要6个字符';
+      hasError = true;
     }
+    if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = '密码不一致';
+      hasError = true;
+    }
+    setFieldErrors(errors);
+    if (hasError) return;
 
     if (inviteCodeStatus !== 'valid') {
       setError('请输入有效的邀请码');
@@ -266,10 +285,17 @@ export default function RegisterPage() {
                     required
                     minLength={6}
                     value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    onChange={(e) => {
+                      setFormData({ ...formData, password: e.target.value });
+                      if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: '' }));
+                    }}
+                    onBlur={validatePasswordFields}
+                    className={`w-full p-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent ${fieldErrors.password ? 'border-red-500' : 'border-white/20'}`}
                     placeholder="至少6个字符"
                   />
+                  {fieldErrors.password && (
+                    <p className="text-red-400 text-xs mt-1">{fieldErrors.password}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-purple-200 mb-2">
@@ -279,10 +305,17 @@ export default function RegisterPage() {
                     type="password"
                     required
                     value={formData.confirmPassword}
-                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                    className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    onChange={(e) => {
+                      setFormData({ ...formData, confirmPassword: e.target.value });
+                      if (fieldErrors.confirmPassword) setFieldErrors(prev => ({ ...prev, confirmPassword: '' }));
+                    }}
+                    onBlur={validatePasswordFields}
+                    className={`w-full p-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent ${fieldErrors.confirmPassword ? 'border-red-500' : 'border-white/20'}`}
                     placeholder="再次输入"
                   />
+                  {fieldErrors.confirmPassword && (
+                    <p className="text-red-400 text-xs mt-1">{fieldErrors.confirmPassword}</p>
+                  )}
                 </div>
               </div>
 

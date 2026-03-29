@@ -28,7 +28,8 @@ function DashboardContent() {
   const [days] = useState(30);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+  const [refreshError, setRefreshError] = useState('');
+
   // 下拉刷新相关状态
   const [pullStartY, setPullStartY] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
@@ -97,6 +98,7 @@ function DashboardContent() {
     if (isRefreshing) return; // 防止重复点击
     
     setIsRefreshing(true);
+    setRefreshError('');
     try {
       // 1. 先触发 Garmin 同步
       if (userId) {
@@ -108,10 +110,10 @@ function DashboardContent() {
           // 同步失败不影响数据刷新
         }
       }
-      
+
       // 2. 等待 2 秒让同步有时间完成
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       // 3. 使所有相关查询失效并重新获取
       await Promise.all([
         refetchToday(),
@@ -122,6 +124,8 @@ function DashboardContent() {
       setLastUpdate(new Date());
     } catch (error) {
       console.error('刷新数据失败:', error);
+      setRefreshError('刷新数据失败，请稍后重试');
+      setTimeout(() => setRefreshError(''), 5000);
     } finally {
       setIsRefreshing(false);
     }
@@ -282,6 +286,12 @@ function DashboardContent() {
               )}
             </button>
           </div>
+
+          {refreshError && (
+            <div className="mb-4 p-3 bg-red-500/20 border border-red-400/30 rounded-lg text-red-100 text-sm">
+              {refreshError}
+            </div>
+          )}
 
           {todayRecord ? (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">

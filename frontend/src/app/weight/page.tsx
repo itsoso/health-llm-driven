@@ -32,6 +32,7 @@ function WeightContent() {
     muscle_mass: '',
     notes: '',
   });
+  const [weightError, setWeightError] = useState('');
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -92,6 +93,12 @@ function WeightContent() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const weightValue = parseFloat(formData.weight);
+    if (weightValue < 20 || weightValue > 300) {
+      setWeightError('体重必须在 20-300 kg 之间');
+      return;
+    }
+    setWeightError('');
     createMutation.mutate({
       user_id: userId,
       record_date: today,
@@ -185,12 +192,20 @@ function WeightContent() {
                   <input
                     type="number"
                     step="0.1"
+                    min={20}
+                    max={300}
                     required
                     value={formData.weight}
-                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 text-lg"
+                    onChange={(e) => {
+                      setFormData({ ...formData, weight: e.target.value });
+                      setWeightError('');
+                    }}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 text-lg ${weightError ? 'border-red-500' : 'border-gray-300'}`}
                     placeholder="例如: 75.5"
                   />
+                  {weightError && (
+                    <p className="text-red-500 text-sm mt-1">{weightError}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
@@ -241,7 +256,7 @@ function WeightContent() {
         )}
 
         {/* 体重趋势图 */}
-        {chartData.length > 0 && (
+        {chartData.length > 0 ? (
           <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">
             <h3 className="text-xl font-bold text-gray-900 mb-4">📈 体重趋势</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -274,6 +289,17 @@ function WeightContent() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200 text-center py-10">
+            <p className="text-4xl mb-3">📈</p>
+            <p className="text-gray-500 mb-4">暂无记录</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md transition-all"
+            >
+              记录第一条
+            </button>
+          </div>
         )}
 
         {/* 历史记录 */}
@@ -282,7 +308,13 @@ function WeightContent() {
           {recordsList.length === 0 ? (
             <div className="text-center py-10 text-gray-500">
               <p className="text-4xl mb-2">⚖️</p>
-              <p>暂无体重记录，开始记录你的第一个数据吧！</p>
+              <p className="mb-4">暂无体重记录，开始记录你的第一个数据吧！</p>
+              <button
+                onClick={() => setShowForm(true)}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md transition-all"
+              >
+                记录第一条
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
