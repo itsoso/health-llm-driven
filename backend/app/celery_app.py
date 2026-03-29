@@ -8,6 +8,11 @@ from celery import Celery
 from celery.schedules import crontab
 from app.config import settings
 
+# 确保所有 ORM 模型在 Celery worker 启动时被加载，
+# 避免 relationship() lazy resolution 失败（如 UserApiKey）
+import app.models.user_api_key  # noqa: F401
+import app.models.external_recommendation  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 # 创建 Celery 应用
