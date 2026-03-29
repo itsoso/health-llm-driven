@@ -161,5 +161,5 @@ class TestHealthContextLite:
         assert ctx is not None
         # 应该有用户信息，但没有 Garmin 行
         assert "张三" in ctx
-        assert "步数" not in ctx  # 没有 Garmin 数据
-        assert "7日均值" not in ctx
+        assert "7日均值" not in ctx  # 没有 Garmin 趋势数据
+        assert "睡眠分数" not in ctx  # 没有 Garmin 睡眠数据
