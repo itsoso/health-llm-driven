@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.invitation import InvitationCode, UserApplication, ApplicationStatus
 from app.models.user import User
 from app.models.user_profile import UserProfile
+from app.models.notification import NotificationLog
 from app.api.users import get_current_user_required
 from app.services.auth import AuthService
 
@@ -505,7 +506,7 @@ async def review_application(
     如果通过：
     1. 创建用户账号（或审核微信用户）
     2. 更新申请状态
-    3. 发送通知（TODO）
+    3. 记录站内通知
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以审批申请")
@@ -569,9 +570,13 @@ async def review_application(
         application.user_id = new_user.id
         
         db.commit()
-        
-        # TODO: 发送邮件通知
-        
+
+        # 记录站内通知：申请已通过
+        _log_application_notification(
+            db, new_user.id, "申请已通过",
+            f"您的注册申请已通过审核，欢迎使用健康管理平台！"
+        )
+
         return {
             "message": "申请已通过，用户账号已创建",
             "user_id": new_user.id,
@@ -580,13 +585,44 @@ async def review_application(
     else:
         application.status = ApplicationStatus.REJECTED.value
         db.commit()
-        
-        # TODO: 发送拒绝通知邮件
-        
+
+        # 记录站内通知：申请已拒绝（如果有关联邮箱，通知信息存入日志供后续查看）
+        reason_text = f"原因：{review.note}" if review.note else ""
+        _log_application_notification(
+            db, None, "申请未通过",
+            f"您的注册申请未通过审核。{reason_text}",
+            data={"application_id": app_id, "email": application.email},
+        )
+
         return {
             "message": "申请已拒绝",
             "reason": review.note
         }
+
+
+def _log_application_notification(
+    db: Session,
+    user_id: int | None,
+    title: str,
+    content: str,
+    data: dict | None = None,
+):
+    """向 notification_logs 表插入一条站内通知记录"""
+    try:
+        log = NotificationLog(
+            user_id=user_id or 0,
+            notification_type="application_review",
+            channel="in_app",
+            title=title,
+            content=content,
+            data=data,
+            status="sent",
+            sent_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        db.commit()
+    except Exception:
+        db.rollback()  # 通知记录失败不应影响主流程
 
 
 @router.get("/applications/check/{email}", summary="检查申请状态")

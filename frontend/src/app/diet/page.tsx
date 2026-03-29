@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
@@ -64,6 +64,8 @@ function DietContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
   const { showToast } = useToast();
+
+  useEffect(() => { document.title = '饮食记录 | 健康管理'; }, []);
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));

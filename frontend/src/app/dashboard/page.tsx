@@ -26,6 +26,8 @@ function DashboardContent() {
   const queryClient = useQueryClient();
   const userId = user?.id;
   const [days] = useState(30);
+
+  useEffect(() => { document.title = '首页 | 健康管理'; }, []);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState('');
@@ -234,16 +236,21 @@ function DashboardContent() {
       }}
     >
       {/* 下拉刷新指示器 */}
-      {(isPulling || pullDistance > 0) && (
-        <div 
+      {(isPulling || pullDistance > 0 || isRefreshing) && (
+        <div
           className="fixed top-0 left-0 right-0 flex items-center justify-center bg-gradient-to-r from-indigo-600 to-purple-600 text-white z-50"
           style={{
-            height: `${pullDistance}px`,
-            opacity: Math.min(pullDistance / 60, 1),
+            height: isRefreshing ? '48px' : `${pullDistance}px`,
+            opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1),
           }}
         >
           <div className="flex items-center gap-2">
-            {pullDistance > 60 ? (
+            {isRefreshing ? (
+              <>
+                <span className="text-xl animate-spin">🔄</span>
+                <span className="font-semibold">正在同步 Garmin 数据...</span>
+              </>
+            ) : pullDistance > 60 ? (
               <>
                 <span className="text-xl">🔄</span>
                 <span className="font-semibold">释放刷新</span>

@@ -12,6 +12,7 @@ export default function ReportsPage() {
 }
 
 function ReportsContent() {
+  useEffect(() => { document.title = '体检报告 | 健康管理'; }, []);
   const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);

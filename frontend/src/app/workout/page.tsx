@@ -19,6 +19,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 function WorkoutContent() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
+
+  useEffect(() => { document.title = '运动 | 健康管理'; }, []);
   const [selectedWorkout, setSelectedWorkout] = useState<number | null>(null);
   const [days, setDays] = useState(7);
   const [syncDays, setSyncDays] = useState(7);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import {
@@ -31,6 +31,8 @@ function WaterContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
   const queryClient = useQueryClient();
+
+  useEffect(() => { document.title = '饮水 | 健康管理'; }, []);
   const [showForm, setShowForm] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [formData, setFormData] = useState({

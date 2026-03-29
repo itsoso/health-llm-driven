@@ -59,6 +59,7 @@ vi.mock('recharts', () => ({
   Bar: () => null, XAxis: () => null, YAxis: () => null,
   CartesianGrid: () => null, Tooltip: () => null, Legend: () => null,
   ResponsiveContainer: ({ children }: any) => <div>{children}</div>,
+  ReferenceLine: () => null,
 }));
 
 // Mock date-fns
@@ -66,6 +67,17 @@ vi.mock('date-fns', () => ({
   format: (d: any, f: string) => '2026-03-29',
   subDays: (d: any, n: number) => new Date(),
 }));
+
+// Mock localStorage
+const localStorageMock = {
+  getItem: vi.fn().mockReturnValue('test-token'),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+  length: 0,
+  key: vi.fn(),
+};
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -109,5 +121,31 @@ describe('Report Detail', () => {
     render(<Page />);
     // Should show loading state initially
     expect(screen.getByText('加载中...')).toBeDefined();
+  });
+});
+
+describe('Not Found (404)', () => {
+  it('renders 404 page correctly', async () => {
+    const NotFound = (await import('@/app/not-found')).default;
+    render(<NotFound />);
+    expect(screen.getByText('404')).toBeDefined();
+    expect(screen.getByText('页面不存在')).toBeDefined();
+    expect(screen.getByText('返回首页')).toBeDefined();
+  });
+});
+
+describe('Weight Page', () => {
+  it('renders without crashing', async () => {
+    const Page = (await import('@/app/weight/page')).default;
+    render(<Page />);
+    expect(screen.getByText('追踪体重变化，管理健康目标')).toBeDefined();
+  });
+});
+
+describe('Water Page', () => {
+  it('renders without crashing', async () => {
+    const Page = (await import('@/app/water/page')).default;
+    render(<Page />);
+    expect(screen.getByText('今日饮水')).toBeDefined();
   });
 });

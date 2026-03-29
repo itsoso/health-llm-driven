@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, chatApi, openclawApi, sharedApi, feedbackApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { relativeTime } from '@/utils/timeFormat';
 
 interface InsightItem { id: number; notification_type: string; title: string; content: string; created_at: string }
 
@@ -120,6 +121,8 @@ export default function AIAssistantPage() {
   const [conversationId, setConversationId] = useState<number | undefined>();
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [dietNotification, setDietNotification] = useState<DietSavedData | null>(null);
@@ -799,7 +802,10 @@ export default function AIAssistantPage() {
                         <div className="min-w-0 flex-1">
                           <div className="line-clamp-2 text-sm font-medium leading-6 text-white">{conv.title}</div>
                           {conv.last_message && (
-                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">{conv.last_message}</div>
+                            <div className="mt-1 text-xs leading-5 text-slate-400 truncate">{conv.last_message.length > 30 ? conv.last_message.slice(0, 30) + '...' : conv.last_message}</div>
+                          )}
+                          {conv.updated_at && (
+                            <div className="mt-0.5 text-[11px] text-slate-500">{relativeTime(conv.updated_at)}</div>
                           )}
                         </div>
                       </div>
@@ -1245,7 +1251,7 @@ export default function AIAssistantPage() {
                 <div className="text-xs text-slate-500">Enter 发送</div>
               </div>
 
-              <div className="flex items-center gap-3 px-4 py-4">
+              <div className="flex items-center gap-3 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1257,7 +1263,7 @@ export default function AIAssistantPage() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={imageUploading}
-                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
+                  className={`flex min-h-[44px] min-w-[44px] h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
                     imageUploading ? 'bg-white/15 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
                   }`}
                   title="上传图片或文件"
@@ -1269,7 +1275,7 @@ export default function AIAssistantPage() {
 
                 <button
                   onClick={handleVoiceToggle}
-                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
+                  className={`flex min-h-[44px] min-w-[44px] h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
                     isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
                   }`}
                   title={isRecording ? '停止录音' : '语音输入'}
@@ -1297,7 +1303,7 @@ export default function AIAssistantPage() {
                 <button
                   onClick={() => handleSend()}
                   disabled={!inputText.trim() && !pendingImage && !pendingFile}
-                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all ${
+                  className={`flex min-h-[44px] min-w-[44px] h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all ${
                     (inputText.trim() || pendingImage || pendingFile)
                       ? 'bg-white text-slate-950 hover:scale-[1.02]'
                       : 'bg-white/8 text-slate-500 cursor-not-allowed'

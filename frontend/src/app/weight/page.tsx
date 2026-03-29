@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
@@ -24,6 +24,8 @@ function WeightContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
   const { showToast } = useToast();
+
+  useEffect(() => { document.title = '体重 | 健康管理'; }, []);
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({

@@ -364,12 +364,18 @@ def update_diet_record(
 
 
 @router.delete("/records/{record_id}")
-def delete_diet_record(record_id: int, db: Session = Depends(get_db)):
-    """删除饮食记录"""
+def delete_diet_record(
+    record_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """删除饮食记录（需登录，且只能删除自己的记录）"""
     record = db.query(DietRecordModel).filter(DietRecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+    if record.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除他人的饮食记录")
+
     db.delete(record)
     db.commit()
     return {"message": "Record deleted successfully"}

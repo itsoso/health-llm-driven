@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format, subDays, startOfWeek } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
@@ -170,6 +170,8 @@ function MetricCard({
 
 function OverviewContent() {
   const { token } = useAuth();
+
+  useEffect(() => { document.title = '健康总览 | 健康管理'; }, []);
   // 使用北京时间 (UTC+8) 计算日期
   const TIMEZONE = 'Asia/Shanghai';
   const nowInTimezone = utcToZonedTime(new Date(), TIMEZONE);

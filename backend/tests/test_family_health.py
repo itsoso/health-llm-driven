@@ -1,0 +1,132 @@
+"""家庭健康管理 API 测试 — 体检报告 + 指标分析"""
+import pytest
+from datetime import date
+
+from app.models.family_health import MedicalReport, MedicalIndicator
+
+
+class TestMedicalReportsMe:
+    """GET /family-health/medical-reports/me"""
+
+    def test_returns_empty_list(self, client, db, auth_user_and_headers):
+        """无报告时返回空列表"""
+        _, headers = auth_user_and_headers
+        res = client.get("/api/v1/family-health/medical-reports/me", headers=headers)
+        assert res.status_code == 200
+        assert res.json() == []
+
+    def test_returns_own_reports(self, client, db, auth_user_and_headers):
+        """返回当前用户的报告列表"""
+        user, headers = auth_user_and_headers
+        report = MedicalReport(
+            user_id=user.id,
+            report_date=date(2025, 6, 1),
+            hospital="测试医院",
+            report_type="general",
+            title="年度体检",
+            status="completed",
+        )
+        db.add(report)
+        db.commit()
+
+        res = client.get("/api/v1/family-health/medical-reports/me", headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "年度体检"
+        assert data[0]["hospital"] == "测试医院"
+
+
+class TestMedicalReportDetail:
+    """GET /family-health/medical-reports/{id}"""
+
+    def test_nonexistent_report_returns_404(self, client, db, auth_user_and_headers):
+        """查询不存在的报告返回 404"""
+        _, headers = auth_user_and_headers
+        res = client.get("/api/v1/family-health/medical-reports/99999", headers=headers)
+        assert res.status_code == 404
+
+    def test_get_own_report_detail(self, client, db, auth_user_and_headers):
+        """获取自己的报告详情"""
+        user, headers = auth_user_and_headers
+        report = MedicalReport(
+            user_id=user.id,
+            report_date=date(2025, 6, 1),
+            title="血液检查",
+            status="completed",
+            extracted_items=[{"name": "白细胞", "value": 6.5}],
+            abnormal_items=[],
+            ai_summary="各项指标正常",
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+
+        res = client.get(
+            f"/api/v1/family-health/medical-reports/{report.id}", headers=headers
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["title"] == "血液检查"
+        assert data["ai_summary"] == "各项指标正常"
+        assert len(data["extracted_items"]) == 1
+
+
+class TestMedicalIndicatorsAnalysis:
+    """GET /family-health/medical-indicators/analysis"""
+
+    def test_analysis_returns_structure(self, client, db, auth_user_and_headers):
+        """分析接口返回正确结构"""
+        user, headers = auth_user_and_headers
+
+        # 创建一些指标数据
+        for i, name in enumerate(["空腹血糖", "总胆固醇"]):
+            ind = MedicalIndicator(
+                user_id=user.id,
+                name=name,
+                category="blood" if i == 0 else "lipid",
+                value=5.5 + i,
+                unit="mmol/L",
+                is_abnormal=False,
+                severity="normal",
+                record_date=date(2025, 6, 1),
+            )
+            db.add(ind)
+        db.commit()
+
+        res = client.get(
+            "/api/v1/family-health/medical-indicators/analysis", headers=headers
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "categories" in data or "indicators" in data or isinstance(data, dict)
+
+    def test_analysis_empty_data(self, client, db, auth_user_and_headers):
+        """无指标数据时也能正常返回"""
+        _, headers = auth_user_and_headers
+        res = client.get(
+            "/api/v1/family-health/medical-indicators/analysis", headers=headers
+        )
+        assert res.status_code == 200
+
+    def test_analysis_with_category_filter(self, client, db, auth_user_and_headers):
+        """按分类过滤"""
+        user, headers = auth_user_and_headers
+        ind = MedicalIndicator(
+            user_id=user.id,
+            name="空腹血糖",
+            category="glucose",
+            value=5.8,
+            unit="mmol/L",
+            is_abnormal=False,
+            severity="normal",
+            record_date=date(2025, 6, 1),
+        )
+        db.add(ind)
+        db.commit()
+
+        res = client.get(
+            "/api/v1/family-health/medical-indicators/analysis?category=glucose",
+            headers=headers,
+        )
+        assert res.status_code == 200

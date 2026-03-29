@@ -21,6 +21,8 @@ function SettingsContent() {
   const router = useRouter();
   const { token, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+
+  useEffect(() => { document.title = '设置 | 健康管理'; }, []);
   const assistantOpenclawSectionRef = useRef<HTMLDivElement>(null);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

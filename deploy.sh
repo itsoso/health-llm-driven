@@ -260,6 +260,8 @@ deploy_backend() {
         pip install -r requirements.txt -q && \
         echo '重启后端服务...' && \
         systemctl restart health-backend && \
+        echo '重启 Celery worker & beat...' && \
+        systemctl restart celery-worker celery-beat && \
         echo '同步 Skills 到 OpenClaw Gateway...' && \
         python3 -c '
 from app.services.openclaw_skills_service import openclaw_skills_service

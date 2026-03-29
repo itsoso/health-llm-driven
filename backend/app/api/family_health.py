@@ -110,63 +110,6 @@ async def get_my_reports(
     } for r in reports]
 
 
-@router.get("/medical-reports/{report_id}", summary="体检报告详情", tags=["medical-reports"])
-async def get_report_detail(
-    report_id: int,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    report = db.query(MedicalReport).filter(
-        MedicalReport.id == report_id,
-        MedicalReport.user_id == current_user.id,
-    ).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="报告不存在")
-
-    return {
-        "id": report.id,
-        "report_date": str(report.report_date),
-        "hospital": report.hospital,
-        "title": report.title,
-        "status": report.status,
-        "extracted_items": report.extracted_items or [],
-        "abnormal_items": report.abnormal_items or [],
-        "ai_summary": report.ai_summary,
-        "ai_suggestions": report.ai_suggestions,
-    }
-
-
-@router.get("/medical-indicators/trend/{indicator_name}", summary="指标趋势", tags=["medical-reports"])
-async def get_indicator_trend(
-    indicator_name: str,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    """获取某项指标的历史趋势（跨报告）"""
-    records = db.query(MedicalIndicator).filter(
-        MedicalIndicator.user_id == current_user.id,
-        MedicalIndicator.name == indicator_name,
-    ).order_by(MedicalIndicator.record_date).all()
-
-    return {
-        "indicator_name": indicator_name,
-        "data_points": [{
-            "date": str(r.record_date),
-            "value": r.value,
-            "unit": r.unit,
-            "is_abnormal": r.is_abnormal,
-            "severity": r.severity,
-            "reference_low": r.reference_low,
-            "reference_high": r.reference_high,
-        } for r in records],
-        "total_records": len(records),
-    }
-
-
-# ══════════════════════════════════════════════════════════
-# 多报告对比 & 趋势分析
-# ══════════════════════════════════════════════════════════
-
 @router.get("/medical-reports/compare", summary="多份体检报告对比", tags=["medical-reports"])
 async def compare_reports(
     report_ids: str = Query(..., description="逗号分隔的报告 ID，如 '1,2,3'"),
@@ -299,6 +242,59 @@ async def compare_reports(
             "stable": stable,
             "new_abnormal": new_abnormal,
         },
+    }
+
+
+@router.get("/medical-reports/{report_id}", summary="体检报告详情", tags=["medical-reports"])
+async def get_report_detail(
+    report_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    report = db.query(MedicalReport).filter(
+        MedicalReport.id == report_id,
+        MedicalReport.user_id == current_user.id,
+    ).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+
+    return {
+        "id": report.id,
+        "report_date": str(report.report_date),
+        "hospital": report.hospital,
+        "title": report.title,
+        "status": report.status,
+        "extracted_items": report.extracted_items or [],
+        "abnormal_items": report.abnormal_items or [],
+        "ai_summary": report.ai_summary,
+        "ai_suggestions": report.ai_suggestions,
+    }
+
+
+@router.get("/medical-indicators/trend/{indicator_name}", summary="指标趋势", tags=["medical-reports"])
+async def get_indicator_trend(
+    indicator_name: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取某项指标的历史趋势（跨报告）"""
+    records = db.query(MedicalIndicator).filter(
+        MedicalIndicator.user_id == current_user.id,
+        MedicalIndicator.name == indicator_name,
+    ).order_by(MedicalIndicator.record_date).all()
+
+    return {
+        "indicator_name": indicator_name,
+        "data_points": [{
+            "date": str(r.record_date),
+            "value": r.value,
+            "unit": r.unit,
+            "is_abnormal": r.is_abnormal,
+            "severity": r.severity,
+            "reference_low": r.reference_low,
+            "reference_high": r.reference_high,
+        } for r in records],
+        "total_records": len(records),
     }
 
 
