@@ -239,7 +239,7 @@ function GeneticContent() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">检测机构 *</label>
                 <select value={profileForm.test_provider}
                   onChange={e => setProfileForm({...profileForm, test_provider: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent">
                   <option value="">选择检测机构</option>
                   <option value="华大基因">华大基因</option>
                   <option value="微基因">微基因 (WeGene)</option>
