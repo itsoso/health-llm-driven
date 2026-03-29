@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi } from '@/services/api';
+import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi, api } from '@/services/api';
 import { format, subDays } from 'date-fns';
 import {
   LineChart,
@@ -72,6 +72,23 @@ function DashboardContent() {
   const { data: trendData } = useQuery({
     queryKey: ['health-trends-latest', userId],
     queryFn: () => healthTrendApi.getLatest(),
+    enabled: !!userId,
+  });
+
+  // 非 Garmin 用户数据：饮水/饮食/体重（当 Garmin 数据为空时展示）
+  const { data: waterToday } = useQuery({
+    queryKey: ['water-today', userId, today],
+    queryFn: () => api.get(`/water/records/me/daily-summary?date=${today}`),
+    enabled: !!userId,
+  });
+  const { data: dietToday } = useQuery({
+    queryKey: ['diet-today', userId, today],
+    queryFn: () => api.get(`/diet/records/me/date/${today}`),
+    enabled: !!userId,
+  });
+  const { data: weightLatest } = useQuery({
+    queryKey: ['weight-latest', userId],
+    queryFn: () => api.get('/weight/records/me?limit=1'),
     enabled: !!userId,
   });
 
@@ -371,9 +388,62 @@ function DashboardContent() {
               </div>
             </div>
           ) : (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-              <p className="text-indigo-100">正在加载今日数据...</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* 没有 Garmin 数据时展示手动记录的数据 */}
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">💧</span>
+                  <p className="text-sm font-medium text-indigo-100">今日饮水</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {waterToday?.data?.total_amount || 0}
+                  <span className="text-lg ml-1">ml</span>
+                </p>
+                <p className="text-xs text-indigo-200 mt-1">目标 {waterToday?.data?.target_amount || 2000}ml</p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🍽️</span>
+                  <p className="text-sm font-medium text-indigo-100">今日饮食</p>
+                </div>
+                <p className="text-3xl font-bold">
+                  {Array.isArray(dietToday?.data) ? dietToday.data.length : 0}
+                  <span className="text-lg ml-1">餐</span>
+                </p>
+                <p className="text-xs text-indigo-200 mt-1">
+                  {Array.isArray(dietToday?.data) && dietToday.data.length > 0
+                    ? `${dietToday.data.reduce((s: number, d: any) => s + (d.calories || 0), 0).toFixed(0)} kcal`
+                    : '暂无记录'}
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">⚖️</span>
+                  <p className="text-sm font-medium text-indigo-100">最近体重</p>
+                </div>
+                {(() => {
+                  const records = weightLatest?.data;
+                  const latest = Array.isArray(records) && records.length > 0 ? records[0] : null;
+                  return (
+                    <>
+                      <p className="text-3xl font-bold">
+                        {latest?.weight || '-'}
+                        {latest?.weight && <span className="text-lg ml-1">kg</span>}
+                      </p>
+                      <p className="text-xs text-indigo-200 mt-1">{latest?.record_date || '暂无记录'}</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 flex flex-col items-center justify-center cursor-pointer hover:bg-white/20 transition"
+                onClick={() => router.push('/settings#garmin')}>
+                <span className="text-3xl mb-2">⌚</span>
+                <p className="text-sm font-medium text-indigo-100">连接智能手表</p>
+                <p className="text-xs text-indigo-200 mt-1">解锁更多健康数据</p>
+              </div>
             </div>
           )}
         </div>
