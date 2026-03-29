@@ -256,6 +256,21 @@ export default function AIAssistantPage() {
 
       let gotDone = false;
       let firstToken = true;
+      // 等待进度提示：超过 8 秒没收到 token 时更新占位消息
+      const waitTimer = setTimeout(() => {
+        if (firstToken) {
+          setMessages(prev => prev.map(m =>
+            m.id === aiMsgId ? { ...m, content: '⏳ AI 正在思考中，复杂分析可能需要 1-2 分钟...' } : m
+          ));
+        }
+      }, 8000);
+      const waitTimer2 = setTimeout(() => {
+        if (firstToken) {
+          setMessages(prev => prev.map(m =>
+            m.id === aiMsgId ? { ...m, content: '⏳ 正在调用多个 AI 模型进行深度分析，请耐心等待...' } : m
+          ));
+        }
+      }, 30000);
       // 每次调用独立的缓冲区，支持并行流
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
       const streamIterator = openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
@@ -263,6 +278,12 @@ export default function AIAssistantPage() {
         if (event.event === 'token') {
           if (firstToken) {
             firstToken = false;
+            clearTimeout(waitTimer);
+            clearTimeout(waitTimer2);
+            // 清除等待提示，用真实内容替换
+            setMessages(prev => prev.map(m =>
+              m.id === aiMsgId ? { ...m, content: '' } : m
+            ));
             setLoading(false);
           }
           // 缓冲 token，批量更新减少渲染次数
@@ -305,19 +326,30 @@ export default function AIAssistantPage() {
           }
           handleDoneEvent(result);
         } else if (event.event === 'error') {
+          clearTimeout(waitTimer);
+          clearTimeout(waitTimer2);
+          const errText = event.data.message || '';
+          const friendlyMsg = errText.includes('timeout') || errText.includes('Timeout')
+            ? '⏱ 分析超时了，可能是数据量较大。请稍后重试，或换一个更具体的问题。'
+            : errText.includes('Gateway') || errText.includes('502') || errText.includes('503')
+            ? '🔧 AI 服务暂时繁忙，请稍后再试。'
+            : errText || '抱歉，出了点问题，请重试。';
           setMessages(prev => prev.map(m =>
-            m.id === aiMsgId ? { ...m, content: event.data.message || '服务异常，请重试' } : m
+            m.id === aiMsgId ? { ...m, content: friendlyMsg } : m
           ));
         }
       }
+
+      clearTimeout(waitTimer);
+      clearTimeout(waitTimer2);
 
       // 如果流没有返回 done 事件且消息为空，显示错误
       if (!gotDone) {
         setMessages(prev => {
           const aiMsg = prev.find(m => m.id === aiMsgId);
-          if (aiMsg && !aiMsg.content) {
+          if (aiMsg && (!aiMsg.content || aiMsg.content.startsWith('⏳'))) {
             return prev.map(m =>
-              m.id === aiMsgId ? { ...m, content: '抱歉，响应异常中断，请重试。' } : m
+              m.id === aiMsgId ? { ...m, content: '抱歉，OpenClaw 暂时无法响应，请稍后再试。' } : m
             );
           }
           return prev;
