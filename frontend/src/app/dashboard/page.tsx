@@ -16,10 +16,12 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 function DashboardContent() {
+  const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
@@ -374,6 +376,29 @@ function DashboardContent() {
               <p className="text-indigo-100">正在加载今日数据...</p>
             </div>
           )}
+        </div>
+
+        {/* 快捷操作 */}
+        <div className="grid grid-cols-4 md:grid-cols-8 gap-3 mb-8">
+          {[
+            { icon: '💧', label: '喝水', path: '/water' },
+            { icon: '🍽️', label: '饮食', path: '/diet' },
+            { icon: '⚖️', label: '体重', path: '/weight' },
+            { icon: '🩺', label: '血压', path: '/blood-pressure' },
+            { icon: '🤖', label: 'AI助理', path: '/ai-assistant' },
+            { icon: '📋', label: '体检报告', path: '/family/reports' },
+            { icon: '🏃', label: '运动', path: '/workout' },
+            { icon: '📊', label: '总览', path: '/overview' },
+          ].map(item => (
+            <button
+              key={item.path}
+              onClick={() => router.push(item.path)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-200 transition"
+            >
+              <span className="text-2xl">{item.icon}</span>
+              <span className="text-xs font-medium text-gray-600">{item.label}</span>
+            </button>
+          ))}
         </div>
 
         {/* 关键指标卡片 */}
