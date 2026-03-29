@@ -269,13 +269,13 @@ function GeneticContent() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
               </div>
             </div>
-            {/* PDF 上传区 */}
+            {/* 文件上传区 */}
             <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-              <p className="text-sm font-medium text-gray-700 mb-2">📄 上传 PDF 报告（可选）</p>
-              <p className="text-xs text-gray-500 mb-3">上传基因检测 PDF，AI 自动提取所有基因位点。也可以跳过，稍后手动录入。</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">📄 上传检测数据（推荐）</p>
+              <p className="text-xs text-gray-500 mb-3">支持微基因/23andMe 的 TXT 原始数据（秒级解析）或 PDF 报告（AI 提取，较慢）。</p>
               <input
                 type="file"
-                accept=".pdf"
+                accept=".txt,.pdf,.csv"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -283,46 +283,72 @@ function GeneticContent() {
                     alert('请先选择检测机构和日期');
                     return;
                   }
-                  const reader = new FileReader();
-                  reader.onload = async () => {
-                    const base64 = (reader.result as string).split(',')[1];
-                    setPdfUploading(true);
-                    try {
-                      const res = await api.post('/genetic/profiles/upload-pdf', {
-                        test_provider: profileForm.test_provider,
-                        test_date: profileForm.test_date,
-                        pdf_base64: base64,
-                        notes: profileForm.notes,
-                      });
-                      setPdfStatus(`正在提取... (ID: ${res.data.id})`);
-                      // 轮询状态
-                      const pollId = res.data.id;
-                      const poll = setInterval(async () => {
-                        try {
-                          const detail = await api.get(`/genetic/profiles/${pollId}`);
-                          const variants = detail.data.variants || [];
-                          if (variants.length > 0 || (detail.data.notes && detail.data.notes.includes('完成'))) {
-                            clearInterval(poll);
-                            setPdfUploading(false);
-                            setPdfStatus(`提取完成！发现 ${variants.length} 个基因位点`);
-                            setShowProfileForm(false);
-                            queryClient.invalidateQueries({ queryKey: ['genetic-profiles'] });
-                            queryClient.invalidateQueries({ queryKey: ['genetic-variants'] });
-                          } else if (detail.data.notes && detail.data.notes.includes('失败')) {
-                            clearInterval(poll);
-                            setPdfUploading(false);
-                            setPdfStatus('提取失败: ' + detail.data.notes);
-                          }
-                        } catch { /* continue polling */ }
-                      }, 3000);
-                      // 最多轮询 5 分钟
-                      setTimeout(() => { clearInterval(poll); setPdfUploading(false); }, 300000);
-                    } catch (err: any) {
-                      setPdfUploading(false);
-                      setPdfStatus('上传失败: ' + (err.response?.data?.detail || err.message));
-                    }
-                  };
-                  reader.readAsDataURL(file);
+                  const isTxt = file.name.endsWith('.txt') || file.name.endsWith('.csv');
+                  setPdfUploading(true);
+                  setPdfStatus(isTxt ? '正在解析原始数据...' : '正在上传 PDF...');
+
+                  if (isTxt) {
+                    // TXT: 直接读文本，秒级解析
+                    const reader = new FileReader();
+                    reader.onload = async () => {
+                      try {
+                        const res = await api.post('/genetic/profiles/upload-txt', {
+                          test_provider: profileForm.test_provider,
+                          test_date: profileForm.test_date,
+                          txt_content: reader.result as string,
+                          notes: profileForm.notes,
+                        });
+                        setPdfUploading(false);
+                        setPdfStatus(`解析完成！匹配到 ${res.data.matched_count} 个健康相关基因位点`);
+                        setShowProfileForm(false);
+                        queryClient.invalidateQueries({ queryKey: ['genetic-profiles'] });
+                        queryClient.invalidateQueries({ queryKey: ['genetic-variants'] });
+                      } catch (err: any) {
+                        setPdfUploading(false);
+                        setPdfStatus('解析失败: ' + (err.response?.data?.detail || err.message));
+                      }
+                    };
+                    reader.readAsText(file);
+                  } else {
+                    // PDF: base64 上传，AI 异步提取
+                    const reader = new FileReader();
+                    reader.onload = async () => {
+                      const base64 = (reader.result as string).split(',')[1];
+                      try {
+                        const res = await api.post('/genetic/profiles/upload-pdf', {
+                          test_provider: profileForm.test_provider,
+                          test_date: profileForm.test_date,
+                          pdf_base64: base64,
+                          notes: profileForm.notes,
+                        });
+                        setPdfStatus(`AI 正在提取... (ID: ${res.data.id})`);
+                        const pollId = res.data.id;
+                        const poll = setInterval(async () => {
+                          try {
+                            const detail = await api.get(`/genetic/profiles/${pollId}`);
+                            const variants = detail.data.variants || [];
+                            if (variants.length > 0 || (detail.data.notes && detail.data.notes.includes('完成'))) {
+                              clearInterval(poll);
+                              setPdfUploading(false);
+                              setPdfStatus(`提取完成！发现 ${variants.length} 个基因位点`);
+                              setShowProfileForm(false);
+                              queryClient.invalidateQueries({ queryKey: ['genetic-profiles'] });
+                              queryClient.invalidateQueries({ queryKey: ['genetic-variants'] });
+                            } else if (detail.data.notes && detail.data.notes.includes('失败')) {
+                              clearInterval(poll);
+                              setPdfUploading(false);
+                              setPdfStatus('提取失败: ' + detail.data.notes);
+                            }
+                          } catch { /* continue polling */ }
+                        }, 3000);
+                        setTimeout(() => { clearInterval(poll); setPdfUploading(false); }, 300000);
+                      } catch (err: any) {
+                        setPdfUploading(false);
+                        setPdfStatus('上传失败: ' + (err.response?.data?.detail || err.message));
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }
                 }}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
                 disabled={pdfUploading}

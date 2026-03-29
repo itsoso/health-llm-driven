@@ -89,11 +89,141 @@ class VariantResponse(BaseModel):
 # PDF 上传 + AI 自动提取
 # ══════════════════════════════════════════════════════════
 
+# 已知健康相关 SNP 字典：rsid → (category, gene, variant, genotype→label 映射)
+KNOWN_SNPS = {
+    # 营养代谢
+    "rs1801133": {"category": "nutrition", "gene": "MTHFR", "variant": "C677T",
+        "map": {"GG": ("CC", "叶酸代谢正常", "low"), "AG": ("CT", "叶酸代谢轻度减弱", "medium"), "AA": ("TT", "叶酸代谢显著减弱", "high")},
+        "desc": "亚甲基四氢叶酸还原酶，影响叶酸代谢和同型半胱氨酸水平"},
+    "rs762551": {"category": "nutrition", "gene": "CYP1A2", "variant": "咖啡因代谢",
+        "map": {"AA": ("AA", "快速代谢", "low"), "AC": ("AC", "中等代谢", "info"), "CC": ("CC", "慢速代谢", "medium")},
+        "desc": "细胞色素P450酶，影响咖啡因代谢速度"},
+    "rs4988235": {"category": "nutrition", "gene": "LCT", "variant": "乳糖耐受",
+        "map": {"GG": ("CC", "乳糖不耐受", "medium"), "AG": ("CT", "部分耐受", "low"), "AA": ("TT", "乳糖耐受", "low")},
+        "desc": "乳糖酶基因，影响乳制品消化能力"},
+    "rs671": {"category": "nutrition", "gene": "ALDH2", "variant": "酒精代谢",
+        "map": {"GG": ("GG", "酒精代谢正常", "low"), "AG": ("GA", "酒精代谢减弱(易脸红)", "medium"), "AA": ("AA", "酒精代谢缺陷", "high")},
+        "desc": "乙醛脱氢酶，影响酒精代谢能力"},
+    "rs1544410": {"category": "nutrition", "gene": "VDR", "variant": "维生素D受体",
+        "map": {"CC": ("CC", "维D需求正常", "low"), "CT": ("CT", "维D需求轻度增高", "low"), "TT": ("TT", "维D需求增高", "medium")},
+        "desc": "维生素D受体基因，影响钙吸收和骨密度"},
+    # 运动能力
+    "rs1815739": {"category": "exercise", "gene": "ACTN3", "variant": "R577X",
+        "map": {"CC": ("RR", "爆发力型", "info"), "CT": ("RX", "混合型", "info"), "TT": ("XX", "耐力型", "info")},
+        "desc": "α-辅肌动蛋白3，影响快肌纤维比例"},
+    "rs12722489": {"category": "exercise", "gene": "PPARGC1A", "variant": "有氧能力",
+        "map": {"CC": ("CC", "有氧能力正常", "info"), "CT": ("CT", "有氧能力较好", "info"), "TT": ("TT", "有氧能力较强", "info")},
+        "desc": "线粒体生物合成关键调节因子"},
+    # 药物敏感
+    "rs4244285": {"category": "drug_sensitivity", "gene": "CYP2C19", "variant": "氯吡格雷代谢 *2",
+        "map": {"GG": ("*1/*1", "正常代谢", "low"), "AG": ("*1/*2", "中间代谢", "medium"), "AA": ("*2/*2", "慢代谢", "high")},
+        "desc": "影响氯吡格雷、奥美拉唑等药物代谢"},
+    "rs5030655": {"category": "drug_sensitivity", "gene": "CYP2D6", "variant": "止痛药代谢",
+        "map": {"DD": ("正常", "正常代谢", "low"), "DI": ("中间", "中间代谢", "medium"), "II": ("慢", "慢代谢(需调整剂量)", "high")},
+        "desc": "影响可待因、曲马多等止痛药代谢"},
+    "rs4149056": {"category": "drug_sensitivity", "gene": "SLCO1B1", "variant": "他汀类药物",
+        "map": {"TT": ("TT", "他汀耐受正常", "low"), "CT": ("CT", "他汀肌病风险轻度增高", "medium"), "CC": ("CC", "他汀肌病风险增高", "high")},
+        "desc": "有机阴离子转运蛋白，影响他汀类药物清除"},
+    "rs1265181": {"category": "drug_sensitivity", "gene": "HLA-B*5801", "variant": "别嘌醇过敏",
+        "map": {"GG": ("阴性", "别嘌醇可使用", "low"), "AG": ("携带", "别嘌醇慎用", "high"), "AA": ("阳性", "别嘌醇禁用", "high")},
+        "desc": "HLA基因，与别嘌醇严重过敏反应相关"},
+    # 疾病风险
+    "rs429358": {"category": "disease_risk", "gene": "APOE", "variant": "ε4 (rs429358)",
+        "map": {"TT": ("ε3/ε3", "标准风险", "low"), "CT": ("ε3/ε4", "心血管/AD风险轻度增高", "medium"), "CC": ("ε4/ε4", "心血管/AD风险显著增高", "high")},
+        "desc": "载脂蛋白E，与阿尔茨海默病和心血管疾病风险相关"},
+    "rs7903146": {"category": "disease_risk", "gene": "TCF7L2", "variant": "2型糖尿病",
+        "map": {"CC": ("CC", "标准风险", "low"), "CT": ("CT", "糖尿病风险轻度增高", "medium"), "TT": ("TT", "糖尿病风险增高", "high")},
+        "desc": "转录因子7-like 2，与胰岛素分泌和2型糖尿病风险相关"},
+    "rs9939609": {"category": "disease_risk", "gene": "FTO", "variant": "肥胖倾向",
+        "map": {"TT": ("TT", "标准体重倾向", "low"), "AT": ("AT", "轻度肥胖倾向", "medium"), "AA": ("AA", "肥胖倾向增高", "high")},
+        "desc": "脂肪量和肥胖相关基因"},
+    # 睡眠
+    "rs1801260": {"category": "sleep", "gene": "CLOCK", "variant": "昼夜节律",
+        "map": {"AA": ("TT", "标准作息型", "info"), "AG": ("TC", "轻度夜猫子", "low"), "GG": ("CC", "夜猫子型", "medium")},
+        "desc": "生物钟核心基因，影响昼夜节律偏好"},
+    "rs2304672": {"category": "sleep", "gene": "PER2", "variant": "睡眠周期",
+        "map": {"GG": ("GG", "标准睡眠周期", "info"), "CG": ("CG", "睡眠周期轻度偏移", "low"), "CC": ("CC", "睡眠周期偏移", "medium")},
+        "desc": "周期蛋白2，影响睡眠-觉醒周期"},
+    "rs73598374": {"category": "sleep", "gene": "ADA", "variant": "深度睡眠",
+        "map": {"CC": ("GG", "深睡正常", "info"), "CT": ("GA", "深睡偏少", "medium"), "TT": ("AA", "深睡显著偏少", "high")},
+        "desc": "腺苷脱氨酶，影响深度睡眠质量"},
+}
+
+
 class GeneticPdfUploadRequest(BaseModel):
     test_provider: str = Field(..., description="检测机构")
     test_date: date = Field(..., description="检测日期")
     pdf_base64: str = Field(..., description="PDF 文件 base64")
     notes: Optional[str] = None
+
+
+class GeneticTxtUploadRequest(BaseModel):
+    test_provider: str = Field(..., description="检测机构")
+    test_date: date = Field(..., description="检测日期")
+    txt_content: str = Field(..., description="TXT 原始数据内容")
+    notes: Optional[str] = None
+
+
+@router.post("/profiles/upload-txt", summary="上传微基因/23andMe 原始 TXT 数据，自动解析健康位点")
+def upload_genetic_txt(
+    req: GeneticTxtUploadRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """解析 WeGene/23andMe 格式的 TXT 原始数据，匹配已知健康 SNP"""
+    profile = GeneticProfile(
+        user_id=current_user.id,
+        test_provider=req.test_provider,
+        test_date=req.test_date,
+        notes=req.notes or "TXT 原始数据解析",
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    # 解析 TXT
+    matched = []
+    for line in req.txt_content.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+        rsid = parts[0]
+        genotype = parts[3].strip()
+        if rsid in KNOWN_SNPS and genotype != "--":
+            snp = KNOWN_SNPS[rsid]
+            mapping = snp["map"].get(genotype)
+            if not mapping:
+                # 尝试反转基因型 (AG→GA)
+                rev = genotype[::-1] if len(genotype) == 2 else genotype
+                mapping = snp["map"].get(rev)
+            if mapping:
+                geno_label, result_label, risk = mapping
+                variant = GeneticVariant(
+                    user_id=current_user.id,
+                    profile_id=profile.id,
+                    category=snp["category"],
+                    gene_name=snp["gene"],
+                    variant_name=snp["variant"],
+                    genotype=geno_label,
+                    result_label=result_label,
+                    risk_level=risk,
+                    description=snp["desc"],
+                )
+                db.add(variant)
+                matched.append({"gene": snp["gene"], "genotype": geno_label, "result": result_label, "risk": risk})
+
+    profile.notes = f"TXT 解析完成，匹配 {len(matched)} 个健康位点"
+    db.commit()
+
+    return {
+        "id": profile.id,
+        "matched_count": len(matched),
+        "variants": matched,
+        "message": f"成功解析 {len(matched)} 个健康相关基因位点",
+    }
 
 
 @router.post("/profiles/upload-pdf", summary="上传基因检测 PDF，AI 自动提取基因位点")
