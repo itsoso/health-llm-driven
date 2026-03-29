@@ -3,6 +3,37 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, chatApi, openclawApi, sharedApi, feedbackApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+
+interface InsightItem { id: number; notification_type: string; title: string; content: string; created_at: string }
+
+function InsightsCard({ insights, accentClass }: { insights: InsightItem[]; accentClass: string }) {
+  const ICONS: Record<string, string> = {
+    morning_summary: '🌅', health_alert: '⚠️', daily_insights: '📊',
+    trend_report: '📈', family_daily_brief: '👪',
+  };
+  const COLORS: Record<string, string> = {
+    health_alert: 'border-red-500/30 bg-red-500/10',
+    morning_summary: 'border-emerald-500/30 bg-emerald-500/10',
+  };
+  return (
+    <div className="rounded-[30px] border border-white/10 bg-slate-950/60 p-5 shadow-[0_20px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+      <div className={`text-[10px] uppercase tracking-[0.3em] ${accentClass}`}>今日洞察</div>
+      <div className="mt-3 space-y-3">
+        {insights.map(ins => (
+          <div key={ins.id} className={`rounded-xl border p-3 ${COLORS[ins.notification_type] || 'border-white/10 bg-white/5'}`}>
+            <div className="flex items-start gap-2">
+              <span className="text-lg shrink-0">{ICONS[ins.notification_type] || '💡'}</span>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-white">{ins.title}</div>
+                <div className="mt-1 text-xs leading-5 text-slate-300 line-clamp-2">{ins.content}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
@@ -59,7 +90,7 @@ const STYLE = {
   title: '健康助理',
   description: '把记录、分析、提醒和训练恢复收拢到一个会话里，用最少的跳转完成今天的健康决策。',
   support: '支持图片、文件、语音',
-  subSupport: '也可以直接说”我刚运动完”，自动触发 Garmin 同步和恢复分析。',
+  subSupport: '也可以直接说"我刚运动完"，自动触发 Garmin 同步和恢复分析。',
   panelClass: 'from-slate-950/95 via-slate-900/90 to-emerald-950/80',
   badgeClass: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
   bubbleClass: 'bg-slate-900/80 border border-emerald-400/15 text-white shadow-[0_24px_80px_rgba(4,120,87,0.12)]',
@@ -627,12 +658,25 @@ export default function AIAssistantPage() {
 
   const modeCopy = STYLE;
   const [dynamicQuestions, setDynamicQuestions] = useState<QuickQuestion[]>(DEFAULT_QUESTIONS);
+  const [insights, setInsights] = useState<Array<{id: number; notification_type: string; title: string; content: string; created_at: string}>>([]);
 
-  // 加载动态快速问题（基于用户当前状态）
+  // 加载动态快速问题 + 今日洞察
   useEffect(() => {
     api.get('/quick-questions/me?limit=6').then(res => {
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         setDynamicQuestions(res.data);
+      }
+    }).catch(() => {});
+
+    // 加载最近的 AI 洞察（通知日志）
+    api.get('/notification/logs?limit=5').then(res => {
+      const logs = res.data?.logs || res.data || [];
+      if (Array.isArray(logs)) {
+        // 只展示有价值的类型，排除重复的睡眠提醒
+        const valuable = logs.filter((l: any) =>
+          ['morning_summary', 'health_alert', 'daily_insights', 'trend_report', 'family_daily_brief'].includes(l.notification_type)
+        );
+        setInsights(valuable.slice(0, 3));
       }
     }).catch(() => {});
   }, []);
@@ -964,15 +1008,20 @@ export default function AIAssistantPage() {
                       </div>
                     ))}
 
-                    <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                      <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>会话方式</div>
-                      <div className="mt-3 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                        先问结果，再追细节
+                    {insights.length > 0 && (
+                      <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
+                    )}
+                    {insights.length === 0 && (
+                      <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                        <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{"会话方式"}</div>
+                        <div className="mt-3 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                          {"先问结果，再追细节"}
+                        </div>
+                        <div className="mt-3 text-sm leading-7 text-slate-400">
+                          {"例如先问\"今天状态如何\"，再继续追问\"为什么\"和\"下一步做什么\"。"}
+                        </div>
                       </div>
-                      <div className="mt-3 text-sm leading-7 text-slate-400">
-                        例如先问“今天状态如何”，再继续追问“为什么”和“下一步做什么”。
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               ) : (
