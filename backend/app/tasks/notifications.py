@@ -400,15 +400,15 @@ def daily_anomaly_check():
     """
     logger.info("[异常检测] 开始每日健康异常检测")
 
-    from app.models.device_credential import DeviceCredential
+    from app.models.user import GarminCredential
     from app.services.anomaly_detection_service import AnomalyDetectionService
     from app.utils.timezone import get_china_today
 
     with SessionLocal() as db:
         # 获取有Garmin设备的活跃用户
-        credentials = db.query(DeviceCredential).filter(
-            DeviceCredential.device_type == "garmin",
-            DeviceCredential.is_active == True
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True
         ).all()
         user_ids = [c.user_id for c in credentials]
 
@@ -438,15 +438,15 @@ def daily_trend_analysis():
     每日健康趋势分析（22:00执行）
     为活跃用户生成各维度健康趋势报告。
     """
-    from app.models.device_credential import DeviceCredential
+    from app.models.user import GarminCredential
     from app.services.health_trend_service import HealthTrendService
 
     logger.info("[趋势分析] 开始每日趋势分析")
 
     with SessionLocal() as db:
-        credentials = db.query(DeviceCredential).filter(
-            DeviceCredential.device_type == "garmin",
-            DeviceCredential.is_active == True
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True
         ).all()
         user_ids = [c.user_id for c in credentials]
 
@@ -530,7 +530,7 @@ def send_morning_health_summary():
     每日早安健康摘要推送（07:30执行）
     综合昨日健康评分+预警，给用户一条晨间健康问候。
     """
-    from app.models.device_credential import DeviceCredential
+    from app.models.user import GarminCredential
     from app.services.health_score_service import health_score_service
     from app.models.anomaly_alert import AnomalyAlert
 
@@ -538,9 +538,9 @@ def send_morning_health_summary():
     yesterday = date.today() - timedelta(days=1)
 
     with SessionLocal() as db:
-        credentials = db.query(DeviceCredential).filter(
-            DeviceCredential.device_type == "garmin",
-            DeviceCredential.is_active == True
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True
         ).all()
         user_ids = [c.user_id for c in credentials]
 
