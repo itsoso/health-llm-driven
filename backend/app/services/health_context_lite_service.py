@@ -49,6 +49,10 @@ OPENCLAW_HEALTH_SYSTEM_RULES = """你是用户的 AI 健康助理，能通过 Sk
 5. **严重问题**：HRV 持续偏低、SpO2<92%、血压异常、胸痛等 → 务必建议就医
 6. **中文回复**：简洁务实，给出可执行的具体建议，不要泛泛而谈
 7. **⚠️ 预警优先**：有未确认的健康预警时，必须在回复开头提醒
+8. **过敏禁忌**：当用户有过敏或饮食禁忌时，所有饮食建议必须避开这些食物
+9. **伤病限制**：当用户有慢性病或受伤史时，运动建议必须考虑身体限制
+10. **历史偏好**：参考用户记忆中的历史偏好和医嘱，保持个性化
+11. **具体数据**：在回复中主动引用具体数据（步数、心率、睡眠分数），不要泛泛而谈
 
 以下是用户的实时健康档案：
 """
@@ -176,6 +180,43 @@ def _build_context(db: Session, user_id: int) -> str:
             health_info.append(f"用药: {', '.join(med_names)}")
         if health_info:
             parts.append(" | ".join(health_info))
+
+    # ── 1b. 健康目标 ──────────────────────────────────────
+    if profile:
+        goal_parts = []
+        if profile.target_steps:
+            goal_parts.append(f"步数{profile.target_steps}")
+        if profile.target_sleep_hours:
+            goal_parts.append(f"睡眠{profile.target_sleep_hours}h")
+        if profile.target_water_ml:
+            goal_parts.append(f"饮水{profile.target_water_ml}ml")
+        if profile.target_exercise_minutes:
+            goal_parts.append(f"运动{profile.target_exercise_minutes}min")
+        if goal_parts:
+            parts.append(f"健康目标: 每日{' | '.join(goal_parts)}")
+
+    # ── 1c. 过敏与饮食偏好 ───────────────────────────────
+    if profile:
+        diet_info = []
+        allergies = profile.allergies or []
+        if allergies:
+            diet_info.append(f"过敏/禁忌: {', '.join(allergies)}")
+        pref_map = {"vegetarian": "素食", "vegan": "纯素", "low_carb": "低碳水",
+                     "keto": "生酮", "normal": ""}
+        pref = pref_map.get(profile.diet_preference or "", profile.diet_preference or "")
+        if pref:
+            diet_info.append(f"饮食偏好: {pref}")
+        if diet_info:
+            parts.append(" | ".join(diet_info))
+
+    # ── 1d. 用户记忆 ────────────────────────────────────
+    try:
+        from app.services.conversation_memory_service import get_relevant_memories
+        memories_str = get_relevant_memories(db, user_id, limit=5)
+        if memories_str:
+            parts.append(memories_str)
+    except Exception:
+        pass
 
     # ── 2. 今日 Garmin 数据 ──────────────────────────────
     latest_garmin = db.query(GarminData).filter(
@@ -329,6 +370,7 @@ def _build_context(db: Session, user_id: int) -> str:
         pass
 
     # ── 7. 今日饮食概况 ──────────────────────────────────
+    diet_today = []
     try:
         diet_today = db.query(DietRecord).filter(
             DietRecord.user_id == user_id,
@@ -341,6 +383,16 @@ def _build_context(db: Session, user_id: int) -> str:
             parts.append(f"今日饮食: {meals}餐, {total_cal:.0f}kcal, 蛋白质{total_protein:.0f}g")
         else:
             parts.append("今日饮食: 尚未记录")
+    except Exception:
+        pass
+
+    # ── 7b. 能量平衡 ──────────────────────────────────────
+    try:
+        cal_in = sum(d.calories or 0 for d in diet_today) if diet_today else 0
+        cal_out = latest_garmin.calories_burned if latest_garmin and latest_garmin.calories_burned else 0
+        if cal_in > 0 or cal_out > 0:
+            balance = cal_in - cal_out
+            parts.append(f"能量平衡: 摄入{cal_in:.0f}kcal / 消耗{cal_out}kcal = {'+' if balance >= 0 else ''}{balance:.0f}kcal")
     except Exception:
         pass
 
@@ -365,6 +417,22 @@ def _build_context(db: Session, user_id: int) -> str:
             parts.append(f"近期运动: {' | '.join(w_strs)}")
         else:
             parts.append("近7天无运动记录")
+    except Exception:
+        pass
+
+    # ── 8b. 运动水平（30天） ────────────────────────────
+    try:
+        workout_30d_count = db.query(func.count(WorkoutRecord.id)).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= today - timedelta(days=30)
+        ).scalar() or 0
+        if workout_30d_count <= 4:
+            level = "新手"
+        elif workout_30d_count <= 12:
+            level = "中等"
+        else:
+            level = "活跃"
+        parts.append(f"运动水平: {level} (最近30天{workout_30d_count}次运动)")
     except Exception:
         pass
 
