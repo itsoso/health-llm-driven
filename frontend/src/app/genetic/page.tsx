@@ -232,32 +232,53 @@ function GeneticContent() {
         {/* Profile creation form */}
         {showProfileForm && (
           <div className="bg-white rounded-xl shadow-sm p-5 mb-6 border border-gray-200">
-            <h3 className="font-semibold text-gray-800 mb-3">新建基因档案</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input type="text" placeholder="检测机构 (如: 华大基因)" value={profileForm.test_provider}
-                onChange={e => setProfileForm({...profileForm, test_provider: e.target.value})}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
-              <input type="date" value={profileForm.test_date}
-                onChange={e => setProfileForm({...profileForm, test_date: e.target.value})}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
-              <input type="text" placeholder="报告编号 (可选)" value={profileForm.report_id}
-                onChange={e => setProfileForm({...profileForm, report_id: e.target.value})}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
-              <input type="text" placeholder="备注 (可选)" value={profileForm.notes}
-                onChange={e => setProfileForm({...profileForm, notes: e.target.value})}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+            <h3 className="font-semibold text-gray-800 mb-1">新建基因档案</h3>
+            <p className="text-xs text-gray-500 mb-4">从你的华大基因/微基因检测报告中录入基因位点数据，AI 会结合这些数据给出个性化建议。</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">检测机构 *</label>
+                <select value={profileForm.test_provider}
+                  onChange={e => setProfileForm({...profileForm, test_provider: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                  <option value="">选择检测机构</option>
+                  <option value="华大基因">华大基因</option>
+                  <option value="微基因">微基因 (WeGene)</option>
+                  <option value="23andMe">23andMe</option>
+                  <option value="圆基因">圆基因</option>
+                  <option value="其他">其他</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">检测日期 *</label>
+                <input type="date" value={profileForm.test_date}
+                  onChange={e => setProfileForm({...profileForm, test_date: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">报告编号</label>
+                <input type="text" placeholder="选填" value={profileForm.report_id}
+                  onChange={e => setProfileForm({...profileForm, report_id: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">备注</label>
+                <input type="text" placeholder="选填" value={profileForm.notes}
+                  onChange={e => setProfileForm({...profileForm, notes: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
+              </div>
             </div>
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-2 mt-4">
               <button onClick={() => createProfileMutation.mutate(profileForm)}
                 disabled={!profileForm.test_provider || !profileForm.test_date || createProfileMutation.isPending}
-                className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition">
-                {createProfileMutation.isPending ? '保存中...' : '保存'}
+                className="px-5 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition">
+                {createProfileMutation.isPending ? '保存中...' : '保存档案'}
               </button>
               <button onClick={() => setShowProfileForm(false)}
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
                 取消
               </button>
             </div>
+            <p className="text-xs text-gray-400 mt-3">保存后，在下方各分类标签中选择你报告中对应的基因位点结果。</p>
           </div>
         )}
 
