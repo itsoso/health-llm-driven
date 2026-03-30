@@ -26,8 +26,21 @@ def main():
     s = CffiSession(impersonate="chrome")
     SSO = "https://sso.garmin.com/sso"
 
-    print("[2/4] GET signin page...")
-    r1 = s.get(f"{SSO}/signin", params={"service": "https://connect.garmin.com/modern"})
+    # 用 embed 模式（和 garth 一致）获取 ticket
+    SSO_EMBED = f"{SSO}/embed"
+    SIGNIN_PARAMS = {
+        "id": "gauth-widget",
+        "embedWidget": "true",
+        "gauthHost": SSO_EMBED,
+        "service": SSO_EMBED,
+        "source": SSO_EMBED,
+        "redirectAfterAccountLoginUrl": SSO_EMBED,
+        "redirectAfterAccountCreationUrl": SSO_EMBED,
+    }
+
+    print("[2/4] GET signin page (embed mode)...")
+    s.get(f"{SSO}/embed", params={"id": "gauth-widget", "embedWidget": "true", "gauthHost": SSO})
+    r1 = s.get(f"{SSO}/signin", params=SIGNIN_PARAMS)
     print(f"  status={r1.status_code}")
 
     csrf_match = re.search(r'name="_csrf"\s+value="([^"]+)"', r1.text)
@@ -37,11 +50,11 @@ def main():
 
     print(f"  CSRF: {csrf_match.group(1)[:20]}...")
 
-    print("[3/4] POST login...")
+    print("[3/4] POST login (embed mode)...")
     r2 = s.post(
         f"{SSO}/signin",
-        params={"service": "https://connect.garmin.com/modern"},
-        data={"username": email, "password": password, "embed": "false", "_csrf": csrf_match.group(1)},
+        params=SIGNIN_PARAMS,
+        data={"username": email, "password": password, "embed": "true", "_csrf": csrf_match.group(1)},
         headers={"Referer": r1.url, "Origin": "https://sso.garmin.com"},
     )
     print(f"  status={r2.status_code}")
