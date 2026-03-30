@@ -66,3 +66,16 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/profil
 - 不推荐超过5种以上补剂同时服用（简单原则）
 - 有严重健康问题 → 建议咨询医生
 - Always respond in Chinese
+
+## 基因数据关联
+
+推荐补剂前，查询用户基因数据：
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/variants/me?category=nutrition"
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/variants/me?category=drug_sensitivity"
+```
+基因指导的补剂建议：
+- MTHFR TT → 推荐活性叶酸(5-MTHF)而非普通叶酸(folic acid)
+- VDR TT → 维D3补充剂量建议2000-4000IU/天
+- ALDH2 缺陷 → 避免含酒精的液体补剂
+- 药物敏感基因阳性 → 检查补剂与药物的相互作用

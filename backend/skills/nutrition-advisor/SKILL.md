@@ -72,3 +72,16 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/diet/r
 - 给出具体的食物和份量建议（"200g 鸡胸肉"而非"适量蛋白质"）
 - 考虑中国饮食习惯，推荐实际可做的菜品
 - Always respond in Chinese
+
+## 基因数据关联
+
+制定饮食建议前，查询用户营养代谢基因：
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/variants/me?category=nutrition"
+```
+根据基因结果调整建议：
+- MTHFR TT → 增加深绿叶蔬菜，建议补充活性叶酸(5-MTHF)
+- LCT CC(乳糖不耐受) → 避免鲜奶，推荐酸奶/奶酪或植物奶
+- ALDH2 缺陷 → 严格建议戒酒，避免含酒精食物
+- CYP1A2 CC(咖啡因慢代谢) → 限制每日咖啡因≤200mg，避免下午饮用
+- VDR TT(维D需求增高) → 建议额外补充维D3 2000IU/天

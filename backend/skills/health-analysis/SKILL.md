@@ -54,9 +54,21 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/health-sco
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/health-score/trend/me?days=7"
 ```
 
+## 基因数据关联
+
+进行健康分析时，可调用基因数据辅助判断：
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/summary/me"
+```
+如用户有基因数据，应结合基因风险等级解读体检指标和健康趋势。例如：
+- FTO 肥胖基因 + BMI 偏高 → 加强饮食控制建议
+- MTHFR TT + 同型半胱氨酸偏高 → 建议补充活性叶酸
+- CYP2C19 慢代谢 + 正在服用氯吡格雷 → 警告需换药
+
 ## Response Rules
 - Present analysis in structured, readable format
 - Use severity levels: 🟢 正常, 🟡 注意, 🔴 警告
 - Highlight important trends and anomalies
 - Provide actionable suggestions
+- 如有基因数据，在分析中引用具体基因型
 - Always respond in Chinese
