@@ -252,15 +252,44 @@ class WorkoutSyncService:
                 logger.warning(f"{prefix}WorkoutSyncService: MFA会话不存在或已过期: {self._mfa_session_id}")
         
         if not self._authenticated or self.client is None:
+            # 优先从 DB 加载缓存的 garth session（避免 SSO 登录被 Cloudflare 429）
+            if self.user_id:
+                try:
+                    from app.database import SessionLocal
+                    from app.models.user import GarminCredential
+                    import json, tempfile, os
+                    from datetime import datetime
+                    _db = SessionLocal()
+                    cred = _db.query(GarminCredential).filter(GarminCredential.user_id == self.user_id).first()
+                    if cred and cred.garth_session and cred.session_expires_at:
+                        expires = cred.session_expires_at
+                        if expires.tzinfo:
+                            expires = expires.replace(tzinfo=None)
+                        if expires > datetime.utcnow():
+                            session_data = json.loads(cred.garth_session)
+                            self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                            with tempfile.TemporaryDirectory() as tmpdir:
+                                for fname, data in session_data.items():
+                                    with open(os.path.join(tmpdir, fname), "w") as f:
+                                        json.dump(data, f)
+                                self.client.garth.load(tmpdir)
+                            self._authenticated = True
+                            logger.info(f"{prefix}WorkoutSyncService: ✅ 从 DB 加载 garth session 成功")
+                            _db.close()
+                            return
+                    _db.close()
+                except Exception as e:
+                    logger.warning(f"{prefix}WorkoutSyncService: 加载 DB session 失败: {e}")
+
             try:
-                # 创建支持 MFA 提前返回的客户端
+                # 回退：创建新客户端登录（可能被 Cloudflare 429）
                 self.client = Garmin(
-                    self.email, 
-                    self.password, 
+                    self.email,
+                    self.password,
                     is_cn=self.is_cn,
-                    return_on_mfa=True  # 需要 MFA 时提前返回
+                    return_on_mfa=True
                 )
-                
+
                 result = self.client.login()
                 
                 # 检查是否需要 MFA
