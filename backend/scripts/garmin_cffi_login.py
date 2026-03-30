@@ -105,18 +105,19 @@ def main():
 
     session_json = json.dumps(session_data)
 
-    from app.database import SessionLocal
-    from app.models.user import GarminCredential
-    db = SessionLocal()
-    cred = db.query(GarminCredential).filter(GarminCredential.user_id == 3).first()
-    cred.garth_session = session_json
-    cred.session_expires_at = datetime.utcnow() + timedelta(hours=23)
-    cred.login_locked_until = None
-    cred.credentials_valid = True
-    cred.last_error = None
-    cred.error_count = 0
-    db.commit()
-    db.close()
+    # 用 raw SQL 避免 ORM 模型依赖问题
+    with e.connect() as c:
+        c.execute(text(
+            "UPDATE garmin_credentials "
+            "SET garth_session = :s, "
+            "    session_expires_at = NOW() + INTERVAL '23 hours', "
+            "    login_locked_until = NULL, "
+            "    credentials_valid = true, "
+            "    last_error = NULL, "
+            "    error_count = 0 "
+            "WHERE user_id = 3"
+        ), {"s": session_json})
+        c.commit()
 
     print("\nSESSION INJECTED! Garmin sync restored.")
 
