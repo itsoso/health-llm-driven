@@ -1639,7 +1639,20 @@ class GarminConnectService:
         # HRV数据 - 如果从睡眠数据没有获取到，尝试从summary获取
         if hrv is None and isinstance(summary, dict):
             hrv = summary.get('hrv') or safe_get_nested(summary, 'hrvStatus', 'hrv') or summary.get('avgOvernightHrv')
-        
+
+        # HRV数据 - 最后兜底：从 HRV 专用 API 获取
+        if hrv is None:
+            try:
+                hrv_resp = self.client.connectapi(f"/hrv-service/hrv/{target_date}")
+                if hrv_resp and isinstance(hrv_resp, dict):
+                    hrv_summary = hrv_resp.get("hrvSummary", {})
+                    hrv = hrv_summary.get("lastNightAvg") or hrv_summary.get("weeklyAvg")
+                    hrv_status_val = hrv_summary.get("status")
+                    if hrv:
+                        logger.info(f"从 HRV API 获取: hrv={hrv}, status={hrv_status_val}")
+            except Exception as e:
+                logger.debug(f"HRV API 调用失败(非致命): {e}")
+
         logger.debug(f"最终HRV值: {hrv}")
         
         # 身体电量数据（可能来自get_body_battery或summary）
