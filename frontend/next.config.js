@@ -5,6 +5,13 @@ const isNativeApp = process.env.BUILD_TARGET === 'native';
 
 const nextConfig = {
   reactStrictMode: true,
+
+  // 跳过 Server Actions 的 origin 校验（反向代理场景下 origin header 可能缺失）
+  experimental: {
+    serverActions: {
+      allowedOrigins: ['health.executor.life', 'localhost:3000', 'localhost:30001'],
+    },
+  },
   
   // 原生App构建使用静态导出
   ...(isNativeApp && {
