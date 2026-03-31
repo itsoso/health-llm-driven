@@ -886,6 +886,33 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
 
         briefing_md = "\n".join(lines)
 
+        # AI 叙事：用 LLM 把数据转为一段自然语言分析
+        try:
+            from app.services.llm.factory import get_llm_provider
+            provider = get_llm_provider()
+
+            data_summary = (
+                f"用户昨日数据：睡眠{sleep or '无'}分，HRV {hrv_val or '无'}ms"
+                f"（7日均值{hrv_7d_avg:.0f}ms），步数{steps}，压力{stress or '无'}，"
+                f"身体电量峰值{battery or '无'}，饮水{water_total}ml/{target_water}ml，"
+                f"饮食{diet_calories:.0f}kcal。综合评分{total_score}/100。"
+            )
+            if gene_risks:
+                data_summary += f" 基因高风险：{'、'.join(f'{g.gene_name} {g.genotype}({g.result_label})' for g in gene_risks)}。"
+            if alerts:
+                data_summary += f" 预警：{'、'.join(a.message[:30] for a in alerts[:2])}。"
+
+            ai_prompt = (
+                f"你是一位私人健康顾问。根据以下数据，用3-4句中文写一段温暖、具体、有行动建议的健康分析。"
+                f"不要重复数字，而是解读含义和给出建议。语气像朋友聊天，不要太正式。\n\n{data_summary}"
+            )
+
+            ai_narrative = run_async(provider.chat(ai_prompt))
+            if ai_narrative and len(ai_narrative) > 20:
+                briefing_md += f"\n\n---\n\n💬 **AI 解读：**\n{ai_narrative.strip()}"
+        except Exception as e:
+            logger.warning(f"[每日简报] 用户 {user_id} AI 叙事生成失败（不影响简报）: {e}")
+
         # 写入对话
         _write_briefing_message(db, user_id, briefing_md)
         logger.info(f"[每日简报] 用户 {user_id} 简报已写入对话")
