@@ -327,6 +327,18 @@ class GarminConnectService:
             masked_email = '***'
         return f"[{masked_email}]"
     
+    def _create_patched_client(self, **kwargs) -> Garmin:
+        """创建 Garmin 客户端并 patch 其 garth HTTP session 为 curl_cffi"""
+        client = Garmin(self.email, self.password, is_cn=self.is_cn, **kwargs)
+        try:
+            from curl_cffi.requests import Session as CffiSession
+            headers = dict(client.garth.sess.headers)
+            client.garth.sess = CffiSession(impersonate="chrome")
+            client.garth.sess.headers.update(headers)
+        except ImportError:
+            pass
+        return client
+
     def _save_session_to_db(self, db: Session) -> bool:
         """
         保存 garth session 到数据库，避免频繁登录
@@ -425,8 +437,8 @@ class GarminConnectService:
                     with open(filepath, 'w') as f:
                         json.dump(data, f)
                 
-                # 创建 Garmin 客户端并恢复 session
-                self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                # 创建 Garmin 客户端（自动 patch curl_cffi）并恢复 session
+                self.client = self._create_patched_client()
                 self.client.garth.load(tmpdir)
                 
                 # 验证 session 是否有效：检查 token 过期时间而非调用已废弃的 API
@@ -759,12 +771,7 @@ class GarminConnectService:
         if not self._authenticated or self.client is None:
             try:
                 # 创建支持 MFA 提前返回的客户端
-                self.client = Garmin(
-                    self.email, 
-                    self.password, 
-                    is_cn=self.is_cn,
-                    return_on_mfa=True  # 需要 MFA 时提前返回
-                )
+                self.client = self._create_patched_client(return_on_mfa=True)
                 
                 result = self.client.login()
                 
@@ -817,7 +824,7 @@ class GarminConnectService:
                 if not self._authenticated:
                     # 如果没有oauth2_token，尝试重新登录
                     if not hasattr(self.client, 'garth') or not self.client.garth.oauth2_token:
-                        self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                        self.client = self._create_patched_client()
                         self.client.login()
                     self._authenticated = True
                     server_type = "中国版 (garmin.cn)" if self.is_cn else "国际版 (garmin.com)"
@@ -905,12 +912,7 @@ class GarminConnectService:
         
         try:
             # 创建支持 MFA 提前返回的客户端
-            self.client = Garmin(
-                self.email, 
-                self.password, 
-                is_cn=self.is_cn,
-                return_on_mfa=True  # 需要 MFA 时提前返回
-            )
+            self.client = self._create_patched_client(return_on_mfa=True)
             
             result = self.client.login()
             
@@ -1048,7 +1050,7 @@ class GarminConnectService:
         try:
             if self.client is None:
                 # 如果客户端不存在，需要重新创建
-                self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                self.client = self._create_patched_client()
             
             # 使用验证码恢复登录
             self.client.resume_login(client_state, mfa_code)
