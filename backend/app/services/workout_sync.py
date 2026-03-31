@@ -224,7 +224,19 @@ class WorkoutSyncService:
     
     def _log_prefix(self) -> str:
         return f"[用户 {self.user_id}] " if self.user_id else ""
-    
+
+    def _create_patched_client(self, **kwargs) -> Garmin:
+        """创建 Garmin 客户端并 patch curl_cffi"""
+        client = Garmin(self.email, self.password, is_cn=self.is_cn, **kwargs)
+        try:
+            from curl_cffi.requests import Session as CffiSession
+            headers = dict(client.garth.sess.headers)
+            client.garth.sess = CffiSession(impersonate="chrome")
+            client.garth.sess.headers.update(headers)
+        except ImportError:
+            pass
+        return client
+
     def _ensure_authenticated(self):
         """确保已认证"""
         prefix = self._log_prefix()
@@ -267,7 +279,7 @@ class WorkoutSyncService:
                             expires = expires.replace(tzinfo=None)
                         if expires > datetime.utcnow():
                             session_data = json.loads(cred.garth_session)
-                            self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                            self.client = self._create_patched_client()
                             with tempfile.TemporaryDirectory() as tmpdir:
                                 for fname, data in session_data.items():
                                     with open(os.path.join(tmpdir, fname), "w") as f:
@@ -283,12 +295,7 @@ class WorkoutSyncService:
 
             try:
                 # 回退：创建新客户端登录（可能被 Cloudflare 429）
-                self.client = Garmin(
-                    self.email,
-                    self.password,
-                    is_cn=self.is_cn,
-                    return_on_mfa=True
-                )
+                self.client = self._create_patched_client(return_on_mfa=True)
 
                 result = self.client.login()
                 
@@ -316,7 +323,7 @@ class WorkoutSyncService:
                 if not self._authenticated:
                     # 如果没有oauth2_token，尝试重新登录
                     if not hasattr(self.client, 'garth') or not self.client.garth.oauth2_token:
-                        self.client = Garmin(self.email, self.password, is_cn=self.is_cn)
+                        self.client = self._create_patched_client()
                         self.client.login()
                     self._authenticated = True
                     logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
