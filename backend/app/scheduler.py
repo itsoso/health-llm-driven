@@ -615,7 +615,7 @@ def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = 
         asyncio.set_event_loop(loop)
         if use_daily_schedule:
             # 使用每日定时同步（默认08:01），避免账户锁定
-            loop.run_until_complete(scheduler_loop_daily(target_hour=8, target_minute=1))
+            loop.run_until_complete(scheduler_loop_daily(target_hour=9, target_minute=2))
         else:
             # 使用间隔同步（不推荐，可能导致账户锁定）
             loop.run_until_complete(scheduler_loop(interval_minutes))
@@ -626,7 +626,7 @@ def start_scheduler(app, interval_minutes: int = 60, use_daily_schedule: bool = 
     thread.start()
 
     if use_daily_schedule:
-        logger.info("后台每日定时同步调度器线程已启动（每天08:01北京时间执行）")
+        logger.info("后台每日定时同步调度器线程已启动（每天09:02北京时间执行）")
     else:
         logger.info(f"后台间隔同步调度器线程已启动（每{interval_minutes}分钟执行）")
 
