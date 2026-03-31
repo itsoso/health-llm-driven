@@ -147,7 +147,7 @@ async def sync_user_garmin_data(
         logger.warning(f"⏸️ 用户 {user_id} 跳过同步: {reason}")
         return result
 
-    # 1b. 检查 DB 登录锁定（与 API 路径共享，跨 worker 生效）
+    # 1b. 检查 DB 登录锁定（仅在没有缓存 session 时才阻止同步）
     _was_previously_locked = False
     try:
         cred = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
@@ -157,13 +157,18 @@ async def sync_user_garmin_data(
             if locked_until.tzinfo is not None:
                 locked_until = locked_until.replace(tzinfo=None)
             if locked_until > now:
-                remaining = int((locked_until - now).total_seconds() / 60) + 1
-                result["skipped"] = True
-                result["message"] = f"跳过同步: 登录锁定中，剩余 {remaining} 分钟"
-                logger.warning(f"⏸️ 用户 {user_id} 跳过同步: DB 登录锁定到 {cred.login_locked_until}")
-                return result
+                # 有缓存 session 时，忽略锁定继续同步（锁定仅防止 SSO 登录）
+                has_valid_session = (cred.garth_session and cred.session_expires_at
+                    and (cred.session_expires_at.replace(tzinfo=None) if cred.session_expires_at.tzinfo else cred.session_expires_at) > now)
+                if has_valid_session:
+                    logger.info(f"🔓 用户 {user_id} 虽被锁定但有有效 session，继续同步")
+                else:
+                    remaining = int((locked_until - now).total_seconds() / 60) + 1
+                    result["skipped"] = True
+                    result["message"] = f"跳过同步: 登录锁定中，剩余 {remaining} 分钟"
+                    logger.warning(f"⏸️ 用户 {user_id} 跳过同步: DB 登录锁定到 {cred.login_locked_until}")
+                    return result
             else:
-                # 锁定已到期，标记为曾被锁定，后续需要探测 SSO
                 _was_previously_locked = True
                 logger.info(f"🔓 用户 {user_id} DB 登录锁定已到期，将探测 SSO 可用性")
     except Exception as e:
