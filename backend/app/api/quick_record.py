@@ -1,0 +1,178 @@
+"""快速记录 API — 自然语言解析，一句话记录健康数据"""
+import re
+import logging
+from datetime import date, datetime
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.user import User
+from app.models.daily_health import DietRecord, WaterIntake
+from app.models.weight import WeightRecord
+from app.models.blood_pressure import BloodPressureRecord
+from app.api.deps import get_current_user_required
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+class QuickRecordRequest(BaseModel):
+    text: str
+
+
+class QuickRecordResponse(BaseModel):
+    type: str  # diet / water / weight / bp
+    message: str
+    success: bool
+
+
+# 餐次映射
+MEAL_MAP = {
+    "早餐": "breakfast",
+    "早饭": "breakfast",
+    "午餐": "lunch",
+    "午饭": "lunch",
+    "晚餐": "dinner",
+    "晚饭": "dinner",
+    "加餐": "snack",
+    "零食": "snack",
+    "夜宵": "snack",
+}
+
+# 餐次关键词正则（用于匹配）
+MEAL_KEYWORDS = "|".join(MEAL_MAP.keys())
+
+
+def _parse_quick_record(text: str):
+    """
+    解析自然语言快速记录，返回 (type, data) 元组。
+    支持：
+      - 饮食：早餐牛肉面 / 午餐 鸡胸肉沙拉
+      - 饮水：喝水500 / 水500ml / 喝水 500
+      - 体重：体重71.5 / 体重 71.5kg
+      - 血压：血压120/80 / 血压 130 85
+    """
+    text = text.strip()
+
+    # --- 血压 ---
+    bp_match = re.match(r"血压\s*(\d{2,3})\s*[/／]\s*(\d{2,3})", text)
+    if bp_match:
+        systolic = int(bp_match.group(1))
+        diastolic = int(bp_match.group(2))
+        return "bp", {"systolic": systolic, "diastolic": diastolic}
+
+    bp_match2 = re.match(r"血压\s*(\d{2,3})\s+(\d{2,3})", text)
+    if bp_match2:
+        systolic = int(bp_match2.group(1))
+        diastolic = int(bp_match2.group(2))
+        return "bp", {"systolic": systolic, "diastolic": diastolic}
+
+    # --- 体重 ---
+    weight_match = re.match(r"体重\s*([\d.]+)\s*(?:kg|公斤)?", text, re.IGNORECASE)
+    if weight_match:
+        weight = float(weight_match.group(1))
+        return "weight", {"weight": weight}
+
+    # --- 饮水 ---
+    water_match = re.match(r"(?:喝水|水|饮水)\s*(\d+)\s*(?:ml|毫升)?", text, re.IGNORECASE)
+    if water_match:
+        amount = int(water_match.group(1))
+        return "water", {"amount": amount}
+
+    # --- 饮食 ---
+    diet_match = re.match(rf"({MEAL_KEYWORDS})\s*(.*)", text)
+    if diet_match:
+        meal_cn = diet_match.group(1)
+        food = diet_match.group(2).strip()
+        meal_type = MEAL_MAP.get(meal_cn, "snack")
+        return "diet", {"meal_type": meal_type, "meal_cn": meal_cn, "food": food or "未指定"}
+
+    return None, None
+
+
+@router.post("/quick-record", response_model=QuickRecordResponse)
+def quick_record(
+    req: QuickRecordRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """自然语言快速记录健康数据"""
+    record_type, data = _parse_quick_record(req.text)
+
+    if record_type is None:
+        raise HTTPException(
+            status_code=400,
+            detail="无法识别记录类型。支持格式：午餐牛肉面 / 喝水500 / 体重71.5 / 血压120/80",
+        )
+
+    today = date.today()
+
+    try:
+        if record_type == "diet":
+            record = DietRecord(
+                user_id=current_user.id,
+                record_date=today,
+                meal_type=data["meal_type"],
+                food_items=data["food"],
+                food_name=data["food"],
+            )
+            db.add(record)
+            db.commit()
+            return QuickRecordResponse(
+                type="diet",
+                message=f"已记录{data['meal_cn']}：{data['food']}",
+                success=True,
+            )
+
+        elif record_type == "water":
+            record = WaterIntake(
+                user_id=current_user.id,
+                record_date=today,
+                amount_ml=data["amount"],
+                intake_time=datetime.now(),
+            )
+            db.add(record)
+            db.commit()
+            return QuickRecordResponse(
+                type="water",
+                message=f"已记录饮水 {data['amount']}ml",
+                success=True,
+            )
+
+        elif record_type == "weight":
+            record = WeightRecord(
+                user_id=current_user.id,
+                record_date=today,
+                weight=data["weight"],
+                source="quick_record",
+            )
+            db.add(record)
+            db.commit()
+            return QuickRecordResponse(
+                type="weight",
+                message=f"已记录体重 {data['weight']}kg",
+                success=True,
+            )
+
+        elif record_type == "bp":
+            record = BloodPressureRecord(
+                user_id=current_user.id,
+                record_date=today,
+                systolic=data["systolic"],
+                diastolic=data["diastolic"],
+                measured_at=datetime.now(),
+            )
+            db.add(record)
+            db.commit()
+            return QuickRecordResponse(
+                type="bp",
+                message=f"已记录血压 {data['systolic']}/{data['diastolic']} mmHg",
+                success=True,
+            )
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"快速记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"记录失败: {str(e)}")

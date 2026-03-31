@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi, api } from '@/services/api';
+import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
   LineChart,
@@ -37,6 +38,30 @@ function DashboardContent() {
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // 快速记录
+  const [quickInput, setQuickInput] = useState('');
+  const [quickToast, setQuickToast] = useState('');
+  const quickRecordMutation = useMutation({
+    mutationFn: (text: string) => api.post('/quick-record', { text }),
+    onSuccess: (res) => {
+      const msg = res.data?.message || '记录成功';
+      setQuickToast(msg);
+      setQuickInput('');
+      setTimeout(() => setQuickToast(''), 3000);
+    },
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || '记录失败，请检查格式';
+      setQuickToast(detail);
+      setTimeout(() => setQuickToast(''), 4000);
+    },
+  });
+
+  const handleQuickRecord = () => {
+    const text = quickInput.trim();
+    if (!text) return;
+    quickRecordMutation.mutate(text);
+  };
 
   const endDate = format(new Date(), 'yyyy-MM-dd');
   const startDate = format(subDays(new Date(), days), 'yyyy-MM-dd');
@@ -460,6 +485,48 @@ function DashboardContent() {
                 <span className="text-3xl mb-2">⌚</span>
                 <p className="text-sm font-medium text-indigo-100">连接智能手表</p>
                 <p className="text-xs text-indigo-200 mt-1">解锁更多健康数据</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 快速记录输入栏 */}
+        <div className="mb-6 relative">
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleQuickRecord(); }}
+            className="flex gap-2"
+          >
+            <input
+              type="text"
+              value={quickInput}
+              onChange={(e) => setQuickInput(e.target.value)}
+              placeholder="记录：午餐牛肉面 / 喝水500 / 体重71.5 / 血压120/80"
+              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
+              disabled={quickRecordMutation.isPending}
+            />
+            <button
+              type="submit"
+              disabled={quickRecordMutation.isPending || !quickInput.trim()}
+              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium text-sm shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              {quickRecordMutation.isPending ? (
+                <span className="animate-spin">...</span>
+              ) : (
+                <>
+                  <span>📝</span>
+                  <span>记录</span>
+                </>
+              )}
+            </button>
+          </form>
+          {quickToast && (
+            <div className="absolute top-full left-0 right-0 mt-2 z-10">
+              <div className={`inline-block px-4 py-2 rounded-lg text-sm font-medium shadow-md ${
+                quickToast.includes('失败') || quickToast.includes('无法')
+                  ? 'bg-red-50 text-red-700 border border-red-200'
+                  : 'bg-green-50 text-green-700 border border-green-200'
+              }`}>
+                {quickToast}
               </div>
             </div>
           )}

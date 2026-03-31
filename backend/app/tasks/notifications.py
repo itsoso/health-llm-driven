@@ -3,6 +3,7 @@
 """
 import logging
 from datetime import date, datetime, timedelta
+from sqlalchemy import func as sa_func
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.user import User
@@ -590,3 +591,413 @@ def send_morning_health_summary():
 
     logger.info(f"[早安推送] 完成，推送 {sent_count} 条")
     return {"sent_count": sent_count}
+
+
+# ---------------------------------------------------------------------------
+# 工具函数：写入 OpenClaw "每日健康简报" 对话
+# ---------------------------------------------------------------------------
+
+BRIEFING_CONVERSATION_TITLE = "每日健康简报"
+
+
+def _get_or_create_briefing_conversation(db, user_id: int):
+    """获取或创建用户的「每日健康简报」对话"""
+    from app.models.openclaw import OpenClawConversation
+
+    conv = db.query(OpenClawConversation).filter(
+        OpenClawConversation.user_id == user_id,
+        OpenClawConversation.title == BRIEFING_CONVERSATION_TITLE,
+    ).first()
+
+    if not conv:
+        conv = OpenClawConversation(
+            user_id=user_id,
+            title=BRIEFING_CONVERSATION_TITLE,
+        )
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+
+    return conv
+
+
+def _write_briefing_message(db, user_id: int, content: str):
+    """将简报内容作为 assistant 消息写入对话"""
+    from app.models.openclaw import OpenClawMessage
+
+    conv = _get_or_create_briefing_conversation(db, user_id)
+    msg = OpenClawMessage(
+        conversation_id=conv.id,
+        role="assistant",
+        content=content,
+    )
+    db.add(msg)
+    conv.updated_at = datetime.utcnow()
+    db.commit()
+
+
+def _status_emoji(value, good_threshold, bad_threshold, higher_is_better=True):
+    """根据阈值返回状态 emoji"""
+    if value is None:
+        return "❓"
+    if higher_is_better:
+        return "✅" if value >= good_threshold else ("⚠️" if value >= bad_threshold else "🔴")
+    else:
+        return "✅" if value <= good_threshold else ("⚠️" if value <= bad_threshold else "🔴")
+
+
+# ---------------------------------------------------------------------------
+# Feature 1: 每日健康简报（写入 AI 对话）
+# ---------------------------------------------------------------------------
+
+@celery_app.task(time_limit=600)
+def generate_daily_briefing_message():
+    """
+    每日健康简报（07:35 执行）
+    为有 Garmin 设备的活跃用户生成简报并写入 OpenClaw 对话。
+    """
+    from app.models.user import GarminCredential
+    from app.models.daily_health import GarminData, DietRecord, WaterIntake
+    from app.models.anomaly_alert import AnomalyAlert
+    from app.models.genetic_data import GeneticVariant
+    from app.models.user_profile import UserProfile
+    from app.services.health_score_service import health_score_service
+    from app.utils.timezone import get_china_today
+
+    logger.info("[每日简报] 开始生成")
+    today = get_china_today()
+    yesterday = today - timedelta(days=1)
+
+    with SessionLocal() as db:
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True,
+        ).all()
+        user_ids = [c.user_id for c in credentials]
+
+    logger.info(f"[每日简报] 发现 {len(user_ids)} 个活跃用户")
+    generated_count = 0
+
+    for user_id in user_ids:
+        try:
+            _generate_daily_briefing_for_user(user_id, yesterday)
+            generated_count += 1
+        except Exception as e:
+            logger.error(f"[每日简报] 用户 {user_id} 失败: {e}")
+
+    logger.info(f"[每日简报] 完成，生成 {generated_count}/{len(user_ids)} 份")
+    return {"generated_count": generated_count, "total_users": len(user_ids)}
+
+
+def _generate_daily_briefing_for_user(user_id: int, target_date: date):
+    """为单个用户生成每日健康简报"""
+    from app.models.daily_health import GarminData, DietRecord, WaterIntake
+    from app.models.anomaly_alert import AnomalyAlert
+    from app.models.genetic_data import GeneticVariant
+    from app.models.user_profile import UserProfile
+    from app.services.health_score_service import health_score_service
+
+    with SessionLocal() as db:
+        # 1. Garmin 数据
+        garmin = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date == target_date,
+        ).first()
+
+        if not garmin:
+            logger.info(f"[每日简报] 用户 {user_id} 无 {target_date} Garmin 数据，跳过")
+            return
+
+        # 2. 7 日 HRV 均值（用于比较）
+        week_ago = target_date - timedelta(days=7)
+        hrv_7d_avg = db.query(sa_func.avg(GarminData.hrv)).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= week_ago,
+            GarminData.record_date < target_date,
+            GarminData.hrv.isnot(None),
+        ).scalar()
+
+        # 3. 饮食卡路里
+        diet_calories = db.query(sa_func.sum(DietRecord.calories)).filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date == target_date,
+        ).scalar() or 0
+
+        # 4. 饮水量
+        water_total = db.query(sa_func.sum(WaterIntake.amount_ml)).filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date == target_date,
+        ).scalar() or 0
+
+        # 5. 健康评分
+        score_result = health_score_service.calculate_daily_score(db, user_id, target_date=target_date)
+        total_score = score_result.get("total_score", "-") if score_result.get("status") == "ok" else "-"
+
+        # 6. 异常预警
+        alerts = db.query(AnomalyAlert).filter(
+            AnomalyAlert.user_id == user_id,
+            AnomalyAlert.detection_date == target_date,
+        ).all()
+
+        # 7. 基因高风险位点（最多 3 个）
+        gene_risks = db.query(GeneticVariant).filter(
+            GeneticVariant.user_id == user_id,
+            GeneticVariant.risk_level == "high",
+        ).limit(3).all()
+
+        # 8. 用户健康目标
+        profile = db.query(UserProfile).filter(
+            UserProfile.user_id == user_id,
+        ).first()
+
+        target_steps = profile.target_steps if profile else 8000
+        target_water = profile.target_water_ml if profile else 2000
+
+        # --- 构建 Markdown ---
+        date_str = target_date.strftime("%-m月%-d日")
+        lines = [f"🌅 **{date_str} 健康简报**\n"]
+
+        # 综合评分
+        lines.append(f"**综合评分：{total_score}/100**\n")
+
+        # 指标表格
+        lines.append("| 指标 | 数值 | 状态 |")
+        lines.append("|------|------|------|")
+
+        # 睡眠
+        sleep = garmin.sleep_score
+        sleep_label = "优秀" if (sleep and sleep >= 80) else ("良好" if (sleep and sleep >= 60) else "待改善")
+        sleep_emoji = _status_emoji(sleep, 80, 60, higher_is_better=True)
+        lines.append(f"| 睡眠 | {sleep or '-'}分 | {sleep_emoji} {sleep_label} |")
+
+        # HRV
+        hrv_val = garmin.hrv
+        hrv_line = f"{hrv_val}ms" if hrv_val else "-"
+        if hrv_val and hrv_7d_avg and hrv_7d_avg > 0:
+            pct_change = ((hrv_val - hrv_7d_avg) / hrv_7d_avg) * 100
+            direction = "↑" if pct_change > 0 else "↓"
+            hrv_status = f"较7日均值{direction}{abs(pct_change):.0f}%"
+            hrv_emoji = "✅" if pct_change >= -5 else "⚠️"
+        else:
+            hrv_status = ""
+            hrv_emoji = "✅" if hrv_val else "❓"
+        hrv_display = f"{hrv_line}" + (f" {hrv_status}" if hrv_status else "")
+        lines.append(f"| HRV | {hrv_display} | {hrv_emoji} |")
+
+        # 步数
+        steps = garmin.steps or 0
+        steps_pct = int((steps / target_steps * 100)) if target_steps > 0 else 0
+        steps_emoji = "✅" if steps_pct >= 100 else "⚠️"
+        steps_label = f"达标{steps_pct}%" if steps_pct >= 100 else f"{steps_pct}%"
+        lines.append(f"| 步数 | {steps:,} | {steps_emoji} {steps_label} |")
+
+        # 压力
+        stress = garmin.stress_level
+        stress_emoji = _status_emoji(stress, 40, 60, higher_is_better=False)
+        stress_label = "正常" if (stress and stress <= 40) else ("偏高" if (stress and stress <= 60) else "高")
+        lines.append(f"| 压力 | {stress or '-'} | {stress_emoji} {stress_label} |")
+
+        # 身体电量
+        battery = garmin.body_battery_most_charged
+        battery_emoji = _status_emoji(battery, 80, 50, higher_is_better=True)
+        battery_label = "充沛" if (battery and battery >= 80) else ("中等" if (battery and battery >= 50) else "偏低")
+        lines.append(f"| 身体电量 | 峰值{battery or '-'} | {battery_emoji} {battery_label} |")
+
+        # 饮水
+        water_pct = int((water_total / target_water * 100)) if target_water > 0 else 0
+        water_emoji = "✅" if water_pct >= 100 else "⚠️"
+        lines.append(f"| 饮水 | {water_total}ml/{target_water}ml | {water_emoji} {water_pct}% |")
+
+        # 今日建议
+        suggestions = []
+
+        # HRV 建议
+        if hrv_val and hrv_7d_avg and ((hrv_val - hrv_7d_avg) / hrv_7d_avg) < -0.05:
+            suggestions.append("HRV轻度下降，建议今天以恢复性运动为主")
+
+        # 饮水建议
+        if water_pct < 100:
+            deficit = target_water - water_total
+            suggestions.append(f"饮水未达标，上午补充{min(deficit, 500)}ml")
+
+        # 基因建议
+        for gv in gene_risks:
+            desc = gv.description or gv.result_label or ""
+            suggestions.append(f"基因提示：{gv.gene_name} {gv.genotype} {desc[:30]}")
+
+        # 异常预警建议
+        for alert in alerts[:2]:
+            suggestions.append(f"预警：{alert.message[:50]}")
+
+        if suggestions:
+            lines.append("\n**📌 今日建议：**")
+            for i, s in enumerate(suggestions[:5], 1):
+                lines.append(f"{i}. {s}")
+
+        briefing_md = "\n".join(lines)
+
+        # 写入对话
+        _write_briefing_message(db, user_id, briefing_md)
+        logger.info(f"[每日简报] 用户 {user_id} 简报已写入对话")
+
+
+# ---------------------------------------------------------------------------
+# Feature 3: 每周健康报告（写入 AI 对话）
+# ---------------------------------------------------------------------------
+
+@celery_app.task(time_limit=600)
+def generate_weekly_report_message():
+    """
+    每周健康报告（周一 09:05 执行）
+    收集 7 天数据生成周报并写入 OpenClaw 对话。
+    """
+    from app.models.user import GarminCredential
+    from app.utils.timezone import get_china_today
+
+    logger.info("[周报简报] 开始生成")
+    today = get_china_today()
+
+    with SessionLocal() as db:
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True,
+        ).all()
+        user_ids = [c.user_id for c in credentials]
+
+    logger.info(f"[周报简报] 发现 {len(user_ids)} 个活跃用户")
+    generated_count = 0
+
+    for user_id in user_ids:
+        try:
+            _generate_weekly_report_for_user(user_id, today)
+            generated_count += 1
+        except Exception as e:
+            logger.error(f"[周报简报] 用户 {user_id} 失败: {e}")
+
+    logger.info(f"[周报简报] 完成，生成 {generated_count}/{len(user_ids)} 份")
+    return {"generated_count": generated_count, "total_users": len(user_ids)}
+
+
+def _generate_weekly_report_for_user(user_id: int, today: date):
+    """为单个用户生成周报"""
+    from app.models.daily_health import GarminData, DietRecord, WaterIntake, WorkoutRecord
+    from app.models.weight import WeightRecord
+
+    this_week_end = today
+    this_week_start = today - timedelta(days=7)
+    last_week_end = this_week_start
+    last_week_start = this_week_start - timedelta(days=7)
+
+    with SessionLocal() as db:
+        # --- 本周数据 ---
+        this_garmin = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= this_week_start,
+            GarminData.record_date < this_week_end,
+        ).all()
+
+        if not this_garmin:
+            logger.info(f"[周报简报] 用户 {user_id} 本周无 Garmin 数据，跳过")
+            return
+
+        # 本周平均值
+        def avg_field(records, field):
+            vals = [getattr(r, field) for r in records if getattr(r, field) is not None]
+            return sum(vals) / len(vals) if vals else None
+
+        tw_steps = avg_field(this_garmin, "steps")
+        tw_sleep = avg_field(this_garmin, "sleep_score")
+        tw_hrv = avg_field(this_garmin, "hrv")
+        tw_rhr = avg_field(this_garmin, "resting_heart_rate")
+
+        # --- 上周数据 ---
+        last_garmin = db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= last_week_start,
+            GarminData.record_date < last_week_end,
+        ).all()
+
+        lw_steps = avg_field(last_garmin, "steps")
+        lw_sleep = avg_field(last_garmin, "sleep_score")
+        lw_hrv = avg_field(last_garmin, "hrv")
+        lw_rhr = avg_field(last_garmin, "resting_heart_rate")
+
+        # 运动次数
+        workout_count = db.query(sa_func.count(WorkoutRecord.id)).filter(
+            WorkoutRecord.user_id == user_id,
+            WorkoutRecord.workout_date >= this_week_start,
+            WorkoutRecord.workout_date < this_week_end,
+        ).scalar() or 0
+
+        # 总饮水量
+        water_total = db.query(sa_func.sum(WaterIntake.amount_ml)).filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date >= this_week_start,
+            WaterIntake.record_date < this_week_end,
+        ).scalar() or 0
+
+        # 饮食记录数
+        diet_count = db.query(sa_func.count(DietRecord.id)).filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date >= this_week_start,
+            DietRecord.record_date < this_week_end,
+        ).scalar() or 0
+
+        # 体重变化
+        first_weight = db.query(WeightRecord).filter(
+            WeightRecord.user_id == user_id,
+            WeightRecord.record_date >= this_week_start,
+            WeightRecord.record_date < this_week_end,
+        ).order_by(WeightRecord.record_date.asc()).first()
+
+        last_weight = db.query(WeightRecord).filter(
+            WeightRecord.user_id == user_id,
+            WeightRecord.record_date >= this_week_start,
+            WeightRecord.record_date < this_week_end,
+        ).order_by(WeightRecord.record_date.desc()).first()
+
+        weight_change = None
+        if first_weight and last_weight and first_weight.id != last_weight.id:
+            weight_change = last_weight.weight - first_weight.weight
+
+        # --- 构建 Markdown ---
+        date_range = f"{this_week_start.strftime('%-m/%-d')}~{(this_week_end - timedelta(days=1)).strftime('%-m/%-d')}"
+        lines = [f"📊 **周报 ({date_range})**\n"]
+
+        def _compare(current, previous, unit="", higher_is_better=True):
+            """生成对比文字"""
+            if current is None:
+                return "-"
+            text = f"{current:.0f}{unit}"
+            if previous is not None and previous > 0:
+                pct = ((current - previous) / previous) * 100
+                arrow = "↑" if pct > 0 else "↓"
+                emoji = ""
+                if abs(pct) >= 3:
+                    is_good = (pct > 0) == higher_is_better
+                    emoji = " ✅" if is_good else " ⚠️"
+                text += f" ({arrow}{abs(pct):.0f}%{emoji})"
+            return text
+
+        lines.append("| 指标 | 本周均值 | 上周对比 |")
+        lines.append("|------|----------|----------|")
+        lines.append(f"| 日均步数 | {_compare(tw_steps, None)} | {_compare(tw_steps, lw_steps, higher_is_better=True)} |")
+        lines.append(f"| 睡眠评分 | {_compare(tw_sleep, None)}分 | {_compare(tw_sleep, lw_sleep, '分', higher_is_better=True)} |")
+        lines.append(f"| HRV | {_compare(tw_hrv, None)}ms | {_compare(tw_hrv, lw_hrv, 'ms', higher_is_better=True)} |")
+        lines.append(f"| 静息心率 | {_compare(tw_rhr, None)}bpm | {_compare(tw_rhr, lw_rhr, 'bpm', higher_is_better=False)} |")
+
+        lines.append("")
+        lines.append("**📋 本周概览：**")
+        lines.append(f"- 运动 {workout_count} 次")
+        lines.append(f"- 总饮水 {water_total}ml（日均 {water_total // 7}ml）")
+        lines.append(f"- 饮食记录 {diet_count} 条")
+
+        if weight_change is not None:
+            direction = "增" if weight_change > 0 else "减"
+            lines.append(f"- 体重变化：{direction}{abs(weight_change):.1f}kg（{first_weight.weight:.1f} → {last_weight.weight:.1f}）")
+
+        report_md = "\n".join(lines)
+
+        # 写入对话
+        _write_briefing_message(db, user_id, report_md)
+        logger.info(f"[周报简报] 用户 {user_id} 周报已写入对话")

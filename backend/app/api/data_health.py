@@ -1,0 +1,285 @@
+"""
+数据健康仪表盘 API
+
+提供各数据源的状态概览，帮助用户了解数据完整性。
+"""
+import logging
+from datetime import date, datetime, timedelta
+from typing import Optional
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user_required
+from app.database import get_db
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.get("/status")
+def get_data_health_status(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户各数据源的健康状态
+
+    返回 Garmin 连接、HRV、饮食、饮水、推送、基因等模块的状态。
+    """
+    user_id = current_user.id
+    today = date.today()
+    now = datetime.utcnow()
+
+    return {
+        "garmin": _garmin_status(db, user_id, now),
+        "hrv": _hrv_status(db, user_id, today),
+        "diet": _diet_status(db, user_id, today),
+        "water": _water_status(db, user_id, today),
+        "notifications": _notification_status(db, user_id, now),
+        "genetic": _genetic_status(db, user_id),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
+    """Garmin 连接 & session 状态"""
+    from app.models.user import GarminCredential
+
+    cred = db.query(GarminCredential).filter(
+        GarminCredential.user_id == user_id,
+    ).first()
+
+    if not cred:
+        return {
+            "status": "error",
+            "last_sync": None,
+            "session_valid": False,
+            "session_expires": None,
+            "message": "未绑定 Garmin 账号",
+        }
+
+    session_valid = bool(
+        cred.garth_session
+        and cred.session_expires_at
+        and cred.session_expires_at > now
+    )
+
+    if not cred.sync_enabled:
+        status = "error"
+        message = "同步已关闭"
+    elif not cred.credentials_valid:
+        status = "error"
+        message = cred.last_error or "凭证无效"
+    elif not session_valid:
+        status = "warning"
+        message = "Session 已过期，等待自动续期"
+    else:
+        # 检查最近是否有成功同步
+        if cred.last_sync_at and (now - cred.last_sync_at).total_seconds() < 86400:
+            status = "ok"
+            message = "正常同步中"
+        else:
+            status = "warning"
+            message = "超过24小时未同步"
+
+    return {
+        "status": status,
+        "last_sync": cred.last_sync_at.isoformat() if cred.last_sync_at else None,
+        "session_valid": session_valid,
+        "session_expires": cred.session_expires_at.isoformat() if cred.session_expires_at else None,
+        "message": message,
+    }
+
+
+def _hrv_status(db: Session, user_id: int, today: date) -> dict:
+    """最近 7 天 HRV 数据完整性"""
+    from app.models.daily_health import GarminData
+
+    seven_days_ago = today - timedelta(days=6)  # 含今天共 7 天
+
+    rows = (
+        db.query(GarminData.record_date)
+        .filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= seven_days_ago,
+            GarminData.record_date <= today,
+            GarminData.hrv.isnot(None),
+        )
+        .all()
+    )
+
+    available_dates = {r.record_date for r in rows}
+    expected_dates = {seven_days_ago + timedelta(days=i) for i in range(7)}
+    missing_days = len(expected_dates - available_dates)
+
+    last_available = max(available_dates) if available_dates else None
+
+    if missing_days == 0:
+        status = "ok"
+        message = "最近7天HRV数据完整"
+    elif missing_days <= 2:
+        status = "warning"
+        message = f"最近7天缺失{missing_days}天HRV数据"
+    else:
+        status = "error"
+        message = f"最近7天缺失{missing_days}天HRV数据"
+
+    return {
+        "status": status,
+        "missing_days": missing_days,
+        "last_available": last_available.isoformat() if last_available else None,
+        "message": message,
+    }
+
+
+def _diet_status(db: Session, user_id: int, today: date) -> dict:
+    """今日饮食记录状态"""
+    from app.models.daily_health import DietRecord
+
+    today_count = (
+        db.query(func.count(DietRecord.id))
+        .filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date == today,
+        )
+        .scalar()
+    ) or 0
+
+    # 过去 7 天每日平均
+    seven_days_ago = today - timedelta(days=6)
+    week_total = (
+        db.query(func.count(DietRecord.id))
+        .filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date >= seven_days_ago,
+            DietRecord.record_date <= today,
+        )
+        .scalar()
+    ) or 0
+    week_avg = round(week_total / 7, 1)
+
+    if today_count >= 2:
+        status = "ok"
+        message = f"今天已记录{today_count}餐"
+    elif today_count == 1:
+        status = "warning"
+        message = "今天仅记录1餐"
+    else:
+        status = "warning"
+        message = "今天尚未记录饮食"
+
+    return {
+        "status": status,
+        "today_count": today_count,
+        "week_avg": week_avg,
+        "message": message,
+    }
+
+
+def _water_status(db: Session, user_id: int, today: date) -> dict:
+    """今日饮水状态"""
+    from app.models.daily_health import WaterIntake
+
+    today_amount = (
+        db.query(func.coalesce(func.sum(WaterIntake.amount_ml), 0))
+        .filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date == today,
+        )
+        .scalar()
+    ) or 0
+
+    target = 2000  # 默认目标 2000ml
+
+    if today_amount >= target:
+        status = "ok"
+        message = f"今日饮水{today_amount}ml，已达标"
+    elif today_amount >= target * 0.5:
+        status = "warning"
+        message = f"今日饮水{today_amount}ml/{target}ml"
+    else:
+        status = "warning" if today_amount > 0 else "warning"
+        message = f"今日饮水{today_amount}ml/{target}ml"
+
+    return {
+        "status": status,
+        "today_amount": today_amount,
+        "target": target,
+        "message": message,
+    }
+
+
+def _notification_status(db: Session, user_id: int, now: datetime) -> dict:
+    """推送通知状态"""
+    from app.models.notification import NotificationLog
+
+    twenty_four_hours_ago = now - timedelta(hours=24)
+
+    last_24h_count = (
+        db.query(func.count(NotificationLog.id))
+        .filter(
+            NotificationLog.user_id == user_id,
+            NotificationLog.sent_at >= twenty_four_hours_ago,
+        )
+        .scalar()
+    ) or 0
+
+    # 简易检测 Celery worker 是否活跃（通过 celery app inspect）
+    celery_worker = _check_celery_worker()
+
+    if celery_worker and last_24h_count > 0:
+        status = "ok"
+        message = "推送正常"
+    elif not celery_worker:
+        status = "error"
+        message = "Celery worker 未响应"
+    else:
+        status = "warning"
+        message = "过去24小时无推送记录"
+
+    return {
+        "status": status,
+        "last_24h_count": last_24h_count,
+        "celery_worker": celery_worker,
+        "message": message,
+    }
+
+
+def _check_celery_worker() -> bool:
+    """检测 Celery worker 是否在线（带超时，避免阻塞请求）"""
+    try:
+        from app.celery_app import celery_app
+        result = celery_app.control.ping(timeout=2.0)
+        return len(result) > 0
+    except Exception:
+        return False
+
+
+def _genetic_status(db: Session, user_id: int) -> dict:
+    """基因数据状态"""
+    from app.models.genetic_data import GeneticVariant
+
+    variant_count = (
+        db.query(func.count(GeneticVariant.id))
+        .filter(GeneticVariant.user_id == user_id)
+        .scalar()
+    ) or 0
+
+    if variant_count > 0:
+        status = "ok"
+        message = f"已录入{variant_count}个基因位点"
+    else:
+        status = "warning"
+        message = "尚未录入基因数据"
+
+    return {
+        "status": status,
+        "variant_count": variant_count,
+        "message": message,
+    }

@@ -2,7 +2,10 @@
 Garmin 数据同步任务
 """
 import asyncio
+import json
 import logging
+import os
+import tempfile
 from datetime import date, datetime, timedelta
 from app.celery_app import celery_app
 from app.database import SessionLocal
@@ -225,3 +228,171 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
     except Exception as e:
         logger.error(f"[自动分析] 失败: user={user_id} workout={workout_id} error={e}")
         raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
+
+
+@celery_app.task(bind=True, max_retries=1, time_limit=600)
+def renew_garmin_sessions(self):
+    """
+    续期所有用户的 Garmin OAuth session（每 12 小时运行一次）
+
+    对每个 sync_enabled=True 且有 garth_session 的用户：
+    1. 加载 session，尝试调用轻量 API 验证有效性
+    2. 若失效，尝试 garth token refresh
+    3. 若 refresh 失败，尝试 curl_cffi 重新登录（最后手段）
+    """
+    logger.info("[session-renew] 开始续期 Garmin sessions")
+
+    from app.models.user import GarminCredential
+    from app.services.auth import garmin_credential_service
+
+    renewed = 0
+    failed = 0
+    skipped = 0
+
+    with SessionLocal() as db:
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.garth_session.isnot(None),
+        ).all()
+
+        logger.info(f"[session-renew] 发现 {len(credentials)} 个需要检查的 session")
+
+        for cred in credentials:
+            user_id = cred.user_id
+            prefix = f"[session-renew][user={user_id}]"
+
+            try:
+                result = _renew_single_session(db, cred, prefix)
+                if result == "renewed":
+                    renewed += 1
+                elif result == "valid":
+                    skipped += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.error(f"{prefix} 续期异常: {e}", exc_info=True)
+                failed += 1
+
+    summary = f"[session-renew] 完成: 续期成功={renewed}, 仍有效={skipped}, 失败={failed}"
+    logger.info(summary)
+    return {"renewed": renewed, "skipped": skipped, "failed": failed}
+
+
+def _renew_single_session(db, cred, prefix: str) -> str:
+    """
+    对单个用户尝试续期 session。
+
+    Returns:
+        "valid" - session 仍然有效
+        "renewed" - 成功续期
+        "failed" - 所有续期手段均失败
+    """
+    from app.models.user import GarminCredential
+    from app.services.auth import garmin_credential_service
+
+    user_id = cred.user_id
+
+    # ---- Step 1: 加载 garth session 并尝试轻量 API 调用 ----
+    try:
+        import garth
+
+        session_data = json.loads(cred.garth_session)
+        client = garth.Client()
+
+        if getattr(cred, "is_cn", False):
+            client.configure(domain="garmin.cn")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for filename, data in session_data.items():
+                filepath = os.path.join(tmpdir, filename)
+                with open(filepath, "w") as f:
+                    json.dump(data, f)
+            client.load(tmpdir)
+
+        # 尝试轻量 API 调用测试 session 有效性
+        try:
+            client.connectapi("/userprofile-service/userdisplayname")
+            logger.info(f"{prefix} session 仍然有效")
+            return "valid"
+        except Exception as e:
+            logger.info(f"{prefix} session 已失效 ({e})，尝试续期...")
+
+    except Exception as e:
+        logger.warning(f"{prefix} 加载 session 失败: {e}")
+        client = None
+
+    # ---- Step 2: 尝试 garth token refresh ----
+    if client and hasattr(client, "oauth2_token") and client.oauth2_token:
+        try:
+            client.oauth2_token.refresh(
+                client=client,
+            )
+            # 验证 refresh 后的 token
+            client.connectapi("/userprofile-service/userdisplayname")
+            logger.info(f"{prefix} garth token refresh 成功")
+
+            # 保存续期后的 session
+            _save_session_to_db(db, cred, client)
+            return "renewed"
+        except Exception as e:
+            logger.warning(f"{prefix} garth token refresh 失败: {e}")
+
+    # ---- Step 3: curl_cffi 最后手段 ----
+    try:
+        password = garmin_credential_service.decrypt_password(cred.encrypted_password)
+    except Exception as e:
+        logger.error(f"{prefix} 密码解密失败，无法尝试 cffi 登录: {e}")
+        cred.last_error = f"密码解密失败: {e}"
+        db.commit()
+        return "failed"
+
+    try:
+        from app.services.garmin_cffi_login import cffi_login_and_get_session
+
+        is_cn = getattr(cred, "is_cn", False)
+        session_data = cffi_login_and_get_session(cred.garmin_email, password, is_cn=is_cn)
+
+        cred.garth_session = json.dumps(session_data)
+        cred.session_expires_at = datetime.utcnow() + timedelta(hours=23)
+        cred.login_locked_until = None
+        cred.credentials_valid = True
+        cred.last_error = None
+        cred.error_count = 0
+        db.commit()
+
+        logger.info(f"{prefix} curl_cffi 重新登录成功，session 已更新")
+        return "renewed"
+
+    except ImportError:
+        logger.warning(f"{prefix} curl_cffi 未安装，跳过最后手段登录")
+        cred.last_error = "garth refresh 失败且 curl_cffi 未安装"
+        db.commit()
+        return "failed"
+    except Exception as e:
+        logger.error(f"{prefix} curl_cffi 登录失败: {e}")
+        cred.last_error = f"session 续期失败: {e}"
+        cred.error_count = (cred.error_count or 0) + 1
+        db.commit()
+        return "failed"
+
+
+def _save_session_to_db(db, cred, garth_client):
+    """将 garth client 的 session 保存到数据库"""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            garth_client.dump(tmpdir)
+            session_data = {}
+            for filename in ["oauth1_token.json", "oauth2_token.json"]:
+                filepath = os.path.join(tmpdir, filename)
+                if os.path.exists(filepath):
+                    with open(filepath, "r") as f:
+                        session_data[filename] = json.load(f)
+
+        cred.garth_session = json.dumps(session_data)
+        cred.session_expires_at = datetime.utcnow() + timedelta(hours=23)
+        cred.last_error = None
+        cred.error_count = 0
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[session-renew] 保存 session 失败: {e}")
+        db.rollback()

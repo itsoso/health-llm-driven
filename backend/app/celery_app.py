@@ -134,6 +134,24 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.notifications.send_morning_health_summary",
         "schedule": crontab(hour=7, minute=30),
     },
+
+    # 每12小时续期 Garmin OAuth session
+    "renew-garmin-sessions": {
+        "task": "app.tasks.garmin_sync.renew_garmin_sessions",
+        "schedule": crontab(hour="*/12", minute=15),
+    },
+
+    # 每日 07:35 健康简报（写入 AI 对话）
+    "daily-briefing-message": {
+        "task": "app.tasks.notifications.generate_daily_briefing_message",
+        "schedule": crontab(hour=7, minute=35),
+    },
+
+    # 每周一 09:05 周报（写入 AI 对话）
+    "weekly-report-message": {
+        "task": "app.tasks.notifications.generate_weekly_report_message",
+        "schedule": crontab(hour=9, minute=5, day_of_week=1),
+    },
 }
 
 logger.info("Celery 配置加载完成")
