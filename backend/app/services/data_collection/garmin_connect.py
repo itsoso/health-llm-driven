@@ -405,10 +405,14 @@ class GarminConnectService:
                 logger.debug(f"{prefix} 数据库中无缓存的 garth session")
                 return False
             
-            # 检查是否过期
-            if cred.session_expires_at and cred.session_expires_at < datetime.utcnow():
-                logger.info(f"{prefix} 缓存的 garth session 已过期")
-                return False
+            # 检查是否过期（兼容 timezone-aware 和 naive datetime）
+            if cred.session_expires_at:
+                exp = cred.session_expires_at
+                if hasattr(exp, 'tzinfo') and exp.tzinfo is not None:
+                    exp = exp.replace(tzinfo=None)
+                if exp < datetime.utcnow():
+                    logger.info(f"{prefix} 缓存的 garth session 已过期")
+                    return False
             
             # 解析 session 数据
             session_data = json.loads(cred.garth_session)
@@ -432,8 +436,16 @@ class GarminConnectService:
                         # 检查 token 是否过期（garth token 有 expires_at 属性）
                         token_expired = False
                         if hasattr(token, 'expires_at') and token.expires_at:
-                            now = datetime.now(tz=token.expires_at.tzinfo) if token.expires_at.tzinfo else datetime.now()
-                            token_expired = now >= token.expires_at
+                            exp_at = token.expires_at
+                            if isinstance(exp_at, (int, float)):
+                                # Unix timestamp
+                                import time
+                                token_expired = time.time() >= exp_at
+                            elif hasattr(exp_at, 'tzinfo'):
+                                now = datetime.now(tz=exp_at.tzinfo) if exp_at.tzinfo else datetime.now()
+                                token_expired = now >= exp_at
+                            else:
+                                token_expired = False
 
                         if token_expired:
                             logger.info(f"{prefix} oauth2_token 已过期，尝试用 oauth1 refresh...")
