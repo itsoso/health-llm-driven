@@ -553,18 +553,31 @@ class GarminConnectService:
             if cred:
                 cred.last_error = error_msg[:500] if error_msg else None
 
+                # 有有效 session 时不设锁定（session 优先于 SSO 登录）
+                has_valid_session = bool(cred.garth_session and cred.session_expires_at)
+                if has_valid_session:
+                    try:
+                        exp = cred.session_expires_at
+                        if hasattr(exp, 'tzinfo') and exp.tzinfo:
+                            exp = exp.replace(tzinfo=None)
+                        has_valid_session = exp > datetime.utcnow()
+                    except Exception:
+                        has_valid_session = False
+
                 is_rate_limited = '429' in (error_msg or '') or 'Too Many Requests' in (error_msg or '')
                 is_cloudflare = 'cloudflare' in (error_msg or '').lower() or 'challenge' in (error_msg or '').lower()
 
                 if is_rate_limited or is_cloudflare:
-                    # Cloudflare/429: 短锁定但不累加 error_count（不是密码错误）
-                    lock_minutes = 30
-                    lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
-                    cred.login_locked_until = lock_until
-                    # 保持 credentials_valid=True（密码没错，只是被限流）
-                    logger.warning(
-                        f"{prefix} ⚠️ Cloudflare/429 限流，锁定 {lock_minutes} 分钟（不累加错误计数）"
-                    )
+                    if has_valid_session:
+                        # 有 session 时不锁定，下次同步会直接用 session
+                        logger.info(f"{prefix} Cloudflare/429 但有有效 session，不设锁定")
+                    else:
+                        lock_minutes = 30
+                        lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
+                        cred.login_locked_until = lock_until
+                        logger.warning(
+                            f"{prefix} ⚠️ Cloudflare/429 限流且无 session，锁定 {lock_minutes} 分钟"
+                        )
                 else:
                     # 真正的登录失败（密码错、账号问题等）
                     cred.error_count = (cred.error_count or 0) + 1
