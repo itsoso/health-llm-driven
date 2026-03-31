@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { api } from '@/services/api';
 import { format, subDays, startOfWeek } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
 import { zhCN } from 'date-fns/locale';
@@ -172,6 +173,25 @@ function OverviewContent() {
   const { token } = useAuth();
 
   useEffect(() => { document.title = '健康总览 | 健康管理'; }, []);
+
+  // 快速记录
+  const [quickInput, setQuickInput] = useState('');
+  const [quickToast, setQuickToast] = useState('');
+  const quickToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quickMutation = useMutation({
+    mutationFn: (text: string) => api.post('/quick-record', { text }),
+    onSuccess: (res: any) => {
+      if (quickToastTimer.current) clearTimeout(quickToastTimer.current);
+      setQuickToast(res.data?.message || '记录成功');
+      setQuickInput('');
+      quickToastTimer.current = setTimeout(() => setQuickToast(''), 3000);
+    },
+    onError: (err: any) => {
+      if (quickToastTimer.current) clearTimeout(quickToastTimer.current);
+      setQuickToast(err?.response?.data?.detail || '格式不对，试试「喝水500」「体重71.5」');
+      quickToastTimer.current = setTimeout(() => setQuickToast(''), 4000);
+    },
+  });
   // 使用北京时间 (UTC+8) 计算日期
   const TIMEZONE = 'Asia/Shanghai';
   const nowInTimezone = utcToZonedTime(new Date(), TIMEZONE);
@@ -937,6 +957,39 @@ function OverviewContent() {
             )}
           </MetricCard>
         </div>
+      </div>
+
+      {/* 快速记录输入条 */}
+      <div className="sticky bottom-20 z-10 px-4 pb-3">
+        <form
+          onSubmit={(e) => { e.preventDefault(); const t = quickInput.trim(); if (t) quickMutation.mutate(t); }}
+          className="flex gap-2 rounded-2xl border border-gray-200 bg-white/90 p-2 shadow-lg backdrop-blur-sm"
+        >
+          <input
+            type="text"
+            value={quickInput}
+            onChange={e => setQuickInput(e.target.value)}
+            placeholder="快速记录：午餐牛肉面 / 喝水500 / 体重71.5 / 血压120/80"
+            className="flex-1 bg-transparent px-3 py-1.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none"
+            disabled={quickMutation.isPending}
+          />
+          <button
+            type="submit"
+            disabled={quickMutation.isPending || !quickInput.trim()}
+            className="rounded-xl bg-teal-500 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-teal-600 disabled:opacity-40"
+          >
+            {quickMutation.isPending ? '…' : '记录'}
+          </button>
+        </form>
+        {quickToast && (
+          <div className={`mt-2 rounded-xl px-4 py-2 text-sm font-medium shadow ${
+            quickToast.includes('失败') || quickToast.includes('不对')
+              ? 'bg-red-50 text-red-700'
+              : 'bg-teal-50 text-teal-700'
+          }`}>
+            {quickToast}
+          </div>
+        )}
       </div>
     </main>
   );

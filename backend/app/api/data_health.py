@@ -216,7 +216,7 @@ def _water_status(db: Session, user_id: int, today: date) -> dict:
 
 
 def _notification_status(db: Session, user_id: int, now: datetime) -> dict:
-    """推送通知状态"""
+    """推送通知状态 — 只查 DB，不阻塞 Celery ping"""
     from app.models.notification import NotificationLog
 
     twenty_four_hours_ago = now - timedelta(hours=24)
@@ -230,35 +230,34 @@ def _notification_status(db: Session, user_id: int, now: datetime) -> dict:
         .scalar()
     ) or 0
 
-    # 简易检测 Celery worker 是否活跃（通过 celery app inspect）
-    celery_worker = _check_celery_worker()
+    # 用最近一条 NotificationLog 的时间推断 worker 是否存活，
+    # 避免同步 celery.control.ping(timeout=2s) 阻塞整个请求
+    latest_any = (
+        db.query(NotificationLog.sent_at)
+        .order_by(NotificationLog.sent_at.desc())
+        .first()
+    )
+    # 如果全局最新一条推送在 25 小时内，说明 worker 最近正常运行过
+    worker_likely_ok = (
+        latest_any is not None
+        and (now - latest_any[0].replace(tzinfo=None)).total_seconds() < 90000  # 25h
+    )
 
-    if celery_worker and last_24h_count > 0:
+    if last_24h_count > 0:
         status = "ok"
         message = "推送正常"
-    elif not celery_worker:
-        status = "error"
-        message = "Celery worker 未响应"
-    else:
+    elif worker_likely_ok:
         status = "warning"
         message = "过去24小时无推送记录"
+    else:
+        status = "warning"
+        message = "推送服务可能未启动"
 
     return {
         "status": status,
         "last_24h_count": last_24h_count,
-        "celery_worker": celery_worker,
         "message": message,
     }
-
-
-def _check_celery_worker() -> bool:
-    """检测 Celery worker 是否在线（带超时，避免阻塞请求）"""
-    try:
-        from app.celery_app import celery_app
-        result = celery_app.control.ping(timeout=2.0)
-        return len(result) > 0
-    except Exception:
-        return False
 
 
 def _genetic_status(db: Session, user_id: int) -> dict:

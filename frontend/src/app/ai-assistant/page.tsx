@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, chatApi, openclawApi, sharedApi, feedbackApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { api, chatApi, openclawApi, sharedApi, feedbackApi, dailyHealthApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import { relativeTime } from '@/utils/timeFormat';
 
 interface InsightItem { id: number; notification_type: string; title: string; content: string; created_at: string }
@@ -77,23 +77,60 @@ const DEFAULT_QUESTIONS: QuickQuestion[] = [
   { label: '运动完成', text: '我刚运动完，帮我同步Garmin数据并分析本次训练', eyebrow: '即时分析', summary: '触发 Garmin 同步和恢复建议。' },
 ];
 
-const UNIFIED_METRICS = [
-  {
-    label: '技能驱动',
-    value: '查询 / 记录 / 分析',
-    description: '一句话描述目标，AI 自动选择合适的技能组合完成任务。',
-  },
-  {
-    label: '数据感知',
-    value: '语音 / 图片 / 文件',
-    description: '同一输入栏就能完成记录、分析和补充说明。',
-  },
-  {
-    label: '行动建议',
-    value: '饮食 / 运动 / 节奏',
-    description: '把建议收敛成可执行动作，而不是泛泛健康话术。',
-  },
+// 静态兜底 Metrics（无 Garmin 数据时展示）
+const STATIC_METRICS = [
+  { label: '技能驱动', value: '查询 / 记录 / 分析', description: '一句话描述目标，AI 自动选择合适的技能组合完成任务。' },
+  { label: '数据感知', value: '语音 / 图片 / 文件', description: '同一输入栏就能完成记录、分析和补充说明。' },
+  { label: '行动建议', value: '饮食 / 运动 / 节奏', description: '把建议收敛成可执行动作，而不是泛泛健康话术。' },
 ];
+
+// 根据 Garmin 数据动态生成 Metrics
+function buildDynamicMetrics(g: any) {
+  if (!g) return STATIC_METRICS;
+  const metrics = [];
+
+  // 睡眠
+  if (g.sleep_score != null) {
+    const grade = g.sleep_score >= 80 ? '优秀' : g.sleep_score >= 60 ? '良好' : '偏差';
+    const hours = g.total_sleep_duration ? `${(g.total_sleep_duration / 3600).toFixed(1)}h` : '';
+    metrics.push({
+      label: '昨夜睡眠',
+      value: `${g.sleep_score}分 ${hours}`.trim(),
+      description: `睡眠质量${grade}${g.deep_sleep_duration ? `，深睡 ${(g.deep_sleep_duration / 3600).toFixed(1)}h` : ''}`,
+    });
+  }
+
+  // HRV
+  if (g.hrv != null) {
+    const status = g.hrv_status === 'balanced' ? '均衡' : g.hrv_status === 'unbalanced' ? '失衡' : '偏低';
+    metrics.push({
+      label: '心率变异性',
+      value: `${g.hrv} ms`,
+      description: `HRV 状态${status}${g.hrv_7day_avg ? `，7日均值 ${Math.round(g.hrv_7day_avg)}ms` : ''}`,
+    });
+  }
+
+  // Body Battery
+  if (g.body_battery_most_charged != null) {
+    const level = g.body_battery_most_charged >= 75 ? '充沛' : g.body_battery_most_charged >= 50 ? '中等' : '偏低';
+    metrics.push({
+      label: '身体电量',
+      value: `峰值 ${g.body_battery_most_charged}`,
+      description: `当前恢复能量${level}${g.stress_level != null ? `，压力指数 ${g.stress_level}` : ''}`,
+    });
+  }
+
+  // 步数（兜底）
+  if (metrics.length < 2 && g.steps != null) {
+    metrics.push({
+      label: '今日步数',
+      value: g.steps.toLocaleString(),
+      description: `活动卡路里 ${g.active_calories ?? '-'} kcal`,
+    });
+  }
+
+  return metrics.length > 0 ? metrics.slice(0, 3) : STATIC_METRICS;
+}
 
 const STYLE = {
   eyebrow: 'Health AI',
@@ -123,6 +160,7 @@ export default function AIAssistantPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [briefingPreview, setBriefingPreview] = useState<string | null>(null);
   const [briefingConvId, setBriefingConvId] = useState<number | undefined>();
+  const [todayGarmin, setTodayGarmin] = useState<any>(null);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,6 +208,18 @@ export default function AIAssistantPage() {
     }
   }, []);
 
+  // 加载今日 Garmin 数据，用于欢迎屏实时指标
+  const loadTodayGarmin = useCallback(async () => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await dailyHealthApi.getMyGarminData(today, today);
+      const records: any[] = res.data || [];
+      if (records.length > 0) setTodayGarmin(records[0]);
+    } catch (e) {
+      // 非关键，静默处理
+    }
+  }, []);
+
   // 加载指定对话的消息
   const loadConversation = useCallback(async (convId: number, _convMode?: string) => {
     try {
@@ -191,7 +241,8 @@ export default function AIAssistantPage() {
       return;
     }
     loadConversations();
-  }, [loadConversations, router]);
+    loadTodayGarmin();
+  }, [loadConversations, loadTodayGarmin, router]);
 
   // 检测是否是运动完成意图
   const isPostWorkoutMessage = (msg: string): boolean => {
@@ -536,16 +587,19 @@ export default function AIAssistantPage() {
 
   // 过滤和分页对话列表
   const BRIEFING_TITLE = '每日健康简报';
+  const WEEKLY_TITLE = '每周健康周报';
+  const PINNED_TITLES = [BRIEFING_TITLE, WEEKLY_TITLE];
 
   const filteredConversations = conversations.filter(conv =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (conv.last_message && conv.last_message.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // 简报对话始终置顶
+  // 简报/周报始终置顶，日报在周报之前
   const sortedConversations = [
     ...filteredConversations.filter(c => c.title === BRIEFING_TITLE),
-    ...filteredConversations.filter(c => c.title !== BRIEFING_TITLE),
+    ...filteredConversations.filter(c => c.title === WEEKLY_TITLE),
+    ...filteredConversations.filter(c => !PINNED_TITLES.includes(c.title)),
   ];
 
   const totalPages = Math.ceil(sortedConversations.length / itemsPerPage);
@@ -711,7 +765,7 @@ export default function AIAssistantPage() {
   }, []);
 
   const activeQuickQuestions = dynamicQuestions;
-  const activeMetrics = UNIFIED_METRICS;
+  const activeMetrics = buildDynamicMetrics(todayGarmin);
   const handleFeedback = async (msgId: number, rating: 1 | 5) => {
     if (!conversationId) return;
     const prev = messageFeedback[msgId];
@@ -804,6 +858,8 @@ export default function AIAssistantPage() {
                 <div className="space-y-2">
                   {paginatedConversations.map(conv => {
                     const isBriefing = conv.title === BRIEFING_TITLE;
+                    const isWeekly = conv.title === WEEKLY_TITLE;
+                    const isPinned = isBriefing || isWeekly;
                     return (
                     <button
                       key={conv.id}
@@ -813,20 +869,25 @@ export default function AIAssistantPage() {
                           ? `border-white/15 bg-white/10 shadow-[0_20px_50px_rgba(15,23,42,0.35)] ${modeCopy.accentTextClass}`
                           : isBriefing
                             ? 'border-amber-400/20 bg-amber-400/[0.06] hover:border-amber-400/30 hover:bg-amber-400/[0.10]'
-                            : 'border-transparent bg-white/[0.03] hover:border-white/10 hover:bg-white/[0.06]'
+                            : isWeekly
+                              ? 'border-purple-400/20 bg-purple-400/[0.06] hover:border-purple-400/30 hover:bg-purple-400/[0.10]'
+                              : 'border-transparent bg-white/[0.03] hover:border-white/10 hover:bg-white/[0.06]'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isBriefing ? 'bg-amber-400/20 text-amber-300' : modeCopy.badgeClass}`}>
+                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isBriefing ? 'bg-amber-400/20' : isWeekly ? 'bg-purple-400/20' : modeCopy.badgeClass}`}>
                           {isBriefing
                             ? <span className="text-base">🌅</span>
-                            : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                            : isWeekly
+                              ? <span className="text-base">📊</span>
+                              : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
                           }
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className={`flex items-center gap-2 text-sm font-medium leading-6 ${isBriefing ? 'text-amber-200' : 'text-white'}`}>
+                          <div className={`flex items-center gap-2 text-sm font-medium leading-6 ${isBriefing ? 'text-amber-200' : isWeekly ? 'text-purple-200' : 'text-white'}`}>
                             <span className="line-clamp-1">{conv.title}</span>
                             {isBriefing && <span className="shrink-0 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">每日</span>}
+                            {isWeekly && <span className="shrink-0 rounded-full bg-purple-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">周报</span>}
                           </div>
                           {conv.last_message && (
                             <div className="mt-1 text-xs leading-5 text-slate-400 truncate">{conv.last_message.length > 30 ? conv.last_message.slice(0, 30) + '...' : conv.last_message}</div>
@@ -838,7 +899,7 @@ export default function AIAssistantPage() {
                       </div>
                       <div className="mt-3 flex items-center justify-between">
                         <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                          {isBriefing ? '📊 简报' : `#${conv.id}`}
+                          {isBriefing ? '📊 日报' : isWeekly ? '📈 周报' : `#${conv.id}`}
                         </span>
                         <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                           <button

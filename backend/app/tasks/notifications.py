@@ -622,7 +622,7 @@ def _get_or_create_briefing_conversation(db, user_id: int):
 
 
 def _write_briefing_message(db, user_id: int, content: str):
-    """将简报内容作为 assistant 消息写入对话"""
+    """将日报内容作为 assistant 消息写入「每日健康简报」对话"""
     from app.models.openclaw import OpenClawMessage
 
     conv = _get_or_create_briefing_conversation(db, user_id)
@@ -631,6 +631,34 @@ def _write_briefing_message(db, user_id: int, content: str):
         role="assistant",
         content=content,
     )
+    db.add(msg)
+    conv.updated_at = datetime.utcnow()
+    db.commit()
+
+
+WEEKLY_REPORT_TITLE = "每周健康周报"
+
+
+def _get_or_create_weekly_conversation(db, user_id: int):
+    """获取或创建用户的「每周健康周报」独立对话"""
+    from app.models.openclaw import OpenClawConversation
+    conv = db.query(OpenClawConversation).filter(
+        OpenClawConversation.user_id == user_id,
+        OpenClawConversation.title == WEEKLY_REPORT_TITLE,
+    ).first()
+    if not conv:
+        conv = OpenClawConversation(user_id=user_id, title=WEEKLY_REPORT_TITLE)
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+    return conv
+
+
+def _write_weekly_report_message(db, user_id: int, content: str):
+    """将周报内容写入独立「每周健康周报」对话，与日报分开"""
+    from app.models.openclaw import OpenClawMessage
+    conv = _get_or_create_weekly_conversation(db, user_id)
+    msg = OpenClawMessage(conversation_id=conv.id, role="assistant", content=content)
     db.add(msg)
     conv.updated_at = datetime.utcnow()
     db.commit()
@@ -705,7 +733,14 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
         ).first()
 
         if not garmin:
-            logger.info(f"[每日简报] 用户 {user_id} 无 {target_date} Garmin 数据，跳过")
+            logger.info(f"[每日简报] 用户 {user_id} 无 {target_date} Garmin 数据，写占位简报")
+            date_str = target_date.strftime("%-m月%-d日")
+            placeholder = (
+                f"🌅 **{date_str} 健康简报**\n\n"
+                f"今日 Garmin 数据尚未同步，简报将在数据到位后更新。\n\n"
+                f"如需手动同步，可以在 AI 助手中发送「同步 Garmin」。"
+            )
+            _write_briefing_message(db, user_id, placeholder)
             return
 
         # 2. 7 日 HRV 均值（用于比较）
@@ -998,6 +1033,6 @@ def _generate_weekly_report_for_user(user_id: int, today: date):
 
         report_md = "\n".join(lines)
 
-        # 写入对话
-        _write_briefing_message(db, user_id, report_md)
+        # 写入独立「每周健康周报」对话（与日报分开，避免混排）
+        _write_weekly_report_message(db, user_id, report_md)
         logger.info(f"[周报简报] 用户 {user_id} 周报已写入对话")
