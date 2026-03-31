@@ -1136,17 +1136,32 @@ export default function AIAssistantPage() {
                     {insights.length > 0 && (
                       <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
                     )}
-                    {insights.length === 0 && (
-                      <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                        <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{"会话方式"}</div>
-                        <div className="mt-3 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                          {"先问结果，再追细节"}
+                    {insights.length === 0 && (() => {
+                      const h = new Date().getHours();
+                      const timeHint = h < 10
+                        ? { label: '晨间建议', icon: '🌅', q: '今天早上状态怎么样？给我一个晨间健康简报', tip: '开启美好的一天' }
+                        : h < 14
+                        ? { label: '午间复盘', icon: '☀️', q: '上午运动和饮食情况怎么样？', tip: '回顾上午，规划下午' }
+                        : h < 18
+                        ? { label: '下午能量', icon: '⚡', q: '我现在适合做什么运动？', tip: '下午是运动的黄金时段' }
+                        : { label: '晚间总结', icon: '🌙', q: '帮我总结今天的健康数据，还差哪些目标没完成？', tip: '收官今日，规划明天' };
+                      return (
+                        <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                          <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{"今日快问"}</div>
+                          <div className="mt-3 flex items-center gap-2 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                            <span>{timeHint.icon}</span>
+                            <span>{timeHint.label}</span>
+                          </div>
+                          <div className="mt-2 text-sm text-slate-500">{timeHint.tip}</div>
+                          <button
+                            onClick={() => { setInputText(timeHint.q); }}
+                            className="mt-4 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
+                          >
+                            {timeHint.q}
+                          </button>
                         </div>
-                        <div className="mt-3 text-sm leading-7 text-slate-400">
-                          {"例如先问\"今天状态如何\"，再继续追问\"为什么\"和\"下一步做什么\"。"}
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (
