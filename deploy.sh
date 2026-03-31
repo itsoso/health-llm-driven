@@ -217,6 +217,11 @@ push_code() {
     
     git push
     print_success "代码已推送到 GitHub"
+
+    # 同步到 kuaishou GitLab（静默，失败不影响部署）
+    if git remote | grep -q kuaishou; then
+        git push kuaishou main 2>/dev/null && print_success "代码已同步到 kuaishou GitLab" || print_warning "kuaishou GitLab 同步失败（不影响部署）"
+    fi
 }
 
 # 部署前端
