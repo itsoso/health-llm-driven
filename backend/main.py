@@ -26,6 +26,10 @@ import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 # 设置日志，使用北京时间
 setup_beijing_logging()
 
+# Patch garth 使用 Chrome TLS 指纹（绕过 Cloudflare bot 检测）
+from app.services.garmin_cffi_patch import patch_garth_with_cffi
+patch_garth_with_cffi()
+
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
 
