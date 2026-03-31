@@ -225,7 +225,7 @@ def _notification_status(db: Session, user_id: int, now: datetime) -> dict:
         db.query(func.count(NotificationLog.id))
         .filter(
             NotificationLog.user_id == user_id,
-            NotificationLog.sent_at >= twenty_four_hours_ago,
+            NotificationLog.created_at >= twenty_four_hours_ago,
         )
         .scalar()
     ) or 0
