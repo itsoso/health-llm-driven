@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
-from app.models.daily_health import GarminData, DietRecord
+from app.models.daily_health import GarminData, DietRecord, WaterIntake
 from app.models.weight import WeightRecord
 from app.models.mood import MoodRecord
 
@@ -18,12 +18,13 @@ class HealthScoreService:
 
     # 维度权重配置
     DIMENSION_WEIGHTS = {
-        "运动": 0.25,
-        "睡眠": 0.25,
+        "运动": 0.20,
+        "睡眠": 0.20,
         "饮食": 0.15,
         "情绪": 0.15,
         "体征": 0.10,
         "体重": 0.10,
+        "水分": 0.10,
     }
 
     def calculate_daily_score(
@@ -45,6 +46,7 @@ class HealthScoreService:
         mood_score = self._score_mood(db, user_id, target_date)
         vitals_score = self._score_vitals(db, user_id, target_date)
         weight_score = self._score_weight(db, user_id, target_date)
+        hydration_score = self._score_hydration(db, user_id, target_date)
 
         dimensions = [
             exercise_score,
@@ -53,6 +55,7 @@ class HealthScoreService:
             mood_score,
             vitals_score,
             weight_score,
+            hydration_score,
         ]
 
         # 过滤有数据的维度
@@ -369,6 +372,35 @@ class HealthScoreService:
 
         return {"name": "体征", "score": min(100, score), "weight": self.DIMENSION_WEIGHTS["体征"], "description": self._vitals_desc(score), "details": details}
 
+    def _score_hydration(self, db: Session, user_id: int, target_date: date) -> Dict[str, Any]:
+        """饮水维度评分"""
+        records = db.query(WaterIntake).filter(
+            WaterIntake.user_id == user_id,
+            WaterIntake.record_date == target_date,
+        ).all()
+
+        if not records:
+            return {"name": "水分", "score": None, "weight": self.DIMENSION_WEIGHTS["水分"], "description": "无数据", "details": {}}
+
+        total_ml = sum(r.amount_ml or 0 for r in records)
+        details = {"total_ml": total_ml, "intake_count": len(records)}
+
+        # 推荐饮水量 2000ml/天
+        if total_ml >= 2000:
+            score = 100
+        elif total_ml >= 1600:
+            score = 80
+        elif total_ml >= 1200:
+            score = 60
+        elif total_ml >= 800:
+            score = 40
+        elif total_ml >= 400:
+            score = 20
+        else:
+            score = 10
+
+        return {"name": "水分", "score": score, "weight": self.DIMENSION_WEIGHTS["水分"], "description": self._hydration_desc(score), "details": details}
+
     def _score_weight(self, db: Session, user_id: int, target_date: date) -> Dict[str, Any]:
         """体重维度评分"""
         latest = db.query(WeightRecord).filter(
@@ -491,6 +523,16 @@ class HealthScoreService:
             return "体重需要关注"
         return "体重管理需要加强"
 
+    @staticmethod
+    def _hydration_desc(score: int) -> str:
+        if score >= 80:
+            return "饮水充足，身体水分良好"
+        elif score >= 60:
+            return "饮水基本达标"
+        elif score >= 40:
+            return "饮水不足，建议多喝水"
+        return "严重缺水，请注意补充水分"
+
     def _generate_suggestions(self, dimensions: List[Dict], total_score: int) -> List[str]:
         """基于各维度得分生成建议"""
         suggestions = []
@@ -515,6 +557,8 @@ class HealthScoreService:
                     suggestions.append("身体机能指标异常，建议关注休息和恢复")
                 elif name == "体重":
                     suggestions.append("体重管理需加强，建议控制热量摄入并增加运动")
+                elif name == "水分":
+                    suggestions.append("今日饮水严重不足，建议立即补水，目标每天 2000ml")
             elif score < 60:
                 if name == "运动":
                     suggestions.append("运动量不足，尝试增加每日步数或安排运动计划")
@@ -522,6 +566,8 @@ class HealthScoreService:
                     suggestions.append("睡眠质量可以改善，注意营造良好睡眠环境")
                 elif name == "饮食":
                     suggestions.append("饮食结构有待优化，增加蛋白质和蔬菜摄入")
+                elif name == "水分":
+                    suggestions.append("饮水量不足，建议定时提醒自己补水，目标每天 2000ml")
 
         if not suggestions and total_score >= 80:
             suggestions.append("整体健康状态良好，继续保持当前的生活习惯")

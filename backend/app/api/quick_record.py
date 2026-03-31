@@ -44,6 +44,70 @@ MEAL_MAP = {
 # 餐次关键词正则（用于匹配）
 MEAL_KEYWORDS = "|".join(MEAL_MAP.keys())
 
+# 常见食物营养估算（每份 kcal / 蛋白质g / 碳水g / 脂肪g）
+# 覆盖高频中国食物，快速返回无需调用 LLM
+_FOOD_NUTRITION: dict[str, tuple[int, float, float, float]] = {
+    # 主食
+    "米饭": (200, 4, 44, 0.5),
+    "白米饭": (200, 4, 44, 0.5),
+    "炒饭": (320, 7, 50, 10),
+    "面条": (280, 9, 52, 3),
+    "牛肉面": (450, 22, 55, 14),
+    "兰州拉面": (470, 24, 58, 14),
+    "拌面": (400, 12, 58, 12),
+    "馒头": (220, 7, 44, 1),
+    "包子": (280, 12, 40, 8),
+    "饺子": (350, 16, 48, 10),
+    "粥": (120, 3, 26, 0.5),
+    "皮蛋瘦肉粥": (180, 10, 28, 3),
+    "油条": (380, 8, 45, 18),
+    "烧饼": (320, 9, 50, 9),
+    "煎饼果子": (420, 15, 52, 16),
+    "三明治": (350, 15, 40, 14),
+    "汉堡": (500, 22, 42, 25),
+    "披萨": (450, 18, 52, 18),
+    # 蛋白质
+    "鸡胸肉": (165, 31, 0, 3.5),
+    "鸡腿": (230, 24, 0, 14),
+    "牛肉": (250, 26, 0, 15),
+    "猪肉": (260, 22, 0, 18),
+    "鱼": (150, 22, 0, 6),
+    "虾": (100, 20, 1, 1.5),
+    "鸡蛋": (80, 7, 0.5, 5.5),
+    "煎蛋": (95, 7, 0.5, 7),
+    "荷包蛋": (95, 7, 0.5, 7),
+    "豆腐": (80, 8, 2, 4),
+    # 蔬菜
+    "沙拉": (80, 3, 10, 3),
+    "蔬菜": (50, 2, 8, 0.5),
+    "西兰花": (55, 4, 10, 0.5),
+    "菠菜": (30, 3, 4, 0.4),
+    # 汤
+    "番茄蛋汤": (80, 5, 8, 3),
+    "紫菜蛋花汤": (60, 5, 6, 2),
+    "排骨汤": (200, 12, 5, 15),
+    # 饮料/奶制品
+    "牛奶": (150, 8, 12, 8),
+    "豆浆": (80, 7, 5, 3),
+    "酸奶": (130, 7, 17, 3),
+    "果汁": (120, 0.5, 28, 0.2),
+    "咖啡": (10, 0.3, 2, 0),
+    "拿铁": (180, 8, 20, 7),
+    # 零食/甜食
+    "苹果": (80, 0.4, 21, 0.2),
+    "香蕉": (90, 1.1, 23, 0.3),
+    "坚果": (180, 5, 6, 16),
+    "巧克力": (160, 2, 18, 9),
+}
+
+
+def _estimate_nutrition(food_text: str) -> tuple[int, float, float, float] | None:
+    """根据食物描述估算营养（kcal, 蛋白质g, 碳水g, 脂肪g）"""
+    for keyword, nutrition in _FOOD_NUTRITION.items():
+        if keyword in food_text:
+            return nutrition
+    return None
+
 
 def _parse_quick_record(text: str):
     """
@@ -111,18 +175,24 @@ def quick_record(
 
     try:
         if record_type == "diet":
+            nutrition = _estimate_nutrition(data["food"])
             record = DietRecord(
                 user_id=current_user.id,
                 record_date=today,
                 meal_type=data["meal_type"],
                 food_items=data["food"],
                 food_name=data["food"],
+                calories=nutrition[0] if nutrition else None,
+                protein=nutrition[1] if nutrition else None,
+                carbs=nutrition[2] if nutrition else None,
+                fat=nutrition[3] if nutrition else None,
             )
             db.add(record)
             db.commit()
+            nutrition_msg = f"，约 {nutrition[0]} kcal" if nutrition else ""
             return QuickRecordResponse(
                 type="diet",
-                message=f"已记录{data['meal_cn']}：{data['food']}",
+                message=f"已记录{data['meal_cn']}：{data['food']}{nutrition_msg}",
                 success=True,
             )
 
