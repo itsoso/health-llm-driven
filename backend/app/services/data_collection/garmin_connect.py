@@ -333,8 +333,14 @@ class GarminConnectService:
         try:
             from curl_cffi.requests import Session as CffiSession
             headers = dict(client.garth.sess.headers)
-            client.garth.sess = CffiSession(impersonate="chrome")
-            client.garth.sess.headers.update(headers)
+            cffi_sess = CffiSession(impersonate="chrome")
+            cffi_sess.headers.update(headers)
+            # 兼容 requests.Session 属性（garminconnect 内部可能访问）
+            if not hasattr(cffi_sess, 'adapters'):
+                cffi_sess.adapters = {}
+            if not hasattr(cffi_sess, 'auth'):
+                cffi_sess.auth = None
+            client.garth.sess = cffi_sess
         except ImportError:
             pass
         return client

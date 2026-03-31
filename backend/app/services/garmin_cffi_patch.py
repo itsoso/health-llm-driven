@@ -38,6 +38,12 @@ def patch_garth_with_cffi():
         original_headers = dict(garth.client.sess.headers)
         cffi_sess.headers.update(original_headers)
 
+        # 兼容 requests.Session 属性
+        if not hasattr(cffi_sess, 'adapters'):
+            cffi_sess.adapters = {}
+        if not hasattr(cffi_sess, 'auth'):
+            cffi_sess.auth = None
+
         # 替换
         garth.client.sess = cffi_sess
 
