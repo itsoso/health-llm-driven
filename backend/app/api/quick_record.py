@@ -23,7 +23,7 @@ class QuickRecordRequest(BaseModel):
 
 
 class QuickRecordResponse(BaseModel):
-    type: str  # diet / water / weight / bp
+    type: str  # diet / water / weight / bp / supplement
     message: str
     success: bool
 
@@ -145,13 +145,37 @@ def _parse_quick_record(text: str):
         amount = int(water_match.group(1))
         return "water", {"amount": amount}
 
-    # --- 饮食 ---
+    # --- 饮食（指定餐次）---
     diet_match = re.match(rf"({MEAL_KEYWORDS})\s*(.*)", text)
     if diet_match:
         meal_cn = diet_match.group(1)
         food = diet_match.group(2).strip()
         meal_type = MEAL_MAP.get(meal_cn, "snack")
         return "diet", {"meal_type": meal_type, "meal_cn": meal_cn, "food": food or "未指定"}
+
+    # --- 饮食（"吃了xxx"，自动推断餐次）---
+    ate_match = re.match(r"(?:吃了|吃)\s+(.+)", text)
+    if ate_match:
+        food = ate_match.group(1).strip()
+        from datetime import datetime as _dt
+        hour = _dt.now().hour
+        if 5 <= hour < 10:
+            meal_type, meal_cn = "breakfast", "早餐"
+        elif 10 <= hour < 14:
+            meal_type, meal_cn = "lunch", "午餐"
+        elif 14 <= hour < 17:
+            meal_type, meal_cn = "snack", "加餐"
+        elif 17 <= hour < 21:
+            meal_type, meal_cn = "dinner", "晚餐"
+        else:
+            meal_type, meal_cn = "snack", "加餐"
+        return "diet", {"meal_type": meal_type, "meal_cn": meal_cn, "food": food}
+
+    # --- 补剂打卡 ---
+    supp_match = re.match(r"(?:吃了?|服用|补剂)\s*(维生素|鱼油|钙片|叶酸|益生菌|辅酶|NAC|锌|镁|铁|B族|维C|维D|omega|Omega)(.*)$", text, re.IGNORECASE)
+    if supp_match:
+        supp_name = supp_match.group(1) + (supp_match.group(2) or "").strip()
+        return "supplement", {"name": supp_name}
 
     return None, None
 
@@ -168,7 +192,7 @@ def quick_record(
     if record_type is None:
         raise HTTPException(
             status_code=400,
-            detail="无法识别记录类型。支持格式：午餐牛肉面 / 喝水500 / 体重71.5 / 血压120/80",
+            detail="无法识别。支持：午餐牛肉面 / 吃了鸡胸肉 / 喝水500 / 体重71.5 / 血压120/80 / 吃了维生素D",
         )
 
     today = date.today()
@@ -239,6 +263,44 @@ def quick_record(
             return QuickRecordResponse(
                 type="bp",
                 message=f"已记录血压 {data['systolic']}/{data['diastolic']} mmHg",
+                success=True,
+            )
+
+        elif record_type == "supplement":
+            # 查找或创建补剂定义，然后打卡
+            from app.models.supplement import SupplementDefinition, SupplementRecord
+            supp = db.query(SupplementDefinition).filter(
+                SupplementDefinition.user_id == current_user.id,
+                SupplementDefinition.name.ilike(f"%{data['name']}%"),
+            ).first()
+            if not supp:
+                # 自动创建补剂定义
+                supp = SupplementDefinition(
+                    user_id=current_user.id,
+                    name=data["name"],
+                    timing="morning",
+                    category="其他",
+                )
+                db.add(supp)
+                db.flush()
+            # 打卡
+            existing = db.query(SupplementRecord).filter(
+                SupplementRecord.user_id == current_user.id,
+                SupplementRecord.supplement_id == supp.id,
+                SupplementRecord.record_date == today,
+            ).first()
+            if not existing:
+                record = SupplementRecord(
+                    user_id=current_user.id,
+                    supplement_id=supp.id,
+                    record_date=today,
+                    taken=True,
+                )
+                db.add(record)
+            db.commit()
+            return QuickRecordResponse(
+                type="supplement",
+                message=f"已打卡补剂：{data['name']}",
                 success=True,
             )
 
