@@ -121,6 +121,8 @@ export default function AIAssistantPage() {
   const [conversationId, setConversationId] = useState<number | undefined>();
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [briefingPreview, setBriefingPreview] = useState<string | null>(null);
+  const [briefingConvId, setBriefingConvId] = useState<number | undefined>();
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,7 +157,14 @@ export default function AIAssistantPage() {
   const loadConversations = useCallback(async () => {
     try {
       const response = await openclawApi.getConversations();
-      setConversations(response.data || []);
+      const convList: Conversation[] = response.data || [];
+      setConversations(convList);
+      // 提取每日简报摘要，用于欢迎屏展示
+      const briefingConv = convList.find(c => c.title === '每日健康简报');
+      if (briefingConv) {
+        setBriefingConvId(briefingConv.id);
+        setBriefingPreview(briefingConv.last_message || null);
+      }
     } catch (e) {
       console.error('加载对话列表失败:', e);
     }
@@ -526,13 +535,21 @@ export default function AIAssistantPage() {
   };
 
   // 过滤和分页对话列表
+  const BRIEFING_TITLE = '每日健康简报';
+
   const filteredConversations = conversations.filter(conv =>
     conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (conv.last_message && conv.last_message.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const totalPages = Math.ceil(filteredConversations.length / itemsPerPage);
-  const paginatedConversations = filteredConversations.slice(
+  // 简报对话始终置顶
+  const sortedConversations = [
+    ...filteredConversations.filter(c => c.title === BRIEFING_TITLE),
+    ...filteredConversations.filter(c => c.title !== BRIEFING_TITLE),
+  ];
+
+  const totalPages = Math.ceil(sortedConversations.length / itemsPerPage);
+  const paginatedConversations = sortedConversations.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -785,22 +802,32 @@ export default function AIAssistantPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {paginatedConversations.map(conv => (
+                  {paginatedConversations.map(conv => {
+                    const isBriefing = conv.title === BRIEFING_TITLE;
+                    return (
                     <button
                       key={conv.id}
                       onClick={() => loadConversation(conv.id)}
                       className={`group w-full rounded-[26px] border px-4 py-4 text-left transition-all ${
                         conv.id === conversationId
                           ? `border-white/15 bg-white/10 shadow-[0_20px_50px_rgba(15,23,42,0.35)] ${modeCopy.accentTextClass}`
-                          : 'border-transparent bg-white/[0.03] hover:border-white/10 hover:bg-white/[0.06]'
+                          : isBriefing
+                            ? 'border-amber-400/20 bg-amber-400/[0.06] hover:border-amber-400/30 hover:bg-amber-400/[0.10]'
+                            : 'border-transparent bg-white/[0.03] hover:border-white/10 hover:bg-white/[0.06]'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${modeCopy.badgeClass}`}>
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isBriefing ? 'bg-amber-400/20 text-amber-300' : modeCopy.badgeClass}`}>
+                          {isBriefing
+                            ? <span className="text-base">🌅</span>
+                            : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                          }
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="line-clamp-2 text-sm font-medium leading-6 text-white">{conv.title}</div>
+                          <div className={`flex items-center gap-2 text-sm font-medium leading-6 ${isBriefing ? 'text-amber-200' : 'text-white'}`}>
+                            <span className="line-clamp-1">{conv.title}</span>
+                            {isBriefing && <span className="shrink-0 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">每日</span>}
+                          </div>
                           {conv.last_message && (
                             <div className="mt-1 text-xs leading-5 text-slate-400 truncate">{conv.last_message.length > 30 ? conv.last_message.slice(0, 30) + '...' : conv.last_message}</div>
                           )}
@@ -811,7 +838,7 @@ export default function AIAssistantPage() {
                       </div>
                       <div className="mt-3 flex items-center justify-between">
                         <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                          #{conv.id}
+                          {isBriefing ? '📊 简报' : `#${conv.id}`}
                         </span>
                         <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                           <button
@@ -837,12 +864,12 @@ export default function AIAssistantPage() {
                         </div>
                       </div>
                     </button>
-                  ))}
+                  );})}
                 </div>
               )}
             </div>
 
-            {filteredConversations.length > itemsPerPage && (
+            {sortedConversations.length > itemsPerPage && (
               <div className="border-t border-white/10 px-4 py-3">
                 <div className="flex items-center justify-between text-xs text-slate-400">
                   <button
@@ -1013,6 +1040,28 @@ export default function AIAssistantPage() {
                   </div>
 
                   <div className="grid gap-4 content-start">
+                    {/* 每日健康简报卡片 — 置顶展示最新简报摘要 */}
+                    {briefingPreview && briefingConvId ? (
+                      <button
+                        onClick={() => loadConversation(briefingConvId)}
+                        className="group rounded-[30px] border border-amber-400/20 bg-amber-400/[0.06] p-5 text-left shadow-[0_20px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl transition-all hover:border-amber-400/35 hover:bg-amber-400/[0.10]"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">🌅 今日简报</div>
+                          <svg className="h-4 w-4 text-amber-400/50 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                        </div>
+                        <div className="mt-3 line-clamp-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap">
+                          {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 200)}
+                        </div>
+                        <div className="mt-3 text-[11px] text-amber-400/60">点击查看完整简报 →</div>
+                      </button>
+                    ) : (
+                      <div className="rounded-[30px] border border-amber-400/10 bg-amber-400/[0.03] p-5">
+                        <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/50">🌅 每日简报</div>
+                        <div className="mt-3 text-sm text-slate-500">简报每日 07:35 自动生成，将在这里显示今日健康摘要</div>
+                      </div>
+                    )}
+
                     {activeMetrics.map((metric) => (
                       <div key={metric.label} className="rounded-[30px] border border-white/10 bg-slate-950/60 p-5 shadow-[0_20px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl">
                         <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>

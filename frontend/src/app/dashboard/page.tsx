@@ -39,6 +39,12 @@ function DashboardContent() {
   const [isPulling, setIsPulling] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 数据健康度
+  const [dataHealth, setDataHealth] = useState<Record<string, { status: string; message: string }> | null>(null);
+  useEffect(() => {
+    api.get('/data-health/status').then(r => setDataHealth(r.data)).catch(() => {});
+  }, []);
+
   // 快速记录
   const [quickInput, setQuickInput] = useState('');
   const [quickToast, setQuickToast] = useState('');
@@ -489,6 +495,36 @@ function DashboardContent() {
             </div>
           )}
         </div>
+
+        {/* 数据健康度状态条 */}
+        {dataHealth && (
+          <div className="mb-4 flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-gray-400 font-medium mr-1">数据状态</span>
+            {[
+              { key: 'garmin', label: 'Garmin', icon: '⌚' },
+              { key: 'hrv', label: 'HRV', icon: '💓' },
+              { key: 'diet', label: '饮食', icon: '🍽️' },
+              { key: 'water', label: '饮水', icon: '💧' },
+              { key: 'notifications', label: '推送', icon: '🔔' },
+              { key: 'genetic', label: '基因', icon: '🧬' },
+            ].map(({ key, label, icon }) => {
+              const item = dataHealth[key];
+              if (!item) return null;
+              const color = item.status === 'ok'
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : item.status === 'warning'
+                  ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                  : 'bg-red-50 border-red-200 text-red-700';
+              const dot = item.status === 'ok' ? 'bg-green-500' : item.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500';
+              return (
+                <div key={key} title={item.message} className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium cursor-default ${color}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                  <span>{icon} {label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* 快速记录输入栏 */}
         <div className="mb-6 relative">
