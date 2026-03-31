@@ -336,8 +336,10 @@ class GarminConnectService:
             cffi_sess = CffiSession(impersonate="chrome")
             cffi_sess.headers.update(headers)
             # 兼容 requests.Session 属性（garminconnect 内部可能访问）
+            # 兼容 requests.Session 属性（garminconnect 内部可能访问）
             if not hasattr(cffi_sess, 'adapters'):
-                cffi_sess.adapters = {}
+                from requests.adapters import HTTPAdapter
+                cffi_sess.adapters = {'https://': HTTPAdapter(), 'http://': HTTPAdapter()}
             if not hasattr(cffi_sess, 'auth'):
                 cffi_sess.auth = None
             client.garth.sess = cffi_sess

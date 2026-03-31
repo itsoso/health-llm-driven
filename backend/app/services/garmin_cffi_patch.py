@@ -40,7 +40,8 @@ def patch_garth_with_cffi():
 
         # 兼容 requests.Session 属性
         if not hasattr(cffi_sess, 'adapters'):
-            cffi_sess.adapters = {}
+            from requests.adapters import HTTPAdapter
+            cffi_sess.adapters = {'https://': HTTPAdapter(), 'http://': HTTPAdapter()}
         if not hasattr(cffi_sess, 'auth'):
             cffi_sess.auth = None
 
