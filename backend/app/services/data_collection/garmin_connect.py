@@ -685,22 +685,21 @@ class GarminConnectService:
         """
         prefix = self._log_prefix()
 
-        # 0. 检查是否被锁定（防止频繁登录失败导致 Garmin 账号被封）
+        # 1. 优先尝试从数据库加载缓存的 session（即使被锁定也能用 session）
+        if db and self.user_id and not self._authenticated:
+            if self._load_session_from_db(db):
+                logger.info(f"{prefix} ✅ 使用缓存的 OAuth Token，避免重新登录")
+                return
+
+        # 0. 检查是否被锁定（仅在没有缓存 session、需要 SSO 登录时才阻止）
         if db and self.user_id:
             locked_until = self._check_login_lock(db)
             if locked_until:
-                # 统一为 naive datetime 比较
                 locked_naive = locked_until.replace(tzinfo=None) if locked_until.tzinfo else locked_until
                 remaining_minutes = int((locked_naive - datetime.utcnow()).total_seconds() / 60) + 1
                 error_msg = f"⏳ 登录已被暂停，请 {remaining_minutes} 分钟后再试。连续登录失败会导致 Garmin 账号被锁定，请先确认密码正确。"
                 logger.warning(f"{prefix} {error_msg}")
                 raise GarminLoginLockedError(error_msg, locked_until)
-
-        # 1. 优先尝试从数据库加载缓存的 session（避免频繁登录触发账号锁定）
-        if db and self.user_id and not self._authenticated:
-            if self._load_session_from_db(db):
-                logger.info(f"{prefix} ✅ 使用缓存的 OAuth Token，避免重新登录")
-                return
         
         # 2. 如果有MFA会话ID，尝试复用已认证的client
         if self._mfa_session_id and not self._authenticated:
