@@ -678,6 +678,21 @@ def _status_emoji(value, good_threshold, bad_threshold, higher_is_better=True):
 # Feature 1: 每日健康简报（写入 AI 对话）
 # ---------------------------------------------------------------------------
 
+@celery_app.task(time_limit=120, name="app.tasks.notifications.regenerate_briefing_for_user")
+def regenerate_briefing_for_user(user_id: int):
+    """
+    Garmin 同步完成后为单个用户重新生成今日简报。
+    确保简报包含最新同步数据，而不是 07:35 时的旧数据。
+    """
+    from app.utils.timezone import get_china_today
+    today = get_china_today()
+    logger.info(f"[简报重生成] 用户 {user_id} — {today}")
+    try:
+        _generate_daily_briefing_for_user(user_id, today)
+    except Exception as e:
+        logger.error(f"[简报重生成] 用户 {user_id} 失败: {e}")
+
+
 @celery_app.task(time_limit=600)
 def generate_daily_briefing_message():
     """

@@ -128,6 +128,14 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
             # 更新同步状态
             garmin_credential_service.update_sync_status(db, user_id)
 
+            # 同步完成后重新生成今日简报（确保简报包含最新数据）
+            try:
+                from app.tasks.notifications import regenerate_briefing_for_user
+                regenerate_briefing_for_user.delay(user_id)
+                logger.info(f"用户 {user_id} Garmin 同步完成，已触发简报重新生成")
+            except Exception as e:
+                logger.warning(f"触发简报重新生成失败（不影响同步结果）: {e}")
+
             return {
                 "status": "success",
                 "success_count": success_count,
