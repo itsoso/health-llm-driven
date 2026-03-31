@@ -257,9 +257,14 @@ def renew_garmin_sessions(self):
 
         logger.info(f"[session-renew] 发现 {len(credentials)} 个需要检查的 session")
 
-        for cred in credentials:
+        import time as _time
+        for i, cred in enumerate(credentials):
             user_id = cred.user_id
             prefix = f"[session-renew][user={user_id}]"
+
+            # 用户间延迟 30 秒，避免短时间内多次 SSO 登录触发 Garmin 限流
+            if i > 0:
+                _time.sleep(30)
 
             try:
                 result = _renew_single_session(db, cred, prefix)
