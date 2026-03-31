@@ -304,15 +304,15 @@ class DeviceManager:
         if data.steps is not None:
             record.steps = data.steps
         if data.distance_meters is not None:
-            record.distance_meters = data.distance_meters
+            record.distance_meters = int(data.distance_meters)
         if data.floors_climbed is not None:
             record.floors_climbed = data.floors_climbed
         if data.active_minutes is not None:
             record.active_minutes = data.active_minutes
         if data.calories_total is not None:
-            record.calories_burned = data.calories_total
+            record.calories_burned = int(data.calories_total)
         if data.calories_active is not None:
-            record.active_calories = data.calories_active
+            record.active_calories = int(data.calories_active)
             
         if data.stress_level is not None:
             record.stress_level = data.stress_level

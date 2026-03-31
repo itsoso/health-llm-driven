@@ -24,6 +24,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 输入框文字颜色统一为黑色，避免暗色模式下看不到 */
+input, textarea, select {
+  color: #111827;
+}
+
 /* 优化数字显示 */
 .tabular-nums {
   font-variant-numeric: tabular-nums;

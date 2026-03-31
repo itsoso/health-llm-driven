@@ -38,6 +38,7 @@ from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 # 资讯模型
 from app.models.news import NewsArticle, NewsApiKey
 # 外部建议模型
+from app.models.user_api_key import UserApiKey
 from app.models.external_recommendation import ExternalRecommendation
 # 聊天模型
 from app.models.chat import ChatConversation, ChatMessage
@@ -148,6 +149,8 @@ __all__ = [
     # 资讯模型
     "NewsArticle",
     "NewsApiKey",
+    # 用户API密钥
+    "UserApiKey",
     # 外部建议模型
     "ExternalRecommendation",
     # 聊天模型
