@@ -238,10 +238,12 @@ def _notification_status(db: Session, user_id: int, now: datetime) -> dict:
         .first()
     )
     # 如果全局最新一条推送在 25 小时内，说明 worker 最近正常运行过
-    worker_likely_ok = (
-        latest_any is not None
-        and (now - latest_any[0].replace(tzinfo=None)).total_seconds() < 90000  # 25h
-    )
+    worker_likely_ok = False
+    if latest_any is not None and latest_any[0] is not None:
+        ts = latest_any[0]
+        if hasattr(ts, 'tzinfo') and ts.tzinfo:
+            ts = ts.replace(tzinfo=None)
+        worker_likely_ok = (now - ts).total_seconds() < 90000  # 25h
 
     if last_24h_count > 0:
         status = "ok"
