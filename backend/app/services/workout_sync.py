@@ -233,11 +233,8 @@ class WorkoutSyncService:
             headers = dict(client.garth.sess.headers)
             cffi_sess = CffiSession(impersonate="chrome")
             cffi_sess.headers.update(headers)
-            if not hasattr(cffi_sess, 'adapters'):
-                from requests.adapters import HTTPAdapter
-                cffi_sess.adapters = {'https://': HTTPAdapter(), 'http://': HTTPAdapter()}
-            if not hasattr(cffi_sess, 'auth'):
-                cffi_sess.auth = None
+            from app.services.garmin_cffi_patch import make_cffi_session_compatible
+            make_cffi_session_compatible(cffi_sess)
             client.garth.sess = cffi_sess
         except ImportError:
             pass

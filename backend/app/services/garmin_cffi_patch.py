@@ -11,12 +11,30 @@ logger = logging.getLogger(__name__)
 _patched = False
 
 
+def make_cffi_session_compatible(cffi_sess):
+    """给 curl_cffi.Session 补上 requests.Session 的兼容属性"""
+    from requests.adapters import HTTPAdapter
+    defaults = {
+        'adapters': {'https://': HTTPAdapter(), 'http://': HTTPAdapter()},
+        'auth': None,
+        'hooks': {'response': []},
+        'params': {},
+        'proxies': {},
+        'stream': False,
+        'verify': True,
+        'cert': None,
+        'max_redirects': 30,
+        'trust_env': True,
+    }
+    for attr, default in defaults.items():
+        if not hasattr(cffi_sess, attr):
+            setattr(cffi_sess, attr, default)
+    return cffi_sess
+
+
 def patch_garth_with_cffi():
     """
     替换 garth 全局 client 的 requests.Session 为 curl_cffi.Session(impersonate="chrome")。
-
-    这样 garth 的所有 HTTP 请求（SSO 登录、token refresh、API 调用）
-    都会使用 Chrome 的 TLS 指纹，绕过 Cloudflare bot 检测。
     """
     global _patched
     if _patched:
@@ -31,21 +49,10 @@ def patch_garth_with_cffi():
     try:
         import garth
 
-        # 创建 Chrome TLS 指纹的 session
         cffi_sess = CffiSession(impersonate="chrome")
-
-        # 保留 garth 原有的 headers
         original_headers = dict(garth.client.sess.headers)
         cffi_sess.headers.update(original_headers)
-
-        # 兼容 requests.Session 属性
-        if not hasattr(cffi_sess, 'adapters'):
-            from requests.adapters import HTTPAdapter
-            cffi_sess.adapters = {'https://': HTTPAdapter(), 'http://': HTTPAdapter()}
-        if not hasattr(cffi_sess, 'auth'):
-            cffi_sess.auth = None
-
-        # 替换
+        make_cffi_session_compatible(cffi_sess)
         garth.client.sess = cffi_sess
 
         _patched = True
