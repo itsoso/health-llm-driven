@@ -84,52 +84,94 @@ const STATIC_METRICS = [
   { label: '行动建议', value: '饮食 / 运动 / 节奏', description: '把建议收敛成可执行动作，而不是泛泛健康话术。' },
 ];
 
-// 根据 Garmin 数据动态生成 Metrics
-function buildDynamicMetrics(g: any) {
-  if (!g) return STATIC_METRICS;
-  const metrics = [];
+type RichMetric = {
+  label: string;
+  icon: string;
+  primary: string;        // 大数字
+  secondary?: string;     // 大数字旁的副文
+  subs: { icon: string; label: string; value: string; color?: string }[];
+  gradient: string;
+  border: string;
+  accent: string;
+};
+
+function buildRichMetrics(g: any): RichMetric[] {
+  if (!g) return [];
+  const metrics: RichMetric[] = [];
 
   // 睡眠
   if (g.sleep_score != null) {
-    const grade = g.sleep_score >= 80 ? '优秀' : g.sleep_score >= 60 ? '良好' : '偏差';
-    const hours = g.total_sleep_duration ? `${(g.total_sleep_duration / 60).toFixed(1)}h` : '';
+    const hours = g.total_sleep_duration ? (g.total_sleep_duration / 60) : 0;
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    const durationText = hours > 0 ? `${h}小时${m > 0 ? m + '分钟' : ''}` : '';
+    const subs: RichMetric['subs'] = [];
+    if (durationText) subs.push({ icon: '⏱', label: '持续时间', value: durationText });
+    if (g.deep_sleep_duration) subs.push({ icon: '🟦', label: '深睡', value: `${(g.deep_sleep_duration / 60).toFixed(1)}h` });
+    if (g.rem_sleep_duration) subs.push({ icon: '🟪', label: 'REM', value: `${(g.rem_sleep_duration / 60).toFixed(1)}h` });
+    if (g.light_sleep_duration) subs.push({ icon: '🟨', label: '浅睡', value: `${(g.light_sleep_duration / 60).toFixed(1)}h` });
     metrics.push({
-      label: '昨夜睡眠',
-      value: `${g.sleep_score}分 ${hours}`.trim(),
-      description: `睡眠质量${grade}${g.deep_sleep_duration ? `，深睡 ${(g.deep_sleep_duration / 60).toFixed(1)}h` : ''}`,
+      label: '昨夜睡眠', icon: '🌙',
+      primary: `${g.sleep_score}分`,
+      secondary: hours > 0 ? `${hours.toFixed(1)}h` : undefined,
+      subs,
+      gradient: 'from-indigo-500/20 to-purple-600/10', border: 'border-indigo-400/20', accent: 'text-indigo-300',
     });
   }
 
   // HRV
   if (g.hrv != null) {
-    const status = g.hrv_status === 'balanced' ? '均衡' : g.hrv_status === 'unbalanced' ? '失衡' : '偏低';
+    const statusMap: Record<string, [string, string]> = { balanced: ['均衡', 'text-emerald-400'], unbalanced: ['不平衡', 'text-amber-400'], low: ['偏低', 'text-red-400'] };
+    const [statusText, statusColor] = statusMap[g.hrv_status] || ['—', 'text-slate-400'];
+    const subs: RichMetric['subs'] = [
+      { icon: '🟧', label: '状态', value: statusText, color: statusColor },
+    ];
+    if (g.hrv_7day_avg) subs.push({ icon: '📊', label: '7日均值', value: `${Math.round(g.hrv_7day_avg)} ms` });
+    if (g.resting_heart_rate) subs.push({ icon: '❤️', label: '静息心率', value: `${g.resting_heart_rate} bpm` });
     metrics.push({
-      label: '心率变异性',
-      value: `${g.hrv} ms`,
-      description: `HRV 状态${status}${g.hrv_7day_avg ? `，7日均值 ${Math.round(g.hrv_7day_avg)}ms` : ''}`,
+      label: 'HRV 状态', icon: '💓',
+      primary: `${Math.round(g.hrv)}`,
+      secondary: '毫秒',
+      subs,
+      gradient: 'from-rose-500/20 to-pink-600/10', border: 'border-rose-400/20', accent: 'text-rose-300',
     });
   }
 
   // Body Battery
   if (g.body_battery_most_charged != null) {
     const level = g.body_battery_most_charged >= 75 ? '充沛' : g.body_battery_most_charged >= 50 ? '中等' : '偏低';
+    const levelColor = g.body_battery_most_charged >= 75 ? 'text-emerald-400' : g.body_battery_most_charged >= 50 ? 'text-amber-400' : 'text-red-400';
+    const subs: RichMetric['subs'] = [
+      { icon: '📈', label: '峰值', value: `${g.body_battery_most_charged}`, color: 'text-emerald-400' },
+    ];
+    if (g.body_battery_lowest != null) subs.push({ icon: '📉', label: '最低', value: `${g.body_battery_lowest}` });
+    if (g.body_battery_drained != null) subs.push({ icon: '⚡', label: '消耗', value: `${g.body_battery_drained > 0 ? '-' : ''}${g.body_battery_drained}`, color: 'text-red-400' });
+    if (g.stress_level != null) subs.push({ icon: '😤', label: '压力', value: `${g.stress_level}` });
     metrics.push({
-      label: '身体电量',
-      value: `峰值 ${g.body_battery_most_charged}`,
-      description: `当前恢复能量${level}${g.stress_level != null ? `，压力指数 ${g.stress_level}` : ''}`,
+      label: '身体电量', icon: '🔋',
+      primary: `${g.body_battery_current ?? g.body_battery_most_charged}`,
+      secondary: `/ 100  ${level}`,
+      subs,
+      gradient: 'from-amber-500/20 to-orange-600/10', border: 'border-amber-400/20', accent: 'text-amber-300',
     });
   }
 
-  // 步数（兜底）
-  if (metrics.length < 2 && g.steps != null) {
+  // 步数 + 心率（第四张卡）
+  if (g.steps != null) {
+    const subs: RichMetric['subs'] = [];
+    if (g.active_calories) subs.push({ icon: '🔥', label: '活动卡路里', value: `${g.active_calories} kcal` });
+    if (g.resting_heart_rate && !g.hrv) subs.push({ icon: '❤️', label: '静息心率', value: `${g.resting_heart_rate} bpm` });
+    if (g.calories_burned) subs.push({ icon: '💪', label: '总消耗', value: `${g.calories_burned} kcal` });
     metrics.push({
-      label: '今日步数',
-      value: g.steps.toLocaleString(),
-      description: `活动卡路里 ${g.active_calories ?? '-'} kcal`,
+      label: '今日活动', icon: '👟',
+      primary: g.steps.toLocaleString(),
+      secondary: '步',
+      subs,
+      gradient: 'from-cyan-500/20 to-teal-600/10', border: 'border-cyan-400/20', accent: 'text-cyan-300',
     });
   }
 
-  return metrics.length > 0 ? metrics.slice(0, 3) : STATIC_METRICS;
+  return metrics.slice(0, 4);
 }
 
 const STYLE = {
@@ -772,7 +814,7 @@ export default function AIAssistantPage() {
   }, []);
 
   const activeQuickQuestions = dynamicQuestions;
-  const activeMetrics = buildDynamicMetrics(todayGarmin);
+  const richMetrics = buildRichMetrics(todayGarmin);
   const handleFeedback = async (msgId: number, rating: 1 | 5) => {
     if (!conversationId) return;
     const prev = messageFeedback[msgId];
@@ -1075,38 +1117,43 @@ export default function AIAssistantPage() {
                     );
                   })()}
 
-                  {/* Metric cards — colored gradient accents */}
-                  {(() => {
-                    const METRIC_STYLES = [
-                      { gradient: 'from-indigo-500/20 to-purple-600/10', border: 'border-indigo-400/25', icon: '🌙', accent: 'text-indigo-300' },
-                      { gradient: 'from-rose-500/20 to-pink-600/10', border: 'border-rose-400/25', icon: '💓', accent: 'text-rose-300' },
-                      { gradient: 'from-amber-500/20 to-orange-600/10', border: 'border-amber-400/25', icon: '⚡', accent: 'text-amber-300' },
-                      { gradient: 'from-cyan-500/20 to-teal-600/10', border: 'border-cyan-400/25', icon: '👟', accent: 'text-cyan-300' },
-                    ];
-                    const allMetrics = [...activeMetrics];
-                    if (allMetrics.length < 4 && todayGarmin?.steps != null) {
-                      allMetrics.push({ label: '今日步数', value: todayGarmin.steps.toLocaleString(), description: `活动卡路里 ${todayGarmin.active_calories ?? '-'} kcal` });
-                    }
-                    return (
-                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                        {allMetrics.slice(0, 4).map((metric, i) => {
-                          const s = METRIC_STYLES[i % METRIC_STYLES.length];
-                          return (
-                            <div key={metric.label} className={`relative overflow-hidden rounded-2xl border ${s.border} bg-gradient-to-br ${s.gradient} p-4 backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-lg`}>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-sm">{s.icon}</span>
-                                <span className={`text-[11px] font-medium tracking-wide ${s.accent}`}>{metric.label}</span>
-                              </div>
-                              <div className="mt-2 text-2xl font-bold text-white" style={{ fontFamily: UI_FONT_STACK }}>
-                                {metric.value}
-                              </div>
-                              <div className="mt-1 text-[11px] leading-4 text-white/50">{metric.description}</div>
+                  {/* Metric cards — rich Garmin data */}
+                  {richMetrics.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {richMetrics.map((m) => (
+                        <div key={m.label} className={`relative overflow-hidden rounded-2xl border ${m.border} bg-gradient-to-br ${m.gradient} p-4 backdrop-blur-xl`}>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm">{m.icon}</span>
+                            <span className={`text-[11px] font-medium tracking-wide ${m.accent}`}>{m.label}</span>
+                          </div>
+                          <div className="mt-2 flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-white" style={{ fontFamily: UI_FONT_STACK }}>{m.primary}</span>
+                            {m.secondary && <span className="text-sm text-white/50">{m.secondary}</span>}
+                          </div>
+                          {m.subs.length > 0 && (
+                            <div className="mt-3 space-y-1.5 border-t border-white/[0.06] pt-3">
+                              {m.subs.map((sub, i) => (
+                                <div key={i} className="flex items-center justify-between text-[11px]">
+                                  <span className="text-white/40">{sub.icon} {sub.label}</span>
+                                  <span className={sub.color || 'text-white/70'}>{sub.value}</span>
+                                </div>
+                              ))}
                             </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3">
+                      {STATIC_METRICS.map((m) => (
+                        <div key={m.label} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                          <div className="text-[11px] font-medium text-emerald-300/70">{m.label}</div>
+                          <div className="mt-2 text-lg font-semibold text-white/80">{m.value}</div>
+                          <div className="mt-1 text-[11px] text-white/35">{m.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Briefing + Insights row */}
                   <div className="grid gap-4 lg:grid-cols-2">
