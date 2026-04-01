@@ -296,14 +296,10 @@ class WorkoutSyncService:
                 except Exception as e:
                     logger.warning(f"{prefix}WorkoutSyncService: 加载 DB session 失败: {e}")
 
-            # 不再回退到 SSO 登录（避免 429）。
-            # 如果 DB session 和传入 client 都无效，直接报错让调用方处理。
-            raise GarminConnectConnectionError(
-                "无法认证：DB session 不可用且不尝试 SSO 登录（防止 429 限流）。"
-                "请确保 Garmin session 已通过自动续期或手动注入。"
-            )
-
-            if False:  # 以下代码保留但不执行，作为紧急回退参考
+            try:
+                # 回退：用 cffi patched client 尝试 SSO 登录
+                # curl_cffi 用 Chrome TLS 指纹，大部分情况能绕过 Cloudflare
+                logger.info(f"{prefix}WorkoutSyncService: DB session 不可用，尝试 cffi SSO 登录")
                 self.client = self._create_patched_client(return_on_mfa=True)
                 result = self.client.login()
                 
