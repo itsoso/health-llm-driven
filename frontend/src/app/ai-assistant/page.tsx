@@ -174,7 +174,6 @@ export default function AIAssistantPage() {
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   // Unified OpenClaw mode — no more dual mode switching
-  const [welcomeLayout, setWelcomeLayout] = useState<1 | 2 | 3>(1);
   const [messageFeedback, setMessageFeedback] = useState<Record<number, 1 | 5>>({});
   const [doneMessageIds, setDoneMessageIds] = useState<Set<number>>(new Set());
   const itemsPerPage = 10;
@@ -1061,217 +1060,136 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
               {visibleMessages.length === 0 && !loading ? (
-                <div className="relative">
-                  {/* Layout toggle */}
-                  <button
-                    onClick={() => setWelcomeLayout(prev => (prev % 3 + 1) as 1 | 2 | 3)}
-                    className="absolute right-0 top-0 z-10 flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-xs text-slate-400 transition-all hover:bg-white/10 hover:text-white"
-                    title={`布局 ${welcomeLayout}/3 — 点击切换`}
-                  >
-                    {welcomeLayout === 1 ? '▦' : welcomeLayout === 2 ? '◻' : '▤'}
-                  </button>
-
-                  {/* Layout 1: Data Hero */}
-                  {welcomeLayout === 1 && (
-                    <div className="space-y-5 pt-2">
-                      {/* Metric cards row */}
-                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                        {activeMetrics.map((metric) => (
-                          <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
-                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>
-                            <div className="mt-2 text-3xl font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                              {metric.value}
-                            </div>
-                            <div className="mt-1.5 text-xs leading-5 text-slate-400">{metric.description}</div>
-                          </div>
-                        ))}
-                        {/* Steps fallback if less than 4 metrics */}
-                        {activeMetrics.length < 4 && todayGarmin?.steps != null && (
-                          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
-                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>今日步数</div>
-                            <div className="mt-2 text-3xl font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                              {todayGarmin.steps.toLocaleString()}
-                            </div>
-                            <div className="mt-1.5 text-xs leading-5 text-slate-400">活动卡路里 {todayGarmin.active_calories ?? '-'} kcal</div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Briefing or insight */}
-                      {briefingPreview && briefingConvId ? (
-                        <button
-                          onClick={() => loadConversation(briefingConvId)}
-                          className="group w-full rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-5 text-left transition-all hover:border-amber-400/35 hover:bg-amber-400/[0.10]"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">今日简报</div>
-                            <svg className="h-4 w-4 text-amber-400/50 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                          </div>
-                          <div className="mt-2 line-clamp-3 text-sm leading-6 text-slate-300 whitespace-pre-wrap">
-                            {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 200)}
-                          </div>
-                        </button>
-                      ) : insights.length > 0 ? (
-                        <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
-                      ) : null}
-
-                      {/* Quick questions 2x3 grid */}
-                      <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-                        {activeQuickQuestions.map((q) => (
-                          <button
-                            key={q.label}
-                            onClick={() => handleSend(q.text)}
-                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-all hover:border-white/20 hover:bg-white/10"
-                          >
-                            <div className={`text-[10px] uppercase tracking-[0.2em] ${modeCopy.accentTextClass}`}>{q.eyebrow}</div>
-                            <div className="mt-1 text-sm text-white">{q.label}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Layout 2: Chat First */}
-                  {welcomeLayout === 2 && (() => {
+                <div className="space-y-6 pt-2">
+                  {/* Greeting */}
+                  {(() => {
                     const h = new Date().getHours();
                     const greeting = h < 6 ? '夜深了' : h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
-                    const timeEmoji = h < 6 ? '\u{1F319}' : h < 11 ? '\u{1F305}' : h < 14 ? '\u{2600}\u{FE0F}' : h < 18 ? '\u{26A1}' : '\u{1F319}';
                     const displayName = user?.name || user?.username || '';
                     return (
-                      <div className="flex flex-col items-center gap-8 pt-8 lg:flex-row lg:items-start lg:gap-12">
-                        {/* Left: greeting + questions */}
-                        <div className="flex-1 space-y-6">
-                          <h1 className="text-3xl text-white lg:text-4xl" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                            {timeEmoji} {greeting}{displayName ? `\uFF0C${displayName}` : ''}
-                          </h1>
-                          <div className="flex flex-wrap gap-2">
-                            {activeQuickQuestions.slice(0, 3).map((q) => (
-                              <button
-                                key={q.label}
-                                onClick={() => handleSend(q.text)}
-                                className={`rounded-full px-4 py-2 text-sm transition-all hover:scale-[1.03] ${modeCopy.chipClass}`}
-                              >
-                                {q.label}
-                              </button>
-                            ))}
-                          </div>
-                          {briefingPreview && briefingConvId && (
-                            <button
-                              onClick={() => loadConversation(briefingConvId)}
-                              className="group w-full max-w-lg rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-4 text-left transition-all hover:border-amber-400/35"
-                            >
-                              <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">今日简报</div>
-                              <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-300">
-                                {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 120)}
-                              </div>
-                            </button>
-                          )}
-                        </div>
-                        {/* Right: compact data column */}
-                        <div className="w-full space-y-3 lg:w-56">
-                          {activeMetrics.map((metric) => (
-                            <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-xl">
-                              <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-xs text-slate-400">{metric.label}</span>
-                                <span className="text-lg font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>{metric.value}</span>
-                              </div>
-                              <div className="mt-1 text-[11px] text-slate-500">{metric.description}</div>
-                            </div>
-                          ))}
-                          {insights.length > 0 && (
-                            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                              <div className={`text-[10px] uppercase tracking-[0.2em] ${modeCopy.accentTextClass}`}>insights</div>
-                              {insights.slice(0, 2).map(ins => (
-                                <div key={ins.id} className="mt-2 text-xs leading-5 text-slate-400 line-clamp-1">{ins.title}</div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                      <div className="mb-2">
+                        <h1 className="text-2xl font-semibold text-white/90" style={{ fontFamily: UI_FONT_STACK }}>
+                          {greeting}{displayName ? `，${displayName}` : ''}
+                        </h1>
                       </div>
                     );
                   })()}
 
-                  {/* Layout 3: Dashboard Mix */}
-                  {welcomeLayout === 3 && (
-                    <div className="space-y-5 pt-2">
-                      {/* Top: 3 metric cards */}
-                      <div className="grid grid-cols-3 gap-3">
-                        {activeMetrics.slice(0, 3).map((metric) => (
-                          <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-xl">
-                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>
-                            <div className="mt-2 text-2xl font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>{metric.value}</div>
-                            <div className="mt-1 text-xs text-slate-400">{metric.description}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Middle: briefing + insights side by side */}
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        {briefingPreview && briefingConvId ? (
-                          <button
-                            onClick={() => loadConversation(briefingConvId)}
-                            className="group rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-5 text-left transition-all hover:border-amber-400/35 hover:bg-amber-400/[0.10]"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">今日简报</div>
-                              <svg className="h-4 w-4 text-amber-400/50 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                            </div>
-                            <div className="mt-2 line-clamp-4 text-sm leading-6 text-slate-300 whitespace-pre-wrap">
-                              {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 200)}
-                            </div>
-                            <div className="mt-2 text-[11px] text-amber-400/60">查看完整简报</div>
-                          </button>
-                        ) : (
-                          <div className="rounded-2xl border border-amber-400/10 bg-amber-400/[0.03] p-5">
-                            <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/50">每日简报</div>
-                            <div className="mt-3 text-sm text-slate-500">简报每日 07:35 自动生成</div>
-                          </div>
-                        )}
-                        {insights.length > 0 ? (
-                          <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
-                        ) : (() => {
-                          const h = new Date().getHours();
-                          const timeHint = h < 10
-                            ? { label: '晨间建议', icon: '\u{1F305}', q: '今天早上状态怎么样？给我一个晨间健康简报', tip: '开启美好的一天' }
-                            : h < 14
-                            ? { label: '午间复盘', icon: '\u{2600}\u{FE0F}', q: '上午运动和饮食情况怎么样？', tip: '回顾上午，规划下午' }
-                            : h < 18
-                            ? { label: '下午能量', icon: '\u{26A1}', q: '我现在适合做什么运动？', tip: '下午是运动的黄金时段' }
-                            : { label: '晚间总结', icon: '\u{1F319}', q: '帮我总结今天的健康数据，还差哪些目标没完成？', tip: '收官今日，规划明天' };
+                  {/* Metric cards — colored gradient accents */}
+                  {(() => {
+                    const METRIC_STYLES = [
+                      { gradient: 'from-indigo-500/20 to-purple-600/10', border: 'border-indigo-400/25', icon: '🌙', accent: 'text-indigo-300' },
+                      { gradient: 'from-rose-500/20 to-pink-600/10', border: 'border-rose-400/25', icon: '💓', accent: 'text-rose-300' },
+                      { gradient: 'from-amber-500/20 to-orange-600/10', border: 'border-amber-400/25', icon: '⚡', accent: 'text-amber-300' },
+                      { gradient: 'from-cyan-500/20 to-teal-600/10', border: 'border-cyan-400/25', icon: '👟', accent: 'text-cyan-300' },
+                    ];
+                    const allMetrics = [...activeMetrics];
+                    if (allMetrics.length < 4 && todayGarmin?.steps != null) {
+                      allMetrics.push({ label: '今日步数', value: todayGarmin.steps.toLocaleString(), description: `活动卡路里 ${todayGarmin.active_calories ?? '-'} kcal` });
+                    }
+                    return (
+                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        {allMetrics.slice(0, 4).map((metric, i) => {
+                          const s = METRIC_STYLES[i % METRIC_STYLES.length];
                           return (
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                              <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>今日快问</div>
-                              <div className="mt-2 flex items-center gap-2 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                                <span>{timeHint.icon}</span><span>{timeHint.label}</span>
+                            <div key={metric.label} className={`relative overflow-hidden rounded-2xl border ${s.border} bg-gradient-to-br ${s.gradient} p-4 backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-lg`}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm">{s.icon}</span>
+                                <span className={`text-[11px] font-medium tracking-wide ${s.accent}`}>{metric.label}</span>
                               </div>
-                              <div className="mt-1 text-sm text-slate-500">{timeHint.tip}</div>
-                              <button
-                                onClick={() => { setInputText(timeHint.q); }}
-                                className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm text-slate-300 transition hover:bg-white/10"
-                              >
-                                {timeHint.q}
-                              </button>
+                              <div className="mt-2 text-2xl font-bold text-white" style={{ fontFamily: UI_FONT_STACK }}>
+                                {metric.value}
+                              </div>
+                              <div className="mt-1 text-[11px] leading-4 text-white/50">{metric.description}</div>
                             </div>
                           );
-                        })()}
+                        })}
                       </div>
+                    );
+                  })()}
 
-                      {/* Bottom: 2x2 quick questions */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {activeQuickQuestions.slice(0, 4).map((q) => (
-                          <button
-                            key={q.label}
-                            onClick={() => handleSend(q.text)}
-                            className="rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/10"
-                          >
-                            <div className={`text-[10px] uppercase tracking-[0.2em] ${modeCopy.accentTextClass}`}>{q.eyebrow}</div>
-                            <div className="mt-1.5 text-sm text-white">{q.label}</div>
-                            <div className="mt-1 text-xs leading-5 text-slate-400 line-clamp-2">{q.summary}</div>
-                          </button>
-                        ))}
+                  {/* Briefing + Insights row */}
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {/* Briefing card */}
+                    {briefingPreview && briefingConvId ? (
+                      <button
+                        onClick={() => loadConversation(briefingConvId)}
+                        className="group relative overflow-hidden rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent p-5 text-left transition-all hover:border-amber-400/40 hover:shadow-[0_8px_30px_rgba(251,191,36,0.08)]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">📋</span>
+                          <span className="text-xs font-semibold text-amber-300/90">今日健康简报</span>
+                          <svg className="ml-auto h-4 w-4 text-amber-400/40 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                        </div>
+                        <div className="mt-3 line-clamp-3 text-[13px] leading-6 text-slate-300/90 whitespace-pre-wrap">
+                          {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 180)}
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">📋</span>
+                          <span className="text-xs font-medium text-white/30">每日简报</span>
+                        </div>
+                        <div className="mt-3 text-sm text-white/20">简报每日 07:35 自动生成</div>
                       </div>
+                    )}
+
+                    {/* Insights card */}
+                    {insights.length > 0 ? (
+                      <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.04] to-transparent p-5 backdrop-blur-xl">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-base">💡</span>
+                          <span className="text-xs font-semibold text-emerald-300/80">今日洞察</span>
+                        </div>
+                        <div className="space-y-2.5">
+                          {(() => {
+                            const seen = new Set<string>();
+                            return insights.filter(ins => {
+                              if (seen.has(ins.notification_type)) return false;
+                              seen.add(ins.notification_type);
+                              return true;
+                            }).slice(0, 3).map(ins => (
+                              <div key={ins.id} className="flex items-start gap-2.5 rounded-xl bg-white/[0.03] px-3 py-2.5">
+                                <span className="mt-0.5 text-xs shrink-0">
+                                  {ins.notification_type === 'health_alert' ? '⚠️' : ins.notification_type === 'morning_summary' ? '☀️' : ins.notification_type === 'trend_report' ? '📈' : ins.notification_type === 'family_daily_brief' ? '👨‍👩‍👦' : '💬'}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-[13px] font-medium text-white/80">{ins.title}</div>
+                                  <div className="mt-0.5 text-[11px] leading-4 text-white/40 line-clamp-1">{ins.content}</div>
+                                </div>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">💡</span>
+                          <span className="text-xs font-medium text-white/30">今日洞察</span>
+                        </div>
+                        <div className="mt-3 text-sm text-white/20">暂无新洞察</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick actions — compact chips */}
+                  <div>
+                    <div className="mb-3 text-[11px] font-medium text-white/30 tracking-wide">快速提问</div>
+                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                      {activeQuickQuestions.map((q) => (
+                        <button
+                          key={q.label}
+                          onClick={() => handleSend(q.text)}
+                          className="group rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left transition-all hover:border-emerald-400/25 hover:bg-emerald-400/[0.06]"
+                        >
+                          <div className="text-[13px] font-medium text-white/75 group-hover:text-emerald-200 transition-colors">{q.label}</div>
+                          <div className="mt-0.5 text-[11px] leading-4 text-white/30 line-clamp-1">{q.summary}</div>
+                        </button>
+                      ))}
                     </div>
-                  )}
+                  </div>
                 </div>
               ) : (
                 <div className="mx-auto max-w-5xl space-y-5">
