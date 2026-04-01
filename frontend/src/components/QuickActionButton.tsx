@@ -24,7 +24,7 @@ export default function QuickActionButton() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // 在登录、注册、引导页不显示
-  const hiddenPaths = ['/login', '/register', '/onboarding'];
+  const hiddenPaths = ['/login', '/register', '/onboarding', '/overview'];
   const shouldHide = !isAuthenticated || hiddenPaths.some(p => pathname?.startsWith(p));
 
   // 点击外部关闭菜单
