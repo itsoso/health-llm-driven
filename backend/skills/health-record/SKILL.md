@@ -40,17 +40,36 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
   -d '{"record_date":"'"'"'$(date +%Y-%m-%d)'"'"'","systolic":120,"diastolic":80,"pulse":72}'
 ```
 
-### 快速打卡
-先查询可用模板：
+### 运动/习惯打卡
+先查询可用模板获取 template_id：
 ```bash
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/checkin/templates"
 ```
-然后打卡（用模板ID）：
+
+常用模板（直接用 template_id 打卡，无需每次查询）：
+| template_id | 名称 | 单位 | 默认目标 |
+|-------------|------|------|---------|
+| 19 | 俯卧撑 | 个 | 20 |
+| 20 | 深蹲 | 个 | 30 |
+| 21 | 仰卧起坐 | 个 | 20 |
+| 22 | 平板支撑 | 秒 | 60 |
+| 23 | 跳绳 | 个 | 100 |
+| 24 | 爬楼梯 | 层 | 10 |
+| 25 | 拉伸 | 分钟 | 10 |
+| 26 | 洗鼻 | 次 | 1 |
+| 34 | 户外活动 | 分钟 | 30 |
+
+打卡（用模板ID + 实际完成值）：
 ```bash
 curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
   "$HEALTH_API_URL/checkin/records/quick" \
-  -d '{"template_id":1,"value":30}'
+  -d '{"template_id":19,"value":43}'
 ```
+**必须参数：** template_id（整数）, value（数字，实际完成量）
+**示例：** 用户说"俯卧撑43个" → template_id=19, value=43
+**示例：** 用户说"深蹲50个" → template_id=20, value=50
+
+**重要：当用户说"记录运动"时，必须调用此打卡接口，不要只是口头确认。**
 
 ### 记录饮食（文字描述）
 端点：`POST $HEALTH_API_URL/diet/records`
