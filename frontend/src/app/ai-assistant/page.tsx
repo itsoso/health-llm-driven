@@ -174,6 +174,7 @@ export default function AIAssistantPage() {
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   // Unified OpenClaw mode — no more dual mode switching
+  const [welcomeLayout, setWelcomeLayout] = useState<1 | 2 | 3>(1);
   const [messageFeedback, setMessageFeedback] = useState<Record<number, 1 | 5>>({});
   const [doneMessageIds, setDoneMessageIds] = useState<Set<number>>(new Set());
   const itemsPerPage = 10;
@@ -1060,116 +1061,217 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
               {visibleMessages.length === 0 && !loading ? (
-                <div className="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
-                  <div className={`relative overflow-hidden rounded-[34px] border border-white/10 bg-gradient-to-br ${modeCopy.panelClass} p-8 shadow-[0_35px_120px_rgba(2,6,23,0.55)]`}>
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.14),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_32%)]" />
-                    <div className="relative">
-                      <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] ${modeCopy.badgeClass}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
-                        {modeCopy.eyebrow}
+                <div className="relative">
+                  {/* Layout toggle */}
+                  <button
+                    onClick={() => setWelcomeLayout(prev => (prev % 3 + 1) as 1 | 2 | 3)}
+                    className="absolute right-0 top-0 z-10 flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-xs text-slate-400 transition-all hover:bg-white/10 hover:text-white"
+                    title={`布局 ${welcomeLayout}/3 — 点击切换`}
+                  >
+                    {welcomeLayout === 1 ? '▦' : welcomeLayout === 2 ? '◻' : '▤'}
+                  </button>
+
+                  {/* Layout 1: Data Hero */}
+                  {welcomeLayout === 1 && (
+                    <div className="space-y-5 pt-2">
+                      {/* Metric cards row */}
+                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        {activeMetrics.map((metric) => (
+                          <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
+                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>
+                            <div className="mt-2 text-3xl font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                              {metric.value}
+                            </div>
+                            <div className="mt-1.5 text-xs leading-5 text-slate-400">{metric.description}</div>
+                          </div>
+                        ))}
+                        {/* Steps fallback if less than 4 metrics */}
+                        {activeMetrics.length < 4 && todayGarmin?.steps != null && (
+                          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
+                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>今日步数</div>
+                            <div className="mt-2 text-3xl font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                              {todayGarmin.steps.toLocaleString()}
+                            </div>
+                            <div className="mt-1.5 text-xs leading-5 text-slate-400">活动卡路里 {todayGarmin.active_calories ?? '-'} kcal</div>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="mt-7 flex items-start gap-4">
-                        <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] ${modeCopy.badgeClass}`}>
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12a4.5 4.5 0 019-0" opacity="0.4" /></svg>
-                        </div>
-                        <div>
-                          <h1 className="text-4xl leading-tight text-white md:text-5xl" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                            {modeCopy.title}
-                          </h1>
-                          <p className="mt-4 max-w-2xl text-base leading-8 text-slate-100">
-                            {modeCopy.description}
-                          </p>
-                        </div>
-                      </div>
+                      {/* Briefing or insight */}
+                      {briefingPreview && briefingConvId ? (
+                        <button
+                          onClick={() => loadConversation(briefingConvId)}
+                          className="group w-full rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-5 text-left transition-all hover:border-amber-400/35 hover:bg-amber-400/[0.10]"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">今日简报</div>
+                            <svg className="h-4 w-4 text-amber-400/50 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                          </div>
+                          <div className="mt-2 line-clamp-3 text-sm leading-6 text-slate-300 whitespace-pre-wrap">
+                            {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 200)}
+                          </div>
+                        </button>
+                      ) : insights.length > 0 ? (
+                        <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
+                      ) : null}
 
-                      <div className="mt-7 flex flex-wrap gap-3">
-                        <span className={`rounded-full px-4 py-2 text-sm ${modeCopy.chipClass}`}>{modeCopy.support}</span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">一屏完成记录、提问和复盘</span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">历史会话可回溯</span>
-                      </div>
-
-                      <p className={`mt-4 text-sm leading-7 ${modeCopy.subtleClass}`}>{modeCopy.subSupport}</p>
-
-                      <div className="mt-8 grid gap-3 md:grid-cols-2">
+                      {/* Quick questions 2x3 grid */}
+                      <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                         {activeQuickQuestions.map((q) => (
                           <button
                             key={q.label}
                             onClick={() => handleSend(q.text)}
-                            className="group rounded-[26px] border border-white/10 bg-white/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/10"
+                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-all hover:border-white/20 hover:bg-white/10"
                           >
-                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{q.eyebrow}</div>
-                            <div className="mt-3 text-lg text-white">{q.label}</div>
-                            <div className="mt-2 text-sm leading-6 text-slate-300">{q.summary}</div>
+                            <div className={`text-[10px] uppercase tracking-[0.2em] ${modeCopy.accentTextClass}`}>{q.eyebrow}</div>
+                            <div className="mt-1 text-sm text-white">{q.label}</div>
                           </button>
                         ))}
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="grid gap-4 content-start">
-                    {/* 每日健康简报卡片 — 置顶展示最新简报摘要 */}
-                    {briefingPreview && briefingConvId ? (
-                      <button
-                        onClick={() => loadConversation(briefingConvId)}
-                        className="group rounded-[30px] border border-amber-400/20 bg-amber-400/[0.06] p-5 text-left shadow-[0_20px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl transition-all hover:border-amber-400/35 hover:bg-amber-400/[0.10]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">🌅 今日简报</div>
-                          <svg className="h-4 w-4 text-amber-400/50 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                        </div>
-                        <div className="mt-3 line-clamp-4 text-xs leading-6 text-slate-300 whitespace-pre-wrap">
-                          {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 200)}
-                        </div>
-                        <div className="mt-3 text-[11px] text-amber-400/60">点击查看完整简报 →</div>
-                      </button>
-                    ) : (
-                      <div className="rounded-[30px] border border-amber-400/10 bg-amber-400/[0.03] p-5">
-                        <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/50">🌅 每日简报</div>
-                        <div className="mt-3 text-sm text-slate-500">简报每日 07:35 自动生成，将在这里显示今日健康摘要</div>
-                      </div>
-                    )}
-
-                    {activeMetrics.map((metric) => (
-                      <div key={metric.label} className="rounded-[30px] border border-white/10 bg-slate-950/60 p-5 shadow-[0_20px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl">
-                        <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>
-                        <div className="mt-3 text-2xl leading-tight text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                          {metric.value}
-                        </div>
-                        <div className="mt-3 text-sm leading-7 text-slate-400">{metric.description}</div>
-                      </div>
-                    ))}
-
-                    {insights.length > 0 && (
-                      <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
-                    )}
-                    {insights.length === 0 && (() => {
-                      const h = new Date().getHours();
-                      const timeHint = h < 10
-                        ? { label: '晨间建议', icon: '🌅', q: '今天早上状态怎么样？给我一个晨间健康简报', tip: '开启美好的一天' }
-                        : h < 14
-                        ? { label: '午间复盘', icon: '☀️', q: '上午运动和饮食情况怎么样？', tip: '回顾上午，规划下午' }
-                        : h < 18
-                        ? { label: '下午能量', icon: '⚡', q: '我现在适合做什么运动？', tip: '下午是运动的黄金时段' }
-                        : { label: '晚间总结', icon: '🌙', q: '帮我总结今天的健康数据，还差哪些目标没完成？', tip: '收官今日，规划明天' };
-                      return (
-                        <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                          <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{"今日快问"}</div>
-                          <div className="mt-3 flex items-center gap-2 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
-                            <span>{timeHint.icon}</span>
-                            <span>{timeHint.label}</span>
+                  {/* Layout 2: Chat First */}
+                  {welcomeLayout === 2 && (() => {
+                    const h = new Date().getHours();
+                    const greeting = h < 6 ? '夜深了' : h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
+                    const timeEmoji = h < 6 ? '\u{1F319}' : h < 11 ? '\u{1F305}' : h < 14 ? '\u{2600}\u{FE0F}' : h < 18 ? '\u{26A1}' : '\u{1F319}';
+                    const displayName = user?.name || user?.username || '';
+                    return (
+                      <div className="flex flex-col items-center gap-8 pt-8 lg:flex-row lg:items-start lg:gap-12">
+                        {/* Left: greeting + questions */}
+                        <div className="flex-1 space-y-6">
+                          <h1 className="text-3xl text-white lg:text-4xl" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                            {timeEmoji} {greeting}{displayName ? `\uFF0C${displayName}` : ''}
+                          </h1>
+                          <div className="flex flex-wrap gap-2">
+                            {activeQuickQuestions.slice(0, 3).map((q) => (
+                              <button
+                                key={q.label}
+                                onClick={() => handleSend(q.text)}
+                                className={`rounded-full px-4 py-2 text-sm transition-all hover:scale-[1.03] ${modeCopy.chipClass}`}
+                              >
+                                {q.label}
+                              </button>
+                            ))}
                           </div>
-                          <div className="mt-2 text-sm text-slate-500">{timeHint.tip}</div>
-                          <button
-                            onClick={() => { setInputText(timeHint.q); }}
-                            className="mt-4 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
-                          >
-                            {timeHint.q}
-                          </button>
+                          {briefingPreview && briefingConvId && (
+                            <button
+                              onClick={() => loadConversation(briefingConvId)}
+                              className="group w-full max-w-lg rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-4 text-left transition-all hover:border-amber-400/35"
+                            >
+                              <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">今日简报</div>
+                              <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-300">
+                                {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 120)}
+                              </div>
+                            </button>
+                          )}
                         </div>
-                      );
-                    })()}
-                  </div>
+                        {/* Right: compact data column */}
+                        <div className="w-full space-y-3 lg:w-56">
+                          {activeMetrics.map((metric) => (
+                            <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-xl">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-xs text-slate-400">{metric.label}</span>
+                                <span className="text-lg font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>{metric.value}</span>
+                              </div>
+                              <div className="mt-1 text-[11px] text-slate-500">{metric.description}</div>
+                            </div>
+                          ))}
+                          {insights.length > 0 && (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                              <div className={`text-[10px] uppercase tracking-[0.2em] ${modeCopy.accentTextClass}`}>insights</div>
+                              {insights.slice(0, 2).map(ins => (
+                                <div key={ins.id} className="mt-2 text-xs leading-5 text-slate-400 line-clamp-1">{ins.title}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Layout 3: Dashboard Mix */}
+                  {welcomeLayout === 3 && (
+                    <div className="space-y-5 pt-2">
+                      {/* Top: 3 metric cards */}
+                      <div className="grid grid-cols-3 gap-3">
+                        {activeMetrics.slice(0, 3).map((metric) => (
+                          <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-xl">
+                            <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>{metric.label}</div>
+                            <div className="mt-2 text-2xl font-bold text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>{metric.value}</div>
+                            <div className="mt-1 text-xs text-slate-400">{metric.description}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Middle: briefing + insights side by side */}
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        {briefingPreview && briefingConvId ? (
+                          <button
+                            onClick={() => loadConversation(briefingConvId)}
+                            className="group rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-5 text-left transition-all hover:border-amber-400/35 hover:bg-amber-400/[0.10]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80">今日简报</div>
+                              <svg className="h-4 w-4 text-amber-400/50 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                            </div>
+                            <div className="mt-2 line-clamp-4 text-sm leading-6 text-slate-300 whitespace-pre-wrap">
+                              {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 200)}
+                            </div>
+                            <div className="mt-2 text-[11px] text-amber-400/60">查看完整简报</div>
+                          </button>
+                        ) : (
+                          <div className="rounded-2xl border border-amber-400/10 bg-amber-400/[0.03] p-5">
+                            <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/50">每日简报</div>
+                            <div className="mt-3 text-sm text-slate-500">简报每日 07:35 自动生成</div>
+                          </div>
+                        )}
+                        {insights.length > 0 ? (
+                          <InsightsCard insights={insights} accentClass={modeCopy.accentTextClass} />
+                        ) : (() => {
+                          const h = new Date().getHours();
+                          const timeHint = h < 10
+                            ? { label: '晨间建议', icon: '\u{1F305}', q: '今天早上状态怎么样？给我一个晨间健康简报', tip: '开启美好的一天' }
+                            : h < 14
+                            ? { label: '午间复盘', icon: '\u{2600}\u{FE0F}', q: '上午运动和饮食情况怎么样？', tip: '回顾上午，规划下午' }
+                            : h < 18
+                            ? { label: '下午能量', icon: '\u{26A1}', q: '我现在适合做什么运动？', tip: '下午是运动的黄金时段' }
+                            : { label: '晚间总结', icon: '\u{1F319}', q: '帮我总结今天的健康数据，还差哪些目标没完成？', tip: '收官今日，规划明天' };
+                          return (
+                            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                              <div className={`text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>今日快问</div>
+                              <div className="mt-2 flex items-center gap-2 text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>
+                                <span>{timeHint.icon}</span><span>{timeHint.label}</span>
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">{timeHint.tip}</div>
+                              <button
+                                onClick={() => { setInputText(timeHint.q); }}
+                                className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm text-slate-300 transition hover:bg-white/10"
+                              >
+                                {timeHint.q}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Bottom: 2x2 quick questions */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {activeQuickQuestions.slice(0, 4).map((q) => (
+                          <button
+                            key={q.label}
+                            onClick={() => handleSend(q.text)}
+                            className="rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/10"
+                          >
+                            <div className={`text-[10px] uppercase tracking-[0.2em] ${modeCopy.accentTextClass}`}>{q.eyebrow}</div>
+                            <div className="mt-1.5 text-sm text-white">{q.label}</div>
+                            <div className="mt-1 text-xs leading-5 text-slate-400 line-clamp-2">{q.summary}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="mx-auto max-w-5xl space-y-5">
