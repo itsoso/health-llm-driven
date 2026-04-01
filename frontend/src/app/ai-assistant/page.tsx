@@ -1131,11 +1131,11 @@ export default function AIAssistantPage() {
                             {m.secondary && <span className="text-sm text-white/50">{m.secondary}</span>}
                           </div>
                           {m.subs.length > 0 && (
-                            <div className="mt-2.5 space-y-1 border-t border-white/[0.05] pt-2.5">
+                            <div className="mt-2.5 space-y-1.5 border-t border-white/10 pt-2.5">
                               {m.subs.map((sub, i) => (
                                 <div key={i} className="flex items-center justify-between">
-                                  <span className="text-[10px] text-white/35"><span className={sub.color || 'text-white/25'}>{sub.icon}</span> {sub.label}</span>
-                                  <span className={`text-[11px] font-medium ${sub.color || 'text-white/65'}`}>{sub.value}</span>
+                                  <span className="text-[11px] text-white/60"><span className={sub.color || 'text-white/50'}>{sub.icon}</span> {sub.label}</span>
+                                  <span className={`text-[11px] font-semibold ${sub.color || 'text-white/90'}`}>{sub.value}</span>
                                 </div>
                               ))}
                             </div>
