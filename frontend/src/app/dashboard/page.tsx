@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi, api } from '@/services/api';
+import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi, healthScoreApi, api } from '@/services/api';
 import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {
@@ -108,6 +108,19 @@ function DashboardContent() {
     queryFn: () => healthTrendApi.getLatest(),
     enabled: !!userId,
   });
+
+  // 每日健康评分
+  const { data: healthScore } = useQuery({
+    queryKey: ['health-score-daily', userId, today],
+    queryFn: () => healthScoreApi.getDailyScore(today),
+    enabled: !!userId,
+    staleTime: 10 * 60 * 1000,
+  });
+  const scoreData = healthScore?.data;
+  const scoreGradeColor = (s: number) =>
+    s >= 90 ? 'text-emerald-400' : s >= 75 ? 'text-green-400' : s >= 60 ? 'text-yellow-400' : 'text-red-400';
+  const scoreBg = (s: number) =>
+    s >= 90 ? 'from-emerald-600 to-teal-600' : s >= 75 ? 'from-green-600 to-emerald-600' : s >= 60 ? 'from-yellow-600 to-amber-600' : 'from-red-600 to-rose-600';
 
   // 非 Garmin 用户数据：饮水/饮食/体重（当 Garmin 数据为空时展示）
   const { data: waterToday } = useQuery({
@@ -297,6 +310,33 @@ function DashboardContent() {
       )}
       
       <div className="max-w-7xl mx-auto">
+        {/* 健康评分卡 */}
+        {scoreData?.status === 'ok' && (
+          <div className={`bg-gradient-to-r ${scoreBg(scoreData.total_score)} rounded-2xl shadow-xl p-5 mb-6 text-white flex items-center gap-6`}>
+            {/* 分数圆圈 */}
+            <div className="flex-shrink-0 flex flex-col items-center">
+              <div className="w-20 h-20 rounded-full bg-white/20 border-4 border-white/40 flex items-center justify-center">
+                <span className="text-3xl font-black">{scoreData.total_score}</span>
+              </div>
+              <span className="mt-1 text-sm font-semibold text-white/90">{scoreData.grade}</span>
+            </div>
+            {/* 维度 + 建议 */}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs uppercase tracking-widest text-white/70 mb-2">今日健康评分</div>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(scoreData.dimensions || []).map((d: any) => (
+                  <span key={d.name} className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+                    {d.name} <span className={`font-bold ${scoreGradeColor(d.score)}`}>{d.score}</span>
+                  </span>
+                ))}
+              </div>
+              {scoreData.suggestions?.[0] && (
+                <p className="text-sm text-white/80 truncate">💡 {scoreData.suggestions[0]}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 今日实时数据 */}
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-2xl p-6 mb-8 text-white">
           <div className="flex justify-between items-center mb-4">
@@ -536,7 +576,7 @@ function DashboardContent() {
               type="text"
               value={quickInput}
               onChange={(e) => setQuickInput(e.target.value)}
-              placeholder="记录：午餐牛肉面 / 喝水500 / 体重71.5 / 血压120/80"
+              placeholder="午餐牛肉面 / 吃了鸡胸肉 / 喝水500 / 体重71.5 / 吃了维生素D"
               className="flex-1 px-4 py-3 rounded-xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
               disabled={quickRecordMutation.isPending}
             />

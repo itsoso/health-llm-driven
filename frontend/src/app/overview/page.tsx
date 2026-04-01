@@ -969,7 +969,7 @@ function OverviewContent() {
             type="text"
             value={quickInput}
             onChange={e => setQuickInput(e.target.value)}
-            placeholder="快速记录：午餐牛肉面 / 喝水500 / 体重71.5 / 血压120/80"
+            placeholder="午餐牛肉面 / 吃了鸡胸肉 / 喝水500 / 体重71.5 / 吃了维生素D"
             className="flex-1 bg-transparent px-3 py-1.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none"
             disabled={quickMutation.isPending}
           />
