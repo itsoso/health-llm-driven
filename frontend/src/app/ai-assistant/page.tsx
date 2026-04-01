@@ -92,11 +92,11 @@ function buildDynamicMetrics(g: any) {
   // 睡眠
   if (g.sleep_score != null) {
     const grade = g.sleep_score >= 80 ? '优秀' : g.sleep_score >= 60 ? '良好' : '偏差';
-    const hours = g.total_sleep_duration ? `${(g.total_sleep_duration / 3600).toFixed(1)}h` : '';
+    const hours = g.total_sleep_duration ? `${(g.total_sleep_duration / 60).toFixed(1)}h` : '';
     metrics.push({
       label: '昨夜睡眠',
       value: `${g.sleep_score}分 ${hours}`.trim(),
-      description: `睡眠质量${grade}${g.deep_sleep_duration ? `，深睡 ${(g.deep_sleep_duration / 3600).toFixed(1)}h` : ''}`,
+      description: `睡眠质量${grade}${g.deep_sleep_duration ? `，深睡 ${(g.deep_sleep_duration / 60).toFixed(1)}h` : ''}`,
     });
   }
 
