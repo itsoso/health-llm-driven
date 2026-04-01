@@ -211,10 +211,17 @@ export default function AIAssistantPage() {
   // 加载今日 Garmin 数据，用于欢迎屏实时指标
   const loadTodayGarmin = useCallback(async () => {
     try {
+      // 尝试今天的数据，没有则回退到昨天（Garmin 可能还没同步今天的）
       const today = new Date().toISOString().slice(0, 10);
-      const res = await dailyHealthApi.getMyGarminData(today, today);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const res = await dailyHealthApi.getMyGarminData(yesterday, today);
       const records: any[] = res.data || [];
-      if (records.length > 0) setTodayGarmin(records[0]);
+      // 优先用最新的有数据的记录
+      const latest = records.sort((a: any, b: any) =>
+        (b.record_date || '').localeCompare(a.record_date || '')
+      ).find((r: any) => r.sleep_score || r.hrv || r.steps > 0);
+      if (latest) setTodayGarmin(latest);
+      else if (records.length > 0) setTodayGarmin(records[records.length - 1]);
     } catch (e) {
       // 非关键，静默处理
     }
