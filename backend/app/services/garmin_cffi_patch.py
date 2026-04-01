@@ -29,6 +29,18 @@ def make_cffi_session_compatible(cffi_sess):
     for attr, default in defaults.items():
         if not hasattr(cffi_sess, attr):
             setattr(cffi_sess, attr, default)
+
+    # 补充 requests.Session 的方法（garminconnect 可能调用）
+    if not hasattr(cffi_sess, 'mount'):
+        cffi_sess.mount = lambda prefix, adapter: cffi_sess.adapters.update({prefix: adapter})
+    if not hasattr(cffi_sess, 'prepare_request'):
+        from requests import Request
+        cffi_sess.prepare_request = lambda req: req.prepare()
+    if not hasattr(cffi_sess, 'merge_environment_settings'):
+        cffi_sess.merge_environment_settings = lambda url, proxies, stream, verify, cert: {
+            'proxies': proxies or {}, 'stream': stream, 'verify': verify, 'cert': cert
+        }
+
     return cffi_sess
 
 
