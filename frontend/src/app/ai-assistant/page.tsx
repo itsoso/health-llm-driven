@@ -106,10 +106,10 @@ function buildRichMetrics(g: any): RichMetric[] {
     const m = Math.round((hours - h) * 60);
     const durationText = hours > 0 ? `${h}小时${m > 0 ? m + '分钟' : ''}` : '';
     const subs: RichMetric['subs'] = [];
-    if (durationText) subs.push({ icon: '⏱', label: '持续时间', value: durationText });
-    if (g.deep_sleep_duration) subs.push({ icon: '🟦', label: '深睡', value: `${(g.deep_sleep_duration / 60).toFixed(1)}h` });
-    if (g.rem_sleep_duration) subs.push({ icon: '🟪', label: 'REM', value: `${(g.rem_sleep_duration / 60).toFixed(1)}h` });
-    if (g.light_sleep_duration) subs.push({ icon: '🟨', label: '浅睡', value: `${(g.light_sleep_duration / 60).toFixed(1)}h` });
+    if (durationText) subs.push({ icon: '◷', label: '持续时间', value: durationText });
+    if (g.deep_sleep_duration) subs.push({ icon: '●', label: '深睡', value: `${(g.deep_sleep_duration / 60).toFixed(1)}h`, color: 'text-indigo-400' });
+    if (g.rem_sleep_duration) subs.push({ icon: '●', label: 'REM', value: `${(g.rem_sleep_duration / 60).toFixed(1)}h`, color: 'text-purple-400' });
+    if (g.light_sleep_duration) subs.push({ icon: '●', label: '浅睡', value: `${(g.light_sleep_duration / 60).toFixed(1)}h`, color: 'text-sky-400' });
     metrics.push({
       label: '昨夜睡眠', icon: '🌙',
       primary: `${g.sleep_score}分`,
@@ -124,10 +124,10 @@ function buildRichMetrics(g: any): RichMetric[] {
     const statusMap: Record<string, [string, string]> = { balanced: ['均衡', 'text-emerald-400'], unbalanced: ['不平衡', 'text-amber-400'], low: ['偏低', 'text-red-400'] };
     const [statusText, statusColor] = statusMap[g.hrv_status] || ['—', 'text-slate-400'];
     const subs: RichMetric['subs'] = [
-      { icon: '🟧', label: '状态', value: statusText, color: statusColor },
+      { icon: '●', label: '状态', value: statusText, color: statusColor },
     ];
-    if (g.hrv_7day_avg) subs.push({ icon: '📊', label: '7日均值', value: `${Math.round(g.hrv_7day_avg)} ms` });
-    if (g.resting_heart_rate) subs.push({ icon: '❤️', label: '静息心率', value: `${g.resting_heart_rate} bpm` });
+    if (g.hrv_7day_avg) subs.push({ icon: '∅', label: '7日均值', value: `${Math.round(g.hrv_7day_avg)} ms` });
+    if (g.resting_heart_rate) subs.push({ icon: '♡', label: '静息心率', value: `${g.resting_heart_rate} bpm` });
     metrics.push({
       label: 'HRV 状态', icon: '💓',
       primary: `${Math.round(g.hrv)}`,
@@ -142,11 +142,11 @@ function buildRichMetrics(g: any): RichMetric[] {
     const level = g.body_battery_most_charged >= 75 ? '充沛' : g.body_battery_most_charged >= 50 ? '中等' : '偏低';
     const levelColor = g.body_battery_most_charged >= 75 ? 'text-emerald-400' : g.body_battery_most_charged >= 50 ? 'text-amber-400' : 'text-red-400';
     const subs: RichMetric['subs'] = [
-      { icon: '📈', label: '峰值', value: `${g.body_battery_most_charged}`, color: 'text-emerald-400' },
+      { icon: '↑', label: '峰值', value: `${g.body_battery_most_charged}`, color: 'text-emerald-400' },
     ];
-    if (g.body_battery_lowest != null) subs.push({ icon: '📉', label: '最低', value: `${g.body_battery_lowest}` });
+    if (g.body_battery_lowest != null) subs.push({ icon: '↓', label: '最低', value: `${g.body_battery_lowest}` });
     if (g.body_battery_drained != null) subs.push({ icon: '⚡', label: '消耗', value: `${g.body_battery_drained > 0 ? '-' : ''}${g.body_battery_drained}`, color: 'text-red-400' });
-    if (g.stress_level != null) subs.push({ icon: '😤', label: '压力', value: `${g.stress_level}` });
+    if (g.stress_level != null) subs.push({ icon: '◎', label: '压力', value: `${g.stress_level}` });
     metrics.push({
       label: '身体电量', icon: '🔋',
       primary: `${g.body_battery_current ?? g.body_battery_most_charged}`,
@@ -159,9 +159,9 @@ function buildRichMetrics(g: any): RichMetric[] {
   // 步数 + 心率（第四张卡）
   if (g.steps != null) {
     const subs: RichMetric['subs'] = [];
-    if (g.active_calories) subs.push({ icon: '🔥', label: '活动卡路里', value: `${g.active_calories} kcal` });
-    if (g.resting_heart_rate && !g.hrv) subs.push({ icon: '❤️', label: '静息心率', value: `${g.resting_heart_rate} bpm` });
-    if (g.calories_burned) subs.push({ icon: '💪', label: '总消耗', value: `${g.calories_burned} kcal` });
+    if (g.active_calories) subs.push({ icon: '~', label: '活动卡路里', value: `${g.active_calories} kcal`, color: 'text-orange-400' });
+    if (g.resting_heart_rate && !g.hrv) subs.push({ icon: '♡', label: '静息心率', value: `${g.resting_heart_rate} bpm` });
+    if (g.calories_burned) subs.push({ icon: '∑', label: '总消耗', value: `${g.calories_burned} kcal` });
     metrics.push({
       label: '今日活动', icon: '👟',
       primary: g.steps.toLocaleString(),
@@ -1131,11 +1131,11 @@ export default function AIAssistantPage() {
                             {m.secondary && <span className="text-sm text-white/50">{m.secondary}</span>}
                           </div>
                           {m.subs.length > 0 && (
-                            <div className="mt-3 space-y-1.5 border-t border-white/[0.06] pt-3">
+                            <div className="mt-2.5 space-y-1 border-t border-white/[0.05] pt-2.5">
                               {m.subs.map((sub, i) => (
-                                <div key={i} className="flex items-center justify-between text-[11px]">
-                                  <span className="text-white/40">{sub.icon} {sub.label}</span>
-                                  <span className={sub.color || 'text-white/70'}>{sub.value}</span>
+                                <div key={i} className="flex items-center justify-between">
+                                  <span className="text-[10px] text-white/35"><span className={sub.color || 'text-white/25'}>{sub.icon}</span> {sub.label}</span>
+                                  <span className={`text-[11px] font-medium ${sub.color || 'text-white/65'}`}>{sub.value}</span>
                                 </div>
                               ))}
                             </div>
@@ -1155,8 +1155,8 @@ export default function AIAssistantPage() {
                     </div>
                   )}
 
-                  {/* Briefing + Insights row */}
-                  <div className="grid gap-4 lg:grid-cols-2">
+                  {/* Briefing + Insights */}
+                  <div className="space-y-3">
                     {/* Briefing card */}
                     {briefingPreview && briefingConvId ? (
                       <button
@@ -1184,31 +1184,41 @@ export default function AIAssistantPage() {
 
                     {/* Insights card */}
                     {insights.length > 0 ? (
-                      <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.04] to-transparent p-5 backdrop-blur-xl">
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="text-base">💡</span>
-                          <span className="text-xs font-semibold text-emerald-300/80">今日洞察</span>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-2 px-1">
+                          <span className="text-xs font-medium text-white/30 tracking-wide">今日洞察</span>
                         </div>
-                        <div className="space-y-2.5">
-                          {(() => {
-                            const seen = new Set<string>();
-                            return insights.filter(ins => {
-                              if (seen.has(ins.notification_type)) return false;
-                              seen.add(ins.notification_type);
-                              return true;
-                            }).slice(0, 3).map(ins => (
-                              <div key={ins.id} className="flex items-start gap-2.5 rounded-xl bg-white/[0.03] px-3 py-2.5">
-                                <span className="mt-0.5 text-xs shrink-0">
-                                  {ins.notification_type === 'health_alert' ? '⚠️' : ins.notification_type === 'morning_summary' ? '☀️' : ins.notification_type === 'trend_report' ? '📈' : ins.notification_type === 'family_daily_brief' ? '👨‍👩‍👦' : '💬'}
-                                </span>
-                                <div className="min-w-0">
-                                  <div className="text-[13px] font-medium text-white/80">{ins.title}</div>
-                                  <div className="mt-0.5 text-[11px] leading-4 text-white/40 line-clamp-1">{ins.content}</div>
+                        {(() => {
+                          const INSIGHT_STYLES: Record<string, { icon: string; border: string; bg: string; iconBg: string; titleColor: string }> = {
+                            health_alert:      { icon: '⚠️', border: 'border-red-500/20',    bg: 'from-red-500/8 to-transparent',    iconBg: 'bg-red-500/15',    titleColor: 'text-red-300' },
+                            morning_summary:   { icon: '☀️', border: 'border-amber-400/20',  bg: 'from-amber-500/8 to-transparent',  iconBg: 'bg-amber-500/15',  titleColor: 'text-amber-300' },
+                            trend_report:      { icon: '📈', border: 'border-cyan-400/20',   bg: 'from-cyan-500/8 to-transparent',   iconBg: 'bg-cyan-500/15',   titleColor: 'text-cyan-300' },
+                            family_daily_brief:{ icon: '👨‍👩‍👦', border: 'border-purple-400/20', bg: 'from-purple-500/8 to-transparent', iconBg: 'bg-purple-500/15', titleColor: 'text-purple-300' },
+                            daily_insights:    { icon: '💡', border: 'border-emerald-400/20', bg: 'from-emerald-500/8 to-transparent', iconBg: 'bg-emerald-500/15', titleColor: 'text-emerald-300' },
+                          };
+                          const fallback = { icon: '💬', border: 'border-slate-400/20', bg: 'from-slate-500/8 to-transparent', iconBg: 'bg-slate-500/15', titleColor: 'text-slate-300' };
+                          const seen = new Set<string>();
+                          return insights.filter(ins => {
+                            if (seen.has(ins.notification_type)) return false;
+                            seen.add(ins.notification_type);
+                            return true;
+                          }).slice(0, 3).map(ins => {
+                            const s = INSIGHT_STYLES[ins.notification_type] || fallback;
+                            return (
+                              <div key={ins.id} className={`rounded-2xl border ${s.border} bg-gradient-to-r ${s.bg} p-4 backdrop-blur-xl`}>
+                                <div className="flex items-start gap-3">
+                                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${s.iconBg}`}>
+                                    <span className="text-base">{s.icon}</span>
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className={`text-[13px] font-semibold ${s.titleColor}`}>{ins.title}</div>
+                                    <div className="mt-1 text-[12px] leading-5 text-white/50 line-clamp-2">{ins.content}</div>
+                                  </div>
                                 </div>
                               </div>
-                            ));
-                          })()}
-                        </div>
+                            );
+                          });
+                        })()}
                       </div>
                     ) : (
                       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
