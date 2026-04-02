@@ -959,38 +959,7 @@ function OverviewContent() {
         </div>
       </div>
 
-      {/* 快速记录输入条 */}
-      <div className="sticky bottom-20 z-10 px-4 pb-3">
-        <form
-          onSubmit={(e) => { e.preventDefault(); const t = quickInput.trim(); if (t) quickMutation.mutate(t); }}
-          className="flex gap-2 rounded-2xl border border-gray-200 bg-white/90 p-2 shadow-lg backdrop-blur-sm"
-        >
-          <input
-            type="text"
-            value={quickInput}
-            onChange={e => setQuickInput(e.target.value)}
-            placeholder="午餐牛肉面 / 吃了鸡胸肉 / 喝水500 / 体重71.5 / 吃了维生素D"
-            className="flex-1 bg-transparent px-3 py-1.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none"
-            disabled={quickMutation.isPending}
-          />
-          <button
-            type="submit"
-            disabled={quickMutation.isPending || !quickInput.trim()}
-            className="rounded-xl bg-teal-500 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-teal-600 disabled:opacity-40"
-          >
-            {quickMutation.isPending ? '…' : '记录'}
-          </button>
-        </form>
-        {quickToast && (
-          <div className={`mt-2 rounded-xl px-4 py-2 text-sm font-medium shadow ${
-            quickToast.includes('失败') || quickToast.includes('不对')
-              ? 'bg-red-50 text-red-700'
-              : 'bg-teal-50 text-teal-700'
-          }`}>
-            {quickToast}
-          </div>
-        )}
-      </div>
+      {/* 快速记录输入条 — 已移除，使用 AI 助手或浮动按钮记录 */}
     </main>
   );
 }
