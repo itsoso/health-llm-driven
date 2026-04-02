@@ -89,6 +89,7 @@ from app.api import (
     garmin_import,  # Garmin 数据批量导入
     quick_questions,  # 动态快速问题
     genetic_data,  # 基因数据管理
+    affiliate_products,  # 联盟产品
     quick_record,  # 快速记录（自然语言）
     data_health,  # 数据健康仪表盘
 )
@@ -230,6 +231,7 @@ api_router.include_router(quick_questions.router)
 
 # 基因数据管理
 api_router.include_router(genetic_data.router, prefix="/genetic", tags=["genetic-data"])
+api_router.include_router(affiliate_products.router, prefix="/affiliate-products", tags=["affiliate-products"])
 
 # 快速记录（自然语言解析）
 api_router.include_router(quick_record.router, tags=["quick-record"])
