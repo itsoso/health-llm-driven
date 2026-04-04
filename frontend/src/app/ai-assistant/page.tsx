@@ -1086,19 +1086,19 @@ export default function AIAssistantPage() {
 
       <div className="relative flex overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
         {showHistory && (
-          <aside className="flex w-[330px] shrink-0 flex-col border-r border-white/10 bg-slate-950/65 backdrop-blur-2xl">
-            <div className="border-b border-white/10 px-4 py-4">
-              <div className="flex items-center gap-3">
+          <aside className="flex w-[330px] shrink-0 flex-col border-r border-gray-200 bg-white/95 backdrop-blur-xl">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={handleNewChat}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-white/15"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-emerald-600 active:scale-[0.98] shadow-sm"
                 >
                   <span className="text-lg leading-none">+</span>
                   新建对话
                 </button>
                 <button
                   onClick={toggleHistory}
-                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-600"
                   title="收起侧边栏"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -1106,16 +1106,7 @@ export default function AIAssistantPage() {
                   </svg>
                 </button>
               </div>
-
-              <div className="mt-5">
-                <div className={`mb-1 text-[10px] uppercase tracking-[0.32em] ${modeCopy.accentTextClass}`}>Conversation archive</div>
-                <h2 className="text-lg text-white" style={{ fontFamily: DISPLAY_FONT_STACK }}>会话档案</h2>
-                <p className="mt-1 text-sm text-slate-400">按标题或最后一条消息快速回到上下文。</p>
-              </div>
-            </div>
-
-            <div className="border-b border-white/10 px-4 py-4">
-              <div className="relative">
+              <div className="relative mt-3">
                 <input
                   type="text"
                   value={searchQuery}
@@ -1124,25 +1115,25 @@ export default function AIAssistantPage() {
                     setCurrentPage(1);
                   }}
                   placeholder="搜索对话..."
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 pl-11 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 pl-10 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
                 />
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-3 py-3">
+            <div className="flex-1 overflow-y-auto px-3 py-2">
               {conversations.length === 0 ? (
-                <div className="rounded-[28px] border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center text-slate-400">
-                  <div className="text-4xl">◌</div>
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center text-gray-400">
+                  <div className="text-4xl">💬</div>
                   <div className="mt-3 text-sm">还没有历史对话</div>
                 </div>
               ) : paginatedConversations.length === 0 ? (
-                <div className="rounded-[28px] border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center text-slate-400">
-                  <div className="text-4xl">⌕</div>
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center text-gray-400">
+                  <div className="text-4xl">🔍</div>
                   <div className="mt-3 text-sm">没有找到匹配结果</div>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {paginatedConversations.map(conv => {
                     const isBriefing = conv.title === BRIEFING_TITLE;
                     const isWeekly = conv.title === WEEKLY_TITLE;
@@ -1151,41 +1142,41 @@ export default function AIAssistantPage() {
                     <button
                       key={conv.id}
                       onClick={() => loadConversation(conv.id)}
-                      className={`group w-full rounded-[26px] border px-4 py-4 text-left transition-all ${
+                      className={`group w-full rounded-2xl border px-3.5 py-3 text-left transition-all ${
                         conv.id === conversationId
-                          ? `border-white/15 bg-white/10 shadow-[0_20px_50px_rgba(15,23,42,0.35)] ${modeCopy.accentTextClass}`
+                          ? 'border-emerald-200 bg-emerald-50 shadow-sm'
                           : isBriefing
-                            ? 'border-amber-400/20 bg-amber-400/[0.06] hover:border-amber-400/30 hover:bg-amber-400/[0.10]'
+                            ? 'border-amber-100 bg-amber-50/60 hover:border-amber-200 hover:bg-amber-50'
                             : isWeekly
-                              ? 'border-purple-400/20 bg-purple-400/[0.06] hover:border-purple-400/30 hover:bg-purple-400/[0.10]'
-                              : 'border-transparent bg-white/[0.03] hover:border-white/10 hover:bg-white/[0.06]'
+                              ? 'border-purple-100 bg-purple-50/60 hover:border-purple-200 hover:bg-purple-50'
+                              : 'border-transparent bg-transparent hover:border-gray-200 hover:bg-gray-50'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isBriefing ? 'bg-amber-400/20' : isWeekly ? 'bg-purple-400/20' : modeCopy.badgeClass}`}>
+                        <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isBriefing ? 'bg-amber-100' : isWeekly ? 'bg-purple-100' : 'bg-emerald-100'}`}>
                           {isBriefing
-                            ? <span className="text-base">🌅</span>
+                            ? <span className="text-sm">🌅</span>
                             : isWeekly
-                              ? <span className="text-base">📊</span>
-                              : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                              ? <span className="text-sm">📊</span>
+                              : <span className="text-sm">💬</span>
                           }
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className={`flex items-center gap-2 text-sm font-medium leading-6 ${isBriefing ? 'text-amber-200' : isWeekly ? 'text-purple-200' : 'text-white'}`}>
+                          <div className={`flex items-center gap-2 text-sm font-medium leading-6 ${isBriefing ? 'text-amber-700' : isWeekly ? 'text-purple-700' : 'text-gray-800'}`}>
                             <span className="line-clamp-1">{conv.title}</span>
-                            {isBriefing && <span className="shrink-0 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">每日</span>}
-                            {isWeekly && <span className="shrink-0 rounded-full bg-purple-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">周报</span>}
+                            {isBriefing && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-600">每日</span>}
+                            {isWeekly && <span className="shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-600">周报</span>}
                           </div>
                           {conv.last_message && (
-                            <div className="mt-1 text-xs leading-5 text-slate-400 truncate">{conv.last_message.length > 30 ? conv.last_message.slice(0, 30) + '...' : conv.last_message}</div>
+                            <div className="mt-0.5 text-xs leading-5 text-gray-500 truncate">{conv.last_message.length > 30 ? conv.last_message.slice(0, 30) + '...' : conv.last_message}</div>
                           )}
                           {conv.updated_at && (
-                            <div className="mt-0.5 text-[11px] text-slate-500">{relativeTime(conv.updated_at)}</div>
+                            <div className="mt-0.5 text-[11px] text-gray-400">{relativeTime(conv.updated_at)}</div>
                           )}
                         </div>
                       </div>
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-[11px] text-gray-400">
                           {isBriefing ? '📊 日报' : isWeekly ? '📈 周报' : `#${conv.id}`}
                         </span>
                         <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
@@ -1194,7 +1185,7 @@ export default function AIAssistantPage() {
                               e.stopPropagation();
                               handleShareConversation(conv.id);
                             }}
-                            className="text-xs text-slate-400 transition-colors hover:text-white"
+                            className="text-xs text-gray-400 transition-colors hover:text-gray-700"
                             title="分享对话"
                           >
                             分享
@@ -1204,7 +1195,7 @@ export default function AIAssistantPage() {
                               e.stopPropagation();
                               handleDeleteConversation(conv.id);
                             }}
-                            className="text-xs text-slate-400 transition-colors hover:text-red-300"
+                            className="text-xs text-gray-400 transition-colors hover:text-red-500"
                             title="删除对话"
                           >
                             删除
@@ -1218,12 +1209,12 @@ export default function AIAssistantPage() {
             </div>
 
             {sortedConversations.length > itemsPerPage && (
-              <div className="border-t border-white/10 px-4 py-3">
-                <div className="flex items-center justify-between text-xs text-slate-400">
+              <div className="border-t border-gray-100 px-4 py-3">
+                <div className="flex items-center justify-between text-xs text-gray-500">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="rounded-full border border-white/10 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     上一页
                   </button>
@@ -1231,7 +1222,7 @@ export default function AIAssistantPage() {
                   <button
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="rounded-full border border-white/10 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-gray-200 px-3 py-1.5 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     下一页
                   </button>
