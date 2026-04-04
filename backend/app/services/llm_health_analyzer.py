@@ -161,7 +161,122 @@ class LLMHealthAnalyzer:
             }
         
         return context
-    
+
+    def _build_gene_drug_constraints(self, db: Session, user_id: int) -> str:
+        """
+        从用户基因数据动态生成药物安全约束
+
+        读取用户的 GeneticVariant 记录，匹配药物交互规则，
+        生成可注入 AI prompt 的约束文本。
+        多租户安全：每个用户独立生成，无基因数据则返回空字符串。
+        """
+        try:
+            from app.models.genetic_data import GeneticVariant
+
+            variants = db.query(GeneticVariant).filter(
+                GeneticVariant.user_id == user_id
+            ).all()
+
+            if not variants:
+                return ""
+
+            # 基因-药物交互规则（Layer 2 通用规则）
+            GENE_DRUG_RULES = {
+                "CYP2D6": {
+                    "high": {
+                        "avoid": "可待因类止咳药（无法激活，无效且蓄积）、曲马多",
+                        "substitute": "抗过敏药选西替利嗪（肾排泄）替代氯雷他定（CYP2D6代谢）",
+                        "monitor": "如必须用氯雷他定，减量50%并监测嗜睡",
+                    },
+                    "medium": {
+                        "monitor": "氯雷他定注意剂量，必要时改用西替利嗪",
+                    },
+                },
+                "CYP2C19": {
+                    "high": {
+                        "substitute": "PPI选雷贝拉唑替代奥美拉唑；抗血小板选替格瑞洛替代氯吡格雷",
+                    },
+                    "medium": {
+                        "monitor": "奥美拉唑减量50%或换用雷贝拉唑",
+                    },
+                },
+                "ALDH2": {
+                    "high": {
+                        "avoid": "含酒精制剂、硝酸甘油（疗效显著降低）",
+                        "lifestyle": "严格禁酒",
+                    },
+                    "medium": {
+                        "avoid": "含酒精口服液/中成药（乙醛蓄积加重过敏）",
+                        "lifestyle": "禁酒——乙醛是组胺释放触发因子",
+                    },
+                },
+                "MTHFR": {
+                    "high": {
+                        "substitute": "叶酸必须用5-MTHF甲基叶酸(400-800μg/天)，禁止普通folic acid",
+                        "supplement": "配合甲钴胺(活性B12)降低同型半胱氨酸",
+                        "monitor": "每年检测同型半胱氨酸，目标<10μmol/L",
+                    },
+                    "medium": {
+                        "monitor": "每1-2年检测同型半胱氨酸",
+                    },
+                },
+                "9p21": {
+                    "high": {
+                        "avoid": "长期使用麻黄碱/伪麻黄碱（心血管风险）",
+                        "monitor": "使用减充血剂期间每日监测血压",
+                    },
+                },
+                "LCT": {
+                    "high": {
+                        "avoid": "含乳糖辅料药片（乳糖不耐受影响吸收）",
+                        "lifestyle": "减少乳制品，改用无乳糖奶或植物奶",
+                    },
+                },
+                "SLCO1B1": {
+                    "high": {
+                        "monitor": "他汀类药物肌病风险增加，需低剂量起始",
+                    },
+                    "medium": {
+                        "monitor": "他汀类药物注意肌肉症状",
+                    },
+                },
+            }
+
+            constraints = []
+            for variant in variants:
+                gene = variant.gene_name
+                risk = variant.risk_level  # "low", "medium", "high"
+
+                if gene in GENE_DRUG_RULES and risk in GENE_DRUG_RULES[gene]:
+                    rules = GENE_DRUG_RULES[gene][risk]
+                    constraint_parts = [f"**{gene}** ({variant.result_label or risk}):"]
+
+                    if "avoid" in rules:
+                        constraint_parts.append(f"  - 避免: {rules['avoid']}")
+                    if "substitute" in rules:
+                        constraint_parts.append(f"  - 替代: {rules['substitute']}")
+                    if "monitor" in rules:
+                        constraint_parts.append(f"  - 监测: {rules['monitor']}")
+                    if "supplement" in rules:
+                        constraint_parts.append(f"  - 补充: {rules['supplement']}")
+                    if "lifestyle" in rules:
+                        constraint_parts.append(f"  - 生活方式: {rules['lifestyle']}")
+
+                    constraints.append("\n".join(constraint_parts))
+
+            if not constraints:
+                return ""
+
+            return (
+                "\n\n## 此用户的药物基因组约束（硬性规则，AI建议不可违反）\n\n"
+                + "\n\n".join(constraints)
+                + "\n\n注意：以上约束基于用户基因检测结果，推荐用药时必须遵守。"
+            )
+
+        except Exception as e:
+            logger.warning(f"构建基因药物约束失败: {e}")
+            return ""
+
     def _get_time_context(self) -> Dict[str, Any]:
         """获取当前时间上下文"""
         now = get_china_now()
@@ -547,7 +662,12 @@ class LLMHealthAnalyzer:
             health_prompt = self._build_health_data_prompt(
                 yesterday_data, recent_data, rule_analysis, user_context, environment_data
             )
-            
+
+            # 基因-药物约束（如果有）
+            gene_constraints = self._build_gene_drug_constraints(db, user_id)
+            if gene_constraints:
+                health_prompt += gene_constraints
+
             system_prompt = """你是一位专业的智能助理和运动生理学专家。
 你需要基于用户的可穿戴设备数据、个人画像和当地环境信息，提供科学、高度个性化的健康建议。
 

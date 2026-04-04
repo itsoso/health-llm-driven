@@ -237,17 +237,19 @@ class VectorStoreService:
         query: str,
         n_results: int = 5,
         category: Optional[str] = None,
-        source: Optional[str] = None
+        source: Optional[str] = None,
+        conditions: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         搜索相关文档
-        
+
         Args:
             query: 搜索查询
             n_results: 返回结果数量
             category: 按分类过滤
             source: 按来源过滤
-            
+            conditions: 用户健康条件标签列表，用于分层检索
+
         Returns:
             相关文档列表
         """
@@ -258,25 +260,46 @@ class VectorStoreService:
             # 构建过滤条件
             where_filter = None
             if category or source:
-                conditions = []
+                conditions_list = []
                 if category:
-                    conditions.append({"category": category})
+                    conditions_list.append({"category": category})
                 if source:
-                    conditions.append({"source": source})
-                
-                if len(conditions) == 1:
-                    where_filter = conditions[0]
+                    conditions_list.append({"source": source})
+
+                if len(conditions_list) == 1:
+                    where_filter = conditions_list[0]
                 else:
-                    where_filter = {"$and": conditions}
-            
+                    where_filter = {"$and": conditions_list}
+
             # 获取查询的 embedding
             query_embedding = None
             if self.openai_client:
                 embeddings = self._get_embeddings([query])
                 if embeddings:
                     query_embedding = embeddings[0]
+
+            # 如果有用户条件标签，执行分层检索
+            if conditions:
+                return self._search_with_conditions(
+                    query, query_embedding, conditions, n_results, where_filter
+                )
+
+            # 普通搜索
+            return self._execute_search(query, query_embedding, n_results, where_filter)
             
-            # 执行搜索
+        except Exception as e:
+            logger.error(f"搜索失败: {e}")
+            return []
+    
+    def _execute_search(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]],
+        n_results: int,
+        where_filter: Optional[Dict] = None
+    ) -> List[Dict[str, Any]]:
+        """执行单次向量搜索"""
+        try:
             if query_embedding:
                 results = self.collection.query(
                     query_embeddings=[query_embedding],
@@ -291,8 +314,7 @@ class VectorStoreService:
                     where=where_filter,
                     include=["documents", "metadatas", "distances"]
                 )
-            
-            # 格式化结果
+
             formatted_results = []
             if results and results.get("documents"):
                 for i, doc in enumerate(results["documents"][0]):
@@ -302,13 +324,79 @@ class VectorStoreService:
                         "distance": results["distances"][0][i] if results.get("distances") else None,
                         "relevance_score": 1 - (results["distances"][0][i] if results.get("distances") else 0)
                     })
-            
+
             return formatted_results
-            
         except Exception as e:
-            logger.error(f"搜索失败: {e}")
+            logger.error(f"搜索执行失败: {e}")
             return []
-    
+
+    def _search_with_conditions(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]],
+        conditions: List[str],
+        n_results: int,
+        base_filter: Optional[Dict] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        条件感知的分层检索
+
+        1. 搜索匹配用户条件的 Layer 2 文档
+        2. 搜索通用 Layer 1 文档
+        3. 合并去重，条件匹配的优先
+        """
+        all_results = []
+        seen_contents = set()
+
+        # Phase 1: 搜索条件匹配的文档
+        for condition in conditions[:5]:  # 最多5个条件避免过多查询
+            try:
+                condition_filter = {"conditions": {"$contains": condition}}
+                if base_filter:
+                    condition_filter = {"$and": [base_filter, condition_filter]}
+
+                results = self._execute_search(query, query_embedding, n_results, condition_filter)
+                for r in results:
+                    content_key = r["content"][:100]  # 用前100字符去重
+                    if content_key not in seen_contents:
+                        seen_contents.add(content_key)
+                        r["metadata"]["matched_condition"] = condition
+                        all_results.append(r)
+            except Exception as e:
+                logger.debug(f"条件 '{condition}' 检索失败（可能无匹配文档）: {e}")
+                continue
+
+        # Phase 2: 搜索通用文档 (Layer 1)
+        try:
+            universal_filter = {"layer": "1"}
+            if base_filter:
+                universal_filter = {"$and": [base_filter, universal_filter]}
+
+            universal_results = self._execute_search(query, query_embedding, n_results, universal_filter)
+            for r in universal_results:
+                content_key = r["content"][:100]
+                if content_key not in seen_contents:
+                    seen_contents.add(content_key)
+                    all_results.append(r)
+        except Exception as e:
+            logger.debug(f"通用知识检索失败: {e}")
+
+        # Phase 3: 如果条件检索结果不足，补充无条件通用搜索
+        if len(all_results) < n_results:
+            try:
+                fallback_results = self._execute_search(query, query_embedding, n_results, base_filter)
+                for r in fallback_results:
+                    content_key = r["content"][:100]
+                    if content_key not in seen_contents:
+                        seen_contents.add(content_key)
+                        all_results.append(r)
+            except Exception:
+                pass
+
+        # 按相关度排序，截取
+        all_results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+        return all_results[:n_results]
+
     def get_stats(self) -> Dict[str, Any]:
         """获取知识库统计信息"""
         if not self.is_available():

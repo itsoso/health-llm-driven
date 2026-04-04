@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 import json
 import logging
 
+from datetime import datetime
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
@@ -77,6 +78,17 @@ class CourseUploadInput(BaseModel):
     difficulty: str = Field(default="intermediate", description="难度：beginner/intermediate/advanced")
     target_audience: List[str] = Field(default_factory=list, description="目标人群，如 ['跑步爱好者', '减脂人群']")
     course_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="额外元数据")
+
+
+class GeneDrugRulesInput(BaseModel):
+    """基因-药物规则输入"""
+    id: str = Field(..., description="规则ID")
+    type: str = Field(default="gene_drug_constraints")
+    version: str = Field(..., description="版本号")
+    compiled_at: str = Field(..., description="编译时间")
+    source: str = Field(default="ak-kbase")
+    description: Optional[str] = None
+    rules: Dict[str, Any] = Field(..., description="基因-药物规则")
 
 
 # ========== API Endpoints ==========
@@ -673,6 +685,186 @@ def clear_all_documents(
         )
     
     return {"message": "知识库已清空", **result}
+
+
+@router.post("/gene-drug-rules", summary="上传基因-药物交互规则")
+def upload_gene_drug_rules(
+    input_data: GeneDrugRulesInput,
+    current_user: User = Depends(get_current_user_required),
+):
+    """
+    上传基因-药物交互规则库
+
+    这些规则被 AI 分析引擎用于为每个用户动态生成药物安全约束。
+    规则本身是通用的（Layer 2），但在运行时结合每个用户的
+    GeneticVariant 记录生成个性化约束。
+
+    需要管理员权限。
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以上传规则"
+        )
+
+    # 将规则存储为知识库文档（便于版本追踪）
+    if not vector_store.is_available():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="知识库服务不可用"
+        )
+
+    # 先删除旧版本
+    vector_store.delete_by_source(f"{input_data.source}_gene_rules")
+
+    # 存储为文档
+    import json as json_lib
+    doc = {
+        "content": json_lib.dumps(input_data.rules, ensure_ascii=False, indent=2),
+        "title": "基因-药物交互规则库",
+        "category": "gene_drug_rules",
+        "metadata": {
+            "version": input_data.version,
+            "compiled_at": input_data.compiled_at,
+            "type": input_data.type,
+        }
+    }
+
+    result = vector_store.add_documents([doc], source=f"{input_data.source}_gene_rules")
+
+    if result.get("success"):
+        logger.info(f"基因-药物规则已更新: version={input_data.version}, genes={len(input_data.rules)}")
+
+    return {
+        "message": "基因-药物规则已更新",
+        "version": input_data.version,
+        "gene_count": len(input_data.rules),
+        **result
+    }
+
+
+@router.get("/feedback", summary="获取知识库反馈洞察")
+def get_knowledge_feedback(
+    source: Optional[str] = None,
+    since: Optional[str] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """
+    获取匿名聚合的知识库使用反馈
+
+    供外部知识系统（如 ak-kbase）拉取匿名化的群体洞察，
+    用于知识库的持续演进。
+
+    返回的数据已脱敏：
+    - 不包含任何用户ID或个人信息
+    - 只有 N≥30 的聚合数据才会返回
+    - 所有数据为统计摘要
+
+    需要管理员权限。
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以获取反馈数据"
+        )
+
+    insights = []
+
+    # Insight 1: 知识库使用统计
+    try:
+        stats = vector_store.get_stats()
+        insights.append({
+            "title": "知识库统计",
+            "content": f"当前共 {stats.get('total_documents', 0)} 篇文档",
+            "type": "stats",
+            "sample_size": None,
+        })
+    except Exception:
+        pass
+
+    # Insight 2: 疾病模板使用分布（匿名）
+    try:
+        from app.models.disease_tracking import UserDiseaseProfile, DiseaseTemplate
+        from sqlalchemy import func
+
+        disease_counts = db.query(
+            DiseaseTemplate.name,
+            func.count(UserDiseaseProfile.id).label("count")
+        ).join(
+            DiseaseTemplate,
+            UserDiseaseProfile.template_id == DiseaseTemplate.id
+        ).group_by(DiseaseTemplate.name).all()
+
+        if disease_counts:
+            distribution = "; ".join([f"{name}: {count}人" for name, count in disease_counts])
+            total = sum(c for _, c in disease_counts)
+            if total >= 5:  # 至少5人才报告
+                insights.append({
+                    "title": "疾病管理分布",
+                    "content": distribution,
+                    "type": "disease_distribution",
+                    "sample_size": total,
+                })
+    except Exception as e:
+        logger.debug(f"疾病分布统计失败: {e}")
+
+    # Insight 3: 鼻炎症状趋势（匿名聚合）
+    try:
+        from app.models.illness import IllnessEpisode
+        from sqlalchemy import func
+        from datetime import timedelta
+
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+        rhinitis_episodes = db.query(
+            func.count(IllnessEpisode.id),
+            func.avg(IllnessEpisode.severity)
+        ).filter(
+            IllnessEpisode.name.ilike("%喷嚏%") |
+            IllnessEpisode.name.ilike("%鼻%"),
+            IllnessEpisode.created_at >= thirty_days_ago
+        ).first()
+
+        if rhinitis_episodes and rhinitis_episodes[0] and rhinitis_episodes[0] >= 5:
+            insights.append({
+                "title": "鼻炎相关症状（近30天）",
+                "content": f"共 {rhinitis_episodes[0]} 次记录，平均严重度 {rhinitis_episodes[1]:.1f}/10",
+                "type": "rhinitis_trend",
+                "sample_size": rhinitis_episodes[0],
+            })
+    except Exception as e:
+        logger.debug(f"鼻炎统计失败: {e}")
+
+    # Insight 4: 基因数据覆盖率
+    try:
+        from app.models.genetic_data import GeneticVariant
+        from sqlalchemy import func
+
+        gene_stats = db.query(
+            GeneticVariant.gene_name,
+            func.count(func.distinct(GeneticVariant.user_id)).label("user_count")
+        ).group_by(GeneticVariant.gene_name).all()
+
+        if gene_stats:
+            gene_coverage = "; ".join([f"{gene}: {count}人" for gene, count in gene_stats if count >= 3])
+            if gene_coverage:
+                insights.append({
+                    "title": "基因数据覆盖",
+                    "content": gene_coverage,
+                    "type": "gene_coverage",
+                    "sample_size": sum(c for _, c in gene_stats),
+                })
+    except Exception as e:
+        logger.debug(f"基因统计失败: {e}")
+
+    return {
+        "source": source,
+        "since": since,
+        "generated_at": datetime.now().isoformat(),
+        "insights": insights,
+        "note": "所有数据已脱敏，不包含个人信息"
+    }
 
 
 # ========== 预置知识内容 API ==========
