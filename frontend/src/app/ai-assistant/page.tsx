@@ -281,7 +281,10 @@ export default function AIAssistantPage() {
   const [suppExpanded, setSuppExpanded] = useState(false);
   const [garminHistory, setGarminHistory] = useState<any[]>([]);
   const [waterToday, setWaterToday] = useState<{total_ml: number; goal_ml: number; count: number}>({ total_ml: 0, goal_ml: 2000, count: 0 });
-  const [scheduleExpanded, setScheduleExpanded] = useState(false);
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const [airData, setAirData] = useState<any>(null);
+  const [rhinitisToday, setRhinitisToday] = useState<any>(null);
+  const [dietToday, setDietToday] = useState<any>(null);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -354,30 +357,39 @@ export default function AIAssistantPage() {
   const loadDashboardData = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
     // 并行请求
-    const [scoreRes, suppRes, histRes, waterRes] = await Promise.allSettled([
-      healthScoreApi.getDailyScore(today),
-      supplementApi.getMyRecordsWithStatus(today),
-      dailyHealthApi.getMyGarminData(
+    const results = await Promise.allSettled([
+      healthScoreApi.getDailyScore(today),           // 0
+      supplementApi.getMyRecordsWithStatus(today),    // 1
+      dailyHealthApi.getMyGarminData(                 // 2
         new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10),
         today
       ),
-      api.get(`/water/records/me/date/${today}`),
+      api.get(`/water/records/me/date/${today}`),     // 3
+      api.get('/environment/weather'),                // 4
+      api.get('/environment/air-quality'),             // 5
+      api.get('/checkin/me/today'),                    // 6
+      api.get(`/diet/records/me/date/${today}`),       // 7
     ]);
-    if (scoreRes.status === 'fulfilled') setHealthScore(scoreRes.value.data);
-    if (suppRes.status === 'fulfilled') {
-      const raw = suppRes.value.data;
+    const ok = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value.data : null;
+    if (ok(0)) setHealthScore(ok(0));
+    if (ok(1)) {
+      const raw = ok(1);
       setSupplementStatus(Array.isArray(raw) ? raw : raw?.records || []);
     }
-    if (histRes.status === 'fulfilled') {
-      const records = histRes.value.data || [];
+    if (ok(2)) {
+      const records = ok(2) || [];
       setGarminHistory(
         [...records].sort((a: any, b: any) => (a.record_date || '').localeCompare(b.record_date || ''))
       );
     }
-    if (waterRes.status === 'fulfilled') {
-      const w = waterRes.value.data;
+    if (ok(3)) {
+      const w = ok(3);
       setWaterToday({ total_ml: w?.total_ml || 0, goal_ml: w?.goal_ml || 2000, count: w?.count || 0 });
     }
+    if (ok(4)) setWeatherData(ok(4));
+    if (ok(5)) setAirData(ok(5));
+    if (ok(6)) setRhinitisToday(ok(6));
+    if (ok(7)) setDietToday(ok(7));
   }, []);
 
   // 加载指定对话的消息
@@ -1299,7 +1311,7 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
               {isWelcome ? (
-                <div className="space-y-5 max-w-2xl mx-auto">
+                <div className="space-y-5 max-w-4xl mx-auto">
                   {/* ── 1. AI Status Line — one-sentence insight + score ── */}
                   {(() => {
                     const h = new Date().getHours();
@@ -1358,19 +1370,22 @@ export default function AIAssistantPage() {
                   {/* ── 2. Attention Items — smart alerts, only show what needs action ── */}
                   {(() => {
                     const alerts: {icon: string; text: string; action: string; color: string; bg: string}[] = [];
-                    // 水分警告
-                    if (waterToday.total_ml < 500) {
-                      alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，严重不足`, action: '记录喝水250ml', color: '#ef4444', bg: '#fef2f2' });
-                    } else if (waterToday.total_ml < 1200) {
-                      alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，需补充`, action: '记录喝水250ml', color: '#f59e0b', bg: '#fffbeb' });
+                    const hour = new Date().getHours();
+                    // 水分警告 — 结合时间：凌晨(0-6)不提醒，上午轻提醒，下午严格提醒
+                    if (hour >= 7) {
+                      const waterExpected = hour >= 18 ? 1500 : hour >= 12 ? 800 : 300;
+                      if (waterToday.total_ml < waterExpected * 0.3) {
+                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, action: '记录喝水250ml', color: '#ef4444', bg: '#fef2f2' });
+                      } else if (waterToday.total_ml < waterExpected * 0.6) {
+                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, action: '记录喝水250ml', color: '#f59e0b', bg: '#fffbeb' });
+                      }
                     }
-                    // 补剂未完成
+                    // 补剂未完成 — 凌晨不提醒
                     const suppRemaining = suppTotal - suppChecked;
-                    if (suppRemaining > 0 && suppTotal > 0) {
+                    if (suppRemaining > 0 && suppTotal > 0 && hour >= 7) {
                       alerts.push({ icon: '💊', text: `${suppRemaining}项补剂待服用`, action: '今天还需要吃什么补剂？', color: '#8b5cf6', bg: '#f5f3ff' });
                     }
                     // 步数不足（下午之后才提醒）
-                    const hour = new Date().getHours();
                     if (hour >= 14 && todayGarmin?.steps < 3000) {
                       alerts.push({ icon: '🚶', text: `步数仅 ${todayGarmin?.steps?.toLocaleString() || 0}，活动量偏低`, action: '根据我的身体数据，今天适合做什么运动？', color: '#f59e0b', bg: '#fffbeb' });
                     }
@@ -1416,6 +1431,77 @@ export default function AIAssistantPage() {
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* ── 3.5 Environment + Rhinitis + Diet ── */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Weather & Air */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm">🌤️</span>
+                        <span className="text-sm font-semibold text-gray-700">{weatherData?.city || '天气'}</span>
+                      </div>
+                      {weatherData ? (
+                        <>
+                          <div className="text-2xl font-bold text-gray-800">{Math.round(weatherData.temperature ?? 0)}°</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{weatherData.weather_description || weatherData.weather_condition || ''}</div>
+                          {airData && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${(airData.aqi || 0) <= 50 ? 'bg-green-50 text-green-600' : (airData.aqi || 0) <= 100 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-600'}`}>
+                                AQI {airData.aqi || '--'}
+                              </span>
+                              {airData.pm25 != null && <span className="text-[11px] text-gray-400">PM2.5: {airData.pm25}</span>}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-xs text-gray-400 mt-2">加载中...</div>
+                      )}
+                    </div>
+
+                    {/* Rhinitis */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm">👃</span>
+                        <span className="text-sm font-semibold text-gray-700">鼻炎</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xs text-gray-500">喷嚏:</span>
+                        <span className="text-lg font-bold text-gray-800">{rhinitisToday?.sneeze_count || 0}</span>
+                        <span className="text-xs text-gray-400">次</span>
+                      </div>
+                      <div className="flex items-baseline gap-1 mt-1">
+                        <span className="text-xs text-gray-500">洗鼻:</span>
+                        <span className="text-lg font-bold text-gray-800">{rhinitisToday?.nasal_wash_count || 0}</span>
+                        <span className="text-xs text-gray-400">次</span>
+                      </div>
+                    </div>
+
+                    {/* Diet */}
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm">🍽️</span>
+                        <span className="text-sm font-semibold text-gray-700">饮食</span>
+                      </div>
+                      <div className="text-2xl font-bold text-gray-800">
+                        {dietToday?.total_calories ? Math.round(dietToday.total_calories) : 0}
+                        <span className="text-xs font-normal text-gray-400 ml-0.5">kcal</span>
+                      </div>
+                      <div className="flex gap-2 mt-1.5">
+                        {[
+                          { l: 'P', v: dietToday?.total_protein, c: '#ef4444' },
+                          { l: 'C', v: dietToday?.total_carbs, c: '#f59e0b' },
+                          { l: 'F', v: dietToday?.total_fat, c: '#22c55e' },
+                        ].map(n => (
+                          <span key={n.l} className="text-[11px] text-gray-500">
+                            <span style={{ color: n.c }} className="font-semibold">{n.l}</span> {Math.round(n.v || 0)}g
+                          </span>
+                        ))}
+                      </div>
+                      {dietToday?.meals_count > 0 && (
+                        <div className="text-[11px] text-gray-400 mt-1">{dietToday.meals_count}餐已记录</div>
+                      )}
+                    </div>
                   </div>
 
                   {/* ── 4. Progress Rings — 今日进度圆环 ── */}
