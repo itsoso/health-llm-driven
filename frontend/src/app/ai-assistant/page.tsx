@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, chatApi, openclawApi, sharedApi, feedbackApi, dailyHealthApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { api, chatApi, openclawApi, sharedApi, feedbackApi, dailyHealthApi, healthScoreApi, supplementApi, garminAnalysisApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import { relativeTime } from '@/utils/timeFormat';
 
 interface InsightItem { id: number; notification_type: string; title: string; content: string; created_at: string }
@@ -44,6 +44,77 @@ function InsightsCard({ insights, accentClass }: { insights: InsightItem[]; acce
     </div>
   );
 }
+/* ── Animated Score Ring ── */
+function AnimatedRing({ score, size = 130, strokeWidth = 10 }: { score: number; size?: number; strokeWidth?: number }) {
+  const [offset, setOffset] = useState(0);
+  const r = (size - strokeWidth) / 2;
+  const c = 2 * Math.PI * r;
+  const target = c - (score / 100) * c;
+  useEffect(() => { setOffset(c); const t = setTimeout(() => setOffset(target), 80); return () => clearTimeout(t); }, [score, c, target]);
+  const color = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#dcfce7" strokeWidth={strokeWidth} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
+        strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+        style={{ transition: 'stroke-dashoffset 1.5s cubic-bezier(0.4,0,0.2,1)' }} />
+    </svg>
+  );
+}
+
+/* ── SVG Sparkline ── */
+function WelcomeSparkline({ data, color = '#22c55e', w = 130, h = 36 }: { data: number[]; color?: string; w?: number; h?: number }) {
+  if (!data.length) return null;
+  const max = Math.max(...data), min = Math.min(...data), range = max - min || 1;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`).join(' ');
+  const gid = 'g' + color.replace('#', '');
+  return (
+    <svg width={w} height={h} style={{ overflow: 'visible' }}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon fill={`url(#${gid})`} points={`0,${h} ${pts} ${w},${h}`} />
+      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={pts} />
+    </svg>
+  );
+}
+
+/* ── Mini Bar Chart ── */
+function MiniBarChart({ data, color = '#22c55e', w = 150, h = 40 }: { data: { label: string; value: number }[]; color?: string; w?: number; h?: number }) {
+  const max = Math.max(...data.map(d => d.value)) || 1;
+  const bw = w / data.length - 4;
+  return (
+    <svg width={w} height={h + 14}>
+      {data.map((d, i) => {
+        const bh = d.value > 0 ? Math.max((d.value / max) * h, 3) : 3;
+        return (
+          <g key={i}>
+            <rect x={i * (bw + 4)} y={h - bh} width={bw} height={bh} rx={3}
+              fill={d.value > 0 ? color : '#e5e7eb'} opacity={d.value > 0 ? 1 : 0.4} />
+            <text x={i * (bw + 4) + bw / 2} y={h + 11} textAnchor="middle" fontSize="9" fill="#9ca3af">{d.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ── Sleep Stage Bar ── */
+function SleepStageBar({ deep, rem, light }: { deep: number; rem: number; light: number }) {
+  const t = deep + rem + light;
+  if (t <= 0) return null;
+  return (
+    <div style={{ display: 'flex', height: 10, borderRadius: 8, overflow: 'hidden', background: '#f3f4f6' }}>
+      <div style={{ width: `${(deep / t) * 100}%`, background: '#065f46', transition: 'width 1s' }} />
+      <div style={{ width: `${(rem / t) * 100}%`, background: '#22c55e', transition: 'width 1s' }} />
+      <div style={{ width: `${(light / t) * 100}%`, background: '#bbf7d0', transition: 'width 1s' }} />
+    </div>
+  );
+}
+
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
@@ -203,6 +274,10 @@ export default function AIAssistantPage() {
   const [briefingPreview, setBriefingPreview] = useState<string | null>(null);
   const [briefingConvId, setBriefingConvId] = useState<number | undefined>();
   const [todayGarmin, setTodayGarmin] = useState<any>(null);
+  // 首页聚合数据
+  const [healthScore, setHealthScore] = useState<any>(null);
+  const [supplementStatus, setSupplementStatus] = useState<any[]>([]);
+  const [garminHistory, setGarminHistory] = useState<any[]>([]);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,6 +344,31 @@ export default function AIAssistantPage() {
     }
   }, []);
 
+  // 加载首页聚合数据（健康评分、补剂、7日趋势）
+  const loadDashboardData = useCallback(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    // 并行请求
+    const [scoreRes, suppRes, histRes] = await Promise.allSettled([
+      healthScoreApi.getDailyScore(today),
+      supplementApi.getMyRecordsWithStatus(today),
+      dailyHealthApi.getMyGarminData(
+        new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10),
+        today
+      ),
+    ]);
+    if (scoreRes.status === 'fulfilled') setHealthScore(scoreRes.value.data);
+    if (suppRes.status === 'fulfilled') {
+      const raw = suppRes.value.data;
+      setSupplementStatus(Array.isArray(raw) ? raw : raw?.records || []);
+    }
+    if (histRes.status === 'fulfilled') {
+      const records = histRes.value.data || [];
+      setGarminHistory(
+        [...records].sort((a: any, b: any) => (a.record_date || '').localeCompare(b.record_date || ''))
+      );
+    }
+  }, []);
+
   // 加载指定对话的消息
   const loadConversation = useCallback(async (convId: number, _convMode?: string) => {
     try {
@@ -291,7 +391,8 @@ export default function AIAssistantPage() {
     }
     loadConversations();
     loadTodayGarmin();
-  }, [loadConversations, loadTodayGarmin, router]);
+    loadDashboardData();
+  }, [loadConversations, loadTodayGarmin, loadDashboardData, router]);
 
   // 检测是否是运动完成意图
   const isPostWorkoutMessage = (msg: string): boolean => {
@@ -833,18 +934,59 @@ export default function AIAssistantPage() {
   };
 
   const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content));
+  const isWelcome = visibleMessages.length === 0 && !loading;
+
+  // 首页趋势数据
+  const last7 = garminHistory.slice(-7);
+  const prev7 = garminHistory.slice(-14, -7);
+  const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const pctChange = (cur: number, prev: number) => prev > 0 ? ((cur - prev) / prev * 100).toFixed(1) : '0';
+  const hrValues = last7.map((r: any) => r.resting_heart_rate || r.avg_heart_rate).filter(Boolean);
+  const hrvValues = last7.map((r: any) => r.hrv).filter(Boolean);
+  const stressValues = last7.map((r: any) => r.stress_level).filter(Boolean);
+  const stepsWeekData = last7.map((r: any) => ({
+    label: ['日', '一', '二', '三', '四', '五', '六'][new Date(r.record_date).getDay()],
+    value: r.steps || 0,
+  }));
+  const hrAvg = Math.round(avg(hrValues));
+  const hrvAvg = Math.round(avg(hrvValues));
+  const stressAvg = Math.round(avg(stressValues));
+  const stepsAvg = Math.round(avg(last7.map((r: any) => r.steps || 0)));
+  const prevHrAvg = Math.round(avg(prev7.map((r: any) => r.resting_heart_rate || r.avg_heart_rate).filter(Boolean)));
+  const prevHrvAvg = Math.round(avg(prev7.map((r: any) => r.hrv).filter(Boolean)));
+  const prevStressAvg = Math.round(avg(prev7.map((r: any) => r.stress_level).filter(Boolean)));
+  const prevStepsAvg = Math.round(avg(prev7.map((r: any) => r.steps || 0)));
+
+  // 补剂进度
+  const suppChecked = supplementStatus.filter((s: any) => s.is_taken || s.checked).length;
+  const suppTotal = supplementStatus.length;
+
+  // 睡眠分析数据
+  const sleepDeep = todayGarmin?.deep_sleep_duration ? todayGarmin.deep_sleep_duration / 60 : 0;
+  const sleepRem = todayGarmin?.rem_sleep_duration ? todayGarmin.rem_sleep_duration / 60 : 0;
+  const sleepLight = todayGarmin?.light_sleep_duration ? todayGarmin.light_sleep_duration / 60 : 0;
+  const sleepTotal = todayGarmin?.total_sleep_duration ? todayGarmin.total_sleep_duration / 60 : 0;
+  const sleepH = Math.floor(sleepTotal);
+  const sleepM = Math.round((sleepTotal - sleepH) * 60);
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-16 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
-      <div className="absolute inset-0 bg-gradient-to-br from-[#04111f] via-[#0b1b24] to-[#041428]" />
-      <div
-        className="absolute inset-0 opacity-70"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 16% 14%, rgba(16,185,129,0.24), transparent 30%), radial-gradient(circle at 86% 16%, rgba(45,212,191,0.18), transparent 30%), linear-gradient(to right, rgba(148,163,184,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.07) 1px, transparent 1px)',
-          backgroundSize: 'auto, auto, 56px 56px, 56px 56px',
-        }}
-      />
-      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
+      {/* 背景：欢迎屏用浅色，对话用深色 */}
+      {isWelcome ? (
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #f9fafb 25%)' }} />
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-br from-[#04111f] via-[#0b1b24] to-[#041428]" />
+          <div
+            className="absolute inset-0 opacity-70"
+            style={{
+              backgroundImage: 'radial-gradient(circle at 16% 14%, rgba(16,185,129,0.24), transparent 30%), radial-gradient(circle at 86% 16%, rgba(45,212,191,0.18), transparent 30%), linear-gradient(to right, rgba(148,163,184,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.07) 1px, transparent 1px)',
+              backgroundSize: 'auto, auto, 56px 56px, 56px 56px',
+            }}
+          />
+          <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
+        </>
+      )}
 
       <div className="relative flex h-full overflow-hidden">
         {showHistory && (
@@ -1101,151 +1243,264 @@ export default function AIAssistantPage() {
 
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
-              {visibleMessages.length === 0 && !loading ? (
-                <div className="space-y-6 pt-2">
+              {isWelcome ? (
+                <div className="space-y-4">
                   {/* Greeting */}
                   {(() => {
                     const h = new Date().getHours();
                     const greeting = h < 6 ? '夜深了' : h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
                     const displayName = user?.name || user?.username || '';
                     return (
-                      <div className="mb-2">
-                        <h1 className="text-2xl font-semibold text-white/90" style={{ fontFamily: UI_FONT_STACK }}>
-                          {greeting}{displayName ? `，${displayName}` : ''}
+                      <div className="mb-4">
+                        <h1 className="text-2xl font-bold text-gray-800 mb-1">
+                          {greeting}{displayName ? `，${displayName}` : ''} 👋
                         </h1>
+                        {(user as any)?.created_at && (
+                          <p className="text-sm text-gray-400">
+                            今天是你保持健康记录的第 {Math.max(1, Math.ceil((Date.now() - new Date((user as any).created_at).getTime()) / 86400000))} 天
+                          </p>
+                        )}
                       </div>
                     );
                   })()}
 
-                  {/* Metric cards — rich Garmin data */}
-                  {richMetrics.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      {richMetrics.map((m) => (
-                        <div key={m.label} className={`relative overflow-hidden rounded-2xl border ${m.border} bg-gradient-to-br ${m.gradient} p-4 backdrop-blur-xl`}>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm">{m.icon}</span>
-                            <span className={`text-[11px] font-medium tracking-wide ${m.accent}`}>{m.label}</span>
-                          </div>
-                          <div className="mt-2 flex items-baseline gap-2">
-                            <span className="text-3xl font-bold text-white" style={{ fontFamily: UI_FONT_STACK }}>{m.primary}</span>
-                            {m.secondary && <span className="text-sm text-white/50">{m.secondary}</span>}
-                          </div>
-                          {m.subs.length > 0 && (
-                            <div className="mt-2.5 space-y-1.5 border-t border-white/10 pt-2.5">
-                              {m.subs.map((sub, i) => (
-                                <div key={i} className="flex items-center justify-between">
-                                  <span className="text-[11px] text-white/60"><span className={sub.color || 'text-white/50'}>{sub.icon}</span> {sub.label}</span>
-                                  <span className={`text-[11px] font-semibold ${sub.color || 'text-white/90'}`}>{sub.value}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                  {/* Score + Metric Cards */}
+                  <div className="grid grid-cols-12 gap-4">
+                    {/* Health Score Ring */}
+                    <div className="col-span-12 md:col-span-3 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col items-center justify-center py-6">
+                      <div className="relative mb-3">
+                        <AnimatedRing score={healthScore?.total_score || 0} />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-4xl font-bold text-gray-800">{healthScore?.total_score || '--'}</span>
+                          <span className="text-xs text-gray-400">健康评分</span>
                         </div>
-                      ))}
+                      </div>
+                      {sleepTotal > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <span>🌙</span> {sleepH}小时{sleepM > 0 ? `${sleepM}分钟` : ''}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-3">
-                      {STATIC_METRICS.map((m) => (
-                        <div key={m.label} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
-                          <div className="text-[11px] font-medium text-emerald-300/70">{m.label}</div>
-                          <div className="mt-2 text-lg font-semibold text-white/80">{m.value}</div>
-                          <div className="mt-1 text-[11px] text-white/35">{m.description}</div>
+
+                    {/* 4 Metric Cards */}
+                    <div className="col-span-12 md:col-span-9 grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      {richMetrics.length > 0 ? richMetrics.map((m) => (
+                        <div key={m.label} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 flex items-center gap-4 group cursor-pointer">
+                          <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg transition-transform duration-300 group-hover:scale-110"
+                            style={{ background: m.gradient.includes('indigo') ? '#8b5cf615' : m.gradient.includes('rose') ? '#ef444415' : m.gradient.includes('amber') ? '#f59e0b15' : '#22c55e15' }}>
+                            {m.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-gray-400 mb-0.5">{m.label}</p>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-xl font-semibold text-gray-800">{m.primary}</span>
+                              {m.secondary && <span className="text-xs text-gray-400">{m.secondary}</span>}
+                            </div>
+                            {m.subs[0] && <p className="text-xs text-gray-400 truncate mt-0.5">{m.subs[0].label} {m.subs[0].value}</p>}
+                          </div>
+                          <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                         </div>
-                      ))}
+                      )) : (
+                        STATIC_METRICS.map((m) => (
+                          <div key={m.label} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                            <div className="text-xs text-gray-400 mb-1">{m.label}</div>
+                            <div className="text-lg font-semibold text-gray-800">{m.value}</div>
+                            <div className="mt-1 text-xs text-gray-400">{m.description}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Trend Cards */}
+                  {garminHistory.length > 0 && (
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Heart Rate */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-600">心率趋势</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(hrAvg, prevHrAvg)) <= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+                            {Number(pctChange(hrAvg, prevHrAvg)) <= 0 ? '↓' : '↑'} {Math.abs(Number(pctChange(hrAvg, prevHrAvg)))}%
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-3">
+                          <span className="text-lg font-semibold text-gray-800">{hrAvg || '--'}</span>
+                          <span className="text-xs text-gray-400">7日均值 bpm</span>
+                        </div>
+                        <div className="flex justify-center"><WelcomeSparkline data={hrValues} color="#ef4444" /></div>
+                      </div>
+
+                      {/* HRV */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-600">HRV 趋势</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(hrvAvg, prevHrvAvg)) >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+                            {Number(pctChange(hrvAvg, prevHrvAvg)) >= 0 ? '↑' : '↓'} {Math.abs(Number(pctChange(hrvAvg, prevHrvAvg)))}%
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-3">
+                          <span className="text-lg font-semibold text-gray-800">{hrvAvg || '--'}</span>
+                          <span className="text-xs text-gray-400">7日均值 ms</span>
+                        </div>
+                        <div className="flex justify-center"><WelcomeSparkline data={hrvValues} color="#6366f1" /></div>
+                      </div>
+
+                      {/* Steps */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-600">本周步数</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(stepsAvg, prevStepsAvg)) >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+                            {Number(pctChange(stepsAvg, prevStepsAvg)) >= 0 ? '↑' : '↓'} {Math.abs(Number(pctChange(stepsAvg, prevStepsAvg)))}%
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-3">
+                          <span className="text-lg font-semibold text-gray-800">{stepsAvg ? stepsAvg.toLocaleString() : '--'}</span>
+                          <span className="text-xs text-gray-400">日均</span>
+                        </div>
+                        <div className="flex justify-center"><MiniBarChart data={stepsWeekData} /></div>
+                      </div>
+
+                      {/* Stress */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-600">压力趋势</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(stressAvg, prevStressAvg)) <= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+                            {Number(pctChange(stressAvg, prevStressAvg)) <= 0 ? '↓' : '↑'} {Math.abs(Number(pctChange(stressAvg, prevStressAvg)))}%
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-3">
+                          <span className="text-lg font-semibold text-gray-800">{stressAvg || '--'}</span>
+                          <span className="text-xs text-gray-400">7日均值</span>
+                        </div>
+                        <div className="flex justify-center"><WelcomeSparkline data={stressValues} color="#f59e0b" /></div>
+                      </div>
                     </div>
                   )}
 
-                  {/* Briefing + Insights */}
-                  <div className="space-y-3">
-                    {/* Briefing card */}
-                    {briefingPreview && briefingConvId ? (
-                      <button
-                        onClick={() => loadConversation(briefingConvId)}
-                        className="group relative overflow-hidden rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent p-5 text-left transition-all hover:border-amber-400/40 hover:shadow-[0_8px_30px_rgba(251,191,36,0.08)]"
-                      >
+                  {/* Bottom 3-column: Supplements / Quick Actions / Sleep */}
+                  <div className="grid grid-cols-12 gap-4">
+                    {/* Supplements */}
+                    <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-700">今日补剂</h3>
+                          <p className="text-xs text-gray-400 mt-0.5">早晨</p>
+                        </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-base">📋</span>
-                          <span className="text-xs font-semibold text-amber-300/90">今日健康简报</span>
-                          <svg className="ml-auto h-4 w-4 text-amber-400/40 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                          <div className="h-1.5 w-20 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-green-500 rounded-full transition-all duration-500"
+                              style={{ width: suppTotal > 0 ? `${(suppChecked / suppTotal) * 100}%` : '0%' }} />
+                          </div>
+                          <span className="text-xs font-medium text-gray-500">{suppChecked}/{suppTotal}</span>
                         </div>
-                        <div className="mt-3 line-clamp-3 text-[13px] leading-6 text-slate-300/90 whitespace-pre-wrap">
-                          {briefingPreview.replace(/[#*|]/g, '').trim().slice(0, 180)}
-                        </div>
-                      </button>
-                    ) : (
-                      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">📋</span>
-                          <span className="text-xs font-medium text-white/30">每日简报</span>
-                        </div>
-                        <div className="mt-3 text-sm text-white/20">简报每日 07:35 自动生成</div>
                       </div>
-                    )}
+                      <div>
+                        {supplementStatus.length > 0 ? supplementStatus.map((s: any, i: number) => (
+                          <label key={i} className="flex items-center gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer group">
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
+                              (s.is_taken || s.checked) ? 'bg-green-500 border-green-500' : 'border-gray-300 group-hover:border-green-400'
+                            }`}>
+                              {(s.is_taken || s.checked) && (
+                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                              )}
+                            </div>
+                            <span className={`flex-1 text-sm transition-colors ${(s.is_taken || s.checked) ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                              {s.supplement_name || s.name}
+                            </span>
+                            {(s.dosage || s.dose) && <span className="text-xs text-gray-400">{s.dosage || s.dose}</span>}
+                          </label>
+                        )) : (
+                          <p className="text-sm text-gray-400 py-4 text-center">暂无补剂计划</p>
+                        )}
+                      </div>
+                    </div>
 
-                    {/* Insights card */}
-                    {insights.length > 0 ? (
-                      <div className="space-y-2.5">
-                        <div className="flex items-center gap-2 px-1">
-                          <span className="text-xs font-medium text-white/30 tracking-wide">今日洞察</span>
-                        </div>
-                        {(() => {
-                          const INSIGHT_STYLES: Record<string, { icon: string; border: string; bg: string; iconBg: string; titleColor: string }> = {
-                            health_alert:      { icon: '⚠️', border: 'border-red-500/20',    bg: 'from-red-500/8 to-transparent',    iconBg: 'bg-red-500/15',    titleColor: 'text-red-300' },
-                            morning_summary:   { icon: '☀️', border: 'border-amber-400/20',  bg: 'from-amber-500/8 to-transparent',  iconBg: 'bg-amber-500/15',  titleColor: 'text-amber-300' },
-                            trend_report:      { icon: '📈', border: 'border-cyan-400/20',   bg: 'from-cyan-500/8 to-transparent',   iconBg: 'bg-cyan-500/15',   titleColor: 'text-cyan-300' },
-                            family_daily_brief:{ icon: '👨‍👩‍👦', border: 'border-purple-400/20', bg: 'from-purple-500/8 to-transparent', iconBg: 'bg-purple-500/15', titleColor: 'text-purple-300' },
-                            daily_insights:    { icon: '💡', border: 'border-emerald-400/20', bg: 'from-emerald-500/8 to-transparent', iconBg: 'bg-emerald-500/15', titleColor: 'text-emerald-300' },
-                          };
-                          const fallback = { icon: '💬', border: 'border-slate-400/20', bg: 'from-slate-500/8 to-transparent', iconBg: 'bg-slate-500/15', titleColor: 'text-slate-300' };
-                          const seen = new Set<string>();
-                          return insights.filter(ins => {
-                            if (seen.has(ins.notification_type)) return false;
-                            seen.add(ins.notification_type);
-                            return true;
-                          }).slice(0, 3).map(ins => {
-                            const s = INSIGHT_STYLES[ins.notification_type] || fallback;
-                            return (
-                              <div key={ins.id} className={`rounded-2xl border ${s.border} bg-gradient-to-r ${s.bg} p-4 backdrop-blur-xl`}>
-                                <div className="flex items-start gap-3">
-                                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${s.iconBg}`}>
-                                    <span className="text-base">{s.icon}</span>
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className={`text-[13px] font-semibold ${s.titleColor}`}>{ins.title}</div>
-                                    <div className="mt-1 text-[12px] leading-5 text-white/50 line-clamp-2">{ins.content}</div>
-                                  </div>
+                    {/* Quick Actions */}
+                    <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-4">快捷操作</h3>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { icon: '⚠️', label: '查看预警', color: '#ef4444', text: '查看今日健康预警和异常提醒' },
+                          { icon: '📊', label: '今日概览', color: '#6366f1', text: '查一下我今天的健康数据概览' },
+                          { icon: '💊', label: '补剂提醒', color: '#f59e0b', text: '今天还需要吃什么补剂？' },
+                          { icon: '💧', label: '记录饮水', color: '#3b82f6', text: '记录喝水250ml' },
+                          { icon: '🏃', label: '运动建议', color: '#22c55e', text: '根据我的身体数据和天气，今天适合做什么运动？' },
+                          { icon: '🌙', label: '睡眠分析', color: '#8b5cf6', text: '帮我分析一下最近的睡眠质量' },
+                        ].map((action) => (
+                          <button
+                            key={action.label}
+                            onClick={() => handleSend(action.text)}
+                            className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-50 active:scale-95 transition-all duration-200 group"
+                          >
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base transition-transform duration-300 group-hover:scale-110"
+                              style={{ background: action.color + '12', color: action.color }}>
+                              {action.icon}
+                            </div>
+                            <span className="text-xs text-gray-500 group-hover:text-gray-700 transition-colors">{action.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sleep Analysis */}
+                    <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
+                      <div className="flex items-center justify-between mb-5">
+                        <h3 className="text-sm font-semibold text-gray-700">睡眠分析</h3>
+                        {sleepTotal > 0 && (
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                            {sleepH}小时{sleepM > 0 ? `${sleepM}分钟` : ''}
+                          </span>
+                        )}
+                      </div>
+                      {sleepTotal > 0 ? (
+                        <>
+                          <SleepStageBar deep={sleepDeep} rem={sleepRem} light={sleepLight} />
+                          <div className="mt-5 space-y-3">
+                            {[
+                              { l: '深睡', v: `${sleepDeep.toFixed(1)}h`, c: '#065f46' },
+                              { l: 'REM', v: `${sleepRem.toFixed(1)}h`, c: '#22c55e' },
+                              { l: '浅睡', v: `${sleepLight.toFixed(1)}h`, c: '#bbf7d0' },
+                            ].map(x => (
+                              <div key={x.l} className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: x.c }} />
+                                  <span className="text-sm text-gray-500">{x.l}</span>
                                 </div>
+                                <span className="text-sm font-medium text-gray-700">{x.v}</span>
                               </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">💡</span>
-                          <span className="text-xs font-medium text-white/30">今日洞察</span>
-                        </div>
-                        <div className="mt-3 text-sm text-white/20">暂无新洞察</div>
-                      </div>
-                    )}
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-400 py-8 text-center">暂无睡眠数据</p>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Quick actions — compact chips */}
-                  <div>
-                    <div className="mb-3 text-[11px] font-medium text-white/30 tracking-wide">快速提问</div>
-                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-                      {activeQuickQuestions.map((q) => (
-                        <button
-                          key={q.label}
-                          onClick={() => handleSend(q.text)}
-                          className="group rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left transition-all hover:border-emerald-400/25 hover:bg-emerald-400/[0.06]"
-                        >
-                          <div className="text-[13px] font-medium text-white/75 group-hover:text-emerald-200 transition-colors">{q.label}</div>
-                          <div className="mt-0.5 text-[11px] leading-4 text-white/30 line-clamp-1">{q.summary}</div>
-                        </button>
-                      ))}
+                  {/* AI Insights Banner */}
+                  <div className="rounded-2xl p-4 flex items-center justify-between border border-green-100"
+                    style={{ background: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)' }}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center">
+                        <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-700">AI 洞察</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {insights.length > 0
+                            ? `✅ ${insights[0].content?.slice(0, 50) || insights[0].title}`
+                            : '✅ 今日家庭成员健康状况良好，无异常。'}
+                        </p>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => handleSend('查看今日 AI 洞察和健康分析详情')}
+                      className="px-4 py-2 text-xs font-medium text-white bg-green-500 rounded-xl hover:bg-green-600 active:scale-95 transition-all shadow-sm"
+                    >
+                      查看详情
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -1450,17 +1705,22 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          <div className="border-t border-white/10 bg-slate-950/55 px-4 py-4 backdrop-blur-2xl">
-            <div className="mx-auto max-w-5xl rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
-                <div>
-                  <div className={`text-[10px] uppercase tracking-[0.32em] ${modeCopy.accentTextClass}`}>{modeCopy.support}</div>
-                  <div className="mt-1 text-xs text-slate-400">{modeCopy.subSupport}</div>
+          <div className={`px-4 py-4 ${isWelcome ? 'bg-transparent' : 'border-t border-white/10 bg-slate-950/55 backdrop-blur-2xl'}`}>
+            <div className={`mx-auto max-w-5xl ${isWelcome
+              ? 'rounded-2xl bg-white border border-gray-200 shadow-sm'
+              : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'
+            }`}>
+              {!isWelcome && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
+                  <div>
+                    <div className={`text-[10px] uppercase tracking-[0.32em] ${modeCopy.accentTextClass}`}>{modeCopy.support}</div>
+                    <div className="mt-1 text-xs text-slate-400">{modeCopy.subSupport}</div>
+                  </div>
+                  <div className="text-xs text-slate-500">Enter 发送</div>
                 </div>
-                <div className="text-xs text-slate-500">Enter 发送</div>
-              </div>
+              )}
 
-              <div className="flex items-center gap-3 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="flex items-center gap-3 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1472,28 +1732,32 @@ export default function AIAssistantPage() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={imageUploading}
-                  className={`flex min-h-[44px] min-w-[44px] h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
-                    imageUploading ? 'bg-white/15 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${
+                    isWelcome
+                      ? 'text-gray-400 hover:text-gray-600'
+                      : imageUploading ? 'bg-white/15 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
                   }`}
                   title="上传图片或文件"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
                   </svg>
                 </button>
 
                 <button
                   onClick={handleVoiceToggle}
-                  className={`flex min-h-[44px] min-w-[44px] h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 transition-all ${
-                    isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${
+                    isWelcome
+                      ? isRecording ? 'text-red-500' : 'text-gray-400 hover:text-gray-600'
+                      : isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
                   }`}
                   title={isRecording ? '停止录音' : '语音输入'}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     {isRecording ? (
                       <rect x="6" y="6" width="12" height="12" rx="2" />
                     ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
                     )}
                   </svg>
                 </button>
@@ -1505,20 +1769,20 @@ export default function AIAssistantPage() {
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '用一句完整目标开始，例如：分析今天状态，或帮我安排训练恢复'}
-                  className="flex-1 bg-transparent px-2 py-3 text-[15px] text-white placeholder:text-slate-500 focus:outline-none"
+                  className={`flex-1 bg-transparent text-sm outline-none ${isWelcome ? 'text-gray-600 placeholder-gray-300' : 'text-white placeholder:text-slate-500'}`}
                   disabled={isRecording}
                 />
 
                 <button
                   onClick={() => handleSend()}
                   disabled={!inputText.trim() && !pendingImage && !pendingFile}
-                  className={`flex min-h-[44px] min-w-[44px] h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all ${
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all active:scale-95 ${
                     (inputText.trim() || pendingImage || pendingFile)
-                      ? 'bg-white text-slate-950 hover:scale-[1.02]'
-                      : 'bg-white/8 text-slate-500 cursor-not-allowed'
+                      ? 'bg-green-500 hover:bg-green-600 text-white shadow-sm'
+                      : isWelcome ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white/8 text-slate-500 cursor-not-allowed'
                   }`}
                 >
-                  <span className="text-xl leading-none">↑</span>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" /></svg>
                 </button>
               </div>
             </div>
