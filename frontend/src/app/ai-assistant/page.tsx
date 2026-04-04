@@ -285,6 +285,7 @@ export default function AIAssistantPage() {
   const [airData, setAirData] = useState<any>(null);
   const [rhinitisToday, setRhinitisToday] = useState<any>(null);
   const [dietToday, setDietToday] = useState<any>(null);
+  const [weightStats, setWeightStats] = useState<any>(null);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -369,6 +370,7 @@ export default function AIAssistantPage() {
       api.get('/environment/air-quality'),             // 5
       api.get('/checkin/me/today'),                    // 6
       api.get(`/diet/records/me/date/${today}`),       // 7
+      api.get('/weight/records/me/stats'),              // 8
     ]);
     const ok = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value.data : null;
     if (ok(0)) setHealthScore(ok(0));
@@ -390,6 +392,7 @@ export default function AIAssistantPage() {
     if (ok(5)) setAirData(ok(5));
     if (ok(6)) setRhinitisToday(ok(6));
     if (ok(7)) setDietToday(ok(7));
+    if (ok(8)) setWeightStats(ok(8));
   }, []);
 
   // 加载指定对话的消息
@@ -1325,42 +1328,62 @@ export default function AIAssistantPage() {
                       ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 120)
                       : null;
                     return (
-                      <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
+                      <div className="rounded-2xl p-6 relative overflow-hidden"
+                        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #334155 100%)' }}>
+                        <div className="absolute top-0 right-0 w-40 h-40 rounded-full opacity-10"
+                          style={{ background: `radial-gradient(circle, ${scoreColor}, transparent)`, transform: 'translate(30%, -30%)' }} />
                         <div className="flex items-center justify-between mb-4">
-                          <h1 className="text-lg font-bold text-gray-800">
+                          <h1 className="text-lg font-bold text-white">
                             {greeting}{displayName ? `，${displayName}` : ''}
                           </h1>
                           <button onClick={() => { loadTodayGarmin(); loadDashboardData(); }}
-                            className="text-xs text-gray-400 hover:text-emerald-600 transition-colors flex items-center gap-1">
+                            className="text-xs text-white/40 hover:text-white/80 transition-colors flex items-center gap-1">
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                             刷新
                           </button>
                         </div>
-                        <div className="flex items-center gap-4">
-                          {/* Score ring — compact */}
+                        <div className="flex items-center gap-5">
                           <div className="relative shrink-0">
-                            <AnimatedRing score={score} size={80} strokeWidth={7} />
+                            <AnimatedRing score={score} size={88} strokeWidth={7} />
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                              <span className="text-xl font-bold" style={{ color: scoreColor }}>{score || '--'}</span>
+                              <span className="text-2xl font-bold text-white">{score || '--'}</span>
+                              <span className="text-[10px] text-white/50">健康分</span>
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-sm font-semibold" style={{ color: scoreColor }}>{scoreLabel}</span>
                               {healthScore?.dimensions && (() => {
                                 const dims = healthScore.dimensions;
                                 const worst = Object.entries(dims).reduce((a: any, b: any) => (b[1] as number) < (a[1] as number) ? b : a);
                                 const dimNames: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
                                 return worst[1] as number < 40 ? (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-500 font-medium">
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: `${scoreColor}20`, color: scoreColor }}>
                                     {dimNames[worst[0] as string] || worst[0]} 偏低
                                   </span>
                                 ) : null;
                               })()}
                             </div>
-                            <p className="text-xs text-gray-500 leading-5 line-clamp-2">
+                            <p className="text-xs text-white/50 leading-5 line-clamp-2">
                               {insightText || `睡眠${todayGarmin?.sleep_score || '--'}分 · HRV ${todayGarmin?.hrv || '--'}ms · 步数${todayGarmin?.steps?.toLocaleString() || '--'}`}
                             </p>
+                            {/* Mini dimension bars */}
+                            {healthScore?.dimensions && (
+                              <div className="flex gap-1 mt-3">
+                                {Object.entries(healthScore.dimensions).map(([k, v]: [string, any]) => {
+                                  const names: Record<string, string> = { exercise: '动', sleep: '眠', diet: '食', vitals: '征', weight: '重', hydration: '水' };
+                                  const barColor = v >= 70 ? '#22c55e' : v >= 40 ? '#f59e0b' : '#ef4444';
+                                  return (
+                                    <div key={k} className="flex-1">
+                                      <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+                                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${v}%`, background: barColor }} />
+                                      </div>
+                                      <div className="text-[9px] text-white/30 text-center mt-0.5">{names[k] || k}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1421,9 +1444,10 @@ export default function AIAssistantPage() {
                       const isOk = v != null && m.ok(v);
                       const isWarn = v != null && !isOk;
                       return (
-                        <div key={m.label} className="bg-white rounded-2xl border border-gray-100 p-3 shadow-sm text-center">
-                          <span className="text-sm">{m.icon}</span>
-                          <div className={`text-xl font-bold mt-1 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
+                        <div key={m.label} className="rounded-2xl p-4 shadow-sm text-center border border-gray-100/80"
+                          style={{ background: isWarn ? '#fffbeb' : '#f8fafc' }}>
+                          <span className="text-lg">{m.icon}</span>
+                          <div className={`text-2xl font-bold mt-1 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
                             {v ?? '--'}
                             {m.unit && <span className="text-xs font-normal text-gray-400 ml-0.5">{m.unit}</span>}
                           </div>
@@ -1433,73 +1457,74 @@ export default function AIAssistantPage() {
                     })}
                   </div>
 
-                  {/* ── 3.5 Environment + Rhinitis + Diet ── */}
-                  <div className="grid grid-cols-3 gap-3">
+                  {/* ── 3.5 Life Context Grid — weather, rhinitis, diet, energy, weight ── */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Weather & Air */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-sm">🌤️</span>
+                    <div className="rounded-2xl p-4 shadow-sm border border-blue-100/50" style={{ background: 'linear-gradient(135deg, #eff6ff, #f0f9ff)' }}>
+                      <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-semibold text-gray-700">{weatherData?.city || '天气'}</span>
+                        <span className="text-xs text-gray-400">{weatherData?.weather_description || ''}</span>
                       </div>
-                      {weatherData ? (
-                        <>
-                          <div className="text-2xl font-bold text-gray-800">{Math.round(weatherData.temperature ?? 0)}°</div>
-                          <div className="text-xs text-gray-500 mt-0.5">{weatherData.weather_description || weatherData.weather_condition || ''}</div>
-                          {airData && (
-                            <div className="mt-2 flex items-center gap-2">
-                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${(airData.aqi || 0) <= 50 ? 'bg-green-50 text-green-600' : (airData.aqi || 0) <= 100 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-600'}`}>
-                                AQI {airData.aqi || '--'}
-                              </span>
-                              {airData.pm25 != null && <span className="text-[11px] text-gray-400">PM2.5: {airData.pm25}</span>}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="text-xs text-gray-400 mt-2">加载中...</div>
+                      <div className="text-3xl font-bold text-gray-800">{weatherData ? `${Math.round(weatherData.temperature ?? 0)}°` : '--'}</div>
+                      {airData && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${(airData.aqi || 0) <= 50 ? 'bg-green-100 text-green-700' : (airData.aqi || 0) <= 100 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                            AQI {airData.aqi || '--'}
+                          </span>
+                          {airData.pm25 != null && <span className="text-[11px] text-gray-500">PM2.5 {airData.pm25}</span>}
+                        </div>
                       )}
                     </div>
 
-                    {/* Rhinitis */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-sm">👃</span>
-                        <span className="text-sm font-semibold text-gray-700">鼻炎</span>
-                      </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xs text-gray-500">喷嚏:</span>
-                        <span className="text-lg font-bold text-gray-800">{rhinitisToday?.sneeze_count || 0}</span>
-                        <span className="text-xs text-gray-400">次</span>
-                      </div>
-                      <div className="flex items-baseline gap-1 mt-1">
-                        <span className="text-xs text-gray-500">洗鼻:</span>
-                        <span className="text-lg font-bold text-gray-800">{rhinitisToday?.nasal_wash_count || 0}</span>
-                        <span className="text-xs text-gray-400">次</span>
-                      </div>
-                    </div>
-
-                    {/* Diet */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-sm">🍽️</span>
+                    {/* Diet & Energy Balance */}
+                    <div className="rounded-2xl p-4 shadow-sm border border-orange-100/50" style={{ background: 'linear-gradient(135deg, #fff7ed, #fffbeb)' }}>
+                      <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-semibold text-gray-700">饮食</span>
+                        {dietToday?.meals_count > 0 && <span className="text-[11px] text-gray-400">{dietToday.meals_count}餐</span>}
                       </div>
                       <div className="text-2xl font-bold text-gray-800">
-                        {dietToday?.total_calories ? Math.round(dietToday.total_calories) : 0}
+                        {dietToday?.total_calories ? Math.round(dietToday.total_calories).toLocaleString() : 0}
                         <span className="text-xs font-normal text-gray-400 ml-0.5">kcal</span>
                       </div>
-                      <div className="flex gap-2 mt-1.5">
+                      <div className="flex gap-3 mt-1.5">
                         {[
-                          { l: 'P', v: dietToday?.total_protein, c: '#ef4444' },
-                          { l: 'C', v: dietToday?.total_carbs, c: '#f59e0b' },
-                          { l: 'F', v: dietToday?.total_fat, c: '#22c55e' },
+                          { l: '蛋白', v: dietToday?.total_protein, c: '#ef4444' },
+                          { l: '碳水', v: dietToday?.total_carbs, c: '#f59e0b' },
+                          { l: '脂肪', v: dietToday?.total_fat, c: '#22c55e' },
                         ].map(n => (
                           <span key={n.l} className="text-[11px] text-gray-500">
-                            <span style={{ color: n.c }} className="font-semibold">{n.l}</span> {Math.round(n.v || 0)}g
+                            <span style={{ color: n.c }} className="font-medium">{Math.round(n.v || 0)}</span>g
                           </span>
                         ))}
                       </div>
-                      {dietToday?.meals_count > 0 && (
-                        <div className="text-[11px] text-gray-400 mt-1">{dietToday.meals_count}餐已记录</div>
+                    </div>
+
+                    {/* Rhinitis */}
+                    <div className="rounded-2xl p-4 shadow-sm border border-purple-100/50" style={{ background: 'linear-gradient(135deg, #faf5ff, #f5f3ff)' }}>
+                      <div className="text-sm font-semibold text-gray-700 mb-1">👃 鼻炎追踪</div>
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <div className="text-2xl font-bold text-gray-800">{rhinitisToday?.sneeze_count || 0}</div>
+                          <div className="text-[11px] text-gray-400">喷嚏</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-gray-800">{rhinitisToday?.nasal_wash_count || 0}<span className="text-xs text-gray-400">/2</span></div>
+                          <div className="text-[11px] text-gray-400">洗鼻</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Weight */}
+                    <div className="rounded-2xl p-4 shadow-sm border border-emerald-100/50" style={{ background: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)' }}>
+                      <div className="text-sm font-semibold text-gray-700 mb-1">⚖️ 体重</div>
+                      <div className="text-2xl font-bold text-gray-800">
+                        {weightStats?.current_weight || '--'}
+                        <span className="text-xs font-normal text-gray-400 ml-0.5">kg</span>
+                      </div>
+                      {weightStats?.weight_change != null && (
+                        <div className={`text-xs font-medium mt-1 ${weightStats.weight_change > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          30天 {weightStats.weight_change > 0 ? '+' : ''}{weightStats.weight_change}kg
+                        </div>
                       )}
                     </div>
                   </div>
