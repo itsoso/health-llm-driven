@@ -280,6 +280,8 @@ export default function AIAssistantPage() {
   const [supplementStatus, setSupplementStatus] = useState<any[]>([]);
   const [suppExpanded, setSuppExpanded] = useState(false);
   const [garminHistory, setGarminHistory] = useState<any[]>([]);
+  const [waterToday, setWaterToday] = useState<{total_ml: number; goal_ml: number; count: number}>({ total_ml: 0, goal_ml: 2000, count: 0 });
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -352,13 +354,14 @@ export default function AIAssistantPage() {
   const loadDashboardData = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
     // 并行请求
-    const [scoreRes, suppRes, histRes] = await Promise.allSettled([
+    const [scoreRes, suppRes, histRes, waterRes] = await Promise.allSettled([
       healthScoreApi.getDailyScore(today),
       supplementApi.getMyRecordsWithStatus(today),
       dailyHealthApi.getMyGarminData(
         new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10),
         today
       ),
+      api.get(`/water/records/me/date/${today}`),
     ]);
     if (scoreRes.status === 'fulfilled') setHealthScore(scoreRes.value.data);
     if (suppRes.status === 'fulfilled') {
@@ -370,6 +373,10 @@ export default function AIAssistantPage() {
       setGarminHistory(
         [...records].sort((a: any, b: any) => (a.record_date || '').localeCompare(b.record_date || ''))
       );
+    }
+    if (waterRes.status === 'fulfilled') {
+      const w = waterRes.value.data;
+      setWaterToday({ total_ml: w?.total_ml || 0, goal_ml: w?.goal_ml || 2000, count: w?.count || 0 });
     }
   }, []);
 
@@ -1292,157 +1299,254 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
               {isWelcome ? (
-                <div className="space-y-4">
-                  {/* Greeting */}
+                <div className="space-y-4 max-w-2xl mx-auto">
+                  {/* 1. Today's Suggestion — dark hero card */}
                   {(() => {
                     const h = new Date().getHours();
                     const greeting = h < 6 ? '夜深了' : h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
                     const displayName = user?.name || user?.username || '';
+                    const now = new Date();
+                    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    // 根据时段给出建议
+                    const suggestion = h < 6
+                      ? { text: '该休息了', sub: '充足的睡眠是健康的基础', tags: ['保持卧室黑暗凉爽', '避免使用手机'] }
+                      : h < 9
+                        ? { text: '新的一天开始了', sub: '按时服用补剂，开启健康的一天', tags: ['服用晨间补剂', '喝一杯温水'] }
+                        : h < 12
+                          ? { text: '上午保持专注', sub: '记得每小时站立活动', tags: ['站立活动3分钟', '补充水分'] }
+                          : h < 14
+                            ? { text: '午间休息时间', sub: '均衡饮食，适当小憩', tags: ['记录午餐', '短暂午休'] }
+                            : h < 18
+                              ? { text: '下午继续加油', sub: '注意保持水分摄入', tags: ['补充饮水', '服用午间补剂'] }
+                              : h < 21
+                                ? { text: '傍晚放松时段', sub: '适量运动，调整身心状态', tags: ['轻度运动', '记录晚餐'] }
+                                : { text: '该休息了', sub: '充足的睡眠是健康的基础', tags: ['保持卧室黑暗凉爽', '避免使用手机'] };
                     return (
-                      <div className="mb-4">
-                        <h1 className="text-2xl font-bold text-gray-800 mb-1">
-                          {greeting}{displayName ? `，${displayName}` : ''} 👋
-                        </h1>
-                        {(user as any)?.created_at && (
-                          <p className="text-sm text-gray-400">
-                            今天是你保持健康记录的第 {Math.max(1, Math.ceil((Date.now() - new Date((user as any).created_at).getTime()) / 86400000))} 天
-                          </p>
-                        )}
+                      <div className="rounded-2xl p-5 text-white relative overflow-hidden"
+                        style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)' }}>
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">😊</span>
+                            <span className="text-xs text-white/60 font-medium">今日建议</span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-bold tracking-tight">{timeStr}</div>
+                            <div className="text-xs text-white/50">Hi, {displayName || greeting}</div>
+                          </div>
+                        </div>
+                        <h2 className="text-xl font-bold mb-1">{suggestion.text}</h2>
+                        <p className="text-sm text-white/60 mb-3">{suggestion.sub}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {suggestion.tags.map(tag => (
+                            <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/10 text-white/80 backdrop-blur-sm">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     );
                   })()}
 
-                  {/* Score + Metric Cards */}
-                  <div className="grid grid-cols-12 gap-4">
-                    {/* Health Score Ring */}
-                    <div className="col-span-12 md:col-span-3 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col items-center justify-center py-6">
-                      <div className="relative mb-3">
-                        <AnimatedRing score={healthScore?.total_score || 0} />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className="text-4xl font-bold text-gray-800">{healthScore?.total_score || '--'}</span>
-                          <span className="text-xs text-gray-400">健康评分</span>
+                  {/* 2. Quick Actions — 3 horizontal cards */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { icon: '🍽️', label: '饮食记录', sub: '记录每餐摄入', text: '帮我记录一下刚才吃的饭' },
+                      { icon: '🏃', label: '运动指导', sub: '心率区间训练', text: '根据我的身体数据和天气，今天适合做什么运动？' },
+                      { icon: '🤖', label: '智能助理', sub: '私人顾问', text: '查一下我今天的健康数据概览' },
+                    ].map(a => (
+                      <button key={a.label} onClick={() => handleSend(a.text)}
+                        className="bg-white rounded-2xl border border-gray-100 p-4 text-left hover:shadow-md hover:border-gray-200 active:scale-[0.98] transition-all">
+                        <div className="text-2xl mb-2">{a.icon}</div>
+                        <div className="text-sm font-semibold text-gray-800">{a.label}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{a.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 3. Health Brief — 2x2 grid */}
+                  <div>
+                    <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                      <span>📋</span> 健康简报
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Sleep */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base">😴</span>
+                          <span className="text-sm font-semibold text-gray-700">昨晚睡眠</span>
+                        </div>
+                        {sleepTotal > 0 ? (
+                          <>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-xs text-gray-500">分数:</span>
+                              <span className="text-sm font-bold text-gray-800">{todayGarmin?.sleep_score || '--'}分</span>
+                            </div>
+                            <div className="flex items-baseline gap-1 mt-0.5">
+                              <span className="text-xs text-gray-500">时长:</span>
+                              <span className="text-sm font-bold text-gray-800">{sleepH}小时{sleepM > 0 ? `${sleepM}分钟` : ''}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <p className="text-xs text-gray-400">暂无数据</p>
+                        )}
+                      </div>
+
+                      {/* Body Status */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base">⚡</span>
+                          <span className="text-sm font-semibold text-gray-700">身体状态</span>
+                        </div>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xs text-gray-500">电量峰值:</span>
+                          <span className="text-sm font-bold text-gray-800">{todayGarmin?.body_battery_high || '--'}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-xs text-gray-500">HRV:</span>
+                          <span className="text-sm font-bold text-gray-800">{todayGarmin?.hrv || '--'} ms</span>
                         </div>
                       </div>
-                      {sleepTotal > 0 && (
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                          <span>🌙</span> {sleepH}小时{sleepM > 0 ? `${sleepM}分钟` : ''}
-                        </div>
-                      )}
-                    </div>
 
-                    {/* 4 Metric Cards */}
-                    <div className="col-span-12 md:col-span-9 grid grid-cols-2 lg:grid-cols-4 gap-3">
-                      {richMetrics.length > 0 ? richMetrics.map((m) => (
-                        <div key={m.label} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 flex items-center gap-4 group cursor-pointer">
-                          <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg transition-transform duration-300 group-hover:scale-110"
-                            style={{ background: m.gradient.includes('indigo') ? '#8b5cf615' : m.gradient.includes('rose') ? '#ef444415' : m.gradient.includes('amber') ? '#f59e0b15' : '#22c55e15' }}>
-                            {m.icon}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-400 mb-0.5">{m.label}</p>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-xl font-semibold text-gray-800">{m.primary}</span>
-                              {m.secondary && <span className="text-xs text-gray-400">{m.secondary}</span>}
-                            </div>
-                            {m.subs[0] && <p className="text-xs text-gray-400 truncate mt-0.5">{m.subs[0].label} {m.subs[0].value}</p>}
-                          </div>
-                          <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                      {/* Today Goals */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base">🎯</span>
+                          <span className="text-sm font-semibold text-gray-700">今日目标</span>
                         </div>
-                      )) : (
-                        STATIC_METRICS.map((m) => (
-                          <div key={m.label} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                            <div className="text-xs text-gray-400 mb-1">{m.label}</div>
-                            <div className="text-lg font-semibold text-gray-800">{m.value}</div>
-                            <div className="mt-1 text-xs text-gray-400">{m.description}</div>
-                          </div>
-                        ))
-                      )}
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xs text-gray-500">步数:</span>
+                          <span className="text-sm font-bold text-gray-800">{todayGarmin?.steps?.toLocaleString() || '0'}/8000 步</span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-xs text-gray-500">饮水:</span>
+                          <span className="text-sm font-bold text-gray-800">{waterToday.total_ml}/{waterToday.goal_ml} ml</span>
+                        </div>
+                      </div>
+
+                      {/* Today Reminders */}
+                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base">📝</span>
+                          <span className="text-sm font-semibold text-gray-700">今日提醒</span>
+                        </div>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xs text-gray-500">💊</span>
+                          <span className="text-sm text-gray-700">补剂 {suppChecked}/{suppTotal}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-xs text-gray-500">💧</span>
+                          <span className="text-sm text-gray-700">保持充足饮水</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Trend Cards */}
-                  {garminHistory.length > 0 && (
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                      {/* Heart Rate */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-600">心率趋势</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(hrAvg, prevHrAvg)) <= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
-                            {Number(pctChange(hrAvg, prevHrAvg)) <= 0 ? '↓' : '↑'} {Math.abs(Number(pctChange(hrAvg, prevHrAvg)))}%
-                          </span>
+                  {/* 4. Today's Data — 2x2 metric grid */}
+                  <div>
+                    <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                      <span>📊</span> 今日数据
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate || '--', unit: 'bpm', label: '静息心率', color: '#ef4444', bg: '#fef2f2' },
+                        { icon: '👟', value: todayGarmin?.steps?.toLocaleString() || '--', unit: '', label: '步数', color: '#6366f1', bg: '#eef2ff' },
+                        { icon: '🔋', value: todayGarmin?.body_battery_high || '--', unit: '/100', label: '身体电量', color: '#22c55e', bg: '#f0fdf4' },
+                        { icon: '😐', value: todayGarmin?.stress_level || '--', unit: '', label: '压力指数', color: '#f59e0b', bg: '#fffbeb' },
+                      ].map(m => (
+                        <div key={m.label} className="rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col items-center text-center"
+                          style={{ background: m.bg }}>
+                          <span className="text-lg mb-1">{m.icon}</span>
+                          <div className="flex items-baseline gap-0.5">
+                            <span className="text-3xl font-bold" style={{ color: m.color }}>{m.value}</span>
+                            {m.unit && <span className="text-xs text-gray-400">{m.unit}</span>}
+                          </div>
+                          <span className="text-xs text-gray-500 mt-1">{m.label}</span>
                         </div>
-                        <div className="flex items-baseline gap-1 mb-3">
-                          <span className="text-lg font-semibold text-gray-800">{hrAvg || '--'}</span>
-                          <span className="text-xs text-gray-400">7日均值 bpm</span>
-                        </div>
-                        <div className="flex justify-center"><WelcomeSparkline data={hrValues} color="#ef4444" /></div>
-                      </div>
-
-                      {/* HRV */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-600">HRV 趋势</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(hrvAvg, prevHrvAvg)) >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
-                            {Number(pctChange(hrvAvg, prevHrvAvg)) >= 0 ? '↑' : '↓'} {Math.abs(Number(pctChange(hrvAvg, prevHrvAvg)))}%
-                          </span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mb-3">
-                          <span className="text-lg font-semibold text-gray-800">{hrvAvg || '--'}</span>
-                          <span className="text-xs text-gray-400">7日均值 ms</span>
-                        </div>
-                        <div className="flex justify-center"><WelcomeSparkline data={hrvValues} color="#6366f1" /></div>
-                      </div>
-
-                      {/* Steps */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-600">本周步数</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(stepsAvg, prevStepsAvg)) >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
-                            {Number(pctChange(stepsAvg, prevStepsAvg)) >= 0 ? '↑' : '↓'} {Math.abs(Number(pctChange(stepsAvg, prevStepsAvg)))}%
-                          </span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mb-3">
-                          <span className="text-lg font-semibold text-gray-800">{stepsAvg ? stepsAvg.toLocaleString() : '--'}</span>
-                          <span className="text-xs text-gray-400">日均</span>
-                        </div>
-                        <div className="flex justify-center"><MiniBarChart data={stepsWeekData} /></div>
-                      </div>
-
-                      {/* Stress */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-600">压力趋势</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${Number(pctChange(stressAvg, prevStressAvg)) <= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
-                            {Number(pctChange(stressAvg, prevStressAvg)) <= 0 ? '↓' : '↑'} {Math.abs(Number(pctChange(stressAvg, prevStressAvg)))}%
-                          </span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mb-3">
-                          <span className="text-lg font-semibold text-gray-800">{stressAvg || '--'}</span>
-                          <span className="text-xs text-gray-400">7日均值</span>
-                        </div>
-                        <div className="flex justify-center"><WelcomeSparkline data={stressValues} color="#f59e0b" /></div>
-                      </div>
+                      ))}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Bottom 3-column: Supplements / Quick Actions / Sleep */}
-                  <div className="grid grid-cols-12 gap-4">
-                    {/* Supplements */}
-                    <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-base font-bold text-gray-800">今日补剂</h3>
+                  {/* 5. Today's Schedule — timeline */}
+                  {(() => {
+                    const scheduleItems = [
+                      { time: '07:00', title: '起床', desc: '洗漱 · 称重 · 喝水' },
+                      { time: '07:30', title: '早餐', desc: '健康早餐 · 服用补剂' },
+                      { time: '09:00', title: '开始工作', desc: '专注工作 · 每小时站立活动' },
+                      { time: '12:00', title: '午餐', desc: '均衡饮食 · 记录饮食' },
+                      { time: '13:00', title: '午休', desc: '短暂午睡或休息' },
+                      { time: '14:00', title: '下午工作', desc: '补充水分 · 保持专注' },
+                      { time: '17:30', title: '运动', desc: '有氧或力量训练30分钟' },
+                      { time: '18:30', title: '晚餐', desc: '清淡饮食 · 服用晚间补剂' },
+                      { time: '20:30', title: '放松', desc: '阅读 · 拉伸 · 减少蓝光' },
+                      { time: '22:00', title: '准备入睡', desc: '服用睡前补剂 · 冥想' },
+                      { time: '22:30', title: '睡觉', desc: '保持7-8小时睡眠' },
+                    ];
+                    const VISIBLE_COUNT = 5;
+                    const visible = scheduleExpanded ? scheduleItems : scheduleItems.slice(0, VISIBLE_COUNT);
+                    const remaining = scheduleItems.length - VISIBLE_COUNT;
+                    const nowH = new Date().getHours();
+                    const nowM = new Date().getMinutes();
+                    return (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
+                            <span>📅</span> 今日日程
+                          </h3>
+                          <span className="text-xs text-gray-400">{scheduleItems.length}项</span>
                         </div>
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                          {visible.map((item, i) => {
+                            const [ih, im] = item.time.split(':').map(Number);
+                            const nextItem = scheduleItems[scheduleItems.indexOf(item) + 1];
+                            const [nh, nm] = nextItem ? nextItem.time.split(':').map(Number) : [24, 0];
+                            const isPast = nowH > nh || (nowH === nh && nowM >= nm);
+                            const isCurrent = (nowH > ih || (nowH === ih && nowM >= im)) && (nowH < nh || (nowH === nh && nowM < nm));
+                            return (
+                              <div key={i} className={`flex items-center px-4 py-3 ${i > 0 ? 'border-t border-gray-50' : ''} ${isCurrent ? 'bg-emerald-50/50' : ''}`}>
+                                <div className="flex items-center gap-3 flex-1">
+                                  <div className="relative">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${isCurrent ? 'bg-emerald-500 ring-4 ring-emerald-100' : isPast ? 'bg-gray-300' : 'bg-gray-200'}`} />
+                                    {i < visible.length - 1 && (
+                                      <div className={`absolute top-3 left-1 w-0.5 h-8 ${isPast ? 'bg-gray-200' : 'bg-gray-100'}`} />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className={`text-sm font-mono ${isCurrent ? 'text-emerald-700 font-semibold' : isPast ? 'text-gray-400' : 'text-gray-600'}`}>{item.time}</div>
+                                    <div className={`text-xs ${isPast ? 'text-gray-400' : 'text-gray-500'}`}>{item.desc}</div>
+                                  </div>
+                                </div>
+                                <span className={`text-sm font-medium ${isCurrent ? 'text-emerald-700' : isPast ? 'text-gray-400' : 'text-gray-700'}`}>{item.title}</span>
+                              </div>
+                            );
+                          })}
+                          {remaining > 0 && (
+                            <button onClick={() => setScheduleExpanded(!scheduleExpanded)}
+                              className="w-full py-3 text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-50">
+                              {scheduleExpanded ? '收起' : `展开更多 (${remaining}项)`} {scheduleExpanded ? '▲' : '▼'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 6. Supplements */}
+                  {suppFlat.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
+                          <span>💊</span> 今日补剂
+                        </h3>
                         <div className="flex items-center gap-2">
-                          <div className="h-2 w-20 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-2 w-16 bg-gray-100 rounded-full overflow-hidden">
                             <div className="h-full bg-green-500 rounded-full transition-all duration-500"
                               style={{ width: suppTotal > 0 ? `${(suppChecked / suppTotal) * 100}%` : '0%' }} />
                           </div>
-                          <span className="text-sm font-semibold text-gray-600">{suppChecked}/{suppTotal}</span>
+                          <span className="text-sm font-semibold text-gray-500">{suppChecked}/{suppTotal}</span>
                         </div>
                       </div>
-                      <div>
-                        {suppFlat.length > 0 ? (() => {
+                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                        {(() => {
                           let lastTiming = '';
                           return (
                             <>
@@ -1456,12 +1560,8 @@ export default function AIAssistantPage() {
                                   <div key={i}>
                                     {showHeader && <p className="text-xs font-medium text-gray-400 mt-3 mb-1 first:mt-0">{timingLabels[s._timing]}</p>}
                                     <div className="flex items-center gap-3 py-2 px-1 rounded-lg hover:bg-gray-50 transition-colors group">
-                                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-all duration-200 ${
-                                        taken ? 'bg-green-500' : 'border-2 border-gray-200 group-hover:border-green-400'
-                                      }`}>
-                                        {taken && (
-                                          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                        )}
+                                      <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${taken ? 'bg-green-500' : 'border-2 border-gray-200'}`}>
+                                        {taken && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                                       </div>
                                       <span className={`flex-1 text-sm ${taken ? 'text-green-600 font-medium' : 'text-gray-700'}`}>{name}</span>
                                       {dosage && <span className="text-xs text-gray-400 shrink-0">{dosage}</span>}
@@ -1470,110 +1570,50 @@ export default function AIAssistantPage() {
                                 );
                               })}
                               {suppHasMore && (
-                                <button
-                                  onClick={() => setSuppExpanded(!suppExpanded)}
-                                  className="w-full mt-2 py-2 text-xs font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
-                                >
+                                <button onClick={() => setSuppExpanded(!suppExpanded)}
+                                  className="w-full mt-2 py-2 text-xs font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors">
                                   {suppExpanded ? '收起' : `展开全部 (${suppFlat.length})`}
                                 </button>
                               )}
                             </>
                           );
-                        })() : (
-                          <p className="text-sm text-gray-400 py-4 text-center">暂无补剂计划</p>
-                        )}
+                        })()}
                       </div>
                     </div>
+                  )}
 
-                    {/* Quick Actions */}
-                    <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
-                      <h3 className="text-sm font-semibold text-gray-700 mb-4">快捷操作</h3>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { icon: '⚠️', label: '查看预警', color: '#ef4444', text: '查看今日健康预警和异常提醒' },
-                          { icon: '📊', label: '今日概览', color: '#6366f1', text: '查一下我今天的健康数据概览' },
-                          { icon: '💊', label: '补剂提醒', color: '#f59e0b', text: '今天还需要吃什么补剂？' },
-                          { icon: '💧', label: '记录饮水', color: '#3b82f6', text: '记录喝水250ml' },
-                          { icon: '🏃', label: '运动建议', color: '#22c55e', text: '根据我的身体数据和天气，今天适合做什么运动？' },
-                          { icon: '🌙', label: '睡眠分析', color: '#8b5cf6', text: '帮我分析一下最近的睡眠质量' },
-                        ].map((action) => (
-                          <button
-                            key={action.label}
-                            onClick={() => handleSend(action.text)}
-                            className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-50 active:scale-95 transition-all duration-200 group"
-                          >
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base transition-transform duration-300 group-hover:scale-110"
-                              style={{ background: action.color + '12', color: action.color }}>
-                              {action.icon}
-                            </div>
-                            <span className="text-xs text-gray-500 group-hover:text-gray-700 transition-colors">{action.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Sleep Analysis */}
-                    <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
-                      <div className="flex items-center justify-between mb-5">
-                        <h3 className="text-sm font-semibold text-gray-700">睡眠分析</h3>
-                        {sleepTotal > 0 && (
-                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                            {sleepH}小时{sleepM > 0 ? `${sleepM}分钟` : ''}
-                          </span>
-                        )}
-                      </div>
-                      {sleepTotal > 0 ? (
-                        <>
-                          <SleepStageBar deep={sleepDeep} rem={sleepRem} light={sleepLight} />
-                          <div className="mt-5 space-y-3">
-                            {[
-                              { l: '深睡', v: `${sleepDeep.toFixed(1)}h`, c: '#065f46' },
-                              { l: 'REM', v: `${sleepRem.toFixed(1)}h`, c: '#22c55e' },
-                              { l: '浅睡', v: `${sleepLight.toFixed(1)}h`, c: '#bbf7d0' },
-                            ].map(x => (
-                              <div key={x.l} className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: x.c }} />
-                                  <span className="text-sm text-gray-500">{x.l}</span>
-                                </div>
-                                <span className="text-sm font-medium text-gray-700">{x.v}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      ) : (
-                        <p className="text-sm text-gray-400 py-8 text-center">暂无睡眠数据</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* AI Insights Banner */}
+                  {/* 7. AI Insight Banner */}
                   <div className="rounded-2xl p-4 flex items-center justify-between border border-green-100"
                     style={{ background: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)' }}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0">
                         <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
                         </svg>
                       </div>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-700">AI 洞察</p>
                         <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
                           {dailyInsight?.summary
                             ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 100)
-                            : todayGarmin
-                              ? `步数 ${todayGarmin.steps?.toLocaleString() || '-'} · 睡眠 ${todayGarmin.total_sleep_duration ? Math.floor(todayGarmin.total_sleep_duration / 60) + 'h' + Math.round((todayGarmin.total_sleep_duration / 60 % 1) * 60) + 'm' : '-'} · 点击查看完整分析`
-                              : '暂无洞察数据，点击生成今日健康分析'}
+                            : '点击查看 AI 健康分析'}
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleSend('查看今日 AI 洞察和健康分析详情')}
-                      className="px-4 py-2 text-xs font-medium text-white bg-green-500 rounded-xl hover:bg-green-600 active:scale-95 transition-all shadow-sm"
-                    >
+                    <button onClick={() => handleSend('查看今日 AI 洞察和健康分析详情')}
+                      className="px-4 py-2 text-xs font-medium text-white bg-green-500 rounded-xl hover:bg-green-600 active:scale-95 transition-all shadow-sm shrink-0 ml-3">
                       查看详情
                     </button>
                   </div>
+
+                  {/* 8. Sync button */}
+                  <button onClick={() => { loadTodayGarmin(); loadDashboardData(); }}
+                    className="w-full py-3 rounded-2xl border-2 border-emerald-500 text-emerald-600 font-medium text-sm hover:bg-emerald-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    同步并刷新
+                  </button>
                 </div>
               ) : (
                 <div className="mx-auto max-w-5xl space-y-5">
