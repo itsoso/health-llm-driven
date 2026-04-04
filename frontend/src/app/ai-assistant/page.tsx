@@ -1183,46 +1183,7 @@ export default function AIAssistantPage() {
         )}
 
         <section className="relative flex min-w-0 flex-1 flex-col">
-          <div className="border-b border-white/10 bg-slate-950/45 backdrop-blur-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4">
-              <div className="flex min-w-0 items-center gap-3">
-                {!showHistory && (
-                  <button
-                    onClick={toggleHistory}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition-all hover:bg-white/10 hover:text-white"
-                    title="打开历史记录"
-                  >
-                    <span className="text-lg leading-none">☰</span>
-                  </button>
-                )}
-                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] ${modeCopy.badgeClass}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12a4.5 4.5 0 019-0" opacity="0.4" /></svg>
-                </div>
-                <div className="min-w-0">
-                  <div className={`mb-1 text-[10px] uppercase tracking-[0.34em] ${modeCopy.accentTextClass}`}>{modeCopy.eyebrow}</div>
-                  <div className="truncate text-sm text-white">{modeCopy.description}</div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleNewChat}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition-all hover:bg-white/10"
-                >
-                  新对话
-                </button>
-                {conversationId && visibleMessages.length > 0 && (
-                  <button
-                    onClick={() => handleShareConversation(conversationId)}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition-all hover:bg-white/10"
-                    title="分享对话"
-                  >
-                    分享
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* HEALTH AI toolbar removed */}
 
           {dietNotification && (
             <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
@@ -1715,22 +1676,7 @@ export default function AIAssistantPage() {
             </div>
           </div>
 
-          {visibleMessages.length > 0 && (
-            <div className="border-t border-white/10 bg-slate-950/35 px-4 py-3 backdrop-blur-xl">
-              <div className="mx-auto flex max-w-5xl items-center gap-3 overflow-x-auto">
-                <span className={`shrink-0 text-[10px] uppercase tracking-[0.3em] ${modeCopy.accentTextClass}`}>继续推进</span>
-                {activeQuickQuestions.map((q) => (
-                  <button
-                    key={q.label}
-                    onClick={() => handleSend(q.text)}
-                    className="shrink-0 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 transition-all hover:bg-white/10 hover:text-white"
-                  >
-                    {q.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* 继续推进 bar removed */}
 
           {(imagePreview || pendingFile) && (
             <div className="border-t border-white/10 bg-slate-950/50 px-4 py-3 backdrop-blur-xl">
@@ -1769,15 +1715,7 @@ export default function AIAssistantPage() {
               ? 'rounded-2xl bg-white border border-gray-200 shadow-sm'
               : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'
             }`}>
-              {!isWelcome && (
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
-                  <div>
-                    <div className={`text-[10px] uppercase tracking-[0.32em] ${modeCopy.accentTextClass}`}>{modeCopy.support}</div>
-                    <div className="mt-1 text-xs text-slate-400">{modeCopy.subSupport}</div>
-                  </div>
-                  <div className="text-xs text-slate-500">Enter 发送</div>
-                </div>
-              )}
+              {/* Support text + Enter hint removed */}
 
               <div className="flex items-center gap-3 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 <input

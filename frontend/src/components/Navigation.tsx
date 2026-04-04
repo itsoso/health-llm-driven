@@ -189,6 +189,9 @@ export default function Navigation() {
     return group.items.some((item) => isActive(item.href));
   };
 
+  // AI 助手页面有自己的全屏布局和顶栏
+  if (pathname?.startsWith('/ai-assistant')) return null;
+
   return (
     <nav className="bg-[#1a1625]/90 backdrop-blur-xl border-b border-purple-900/20 shadow-sm fixed top-0 left-0 right-0 z-50 font-sans">
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
