@@ -1299,321 +1299,261 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
               {isWelcome ? (
-                <div className="space-y-4 max-w-2xl mx-auto">
-                  {/* 1. Today's Suggestion — dark hero card */}
+                <div className="space-y-5 max-w-2xl mx-auto">
+                  {/* ── 1. AI Status Line — one-sentence insight + score ── */}
                   {(() => {
                     const h = new Date().getHours();
                     const greeting = h < 6 ? '夜深了' : h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
                     const displayName = user?.name || user?.username || '';
-                    const now = new Date();
-                    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    // 根据时段给出建议
-                    const suggestion = h < 6
-                      ? { text: '该休息了', sub: '充足的睡眠是健康的基础', tags: ['保持卧室黑暗凉爽', '避免使用手机'] }
-                      : h < 9
-                        ? { text: '新的一天开始了', sub: '按时服用补剂，开启健康的一天', tags: ['服用晨间补剂', '喝一杯温水'] }
-                        : h < 12
-                          ? { text: '上午保持专注', sub: '记得每小时站立活动', tags: ['站立活动3分钟', '补充水分'] }
-                          : h < 14
-                            ? { text: '午间休息时间', sub: '均衡饮食，适当小憩', tags: ['记录午餐', '短暂午休'] }
-                            : h < 18
-                              ? { text: '下午继续加油', sub: '注意保持水分摄入', tags: ['补充饮水', '服用午间补剂'] }
-                              : h < 21
-                                ? { text: '傍晚放松时段', sub: '适量运动，调整身心状态', tags: ['轻度运动', '记录晚餐'] }
-                                : { text: '该休息了', sub: '充足的睡眠是健康的基础', tags: ['保持卧室黑暗凉爽', '避免使用手机'] };
+                    const score = healthScore?.total_score || 0;
+                    const scoreColor = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
+                    const scoreLabel = score >= 80 ? '状态优秀' : score >= 60 ? '状态一般' : '需要关注';
+                    // AI 一句话洞察
+                    const insightText = dailyInsight?.summary
+                      ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 120)
+                      : null;
                     return (
-                      <div className="rounded-2xl p-5 text-white relative overflow-hidden"
-                        style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)' }}>
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">😊</span>
-                            <span className="text-xs text-white/60 font-medium">今日建议</span>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-bold tracking-tight">{timeStr}</div>
-                            <div className="text-xs text-white/50">Hi, {displayName || greeting}</div>
-                          </div>
+                      <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h1 className="text-lg font-bold text-gray-800">
+                            {greeting}{displayName ? `，${displayName}` : ''}
+                          </h1>
+                          <button onClick={() => { loadTodayGarmin(); loadDashboardData(); }}
+                            className="text-xs text-gray-400 hover:text-emerald-600 transition-colors flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            刷新
+                          </button>
                         </div>
-                        <h2 className="text-xl font-bold mb-1">{suggestion.text}</h2>
-                        <p className="text-sm text-white/60 mb-3">{suggestion.sub}</p>
-                        <div className="flex flex-wrap gap-2">
-                          {suggestion.tags.map(tag => (
-                            <span key={tag} className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/10 text-white/80 backdrop-blur-sm">
-                              {tag}
-                            </span>
-                          ))}
+                        <div className="flex items-center gap-4">
+                          {/* Score ring — compact */}
+                          <div className="relative shrink-0">
+                            <AnimatedRing score={score} size={80} strokeWidth={7} />
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-xl font-bold" style={{ color: scoreColor }}>{score || '--'}</span>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-semibold" style={{ color: scoreColor }}>{scoreLabel}</span>
+                              {healthScore?.dimensions && (() => {
+                                const dims = healthScore.dimensions;
+                                const worst = Object.entries(dims).reduce((a: any, b: any) => (b[1] as number) < (a[1] as number) ? b : a);
+                                const dimNames: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
+                                return worst[1] as number < 40 ? (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-500 font-medium">
+                                    {dimNames[worst[0] as string] || worst[0]} 偏低
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
+                            <p className="text-xs text-gray-500 leading-5 line-clamp-2">
+                              {insightText || `睡眠${todayGarmin?.sleep_score || '--'}分 · HRV ${todayGarmin?.hrv || '--'}ms · 步数${todayGarmin?.steps?.toLocaleString() || '--'}`}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* 2. Quick Actions — 3 horizontal cards */}
-                  <div className="grid grid-cols-3 gap-3">
+                  {/* ── 2. Attention Items — smart alerts, only show what needs action ── */}
+                  {(() => {
+                    const alerts: {icon: string; text: string; action: string; color: string; bg: string}[] = [];
+                    // 水分警告
+                    if (waterToday.total_ml < 500) {
+                      alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，严重不足`, action: '记录喝水250ml', color: '#ef4444', bg: '#fef2f2' });
+                    } else if (waterToday.total_ml < 1200) {
+                      alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，需补充`, action: '记录喝水250ml', color: '#f59e0b', bg: '#fffbeb' });
+                    }
+                    // 补剂未完成
+                    const suppRemaining = suppTotal - suppChecked;
+                    if (suppRemaining > 0 && suppTotal > 0) {
+                      alerts.push({ icon: '💊', text: `${suppRemaining}项补剂待服用`, action: '今天还需要吃什么补剂？', color: '#8b5cf6', bg: '#f5f3ff' });
+                    }
+                    // 步数不足（下午之后才提醒）
+                    const hour = new Date().getHours();
+                    if (hour >= 14 && todayGarmin?.steps < 3000) {
+                      alerts.push({ icon: '🚶', text: `步数仅 ${todayGarmin?.steps?.toLocaleString() || 0}，活动量偏低`, action: '根据我的身体数据，今天适合做什么运动？', color: '#f59e0b', bg: '#fffbeb' });
+                    }
+                    // HRV 异常
+                    if (todayGarmin?.hrv && todayGarmin.hrv < 40) {
+                      alerts.push({ icon: '💓', text: `HRV ${todayGarmin.hrv}ms 偏低，身体恢复不足`, action: '分析我最近的HRV趋势，给出恢复建议', color: '#ef4444', bg: '#fef2f2' });
+                    }
+                    if (alerts.length === 0) return null;
+                    return (
+                      <div className="space-y-2">
+                        {alerts.map((a, i) => (
+                          <button key={i} onClick={() => handleSend(a.action)}
+                            className="w-full rounded-xl px-4 py-3 flex items-center gap-3 text-left transition-all hover:shadow-sm active:scale-[0.99]"
+                            style={{ background: a.bg, border: `1px solid ${a.color}20` }}>
+                            <span className="text-lg shrink-0">{a.icon}</span>
+                            <span className="flex-1 text-sm font-medium" style={{ color: a.color }}>{a.text}</span>
+                            <svg className="w-4 h-4 shrink-0" style={{ color: a.color }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── 3. Body Snapshot — 核心指标一览 ── */}
+                  <div className="grid grid-cols-4 gap-3">
                     {[
-                      { icon: '🍽️', label: '饮食记录', sub: '记录每餐摄入', text: '帮我记录一下刚才吃的饭' },
-                      { icon: '🏃', label: '运动指导', sub: '心率区间训练', text: '根据我的身体数据和天气，今天适合做什么运动？' },
-                      { icon: '🤖', label: '智能助理', sub: '私人顾问', text: '查一下我今天的健康数据概览' },
-                    ].map(a => (
-                      <button key={a.label} onClick={() => handleSend(a.text)}
-                        className="bg-white rounded-2xl border border-gray-100 p-4 text-left hover:shadow-md hover:border-gray-200 active:scale-[0.98] transition-all">
-                        <div className="text-2xl mb-2">{a.icon}</div>
-                        <div className="text-sm font-semibold text-gray-800">{a.label}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{a.sub}</div>
-                      </button>
-                    ))}
+                      { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', ok: (v: number) => v >= 45 && v <= 75 },
+                      { icon: '🔋', value: todayGarmin?.body_battery_high, unit: '', label: '电量峰值', ok: (v: number) => v >= 60 },
+                      { icon: '😴', value: todayGarmin?.sleep_score, unit: '分', label: '睡眠', ok: (v: number) => v >= 70 },
+                      { icon: '😌', value: todayGarmin?.stress_level, unit: '', label: '压力', ok: (v: number) => v <= 40 },
+                    ].map(m => {
+                      const v = m.value;
+                      const isOk = v != null && m.ok(v);
+                      const isWarn = v != null && !isOk;
+                      return (
+                        <div key={m.label} className="bg-white rounded-2xl border border-gray-100 p-3 shadow-sm text-center">
+                          <span className="text-sm">{m.icon}</span>
+                          <div className={`text-xl font-bold mt-1 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
+                            {v ?? '--'}
+                            {m.unit && <span className="text-xs font-normal text-gray-400 ml-0.5">{m.unit}</span>}
+                          </div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">{m.label}</div>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* 3. Health Brief — 2x2 grid */}
-                  <div>
-                    <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-1.5">
-                      <span>📋</span> 健康简报
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Sleep */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-base">😴</span>
-                          <span className="text-sm font-semibold text-gray-700">昨晚睡眠</span>
-                        </div>
-                        {sleepTotal > 0 ? (
-                          <>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-xs text-gray-500">分数:</span>
-                              <span className="text-sm font-bold text-gray-800">{todayGarmin?.sleep_score || '--'}分</span>
+                  {/* ── 4. Progress Rings — 今日进度圆环 ── */}
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <div className="grid grid-cols-3 gap-6">
+                      {(() => {
+                        const stepsTarget = 8000;
+                        const stepsVal = todayGarmin?.steps || 0;
+                        const stepsPct = Math.min(100, Math.round((stepsVal / stepsTarget) * 100));
+                        const waterPct = Math.min(100, Math.round((waterToday.total_ml / waterToday.goal_ml) * 100));
+                        const suppPct = suppTotal > 0 ? Math.round((suppChecked / suppTotal) * 100) : 0;
+                        const rings = [
+                          { label: '步数', pct: stepsPct, display: stepsVal.toLocaleString(), sub: `/${stepsTarget.toLocaleString()}`, color: '#6366f1' },
+                          { label: '饮水', pct: waterPct, display: `${waterToday.total_ml}`, sub: `/${waterToday.goal_ml}ml`, color: '#3b82f6' },
+                          { label: '补剂', pct: suppPct, display: `${suppChecked}/${suppTotal}`, sub: '', color: '#8b5cf6' },
+                        ];
+                        return rings.map(r => {
+                          const size = 64;
+                          const sw = 5;
+                          const radius = (size - sw) / 2;
+                          const circ = 2 * Math.PI * radius;
+                          const dashoffset = circ - (r.pct / 100) * circ;
+                          return (
+                            <div key={r.label} className="flex flex-col items-center">
+                              <div className="relative" style={{ width: size, height: size }}>
+                                <svg width={size} height={size} className="-rotate-90">
+                                  <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="#f3f4f6" strokeWidth={sw} />
+                                  <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={r.color} strokeWidth={sw}
+                                    strokeDasharray={circ} strokeDashoffset={dashoffset} strokeLinecap="round"
+                                    className="transition-all duration-700" />
+                                </svg>
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <span className="text-xs font-bold text-gray-700">{r.pct}%</span>
+                                </div>
+                              </div>
+                              <span className="text-sm font-semibold text-gray-700 mt-2">{r.display}</span>
+                              {r.sub && <span className="text-[11px] text-gray-400">{r.sub}</span>}
+                              <span className="text-[11px] text-gray-400">{r.label}</span>
                             </div>
-                            <div className="flex items-baseline gap-1 mt-0.5">
-                              <span className="text-xs text-gray-500">时长:</span>
-                              <span className="text-sm font-bold text-gray-800">{sleepH}小时{sleepM > 0 ? `${sleepM}分钟` : ''}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <p className="text-xs text-gray-400">暂无数据</p>
-                        )}
-                      </div>
-
-                      {/* Body Status */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-base">⚡</span>
-                          <span className="text-sm font-semibold text-gray-700">身体状态</span>
-                        </div>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-xs text-gray-500">电量峰值:</span>
-                          <span className="text-sm font-bold text-gray-800">{todayGarmin?.body_battery_high || '--'}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mt-0.5">
-                          <span className="text-xs text-gray-500">HRV:</span>
-                          <span className="text-sm font-bold text-gray-800">{todayGarmin?.hrv || '--'} ms</span>
-                        </div>
-                      </div>
-
-                      {/* Today Goals */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-base">🎯</span>
-                          <span className="text-sm font-semibold text-gray-700">今日目标</span>
-                        </div>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-xs text-gray-500">步数:</span>
-                          <span className="text-sm font-bold text-gray-800">{todayGarmin?.steps?.toLocaleString() || '0'}/8000 步</span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mt-0.5">
-                          <span className="text-xs text-gray-500">饮水:</span>
-                          <span className="text-sm font-bold text-gray-800">{waterToday.total_ml}/{waterToday.goal_ml} ml</span>
-                        </div>
-                      </div>
-
-                      {/* Today Reminders */}
-                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-base">📝</span>
-                          <span className="text-sm font-semibold text-gray-700">今日提醒</span>
-                        </div>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-xs text-gray-500">💊</span>
-                          <span className="text-sm text-gray-700">补剂 {suppChecked}/{suppTotal}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mt-0.5">
-                          <span className="text-xs text-gray-500">💧</span>
-                          <span className="text-sm text-gray-700">保持充足饮水</span>
-                        </div>
-                      </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
-                  {/* 4. Today's Data — 2x2 metric grid */}
-                  <div>
-                    <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-1.5">
-                      <span>📊</span> 今日数据
-                    </h3>
+                  {/* ── 5. 7-Day Trends — sparkline cards ── */}
+                  {garminHistory.length > 3 && (
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate || '--', unit: 'bpm', label: '静息心率', color: '#ef4444', bg: '#fef2f2' },
-                        { icon: '👟', value: todayGarmin?.steps?.toLocaleString() || '--', unit: '', label: '步数', color: '#6366f1', bg: '#eef2ff' },
-                        { icon: '🔋', value: todayGarmin?.body_battery_high || '--', unit: '/100', label: '身体电量', color: '#22c55e', bg: '#f0fdf4' },
-                        { icon: '😐', value: todayGarmin?.stress_level || '--', unit: '', label: '压力指数', color: '#f59e0b', bg: '#fffbeb' },
-                      ].map(m => (
-                        <div key={m.label} className="rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col items-center text-center"
-                          style={{ background: m.bg }}>
-                          <span className="text-lg mb-1">{m.icon}</span>
-                          <div className="flex items-baseline gap-0.5">
-                            <span className="text-3xl font-bold" style={{ color: m.color }}>{m.value}</span>
-                            {m.unit && <span className="text-xs text-gray-400">{m.unit}</span>}
+                        { label: '心率', data: hrValues, avg: hrAvg, prevAvg: prevHrAvg, unit: 'bpm', color: '#ef4444', goodDown: true },
+                        { label: 'HRV', data: hrvValues, avg: hrvAvg, prevAvg: prevHrvAvg, unit: 'ms', color: '#6366f1', goodDown: false },
+                      ].map(t => {
+                        const change = Number(pctChange(t.avg, t.prevAvg));
+                        const isGood = t.goodDown ? change <= 0 : change >= 0;
+                        return (
+                          <div key={t.label} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium text-gray-600">{t.label} 7日</span>
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${isGood ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+                                {change >= 0 ? '+' : ''}{change}%
+                              </span>
+                            </div>
+                            <div className="flex items-baseline gap-1 mb-2">
+                              <span className="text-lg font-bold text-gray-800">{t.avg || '--'}</span>
+                              <span className="text-xs text-gray-400">{t.unit}</span>
+                            </div>
+                            <WelcomeSparkline data={t.data} color={t.color} />
                           </div>
-                          <span className="text-xs text-gray-500 mt-1">{m.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 5. Today's Schedule — timeline */}
-                  {(() => {
-                    const scheduleItems = [
-                      { time: '07:00', title: '起床', desc: '洗漱 · 称重 · 喝水' },
-                      { time: '07:30', title: '早餐', desc: '健康早餐 · 服用补剂' },
-                      { time: '09:00', title: '开始工作', desc: '专注工作 · 每小时站立活动' },
-                      { time: '12:00', title: '午餐', desc: '均衡饮食 · 记录饮食' },
-                      { time: '13:00', title: '午休', desc: '短暂午睡或休息' },
-                      { time: '14:00', title: '下午工作', desc: '补充水分 · 保持专注' },
-                      { time: '17:30', title: '运动', desc: '有氧或力量训练30分钟' },
-                      { time: '18:30', title: '晚餐', desc: '清淡饮食 · 服用晚间补剂' },
-                      { time: '20:30', title: '放松', desc: '阅读 · 拉伸 · 减少蓝光' },
-                      { time: '22:00', title: '准备入睡', desc: '服用睡前补剂 · 冥想' },
-                      { time: '22:30', title: '睡觉', desc: '保持7-8小时睡眠' },
-                    ];
-                    const VISIBLE_COUNT = 5;
-                    const visible = scheduleExpanded ? scheduleItems : scheduleItems.slice(0, VISIBLE_COUNT);
-                    const remaining = scheduleItems.length - VISIBLE_COUNT;
-                    const nowH = new Date().getHours();
-                    const nowM = new Date().getMinutes();
-                    return (
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
-                            <span>📅</span> 今日日程
-                          </h3>
-                          <span className="text-xs text-gray-400">{scheduleItems.length}项</span>
-                        </div>
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                          {visible.map((item, i) => {
-                            const [ih, im] = item.time.split(':').map(Number);
-                            const nextItem = scheduleItems[scheduleItems.indexOf(item) + 1];
-                            const [nh, nm] = nextItem ? nextItem.time.split(':').map(Number) : [24, 0];
-                            const isPast = nowH > nh || (nowH === nh && nowM >= nm);
-                            const isCurrent = (nowH > ih || (nowH === ih && nowM >= im)) && (nowH < nh || (nowH === nh && nowM < nm));
-                            return (
-                              <div key={i} className={`flex items-center px-4 py-3 ${i > 0 ? 'border-t border-gray-50' : ''} ${isCurrent ? 'bg-emerald-50/50' : ''}`}>
-                                <div className="flex items-center gap-3 flex-1">
-                                  <div className="relative">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${isCurrent ? 'bg-emerald-500 ring-4 ring-emerald-100' : isPast ? 'bg-gray-300' : 'bg-gray-200'}`} />
-                                    {i < visible.length - 1 && (
-                                      <div className={`absolute top-3 left-1 w-0.5 h-8 ${isPast ? 'bg-gray-200' : 'bg-gray-100'}`} />
-                                    )}
-                                  </div>
-                                  <div>
-                                    <div className={`text-sm font-mono ${isCurrent ? 'text-emerald-700 font-semibold' : isPast ? 'text-gray-400' : 'text-gray-600'}`}>{item.time}</div>
-                                    <div className={`text-xs ${isPast ? 'text-gray-400' : 'text-gray-500'}`}>{item.desc}</div>
-                                  </div>
-                                </div>
-                                <span className={`text-sm font-medium ${isCurrent ? 'text-emerald-700' : isPast ? 'text-gray-400' : 'text-gray-700'}`}>{item.title}</span>
-                              </div>
-                            );
-                          })}
-                          {remaining > 0 && (
-                            <button onClick={() => setScheduleExpanded(!scheduleExpanded)}
-                              className="w-full py-3 text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-50">
-                              {scheduleExpanded ? '收起' : `展开更多 (${remaining}项)`} {scheduleExpanded ? '▲' : '▼'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* 6. Supplements */}
-                  {suppFlat.length > 0 && (
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
-                          <span>💊</span> 今日补剂
-                        </h3>
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-16 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-green-500 rounded-full transition-all duration-500"
-                              style={{ width: suppTotal > 0 ? `${(suppChecked / suppTotal) * 100}%` : '0%' }} />
-                          </div>
-                          <span className="text-sm font-semibold text-gray-500">{suppChecked}/{suppTotal}</span>
-                        </div>
-                      </div>
-                      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-                        {(() => {
-                          let lastTiming = '';
-                          return (
-                            <>
-                              {suppVisible.map((s: any, i: number) => {
-                                const taken = s.record?.taken || s.is_taken || s.checked;
-                                const name = s.supplement?.name || s.supplement_name || s.name;
-                                const dosage = s.supplement?.dosage || s.dosage || s.dose;
-                                const showHeader = s._timing !== lastTiming;
-                                lastTiming = s._timing;
-                                return (
-                                  <div key={i}>
-                                    {showHeader && <p className="text-xs font-medium text-gray-400 mt-3 mb-1 first:mt-0">{timingLabels[s._timing]}</p>}
-                                    <div className="flex items-center gap-3 py-2 px-1 rounded-lg hover:bg-gray-50 transition-colors group">
-                                      <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${taken ? 'bg-green-500' : 'border-2 border-gray-200'}`}>
-                                        {taken && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                                      </div>
-                                      <span className={`flex-1 text-sm ${taken ? 'text-green-600 font-medium' : 'text-gray-700'}`}>{name}</span>
-                                      {dosage && <span className="text-xs text-gray-400 shrink-0">{dosage}</span>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                              {suppHasMore && (
-                                <button onClick={() => setSuppExpanded(!suppExpanded)}
-                                  className="w-full mt-2 py-2 text-xs font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors">
-                                  {suppExpanded ? '收起' : `展开全部 (${suppFlat.length})`}
-                                </button>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {/* 7. AI Insight Banner */}
-                  <div className="rounded-2xl p-4 flex items-center justify-between border border-green-100"
-                    style={{ background: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)' }}>
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0">
-                        <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-                        </svg>
+                  {/* ── 6. Supplements — compact progress ── */}
+                  {suppFlat.length > 0 && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">💊</span>
+                          <span className="text-sm font-semibold text-gray-700">今日补剂</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 w-16 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                              style={{ width: suppTotal > 0 ? `${(suppChecked / suppTotal) * 100}%` : '0%' }} />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-500">{suppChecked}/{suppTotal}</span>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-700">AI 洞察</p>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                          {dailyInsight?.summary
-                            ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 100)
-                            : '点击查看 AI 健康分析'}
-                        </p>
-                      </div>
+                      {(() => {
+                        let lastTiming = '';
+                        return (
+                          <>
+                            {suppVisible.map((s: any, i: number) => {
+                              const taken = s.record?.taken || s.is_taken || s.checked;
+                              const name = s.supplement?.name || s.supplement_name || s.name;
+                              const dosage = s.supplement?.dosage || s.dosage || s.dose;
+                              const showHeader = s._timing !== lastTiming;
+                              lastTiming = s._timing;
+                              return (
+                                <div key={i}>
+                                  {showHeader && <p className="text-[11px] font-medium text-gray-400 mt-2.5 mb-1 first:mt-0 uppercase tracking-wider">{timingLabels[s._timing]}</p>}
+                                  <div className="flex items-center gap-2.5 py-1.5">
+                                    <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${taken ? 'bg-emerald-500' : 'border border-gray-300'}`}>
+                                      {taken && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                    </div>
+                                    <span className={`flex-1 text-sm ${taken ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{name}</span>
+                                    {dosage && <span className="text-[11px] text-gray-400">{dosage}</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {suppHasMore && (
+                              <button onClick={() => setSuppExpanded(!suppExpanded)}
+                                className="w-full mt-2 py-1.5 text-xs text-emerald-600 hover:text-emerald-700 transition-colors">
+                                {suppExpanded ? '收起' : `展开全部 (${suppFlat.length})`}
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
-                    <button onClick={() => handleSend('查看今日 AI 洞察和健康分析详情')}
-                      className="px-4 py-2 text-xs font-medium text-white bg-green-500 rounded-xl hover:bg-green-600 active:scale-95 transition-all shadow-sm shrink-0 ml-3">
-                      查看详情
-                    </button>
-                  </div>
+                  )}
 
-                  {/* 8. Sync button */}
-                  <button onClick={() => { loadTodayGarmin(); loadDashboardData(); }}
-                    className="w-full py-3 rounded-2xl border-2 border-emerald-500 text-emerald-600 font-medium text-sm hover:bg-emerald-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    同步并刷新
-                  </button>
+                  {/* ── 7. Quick Ask — contextual prompts ── */}
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { text: '帮我分析一下最近的睡眠质量', label: '睡眠分析' },
+                      { text: '根据我的身体数据，今天适合做什么运动？', label: '运动建议' },
+                      { text: '帮我记录一下刚才吃的饭', label: '记录饮食' },
+                      { text: '查看今日 AI 洞察和健康分析详情', label: 'AI 洞察' },
+                    ].map(q => (
+                      <button key={q.label} onClick={() => handleSend(q.text)}
+                        className="px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 active:scale-[0.97] transition-all">
+                        {q.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div className="mx-auto max-w-5xl space-y-5">
