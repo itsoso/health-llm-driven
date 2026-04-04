@@ -957,9 +957,16 @@ export default function AIAssistantPage() {
   const prevStressAvg = Math.round(avg(prev7.map((r: any) => r.stress_level).filter(Boolean)));
   const prevStepsAvg = Math.round(avg(prev7.map((r: any) => r.steps || 0)));
 
-  // 补剂进度
-  const suppChecked = supplementStatus.filter((s: any) => s.is_taken || s.checked).length;
+  // 补剂进度（数据结构: { supplement: { name, timing, dosage }, record: { taken } | null }）
+  const suppChecked = supplementStatus.filter((s: any) => s.record?.taken || s.is_taken || s.checked).length;
   const suppTotal = supplementStatus.length;
+  const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
+  const suppGrouped = supplementStatus.reduce((acc: Record<string, any[]>, s: any) => {
+    const timing = s.supplement?.timing || s.timing || 'morning';
+    if (!acc[timing]) acc[timing] = [];
+    acc[timing].push(s);
+    return acc;
+  }, {} as Record<string, any[]>);
 
   // 睡眠分析数据
   const sleepDeep = todayGarmin?.deep_sleep_duration ? todayGarmin.deep_sleep_duration / 60 : 0;
@@ -1383,33 +1390,46 @@ export default function AIAssistantPage() {
                     <div className="col-span-12 md:col-span-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-center justify-between mb-4">
                         <div>
-                          <h3 className="text-sm font-semibold text-gray-700">今日补剂</h3>
-                          <p className="text-xs text-gray-400 mt-0.5">早晨</p>
+                          <h3 className="text-base font-bold text-gray-800">今日补剂</h3>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-20 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-2 w-20 bg-gray-100 rounded-full overflow-hidden">
                             <div className="h-full bg-green-500 rounded-full transition-all duration-500"
                               style={{ width: suppTotal > 0 ? `${(suppChecked / suppTotal) * 100}%` : '0%' }} />
                           </div>
-                          <span className="text-xs font-medium text-gray-500">{suppChecked}/{suppTotal}</span>
+                          <span className="text-sm font-semibold text-gray-600">{suppChecked}/{suppTotal}</span>
                         </div>
                       </div>
-                      <div>
-                        {supplementStatus.length > 0 ? supplementStatus.map((s: any, i: number) => (
-                          <label key={i} className="flex items-center gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer group">
-                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
-                              (s.is_taken || s.checked) ? 'bg-green-500 border-green-500' : 'border-gray-300 group-hover:border-green-400'
-                            }`}>
-                              {(s.is_taken || s.checked) && (
-                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                              )}
+                      <div className="space-y-4">
+                        {Object.keys(suppGrouped).length > 0 ? (
+                          ['morning', 'noon', 'evening', 'bedtime'].filter(t => suppGrouped[t]?.length).map(timing => (
+                            <div key={timing}>
+                              <p className="text-xs font-medium text-gray-400 mb-2">{timingLabels[timing] || timing}</p>
+                              <div className="space-y-0.5">
+                                {suppGrouped[timing].map((s: any, i: number) => {
+                                  const taken = s.record?.taken || s.is_taken || s.checked;
+                                  const name = s.supplement?.name || s.supplement_name || s.name;
+                                  const dosage = s.supplement?.dosage || s.dosage || s.dose;
+                                  return (
+                                    <div key={i} className="flex items-center gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 transition-colors group">
+                                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                                        taken ? 'bg-green-500' : 'border-2 border-gray-200 group-hover:border-green-400'
+                                      }`}>
+                                        {taken && (
+                                          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                        )}
+                                      </div>
+                                      <span className={`flex-1 text-sm ${taken ? 'text-green-600 font-medium' : 'text-gray-700'}`}>
+                                        {name}
+                                      </span>
+                                      {dosage && <span className="text-xs text-gray-400">{dosage}</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <span className={`flex-1 text-sm transition-colors ${(s.is_taken || s.checked) ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                              {s.supplement_name || s.name}
-                            </span>
-                            {(s.dosage || s.dose) && <span className="text-xs text-gray-400">{s.dosage || s.dose}</span>}
-                          </label>
-                        )) : (
+                          ))
+                        ) : (
                           <p className="text-sm text-gray-400 py-4 text-center">暂无补剂计划</p>
                         )}
                       </div>
