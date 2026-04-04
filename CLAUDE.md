@@ -175,6 +175,12 @@ ssh root@39.98.206.178 "journalctl -u health-backend -n 50 --no-pager"
 ssh root@39.98.206.178 "pm2 logs health-frontend --lines 50"
 ```
 
+## CI/CD
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
+- **Backend**: `pytest tests/ -q --no-cov --tb=short -x` (Python 3.12, fails fast on first error)
+- **Frontend**: `npm run build` + `npm run lint` (Node.js 20)
+
 ## Conventions
 
 - **Git commits**: Conventional Commits in Chinese — `feat: 新功能`, `fix: 修复`, `docs:`, `refactor:`, `test:`
@@ -182,8 +188,9 @@ ssh root@39.98.206.178 "pm2 logs health-frontend --lines 50"
 - **Backend**: Python PEP 8, FastAPI, SQLAlchemy ORM, Pydantic schemas
 - **API prefix**: All backend routes under `/api/v1`
 - **Environment vars**: Production secrets in `.env-online` (not committed), synced by deploy script
-- **Dependency versions**: Pin exact versions (no `^` or `~`). Check Snyk before adding new dependencies. See `AGENTS.md` for full security standards.
+- **Dependency versions**: Pin exact versions (no `^` or `~`). Check Snyk before adding new dependencies.
 - **Database**: PostgreSQL only (SQLite is deprecated except for test fixtures). Use `JSONB` for JSON columns, `TIMESTAMP WITH TIME ZONE` for timestamps.
+- **Security & quality standards**: `AGENTS.md` is the authoritative source for security rules, logging standards, testing specs, performance targets, and data privacy requirements. Read it before making infrastructure or security-related changes.
 
 ## Complexity Budget (复杂度预算)
 

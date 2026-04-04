@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, chatApi, openclawApi, sharedApi, feedbackApi, dailyHealthApi, healthScoreApi, supplementApi, garminAnalysisApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import { relativeTime } from '@/utils/timeFormat';
+import NotificationCenter from '@/components/NotificationCenter';
 
 interface InsightItem { id: number; notification_type: string; title: string; content: string; created_at: string }
 
@@ -287,6 +288,8 @@ export default function AIAssistantPage() {
   const [activityNotifications, setActivityNotifications] = useState<ActivitySavedData[]>([]);
   const [planCreatedNotification, setPlanCreatedNotification] = useState<{message: string; planId?: number} | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [showAppsMenu, setShowAppsMenu] = useState(false);
+  const appsMenuRef = useRef<HTMLDivElement>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
@@ -892,9 +895,9 @@ export default function AIAssistantPage() {
 
   const modeCopy = STYLE;
   const [dynamicQuestions, setDynamicQuestions] = useState<QuickQuestion[]>(DEFAULT_QUESTIONS);
-  const [insights, setInsights] = useState<Array<{id: number; notification_type: string; title: string; content: string; created_at: string}>>([]);
+  const [dailyInsight, setDailyInsight] = useState<{summary?: string; content?: string; review_date?: string} | null>(null);
 
-  // 加载动态快速问题 + 今日洞察
+  // 加载动态快速问题 + 每日AI洞察
   useEffect(() => {
     api.get('/quick-questions/me?limit=6').then(res => {
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
@@ -902,15 +905,11 @@ export default function AIAssistantPage() {
       }
     }).catch(() => {});
 
-    // 加载最近的 AI 洞察（通知日志）
-    api.get('/notification/logs?limit=5').then(res => {
-      const logs = res.data?.logs || res.data || [];
-      if (Array.isArray(logs)) {
-        // 只展示有价值的类型，排除重复的睡眠提醒
-        const valuable = logs.filter((l: any) =>
-          ['morning_summary', 'health_alert', 'daily_insights', 'trend_report', 'family_daily_brief'].includes(l.notification_type)
-        );
-        setInsights(valuable.slice(0, 3));
+    // 加载最近的每日AI洞察
+    api.get('/ai-insights/insights/daily?days=2').then(res => {
+      const items = res.data?.items || [];
+      if (items.length > 0) {
+        setDailyInsight(items[0]);
       }
     }).catch(() => {});
   }, []);
@@ -1007,7 +1006,67 @@ export default function AIAssistantPage() {
   const sleepM = Math.round((sleepTotal - sleepH) * 60);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-16 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
+      {/* Header */}
+      <header className="relative z-50 backdrop-blur-md bg-white/80 border-b border-gray-100">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button onClick={handleNewChat} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center">
+                <span className="text-white text-sm font-bold">H</span>
+              </div>
+              <span className="font-semibold text-gray-800 text-sm">智能助理</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            {!showHistory && (
+              <button onClick={toggleHistory} className="text-gray-400 hover:text-gray-600 transition-colors" title="历史记录">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+              </button>
+            )}
+            <button onClick={handleNewChat} className="text-gray-400 hover:text-gray-600 transition-colors" title="新对话">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            </button>
+            <div className="relative" ref={appsMenuRef}>
+              <button onClick={() => setShowAppsMenu(!showAppsMenu)} className={`text-xs flex items-center gap-1 transition-colors ${showAppsMenu ? 'text-gray-700' : 'text-gray-400 hover:text-gray-600'}`}>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
+                功能
+              </button>
+              {showAppsMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowAppsMenu(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-[340px] max-h-[75vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-gray-200 p-4 z-50">
+                    {[
+                      { label: '概览', items: [{ href: '/overview', name: '健康概览', icon: '📊' }, { href: '/daily-insights', name: '今日建议', icon: '✨' }, { href: '/smart-plan', name: '智能计划', icon: '📅' }, { href: '/family', name: '家庭', icon: '👨‍👩‍👦' }] },
+                      { label: '追踪', items: [{ href: '/workout', name: '运动', icon: '🏋️' }, { href: '/sleep', name: '睡眠', icon: '🌙' }, { href: '/garmin', name: 'Garmin', icon: '⌚' }, { href: '/weight', name: '体重', icon: '⚖️' }, { href: '/heart-rate', name: '心率', icon: '❤️' }, { href: '/blood-pressure', name: '血压', icon: '🩺' }, { href: '/mood', name: '情绪', icon: '😊' }] },
+                      { label: '记录', items: [{ href: '/supplements', name: '补剂', icon: '💊' }, { href: '/diet', name: '饮食', icon: '🍽️' }, { href: '/water', name: '饮水', icon: '💧' }, { href: '/checkin', name: '打卡', icon: '✅' }, { href: '/rhinitis', name: '鼻炎', icon: '👃' }] },
+                      { label: '管理', items: [{ href: '/genetic', name: '基因', icon: '🧬' }, { href: '/medical-exams', name: '体检', icon: '📋' }, { href: '/goals', name: '目标', icon: '🎯' }, { href: '/settings', name: '设置', icon: '⚙️' }] },
+                    ].map(group => (
+                      <div key={group.label} className="mb-3 last:mb-0">
+                        <div className="text-[10px] uppercase tracking-widest text-gray-400 font-medium mb-1.5 px-1">{group.label}</div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {group.items.map(item => (
+                            <button key={item.href} onClick={() => { setShowAppsMenu(false); router.push(item.href); }}
+                              className="flex flex-col items-center gap-1 px-1 py-2 rounded-xl hover:bg-gray-50 transition-colors text-center">
+                              <span className="text-lg">{item.icon}</span>
+                              <span className="text-[10px] text-gray-600 leading-tight">{item.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <NotificationCenter />
+            <button onClick={() => router.push('/settings')} className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-white text-xs font-bold shadow-sm">
+              {user?.name?.charAt(0) || '?'}
+            </button>
+          </div>
+        </div>
+      </header>
+
       {/* 背景：欢迎屏用浅色，对话用深色 */}
       {isWelcome ? (
         <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #f9fafb 25%)' }} />
@@ -1025,7 +1084,7 @@ export default function AIAssistantPage() {
         </>
       )}
 
-      <div className="relative flex h-full overflow-hidden">
+      <div className="relative flex overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
         {showHistory && (
           <aside className="flex w-[330px] shrink-0 flex-col border-r border-white/10 bg-slate-950/65 backdrop-blur-2xl">
             <div className="border-b border-white/10 px-4 py-4">
@@ -1506,12 +1565,14 @@ export default function AIAssistantPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
                         </svg>
                       </div>
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-700">AI 洞察</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {insights.length > 0
-                            ? `✅ ${insights[0].content?.slice(0, 50) || insights[0].title}`
-                            : '✅ 今日家庭成员健康状况良好，无异常。'}
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                          {dailyInsight?.summary
+                            ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 100)
+                            : todayGarmin
+                              ? `步数 ${todayGarmin.steps?.toLocaleString() || '-'} · 睡眠 ${todayGarmin.total_sleep_duration ? Math.floor(todayGarmin.total_sleep_duration / 60) + 'h' + Math.round((todayGarmin.total_sleep_duration / 60 % 1) * 60) + 'm' : '-'} · 点击查看完整分析`
+                              : '暂无洞察数据，点击生成今日健康分析'}
                         </p>
                       </div>
                     </div>
