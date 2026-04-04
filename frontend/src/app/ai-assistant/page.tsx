@@ -370,7 +370,8 @@ export default function AIAssistantPage() {
       api.get('/environment/air-quality'),             // 5
       api.get('/checkin/me/today'),                    // 6
       api.get(`/diet/records/me/date/${today}`),       // 7
-      api.get('/weight/records/me/stats'),              // 8
+      api.get('/weight/records/me/stats'),             // 8
+      api.get('/environment/weather/forecast?days=1'), // 9
     ]);
     const ok = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value.data : null;
     if (ok(0)) setHealthScore(ok(0));
@@ -388,7 +389,17 @@ export default function AIAssistantPage() {
       const w = ok(3);
       setWaterToday({ total_ml: w?.total_ml || 0, goal_ml: w?.goal_ml || 2000, count: w?.count || 0 });
     }
-    if (ok(4)) setWeatherData(ok(4));
+    if (ok(4)) {
+      const w = ok(4);
+      // merge forecast temp_min/max if available
+      const fc = ok(9);
+      const todayFc = Array.isArray(fc) ? fc[0] : (fc?.forecasts?.[0] || null);
+      if (todayFc) {
+        w.temp_min = todayFc.temp_min;
+        w.temp_max = todayFc.temp_max;
+      }
+      setWeatherData(w);
+    }
     if (ok(5)) setAirData(ok(5));
     if (ok(6)) setRhinitisToday(ok(6));
     if (ok(7)) setDietToday(ok(7));
@@ -1435,10 +1446,10 @@ export default function AIAssistantPage() {
                   {/* ── 3. Body Snapshot — 核心指标一览 ── */}
                   <div className="grid grid-cols-4 gap-3">
                     {[
-                      { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', ok: (v: number) => v >= 45 && v <= 75 },
-                      { icon: '🔋', value: todayGarmin?.body_battery_high, unit: '', label: '电量峰值', ok: (v: number) => v >= 60 },
-                      { icon: '😴', value: todayGarmin?.sleep_score, unit: '分', label: '睡眠', ok: (v: number) => v >= 70 },
-                      { icon: '😌', value: todayGarmin?.stress_level, unit: '', label: '压力', ok: (v: number) => v <= 40 },
+                      { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', sub: '', ok: (v: number) => v >= 45 && v <= 75 },
+                      { icon: '🔋', value: todayGarmin?.body_battery_high, unit: '', label: '电量', sub: todayGarmin?.body_battery_low != null ? `当前 ${todayGarmin.body_battery_low}` : '', ok: (v: number) => v >= 60 },
+                      { icon: '😴', value: todayGarmin?.sleep_score, unit: '分', label: '睡眠', sub: sleepTotal > 0 ? `${sleepH}h${sleepM > 0 ? sleepM + 'm' : ''}` : '', ok: (v: number) => v >= 70 },
+                      { icon: '😌', value: todayGarmin?.stress_level, unit: '', label: '压力', sub: '', ok: (v: number) => v <= 40 },
                     ].map(m => {
                       const v = m.value;
                       const isOk = v != null && m.ok(v);
@@ -1452,6 +1463,7 @@ export default function AIAssistantPage() {
                             {m.unit && <span className="text-xs font-normal text-gray-400 ml-0.5">{m.unit}</span>}
                           </div>
                           <div className="text-[11px] text-gray-400 mt-0.5">{m.label}</div>
+                          {m.sub && <div className="text-[10px] text-gray-400 mt-0.5">{m.sub}</div>}
                         </div>
                       );
                     })}
@@ -1463,17 +1475,32 @@ export default function AIAssistantPage() {
                     <div className="rounded-2xl p-4 shadow-sm border border-blue-100/50" style={{ background: 'linear-gradient(135deg, #eff6ff, #f0f9ff)' }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-semibold text-gray-700">{weatherData?.city || '天气'}</span>
-                        <span className="text-xs text-gray-400">{weatherData?.weather_description || ''}</span>
+                        <span className="text-xs text-gray-500">{weatherData?.weather_description || weatherData?.weather_condition || ''}</span>
                       </div>
-                      <div className="text-3xl font-bold text-gray-800">{weatherData ? `${Math.round(weatherData.temperature ?? 0)}°` : '--'}</div>
-                      {airData && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${(airData.aqi || 0) <= 50 ? 'bg-green-100 text-green-700' : (airData.aqi || 0) <= 100 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                            AQI {airData.aqi || '--'}
-                          </span>
-                          {airData.pm25 != null && <span className="text-[11px] text-gray-500">PM2.5 {airData.pm25}</span>}
-                        </div>
-                      )}
+                      {weatherData ? (
+                        <>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-3xl font-bold text-gray-800">{Math.round(weatherData.temperature ?? 0)}°</span>
+                            {weatherData.temp_min != null && (
+                              <span className="text-xs text-gray-400">{Math.round(weatherData.temp_min)}° / {Math.round(weatherData.temp_max)}°</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            {airData && (
+                              <>
+                                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${(airData.aqi || 0) <= 50 ? 'bg-green-100 text-green-700' : (airData.aqi || 0) <= 100 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                  AQI {airData.aqi || '--'}
+                                </span>
+                                {airData.pm25 != null && (
+                                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${airData.pm25 <= 35 ? 'bg-green-50 text-green-600' : airData.pm25 <= 75 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-600'}`}>
+                                    PM2.5 {airData.pm25}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </>
+                      ) : <div className="text-xs text-gray-400 mt-2">加载中...</div>}
                     </div>
 
                     {/* Diet & Energy Balance */}
