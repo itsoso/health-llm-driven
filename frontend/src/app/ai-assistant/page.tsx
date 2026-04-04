@@ -277,6 +277,7 @@ export default function AIAssistantPage() {
   // 首页聚合数据
   const [healthScore, setHealthScore] = useState<any>(null);
   const [supplementStatus, setSupplementStatus] = useState<any[]>([]);
+  const [suppExpanded, setSuppExpanded] = useState(false);
   const [garminHistory, setGarminHistory] = useState<any[]>([]);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
@@ -957,16 +958,45 @@ export default function AIAssistantPage() {
   const prevStressAvg = Math.round(avg(prev7.map((r: any) => r.stress_level).filter(Boolean)));
   const prevStepsAvg = Math.round(avg(prev7.map((r: any) => r.steps || 0)));
 
-  // 补剂进度（数据结构: { supplement: { name, timing, dosage }, record: { taken } | null }）
-  const suppChecked = supplementStatus.filter((s: any) => s.record?.taken || s.is_taken || s.checked).length;
-  const suppTotal = supplementStatus.length;
+  // 补剂进度（去重 + 已服用排前面 + 分页）
   const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
-  const suppGrouped = supplementStatus.reduce((acc: Record<string, any[]>, s: any) => {
-    const timing = s.supplement?.timing || s.timing || 'morning';
-    if (!acc[timing]) acc[timing] = [];
-    acc[timing].push(s);
-    return acc;
-  }, {} as Record<string, any[]>);
+  const suppDeduped = (() => {
+    const seen = new Set<string>();
+    return supplementStatus.filter((s: any) => {
+      const name = s.supplement?.name || s.supplement_name || s.name;
+      const timing = s.supplement?.timing || s.timing || 'morning';
+      const key = `${name}_${timing}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
+  const suppChecked = suppDeduped.filter((s: any) => s.record?.taken || s.is_taken || s.checked).length;
+  const suppTotal = suppDeduped.length;
+  const SUPP_PAGE_SIZE = 6;
+  const suppGrouped = (() => {
+    const groups: Record<string, any[]> = {};
+    for (const s of suppDeduped) {
+      const timing = s.supplement?.timing || s.timing || 'morning';
+      if (!groups[timing]) groups[timing] = [];
+      groups[timing].push(s);
+    }
+    // 每组内已服用排前面
+    for (const key of Object.keys(groups)) {
+      groups[key].sort((a: any, b: any) => {
+        const aTaken = a.record?.taken || a.is_taken || a.checked ? 1 : 0;
+        const bTaken = b.record?.taken || b.is_taken || b.checked ? 1 : 0;
+        return bTaken - aTaken;
+      });
+    }
+    return groups;
+  })();
+  // 扁平化用于分页
+  const suppFlat = ['morning', 'noon', 'evening', 'bedtime'].flatMap(t =>
+    (suppGrouped[t] || []).map((s: any) => ({ ...s, _timing: t }))
+  );
+  const suppVisible = suppExpanded ? suppFlat : suppFlat.slice(0, SUPP_PAGE_SIZE);
+  const suppHasMore = suppFlat.length > SUPP_PAGE_SIZE;
 
   // 睡眠分析数据
   const sleepDeep = todayGarmin?.deep_sleep_duration ? todayGarmin.deep_sleep_duration / 60 : 0;
@@ -1400,36 +1430,45 @@ export default function AIAssistantPage() {
                           <span className="text-sm font-semibold text-gray-600">{suppChecked}/{suppTotal}</span>
                         </div>
                       </div>
-                      <div className="space-y-4">
-                        {Object.keys(suppGrouped).length > 0 ? (
-                          ['morning', 'noon', 'evening', 'bedtime'].filter(t => suppGrouped[t]?.length).map(timing => (
-                            <div key={timing}>
-                              <p className="text-xs font-medium text-gray-400 mb-2">{timingLabels[timing] || timing}</p>
-                              <div className="space-y-0.5">
-                                {suppGrouped[timing].map((s: any, i: number) => {
-                                  const taken = s.record?.taken || s.is_taken || s.checked;
-                                  const name = s.supplement?.name || s.supplement_name || s.name;
-                                  const dosage = s.supplement?.dosage || s.dosage || s.dose;
-                                  return (
-                                    <div key={i} className="flex items-center gap-3 py-2.5 px-1 rounded-lg hover:bg-gray-50 transition-colors group">
-                                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                      <div>
+                        {suppFlat.length > 0 ? (() => {
+                          let lastTiming = '';
+                          return (
+                            <>
+                              {suppVisible.map((s: any, i: number) => {
+                                const taken = s.record?.taken || s.is_taken || s.checked;
+                                const name = s.supplement?.name || s.supplement_name || s.name;
+                                const dosage = s.supplement?.dosage || s.dosage || s.dose;
+                                const showHeader = s._timing !== lastTiming;
+                                lastTiming = s._timing;
+                                return (
+                                  <div key={i}>
+                                    {showHeader && <p className="text-xs font-medium text-gray-400 mt-3 mb-1 first:mt-0">{timingLabels[s._timing]}</p>}
+                                    <div className="flex items-center gap-3 py-2 px-1 rounded-lg hover:bg-gray-50 transition-colors group">
+                                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-all duration-200 ${
                                         taken ? 'bg-green-500' : 'border-2 border-gray-200 group-hover:border-green-400'
                                       }`}>
                                         {taken && (
                                           <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                         )}
                                       </div>
-                                      <span className={`flex-1 text-sm ${taken ? 'text-green-600 font-medium' : 'text-gray-700'}`}>
-                                        {name}
-                                      </span>
-                                      {dosage && <span className="text-xs text-gray-400">{dosage}</span>}
+                                      <span className={`flex-1 text-sm ${taken ? 'text-green-600 font-medium' : 'text-gray-700'}`}>{name}</span>
+                                      {dosage && <span className="text-xs text-gray-400 shrink-0">{dosage}</span>}
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))
-                        ) : (
+                                  </div>
+                                );
+                              })}
+                              {suppHasMore && (
+                                <button
+                                  onClick={() => setSuppExpanded(!suppExpanded)}
+                                  className="w-full mt-2 py-2 text-xs font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
+                                >
+                                  {suppExpanded ? '收起' : `展开全部 (${suppFlat.length})`}
+                                </button>
+                              )}
+                            </>
+                          );
+                        })() : (
                           <p className="text-sm text-gray-400 py-4 text-center">暂无补剂计划</p>
                         )}
                       </div>
