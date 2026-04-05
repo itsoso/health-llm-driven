@@ -1486,47 +1486,6 @@ export default function AIAssistantPage() {
                     );
                   })()}
 
-                  {/* ── 1.5 Inline AI Response (stays on dashboard) ── */}
-                  {inlineResponse && (
-                    <div className="bg-white rounded-2xl border border-emerald-200 shadow-md p-5 relative">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">
-                            <span className="text-xs">🤖</span>
-                          </div>
-                          <span className="text-xs font-medium text-gray-500">AI 回复</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => { setInlineMode(false); setInlineResponse(null); }}
-                            className="text-[11px] text-emerald-600 hover:text-emerald-800 transition-colors">
-                            新开对话 →
-                          </button>
-                          <button onClick={() => setInlineResponse(null)}
-                            className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none">×</button>
-                        </div>
-                      </div>
-                      <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 mb-3 inline-block">{inlineResponse.question}</div>
-                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                        {inlineResponse.answer || (inlineResponse.loading ? (
-                          <div className="flex items-center gap-2 text-gray-400">
-                            <div className="flex gap-1">
-                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                            </div>
-                            <span className="text-xs">正在思考...</span>
-                          </div>
-                        ) : '')}
-                      </div>
-                      {inlineResponse.loading && inlineResponse.answer && (
-                        <div className="mt-2 flex items-center gap-1">
-                          <div className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" />
-                          <span className="text-[10px] text-gray-400">生成中...</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {/* ── 2. Alerts — inline quick actions ── */}
                   {(() => {
                     const alerts: {icon: string; text: string; actionLabel: string; onAction: () => void; color: string; bg: string}[] = [];
@@ -2021,6 +1980,40 @@ export default function AIAssistantPage() {
                       </button>
                     ))}
                   </div>
+
+                  {/* ── 12. Inline AI Response (bottom, near input) ── */}
+                  {inlineResponse && (
+                    <div className="rounded-2xl border border-emerald-100 shadow-lg overflow-hidden" style={{ background: 'linear-gradient(to bottom, #f0fdf4, #ffffff)' }}>
+                      <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+                          </div>
+                          <span className="text-xs text-emerald-700 bg-emerald-50 rounded-full px-2.5 py-0.5 font-medium">{inlineResponse.question}</span>
+                        </div>
+                        <button onClick={() => setInlineResponse(null)}
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-all text-sm">×</button>
+                      </div>
+                      <div className="px-5 pb-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap max-h-[50vh] overflow-y-auto">
+                        {inlineResponse.answer || (inlineResponse.loading ? (
+                          <div className="flex items-center gap-2 py-2 text-emerald-500">
+                            <div className="flex gap-1">
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                            <span className="text-xs">思考中...</span>
+                          </div>
+                        ) : '')}
+                      </div>
+                      {inlineResponse.loading && inlineResponse.answer && (
+                        <div className="px-5 pb-3 flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                          <span className="text-[11px] text-emerald-500">生成中...</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="mx-auto max-w-5xl space-y-5">
