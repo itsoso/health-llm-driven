@@ -287,6 +287,12 @@ export default function AIAssistantPage() {
   const [dietToday, setDietToday] = useState<any>(null);
   const [weightStats, setWeightStats] = useState<any>(null);
   const [quickToast, setQuickToast] = useState<string | null>(null);
+  const [bpLatest, setBpLatest] = useState<any>(null);
+  const [bodyComp, setBodyComp] = useState<any>(null);
+  const [moodToday, setMoodToday] = useState<any>(null);
+  const [medToday, setMedToday] = useState<any[]>([]);
+  const [goalsData, setGoalsData] = useState<any[]>([]);
+  const [workoutRecent, setWorkoutRecent] = useState<any[]>([]);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -373,6 +379,12 @@ export default function AIAssistantPage() {
       api.get(`/diet/records/me/date/${today}`),       // 7
       api.get('/weight/records/me/stats'),             // 8
       api.get('/environment/weather/forecast?days=1'), // 9
+      api.get('/blood-pressure/records/me/stats'),     // 10
+      api.get('/body-composition/trend/me?days=30'),   // 11
+      api.get('/mood/records/me/today'),               // 12
+      api.get('/medication/today/me'),                 // 13
+      api.get('/goals/me?status=active'),              // 14
+      api.get('/workout/me?limit=3'),                  // 15
     ]);
     const ok = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value.data : null;
     if (ok(0)) setHealthScore(ok(0));
@@ -412,6 +424,12 @@ export default function AIAssistantPage() {
     if (ok(6)) setRhinitisToday(ok(6));
     if (ok(7)) setDietToday(ok(7));
     if (ok(8)) setWeightStats(ok(8));
+    if (ok(10)) setBpLatest(ok(10));
+    if (ok(11)) setBodyComp(ok(11));
+    if (ok(12)) setMoodToday(ok(12));
+    if (ok(13)) setMedToday(Array.isArray(ok(13)) ? ok(13) : []);
+    if (ok(14)) setGoalsData(Array.isArray(ok(14)) ? ok(14) : ok(14)?.items || []);
+    if (ok(15)) setWorkoutRecent(Array.isArray(ok(15)) ? ok(15) : ok(15)?.items || []);
   }, []);
 
   // 加载指定对话的消息
@@ -1570,6 +1588,113 @@ export default function AIAssistantPage() {
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-600 inline-block" /> 深睡 {Math.round(sleepDeep * 60)}m</span>
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400 inline-block" /> REM {Math.round(sleepRem * 60)}m</span>
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 inline-block" /> 浅睡 {Math.round(sleepLight * 60)}m</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── 6.5 Blood Pressure + Body Composition ── */}
+                  {(bpLatest || bodyComp) && (
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {bpLatest && (
+                        <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/blood-pressure')}>
+                          <span className="text-xs font-semibold text-gray-600">🩺 血压</span>
+                          <div className="text-xl font-bold text-gray-800 mt-1">
+                            {bpLatest.avg_systolic || bpLatest.latest_systolic || '--'}/{bpLatest.avg_diastolic || bpLatest.latest_diastolic || '--'}
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            脉搏 {bpLatest.avg_pulse || bpLatest.latest_pulse || '--'} bpm
+                          </div>
+                        </div>
+                      )}
+                      {bodyComp && (
+                        <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/body-composition')}>
+                          <span className="text-xs font-semibold text-gray-600">🏋️ 体成分</span>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="text-xl font-bold text-gray-800">{bodyComp.latest?.body_fat_pct || bodyComp.body_fat_pct || '--'}%</span>
+                            <span className="text-sm text-gray-500">{bodyComp.latest?.muscle_mass || bodyComp.muscle_mass || '--'}kg</span>
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            体脂率 · 肌肉量
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── 6.6 Mood Today ── */}
+                  {moodToday && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/mood')}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-600">😊 今日情绪</span>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span>心情 <strong className="text-gray-800">{moodToday.mood_score || '--'}</strong>/10</span>
+                          <span>精力 <strong className="text-gray-800">{moodToday.energy_level || '--'}</strong>/5</span>
+                          <span>焦虑 <strong className="text-gray-800">{moodToday.anxiety_level || '--'}</strong>/5</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── 6.7 Medication Today ── */}
+                  {medToday.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/medication')}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-gray-600">💊 今日用药</span>
+                        <span className="text-[10px] text-gray-400">{medToday.filter((m: any) => m.taken_count > 0).length}/{medToday.length}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {medToday.map((m: any) => (
+                          <span key={m.medication_id} className={`text-xs px-2 py-0.5 rounded-full ${m.taken_count > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {m.name} {m.dosage ? `(${m.dosage})` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── 6.8 Goals Progress ── */}
+                  {goalsData.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/goals')}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-gray-600">🎯 进行中的目标</span>
+                        <span className="text-[10px] text-emerald-600">查看全部</span>
+                      </div>
+                      <div className="space-y-2">
+                        {goalsData.slice(0, 3).map((g: any, i: number) => {
+                          const pct = Math.min(100, Math.round((g.current_value || 0) / (g.target_value || 1) * 100));
+                          return (
+                            <div key={i}>
+                              <div className="flex justify-between text-xs mb-0.5">
+                                <span className="text-gray-700">{g.title || g.description || '目标'}</span>
+                                <span className="text-gray-400">{pct}%</span>
+                              </div>
+                              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── 6.9 Recent Workouts ── */}
+                  {workoutRecent.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/workout')}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-gray-600">🏃 最近运动</span>
+                        <span className="text-[10px] text-emerald-600">查看全部</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {workoutRecent.slice(0, 3).map((w: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400">{w.workout_type || w.type || '运动'}</span>
+                              <span className="text-gray-600">{w.distance ? `${(w.distance/1000).toFixed(1)}km` : ''} {w.duration ? `${Math.round(w.duration/60)}min` : ''}</span>
+                            </div>
+                            <span className="text-gray-500">{w.calories ? `${Math.round(w.calories)}kcal` : ''}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
