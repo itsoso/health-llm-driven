@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supplementApi } from '@/services/api';
+import { supplementApi, api } from '@/services/api';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -51,7 +51,7 @@ function SupplementsContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supplements-with-records'] });
       setShowAddForm(false);
-      setFormData({ name: '', dosage: '', timing: 'morning', category: 'vitamin', description: '' });
+      setFormData({ name: '', dosage: '', timing: 'morning', category: 'vitamin', description: '', product_id: undefined });
     },
   });
 
@@ -70,8 +70,40 @@ function SupplementsContent() {
     timing: 'morning',
     category: 'vitamin',
     description: '',
+    product_id: undefined as number | undefined,
   });
   const [selectedSupplement, setSelectedSupplement] = useState<any>(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [productResults, setProductResults] = useState<any[]>([]);
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // 搜索产品库
+  const searchProducts = async (query: string) => {
+    setProductSearch(query);
+    if (query.length < 1) { setProductResults([]); return; }
+    setLoadingProducts(true);
+    try {
+      const res = await api.get(`/supplements/products?search=${encodeURIComponent(query)}&limit=10`);
+      setProductResults(res.data?.items || []);
+    } catch { setProductResults([]); }
+    setLoadingProducts(false);
+  };
+
+  // 选择产品后自动填充
+  const selectProduct = (product: any) => {
+    setFormData({
+      name: `${product.brand} ${product.name}`,
+      dosage: product.serving_size || '',
+      timing: 'morning',
+      category: product.category || 'vitamin',
+      description: product.description || '',
+      product_id: product.id,
+    });
+    setShowProductPicker(false);
+    setProductSearch('');
+    setProductResults([]);
+  };
   const [showMenu, setShowMenu] = useState(false);
 
   const supplements = supplementsData?.data || [];
@@ -219,6 +251,42 @@ function SupplementsContent() {
         {showAddForm && (
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">添加新补剂</h3>
+
+            {/* 从产品库选择 */}
+            <div className="mb-4">
+              <button type="button" onClick={() => setShowProductPicker(!showProductPicker)}
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors">
+                {showProductPicker ? '关闭产品库' : '从产品库选择 →'}
+              </button>
+              {showProductPicker && (
+                <div className="mt-2 border border-indigo-200 rounded-lg p-3 bg-indigo-50/50">
+                  <input type="text" value={productSearch} onChange={(e) => searchProducts(e.target.value)}
+                    placeholder="搜索品牌或产品名..."
+                    className="w-full p-2 border border-gray-300 rounded-md text-gray-900 text-sm focus:ring-2 focus:ring-indigo-500 bg-white" />
+                  {loadingProducts && <p className="text-xs text-gray-400 mt-2">搜索中...</p>}
+                  {productResults.length > 0 && (
+                    <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
+                      {productResults.map((p: any) => (
+                        <button key={p.id} type="button" onClick={() => selectProduct(p)}
+                          className="w-full text-left px-3 py-2 rounded-md hover:bg-indigo-100 transition-colors text-sm">
+                          <span className="font-semibold text-gray-800">{p.brand}</span>
+                          <span className="text-gray-600 ml-1">{p.name}</span>
+                          {p.serving_size && <span className="text-gray-400 ml-2 text-xs">{p.serving_size}</span>}
+                          {p.price_cny && <span className="text-emerald-600 ml-2 text-xs">¥{Number(p.price_cny).toFixed(0)}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {productSearch && productResults.length === 0 && !loadingProducts && (
+                    <p className="text-xs text-gray-400 mt-2">未找到匹配产品，可手动输入</p>
+                  )}
+                </div>
+              )}
+              {formData.product_id && (
+                <div className="mt-2 text-xs text-emerald-600 font-medium">已关联产品库 #{formData.product_id}</div>
+              )}
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

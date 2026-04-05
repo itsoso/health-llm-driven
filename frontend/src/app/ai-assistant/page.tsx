@@ -1367,10 +1367,36 @@ export default function AIAssistantPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: `${scoreColor}25`, color: scoreColor }}>{scoreLabel}</span>
+                              {healthScore?.dimensions && (() => {
+                                const dims = healthScore.dimensions;
+                                const worst = Object.entries(dims).reduce((a: any, b: any) => (b[1] as number) < (a[1] as number) ? b : a);
+                                const dimNames: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
+                                return (worst[1] as number) < 40 ? (
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: `${scoreColor}20`, color: scoreColor }}>
+                                    {dimNames[worst[0] as string] || worst[0]} 偏低
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
-                            <p className="text-xs text-white/50 leading-5 line-clamp-2">
-                              {insightText || `睡眠${todayGarmin?.sleep_score || '--'}分 · HRV ${todayGarmin?.hrv || '--'}ms · 步数${todayGarmin?.steps?.toLocaleString() || '--'}`}
+                            <p className="text-xs text-white/60 leading-5 line-clamp-2">
+                              {insightText || `昨夜睡眠${todayGarmin?.sleep_score || '--'}分，HRV ${todayGarmin?.hrv || '--'}ms，步数${todayGarmin?.steps?.toLocaleString() || '--'}。饮水量${waterToday.total_ml}ml/${waterToday.goal_ml}ml。`}
                             </p>
+                            {healthScore?.dimensions && (
+                              <div className="flex gap-1.5 mt-2">
+                                {Object.entries(healthScore.dimensions).map(([k, v]: [string, any]) => {
+                                  const names: Record<string, string> = { exercise: '动', sleep: '眠', diet: '食', vitals: '征', weight: '重', hydration: '水' };
+                                  const barColor = v >= 70 ? '#22c55e' : v >= 40 ? '#f59e0b' : '#ef4444';
+                                  return (
+                                    <div key={k} className="flex-1">
+                                      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${v}%`, background: barColor }} />
+                                      </div>
+                                      <div className="text-[9px] text-white/30 text-center mt-0.5">{names[k] || k}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1391,9 +1417,9 @@ export default function AIAssistantPage() {
                     if (hour >= 7) {
                       const waterExpected = hour >= 18 ? 1500 : hour >= 12 ? 800 : 300;
                       if (waterToday.total_ml < waterExpected * 0.3) {
-                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, actionLabel: '+250ml', onAction: () => quickDrinkWater(250), color: '#ef4444', bg: '#fef2f2' });
+                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, actionLabel: '+250ml', onAction: () => quickDrinkWater(350), color: '#ef4444', bg: '#fef2f2' });
                       } else if (waterToday.total_ml < waterExpected * 0.6) {
-                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, actionLabel: '+250ml', onAction: () => quickDrinkWater(250), color: '#f59e0b', bg: '#fffbeb' });
+                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, actionLabel: '+350ml', onAction: () => quickDrinkWater(350), color: '#f59e0b', bg: '#fffbeb' });
                       }
                     }
                     const suppRemaining = suppTotal - suppChecked;
@@ -1646,15 +1672,10 @@ export default function AIAssistantPage() {
                     const showQuickToast = (msg: string) => { setQuickToast(msg); setTimeout(() => setQuickToast(null), 1500); };
 
                     const quickActions = [
-                      { icon: '💧', label: '喝水250ml', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 250, drink_type: '水', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 250, count: prev.count + 1 }));
-                        showQuickToast('已记录喝水 250ml');
-                      }},
-                      { icon: '💧', label: '喝水500ml', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 500, drink_type: '水', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 500, count: prev.count + 1 }));
-                        showQuickToast('已记录喝水 500ml');
+                      { icon: '💧', label: '喝水350ml', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 350, drink_type: '水', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 350, count: prev.count + 1 }));
+                        showQuickToast('已记录喝水 350ml');
                       }},
                       { icon: '👃', label: '洗鼻+1', action: async () => {
                         const cur = rhinitisToday?.nasal_wash_count || 0;
@@ -1668,15 +1689,36 @@ export default function AIAssistantPage() {
                         setRhinitisToday((prev: any) => ({ ...prev, sneeze_count: cur + 1 }));
                         showQuickToast(`已记录喷嚏 ${cur + 1} 次`);
                       }},
-                      { icon: '☕', label: '喝咖啡', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 250, drink_type: '咖啡', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 250, count: prev.count + 1 }));
-                        showQuickToast('已记录咖啡 250ml');
+                      { icon: '☕', label: '咖啡', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 350, drink_type: '咖啡', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 350, count: prev.count + 1 }));
+                        showQuickToast('已记录咖啡 350ml');
                       }},
                       { icon: '🍵', label: '喝茶', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 300, drink_type: '茶', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 300, count: prev.count + 1 }));
-                        showQuickToast('已记录喝茶 300ml');
+                        await api.post('/water/records', { record_date: today, amount: 350, drink_type: '茶', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 350, count: prev.count + 1 }));
+                        showQuickToast('已记录喝茶 350ml');
+                      }},
+                      { icon: '💉', label: '注射替尔泊肽', action: async () => {
+                        // 查找或创建药物记录
+                        const medsRes = await api.get('/medication/medications/me');
+                        const meds = medsRes.data || [];
+                        let med = meds.find((m: any) => m.name === '替尔泊肽' || m.name === 'Tirzepatide');
+                        if (!med) {
+                          const createRes = await api.post('/medication/medications', {
+                            name: '替尔泊肽', dosage: '2.4ml', frequency: '每周1次',
+                            times_per_day: 1, category: 'prescription', purpose: '体重管理/GLP-1',
+                            notes: '皮下注射，每周固定时间'
+                          });
+                          med = createRes.data;
+                        }
+                        const now = new Date();
+                        const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                        await api.post('/medication/logs', {
+                          medication_id: med.id, taken_time: timeStr, status: 'taken',
+                          actual_dosage: '2.4ml', notes: `${today} ${timeStr} 注射`
+                        });
+                        showQuickToast(`已记录注射替尔泊肽 2.4ml (${timeStr})`);
                       }},
                     ];
 
