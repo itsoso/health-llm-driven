@@ -1467,7 +1467,7 @@ export default function AIAssistantPage() {
                   <div className="grid grid-cols-4 gap-3">
                     {[
                       { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', sub: '', ok: (v: number) => v >= 45 && v <= 75 },
-                      { icon: '🔋', value: todayGarmin?.body_battery_high, unit: '', label: '电量', sub: todayGarmin?.body_battery_low != null ? `当前 ${todayGarmin.body_battery_low}` : '', ok: (v: number) => v >= 60 },
+                      { icon: '🔋', value: todayGarmin?.body_battery_most_charged, unit: '', label: '电量', sub: todayGarmin?.body_battery_current != null ? `当前 ${todayGarmin.body_battery_current}` : todayGarmin?.body_battery_lowest != null ? `低 ${todayGarmin.body_battery_lowest}` : '', ok: (v: number) => v >= 60 },
                       { icon: '😴', value: todayGarmin?.sleep_score, unit: '分', label: '睡眠', sub: sleepTotal > 0 ? `${sleepH}h${sleepM > 0 ? sleepM + 'm' : ''}` : '', ok: (v: number) => v >= 70 },
                       { icon: '😌', value: todayGarmin?.stress_level, unit: '', label: '压力', sub: '', ok: (v: number) => v <= 40 },
                     ].map(m => {
@@ -1568,9 +1568,9 @@ export default function AIAssistantPage() {
                         {weightStats?.current_weight || '--'}
                         <span className="text-xs font-normal text-gray-400 ml-0.5">kg</span>
                       </div>
-                      {weightStats?.weight_change != null && (
-                        <div className={`text-xs font-medium mt-1 ${weightStats.weight_change > 0 ? 'text-red-500' : 'text-green-600'}`}>
-                          30天 {weightStats.weight_change > 0 ? '+' : ''}{weightStats.weight_change}kg
+                      {weightStats?.weight_change_30d != null && (
+                        <div className={`text-xs font-medium mt-1 ${weightStats.weight_change_30d > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          30天 {weightStats.weight_change_30d > 0 ? '+' : ''}{weightStats.weight_change_30d}kg
                         </div>
                       )}
                     </div>
