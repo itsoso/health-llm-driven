@@ -522,51 +522,27 @@ export default function AIAssistantPage() {
     }
   };
 
-  // 内联发送（首页模式，不切换到聊天窗口）
+  // 内联发送（首页模式，不切换到聊天窗口，复用openclawApi.streamMessage）
   const handleInlineSend = async (text?: string) => {
     const msg = (text || inputText).trim();
     if (!msg) return;
     setInputText('');
     setInlineResponse({ question: msg, answer: '', loading: true });
     try {
-      const streamUrl = `/api/openclaw/stream`;
-      const body: any = { message: msg };
-      if (conversationId) body.conversation_id = conversationId;
-      const res = await fetch(streamUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''}` },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Stream failed');
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
       let fullText = '';
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.conversation_id && !conversationId) setConversationId(parsed.conversation_id);
-                const token = parsed.choices?.[0]?.delta?.content || parsed.content || parsed.token || '';
-                if (token) {
-                  fullText += token;
-                  setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
-                }
-              } catch {}
-            }
-          }
+      const streamIterator = openclawApi.streamMessage(msg, conversationId);
+      for await (const data of streamIterator) {
+        if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
+        const token = data.choices?.[0]?.delta?.content || data.content || data.token || '';
+        if (token) {
+          fullText += token;
+          setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
         }
       }
       setInlineResponse(prev => prev ? { ...prev, loading: false } : null);
     } catch (e) {
-      setInlineResponse(prev => prev ? { ...prev, answer: '请求失败，请重试', loading: false } : null);
+      console.error('Inline send error:', e);
+      setInlineResponse(prev => prev ? { ...prev, answer: prev?.answer || '请求失败，请重试', loading: false } : null);
     }
   };
 
