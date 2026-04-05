@@ -286,6 +286,7 @@ export default function AIAssistantPage() {
   const [rhinitisToday, setRhinitisToday] = useState<any>(null);
   const [dietToday, setDietToday] = useState<any>(null);
   const [weightStats, setWeightStats] = useState<any>(null);
+  const [quickToast, setQuickToast] = useState<string | null>(null);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1639,24 +1640,86 @@ export default function AIAssistantPage() {
                     </div>
                   )}
 
-                  {/* ── 9. Quick Navigation Grid ── */}
+                  {/* ── 9. Quick Record — one-tap API actions ── */}
+                  {(() => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    const showQuickToast = (msg: string) => { setQuickToast(msg); setTimeout(() => setQuickToast(null), 1500); };
+
+                    const quickActions = [
+                      { icon: '💧', label: '喝水250ml', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 250, drink_type: '水', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 250, count: prev.count + 1 }));
+                        showQuickToast('已记录喝水 250ml');
+                      }},
+                      { icon: '💧', label: '喝水500ml', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 500, drink_type: '水', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 500, count: prev.count + 1 }));
+                        showQuickToast('已记录喝水 500ml');
+                      }},
+                      { icon: '👃', label: '洗鼻+1', action: async () => {
+                        const cur = rhinitisToday?.nasal_wash_count || 0;
+                        await api.post('/checkin/', { checkin_date: today, nasal_wash_count: cur + 1 });
+                        setRhinitisToday((prev: any) => ({ ...prev, nasal_wash_count: cur + 1 }));
+                        showQuickToast(`已记录洗鼻 ${cur + 1} 次`);
+                      }},
+                      { icon: '🤧', label: '喷嚏+1', action: async () => {
+                        const cur = rhinitisToday?.sneeze_count || 0;
+                        await api.post('/checkin/', { checkin_date: today, sneeze_count: cur + 1 });
+                        setRhinitisToday((prev: any) => ({ ...prev, sneeze_count: cur + 1 }));
+                        showQuickToast(`已记录喷嚏 ${cur + 1} 次`);
+                      }},
+                      { icon: '☕', label: '喝咖啡', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 250, drink_type: '咖啡', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 250, count: prev.count + 1 }));
+                        showQuickToast('已记录咖啡 250ml');
+                      }},
+                      { icon: '🍵', label: '喝茶', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 300, drink_type: '茶', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 300, count: prev.count + 1 }));
+                        showQuickToast('已记录喝茶 300ml');
+                      }},
+                    ];
+
+                    return (
+                      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                        <div className="text-xs font-semibold text-gray-500 mb-2.5">快速记录</div>
+                        <div className="flex flex-wrap gap-2">
+                          {quickActions.map((a, i) => (
+                            <button key={i} onClick={async () => { try { await a.action(); } catch (e) { console.error(e); } }}
+                              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 active:scale-95 transition-all">
+                              <span>{a.icon}</span>
+                              <span>{a.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {quickToast && (
+                          <div className="mt-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-medium animate-in fade-in duration-200">
+                            {quickToast}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── 10. Navigation Grid ── */}
                   <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <div className="text-xs font-semibold text-gray-500 mb-2.5">健康管理</div>
                     <div className="grid grid-cols-7 gap-y-3">
                       {[
                         { href: '/supplements', icon: '💊', name: '补剂' },
                         { href: '/diet', icon: '🍽️', name: '饮食' },
                         { href: '/water', icon: '💧', name: '饮水' },
                         { href: '/rhinitis', icon: '👃', name: '鼻炎' },
-                        { href: '/checkin', icon: '✅', name: '打卡' },
                         { href: '/mood', icon: '😊', name: '情绪' },
-                        { href: '/supplement-products', icon: '📦', name: '产品库' },
                         { href: '/workout', icon: '🏋️', name: '运动' },
+                        { href: '/supplement-products', icon: '📦', name: '产品库' },
                         { href: '/sleep', icon: '🌙', name: '睡眠' },
                         { href: '/weight', icon: '⚖️', name: '体重' },
                         { href: '/heart-rate', icon: '❤️', name: '心率' },
                         { href: '/blood-pressure', icon: '🩺', name: '血压' },
                         { href: '/garmin', icon: '⌚', name: 'Garmin' },
                         { href: '/genetic', icon: '🧬', name: '基因' },
+                        { href: '/settings', icon: '⚙️', name: '设置' },
                       ].map(item => (
                         <button key={item.href} onClick={() => router.push(item.href)} className="flex flex-col items-center gap-1 hover:opacity-80 active:scale-95 transition-all">
                           <span className="text-xl">{item.icon}</span>
@@ -1666,7 +1729,7 @@ export default function AIAssistantPage() {
                     </div>
                   </div>
 
-                  {/* ── 10. Quick Ask ── */}
+                  {/* ── 11. Quick Ask ── */}
                   <div className="flex flex-wrap gap-2">
                     {[
                       { text: '帮我分析一下最近的睡眠质量', label: '睡眠分析' },
