@@ -390,15 +390,22 @@ export default function AIAssistantPage() {
       setWaterToday({ total_ml: w?.total_ml || 0, goal_ml: w?.goal_ml || 2000, count: w?.count || 0 });
     }
     if (ok(4)) {
-      const w = ok(4);
-      // merge forecast temp_min/max if available
+      const raw = ok(4);
+      // Flatten: API returns { weather: {...}, exercise_advice: {...} }
+      const wd = raw?.weather || raw || {};
+      // merge forecast temp_min/max
       const fc = ok(9);
-      const todayFc = Array.isArray(fc) ? fc[0] : (fc?.forecasts?.[0] || null);
+      const todayFc = fc?.forecasts?.[0] || (Array.isArray(fc) ? fc[0] : null);
       if (todayFc) {
-        w.temp_min = todayFc.temp_min;
-        w.temp_max = todayFc.temp_max;
+        wd.temp_min = todayFc.temp_min;
+        wd.temp_max = todayFc.temp_max;
       }
-      setWeatherData(w);
+      // Get city from user profile
+      try {
+        const profileRes = await api.get('/profile/me');
+        wd.city = profileRes.data?.city || '杭州';
+      } catch { wd.city = '杭州'; }
+      setWeatherData(wd);
     }
     if (ok(5)) setAirData(ok(5));
     if (ok(6)) setRhinitisToday(ok(6));
@@ -1475,7 +1482,7 @@ export default function AIAssistantPage() {
                     <div className="rounded-2xl p-4 shadow-sm border border-blue-100/50" style={{ background: 'linear-gradient(135deg, #eff6ff, #f0f9ff)' }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-semibold text-gray-700">{weatherData?.city || '天气'}</span>
-                        <span className="text-xs text-gray-500">{weatherData?.weather_description || weatherData?.weather_condition || ''}</span>
+                        <span className="text-xs text-gray-500">{weatherData?.weather || weatherData?.weather_description || ''}</span>
                       </div>
                       {weatherData ? (
                         <>
