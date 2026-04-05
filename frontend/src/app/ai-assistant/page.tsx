@@ -288,7 +288,6 @@ export default function AIAssistantPage() {
   const [weightStats, setWeightStats] = useState<any>(null);
   const [quickToast, setQuickToast] = useState<string | null>(null);
   const [bpLatest, setBpLatest] = useState<any>(null);
-  const [bodyComp, setBodyComp] = useState<any>(null);
   const [moodToday, setMoodToday] = useState<any>(null);
   const [medToday, setMedToday] = useState<any[]>([]);
   const [goalsData, setGoalsData] = useState<any[]>([]);
@@ -380,11 +379,10 @@ export default function AIAssistantPage() {
       api.get('/weight/records/me/stats'),             // 8
       api.get('/environment/weather/forecast?days=1'), // 9
       api.get('/blood-pressure/records/me/stats'),     // 10
-      api.get('/body-composition/trend/me?days=30'),   // 11
-      api.get('/mood/records/me/today'),               // 12
-      api.get('/medication/today/me'),                 // 13
-      api.get('/goals/me?status=active'),              // 14
-      api.get('/workout/me?limit=3'),                  // 15
+      api.get('/mood/records/me/today'),               // 11
+      api.get('/medication/today/me'),                 // 12
+      api.get('/goals/me?status=active'),              // 13
+      api.get('/workout/me?days=7'),                   // 14
     ]);
     const ok = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value.data : null;
     if (ok(0)) setHealthScore(ok(0));
@@ -425,11 +423,10 @@ export default function AIAssistantPage() {
     if (ok(7)) setDietToday(ok(7));
     if (ok(8)) setWeightStats(ok(8));
     if (ok(10)) setBpLatest(ok(10));
-    if (ok(11)) setBodyComp(ok(11));
-    if (ok(12)) setMoodToday(ok(12));
-    if (ok(13)) setMedToday(Array.isArray(ok(13)) ? ok(13) : []);
-    if (ok(14)) setGoalsData(Array.isArray(ok(14)) ? ok(14) : ok(14)?.items || []);
-    if (ok(15)) setWorkoutRecent(Array.isArray(ok(15)) ? ok(15) : ok(15)?.items || []);
+    if (ok(11)) setMoodToday(ok(11));
+    if (ok(12)) setMedToday(Array.isArray(ok(12)) ? ok(12) : []);
+    if (ok(13)) setGoalsData(Array.isArray(ok(13)) ? ok(13) : ok(13)?.items || []);
+    if (ok(14)) setWorkoutRecent(Array.isArray(ok(14)) ? ok(14) : ok(14)?.items || []);
   }, []);
 
   // 加载指定对话的消息
@@ -1592,32 +1589,25 @@ export default function AIAssistantPage() {
                     </div>
                   )}
 
-                  {/* ── 6.5 Blood Pressure + Body Composition ── */}
-                  {(bpLatest || bodyComp) && (
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {bpLatest && (
-                        <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/blood-pressure')}>
-                          <span className="text-xs font-semibold text-gray-600">🩺 血压</span>
-                          <div className="text-xl font-bold text-gray-800 mt-1">
-                            {bpLatest.avg_systolic || bpLatest.latest_systolic || '--'}/{bpLatest.avg_diastolic || bpLatest.latest_diastolic || '--'}
-                          </div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">
-                            脉搏 {bpLatest.avg_pulse || bpLatest.latest_pulse || '--'} bpm
-                          </div>
-                        </div>
-                      )}
-                      {bodyComp && (
-                        <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/body-composition')}>
-                          <span className="text-xs font-semibold text-gray-600">🏋️ 体成分</span>
-                          <div className="flex items-baseline gap-2 mt-1">
-                            <span className="text-xl font-bold text-gray-800">{bodyComp.latest?.body_fat_pct || bodyComp.body_fat_pct || '--'}%</span>
-                            <span className="text-sm text-gray-500">{bodyComp.latest?.muscle_mass || bodyComp.muscle_mass || '--'}kg</span>
-                          </div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">
-                            体脂率 · 肌肉量
-                          </div>
-                        </div>
-                      )}
+                  {/* ── 6.5 Blood Pressure ── */}
+                  {bpLatest && bpLatest.total_records > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/blood-pressure')}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-600">🩺 血压（近30天均值）</span>
+                        <span className="text-[10px] text-gray-400">{bpLatest.total_records}次记录</span>
+                      </div>
+                      <div className="flex items-baseline gap-3 mt-1">
+                        <span className="text-2xl font-bold text-gray-800">
+                          {Math.round(bpLatest.average_systolic)}/{Math.round(bpLatest.average_diastolic)}
+                        </span>
+                        <span className="text-sm text-gray-500">mmHg</span>
+                        {bpLatest.average_pulse && (
+                          <span className="text-sm text-gray-400">脉搏 {Math.round(bpLatest.average_pulse)} bpm</span>
+                        )}
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${bpLatest.normal_count >= bpLatest.total_records * 0.8 ? 'bg-emerald-100 text-emerald-700' : bpLatest.high_count > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {bpLatest.normal_count >= bpLatest.total_records * 0.8 ? '正常' : bpLatest.high_count > 0 ? '偏高' : '关注'}
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -1685,16 +1675,27 @@ export default function AIAssistantPage() {
                         <span className="text-xs font-semibold text-gray-600">🏃 最近运动</span>
                         <span className="text-[10px] text-emerald-600">查看全部</span>
                       </div>
-                      <div className="space-y-1.5">
-                        {workoutRecent.slice(0, 3).map((w: any, i: number) => (
-                          <div key={i} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-400">{w.workout_type || w.type || '运动'}</span>
-                              <span className="text-gray-600">{w.distance ? `${(w.distance/1000).toFixed(1)}km` : ''} {w.duration ? `${Math.round(w.duration/60)}min` : ''}</span>
+                      <div className="space-y-2">
+                        {workoutRecent.slice(0, 3).map((w: any, i: number) => {
+                          const dist = w.distance_meters ? (w.distance_meters / 1000).toFixed(2) : null;
+                          const dur = w.duration_seconds ? Math.round(w.duration_seconds / 60) : null;
+                          const typeMap: Record<string, string> = { running: '🏃 跑步', cycling: '🚴 骑行', swimming: '🏊 游泳', walking: '🚶 步行', hiking: '🥾 徒步', strength: '🏋️ 力量', yoga: '🧘 瑜伽' };
+                          const typeName = typeMap[w.workout_type] || w.workout_type || '运动';
+                          return (
+                            <div key={i} className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-700 font-medium">{typeName}</span>
+                                <span className="text-gray-400">{w.workout_name || ''}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-gray-500">
+                                {dist && <span>{dist}km</span>}
+                                {dur && <span>{dur}min</span>}
+                                {w.calories && <span className="font-medium text-orange-500">{w.calories}kcal</span>}
+                                <span className="text-gray-300">{w.workout_date}</span>
+                              </div>
                             </div>
-                            <span className="text-gray-500">{w.calories ? `${Math.round(w.calories)}kcal` : ''}</span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
