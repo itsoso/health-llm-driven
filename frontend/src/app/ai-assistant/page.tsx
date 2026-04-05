@@ -292,6 +292,8 @@ export default function AIAssistantPage() {
   const [medToday, setMedToday] = useState<any[]>([]);
   const [goalsData, setGoalsData] = useState<any[]>([]);
   const [workoutRecent, setWorkoutRecent] = useState<any[]>([]);
+  const [inlineMode, setInlineMode] = useState(true); // 首页内联模式：回复显示在dashboard上
+  const [inlineResponse, setInlineResponse] = useState<{question: string; answer: string; loading: boolean} | null>(null);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -517,11 +519,66 @@ export default function AIAssistantPage() {
     }
   };
 
+  // 内联发送（首页模式，不切换到聊天窗口）
+  const handleInlineSend = async (text?: string) => {
+    const msg = (text || inputText).trim();
+    if (!msg) return;
+    setInputText('');
+    setInlineResponse({ question: msg, answer: '', loading: true });
+    try {
+      const streamUrl = `/api/openclaw/stream`;
+      const body: any = { message: msg };
+      if (conversationId) body.conversation_id = conversationId;
+      const res = await fetch(streamUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('Stream failed');
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.conversation_id && !conversationId) setConversationId(parsed.conversation_id);
+                const token = parsed.choices?.[0]?.delta?.content || parsed.content || parsed.token || '';
+                if (token) {
+                  fullText += token;
+                  setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
+                }
+              } catch {}
+            }
+          }
+        }
+      }
+      setInlineResponse(prev => prev ? { ...prev, loading: false } : null);
+    } catch (e) {
+      setInlineResponse(prev => prev ? { ...prev, answer: '请求失败，请重试', loading: false } : null);
+    }
+  };
+
   // 发送消息（流式优先，降级到非流式）
   const handleSend = async (text?: string, imageBase64?: string, imageType?: string) => {
     const msg = (text || inputText).trim();
     const hasAttachment = pendingImage || pendingFile;
     if (!msg && !hasAttachment) return;
+
+    // 内联模式：在首页直接显示回复
+    if (inlineMode && !hasAttachment) {
+      handleInlineSend(text);
+      return;
+    }
+
     // 如果有待发送图片但未传入参数，使用 pendingImage
     const finalImageBase64 = imageBase64 || pendingImage?.base64;
     const finalImageType = imageType || pendingImage?.type;
@@ -990,7 +1047,7 @@ export default function AIAssistantPage() {
   };
 
   const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content));
-  const isWelcome = visibleMessages.length === 0 && !loading;
+  const isWelcome = inlineMode || (visibleMessages.length === 0 && !loading);
 
   // 首页趋势数据
   const last7 = garminHistory.slice(-7);
@@ -1428,6 +1485,47 @@ export default function AIAssistantPage() {
                       </div>
                     );
                   })()}
+
+                  {/* ── 1.5 Inline AI Response (stays on dashboard) ── */}
+                  {inlineResponse && (
+                    <div className="bg-white rounded-2xl border border-emerald-200 shadow-md p-5 relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">
+                            <span className="text-xs">🤖</span>
+                          </div>
+                          <span className="text-xs font-medium text-gray-500">AI 回复</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => { setInlineMode(false); setInlineResponse(null); }}
+                            className="text-[11px] text-emerald-600 hover:text-emerald-800 transition-colors">
+                            新开对话 →
+                          </button>
+                          <button onClick={() => setInlineResponse(null)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none">×</button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 mb-3 inline-block">{inlineResponse.question}</div>
+                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                        {inlineResponse.answer || (inlineResponse.loading ? (
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <div className="flex gap-1">
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                            <span className="text-xs">正在思考...</span>
+                          </div>
+                        ) : '')}
+                      </div>
+                      {inlineResponse.loading && inlineResponse.answer && (
+                        <div className="mt-2 flex items-center gap-1">
+                          <div className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" />
+                          <span className="text-[10px] text-gray-400">生成中...</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* ── 2. Alerts — inline quick actions ── */}
                   {(() => {
@@ -2171,6 +2269,26 @@ export default function AIAssistantPage() {
                   disabled={isRecording}
                 />
 
+                {/* 新开对话按钮（仅内联模式显示） */}
+                {inlineMode && (
+                  <button
+                    onClick={() => { setInlineMode(false); setInlineResponse(null); setMessages([]); setConversationId(undefined); }}
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200 transition-all"
+                    title="切换到完整对话模式"
+                  >
+                    新开对话
+                  </button>
+                )}
+                {/* 返回首页按钮（仅对话模式显示） */}
+                {!inlineMode && visibleMessages.length > 0 && (
+                  <button
+                    onClick={() => { setInlineMode(true); setMessages([]); setConversationId(undefined); }}
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-gray-500 hover:bg-gray-100 border border-gray-200 transition-all"
+                    title="返回首页"
+                  >
+                    首页
+                  </button>
+                )}
                 <button
                   onClick={() => handleSend()}
                   disabled={!inputText.trim() && !pendingImage && !pendingFile}
