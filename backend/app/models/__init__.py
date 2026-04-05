@@ -15,7 +15,7 @@ from app.models.health_checkin import HealthCheckin
 from app.models.goal import Goal, GoalProgress
 from app.models.daily_recommendation import DailyRecommendation
 from app.models.health_analysis_cache import HealthAnalysisCache
-from app.models.supplement import SupplementDefinition, SupplementRecord
+from app.models.supplement import SupplementProduct, SupplementDefinition, SupplementRecord
 from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
@@ -113,6 +113,7 @@ __all__ = [
     "GoalProgress",
     "DailyRecommendation",
     "HealthAnalysisCache",
+    "SupplementProduct",
     "SupplementDefinition",
     "SupplementRecord",
     "HabitDefinition",

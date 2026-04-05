@@ -16,6 +16,7 @@ from app.api import (
     # garmin_connect,  # 已废弃，功能由 auth.garmin/sync 和 scheduler 提供
     daily_recommendation,
     supplements,
+    supplement_products,
     # habits,  # 已废弃，模块已移除
     weight,
     blood_pressure,
@@ -119,6 +120,7 @@ api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tag
 # api_router.include_router(garmin_connect.router, prefix="/garmin-connect", tags=["garmin-connect"])  # 已废弃
 api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
 api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
+api_router.include_router(supplement_products.router, tags=["supplement-products"])  # 产品知识库（prefix在router中定义）
 # api_router.include_router(habits.router, prefix="/habits", tags=["habits"])  # 已废弃，模块已移除
 api_router.include_router(weight.router, prefix="/weight", tags=["weight"])
 api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=["blood-pressure"])
