@@ -277,6 +277,63 @@ class LLMHealthAnalyzer:
             logger.warning(f"构建基因药物约束失败: {e}")
             return ""
 
+    def _build_genetic_profile_context(self, db: Session, user_id: int) -> str:
+        """
+        构建用户完整基因画像，用于个性化健康建议
+
+        覆盖全部类别：营养代谢、运动基因、药物敏感性、疾病风险、睡眠基因
+        """
+        try:
+            from app.models.genetic_data import GeneticVariant
+
+            variants = db.query(GeneticVariant).filter(
+                GeneticVariant.user_id == user_id
+            ).order_by(
+                GeneticVariant.risk_level.desc(),
+                GeneticVariant.category
+            ).all()
+
+            if not variants:
+                return ""
+
+            cat_labels = {
+                'nutrition': '营养代谢基因',
+                'exercise': '运动基因',
+                'drug_sensitivity': '药物敏感性',
+                'disease_risk': '疾病风险基因',
+                'sleep': '睡眠基因'
+            }
+            by_cat: dict = {}
+            for v in variants:
+                by_cat.setdefault(v.category or 'other', []).append(v)
+
+            lines = ["\n\n## 用户基因检测画像（个性化建议必须参考）\n"]
+            for cat, items in by_cat.items():
+                lines.append(f"\n### {cat_labels.get(cat, cat)}")
+                for v in items:
+                    risk_tag = {'high': '⚠️高风险', 'medium': '⚡中风险', 'low': '✅低风险'}.get(v.risk_level, 'ℹ️')
+                    line = f"- {risk_tag} **{v.gene_name}**"
+                    if v.variant_name:
+                        line += f" {v.variant_name}"
+                    if v.genotype:
+                        line += f" ({v.genotype})"
+                    if v.result_label:
+                        line += f": {v.result_label}"
+                    if v.description:
+                        line += f" — {v.description[:150]}"
+                    lines.append(line)
+
+            lines.append("\n**基于以上基因数据，你的健康建议应该：**")
+            lines.append("- 营养基因异常 → 调整饮食建议（如MTHFR需活性叶酸、ALDH2需禁酒）")
+            lines.append("- 运动基因特征 → 推荐匹配的运动类型（如ACTN3决定力量vs耐力倾向）")
+            lines.append("- 睡眠基因 → 调整作息建议（如CLOCK/PER2影响昼夜节律）")
+            lines.append("- 疾病风险 → 加强对应指标监测和预防建议")
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"构建基因画像失败: {e}")
+            return ""
+
     def _get_time_context(self) -> Dict[str, Any]:
         """获取当前时间上下文"""
         now = get_china_now()
@@ -663,13 +720,18 @@ class LLMHealthAnalyzer:
                 yesterday_data, recent_data, rule_analysis, user_context, environment_data
             )
 
-            # 基因-药物约束（如果有）
+            # 基因画像（完整基因检测数据，用于个性化建议）
+            genetic_profile = self._build_genetic_profile_context(db, user_id)
+            if genetic_profile:
+                health_prompt += genetic_profile
+
+            # 基因-药物约束（硬性安全规则）
             gene_constraints = self._build_gene_drug_constraints(db, user_id)
             if gene_constraints:
                 health_prompt += gene_constraints
 
-            system_prompt = """你是一位专业的智能助理和运动生理学专家。
-你需要基于用户的可穿戴设备数据、个人画像和当地环境信息，提供科学、高度个性化的健康建议。
+            system_prompt = """你是一位专业的智能助理和运动生理学专家，同时具备营养基因组学知识。
+你需要基于用户的可穿戴设备数据、个人画像、基因检测数据和当地环境信息，提供科学、高度个性化的健康建议。
 
 ⚠️ 【关键提醒】你收到的所有运动数据（步数、活动分钟、卡路里）都是昨天的数据，不是今天的！
 今天才刚开始，所以你的运动建议应该：
@@ -691,6 +753,11 @@ class LLMHealthAnalyzer:
 10.【运动推荐】给出具体的锻炼方式推荐，包括室内/室外选择、运动类型、时长、强度等
 11.【时间感知】用户在中国（UTC+8），数据中的日期是北京时间日期
 12.【数据时效】再次强调：活动数据（步数、活动分钟）是昨天的，睡眠数据是昨晚的，不是今天的！
+13.【基因个性化】如果提供了基因检测数据，必须在建议中体现基因影响：
+   - 营养代谢基因异常 → 明确指出该吃什么、避免什么（如MTHFR TT需甲基叶酸、ALDH2缺陷禁酒）
+   - 运动基因 → 推荐匹配肌肉类型的训练（ACTN3 XX偏耐力、RR偏力量）
+   - 睡眠基因 → 调整作息建议
+   - 疾病风险基因 → 在warnings中提醒相关指标监测
 
 🚨 【空气质量警告 - 必须严格执行】基于AQI指数（包含PM2.5）判断户外运动安全性：
 - AQI ≤ 50（优）：空气清新，非常适合各类户外运动

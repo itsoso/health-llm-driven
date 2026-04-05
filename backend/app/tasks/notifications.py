@@ -368,6 +368,28 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
                 w_lines.append(f"- {w.activity_type}: {dist} {dur} 消耗{w.calories or 0}kcal")
             parts.append("\n".join(w_lines))
 
+        # 基因数据
+        try:
+            from app.models.genetic_data import GeneticVariant
+            variants = db.query(GeneticVariant).filter(
+                GeneticVariant.user_id == user_id
+            ).order_by(GeneticVariant.risk_level.desc()).all()
+            if variants:
+                g_lines = ["## 基因检测画像（请结合基因数据给出个性化建议）"]
+                for v in variants:
+                    risk_tag = {'high': '⚠️', 'medium': '⚡', 'low': '✅'}.get(v.risk_level, '')
+                    line = f"- {risk_tag} {v.gene_name}"
+                    if v.genotype:
+                        line += f" ({v.genotype})"
+                    if v.result_label:
+                        line += f": {v.result_label}"
+                    if v.description:
+                        line += f" — {v.description[:80]}"
+                    g_lines.append(line)
+                parts.append("\n".join(g_lines))
+        except Exception as e:
+            logger.warning(f"[健康复盘] 获取基因数据失败: {e}")
+
         if len(parts) <= 1:
             logger.info(f"[健康复盘] 用户 {user_id} 无足够数据，跳过")
             return

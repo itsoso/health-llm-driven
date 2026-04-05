@@ -120,6 +120,17 @@ class SupplementRecommendationServiceLLM:
                     "记录天数": diet_data.get('record_count', 0) if diet_data else 0
                 })
             
+            # 4.5 获取基因数据
+            step_start = time.time()
+            genetic_data = self._get_genetic_data(db, user_id)
+            if debug:
+                self._add_debug_step(debug_info, "获取基因数据", time.time() - step_start)
+                self._add_debug_data(debug_info, "基因数据", {
+                    "变异数量": len(genetic_data),
+                    "高风险": [g['gene'] for g in genetic_data if g.get('risk') == 'high'],
+                    "分类": list(set(g.get('category', '') for g in genetic_data)),
+                })
+
             # 5. 获取当前补剂状态
             step_start = time.time()
             supplement_status = self._get_supplement_status(db, user_id, target_date)
@@ -145,7 +156,8 @@ class SupplementRecommendationServiceLLM:
             step_start = time.time()
             llm_result = await self._generate_llm_recommendation(
                 profile, health_data, workout_data, diet_data,
-                supplement_status, knowledge_results, debug_info
+                supplement_status, knowledge_results, debug_info,
+                genetic_data=genetic_data
             )
             if debug:
                 self._add_debug_step(debug_info, "LLM 生成推荐", time.time() - step_start)
@@ -285,19 +297,21 @@ class SupplementRecommendationServiceLLM:
         diet_data: Optional[Dict[str, Any]],
         supplement_status: Dict[str, Any],
         knowledge_results: List[Dict[str, Any]],
-        debug_info: Optional[Dict[str, Any]]
+        debug_info: Optional[Dict[str, Any]],
+        genetic_data: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """使用 LLM 生成补剂推荐"""
-        
+
         # 构建知识库上下文
         knowledge_context = "\n\n".join([
             f"【知识点 {i+1}】\n{r.get('content', '')}"
             for i, r in enumerate(knowledge_results[:5])
         ])
-        
+
         # 构建用户上下文
         user_context = self._build_user_context(
-            profile, health_data, workout_data, diet_data, supplement_status
+            profile, health_data, workout_data, diet_data, supplement_status,
+            genetic_data=genetic_data
         )
         
         # 构建 Prompt
@@ -349,10 +363,17 @@ class SupplementRecommendationServiceLLM:
 
 注意：
 - 推荐要基于用户的实际数据和需求
+- **必须结合用户的基因检测数据**（如有），基因变异直接影响补剂选择和剂量：
+  - MTHFR C677T TT/CT: 必须使用活性叶酸(5-MTHF)替代普通叶酸，且需要甲基化B族
+  - ALDH2 缺陷: 严格避免含酒精补剂，注意NAD+前体选择
+  - CYP1A2 慢代谢: 限制咖啡因摄入，影响绿茶提取物等含咖啡因补剂
+  - FADS1/FADS2: 影响omega-3转化效率，决定EPA/DHA补充剂量
+  - VDR 变异: 影响维生素D吸收，可能需要更高剂量
+  - COMT Met/Met: 影响儿茶酚胺代谢，避免高剂量甲基供体
 - 优先推荐最需要的补剂（3-5个即可）
 - 考虑用户的过敏史和疾病史
 - 给出具体的剂量和服用时间
-- 提供清晰的理由，引用知识库内容
+- 提供清晰的理由，引用知识库内容和基因数据
 """
 
         user_prompt = f"""请为以下用户生成补剂推荐：
@@ -420,11 +441,12 @@ class SupplementRecommendationServiceLLM:
         health_data: Optional[Dict[str, Any]],
         workout_data: Optional[Dict[str, Any]],
         diet_data: Optional[Dict[str, Any]],
-        supplement_status: Dict[str, Any]
+        supplement_status: Dict[str, Any],
+        genetic_data: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """构建用户上下文"""
         context_parts = []
-        
+
         # 基本信息
         if profile:
             context_parts.append(f"### 基本信息")
@@ -437,12 +459,36 @@ class SupplementRecommendationServiceLLM:
                 if profile.current_weight_kg:
                     bmi = profile.current_weight_kg / ((profile.height_cm / 100) ** 2)
                     context_parts.append(f"- BMI：{bmi:.1f}")
-            
+
             if profile.chronic_conditions:
                 context_parts.append(f"- 慢性病：{', '.join(profile.chronic_conditions)}")
             if profile.allergies:
                 context_parts.append(f"- 过敏：{', '.join(profile.allergies)}")
-        
+
+        # 基因数据 — 关键个性化信息
+        if genetic_data:
+            context_parts.append(f"\n### 基因检测数据（{len(genetic_data)}项变异）")
+            # 按分类分组
+            by_cat: Dict[str, list] = {}
+            for g in genetic_data:
+                cat = g.get('category', 'other')
+                by_cat.setdefault(cat, []).append(g)
+            cat_labels = {'nutrition': '营养代谢', 'exercise': '运动基因', 'drug_sensitivity': '药物敏感性', 'disease_risk': '疾病风险', 'sleep': '睡眠基因'}
+            for cat, items in by_cat.items():
+                context_parts.append(f"\n**{cat_labels.get(cat, cat)}:**")
+                for g in items:
+                    risk_emoji = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}.get(g.get('risk', ''), 'ℹ️')
+                    line = f"- {risk_emoji} {g['gene']}"
+                    if g.get('variant'):
+                        line += f" {g['variant']}"
+                    if g.get('genotype'):
+                        line += f" ({g['genotype']})"
+                    if g.get('result'):
+                        line += f": {g['result']}"
+                    if g.get('description'):
+                        line += f" — {g['description'][:100]}"
+                    context_parts.append(line)
+
         # 健康数据
         if health_data:
             context_parts.append(f"\n### 最近健康数据（7天平均）")
@@ -451,7 +497,7 @@ class SupplementRecommendationServiceLLM:
                 context_parts.append(f"- 睡眠评分：{health_data.get('latest_sleep_score')}/100")
             context_parts.append(f"- 压力水平：{health_data.get('avg_stress_level', 0):.0f}/100")
             context_parts.append(f"- 静息心率：{health_data.get('avg_resting_hr', 0):.0f} bpm")
-        
+
         # 运动数据
         if workout_data:
             context_parts.append(f"\n### 运动情况（最近7天）")
@@ -459,7 +505,7 @@ class SupplementRecommendationServiceLLM:
             context_parts.append(f"- 总时长：{workout_data.get('total_duration_minutes', 0)}分钟")
             if workout_data.get('has_high_intensity'):
                 context_parts.append(f"- 包含高强度训练")
-        
+
         # 饮食数据
         if diet_data:
             context_parts.append(f"\n### 饮食情况（最近7天）")
@@ -467,9 +513,37 @@ class SupplementRecommendationServiceLLM:
             if profile and profile.current_weight_kg:
                 protein_per_kg = diet_data.get('avg_daily_protein', 0) / profile.current_weight_kg
                 context_parts.append(f"- 蛋白质/体重：{protein_per_kg:.2f}g/kg")
-        
+
         return "\n".join(context_parts)
     
+    def _get_genetic_data(self, db: Session, user_id: int) -> List[Dict[str, Any]]:
+        """获取用户基因数据"""
+        try:
+            from app.models.genetic_data import GeneticVariant
+            variants = db.query(GeneticVariant).filter(
+                GeneticVariant.user_id == user_id
+            ).order_by(
+                # 高风险优先
+                GeneticVariant.risk_level.desc(),
+                GeneticVariant.category
+            ).all()
+            return [
+                {
+                    "gene": v.gene_name,
+                    "variant": v.variant_name,
+                    "genotype": v.genotype,
+                    "result": v.result_label,
+                    "risk": v.risk_level,
+                    "category": v.category,
+                    "description": v.description,
+                    "implications": v.health_implications,
+                }
+                for v in variants
+            ]
+        except Exception as e:
+            logger.warning(f"[补剂推荐LLM] 获取基因数据失败: {e}")
+            return []
+
     def _validate_and_fill_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """验证并填充结果字段"""
         return {
