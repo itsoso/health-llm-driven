@@ -1348,71 +1348,83 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-6xl">
               {isWelcome ? (
-                <div className="space-y-4 max-w-4xl mx-auto">
-                  {/* ── 1. Hero Card — greeting + score + insight ── */}
+                <div className="max-w-5xl mx-auto space-y-4">
+
+                  {/* ════════════ HERO — modern gradient card ════════════ */}
                   {(() => {
                     const h = new Date().getHours();
                     const greeting = h < 6 ? '夜深了' : h < 11 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
                     const displayName = user?.name || user?.username || '';
                     const score = healthScore?.total_score || 0;
-                    const scoreColor = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
-                    const scoreLabel = score >= 80 ? '状态优秀' : score >= 60 ? '需要关注' : '需要关注';
+                    const scoreColor = score >= 80 ? '#34d399' : score >= 60 ? '#fbbf24' : '#f87171';
+                    const scoreLabel = score >= 80 ? '状态优秀' : score >= 60 ? '需要关注' : '需要改善';
                     const insightText = dailyInsight?.summary
-                      ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 100)
-                      : null;
+                      ? dailyInsight.summary.replace(/[✅☑️🟢#*_`|>\[\]]/g, '').replace(/\n+/g, ' ').trim().slice(0, 120)
+                      : `睡眠${todayGarmin?.sleep_score || '--'}分 · HRV ${todayGarmin?.hrv || '--'}ms · ${todayGarmin?.steps?.toLocaleString() || '--'}步 · 饮水${waterToday.total_ml}ml`;
                     return (
-                      <div className="rounded-2xl p-5 relative overflow-hidden"
-                        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #334155 100%)' }}>
-                        <div className="flex items-center justify-between mb-3">
-                          <h1 className="text-base font-bold text-white">{greeting}{displayName ? `，${displayName}` : ''}</h1>
-                          <button onClick={() => { loadTodayGarmin(); loadDashboardData(); }}
-                            className="text-xs text-white/40 hover:text-white/80 transition-colors flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                            刷新
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="relative shrink-0">
-                            <AnimatedRing score={score} size={72} strokeWidth={6} />
-                            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                              <span className="text-xl font-bold text-white">{score || '--'}</span>
-                              <span className="text-[9px] text-white/50">健康分</span>
+                      <div className="rounded-3xl p-6 relative overflow-hidden shadow-lg"
+                        style={{ background: 'linear-gradient(135deg, #065f46 0%, #047857 40%, #059669 100%)' }}>
+                        {/* 装饰圆 */}
+                        <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                        <div className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full" style={{ background: 'rgba(255,255,255,0.04)' }} />
+
+                        <div className="relative z-10">
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                              <h1 className="text-xl font-bold text-white tracking-tight">{greeting}{displayName ? `，${displayName}` : ''}</h1>
+                              <p className="text-emerald-200/70 text-sm mt-0.5">{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</p>
                             </div>
+                            <button onClick={() => { loadTodayGarmin(); loadDashboardData(); }}
+                              className="text-xs text-white/50 hover:text-white transition-colors flex items-center gap-1 bg-white/10 rounded-full px-3 py-1.5">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                              刷新
+                            </button>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: `${scoreColor}25`, color: scoreColor }}>{scoreLabel}</span>
-                              {healthScore?.dimensions && (() => {
-                                const dims = healthScore.dimensions;
-                                const worst = Object.entries(dims).reduce((a: any, b: any) => (b[1] as number) < (a[1] as number) ? b : a);
-                                const dimNames: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
-                                return (worst[1] as number) < 40 ? (
-                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: `${scoreColor}20`, color: scoreColor }}>
-                                    {dimNames[worst[0] as string] || worst[0]} 偏低
-                                  </span>
-                                ) : null;
-                              })()}
-                            </div>
-                            <p className="text-xs text-white/60 leading-5 line-clamp-2">
-                              {insightText || `昨夜睡眠${todayGarmin?.sleep_score || '--'}分，HRV ${todayGarmin?.hrv || '--'}ms，步数${todayGarmin?.steps?.toLocaleString() || '--'}。饮水量${waterToday.total_ml}ml/${waterToday.goal_ml}ml。`}
-                            </p>
-                            {healthScore?.dimensions && (
-                              <div className="flex gap-1.5 mt-2">
-                                {Object.entries(healthScore.dimensions).map(([k, v]: [string, any]) => {
-                                  const names: Record<string, string> = { exercise: '动', sleep: '眠', diet: '食', vitals: '征', weight: '重', hydration: '水' };
-                                  const barColor = v >= 70 ? '#22c55e' : v >= 40 ? '#f59e0b' : '#ef4444';
-                                  return (
-                                    <div key={k} className="flex-1">
-                                      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${v}%`, background: barColor }} />
-                                      </div>
-                                      <div className="text-[9px] text-white/30 text-center mt-0.5">{names[k] || k}</div>
-                                    </div>
-                                  );
-                                })}
+
+                          <div className="flex items-center gap-5">
+                            <div className="relative shrink-0">
+                              <AnimatedRing score={score} size={88} strokeWidth={7} />
+                              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className="text-3xl font-extrabold text-white">{score || '--'}</span>
+                                <span className="text-[10px] text-emerald-200/60 font-medium">健康分</span>
                               </div>
-                            )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-xs font-bold px-2.5 py-1 rounded-full text-white" style={{ background: `${scoreColor}40`, border: `1px solid ${scoreColor}60` }}>{scoreLabel}</span>
+                                {healthScore?.dimensions && (() => {
+                                  const dims = healthScore.dimensions;
+                                  const worst = Object.entries(dims).reduce((a: any, b: any) => (b[1] as number) < (a[1] as number) ? b : a);
+                                  const dimNames: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
+                                  return (worst[1] as number) < 40 ? (
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-red-500/20 text-red-200 border border-red-400/30">
+                                      {dimNames[worst[0] as string] || worst[0]} 偏低
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </div>
+                              <p className="text-sm text-emerald-100/80 leading-relaxed line-clamp-2">{insightText}</p>
+                            </div>
                           </div>
+
+                          {/* 维度条 */}
+                          {healthScore?.dimensions && (
+                            <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
+                              {Object.entries(healthScore.dimensions).map(([k, v]: [string, any]) => {
+                                const names: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
+                                const barColor = v >= 70 ? '#34d399' : v >= 40 ? '#fbbf24' : '#f87171';
+                                return (
+                                  <div key={k} className="flex-1 text-center">
+                                    <div className="text-[10px] text-emerald-200/50 mb-1">{names[k] || k}</div>
+                                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${v}%`, background: barColor }} />
+                                    </div>
+                                    <div className="text-[10px] text-emerald-200/40 mt-0.5">{v}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1466,21 +1478,21 @@ export default function AIAssistantPage() {
                       const v = (m as any).value;
                       const isWarn = v != null && !m.ok(v);
                       return (
-                        <div key={m.label} className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm">
-                          <span className="text-base">{m.icon}</span>
-                          <div className={`text-xl font-bold mt-0.5 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
-                            {v ?? '--'}<span className="text-[10px] font-normal text-gray-400 ml-0.5">{m.unit}</span>
+                        <div key={m.label} className={`rounded-2xl p-4 text-center transition-all ${isWarn ? 'bg-amber-50 border-2 border-amber-200' : 'bg-white border border-gray-100'} shadow-sm hover:shadow-md`}>
+                          <span className="text-2xl">{m.icon}</span>
+                          <div className={`text-2xl font-extrabold mt-1 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
+                            {v ?? '--'}<span className="text-xs font-normal text-gray-400 ml-0.5">{m.unit}</span>
                           </div>
-                          <div className="text-[10px] text-gray-400">{m.label}</div>
-                          {(m as any).sub && <div className="text-[9px] text-gray-400">{(m as any).sub}</div>}
+                          <div className="text-xs text-gray-500 font-medium mt-0.5">{m.label}</div>
+                          {(m as any).sub && <div className="text-[11px] text-gray-400 mt-0.5">{(m as any).sub}</div>}
                         </div>
                       );
                     })}
                   </div>
 
                   {/* ── 4. Context Row — weather, diet, rhinitis, weight ── */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                    <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-xs font-semibold text-gray-600">{weatherData?.city || '天气'}</span>
                         <span className="text-[10px] text-gray-400">{weatherData?.weather || ''}</span>
@@ -1539,7 +1551,7 @@ export default function AIAssistantPage() {
                       { label: '补剂', pct: suppPct, val: `${suppChecked}/${suppTotal}`, sub: '', color: '#8b5cf6' },
                     ];
                     return (
-                      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
                         <div className="grid grid-cols-3 gap-4">
                           {rings.map(r => {
                             const sz = 52, sw = 4, rad = (sz - sw) / 2, circ = 2 * Math.PI * rad;
@@ -1566,7 +1578,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 6. Sleep Detail — stages bar ── */}
                   {sleepTotal > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-gray-600">昨夜睡眠详情</span>
                         <span className="text-xs text-gray-400">{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
@@ -1591,7 +1603,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 6.5 Blood Pressure ── */}
                   {bpLatest && bpLatest.total_records > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/blood-pressure')}>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/blood-pressure')}>
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-gray-600">🩺 血压（近30天均值）</span>
                         <span className="text-[10px] text-gray-400">{bpLatest.total_records}次记录</span>
@@ -1613,7 +1625,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 6.6 Mood Today ── */}
                   {moodToday && (
-                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/mood')}>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/mood')}>
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-gray-600">😊 今日情绪</span>
                         <div className="flex items-center gap-3 text-sm">
@@ -1627,7 +1639,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 6.7 Medication Today ── */}
                   {medToday.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/medication')}>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/medication')}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-semibold text-gray-600">💊 今日用药</span>
                         <span className="text-[10px] text-gray-400">{medToday.filter((m: any) => m.taken_count > 0).length}/{medToday.length}</span>
@@ -1644,7 +1656,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 6.8 Goals Progress ── */}
                   {goalsData.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/goals')}>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/goals')}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-gray-600">🎯 进行中的目标</span>
                         <span className="text-[10px] text-emerald-600">查看全部</span>
@@ -1670,7 +1682,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 6.9 Recent Workouts ── */}
                   {workoutRecent.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm cursor-pointer" onClick={() => router.push('/workout')}>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/workout')}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-gray-600">🏃 最近运动</span>
                         <span className="text-[10px] text-emerald-600">查看全部</span>
@@ -1712,7 +1724,7 @@ export default function AIAssistantPage() {
                         const change = Number(pctChange(t.avg, t.prevAvg));
                         const isGood = t.goodDown ? change <= 0 : change >= 0;
                         return (
-                          <div key={t.label} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+                          <div key={t.label} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow">
                             <div className="flex items-center justify-between mb-0.5">
                               <span className="text-xs font-medium text-gray-500">{t.icon} {t.label}</span>
                               <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${isGood ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>{change >= 0 ? '+' : ''}{change}%</span>
@@ -1730,7 +1742,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 8. Supplements — inline checkin ── */}
                   {suppFlat.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm">💊</span>
@@ -1849,19 +1861,19 @@ export default function AIAssistantPage() {
                     ];
 
                     return (
-                      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <div className="text-xs font-semibold text-gray-500 mb-2.5">快速记录</div>
-                        <div className="flex flex-wrap gap-2">
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
+                        <div className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">快速记录</div>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                           {quickActions.map((a, i) => (
                             <button key={i} onClick={async () => { try { await a.action(); } catch (e) { console.error(e); } }}
-                              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-700 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 active:scale-95 transition-all">
-                              <span>{a.icon}</span>
-                              <span>{a.label}</span>
+                              className="flex flex-col items-center gap-1 px-2 py-3 rounded-2xl border border-gray-100 bg-gray-50/80 text-xs text-gray-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 active:scale-95 transition-all">
+                              <span className="text-xl">{a.icon}</span>
+                              <span className="font-medium">{a.label}</span>
                             </button>
                           ))}
                         </div>
                         {quickToast && (
-                          <div className="mt-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-medium animate-in fade-in duration-200">
+                          <div className="mt-3 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium text-center">
                             {quickToast}
                           </div>
                         )}
@@ -1870,9 +1882,9 @@ export default function AIAssistantPage() {
                   })()}
 
                   {/* ── 10. Navigation Grid ── */}
-                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <div className="text-xs font-semibold text-gray-500 mb-2.5">健康管理</div>
-                    <div className="grid grid-cols-7 gap-y-3">
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
+                    <div className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">健康管理</div>
+                    <div className="grid grid-cols-7 gap-2">
                       {[
                         { href: '/supplements', icon: '💊', name: '补剂' },
                         { href: '/diet', icon: '🍽️', name: '饮食' },
@@ -1889,9 +1901,9 @@ export default function AIAssistantPage() {
                         { href: '/genetic', icon: '🧬', name: '基因' },
                         { href: '/settings', icon: '⚙️', name: '设置' },
                       ].map(item => (
-                        <button key={item.href} onClick={() => router.push(item.href)} className="flex flex-col items-center gap-1 hover:opacity-80 active:scale-95 transition-all">
-                          <span className="text-xl">{item.icon}</span>
-                          <span className="text-[10px] text-gray-500">{item.name}</span>
+                        <button key={item.href} onClick={() => router.push(item.href)} className="flex flex-col items-center gap-1.5 py-2 rounded-xl hover:bg-gray-50 active:scale-95 transition-all">
+                          <span className="text-2xl">{item.icon}</span>
+                          <span className="text-[11px] text-gray-500 font-medium">{item.name}</span>
                         </button>
                       ))}
                     </div>
