@@ -295,6 +295,7 @@ export default function AIAssistantPage() {
   const [examTrends, setExamTrends] = useState<any>(null);
   const [inlineMode, setInlineMode] = useState(true); // 首页内联模式：回复显示在dashboard上
   const [inlineResponse, setInlineResponse] = useState<{question: string; answer: string; loading: boolean} | null>(null);
+  const inlineResponseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -528,6 +529,7 @@ export default function AIAssistantPage() {
     if (!msg) return;
     setInputText('');
     setInlineResponse({ question: msg, answer: '', loading: true });
+    setTimeout(() => inlineResponseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
     try {
       let fullText = '';
       const streamIterator = openclawApi.streamMessage(msg, conversationId);
@@ -2052,7 +2054,7 @@ export default function AIAssistantPage() {
 
                   {/* ── 12. Inline AI Response (bottom, near input) ── */}
                   {inlineResponse && (
-                    <div className="rounded-2xl border border-emerald-100 shadow-lg overflow-hidden" style={{ background: 'linear-gradient(to bottom, #f0fdf4, #ffffff)' }}>
+                    <div ref={inlineResponseRef} className="rounded-2xl border border-emerald-100 shadow-lg overflow-hidden" style={{ background: 'linear-gradient(to bottom, #f0fdf4, #ffffff)' }}>
                       <div className="px-5 pt-4 pb-2 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
