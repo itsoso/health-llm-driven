@@ -1647,7 +1647,7 @@ export default function AIAssistantPage() {
                     </div>
                   )}
 
-                  {/* ── 6. Supplements — compact progress ── */}
+                  {/* ── 6. Supplements — compact progress with inline checkin ── */}
                   {suppFlat.length > 0 && (
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -1664,6 +1664,32 @@ export default function AIAssistantPage() {
                         </div>
                       </div>
                       {(() => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        const toggleSupp = async (suppId: number, currentTaken: boolean) => {
+                          const newTaken = !currentTaken;
+                          // 乐观更新 UI
+                          setSupplementStatus(prev => prev.map((s: any) => {
+                            const sid = s.supplement?.id || s.supplement_id || s.id;
+                            if (sid === suppId) {
+                              return { ...s, record: { ...(s.record || {}), taken: newTaken }, is_taken: newTaken, checked: newTaken };
+                            }
+                            return s;
+                          }));
+                          // 调 API
+                          try {
+                            await supplementApi.batchCheckin({ record_date: today, checkins: [{ supplement_id: suppId, taken: newTaken }] });
+                          } catch (e) {
+                            console.error('补剂打卡失败', e);
+                            // 回滚
+                            setSupplementStatus(prev => prev.map((s: any) => {
+                              const sid = s.supplement?.id || s.supplement_id || s.id;
+                              if (sid === suppId) {
+                                return { ...s, record: { ...(s.record || {}), taken: currentTaken }, is_taken: currentTaken, checked: currentTaken };
+                              }
+                              return s;
+                            }));
+                          }
+                        };
                         let lastTiming = '';
                         return (
                           <>
@@ -1671,16 +1697,17 @@ export default function AIAssistantPage() {
                               const taken = s.record?.taken || s.is_taken || s.checked;
                               const name = s.supplement?.name || s.supplement_name || s.name;
                               const dosage = s.supplement?.dosage || s.dosage || s.dose;
+                              const suppId = s.supplement?.id || s.supplement_id || s.id;
                               const showHeader = s._timing !== lastTiming;
                               lastTiming = s._timing;
                               return (
                                 <div key={i}>
                                   {showHeader && <p className="text-[11px] font-medium text-gray-400 mt-2.5 mb-1 first:mt-0 uppercase tracking-wider">{timingLabels[s._timing]}</p>}
-                                  <div className="flex items-center gap-2.5 py-1.5">
-                                    <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${taken ? 'bg-emerald-500' : 'border border-gray-300'}`}>
-                                      {taken && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                  <div className="flex items-center gap-2.5 py-1.5 cursor-pointer group" onClick={() => toggleSupp(suppId, !!taken)}>
+                                    <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-all ${taken ? 'bg-emerald-500 shadow-sm' : 'border-2 border-gray-300 group-hover:border-emerald-400'}`}>
+                                      {taken && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                                     </div>
-                                    <span className={`flex-1 text-sm ${taken ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{name}</span>
+                                    <span className={`flex-1 text-sm transition-colors ${taken ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{name}</span>
                                     {dosage && <span className="text-[11px] text-gray-400">{dosage}</span>}
                                   </div>
                                 </div>
