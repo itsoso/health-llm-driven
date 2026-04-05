@@ -1392,13 +1392,12 @@ export default function AIAssistantPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-xs font-bold px-2.5 py-1 rounded-full text-white" style={{ background: `${scoreColor}40`, border: `1px solid ${scoreColor}60` }}>{scoreLabel}</span>
-                                {healthScore?.dimensions && (() => {
-                                  const dims = healthScore.dimensions;
-                                  const worst = Object.entries(dims).reduce((a: any, b: any) => (b[1] as number) < (a[1] as number) ? b : a);
-                                  const dimNames: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
-                                  return (worst[1] as number) < 40 ? (
+                                {healthScore?.dimensions && Array.isArray(healthScore.dimensions) && (() => {
+                                  const dims = healthScore.dimensions as any[];
+                                  const worst = dims.reduce((a: any, b: any) => (b.score < a.score ? b : a), dims[0]);
+                                  return worst && worst.score < 40 ? (
                                     <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-red-500/20 text-red-200 border border-red-400/30">
-                                      {dimNames[worst[0] as string] || worst[0]} 偏低
+                                      {worst.name} 偏低
                                     </span>
                                   ) : null;
                                 })()}
@@ -1408,18 +1407,18 @@ export default function AIAssistantPage() {
                           </div>
 
                           {/* 维度条 */}
-                          {healthScore?.dimensions && (
+                          {healthScore?.dimensions && Array.isArray(healthScore.dimensions) && (
                             <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
-                              {Object.entries(healthScore.dimensions).map(([k, v]: [string, any]) => {
-                                const names: Record<string, string> = { exercise: '运动', sleep: '睡眠', diet: '饮食', vitals: '体征', weight: '体重', hydration: '水分' };
-                                const barColor = v >= 70 ? '#34d399' : v >= 40 ? '#fbbf24' : '#f87171';
+                              {(healthScore.dimensions as any[]).map((dim: any) => {
+                                const s = dim.score || 0;
+                                const barColor = s >= 70 ? '#34d399' : s >= 40 ? '#fbbf24' : '#f87171';
                                 return (
-                                  <div key={k} className="flex-1 text-center">
-                                    <div className="text-[10px] text-emerald-200/50 mb-1">{names[k] || k}</div>
+                                  <div key={dim.name} className="flex-1 text-center">
+                                    <div className="text-[10px] text-emerald-200/50 mb-1">{dim.name}</div>
                                     <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${v}%`, background: barColor }} />
+                                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s}%`, background: barColor }} />
                                     </div>
-                                    <div className="text-[10px] text-emerald-200/40 mt-0.5">{v}</div>
+                                    <div className="text-[10px] text-emerald-200/40 mt-0.5">{s}</div>
                                   </div>
                                 );
                               })}
