@@ -144,6 +144,7 @@ function SupplementsContent() {
       timing: selectedSupplement.timing,
       category: selectedSupplement.category,
       description: selectedSupplement.description || '',
+      product_id: selectedSupplement.product_id,
     });
     setShowAddForm(true);
     setShowMenu(false);
