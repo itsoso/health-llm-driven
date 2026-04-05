@@ -1468,17 +1468,17 @@ export default function AIAssistantPage() {
 
                           {/* 维度条 */}
                           {healthScore?.dimensions && Array.isArray(healthScore.dimensions) && (
-                            <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
+                            <div className="grid grid-cols-6 gap-3 mt-5 pt-4 border-t border-white/15">
                               {(healthScore.dimensions as any[]).map((dim: any) => {
                                 const s = dim.score || 0;
                                 const barColor = s >= 70 ? '#34d399' : s >= 40 ? '#fbbf24' : '#f87171';
                                 return (
-                                  <div key={dim.name} className="flex-1 text-center">
-                                    <div className="text-[10px] text-emerald-200/50 mb-1">{dim.name}</div>
-                                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                  <div key={dim.name} className="text-center">
+                                    <div className="text-xs font-medium text-white/80 mb-1.5">{dim.name}</div>
+                                    <div className="h-3 rounded-full bg-white/15 overflow-hidden">
                                       <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s}%`, background: barColor }} />
                                     </div>
-                                    <div className="text-[10px] text-emerald-200/40 mt-0.5">{s}</div>
+                                    <div className="text-xs font-bold text-white/70 mt-1">{s}</div>
                                   </div>
                                 );
                               })}
