@@ -1500,14 +1500,22 @@ export default function AIAssistantPage() {
                     if (hour >= 7) {
                       const waterExpected = hour >= 18 ? 1500 : hour >= 12 ? 800 : 300;
                       if (waterToday.total_ml < waterExpected * 0.3) {
-                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, actionLabel: '+250ml', onAction: () => quickDrinkWater(350), color: '#ef4444', bg: '#fef2f2' });
+                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, actionLabel: '+500ml', onAction: () => quickDrinkWater(500), color: '#ef4444', bg: '#fef2f2' });
                       } else if (waterToday.total_ml < waterExpected * 0.6) {
-                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, actionLabel: '+350ml', onAction: () => quickDrinkWater(350), color: '#f59e0b', bg: '#fffbeb' });
+                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, actionLabel: '+250ml', onAction: () => quickDrinkWater(250), color: '#f59e0b', bg: '#fffbeb' });
                       }
                     }
                     const suppRemaining = suppTotal - suppChecked;
                     if (suppRemaining > 0 && suppTotal > 0 && hour >= 7) {
                       alerts.push({ icon: '💊', text: `${suppRemaining}项补剂待服用`, actionLabel: '去打卡', onAction: () => router.push('/supplements'), color: '#8b5cf6', bg: '#f5f3ff' });
+                    }
+                    // SpO2 低值告警
+                    if (todayGarmin?.spo2_avg && todayGarmin.spo2_avg < 95) {
+                      alerts.push({ icon: '🫁', text: `血氧 ${todayGarmin.spo2_avg}% 低于正常值(95%)，注意休息`, actionLabel: '查看', onAction: () => router.push('/garmin'), color: '#ef4444', bg: '#fef2f2' });
+                    }
+                    // HRV 异常
+                    if (todayGarmin?.hrv && todayGarmin.hrv < 40) {
+                      alerts.push({ icon: '💓', text: `HRV ${todayGarmin.hrv}ms 偏低，身体恢复不足`, actionLabel: '分析', onAction: () => handleSend('分析我最近的HRV趋势，给出恢复建议'), color: '#ef4444', bg: '#fef2f2' });
                     }
                     if (alerts.length === 0) return null;
                     return (
@@ -1866,10 +1874,15 @@ export default function AIAssistantPage() {
                     const showQuickToast = (msg: string) => { setQuickToast(msg); setTimeout(() => setQuickToast(null), 1500); };
 
                     const quickActions = [
-                      { icon: '💧', label: '喝水350ml', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 350, drink_type: '水', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 350, count: prev.count + 1 }));
-                        showQuickToast('已记录喝水 350ml');
+                      { icon: '💧', label: '250ml', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 250, drink_type: '水', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 250, count: prev.count + 1 }));
+                        showQuickToast('已记录喝水 250ml');
+                      }},
+                      { icon: '💧', label: '500ml', action: async () => {
+                        await api.post('/water/records', { record_date: today, amount: 500, drink_type: '水', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 500, count: prev.count + 1 }));
+                        showQuickToast('已记录喝水 500ml');
                       }},
                       { icon: '👃', label: '洗鼻+1', action: async () => {
                         const cur = rhinitisToday?.nasal_wash_count || 0;
@@ -1984,8 +1997,39 @@ export default function AIAssistantPage() {
                         <button onClick={() => setInlineResponse(null)}
                           className="w-6 h-6 rounded-full flex items-center justify-center text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-all text-sm">×</button>
                       </div>
-                      <div className="px-5 pb-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap max-h-[50vh] overflow-y-auto">
-                        {inlineResponse.answer || (inlineResponse.loading ? (
+                      <div className="px-5 pb-4 text-sm text-gray-700 leading-relaxed max-h-[50vh] overflow-y-auto">
+                        {inlineResponse.answer ? (
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                              ul: ({ children }) => <ul className="mb-2 ml-4 list-disc space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>,
+                              li: ({ children }) => <li className="leading-6">{children}</li>,
+                              h1: ({ children }) => <h1 className="mb-2 mt-3 text-lg font-bold text-gray-900 first:mt-0">{children}</h1>,
+                              h2: ({ children }) => <h2 className="mb-2 mt-3 text-base font-bold text-gray-900 first:mt-0">{children}</h2>,
+                              h3: ({ children }) => <h3 className="mb-1 mt-2 text-sm font-bold text-gray-800 first:mt-0">{children}</h3>,
+                              strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                              em: ({ children }) => <em className="italic text-gray-500">{children}</em>,
+                              code: ({ ...props }: any) => {
+                                const inline = !props.className?.includes('language-');
+                                return inline ? (
+                                  <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs text-emerald-700" {...props} />
+                                ) : (
+                                  <code className="my-2 block overflow-x-auto rounded-xl bg-gray-50 px-3 py-2 font-mono text-xs" {...props} />
+                                );
+                              },
+                              pre: ({ children }) => <pre className="my-2 overflow-x-auto rounded-xl bg-gray-50 p-3">{children}</pre>,
+                              blockquote: ({ children }) => <blockquote className="my-2 border-l-3 border-emerald-300 bg-emerald-50/50 py-1 pl-3 italic text-gray-600">{children}</blockquote>,
+                              table: ({ children }) => <div className="my-2 overflow-x-auto"><table className="min-w-full text-xs border border-gray-200 rounded-lg">{children}</table></div>,
+                              thead: ({ children }) => <thead className="bg-gray-50">{children}</thead>,
+                              tr: ({ children }) => <tr className="border-b border-gray-100">{children}</tr>,
+                              th: ({ children }) => <th className="px-2 py-1.5 text-left font-semibold text-gray-700 border border-gray-200">{children}</th>,
+                              td: ({ children }) => <td className="px-2 py-1.5 border border-gray-200">{children}</td>,
+                              a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline hover:text-emerald-800">{children}</a>,
+                            }}
+                          >{inlineResponse.answer}</ReactMarkdown>
+                        ) : inlineResponse.loading ? (
                           <div className="flex items-center gap-2 py-2 text-emerald-500">
                             <div className="flex gap-1">
                               <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1994,7 +2038,7 @@ export default function AIAssistantPage() {
                             </div>
                             <span className="text-xs">思考中...</span>
                           </div>
-                        ) : '')}
+                        ) : null}
                       </div>
                       {inlineResponse.loading && inlineResponse.answer && (
                         <div className="px-5 pb-3 flex items-center gap-1.5">
