@@ -292,6 +292,7 @@ export default function AIAssistantPage() {
   const [medToday, setMedToday] = useState<any[]>([]);
   const [goalsData, setGoalsData] = useState<any[]>([]);
   const [workoutRecent, setWorkoutRecent] = useState<any[]>([]);
+  const [examTrends, setExamTrends] = useState<any>(null);
   const [inlineMode, setInlineMode] = useState(true); // 首页内联模式：回复显示在dashboard上
   const [inlineResponse, setInlineResponse] = useState<{question: string; answer: string; loading: boolean} | null>(null);
 
@@ -385,6 +386,7 @@ export default function AIAssistantPage() {
       api.get('/medication/today/me'),                 // 12
       api.get('/goals/me?status=active'),              // 13
       api.get('/workout/me?days=7'),                   // 14
+      api.get('/medical-exams/me/indicator-trends?indicators=HCY,ALT,GGT,TC,FBG,UA'), // 15
     ]);
     const ok = (i: number) => results[i].status === 'fulfilled' ? (results[i] as any).value.data : null;
     if (ok(0)) setHealthScore(ok(0));
@@ -429,6 +431,7 @@ export default function AIAssistantPage() {
     if (ok(12)) setMedToday(Array.isArray(ok(12)) ? ok(12) : []);
     if (ok(13)) setGoalsData(Array.isArray(ok(13)) ? ok(13) : ok(13)?.items || []);
     if (ok(14)) setWorkoutRecent(Array.isArray(ok(14)) ? ok(14) : ok(14)?.items || []);
+    if (ok(15)) setExamTrends(ok(15));
   }, []);
 
   // 加载指定对话的消息
@@ -1687,6 +1690,63 @@ export default function AIAssistantPage() {
                     </div>
                   )}
 
+                  {/* ── 6.55 Medical Exam Trends (multi-year) ── */}
+                  {examTrends && Object.keys(examTrends).length > 0 && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 cursor-pointer" onClick={() => router.push('/medical-exams')}>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">体检指标趋势</span>
+                        <span className="text-[10px] text-emerald-600">查看详情</span>
+                      </div>
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Object.entries(examTrends).map(([code, info]: [string, any]) => {
+                          const pts = info.data || [];
+                          if (pts.length < 2) return null;
+                          const latest = pts[pts.length - 1];
+                          const prev = pts[pts.length - 2];
+                          const diff = latest.value - prev.value;
+                          const pctChange = prev.value ? ((diff / prev.value) * 100).toFixed(1) : '0';
+                          const isDown = diff < 0;
+                          const isAbnormal = latest.is_abnormal;
+                          // Mini sparkline SVG
+                          const maxV = Math.max(...pts.map((p: any) => p.value));
+                          const minV = Math.min(...pts.map((p: any) => p.value));
+                          const range = maxV - minV || 1;
+                          const svgW = 80;
+                          const svgH = 24;
+                          const pathD = pts.map((p: any, i: number) => {
+                            const x = (i / (pts.length - 1)) * svgW;
+                            const y = svgH - ((p.value - minV) / range) * (svgH - 4) - 2;
+                            return `${i === 0 ? 'M' : 'L'}${x},${y}`;
+                          }).join(' ');
+                          const lineColor = isAbnormal ? '#ef4444' : '#10b981';
+                          return (
+                            <div key={code} className="flex items-center justify-between">
+                              <div className="min-w-0">
+                                <div className="text-[11px] text-gray-500">{info.name}</div>
+                                <div className="flex items-baseline gap-1">
+                                  <span className={`text-base font-bold ${isAbnormal ? 'text-red-500' : 'text-gray-800'}`}>{latest.value}</span>
+                                  <span className="text-[10px] text-gray-400">{info.unit}</span>
+                                </div>
+                                <div className={`text-[10px] ${isDown ? 'text-emerald-500' : 'text-red-400'}`}>
+                                  {isDown ? '↓' : '↑'}{Math.abs(Number(pctChange))}%
+                                </div>
+                              </div>
+                              <svg width={svgW} height={svgH} className="shrink-0">
+                                <path d={pathD} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                {/* ref range band */}
+                                {info.reference_low != null && info.reference_high != null && (
+                                  <rect x="0" y={svgH - ((info.reference_high - minV) / range) * (svgH - 4) - 2}
+                                    width={svgW} height={Math.max(1, ((info.reference_high - info.reference_low) / range) * (svgH - 4))}
+                                    fill="#10b981" opacity="0.08" rx="2" />
+                                )}
+                              </svg>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* ── 6.6 Mood Today ── */}
                   {moodToday && (
                     <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/mood')}>
@@ -1740,6 +1800,30 @@ export default function AIAssistantPage() {
                             </div>
                           );
                         })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── 6.85 Today's Activity Status ── */}
+                  {todayGarmin && (todayGarmin.active_minutes > 0 || todayGarmin.active_calories > 0) && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 cursor-pointer" onClick={() => router.push('/garmin')}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-600">🏃 今日活动</span>
+                        <span className="text-[10px] text-gray-400">{new Date().toLocaleDateString('zh-CN')}</span>
+                      </div>
+                      <div className="flex items-center gap-6 mt-2">
+                        <div>
+                          <span className="text-2xl font-bold text-gray-800">{todayGarmin.active_minutes || 0}</span>
+                          <span className="text-xs text-gray-400 ml-1">活动分钟</span>
+                        </div>
+                        <div>
+                          <span className="text-2xl font-bold text-gray-800">{todayGarmin.active_calories || 0}</span>
+                          <span className="text-xs text-gray-400 ml-1">活动卡路里</span>
+                        </div>
+                        <div>
+                          <span className="text-2xl font-bold text-gray-800">{todayGarmin.floors_climbed || 0}</span>
+                          <span className="text-xs text-gray-400 ml-1">爬楼层</span>
+                        </div>
                       </div>
                     </div>
                   )}

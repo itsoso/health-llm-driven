@@ -53,6 +53,44 @@ def create_medical_exam(
     return db_exam
 
 
+# ========== 体检指标趋势 ==========
+
+@router.get("/me/indicator-trends")
+def get_my_indicator_trends(
+    indicators: str = Query(default="HCY,ALT,GGT,TC,TG,FBG,UA,BMI", description="逗号分隔的指标代码"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取关键体检指标多年趋势（需要登录）"""
+    from app.models.family_health import MedicalIndicator
+    codes = [c.strip() for c in indicators.split(",") if c.strip()]
+
+    results = {}
+    for code in codes:
+        rows = db.query(MedicalIndicator).filter(
+            MedicalIndicator.user_id == current_user.id,
+            MedicalIndicator.name_en == code
+        ).order_by(MedicalIndicator.record_date).all()
+
+        if rows:
+            results[code] = {
+                "name": rows[0].name,
+                "unit": rows[0].unit,
+                "reference_low": rows[0].reference_low,
+                "reference_high": rows[0].reference_high,
+                "data": [
+                    {
+                        "date": r.record_date.isoformat(),
+                        "value": r.value,
+                        "is_abnormal": r.is_abnormal,
+                    }
+                    for r in rows
+                ]
+            }
+
+    return results
+
+
 # ========== /me 端点必须在 /user/{user_id} 之前定义 ==========
 
 @router.get("/me", response_model=List[MedicalExamResponse])
