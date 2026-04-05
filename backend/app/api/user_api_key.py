@@ -487,6 +487,36 @@ async def get_external_health_data(
     if user_profile_data:
         response["user_profile"] = user_profile_data
 
+    # 添加基因检测数据（不随日期变化，放在顶层）
+    try:
+        from app.models.genetic_data import GeneticVariant
+        variants = db.query(GeneticVariant).filter(
+            GeneticVariant.user_id == api_key.user_id
+        ).order_by(
+            GeneticVariant.risk_level.desc(),
+            GeneticVariant.category
+        ).all()
+        if variants:
+            response["genetic_profile"] = {
+                "total_variants": len(variants),
+                "high_risk_count": sum(1 for v in variants if v.risk_level == "high"),
+                "variants": [
+                    {
+                        "gene": v.gene_name,
+                        "variant": v.variant_name,
+                        "genotype": v.genotype,
+                        "result": v.result_label,
+                        "risk_level": v.risk_level,
+                        "category": v.category,
+                        "description": v.description,
+                        "health_implications": v.health_implications,
+                    }
+                    for v in variants
+                ]
+            }
+    except Exception:
+        pass  # 基因表未创建或查询失败时不影响主流程
+
     return response
 
 
