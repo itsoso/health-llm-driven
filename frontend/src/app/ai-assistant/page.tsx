@@ -1614,52 +1614,44 @@ export default function AIAssistantPage() {
 
                   {/* (Progress Row merged into Core Metrics above) */}
 
-                  {/* ── 6. Sleep Detail — stages bar ── */}
-                  {sleepTotal > 0 && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-gray-600">昨夜睡眠详情</span>
-                        <span className="text-xs text-gray-400">{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
+                  {/* ── 6. Sleep + Blood Pressure — side by side ── */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    {sleepTotal > 0 && (
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer" onClick={() => router.push('/sleep')}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-semibold text-gray-600">😴 睡眠</span>
+                          <span className="text-[10px] text-gray-400">{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
+                        </div>
+                        <div className="flex h-2.5 rounded-full overflow-hidden mb-2">
+                          {sleepDeep > 0 && <div className="bg-indigo-600" style={{ width: `${(sleepDeep / sleepTotal) * 100}%` }} />}
+                          {sleepRem > 0 && <div className="bg-purple-400" style={{ width: `${(sleepRem / sleepTotal) * 100}%` }} />}
+                          {sleepLight > 0 && <div className="bg-blue-200" style={{ width: `${(sleepLight / sleepTotal) * 100}%` }} />}
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="font-bold text-gray-800">{todayGarmin?.sleep_score || '--'}<span className="text-[10px] text-gray-400">分</span></span>
+                          <span className="text-gray-500">HRV {todayGarmin?.hrv || '--'}</span>
+                          <span className="text-gray-500">SpO2 {todayGarmin?.spo2_avg || '--'}%</span>
+                        </div>
+                        <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
+                          <span>● 深{Math.round(sleepDeep * 60)}m</span>
+                          <span>● REM {Math.round(sleepRem * 60)}m</span>
+                          <span>● 浅{Math.round(sleepLight * 60)}m</span>
+                        </div>
                       </div>
-                      <div className="flex h-3 rounded-full overflow-hidden mb-2">
-                        {sleepDeep > 0 && <div className="bg-indigo-600" style={{ width: `${(sleepDeep / sleepTotal) * 100}%` }} />}
-                        {sleepRem > 0 && <div className="bg-purple-400" style={{ width: `${(sleepRem / sleepTotal) * 100}%` }} />}
-                        {sleepLight > 0 && <div className="bg-blue-200" style={{ width: `${(sleepLight / sleepTotal) * 100}%` }} />}
+                    )}
+                    {bpLatest && bpLatest.total_records > 0 && (
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer" onClick={() => router.push('/blood-pressure')}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-semibold text-gray-600">🩺 血压</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${bpLatest.normal_count >= bpLatest.total_records * 0.8 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {bpLatest.normal_count >= bpLatest.total_records * 0.8 ? '正常' : '偏高'}
+                          </span>
+                        </div>
+                        <div className="text-2xl font-bold text-gray-800">{Math.round(bpLatest.average_systolic)}/{Math.round(bpLatest.average_diastolic)} <span className="text-sm font-normal text-gray-400">mmHg</span></div>
+                        <div className="text-xs text-gray-400 mt-0.5">脉搏 {bpLatest.average_pulse ? Math.round(bpLatest.average_pulse) : '--'} bpm · {bpLatest.total_records}次记录</div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-2xl font-bold text-gray-800">{todayGarmin?.sleep_score || '--'}<span className="text-[10px] text-gray-400 ml-0.5">睡眠分</span></div>
-                        <div className="text-sm text-gray-500">{todayGarmin?.hrv || '--'}<span className="text-[10px] text-gray-400 ml-0.5">HRV ms</span></div>
-                        <div className="text-sm text-gray-500">{todayGarmin?.spo2_avg || '--'}<span className="text-[10px] text-gray-400 ml-0.5">SpO2 %</span></div>
-                      </div>
-                      <div className="flex gap-4 mt-1.5 text-[10px] text-gray-400">
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-600 inline-block" /> 深睡 {Math.round(sleepDeep * 60)}m</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400 inline-block" /> REM {Math.round(sleepRem * 60)}m</span>
-                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 inline-block" /> 浅睡 {Math.round(sleepLight * 60)}m</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── 6.5 Blood Pressure ── */}
-                  {bpLatest && bpLatest.total_records > 0 && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/blood-pressure')}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-600">🩺 血压（近30天均值）</span>
-                        <span className="text-[10px] text-gray-400">{bpLatest.total_records}次记录</span>
-                      </div>
-                      <div className="flex items-baseline gap-3 mt-1">
-                        <span className="text-2xl font-bold text-gray-800">
-                          {Math.round(bpLatest.average_systolic)}/{Math.round(bpLatest.average_diastolic)}
-                        </span>
-                        <span className="text-sm text-gray-500">mmHg</span>
-                        {bpLatest.average_pulse && (
-                          <span className="text-sm text-gray-400">脉搏 {Math.round(bpLatest.average_pulse)} bpm</span>
-                        )}
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${bpLatest.normal_count >= bpLatest.total_records * 0.8 ? 'bg-emerald-100 text-emerald-700' : bpLatest.high_count > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {bpLatest.normal_count >= bpLatest.total_records * 0.8 ? '正常' : bpLatest.high_count > 0 ? '偏高' : '关注'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* ── 6.55 Medical Exam Trends (multi-year) ── */}
                   {examTrends && Object.keys(examTrends).length > 0 && (
@@ -1718,156 +1710,79 @@ export default function AIAssistantPage() {
                     </div>
                   )}
 
-                  {/* ── 6.6 Mood Today ── */}
-                  {moodToday && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/mood')}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-600">😊 今日情绪</span>
-                        <div className="flex items-center gap-3 text-sm">
-                          <span>心情 <strong className="text-gray-800">{moodToday.mood_score || '--'}</strong>/10</span>
-                          <span>精力 <strong className="text-gray-800">{moodToday.energy_level || '--'}</strong>/5</span>
-                          <span>焦虑 <strong className="text-gray-800">{moodToday.anxiety_level || '--'}</strong>/5</span>
-                        </div>
+                  {/* ── 6.6 Activity + Workouts + Medication — combined compact ── */}
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    {/* Activity stats inline */}
+                    {todayGarmin && (todayGarmin.active_minutes > 0 || todayGarmin.active_calories > 0) && (
+                      <div className="flex items-center gap-4 mb-3 pb-3 border-b border-gray-50 cursor-pointer" onClick={() => router.push('/garmin')}>
+                        <span className="text-xs font-semibold text-gray-600">🏃 今日活动</span>
+                        <span className="text-sm font-bold text-gray-800">{todayGarmin.active_minutes || 0}<span className="text-[10px] font-normal text-gray-400">min</span></span>
+                        <span className="text-sm font-bold text-gray-800">{todayGarmin.active_calories || 0}<span className="text-[10px] font-normal text-gray-400">kcal</span></span>
+                        <span className="text-sm font-bold text-gray-800">{todayGarmin.floors_climbed || 0}<span className="text-[10px] font-normal text-gray-400">层</span></span>
                       </div>
-                    </div>
-                  )}
-
-                  {/* ── 6.7 Medication Today ── */}
-                  {medToday.length > 0 && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/medication')}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-gray-600">💊 今日用药</span>
-                        <span className="text-[10px] text-gray-400">{medToday.filter((m: any) => m.taken_count > 0).length}/{medToday.length}</span>
+                    )}
+                    {/* Recent workouts */}
+                    {workoutRecent.length > 0 && (
+                      <div className="mb-3 pb-3 border-b border-gray-50 cursor-pointer" onClick={() => router.push('/workout')}>
+                        {workoutRecent.slice(0, 2).map((w: any, i: number) => {
+                          const dist = w.distance_meters ? (w.distance_meters / 1000).toFixed(1) : null;
+                          const dur = w.duration_seconds ? Math.round(w.duration_seconds / 60) : null;
+                          const typeMap: Record<string, string> = { running: '🏃', cycling: '🚴', swimming: '🏊', walking: '🚶', hiking: '🥾', strength: '🏋️', yoga: '🧘' };
+                          return (
+                            <div key={i} className="flex items-center justify-between text-xs py-0.5">
+                              <span className="text-gray-600">{typeMap[w.workout_type] || '🏃'} {w.workout_name || w.workout_type}</span>
+                              <span className="text-gray-400">{dist && `${dist}km `}{dur && `${dur}min `}{w.calories && <span className="text-orange-500">{w.calories}kcal</span>}</span>
+                            </div>
+                          );
+                        })}
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
+                    )}
+                    {/* Medication inline */}
+                    {medToday.length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap cursor-pointer" onClick={() => router.push('/medication')}>
+                        <span className="text-xs font-semibold text-gray-600">💉 用药</span>
                         {medToday.map((m: any) => (
-                          <span key={m.medication_id} className={`text-xs px-2 py-0.5 rounded-full ${m.taken_count > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
-                            {m.name} {m.dosage ? `(${m.dosage})` : ''}
+                          <span key={m.medication_id} className={`text-[11px] px-2 py-0.5 rounded-full ${m.taken_count > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {m.name}
                           </span>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  {/* ── 6.8 Goals Progress ── */}
-                  {goalsData.length > 0 && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/goals')}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-gray-600">🎯 进行中的目标</span>
-                        <span className="text-[10px] text-emerald-600">查看全部</span>
-                      </div>
-                      <div className="space-y-2">
-                        {goalsData.slice(0, 3).map((g: any, i: number) => {
-                          const pct = Math.min(100, Math.round((g.current_value || 0) / (g.target_value || 1) * 100));
-                          return (
-                            <div key={i}>
-                              <div className="flex justify-between text-xs mb-0.5">
-                                <span className="text-gray-700">{g.title || g.description || '目标'}</span>
-                                <span className="text-gray-400">{pct}%</span>
-                              </div>
-                              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── 6.85 Today's Activity Status ── */}
-                  {todayGarmin && (todayGarmin.active_minutes > 0 || todayGarmin.active_calories > 0) && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 cursor-pointer" onClick={() => router.push('/garmin')}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-600">🏃 今日活动</span>
-                        <span className="text-[10px] text-gray-400">{new Date().toLocaleDateString('zh-CN')}</span>
-                      </div>
-                      <div className="flex items-center gap-6 mt-2">
-                        <div>
-                          <span className="text-2xl font-bold text-gray-800">{todayGarmin.active_minutes || 0}</span>
-                          <span className="text-xs text-gray-400 ml-1">活动分钟</span>
-                        </div>
-                        <div>
-                          <span className="text-2xl font-bold text-gray-800">{todayGarmin.active_calories || 0}</span>
-                          <span className="text-xs text-gray-400 ml-1">活动卡路里</span>
-                        </div>
-                        <div>
-                          <span className="text-2xl font-bold text-gray-800">{todayGarmin.floors_climbed || 0}</span>
-                          <span className="text-xs text-gray-400 ml-1">爬楼层</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── 6.9 Recent Workouts ── */}
-                  {workoutRecent.length > 0 && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/workout')}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-gray-600">🏃 最近运动</span>
-                        <span className="text-[10px] text-emerald-600">查看全部</span>
-                      </div>
-                      <div className="space-y-2">
-                        {workoutRecent.slice(0, 3).map((w: any, i: number) => {
-                          const dist = w.distance_meters ? (w.distance_meters / 1000).toFixed(2) : null;
-                          const dur = w.duration_seconds ? Math.round(w.duration_seconds / 60) : null;
-                          const typeMap: Record<string, string> = { running: '🏃 跑步', cycling: '🚴 骑行', swimming: '🏊 游泳', walking: '🚶 步行', hiking: '🥾 徒步', strength: '🏋️ 力量', yoga: '🧘 瑜伽' };
-                          const typeName = typeMap[w.workout_type] || w.workout_type || '运动';
-                          return (
-                            <div key={i} className="flex items-center justify-between text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="text-gray-700 font-medium">{typeName}</span>
-                                <span className="text-gray-400">{w.workout_name || ''}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-gray-500">
-                                {dist && <span>{dist}km</span>}
-                                {dur && <span>{dur}min</span>}
-                                {w.calories && <span className="font-medium text-orange-500">{w.calories}kcal</span>}
-                                <span className="text-gray-300">{w.workout_date}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── 7. Trend Cards — 2x2 grid with sparklines ── */}
+                  {/* ── 7. Trend Cards — compact 4-col ── */}
                   {garminHistory.length > 3 && (
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {[
-                        { icon: '❤️', label: '心率 7日', data: hrValues, avg: hrAvg, prevAvg: prevHrAvg, unit: 'bpm', color: '#ef4444', goodDown: true },
-                        { icon: '💜', label: 'HRV 7日', data: hrvValues, avg: hrvAvg, prevAvg: prevHrvAvg, unit: 'ms', color: '#8b5cf6', goodDown: false },
-                        { icon: '😰', label: '压力 7日', data: stressValues, avg: stressAvg, prevAvg: prevStressAvg, unit: '', color: '#f59e0b', goodDown: true },
-                        { icon: '🚶', label: '步数 7日', data: last7.map((r: any) => r.steps || 0), avg: stepsAvg, prevAvg: prevStepsAvg, unit: '步', color: '#6366f1', goodDown: false },
-                      ].map(t => {
-                        const change = Number(pctChange(t.avg, t.prevAvg));
-                        const isGood = t.goodDown ? change <= 0 : change >= 0;
-                        return (
-                          <div key={t.label} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex items-center justify-between mb-0.5">
-                              <span className="text-xs font-medium text-gray-500">{t.icon} {t.label}</span>
-                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${isGood ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>{change >= 0 ? '+' : ''}{change}%</span>
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { icon: '❤️', label: '心率', data: hrValues, avg: hrAvg, prevAvg: prevHrAvg, unit: 'bpm', color: '#ef4444', goodDown: true },
+                          { icon: '💜', label: 'HRV', data: hrvValues, avg: hrvAvg, prevAvg: prevHrvAvg, unit: 'ms', color: '#8b5cf6', goodDown: false },
+                          { icon: '😰', label: '压力', data: stressValues, avg: stressAvg, prevAvg: prevStressAvg, unit: '', color: '#f59e0b', goodDown: true },
+                          { icon: '🚶', label: '步数', data: last7.map((r: any) => r.steps || 0), avg: stepsAvg, prevAvg: prevStepsAvg, unit: '', color: '#6366f1', goodDown: false },
+                        ].map(t => {
+                          const change = Number(pctChange(t.avg, t.prevAvg));
+                          const isGood = t.goodDown ? change <= 0 : change >= 0;
+                          return (
+                            <div key={t.label} className="text-center">
+                              <div className="flex items-center justify-center gap-1 mb-0.5">
+                                <span className="text-[10px] text-gray-500">{t.label}</span>
+                                <span className={`text-[9px] font-semibold ${isGood ? 'text-green-500' : 'text-red-400'}`}>{change >= 0 ? '+' : ''}{change}%</span>
+                              </div>
+                              <div className="text-base font-bold text-gray-800">{t.avg || '--'}</div>
+                              <WelcomeSparkline data={t.data} color={t.color} />
                             </div>
-                            <div className="flex items-baseline gap-1 mb-1.5">
-                              <span className="text-lg font-bold text-gray-800">{t.avg || '--'}</span>
-                              <span className="text-[10px] text-gray-400">{t.unit}</span>
-                            </div>
-                            <WelcomeSparkline data={t.data} color={t.color} />
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 
                   {/* ── 8. Supplements — inline checkin ── */}
                   {suppFlat.length > 0 && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm">💊</span>
-                          <span className="text-xs font-semibold text-gray-600">今日补剂</span>
-                        </div>
-                        <span className="text-xs font-semibold text-gray-500">{suppChecked}/{suppTotal}</span>
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-gray-600">💊 补剂打卡</span>
+                        <span className="text-[11px] text-gray-400">{suppChecked}/{suppTotal}</span>
                       </div>
                       {(() => {
                         const today = new Date().toISOString().slice(0, 10);
