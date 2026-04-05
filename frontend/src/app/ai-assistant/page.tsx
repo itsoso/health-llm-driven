@@ -1565,9 +1565,15 @@ export default function AIAssistantPage() {
                     </div>
                     <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
                       <span className="text-xs font-semibold text-gray-600">👃 鼻炎追踪</span>
-                      <div className="flex items-center gap-3 mt-1">
-                        <div><div className="text-2xl font-bold text-gray-800">{rhinitisToday?.sneeze_count || 0}</div><div className="text-[10px] text-gray-400">喷嚏</div></div>
-                        <div><div className="text-2xl font-bold text-gray-800">{rhinitisToday?.nasal_wash_count || 0}<span className="text-[10px] text-gray-400">/2</span></div><div className="text-[10px] text-gray-400">洗鼻</div></div>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-gray-800">{rhinitisToday?.sneeze_count || 0}</div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">喷嚏</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-gray-800">{rhinitisToday?.nasal_wash_count || 0}<span className="text-sm font-normal text-gray-400">/2</span></div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">洗鼻</div>
+                        </div>
                       </div>
                     </div>
                     <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
