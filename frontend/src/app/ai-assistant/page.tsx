@@ -1512,28 +1512,66 @@ export default function AIAssistantPage() {
                     );
                   })()}
 
-                  {/* ── 3. Core Metrics — 4 compact cards ── */}
-                  <div className="grid grid-cols-4 gap-2.5">
-                    {[
+                  {/* ── 3+5. Core Metrics + Progress — merged single row ── */}
+                  {(() => {
+                    const stepsTarget = 8000;
+                    const stepsVal = todayGarmin?.steps || 0;
+                    const stepsPct = Math.min(100, Math.round((stepsVal / stepsTarget) * 100));
+                    const waterPct = Math.min(100, Math.round((waterToday.total_ml / waterToday.goal_ml) * 100));
+                    const suppPct = suppTotal > 0 ? Math.round((suppChecked / suppTotal) * 100) : 0;
+
+                    const metrics = [
                       { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', ok: (v: number) => v >= 45 && v <= 75 },
                       { icon: '🔋', value: todayGarmin?.body_battery_most_charged, unit: '', label: '电量', sub: todayGarmin?.body_battery_current != null ? `当前${todayGarmin.body_battery_current}` : '', ok: (v: number) => v >= 60 },
                       { icon: '😴', value: todayGarmin?.sleep_score, unit: '分', label: '睡眠', sub: sleepTotal > 0 ? `${sleepH}h${sleepM > 0 ? sleepM + 'm' : ''}` : '', ok: (v: number) => v >= 70 },
                       { icon: '😌', value: todayGarmin?.stress_level, unit: '', label: '压力', ok: (v: number) => v <= 40 },
-                    ].map(m => {
-                      const v = (m as any).value;
-                      const isWarn = v != null && !m.ok(v);
-                      return (
-                        <div key={m.label} className={`rounded-2xl p-4 text-center transition-all ${isWarn ? 'bg-amber-50 border-2 border-amber-200' : 'bg-white border border-gray-100'} shadow-sm hover:shadow-md`}>
-                          <span className="text-2xl">{m.icon}</span>
-                          <div className={`text-2xl font-extrabold mt-1 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
-                            {v ?? '--'}<span className="text-xs font-normal text-gray-400 ml-0.5">{m.unit}</span>
-                          </div>
-                          <div className="text-xs text-gray-500 font-medium mt-0.5">{m.label}</div>
-                          {(m as any).sub && <div className="text-[11px] text-gray-400 mt-0.5">{(m as any).sub}</div>}
+                    ];
+                    const rings = [
+                      { label: '步数', pct: stepsPct, val: stepsVal.toLocaleString(), sub: `/${stepsTarget.toLocaleString()}`, color: '#6366f1' },
+                      { label: '饮水', pct: waterPct, val: `${waterToday.total_ml}`, sub: `/${waterToday.goal_ml}ml`, color: '#3b82f6' },
+                      { label: '补剂', pct: suppPct, val: `${suppChecked}/${suppTotal}`, sub: '', color: '#8b5cf6' },
+                    ];
+
+                    return (
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                        <div className="grid grid-cols-7 gap-1">
+                          {/* 4 metrics */}
+                          {metrics.map(m => {
+                            const v = (m as any).value;
+                            const isWarn = v != null && !m.ok(v);
+                            return (
+                              <div key={m.label} className={`rounded-xl p-2.5 text-center ${isWarn ? 'bg-amber-50' : ''}`}>
+                                <span className="text-lg">{m.icon}</span>
+                                <div className={`text-xl font-extrabold mt-0.5 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
+                                  {v ?? '--'}<span className="text-[10px] font-normal text-gray-400 ml-0.5">{m.unit}</span>
+                                </div>
+                                <div className="text-[11px] text-gray-500 font-medium">{m.label}</div>
+                                {(m as any).sub && <div className="text-[10px] text-gray-400">{(m as any).sub}</div>}
+                              </div>
+                            );
+                          })}
+                          {/* 3 rings */}
+                          {rings.map(r => {
+                            const sz = 44, sw = 3.5, rad = (sz - sw) / 2, circ = 2 * Math.PI * rad;
+                            return (
+                              <div key={r.label} className="flex flex-col items-center justify-center p-2">
+                                <div className="relative" style={{ width: sz, height: sz }}>
+                                  <svg width={sz} height={sz} className="-rotate-90">
+                                    <circle cx={sz/2} cy={sz/2} r={rad} fill="none" stroke="#f3f4f6" strokeWidth={sw} />
+                                    <circle cx={sz/2} cy={sz/2} r={rad} fill="none" stroke={r.color} strokeWidth={sw}
+                                      strokeDasharray={circ} strokeDashoffset={circ - (r.pct / 100) * circ} strokeLinecap="round" className="transition-all duration-700" />
+                                  </svg>
+                                  <div className="absolute inset-0 flex items-center justify-center"><span className="text-[9px] font-bold text-gray-600">{r.pct}%</span></div>
+                                </div>
+                                <span className="text-[11px] font-semibold text-gray-700 mt-1">{r.val}</span>
+                                <span className="text-[10px] text-gray-400">{r.label}</span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* ── 4. Context Row — weather, diet, rhinitis, weight ── */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1589,43 +1627,7 @@ export default function AIAssistantPage() {
                     </div>
                   </div>
 
-                  {/* ── 5. Progress Row — steps, water, supplements ── */}
-                  {(() => {
-                    const stepsTarget = 8000;
-                    const stepsVal = todayGarmin?.steps || 0;
-                    const stepsPct = Math.min(100, Math.round((stepsVal / stepsTarget) * 100));
-                    const waterPct = Math.min(100, Math.round((waterToday.total_ml / waterToday.goal_ml) * 100));
-                    const suppPct = suppTotal > 0 ? Math.round((suppChecked / suppTotal) * 100) : 0;
-                    const rings = [
-                      { label: '步数', pct: stepsPct, val: stepsVal.toLocaleString(), sub: `/${stepsTarget.toLocaleString()}`, color: '#6366f1' },
-                      { label: '饮水', pct: waterPct, val: `${waterToday.total_ml}`, sub: `/${waterToday.goal_ml}ml`, color: '#3b82f6' },
-                      { label: '补剂', pct: suppPct, val: `${suppChecked}/${suppTotal}`, sub: '', color: '#8b5cf6' },
-                    ];
-                    return (
-                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4">
-                        <div className="grid grid-cols-3 gap-4">
-                          {rings.map(r => {
-                            const sz = 52, sw = 4, rad = (sz - sw) / 2, circ = 2 * Math.PI * rad;
-                            return (
-                              <div key={r.label} className="flex flex-col items-center">
-                                <div className="relative" style={{ width: sz, height: sz }}>
-                                  <svg width={sz} height={sz} className="-rotate-90">
-                                    <circle cx={sz/2} cy={sz/2} r={rad} fill="none" stroke="#f3f4f6" strokeWidth={sw} />
-                                    <circle cx={sz/2} cy={sz/2} r={rad} fill="none" stroke={r.color} strokeWidth={sw}
-                                      strokeDasharray={circ} strokeDashoffset={circ - (r.pct / 100) * circ} strokeLinecap="round" className="transition-all duration-700" />
-                                  </svg>
-                                  <div className="absolute inset-0 flex items-center justify-center"><span className="text-[10px] font-bold text-gray-600">{r.pct}%</span></div>
-                                </div>
-                                <span className="text-xs font-semibold text-gray-700 mt-1.5">{r.val}</span>
-                                {r.sub && <span className="text-[10px] text-gray-400">{r.sub}</span>}
-                                <span className="text-[10px] text-gray-400">{r.label}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  {/* (Progress Row merged into Core Metrics above) */}
 
                   {/* ── 6. Sleep Detail — stages bar ── */}
                   {sleepTotal > 0 && (
