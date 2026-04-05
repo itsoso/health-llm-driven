@@ -195,6 +195,12 @@ function SupplementsContent() {
           />
           <div className="flex gap-3">
             <Link
+              href="/supplement-products"
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-cyan-700 shadow-md transition-all"
+            >
+              💊 产品库
+            </Link>
+            <Link
               href="/supplement-recommendation"
               className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 shadow-md transition-all"
             >
