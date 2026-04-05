@@ -1883,16 +1883,6 @@ export default function AIAssistantPage() {
                         setRhinitisToday((prev: any) => ({ ...prev, sneeze_count: cur + 1 }));
                         showQuickToast(`已记录喷嚏 ${cur + 1} 次`);
                       }},
-                      { icon: '☕', label: '咖啡', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 350, drink_type: '咖啡', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 350, count: prev.count + 1 }));
-                        showQuickToast('已记录咖啡 350ml');
-                      }},
-                      { icon: '🍵', label: '喝茶', action: async () => {
-                        await api.post('/water/records', { record_date: today, amount: 350, drink_type: '茶', user_id: 0 });
-                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + 350, count: prev.count + 1 }));
-                        showQuickToast('已记录喝茶 350ml');
-                      }},
                       { icon: '💉', label: '注射替尔泊肽', action: async () => {
                         // 查找或创建药物记录
                         const medsRes = await api.get('/medication/medications/me');
