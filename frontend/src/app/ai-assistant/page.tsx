@@ -1512,7 +1512,7 @@ export default function AIAssistantPage() {
                     );
                   })()}
 
-                  {/* ── 3+5. Core Metrics + Progress — merged single row ── */}
+                  {/* ── 3. All-in-one metrics: 7 items in one card ── */}
                   {(() => {
                     const stepsTarget = 8000;
                     const stepsVal = todayGarmin?.steps || 0;
@@ -1520,51 +1520,36 @@ export default function AIAssistantPage() {
                     const waterPct = Math.min(100, Math.round((waterToday.total_ml / waterToday.goal_ml) * 100));
                     const suppPct = suppTotal > 0 ? Math.round((suppChecked / suppTotal) * 100) : 0;
 
-                    const metrics = [
-                      { icon: '❤️', value: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', ok: (v: number) => v >= 45 && v <= 75 },
-                      { icon: '🔋', value: todayGarmin?.body_battery_most_charged, unit: '', label: '电量', sub: todayGarmin?.body_battery_current != null ? `当前${todayGarmin.body_battery_current}` : '', ok: (v: number) => v >= 60 },
-                      { icon: '😴', value: todayGarmin?.sleep_score, unit: '分', label: '睡眠', sub: sleepTotal > 0 ? `${sleepH}h${sleepM > 0 ? sleepM + 'm' : ''}` : '', ok: (v: number) => v >= 70 },
-                      { icon: '😌', value: todayGarmin?.stress_level, unit: '', label: '压力', ok: (v: number) => v <= 40 },
-                    ];
-                    const rings = [
-                      { label: '步数', pct: stepsPct, val: stepsVal.toLocaleString(), sub: `/${stepsTarget.toLocaleString()}`, color: '#6366f1' },
-                      { label: '饮水', pct: waterPct, val: `${waterToday.total_ml}`, sub: `/${waterToday.goal_ml}ml`, color: '#3b82f6' },
-                      { label: '补剂', pct: suppPct, val: `${suppChecked}/${suppTotal}`, sub: '', color: '#8b5cf6' },
+                    const allItems = [
+                      { icon: '❤️', val: todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate, unit: 'bpm', label: '心率', warn: (v: number) => v < 45 || v > 75 },
+                      { icon: '🔋', val: todayGarmin?.body_battery_most_charged, unit: '', label: '电量', sub: todayGarmin?.body_battery_current != null ? `现${todayGarmin.body_battery_current}` : '', warn: (v: number) => v < 60 },
+                      { icon: '😴', val: todayGarmin?.sleep_score, unit: '分', label: '睡眠', sub: sleepTotal > 0 ? `${sleepH}h${sleepM > 0 ? sleepM + 'm' : ''}` : '', warn: (v: number) => v < 70 },
+                      { icon: '😌', val: todayGarmin?.stress_level, unit: '', label: '压力', warn: (v: number) => v > 40 },
+                      { icon: '🚶', val: stepsVal, unit: '', label: '步数', pct: stepsPct, color: '#6366f1', warn: (v: number) => v < 5000 },
+                      { icon: '💧', val: waterToday.total_ml, unit: 'ml', label: '饮水', pct: waterPct, color: '#3b82f6', warn: () => false },
+                      { icon: '💊', val: `${suppChecked}/${suppTotal}`, unit: '', label: '补剂', pct: suppPct, color: '#8b5cf6', warn: () => false },
                     ];
 
                     return (
                       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                        <div className="grid grid-cols-7 gap-1">
-                          {/* 4 metrics */}
-                          {metrics.map(m => {
-                            const v = (m as any).value;
-                            const isWarn = v != null && !m.ok(v);
+                        <div className="grid grid-cols-7 gap-0.5">
+                          {allItems.map((m: any) => {
+                            const v = typeof m.val === 'number' ? m.val : null;
+                            const isWarn = v != null && m.warn(v);
+                            const displayVal = typeof m.val === 'number' ? (m.val >= 1000 ? m.val.toLocaleString() : m.val) : (m.val ?? '--');
                             return (
-                              <div key={m.label} className={`rounded-xl p-2.5 text-center ${isWarn ? 'bg-amber-50' : ''}`}>
-                                <span className="text-lg">{m.icon}</span>
-                                <div className={`text-xl font-extrabold mt-0.5 ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
-                                  {v ?? '--'}<span className="text-[10px] font-normal text-gray-400 ml-0.5">{m.unit}</span>
+                              <div key={m.label} className={`rounded-xl py-2 px-1 text-center ${isWarn ? 'bg-amber-50' : ''}`}>
+                                <span className="text-base">{m.icon}</span>
+                                <div className={`text-lg font-extrabold mt-0.5 leading-tight ${isWarn ? 'text-amber-500' : 'text-gray-800'}`}>
+                                  {displayVal}<span className="text-[9px] font-normal text-gray-400">{m.unit}</span>
                                 </div>
-                                <div className="text-[11px] text-gray-500 font-medium">{m.label}</div>
-                                {(m as any).sub && <div className="text-[10px] text-gray-400">{(m as any).sub}</div>}
-                              </div>
-                            );
-                          })}
-                          {/* 3 rings */}
-                          {rings.map(r => {
-                            const sz = 44, sw = 3.5, rad = (sz - sw) / 2, circ = 2 * Math.PI * rad;
-                            return (
-                              <div key={r.label} className="flex flex-col items-center justify-center p-2">
-                                <div className="relative" style={{ width: sz, height: sz }}>
-                                  <svg width={sz} height={sz} className="-rotate-90">
-                                    <circle cx={sz/2} cy={sz/2} r={rad} fill="none" stroke="#f3f4f6" strokeWidth={sw} />
-                                    <circle cx={sz/2} cy={sz/2} r={rad} fill="none" stroke={r.color} strokeWidth={sw}
-                                      strokeDasharray={circ} strokeDashoffset={circ - (r.pct / 100) * circ} strokeLinecap="round" className="transition-all duration-700" />
-                                  </svg>
-                                  <div className="absolute inset-0 flex items-center justify-center"><span className="text-[9px] font-bold text-gray-600">{r.pct}%</span></div>
-                                </div>
-                                <span className="text-[11px] font-semibold text-gray-700 mt-1">{r.val}</span>
-                                <span className="text-[10px] text-gray-400">{r.label}</span>
+                                <div className="text-[10px] text-gray-500 font-medium">{m.label}</div>
+                                {m.sub && <div className="text-[9px] text-gray-400 leading-tight">{m.sub}</div>}
+                                {m.pct != null && (
+                                  <div className="mt-1 h-1 bg-gray-100 rounded-full overflow-hidden mx-1">
+                                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${m.pct}%`, background: m.color }} />
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
