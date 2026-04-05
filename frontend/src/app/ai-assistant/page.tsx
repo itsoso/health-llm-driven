@@ -387,7 +387,7 @@ export default function AIAssistantPage() {
     }
     if (ok(3)) {
       const w = ok(3);
-      setWaterToday({ total_ml: w?.total_ml || 0, goal_ml: w?.goal_ml || 2000, count: w?.count || 0 });
+      setWaterToday({ total_ml: w?.total_amount || w?.total_ml || 0, goal_ml: w?.target_amount || w?.goal_ml || 2000, count: w?.records_count || w?.count || 0 });
     }
     if (ok(4)) {
       const raw = ok(4);
@@ -1408,43 +1408,56 @@ export default function AIAssistantPage() {
                     );
                   })()}
 
-                  {/* ── 2. Attention Items — smart alerts, only show what needs action ── */}
+                  {/* ── 2. Attention Items — smart alerts with quick actions (direct API) ── */}
                   {(() => {
-                    const alerts: {icon: string; text: string; action: string; color: string; bg: string}[] = [];
+                    const alerts: {icon: string; text: string; actionLabel: string; onAction: () => void; color: string; bg: string}[] = [];
                     const hour = new Date().getHours();
-                    // 水分警告 — 结合时间：凌晨(0-6)不提醒，上午轻提醒，下午严格提醒
+                    const today = new Date().toISOString().slice(0, 10);
+
+                    // 快速记录饮水 — 直接调 API
+                    const quickDrinkWater = async (amount: number) => {
+                      try {
+                        await api.post('/water/records', { record_date: today, amount, drink_type: '水', user_id: 0 });
+                        setWaterToday(prev => ({ ...prev, total_ml: prev.total_ml + amount, count: prev.count + 1 }));
+                      } catch (e) { console.error('记录饮水失败', e); }
+                    };
+
+                    // 水分警告
                     if (hour >= 7) {
                       const waterExpected = hour >= 18 ? 1500 : hour >= 12 ? 800 : 300;
                       if (waterToday.total_ml < waterExpected * 0.3) {
-                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, action: '记录喝水250ml', color: '#ef4444', bg: '#fef2f2' });
+                        alerts.push({ icon: '💧', text: `已${hour}点，饮水仅 ${waterToday.total_ml}ml，需要补充`, actionLabel: '+250ml', onAction: () => quickDrinkWater(250), color: '#ef4444', bg: '#fef2f2' });
                       } else if (waterToday.total_ml < waterExpected * 0.6) {
-                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, action: '记录喝水250ml', color: '#f59e0b', bg: '#fffbeb' });
+                        alerts.push({ icon: '💧', text: `今日饮水 ${waterToday.total_ml}ml，建议多喝水`, actionLabel: '+250ml', onAction: () => quickDrinkWater(250), color: '#f59e0b', bg: '#fffbeb' });
                       }
                     }
-                    // 补剂未完成 — 凌晨不提醒
+                    // 补剂未完成 — 直接跳转补剂页
                     const suppRemaining = suppTotal - suppChecked;
                     if (suppRemaining > 0 && suppTotal > 0 && hour >= 7) {
-                      alerts.push({ icon: '💊', text: `${suppRemaining}项补剂待服用`, action: '今天还需要吃什么补剂？', color: '#8b5cf6', bg: '#f5f3ff' });
+                      alerts.push({ icon: '💊', text: `${suppRemaining}项补剂待服用`, actionLabel: '去打卡', onAction: () => router.push('/supplements'), color: '#8b5cf6', bg: '#f5f3ff' });
                     }
-                    // 步数不足（下午之后才提醒）
+                    // 步数不足
                     if (hour >= 14 && todayGarmin?.steps < 3000) {
-                      alerts.push({ icon: '🚶', text: `步数仅 ${todayGarmin?.steps?.toLocaleString() || 0}，活动量偏低`, action: '根据我的身体数据，今天适合做什么运动？', color: '#f59e0b', bg: '#fffbeb' });
+                      alerts.push({ icon: '🚶', text: `步数仅 ${todayGarmin?.steps?.toLocaleString() || 0}，活动量偏低`, actionLabel: '运动建议', onAction: () => handleSend('根据我的身体数据，今天适合做什么运动？'), color: '#f59e0b', bg: '#fffbeb' });
                     }
                     // HRV 异常
                     if (todayGarmin?.hrv && todayGarmin.hrv < 40) {
-                      alerts.push({ icon: '💓', text: `HRV ${todayGarmin.hrv}ms 偏低，身体恢复不足`, action: '分析我最近的HRV趋势，给出恢复建议', color: '#ef4444', bg: '#fef2f2' });
+                      alerts.push({ icon: '💓', text: `HRV ${todayGarmin.hrv}ms 偏低，身体恢复不足`, actionLabel: '分析', onAction: () => handleSend('分析我最近的HRV趋势，给出恢复建议'), color: '#ef4444', bg: '#fef2f2' });
                     }
                     if (alerts.length === 0) return null;
                     return (
                       <div className="space-y-2">
                         {alerts.map((a, i) => (
-                          <button key={i} onClick={() => handleSend(a.action)}
-                            className="w-full rounded-xl px-4 py-3 flex items-center gap-3 text-left transition-all hover:shadow-sm active:scale-[0.99]"
+                          <div key={i} className="w-full rounded-xl px-4 py-3 flex items-center gap-3 transition-all"
                             style={{ background: a.bg, border: `1px solid ${a.color}20` }}>
                             <span className="text-lg shrink-0">{a.icon}</span>
                             <span className="flex-1 text-sm font-medium" style={{ color: a.color }}>{a.text}</span>
-                            <svg className="w-4 h-4 shrink-0" style={{ color: a.color }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                          </button>
+                            <button onClick={a.onAction}
+                              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 active:scale-95"
+                              style={{ background: a.color }}>
+                              {a.actionLabel}
+                            </button>
+                          </div>
                         ))}
                       </div>
                     );
