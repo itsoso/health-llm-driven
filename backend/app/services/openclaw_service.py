@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.openclaw import OpenClawConversation, OpenClawMessage
 from app.services.openclaw_skills_service import openclaw_skills_service
+from app.services.skills_hub_client import skills_hub_client
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,26 @@ class OpenClawService:
         if re.match(r'^(gateway|网关)\s*(状态|status)', text, re.IGNORECASE):
             return self._gateway_status_response()
 
-        # 10. 兜底：消息中包含技能 JSON 定义（含 name + description 字段）
+        # 10. Hub 分类
+        if re.match(r'^(Hub|技能市场|技能商店)\s*(分类|领域|domains?)', text, re.IGNORECASE):
+            return self._hub_domains_response()
+
+        # 11. Hub 搜索
+        m = re.match(r'^(Hub|技能市场)\s*(搜索|search)\s+(.+)', text, re.IGNORECASE)
+        if m:
+            return self._hub_search_response(m.group(3).strip())
+
+        # 12. Hub 安装
+        m = re.match(r'^(Hub|技能市场)\s*(安装|install)\s+(\S+)\s+(\S+)', text, re.IGNORECASE)
+        if m:
+            return self._hub_install_response(m.group(3).strip(), m.group(4).strip())
+
+        # 13. Hub 卸载
+        m = re.match(r'^(Hub|技能市场)\s*(卸载|uninstall)\s+(\S+)', text, re.IGNORECASE)
+        if m:
+            return self._hub_uninstall_response(m.group(3).strip())
+
+        # 14. 兜底：消息中包含技能 JSON 定义（含 name + description 字段）
         json_match = re.search(r'\{[^{}]*"name"\s*:\s*"[^"]+"[^{}]*"description"\s*:\s*"[^"]+".+?\}', text, re.DOTALL)
         if not json_match:
             json_match = re.search(r'\{[^{}]*"description"\s*:\s*"[^"]+"[^{}]*"name"\s*:\s*"[^"]+".+?\}', text, re.DOTALL)
@@ -400,6 +420,57 @@ class OpenClawService:
             return f"**Gateway 状态**\n- 运行: {status['status']}\n- 启动时间: {status['uptime']}"
         except Exception as e:
             return f"获取状态失败: {e}"
+
+    # ── Skills Hub 命令 ──────────────────────────────────
+
+    def _hub_domains_response(self) -> str:
+        """列出 Hub 技能领域"""
+        try:
+            domains = skills_hub_client.list_domains()
+            if not domains:
+                return "Hub 暂无可用领域，请检查网络连接"
+            lines = ["**技能市场 - 领域分类**\n"]
+            for d in domains:
+                lines.append(f"- **{d['name']}**: {d.get('description', '')} ({d.get('skill_count', 0)} 个技能)")
+            lines.append("\n使用 `Hub 搜索 <关键词>` 搜索技能")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"获取 Hub 领域失败: {e}"
+
+    def _hub_search_response(self, keyword: str) -> str:
+        """搜索 Hub 技能"""
+        try:
+            results = skills_hub_client.search_skills(keyword)
+            if not results:
+                return f"未找到与 \"{keyword}\" 相关的技能"
+            lines = [f"**搜索结果: \"{keyword}\"** ({len(results)} 个)\n"]
+            for r in results[:10]:
+                status = "✅ 已安装" if r.get("installed") else "📦 可安装"
+                lines.append(f"- {status} **{r['name']}** ({r['domain']}): {r.get('description', '')}")
+            lines.append(f"\n使用 `Hub 安装 <领域> <技能名>` 安装技能")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"搜索失败: {e}"
+
+    def _hub_install_response(self, domain: str, skill_name: str) -> str:
+        """从 Hub 安装技能"""
+        try:
+            result = skills_hub_client.install_skill(domain, skill_name)
+            if result["success"]:
+                return f"✅ 成功安装技能 **{skill_name}** (领域: {domain})\n\n需要重启 Gateway 生效。发送 `重启 Gateway`"
+            return f"❌ 安装失败: {result.get('error', '未知错误')}"
+        except Exception as e:
+            return f"安装失败: {e}"
+
+    def _hub_uninstall_response(self, skill_name: str) -> str:
+        """卸载 Hub 技能"""
+        try:
+            result = skills_hub_client.uninstall_skill(skill_name)
+            if result["success"]:
+                return f"✅ 已卸载技能 **{skill_name}**"
+            return f"❌ 卸载失败: {result.get('error', '未知错误')}"
+        except Exception as e:
+            return f"卸载失败: {e}"
 
     # ── 食物图片自动保存 ──────────────────────────────────
 

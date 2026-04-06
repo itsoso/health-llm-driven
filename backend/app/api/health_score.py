@@ -40,3 +40,17 @@ async def get_my_score_trend(
     return health_score_service.get_score_trend(
         db=db, user_id=current_user.id, days=days,
     )
+
+
+@router.get("/enhanced/me")
+async def get_my_enhanced_score(
+    target_date: Optional[str] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """增强版健康评分 — 叠加趋势修正和跨维度协同效应"""
+    logger.info(f"[HealthScoreAPI] 用户 {current_user.id} 请求增强评分")
+    d = date.fromisoformat(target_date) if target_date else None
+    return health_score_service.calculate_enhanced_score(
+        db=db, user_id=current_user.id, target_date=d,
+    )

@@ -120,13 +120,129 @@ class HealthScoreService:
             second_avg = sum(s["score"] for s in second_half) / len(second_half)
             trend_direction = "up" if second_avg > first_avg + 2 else ("down" if second_avg < first_avg - 2 else "stable")
 
+        # 周/月对比
+        score_vs_last_week = None
+        score_vs_last_month = None
+        if avg_score is not None:
+            last_week_scores = []
+            for i in range(7):
+                d = today - timedelta(days=7 + i)
+                r = self.calculate_daily_score(db, user_id, target_date=d)
+                if r["status"] == "ok":
+                    last_week_scores.append(r["total_score"])
+            if last_week_scores:
+                lw_avg = sum(last_week_scores) / len(last_week_scores)
+                score_vs_last_week = round(avg_score - lw_avg, 1)
+
         return {
             "scores": scores,
             "avg_score": avg_score,
             "trend": trend_direction,
+            "score_vs_last_week": score_vs_last_week,
             "best_day": max(scores, key=lambda s: s["score"]) if scores else None,
             "worst_day": min(scores, key=lambda s: s["score"]) if scores else None,
         }
+
+    def calculate_enhanced_score(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """增强版健康评分 — 在基础评分上叠加趋势修正和跨维度协同"""
+        base = self.calculate_daily_score(db, user_id, target_date)
+        if base["status"] != "ok":
+            return base
+
+        target_date = target_date or date.today()
+        dimensions = base["dimensions"]
+
+        # 1. 趋势修正：获取过去 7 天同维度平均分，计算趋势方向
+        trend_adjustments = []
+        for dim in dimensions:
+            dim_name = dim["name"]
+            recent_scores = []
+            for i in range(1, 8):
+                d = target_date - timedelta(days=i)
+                past = self.calculate_daily_score(db, user_id, target_date=d)
+                if past["status"] == "ok":
+                    past_dim = next((pd for pd in past["dimensions"] if pd["name"] == dim_name), None)
+                    if past_dim and past_dim["score"] is not None:
+                        recent_scores.append(past_dim["score"])
+
+            if len(recent_scores) >= 3:
+                past_avg = sum(recent_scores) / len(recent_scores)
+                current = dim["score"]
+                if current > past_avg + 5:
+                    modifier = 1.05  # 持续改善 +5%
+                    trend_dir = "improving"
+                elif current < past_avg - 5:
+                    modifier = 0.90  # 持续恶化 -10%
+                    trend_dir = "declining"
+                else:
+                    modifier = 1.0
+                    trend_dir = "stable"
+
+                adjusted = min(100, round(current * modifier))
+                trend_adjustments.append({
+                    "dimension": dim_name,
+                    "original_score": current,
+                    "adjusted_score": adjusted,
+                    "trend": trend_dir,
+                    "past_avg": round(past_avg, 1),
+                })
+                dim["score"] = adjusted
+                dim["trend"] = trend_dir
+
+        # 2. 跨维度协同效应
+        synergy_alerts = []
+        dim_scores = {d["name"]: d["score"] for d in dimensions if d["score"] is not None}
+
+        sleep_s = dim_scores.get("睡眠", 100)
+        exercise_s = dim_scores.get("运动", 0)
+        vitals_s = dim_scores.get("体征", 100)
+
+        if sleep_s < 40 and exercise_s > 70:
+            synergy_alerts.append({
+                "type": "overtraining_risk",
+                "message": "睡眠差+运动量大 → 过度训练风险，建议休息",
+                "score_impact": -5,
+            })
+        if sleep_s >= 70 and exercise_s >= 60 and dim_scores.get("饮食", 0) >= 60:
+            synergy_alerts.append({
+                "type": "positive_cycle",
+                "message": "睡眠+运动+饮食均良好 → 身体处于良性循环",
+                "score_impact": 3,
+            })
+        if vitals_s < 40 and sleep_s < 50:
+            synergy_alerts.append({
+                "type": "stress_alert",
+                "message": "体征异常+睡眠差 → 身体可能处于高压状态",
+                "score_impact": -5,
+            })
+
+        # 3. 重新计算总分
+        synergy_impact = sum(a["score_impact"] for a in synergy_alerts)
+        active_dims = [d for d in dimensions if d["score"] is not None]
+        total_active_weight = sum(d["weight"] for d in active_dims)
+        if total_active_weight > 0:
+            for d in active_dims:
+                d["weight"] = round(d["weight"] / total_active_weight, 3)
+        raw_total = sum(d["score"] * d["weight"] for d in active_dims)
+        enhanced_total = max(0, min(100, round(raw_total + synergy_impact)))
+
+        base["total_score"] = enhanced_total
+        base["grade"] = self._get_grade(enhanced_total)
+        base["trend_adjustments"] = trend_adjustments
+        base["synergy_alerts"] = synergy_alerts
+        base["enhanced"] = True
+
+        # 更新建议（加入协同效应的建议）
+        for alert in synergy_alerts:
+            if alert["score_impact"] < 0:
+                base["suggestions"].insert(0, alert["message"])
+
+        return base
 
     # ==================== 各维度评分 ====================
 

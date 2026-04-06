@@ -88,6 +88,52 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/workou
 
 ---
 
+## When To Use / When NOT To Use
+
+**使用场景：**
+- 用户准备运动，需要运动前指导
+- 用户完成运动，想要运动后分析
+- 用户询问训练计划、运动强度、恢复建议
+- 用户想了解训练负荷和恢复状态
+
+**不要使用：**
+- 用户只查询运动记录（用 health-query skill）
+- 用户问饮食/营养（用 nutrition-advisor skill）
+- 用户问综合健康评估（用 health-analysis skill）
+
+## Data Contract
+
+**Input：**
+- Garmin 运动数据（心率、配速、距离、时长）
+- 恢复状态（HRV、睡眠评分、Body Battery、压力指数）
+- 环境数据（天气、AQI、温度）
+- 用户目标（可选）
+
+**Output：**
+- 运动前：推荐运动类型、强度、时长、注意事项
+- 运动后：心率区间分布、训练效果评估、恢复建议、改进建议
+- ACWR（急慢性负荷比）：<0.8 可加量 / 0.8-1.3 最佳 / >1.5 休息
+
+**Quality Checks：**
+- 无 Garmin 数据 → 基于用户描述给出通用建议，标注"缺少客观数据"
+- 运动数据 < 4 周 → 无法计算 ACWR，仅做单次分析
+
+## Anti-Patterns
+
+- ❌ 不检查恢复状态就推荐高强度训练
+- ❌ 忽略环境因素（高温、雾霾）推荐户外运动
+- ❌ 用 220-年龄 公式而不考虑个体差异（有实测最大心率时应优先使用）
+- ❌ ACWR > 1.5 仍建议加量训练
+- ❌ 不考虑用户伤病史和慢性病
+- ❌ 给出不切实际的目标（如新手直接跑全马配速）
+
+## Evidence & Caveats
+
+- ACWR 阈值参考 Gabbett (2016) 研究，适用于运动员和活跃人群
+- 心率区间基于 Karvonen 公式（需要静息心率），退而求其次用 %HRmax
+- 恢复建议为 B 级证据，个体差异较大
+- 详细训练负荷公式和阈值见 `references/technical_reference.md`
+
 ## Rules
 - 运动前 **必须** 先检查恢复状态和环境适宜度，再给建议
 - 恢复就绪度 < 50 → 建议轻度活动（散步、瑜伽）而非高强度

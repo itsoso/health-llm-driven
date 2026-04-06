@@ -93,6 +93,11 @@ from app.api import (
     affiliate_products,  # 联盟产品
     quick_record,  # 快速记录（自然语言）
     data_health,  # 数据健康仪表盘
+    massage,  # 按摩/理疗追踪
+    sleep_analysis,  # 睡眠深度分析
+    exercise_recovery,  # 运动恢复评估
+    chronic_risk,  # 慢病风险评估
+    multi_source_integration,  # 多源数据整合
 )
 
 api_router = APIRouter()
@@ -240,3 +245,18 @@ api_router.include_router(quick_record.router, tags=["quick-record"])
 
 # 数据健康仪表盘
 api_router.include_router(data_health.router, prefix="/data-health", tags=["data-health"])
+
+# 按摩/理疗追踪
+api_router.include_router(massage.router, prefix="/massage", tags=["massage"])
+
+# 睡眠深度分析
+api_router.include_router(sleep_analysis.router)  # prefix 已在 router 中定义
+
+# 运动恢复评估
+api_router.include_router(exercise_recovery.router)  # prefix 已在 router 中定义
+
+# 慢病风险评估
+api_router.include_router(chronic_risk.router)  # prefix 已在 router 中定义
+
+# 多源数据整合
+api_router.include_router(multi_source_integration.router)  # prefix 已在 router 中定义

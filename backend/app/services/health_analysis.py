@@ -1,5 +1,7 @@
-"""健康分析服务（基于LLM）"""
+"""健康分析服务（基于LLM）— 结构化多维分析 + 趋势预测"""
 import asyncio
+import json
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
@@ -12,6 +14,9 @@ from app.models.user import User
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.services.llm import get_llm_provider
 import logging
+
+KNOWLEDGE_BASE_DIR = Path(__file__).parent.parent.parent / "knowledge_base"
+SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 
 logger = logging.getLogger(__name__)
 
@@ -458,4 +463,465 @@ class HealthAnalysisService:
         except Exception as e:
             logger.error(f"生成个性化建议失败: {e}", exc_info=True)
             return f"生成建议时出现错误: {str(e)}"
+
+    # ==================== 结构化多维分析（Phase 2 新增） ====================
+
+    # 分析维度配置：每个维度对应的指标、知识库和参考文档
+    ANALYSIS_DIMENSIONS = {
+        "cardiovascular": {
+            "label": "心血管",
+            "metrics": ["resting_heart_rate", "hrv", "blood_pressure", "avg_heart_rate"],
+            "knowledge_files": ["exercise_science/heart_rate_training.md", "feng_xue/cardiovascular.md"],
+            "ref_file": "health-analysis/references/thresholds_and_evidence.md",
+        },
+        "metabolic": {
+            "label": "代谢",
+            "metrics": ["weight_trend", "bmi", "blood_glucose", "cholesterol", "triglycerides"],
+            "knowledge_files": ["feng_xue/weight_management.md", "feng_xue/nutrition.md"],
+            "ref_file": "health-analysis/references/thresholds_and_evidence.md",
+        },
+        "sleep_recovery": {
+            "label": "睡眠恢复",
+            "metrics": ["sleep_score", "deep_sleep_pct", "total_sleep_duration", "body_battery"],
+            "knowledge_files": ["feng_xue/sleep.md", "exercise_science/recovery.md"],
+            "ref_file": "health-analysis/references/thresholds_and_evidence.md",
+        },
+        "fitness": {
+            "label": "运动体能",
+            "metrics": ["steps", "calories_burned", "weekly_exercise_min", "vo2max"],
+            "knowledge_files": ["exercise_science/running.md", "exercise_science/strength_training.md"],
+            "ref_file": "health-analysis/references/thresholds_and_evidence.md",
+        },
+        "nutrition": {
+            "label": "营养",
+            "metrics": ["meal_regularity", "protein_intake", "calorie_balance"],
+            "knowledge_files": ["feng_xue/nutrition.md"],
+            "ref_file": "health-analysis/references/thresholds_and_evidence.md",
+        },
+    }
+
+    # 跨维度协同效应规则
+    SYNERGY_RULES = [
+        {
+            "id": "overtraining",
+            "name": "过度训练风险",
+            "condition": "sleep_recovery < 40 AND fitness > 70",
+            "message": "睡眠恢复差但运动量大，存在过度训练风险，建议降低训练强度或增加休息",
+            "penalty": -10,
+        },
+        {
+            "id": "metabolic_syndrome",
+            "name": "代谢综合征预警",
+            "condition": "metabolic < 40 AND nutrition < 50",
+            "message": "代谢指标和营养均不理想，需关注代谢综合征风险，建议改善饮食结构",
+            "penalty": -8,
+        },
+        {
+            "id": "stress_spiral",
+            "name": "压力-睡眠恶性循环",
+            "condition": "sleep_recovery < 50 AND cardiovascular contains high_stress",
+            "message": "压力偏高且睡眠质量差，可能形成恶性循环，建议增加放松活动",
+            "penalty": -5,
+        },
+        {
+            "id": "positive_momentum",
+            "name": "良性循环加分",
+            "condition": "sleep_recovery >= 70 AND fitness >= 70 AND nutrition >= 60",
+            "message": "睡眠、运动、营养三项良好，身体处于良性循环状态",
+            "penalty": 5,
+        },
+    ]
+
+    def analyze_health_structured(
+        self,
+        db: Session,
+        user_id: int,
+        force_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """结构化多维健康分析（新版本，分维度分析 + 知识库注入 + 趋势）"""
+        today = date.today()
+
+        # 缓存检查
+        cache_key = f"structured_{today.isoformat()}"
+        if not force_refresh:
+            cached = db.query(HealthAnalysisCache).filter(
+                HealthAnalysisCache.user_id == user_id,
+                HealthAnalysisCache.analysis_date == today,
+            ).first()
+            if cached and cached.analysis_result and cached.analysis_result.get("structured"):
+                result = cached.analysis_result.copy()
+                result["cached"] = True
+                return result
+
+        provider = self._get_provider()
+        if not provider:
+            return {"error": "LLM Provider 未配置", "dimensions": {}, "cached": False}
+
+        # 1. 收集数据（90天用于趋势，30天用于当前状态）
+        health_data = self.collect_user_health_data(db, user_id, days=90)
+
+        # 2. 计算趋势
+        trends = self._compute_metric_trends(health_data)
+
+        # 3. 分维度分析
+        dimension_results = {}
+        for dim_key, dim_config in self.ANALYSIS_DIMENSIONS.items():
+            try:
+                dim_result = self._analyze_dimension(
+                    provider, dim_key, dim_config, health_data, trends
+                )
+                dimension_results[dim_key] = dim_result
+            except Exception as e:
+                logger.error(f"维度 {dim_key} 分析失败: {e}")
+                dimension_results[dim_key] = {
+                    "label": dim_config["label"],
+                    "score": None,
+                    "risk_level": "unknown",
+                    "findings": [],
+                    "recommendations": [],
+                    "error": str(e),
+                }
+
+        # 4. 跨维度协同效应
+        synergies = self._evaluate_synergies(dimension_results)
+
+        # 5. 综合评分
+        scored_dims = {k: v for k, v in dimension_results.items() if v.get("score") is not None}
+        if scored_dims:
+            avg_score = sum(v["score"] for v in scored_dims.values()) / len(scored_dims)
+            synergy_adjustment = sum(s["penalty"] for s in synergies)
+            total_score = max(0, min(100, round(avg_score + synergy_adjustment)))
+        else:
+            total_score = 0
+
+        result = {
+            "structured": True,
+            "analysis_date": today.isoformat(),
+            "cached": False,
+            "total_score": total_score,
+            "dimensions": dimension_results,
+            "trends": trends,
+            "synergies": synergies,
+            "data_quality": self._assess_data_quality(health_data),
+        }
+
+        # 保存缓存
+        try:
+            cached = db.query(HealthAnalysisCache).filter(
+                HealthAnalysisCache.user_id == user_id,
+                HealthAnalysisCache.analysis_date == today,
+            ).first()
+            if cached:
+                cached.analysis_result = result
+                cached.updated_at = datetime.utcnow()
+            else:
+                cached = HealthAnalysisCache(
+                    user_id=user_id, analysis_date=today, analysis_result=result
+                )
+                db.add(cached)
+            db.commit()
+        except Exception as e:
+            logger.error(f"保存结构化分析缓存失败: {e}")
+
+        return result
+
+    def _analyze_dimension(
+        self,
+        provider,
+        dim_key: str,
+        dim_config: dict,
+        health_data: dict,
+        trends: dict,
+    ) -> dict:
+        """对单个维度进行 LLM 分析"""
+        # 加载知识库上下文
+        knowledge_context = self._load_knowledge_context(dim_config.get("knowledge_files", []))
+
+        # 加载阈值参考
+        ref_content = self._load_ref_content(dim_config.get("ref_file", ""))
+
+        # 构建维度专用 prompt
+        trend_text = self._format_trends_for_dimension(dim_key, trends)
+        data_text = self._format_data_for_dimension(dim_key, health_data)
+
+        prompt = f"""分析以下用户的{dim_config['label']}维度健康数据。
+
+## 数据
+{data_text}
+
+## 趋势（过去90天）
+{trend_text}
+
+## 参考知识
+{knowledge_context[:2000] if knowledge_context else '无额外参考'}
+
+## 参考阈值
+{ref_content[:1500] if ref_content else '使用通用标准'}
+
+请以 JSON 格式返回分析结果，格式如下：
+{{
+  "score": 0-100的评分,
+  "risk_level": "normal/caution/warning",
+  "findings": ["发现1", "发现2"],
+  "recommendations": ["建议1", "建议2"],
+  "evidence_level": "A/B/C"
+}}
+
+只返回 JSON，不要其他内容。用中文填写 findings 和 recommendations。"""
+
+        response = asyncio.run(
+            provider.chat(
+                messages=[
+                    {"role": "system", "content": f"你是{dim_config['label']}领域的健康分析专家。基于循证医学给出评估。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=800,
+            )
+        )
+
+        # 解析 JSON 响应
+        try:
+            # 提取 JSON（可能被 markdown 代码块包裹）
+            json_str = response.strip()
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+            parsed = json.loads(json_str.strip())
+            parsed["label"] = dim_config["label"]
+            return parsed
+        except (json.JSONDecodeError, IndexError):
+            logger.warning(f"维度 {dim_key} LLM 返回非 JSON，使用文本解析")
+            return {
+                "label": dim_config["label"],
+                "score": 60,
+                "risk_level": "caution",
+                "findings": self._extract_issues(response)[:3],
+                "recommendations": self._extract_recommendations(response)[:3],
+                "evidence_level": "C",
+                "raw_response": response[:500],
+            }
+
+    def _compute_metric_trends(self, health_data: dict) -> dict:
+        """计算关键指标的趋势（线性回归斜率）"""
+        garmin_data = health_data.get("garmin_data", [])
+        if len(garmin_data) < 7:
+            return {"data_days": len(garmin_data), "insufficient_data": True}
+
+        def _slope(values: list) -> Optional[float]:
+            """简单线性回归斜率（不依赖 numpy）"""
+            clean = [(i, v) for i, v in enumerate(values) if v is not None]
+            if len(clean) < 3:
+                return None
+            n = len(clean)
+            sum_x = sum(x for x, _ in clean)
+            sum_y = sum(y for _, y in clean)
+            sum_xy = sum(x * y for x, y in clean)
+            sum_x2 = sum(x * x for x, _ in clean)
+            denom = n * sum_x2 - sum_x * sum_x
+            if denom == 0:
+                return 0.0
+            return (n * sum_xy - sum_x * sum_y) / denom
+
+        def _direction(slope_val: Optional[float], threshold: float = 0.01) -> str:
+            if slope_val is None:
+                return "unknown"
+            if slope_val > threshold:
+                return "rising"
+            elif slope_val < -threshold:
+                return "falling"
+            return "stable"
+
+        # 按时间正序排列
+        sorted_data = sorted(garmin_data, key=lambda d: d["record_date"])
+
+        metrics = {
+            "resting_heart_rate": [d.get("resting_heart_rate") for d in sorted_data],
+            "hrv": [d.get("hrv") for d in sorted_data],
+            "sleep_score": [d.get("sleep_score") for d in sorted_data],
+            "deep_sleep_duration": [d.get("deep_sleep_duration") for d in sorted_data],
+            "steps": [d.get("steps") for d in sorted_data],
+            "stress_level": [d.get("stress_level") for d in sorted_data],
+        }
+
+        trends = {"data_days": len(sorted_data), "insufficient_data": False}
+        for metric_name, values in metrics.items():
+            slope = _slope(values)
+            trends[metric_name] = {
+                "slope": round(slope, 4) if slope is not None else None,
+                "direction": _direction(slope),
+                "latest": values[-1] if values else None,
+                "avg_7d": self._safe_avg(values[-7:]),
+                "avg_30d": self._safe_avg(values[-30:]),
+            }
+
+        return trends
+
+    @staticmethod
+    def _safe_avg(values: list) -> Optional[float]:
+        clean = [v for v in values if v is not None]
+        return round(sum(clean) / len(clean), 1) if clean else None
+
+    def _evaluate_synergies(self, dimension_results: dict) -> list:
+        """评估跨维度协同效应"""
+        synergies = []
+        scores = {k: v.get("score") for k, v in dimension_results.items() if v.get("score") is not None}
+
+        for rule in self.SYNERGY_RULES:
+            triggered = False
+            if rule["id"] == "overtraining":
+                triggered = scores.get("sleep_recovery", 100) < 40 and scores.get("fitness", 0) > 70
+            elif rule["id"] == "metabolic_syndrome":
+                triggered = scores.get("metabolic", 100) < 40 and scores.get("nutrition", 100) < 50
+            elif rule["id"] == "stress_spiral":
+                triggered = scores.get("sleep_recovery", 100) < 50 and scores.get("cardiovascular", 100) < 50
+            elif rule["id"] == "positive_momentum":
+                triggered = (
+                    scores.get("sleep_recovery", 0) >= 70
+                    and scores.get("fitness", 0) >= 70
+                    and scores.get("nutrition", 0) >= 60
+                )
+
+            if triggered:
+                synergies.append({
+                    "id": rule["id"],
+                    "name": rule["name"],
+                    "message": rule["message"],
+                    "penalty": rule["penalty"],
+                })
+
+        return synergies
+
+    def _assess_data_quality(self, health_data: dict) -> dict:
+        """评估数据质量"""
+        garmin_data = health_data.get("garmin_data", [])
+        total_days = len(garmin_data)
+
+        # 计算各指标的完整率
+        completeness = {}
+        for field in ["resting_heart_rate", "hrv", "sleep_score", "steps", "stress_level"]:
+            filled = sum(1 for d in garmin_data if d.get(field) is not None)
+            completeness[field] = round(filled / total_days * 100, 1) if total_days > 0 else 0
+
+        has_exams = len(health_data.get("medical_exams", [])) > 0
+        has_diseases = len(health_data.get("diseases", [])) > 0
+
+        if total_days >= 30 and all(v >= 80 for v in completeness.values()):
+            grade = "A"
+        elif total_days >= 14 and all(v >= 60 for v in completeness.values()):
+            grade = "B"
+        elif total_days >= 7:
+            grade = "C"
+        else:
+            grade = "D"
+
+        return {
+            "grade": grade,
+            "data_days": total_days,
+            "completeness": completeness,
+            "has_medical_exams": has_exams,
+            "has_disease_records": has_diseases,
+            "recommendation": self._data_quality_advice(grade, total_days),
+        }
+
+    @staticmethod
+    def _data_quality_advice(grade: str, days: int) -> str:
+        if grade == "A":
+            return "数据质量优秀，分析结果可信度高"
+        elif grade == "B":
+            return "数据质量良好，建议持续记录以提高分析精准度"
+        elif grade == "C":
+            return f"仅有 {days} 天数据，趋势分析准确度有限，建议积累更多数据"
+        return f"数据严重不足（{days} 天），建议先持续佩戴设备至少 7 天再做分析"
+
+    def _load_knowledge_context(self, knowledge_files: list) -> str:
+        """加载知识库文件内容"""
+        parts = []
+        for f in knowledge_files:
+            path = KNOWLEDGE_BASE_DIR / f
+            if path.exists():
+                try:
+                    content = path.read_text(encoding="utf-8")
+                    # 截取要点，避免 prompt 过长
+                    parts.append(content[:1500])
+                except Exception as e:
+                    logger.warning(f"加载知识库 {f} 失败: {e}")
+        return "\n---\n".join(parts)
+
+    def _load_ref_content(self, ref_file: str) -> str:
+        """加载 skill reference 文件"""
+        if not ref_file:
+            return ""
+        path = SKILLS_DIR / ref_file
+        if path.exists():
+            try:
+                return path.read_text(encoding="utf-8")[:2000]
+            except Exception:
+                return ""
+        return ""
+
+    def _format_trends_for_dimension(self, dim_key: str, trends: dict) -> str:
+        """格式化趋势数据为文本"""
+        if trends.get("insufficient_data"):
+            return "数据不足，无法计算趋势"
+
+        metric_map = {
+            "cardiovascular": ["resting_heart_rate", "hrv"],
+            "metabolic": [],
+            "sleep_recovery": ["sleep_score", "deep_sleep_duration"],
+            "fitness": ["steps"],
+            "nutrition": [],
+        }
+
+        relevant = metric_map.get(dim_key, [])
+        lines = []
+        direction_labels = {"rising": "上升↑", "falling": "下降↓", "stable": "稳定→", "unknown": "数据不足"}
+        for m in relevant:
+            t = trends.get(m, {})
+            if t:
+                d = direction_labels.get(t.get("direction", "unknown"), "")
+                lines.append(f"- {m}: 趋势{d}，近7天均值={t.get('avg_7d')}，近30天均值={t.get('avg_30d')}")
+        return "\n".join(lines) if lines else "该维度无趋势数据"
+
+    def _format_data_for_dimension(self, dim_key: str, health_data: dict) -> str:
+        """为特定维度格式化数据"""
+        if dim_key == "cardiovascular":
+            basic = health_data.get("basic_health", {})
+            garmin = health_data.get("garmin_data", [])
+            lines = [self._format_basic_health(basic)]
+            if garmin:
+                recent = garmin[:7]
+                avg_rhr = self._safe_avg([d.get("resting_heart_rate") for d in recent])
+                avg_hrv = self._safe_avg([d.get("hrv") for d in recent])
+                avg_stress = self._safe_avg([d.get("stress_level") for d in recent])
+                lines.append(f"近7天: 静息心率均值={avg_rhr}, HRV均值={avg_hrv}, 压力均值={avg_stress}")
+            return "\n".join(lines)
+
+        elif dim_key == "metabolic":
+            return self._format_basic_health(health_data.get("basic_health", {}))
+
+        elif dim_key == "sleep_recovery":
+            garmin = health_data.get("garmin_data", [])[:14]
+            if not garmin:
+                return "无睡眠数据"
+            lines = []
+            avg_score = self._safe_avg([d.get("sleep_score") for d in garmin])
+            avg_dur = self._safe_avg([d.get("total_sleep_duration") for d in garmin])
+            avg_deep = self._safe_avg([d.get("deep_sleep_duration") for d in garmin])
+            avg_bb = self._safe_avg([d.get("body_battery_charged") for d in garmin])
+            lines.append(f"近14天: 睡眠评分={avg_score}, 总时长={avg_dur}分钟, 深睡={avg_deep}分钟, Body Battery充电={avg_bb}")
+            return "\n".join(lines)
+
+        elif dim_key == "fitness":
+            garmin = health_data.get("garmin_data", [])[:30]
+            if not garmin:
+                return "无运动数据"
+            avg_steps = self._safe_avg([d.get("steps") for d in garmin])
+            return f"近30天: 日均步数={avg_steps}"
+
+        elif dim_key == "nutrition":
+            return "需结合饮食记录（由 nutrition-advisor skill 处理详细分析）"
+
+        return "无数据"
 

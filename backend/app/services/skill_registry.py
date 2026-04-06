@@ -83,8 +83,14 @@ class SkillRegistry:
             logger.error(f"读取 Skill {name} 失败: {e}")
             return None
 
-    def get_skill_content(self, name: str, version: Optional[str] = None) -> Optional[str]:
-        """获取 Skill 内容（指定版本或当前版本）"""
+    def get_skill_content(self, name: str, version: Optional[str] = None, include_references: bool = False) -> Optional[str]:
+        """获取 Skill 内容（指定版本或当前版本）
+
+        Args:
+            name: Skill 名称
+            version: 指定版本号，None 为当前版本
+            include_references: 是否追加 references/ 目录下的参考文档
+        """
         _validate_skill_name(name)
         skill_dir = self.skills_dir / name
         if version:
@@ -98,10 +104,45 @@ class SkillRegistry:
         if not path.exists():
             return None
         try:
-            return path.read_text(encoding="utf-8")
+            content = path.read_text(encoding="utf-8")
+            if include_references:
+                refs = self._read_references(skill_dir)
+                if refs:
+                    content += "\n\n" + refs
+            return content
         except Exception as e:
             logger.error(f"读取 {path} 失败: {e}")
             return None
+
+    def get_skill_reference(self, name: str, ref_file: str) -> Optional[str]:
+        """获取 Skill 的单个参考文档
+
+        Args:
+            name: Skill 名称
+            ref_file: 参考文件名（如 technical_reference.md）
+        """
+        _validate_skill_name(name)
+        # ref_file 只允许 .md 文件名，防止路径遍历
+        if not re.match(r"^[a-zA-Z0-9_-]+\.md$", ref_file):
+            raise ValueError(f"非法的参考文件名: {ref_file!r}")
+        ref_path = self.skills_dir / name / "references" / ref_file
+        if not str(ref_path.resolve()).startswith(str(self.skills_dir.resolve())):
+            raise ValueError("路径遍历检测: 拒绝访问 skills 目录之外的文件")
+        if not ref_path.exists():
+            return None
+        try:
+            return ref_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.error(f"读取参考文档 {ref_path} 失败: {e}")
+            return None
+
+    def list_skill_references(self, name: str) -> list[str]:
+        """列出 Skill 的所有参考文档文件名"""
+        _validate_skill_name(name)
+        ref_dir = self.skills_dir / name / "references"
+        if not ref_dir.exists():
+            return []
+        return sorted(f.name for f in ref_dir.glob("*.md"))
 
     def save_new_version(self, name: str, content: str, changelog: str = "") -> dict:
         """保存新版本的 Skill（当前版本存档，新内容写入 SKILL.md）"""
@@ -284,12 +325,18 @@ class SkillRegistry:
             [f.stem.replace("SKILL.v", "") for f in skill_dir.glob("SKILL.v*.md")]
         )
 
+        # 检查是否有 references 目录
+        has_references = (skill_dir / "references").is_dir()
+        reference_files = sorted(f.name for f in (skill_dir / "references").glob("*.md")) if has_references else []
+
         return {
             "name": fm.get("name", skill_dir.name),
             "description": fm.get("description", ""),
             "current_version": fm.get("version", "1.0.0"),
             "archived_versions": archived_versions,
             "manifest": manifest,
+            "has_references": has_references,
+            "reference_files": reference_files,
         }
 
     def _read_manifest(self, skill_dir: Path) -> dict:
@@ -313,6 +360,20 @@ class SkillRegistry:
                 }
             ],
         }
+
+    def _read_references(self, skill_dir: Path) -> str:
+        """读取 skill 的所有 references/*.md 并拼接"""
+        ref_dir = skill_dir / "references"
+        if not ref_dir.is_dir():
+            return ""
+        parts = []
+        for ref_file in sorted(ref_dir.glob("*.md")):
+            try:
+                content = ref_file.read_text(encoding="utf-8")
+                parts.append(f"\n---\n## Reference: {ref_file.stem}\n\n{content}")
+            except Exception as e:
+                logger.warning(f"读取参考文档 {ref_file} 失败: {e}")
+        return "\n".join(parts)
 
     def _write_manifest(self, skill_dir: Path, manifest: dict):
         manifest_path = skill_dir / "manifest.json"

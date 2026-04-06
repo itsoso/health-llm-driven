@@ -70,3 +70,32 @@ def get_personalized_advice(
     service = HealthAnalysisService()
     advice = service.generate_personalized_advice(db, user_id, checkin_date)
     return {"advice": advice}
+
+
+# ========== 结构化分析端点（Phase 2 新增） ==========
+
+@router.get("/me/structured")
+def analyze_my_health_structured(
+    force_refresh: bool = Query(default=False, description="是否强制刷新"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    结构化多维健康分析（新版本）
+
+    按 5 个维度（心血管、代谢、睡眠恢复、运动体能、营养）分别分析，
+    返回各维度评分、趋势、跨维度协同效应和数据质量评估。
+    """
+    service = HealthAnalysisService()
+    return service.analyze_health_structured(db, current_user.id, force_refresh)
+
+
+@router.get("/me/trends")
+def get_my_metric_trends(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取关键指标的趋势数据（过去 90 天线性回归）"""
+    service = HealthAnalysisService()
+    health_data = service.collect_user_health_data(db, current_user.id, days=90)
+    return service._compute_metric_trends(health_data)
