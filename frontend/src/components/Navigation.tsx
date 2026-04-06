@@ -141,6 +141,7 @@ export default function Navigation() {
         { href: '/goals', label: '目标管理', icon: <Target className="w-4 h-4" /> },
         { href: '/medical-exams', label: '体检记录', icon: <FileText className="w-4 h-4" /> },
         { href: '/genetic', label: '基因数据', icon: <Zap className="w-4 h-4" /> },
+        { href: '/massage', label: '按摩理疗', icon: <Heart className="w-4 h-4" /> },
         { href: '/data-collection', label: '数据收集', icon: <Database className="w-4 h-4" /> },
         { href: '/external-advice', label: '外部健康建议', icon: <Sparkles className="w-4 h-4" /> },
         { href: '/skills', label: 'AI Skills', icon: <Zap className="w-4 h-4" /> },
