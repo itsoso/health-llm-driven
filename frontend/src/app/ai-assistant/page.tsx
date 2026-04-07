@@ -119,6 +119,8 @@ export default function AIAssistantPage() {
       setMessages(msgs);
       setDoneMessageIds(new Set(msgs.filter((m: ChatMessage) => m.role === 'assistant').map((m: ChatMessage) => m.id)));
       setConversationId(convId);
+      setInlineMode(false);
+      setInlineResponse(null);
     } catch { showToast('加载失败', 'error'); }
   }, [showToast]);
 
