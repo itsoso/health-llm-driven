@@ -100,6 +100,37 @@ def _create_openclaw_provider() -> LLMProvider:
     )
 
 
+# Vision provider 单例
+_vision_provider_instance: Optional[LLMProvider] = None
+
+
+def get_vision_provider() -> LLMProvider:
+    """
+    获取 Vision Provider 单例
+
+    如果配置了独立的 vision API key，使用独立 provider（如 DashScope/Qwen）；
+    否则回退到通用 LLM provider。
+    """
+    global _vision_provider_instance
+    if _vision_provider_instance is None:
+        vision_api_key = getattr(settings, "llm_vision_api_key", None)
+        vision_base_url = getattr(settings, "llm_vision_base_url", None)
+        vision_model = getattr(settings, "llm_vision_model", "qwen-vl-max")
+
+        if vision_api_key:
+            from app.services.llm.providers.openai_provider import OpenAIProvider
+            _vision_provider_instance = OpenAIProvider(
+                api_key=vision_api_key,
+                base_url=vision_base_url,
+                model=vision_model,
+            )
+            logger.info(f"[LLM Factory] Vision provider: {vision_model} @ {vision_base_url}")
+        else:
+            _vision_provider_instance = get_llm_provider()
+            logger.info("[LLM Factory] Vision provider: 回退到通用 LLM provider")
+    return _vision_provider_instance
+
+
 def get_llm_provider() -> LLMProvider:
     """
     获取 LLM Provider 单例

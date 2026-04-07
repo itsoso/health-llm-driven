@@ -351,7 +351,7 @@ def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
         all_variants = []
 
         # 逐页 LLM 提取
-        from app.services.llm_provider import get_llm_provider
+        from app.services.llm.factory import get_vision_provider
         import time
 
         prompt = """请从这份基因检测报告页面中提取所有基因位点信息。
@@ -381,7 +381,7 @@ category 分类规则：
 
 如果页面中没有基因位点信息，返回空数组 []。只返回 JSON，不要其他文字。"""
 
-        provider = get_llm_provider()
+        provider = get_vision_provider()
 
         for i, img_b64 in enumerate(images):
             try:

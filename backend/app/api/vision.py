@@ -16,7 +16,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.vision_usage import VisionUsageLog
 from app.api.auth import get_current_user_required
-from app.services.llm import get_llm_provider
+from app.services.llm import get_vision_provider
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/vision", tags=["vision"])
@@ -117,7 +117,7 @@ async def analyze_beauty(
         )
 
     try:
-        provider = get_llm_provider()
+        provider = get_vision_provider()
     except Exception:
         raise HTTPException(status_code=503, detail="AI 服务不可用")
 
@@ -193,7 +193,7 @@ async def recognize_image(
         )
 
     try:
-        provider = get_llm_provider()
+        provider = get_vision_provider()
     except Exception:
         raise HTTPException(status_code=503, detail="AI 服务不可用")
 

@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from app.config import settings
-from app.services.llm import get_llm_provider
+from app.services.llm import get_vision_provider
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class FoodRecognitionService:
         """懒加载获取 LLM Provider"""
         if self._provider is None:
             try:
-                self._provider = get_llm_provider()
+                self._provider = get_vision_provider()
             except Exception as e:
                 logger.error(f"获取 LLM Provider 失败: {e}")
         return self._provider

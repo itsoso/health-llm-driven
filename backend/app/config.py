@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
-    llm_vision_model: str = "gpt-4o"
+    llm_vision_model: str = "qwen-vl-max"
+    llm_vision_api_key: Optional[str] = None  # 独立 Vision API key（如 DashScope）
+    llm_vision_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     # Ollama 本地模型配置
     ollama_base_url: str = "http://localhost:11434"

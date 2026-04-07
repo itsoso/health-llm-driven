@@ -427,24 +427,26 @@ async def recognize_medication(
 ):
     """拍药盒照片，AI 自动识别药名、剂量、用法并添加到用药清单"""
     try:
-        from app.services.llm import get_llm_provider
-        llm = get_llm_provider()
+        from app.services.llm import get_vision_provider
+        llm = get_vision_provider()
 
-        messages = [
-            {"role": "system", "content": (
-                "你是药品识别专家。请识别照片中的药品，返回 JSON 格式：\n"
-                '{"name": "药品名", "category": "通用名", '
-                '"dosage": "剂量如5mg", "frequency": "频次如每日1次", '
-                '"timing": "morning/noon/evening/bedtime", '
-                '"indication": "适应症", "notes": "注意事项"}\n'
-                "只返回 JSON，不要其他文字。"
-            )},
-            {"role": "user", "content": [
-                {"type": "text", "text": "请识别这个药盒上的药品信息："},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{req.image_base64}", "detail": "high"}},
-            ]},
-        ]
-        resp = await llm.chat(messages, temperature=0.1)
+        system_prompt = (
+            "你是药品识别专家。请识别照片中的药品，返回 JSON 格式：\n"
+            '{"name": "药品名", "category": "通用名", '
+            '"dosage": "剂量如5mg", "frequency": "频次如每日1次", '
+            '"timing": "morning/noon/evening/bedtime", '
+            '"indication": "适应症", "notes": "注意事项"}\n'
+            "只返回 JSON，不要其他文字。"
+        )
+        data_url = f"data:image/jpeg;base64,{req.image_base64}"
+        resp = await llm.chat_with_vision(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "请识别这个药盒上的药品信息："},
+            ],
+            image_url=data_url,
+            temperature=0.1,
+        )
 
         # 解析
         text = resp.strip()
@@ -790,15 +792,24 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
 
         extracted_items = []
         try:
-            from app.services.llm import get_llm_provider
+            from app.services.llm import get_vision_provider
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            llm = loop.run_until_complete(_get_llm())
+            llm = get_vision_provider()
 
             import time as _time
 
+            system_prompt = (
+                "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
+                "提取所有检查指标。对每个指标，返回 JSON 数组格式：\n"
+                '[{"name": "指标名", "value": 数值, "unit": "单位", '
+                '"reference_low": 下限, "reference_high": 上限, '
+                '"is_abnormal": true/false, "severity": "normal/mild/moderate/severe"}]\n'
+                "只返回 JSON，不要其他文字。如果图片不清晰或不是体检报告，返回空数组 []。"
+            )
+
             for i, img_b64 in enumerate(image_list):
-                # 页间限速：避免 OpenAI TPM 限流
+                # 页间限速：避免 TPM 限流
                 if i > 0:
                     _time.sleep(3)
 
@@ -807,21 +818,15 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
 
                 for attempt in range(3):  # 最多重试 3 次
                     try:
-                        messages = [
-                            {"role": "system", "content": (
-                                "你是专业的体检报告解读助手。请仔细阅读这张体检报告图片，"
-                                "提取所有检查指标。对每个指标，返回 JSON 数组格式：\n"
-                                '[{"name": "指标名", "value": 数值, "unit": "单位", '
-                                '"reference_low": 下限, "reference_high": 上限, '
-                                '"is_abnormal": true/false, "severity": "normal/mild/moderate/severe"}]\n'
-                                "只返回 JSON，不要其他文字。如果图片不清晰或不是体检报告，返回空数组 []。"
-                            )},
-                            {"role": "user", "content": [
-                                {"type": "text", "text": f"这是体检报告第 {i+1}/{len(image_list)} 页，请提取所有指标："},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{compressed}", "detail": "low"}},
-                            ]},
-                        ]
-                        resp = loop.run_until_complete(llm.chat(messages, temperature=0.1))
+                        data_url = f"data:image/jpeg;base64,{compressed}"
+                        resp = loop.run_until_complete(llm.chat_with_vision(
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": f"这是体检报告第 {i+1}/{len(image_list)} 页，请提取所有指标："},
+                            ],
+                            image_url=data_url,
+                            temperature=0.1,
+                        ))
 
                         text = resp.strip()
                         if text.startswith("```"):
