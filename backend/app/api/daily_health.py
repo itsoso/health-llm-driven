@@ -17,7 +17,7 @@ from app.schemas.daily_health import (
     SupplementIntakeCreate,
     OutdoorActivityCreate
 )
-from app.auth import get_current_user_required
+from app.api.deps import get_current_user_required
 from app.models.user import User
 from app.models.daily_health import (
     GarminData,
