@@ -106,6 +106,8 @@ class ExerciseRecord(Base):
     duration = Column(Integer)  # 持续时间 (分钟)
     intensity = Column(String)  # 强度（低/中/高）
     calories_burned = Column(Integer)  # 消耗卡路里
+    reps = Column(Integer)  # 次数（如俯卧撑30个）
+    sets = Column(Integer)  # 组数
     distance = Column(Float)  # 距离 (km)
     notes = Column(Text)  # 备注
     

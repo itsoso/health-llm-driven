@@ -18,6 +18,7 @@ export interface DashboardData {
   medToday: any[];
   goalsData: any[];
   workoutRecent: any[];
+  exerciseToday: any[];
 }
 
 const INITIAL: DashboardData = {
@@ -36,6 +37,7 @@ const INITIAL: DashboardData = {
   medToday: [],
   goalsData: [],
   workoutRecent: [],
+  exerciseToday: [],
 };
 
 export function useDashboardData() {
@@ -125,6 +127,7 @@ export function useDashboardData() {
       api.get('/medication/today/me'),                  // 6
       api.get('/goals/me?status=active'),               // 7
       api.get('/workout/me?days=7'),                    // 8
+      dailyHealthApi.getTodayExercises(),               // 9
     ]);
 
     const ok2 = (i: number) => batch2[i].status === 'fulfilled' ? (batch2[i] as any).value.data : null;
@@ -151,6 +154,7 @@ export function useDashboardData() {
     if (ok2(6)) partial2.medToday = Array.isArray(ok2(6)) ? ok2(6) : [];
     if (ok2(7)) partial2.goalsData = Array.isArray(ok2(7)) ? ok2(7) : ok2(7)?.items || [];
     if (ok2(8)) partial2.workoutRecent = Array.isArray(ok2(8)) ? ok2(8) : ok2(8)?.items || [];
+    if (ok2(9)) partial2.exerciseToday = Array.isArray(ok2(9)) ? ok2(9) : [];
 
     update(partial2);
   }, []);

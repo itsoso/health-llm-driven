@@ -11,11 +11,14 @@ from app.schemas.daily_health import (
     GarminDataCreate,
     GarminDataResponse,
     ExerciseRecordCreate,
+    ExerciseRecordResponse,
     DietRecordCreate,
     WaterIntakeCreate,
     SupplementIntakeCreate,
     OutdoorActivityCreate
 )
+from app.auth import get_current_user_required
+from app.models.user import User
 from app.models.daily_health import (
     GarminData,
     ExerciseRecord,
@@ -121,17 +124,49 @@ def get_my_garmin_data(
 
 
 # 锻炼记录
-@router.post("/exercise", response_model=dict)
+@router.post("/exercise", response_model=ExerciseRecordResponse)
 def create_exercise_record(
     exercise: ExerciseRecordCreate,
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
 ):
     """创建锻炼记录"""
-    db_exercise = ExerciseRecord(**exercise.model_dump())
+    db_exercise = ExerciseRecord(user_id=current_user.id, **exercise.model_dump())
     db.add(db_exercise)
     db.commit()
     db.refresh(db_exercise)
-    return {"message": "创建成功", "id": db_exercise.id}
+    return db_exercise
+
+
+@router.get("/exercise/me/today", response_model=List[ExerciseRecordResponse])
+def get_today_exercises(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取今日锻炼记录"""
+    from datetime import date as date_type
+    today = date_type.today()
+    records = db.query(ExerciseRecord).filter(
+        ExerciseRecord.user_id == current_user.id,
+        ExerciseRecord.record_date == today,
+    ).order_by(ExerciseRecord.created_at.desc()).all()
+    return records
+
+
+@router.get("/exercise/me", response_model=List[ExerciseRecordResponse])
+def get_my_exercises(
+    days: int = 7,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取近N天锻炼记录"""
+    from datetime import date as date_type, timedelta
+    start = date_type.today() - timedelta(days=days)
+    records = db.query(ExerciseRecord).filter(
+        ExerciseRecord.user_id == current_user.id,
+        ExerciseRecord.record_date >= start,
+    ).order_by(ExerciseRecord.created_at.desc()).all()
+    return records
 
 
 # 饮食记录

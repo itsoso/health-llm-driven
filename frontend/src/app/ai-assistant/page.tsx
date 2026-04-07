@@ -18,6 +18,7 @@ import TrendsCard from '@/components/assistant/TrendsCard';
 import QuickRecordBar from '@/components/assistant/QuickRecordBar';
 import InlineResponse from '@/components/assistant/InlineResponse';
 import ChatView from '@/components/assistant/ChatView';
+import ExerciseCard from '@/components/assistant/ExerciseCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
 
 declare global {
@@ -460,6 +461,9 @@ export default function AIAssistantPage() {
                     <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
                     <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
                   </div>
+                  {dashboard.exerciseToday.length > 0 && (
+                    <ExerciseCard exerciseToday={dashboard.exerciseToday} />
+                  )}
                   <TrendsCard garminHistory={dashboard.garminHistory} />
                   <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
 

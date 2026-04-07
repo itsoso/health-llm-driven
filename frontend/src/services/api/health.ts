@@ -159,6 +159,8 @@ export const dailyHealthApi = {
       params: { start_date: startDate, end_date: endDate },
     }),
   createExercise: (data: any) => api.post('/daily-health/exercise', data),
+  getTodayExercises: () => api.get('/daily-health/exercise/me/today'),
+  getMyExercises: (days: number = 7) => api.get('/daily-health/exercise/me', { params: { days } }),
   createDiet: (data: any) => api.post('/daily-health/diet', data),
   createWater: (data: any) => api.post('/daily-health/water', data),
   createSupplement: (data: any) => api.post('/daily-health/supplement', data),

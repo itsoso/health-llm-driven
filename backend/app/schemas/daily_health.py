@@ -1,6 +1,6 @@
 """日常健康记录Schema"""
 from pydantic import BaseModel, ConfigDict, field_validator
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Optional
 import math
 
@@ -117,14 +117,33 @@ class GarminDataResponse(_CoerceIntMixin, BaseModel):
 
 class ExerciseRecordCreate(BaseModel):
     """创建锻炼记录"""
+    record_date: date
+    exercise_type: str
+    duration: Optional[int] = None
+    intensity: Optional[str] = None
+    calories_burned: Optional[int] = None
+    reps: Optional[int] = None
+    sets: Optional[int] = None
+    distance: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class ExerciseRecordResponse(BaseModel):
+    """锻炼记录响应"""
+    id: int
     user_id: int
     record_date: date
     exercise_type: str
     duration: Optional[int] = None
     intensity: Optional[str] = None
     calories_burned: Optional[int] = None
+    reps: Optional[int] = None
+    sets: Optional[int] = None
     distance: Optional[float] = None
     notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DietRecordCreate(BaseModel):
