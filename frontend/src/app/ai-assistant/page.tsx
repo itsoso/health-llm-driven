@@ -358,7 +358,15 @@ export default function AIAssistantPage() {
     } catch (e) { console.error('记录饮水失败', e); }
   };
 
-  const handleRefresh = () => { dashboard.loadTodayGarmin(); dashboard.loadDashboardData(); };
+  const handleRefresh = async () => {
+    showToast('正在同步数据...', 'info');
+    try {
+      await api.post('/data-collection/garmin/me/sync?days=1');
+    } catch {}
+    dashboard.loadTodayGarmin();
+    dashboard.loadDashboardData();
+    showToast('数据已刷新', 'success');
+  };
 
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
