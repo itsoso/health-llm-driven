@@ -454,5 +454,18 @@ class VectorStoreService:
             return {"success": False, "error": str(e)}
 
 
-# 单例实例
-vector_store = VectorStoreService()
+# 懒加载单例 — 避免 import 时触发 ChromaDB 模型下载阻塞 worker
+_vector_store_instance: Optional[VectorStoreService] = None
+
+def _get_vector_store() -> VectorStoreService:
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        _vector_store_instance = VectorStoreService()
+    return _vector_store_instance
+
+class _LazyVectorStore:
+    """代理对象，首次访问属性时才初始化 VectorStoreService"""
+    def __getattr__(self, name):
+        return getattr(_get_vector_store(), name)
+
+vector_store = _LazyVectorStore()
