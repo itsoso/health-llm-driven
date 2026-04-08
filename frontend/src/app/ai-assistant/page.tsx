@@ -20,6 +20,7 @@ import InlineResponse from '@/components/assistant/InlineResponse';
 import ChatView from '@/components/assistant/ChatView';
 import ExerciseCard from '@/components/assistant/ExerciseCard';
 import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
+import PushupCard from '@/components/assistant/PushupCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
 
 declare global {
@@ -495,12 +496,15 @@ export default function AIAssistantPage() {
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
                   <div className="grid grid-cols-2 gap-2.5">
-                    <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
+                    <PushupCard />
                     <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
                   </div>
-                  {dashboard.exerciseToday.length > 0 && (
-                    <ExerciseCard exerciseToday={dashboard.exerciseToday} />
-                  )}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
+                    {dashboard.exerciseToday.length > 0 && (
+                      <ExerciseCard exerciseToday={dashboard.exerciseToday} />
+                    )}
+                  </div>
                   <SupplementGuideCard />
                   <TrendsCard garminHistory={dashboard.garminHistory} />
                   <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
