@@ -170,8 +170,9 @@ export default function AIAssistantPage() {
         if (event.event === 'token') {
           fullText += event.data?.content || '';
           setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
-        } else if (event.event === 'done' && event.data?.conversation_id && !conversationId) {
-          setConversationId(event.data.conversation_id);
+        } else if (event.event === 'done') {
+          if (event.data?.conversation_id && !conversationId) setConversationId(event.data.conversation_id);
+          dashboard.loadDashboardData();
         }
       }
       setInlineResponse(prev => prev ? { ...prev, loading: false } : null);
@@ -224,6 +225,8 @@ export default function AIAssistantPage() {
           if (!conversationId && event.data.conversation_id) setConversationId(event.data.conversation_id);
           if (event.data.message_id) { setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, id: event.data.message_id } : m)); setDoneMessageIds(prev => new Set(prev).add(event.data.message_id)); }
           handleDoneEvent(event.data);
+          // OpenClaw Skill 可能修改了健康数据（鼻炎、饮食、体重等），刷新 dashboard
+          dashboard.loadDashboardData();
         } else if (event.event === 'error') {
           clearTimeout(waitTimer); clearTimeout(waitTimer2);
           const errText = event.data.message || '';
