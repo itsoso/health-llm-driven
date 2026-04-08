@@ -50,16 +50,23 @@ export default function StrengthCard({
     } catch {}
 
     try {
-      const r = await api.get('/daily-health/exercise/me?days=7');
+      const r = await api.get('/daily-health/exercise/me?days=14');
       const recs: any[] = Array.isArray(r.data) ? r.data : r.data?.items || [];
       const byDate: Record<string, number> = {};
       for (const e of recs.filter((e: any) => e.exercise_type === exerciseType)) {
         const d = (e.record_date || '').slice(0, 10);
         byDate[d] = (byDate[d] || 0) + (e.reps || 0);
       }
+      // 本周一到周日
+      const now = new Date();
+      const dayOfWeek = (now.getDay() + 6) % 7; // 0=周一, 6=周日
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - dayOfWeek);
       const days: number[] = [];
-      for (let i = 6; i >= 0; i--) {
-        days.push(byDate[new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)] || 0);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        days.push(byDate[d.toISOString().slice(0, 10)] || 0);
       }
       setWeekData(days);
     } catch {}
@@ -85,7 +92,7 @@ export default function StrengthCard({
 
   const maxWeek = Math.max(...weekData, dailyTarget);
   const weekDays = ['一', '二', '三', '四', '五', '六', '日'];
-  const todayDayIndex = (new Date().getDay() + 6) % 7;
+  const todayIdx = (new Date().getDay() + 6) % 7; // 0=周一, 6=周日
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -138,7 +145,7 @@ export default function StrengthCard({
           <div className="flex items-end gap-1 h-7">
             {weekData.map((val, i) => {
               const h = maxWeek > 0 ? Math.max(2, (val / maxWeek) * 28) : 2;
-              const isToday = i === weekData.length - 1;
+              const isToday = i === todayIdx;
               return (
                 <div key={i} className={`flex-1 rounded-sm transition-all ${isToday ? colorBar : val > 0 ? colorBarLight : 'bg-gray-100'}`}
                   style={{ height: `${h}px` }} />
@@ -146,9 +153,9 @@ export default function StrengthCard({
             })}
           </div>
           <div className="flex gap-1 mt-0.5">
-            {weekData.map((_, i) => (
-              <div key={i} className="flex-1 text-center text-[8px] text-gray-300">
-                {weekDays[(todayDayIndex - 6 + i + 7) % 7]}
+            {weekDays.map((d, i) => (
+              <div key={i} className={`flex-1 text-center text-[8px] ${i === todayIdx ? 'text-gray-500 font-bold' : 'text-gray-300'}`}>
+                {d}
               </div>
             ))}
           </div>
