@@ -12,12 +12,13 @@ interface DataGridProps {
 export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisToday, weightStats }: DataGridProps) {
   const router = useRouter();
 
-  const sleepDeep = todayGarmin?.deep_sleep_duration ? todayGarmin.deep_sleep_duration / 60 : 0;
-  const sleepRem = todayGarmin?.rem_sleep_duration ? todayGarmin.rem_sleep_duration / 60 : 0;
-  const sleepLight = todayGarmin?.light_sleep_duration ? todayGarmin.light_sleep_duration / 60 : 0;
-  const sleepTotal = todayGarmin?.total_sleep_duration ? todayGarmin.total_sleep_duration / 60 : 0;
-  const sleepH = Math.floor(sleepTotal);
-  const sleepM = Math.round((sleepTotal - sleepH) * 60);
+  // 数据库存储单位：分钟
+  const sleepDeep = todayGarmin?.deep_sleep_duration || 0;
+  const sleepRem = todayGarmin?.rem_sleep_duration || 0;
+  const sleepLight = todayGarmin?.light_sleep_duration || 0;
+  const sleepTotal = todayGarmin?.total_sleep_duration || 0;
+  const sleepH = Math.floor(sleepTotal / 60);
+  const sleepM = sleepTotal % 60;
   const spo2 = todayGarmin?.spo2_avg;
 
   const cards: JSX.Element[] = [];
@@ -41,9 +42,9 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
               {sleepLight > 0 && <div className="bg-blue-200 rounded-r-full" style={{ width: `${(sleepLight / sleepTotal) * 100}%` }} title={`浅睡 ${Math.round(sleepLight)}min`} />}
             </div>
             <div className="flex items-center gap-3 text-[10px] text-indigo-600/70">
-              <span>深睡 {Math.round(sleepDeep)}m</span>
-              <span>REM {Math.round(sleepRem)}m</span>
-              <span>浅睡 {Math.round(sleepLight)}m</span>
+              <span>深睡 {sleepDeep >= 60 ? `${Math.floor(sleepDeep / 60)}h${sleepDeep % 60}m` : `${sleepDeep}m`}</span>
+              <span>REM {sleepRem >= 60 ? `${Math.floor(sleepRem / 60)}h${sleepRem % 60}m` : `${sleepRem}m`}</span>
+              <span>浅睡 {sleepLight >= 60 ? `${Math.floor(sleepLight / 60)}h${sleepLight % 60}m` : `${sleepLight}m`}</span>
             </div>
           </div>
         </div>
