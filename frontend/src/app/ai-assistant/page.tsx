@@ -515,7 +515,10 @@ export default function AIAssistantPage() {
                       colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
                   </div>
 
-                  {/* 跑步 + 补剂打卡（常驻展示） */}
+                  {/* 快速记录 */}
+                  <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
+
+                  {/* 运动 + 补剂打卡（常驻展示） */}
                   <div className="grid grid-cols-2 gap-2.5">
                     <WorkoutCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
                     <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
@@ -535,7 +538,6 @@ export default function AIAssistantPage() {
                         <ExerciseCard exerciseToday={dashboard.exerciseToday} />
                       )}
                       <TrendsCard garminHistory={dashboard.garminHistory} />
-                      <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
                       <div className="flex flex-wrap gap-1.5">
                         {QUICK_ASKS.map(q => (
                           <button key={q.label} onClick={() => handleSend(q.text)}
