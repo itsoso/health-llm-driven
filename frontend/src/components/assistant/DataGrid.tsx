@@ -26,7 +26,7 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
   // Sleep - 大卡片，最重要
   if (sleepTotal > 0) {
     cards.push(
-      <div key="sleep" className="col-span-2 bg-gradient-to-br from-indigo-50 to-white rounded-2xl p-4 border border-indigo-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push('/sleep')}>
+      <div key="sleep" className="col-span-2 bg-gradient-to-br from-indigo-50 to-white rounded-2xl p-4 border border-indigo-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push('/garmin')}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-indigo-700">😴 睡眠分析</span>
           <span className="text-xs text-indigo-400">{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
@@ -60,7 +60,7 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
 
   // Diet
   cards.push(
-    <div key="diet" className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm">
+    <div key="diet" className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push('/diet')}>
       <span className="text-xs font-semibold text-gray-600">🍽️ 饮食</span>
       <div className="mt-1.5">
         <div className="text-2xl font-extrabold text-gray-800">
