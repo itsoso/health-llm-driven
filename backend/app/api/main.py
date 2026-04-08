@@ -98,6 +98,7 @@ from app.api import (
     exercise_recovery,  # 运动恢复评估
     chronic_risk,  # 慢病风险评估
     multi_source_integration,  # 多源数据整合
+    agent,  # Hermes Agent 模式
 )
 
 api_router = APIRouter()
@@ -205,6 +206,9 @@ api_router.include_router(assistant_openclaw.router)  # prefix 已在 router 中
 
 # OpenClaw Skills 远程管理
 api_router.include_router(openclaw_skills.router)  # prefix 已在 router 中定义
+
+# Hermes Agent 模式（结构化工具调用 + 多步推理）
+api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 
 # 对话分享
 api_router.include_router(shared_conversation.router)  # prefix 已在 router 中定义

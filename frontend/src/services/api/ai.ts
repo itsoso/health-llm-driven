@@ -260,6 +260,48 @@ export const assistantOpenclawApi = {
   },
 };
 
+// ===== Agent 模式 API (Hermes) =====
+export const agentApi = {
+  streamMessage: async function* (message: string, conversationId?: number) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(`${API_BASE_URL}/agent/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message, conversation_id: conversationId }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Agent stream request failed: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (reader) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            yield JSON.parse(line.slice(6));
+          } catch {
+            // skip
+          }
+        }
+      }
+    }
+  },
+
+  listTools: () => api.get('/agent/tools'),
+};
+
 // ===== 对话分享 API =====
 export const openclawSkillsApi = {
   listInstalled: () =>

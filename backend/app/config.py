@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
     llm_vision_model: str = "qwen-vl-max"
+    agent_model: Optional[str] = None  # Hermes Agent 专用模型（默认复用 llm_model）
     llm_vision_api_key: Optional[str] = None  # 独立 Vision API key（如 DashScope）
     llm_vision_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
