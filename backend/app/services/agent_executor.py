@@ -226,8 +226,8 @@ class AgentExecutor:
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
         # 回退到默认 provider
-        from app.services.llm.factory import get_provider
-        provider = get_provider()
+        from app.services.llm.factory import get_llm_provider
+        provider = get_llm_provider()
         return await provider.chat(
             messages=messages, model=model,
             temperature=0.3, max_tokens=4000, stream=False, tools=tools,
