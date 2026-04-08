@@ -402,13 +402,21 @@ export default function AIAssistantPage() {
   };
 
   const handleRefresh = async () => {
-    showToast('正在同步数据...', 'info');
+    showToast('正在同步 Garmin 数据（含运动和睡眠）...', 'info');
     try {
-      await api.post('/data-collection/garmin/me/sync?days=1');
-    } catch {}
-    dashboard.loadTodayGarmin();
-    dashboard.loadDashboardData();
-    showToast('数据已刷新', 'success');
+      const res = await api.post('/data-collection/garmin/me/sync?days=1');
+      const d = res.data;
+      const parts = [];
+      if (d?.success_count > 0) parts.push(`${d.success_count}天健康数据`);
+      if (d?.activities_count > 0) parts.push(`${d.activities_count}条运动`);
+      await dashboard.loadTodayGarmin();
+      await dashboard.loadDashboardData();
+      showToast(parts.length > 0 ? `同步成功：${parts.join('、')}` : '数据已是最新', 'success');
+    } catch {
+      await dashboard.loadTodayGarmin();
+      await dashboard.loadDashboardData();
+      showToast('同步失败，已刷新本地数据', 'error');
+    }
   };
 
   return (
