@@ -21,7 +21,7 @@ import ChatView from '@/components/assistant/ChatView';
 import ExerciseCard from '@/components/assistant/ExerciseCard';
 import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
 import StrengthCard from '@/components/assistant/StrengthCard';
-import RunningCard from '@/components/assistant/RunningCard';
+import WorkoutCard from '@/components/assistant/WorkoutCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
 
 declare global {
@@ -517,7 +517,7 @@ export default function AIAssistantPage() {
 
                   {/* 跑步 + 补剂打卡（常驻展示） */}
                   <div className="grid grid-cols-2 gap-2.5">
-                    <RunningCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
+                    <WorkoutCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
                     <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
                   </div>
 
