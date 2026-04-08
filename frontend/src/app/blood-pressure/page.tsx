@@ -280,6 +280,73 @@ function BloodPressureContent() {
           </div>
         </div>
 
+        {/* Withings 血压计测量指南 */}
+        <div className="bg-gradient-to-br from-blue-50 to-white rounded-xl shadow-md p-4 mb-6 border border-blue-100">
+          <h4 className="text-sm font-semibold text-blue-700 mb-3">📋 Withings 血压计测量指南</h4>
+          <div className="space-y-2 text-xs text-gray-700">
+            <div className="font-semibold text-gray-800 mb-1">测量前准备：</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+              <div className="flex items-start gap-1.5">
+                <span className="text-blue-500 mt-0.5">1.</span>
+                <span>先排空膀胱（憋尿可升高 10-15mmHg）</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-blue-500 mt-0.5">2.</span>
+                <span>静坐休息 5 分钟，避免刚运动/爬楼后测量</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-blue-500 mt-0.5">3.</span>
+                <span>30 分钟内不喝咖啡/浓茶，不吸烟</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-blue-500 mt-0.5">4.</span>
+                <span>松开紧袖口，卷袖至肘上</span>
+              </div>
+            </div>
+            <div className="font-semibold text-gray-800 mt-2 mb-1">正确姿势：</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+              <div className="flex items-start gap-1.5">
+                <span className="text-emerald-500 mt-0.5">&#x2713;</span>
+                <span>坐在有靠背的椅子上，背部靠紧椅背</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-emerald-500 mt-0.5">&#x2713;</span>
+                <span>双脚平放地面，不要翘二郎腿</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-emerald-500 mt-0.5">&#x2713;</span>
+                <span>左臂自然放于桌面，袖带与心脏同高</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-emerald-500 mt-0.5">&#x2713;</span>
+                <span>头部直立，测量时不说话、不移动</span>
+              </div>
+            </div>
+            <div className="font-semibold text-gray-800 mt-2 mb-1">Withings 使用要点：</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+              <div className="flex items-start gap-1.5">
+                <span className="text-purple-500 mt-0.5">&#x25CF;</span>
+                <span>袖带绿色标记对准手腕内侧（桡动脉）</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-purple-500 mt-0.5">&#x25CF;</span>
+                <span>袖带松紧适宜，可插入一指</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-purple-500 mt-0.5">&#x25CF;</span>
+                <span>每次测 2-3 次，取平均值更准确</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-purple-500 mt-0.5">&#x25CF;</span>
+                <span>建议固定早晨起床排尿后测量，便于纵向对比</span>
+              </div>
+            </div>
+            <div className="mt-2 px-2.5 py-1.5 bg-amber-50 rounded-lg border border-amber-200 text-amber-800 text-[11px]">
+              ⚠️ 常见误差来源：憋尿（+10-15）、咖啡因（+5-15）、运动后30min内、翘腿（+5-8）、袖带过松、说话
+            </div>
+          </div>
+        </div>
+
         {/* 血压趋势图 */}
         {chartData.length > 0 && (
           <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">

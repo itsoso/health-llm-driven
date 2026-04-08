@@ -21,6 +21,7 @@ import ChatView from '@/components/assistant/ChatView';
 import ExerciseCard from '@/components/assistant/ExerciseCard';
 import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
 import StrengthCard from '@/components/assistant/StrengthCard';
+import RunningCard from '@/components/assistant/RunningCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
 
 declare global {
@@ -496,6 +497,7 @@ export default function AIAssistantPage() {
                   <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
+                  {/* 四大主力：俯卧撑 · 深蹲 · 跑步 · 补剂 */}
                   <div className="grid grid-cols-2 gap-2.5">
                     <StrengthCard exerciseType="俯卧撑" icon="💪" dailyTarget={100} color="#3b82f6"
                       colorLight="bg-blue-50" colorText="text-blue-600" colorBorder="border-blue-200"
@@ -505,8 +507,8 @@ export default function AIAssistantPage() {
                       colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
                   </div>
                   <div className="grid grid-cols-2 gap-2.5">
+                    <RunningCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
                     <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
-                    <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
                   </div>
                   <SupplementGuideCard />
 
@@ -518,6 +520,7 @@ export default function AIAssistantPage() {
                     </button>
                   ) : (
                     <>
+                      <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
                       {dashboard.exerciseToday.length > 0 && (
                         <ExerciseCard exerciseToday={dashboard.exerciseToday} />
                       )}
