@@ -517,6 +517,54 @@ async def get_external_health_data(
     except Exception:
         pass  # 基因表未创建或查询失败时不影响主流程
 
+    # 添加当前补剂清单（不随日期变化，放在顶层）
+    try:
+        from app.models.supplement import SupplementDefinition
+        active_supps = db.query(SupplementDefinition).filter(
+            SupplementDefinition.user_id == api_key.user_id,
+            SupplementDefinition.is_active == True
+        ).order_by(SupplementDefinition.sort_order).all()
+        if active_supps:
+            response["active_supplements"] = [
+                {
+                    "name": s.name,
+                    "dosage": s.dosage,
+                    "timing": s.timing,
+                    "category": s.category,
+                    "description": s.description,
+                }
+                for s in active_supps
+            ]
+    except Exception:
+        pass
+
+    # 添加当前用药清单（不随日期变化，放在顶层）
+    try:
+        from app.models.medication import Medication
+        active_meds = db.query(Medication).filter(
+            Medication.user_id == api_key.user_id,
+            Medication.is_active == True
+        ).all()
+        if active_meds:
+            response["active_medications"] = [
+                {
+                    "name": m.name,
+                    "dosage": m.dosage,
+                    "frequency": m.frequency,
+                    "times_per_day": m.times_per_day,
+                    "category": m.category,
+                    "purpose": m.purpose,
+                    "side_effects": m.side_effects,
+                    "interactions": m.interactions,
+                    "start_date": m.start_date.isoformat() if m.start_date else None,
+                    "end_date": m.end_date.isoformat() if m.end_date else None,
+                    "notes": m.notes,
+                }
+                for m in active_meds
+            ]
+    except Exception:
+        pass
+
     return response
 
 

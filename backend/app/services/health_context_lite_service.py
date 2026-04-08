@@ -480,13 +480,13 @@ def _build_context(db: Session, user_id: int) -> str:
     except Exception:
         pass
 
-    # ── 11. 补剂提醒 ────────────────────────────────────
+    # ── 11. 补剂清单 + 今日服用 ───────────────────────────
     try:
         from app.models.supplement import SupplementDefinition, SupplementRecord
         active_supps = db.query(SupplementDefinition).filter(
             SupplementDefinition.user_id == user_id,
             SupplementDefinition.is_active == True
-        ).all()
+        ).order_by(SupplementDefinition.sort_order).all()
 
         if active_supps:
             taken_ids = {r.supplement_id for r in db.query(SupplementRecord).filter(
@@ -496,11 +496,51 @@ def _build_context(db: Session, user_id: int) -> str:
             ).all()}
             taken = len(taken_ids)
             total = len(active_supps)
-            not_taken = [s.name for s in active_supps if s.id not in taken_ids]
-            if not_taken:
-                parts.append(f"补剂: {taken}/{total}已服, 未服: {', '.join(not_taken[:5])}")
-            else:
-                parts.append(f"补剂: {total}/{total}已全部服用 ✅")
+
+            # 补剂详情列表
+            supp_details = []
+            for s in active_supps:
+                detail = s.name
+                if s.dosage:
+                    detail += f" {s.dosage}"
+                timing_map = {"morning": "早", "noon": "午", "evening": "晚", "bedtime": "睡前"}
+                if s.timing:
+                    detail += f"({timing_map.get(s.timing, s.timing)})"
+                status = "✅" if s.id in taken_ids else "⬜"
+                supp_details.append(f"{status}{detail}")
+            parts.append(f"补剂({taken}/{total}): {', '.join(supp_details)}")
+    except Exception:
+        pass
+
+    # ── 11b. 当前用药 ──────────────────────────────────────
+    try:
+        from app.models.medication import Medication, MedicationLog
+        active_meds = db.query(Medication).filter(
+            Medication.user_id == user_id,
+            Medication.is_active == True
+        ).all()
+
+        if active_meds:
+            # 今日服药记录
+            today_logs = db.query(MedicationLog).filter(
+                MedicationLog.user_id == user_id,
+                MedicationLog.taken_date == today,
+                MedicationLog.status == "taken"
+            ).all()
+            taken_med_ids = {log.medication_id for log in today_logs}
+
+            med_details = []
+            for m in active_meds:
+                detail = m.name
+                if m.dosage:
+                    detail += f" {m.dosage}"
+                if m.frequency:
+                    detail += f" {m.frequency}"
+                if m.purpose:
+                    detail += f"(用途:{m.purpose})"
+                status = "✅" if m.id in taken_med_ids else "⬜"
+                med_details.append(f"{status}{detail}")
+            parts.append(f"当前用药: {', '.join(med_details)}")
     except Exception:
         pass
 
