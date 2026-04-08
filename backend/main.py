@@ -207,6 +207,7 @@ STREAMING_PATHS = {
     "/api/v1/openclaw/stream",
     "/api/v1/chat/stream",
     "/api/v1/assistant-openclaw/stream",
+    "/api/v1/agent/stream",
 }
 
 

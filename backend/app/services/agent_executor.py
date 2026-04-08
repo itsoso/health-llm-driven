@@ -237,7 +237,9 @@ class AgentExecutor:
         self, messages: List[Dict], tools: List[Dict],
         model: str, base_url: str, api_key: str,
     ) -> Any:
-        """直接调用 OpenAI 兼容的 chatCompletions 端点"""
+        """直接调用 OpenAI 兼容的 chatCompletions 端点，含 429 重试"""
+        import asyncio as _asyncio
+
         url = f"{base_url.rstrip('/')}/chat/completions"
         payload: Dict[str, Any] = {
             "model": model,
@@ -253,11 +255,21 @@ class AgentExecutor:
             "Authorization": f"Bearer {api_key}",
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code != 200:
-                raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
-            data = resp.json()
+        max_retries = 3
+        for attempt in range(max_retries):
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code == 429:
+                    wait = (attempt + 1) * 5  # 5s, 10s, 15s
+                    logger.warning(f"OpenClaw Gateway 429 限流，第{attempt+1}次重试，等待{wait}s")
+                    await _asyncio.sleep(wait)
+                    continue
+                if resp.status_code != 200:
+                    raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
+                data = resp.json()
+                break
+        else:
+            raise RuntimeError("OpenClaw Gateway 429 限流，已重试3次仍失败，请稍后再试")
 
         choice = data.get("choices", [{}])[0]
         msg = choice.get("message", {})
