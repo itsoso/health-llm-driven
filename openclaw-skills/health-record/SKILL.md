@@ -176,10 +176,16 @@ curl -s -X POST -H "Authorization: Bearer ${HEALTH_API_TOKEN}" -H "Content-Type:
 
 ## Garmin 同步
 
-### 触发手动同步
+当用户说"同步Garmin"、"同步Garmin数据"、"同步数据"、"更新运动数据"、"拉取最新数据"、"sync garmin"时，**必须立即调用此 API**，不要让用户手动操作：
+
 ```bash
-curl -s -X POST -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/workout/me/sync-garmin"
+curl -s -X POST -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
+  "${HEALTH_API_URL}/data-collection/garmin/me/sync?days=1"
 ```
+- `days`: 同步最近N天数据，通过 URL query 参数传递
+- 404: 未绑定 Garmin，提示去设置页绑定
+- 成功后告知同步结果
+- **重要**：必须直接调用 API，不要回复"请手动操作"
 
 ---
 

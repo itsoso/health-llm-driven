@@ -197,13 +197,20 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/diet/recor
 
 ## 同步 Garmin 数据
 
-当用户说"同步Garmin数据"、"更新运动数据"、"拉取最新数据"时，触发 Garmin 数据同步：
+当用户说"同步Garmin"、"同步Garmin数据"、"同步数据"、"更新运动数据"、"拉取最新数据"、"sync garmin"时，**必须立即调用此 API**，不要让用户手动操作：
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
-  "$HEALTH_API_URL/auth/garmin/sync" -d '{"days": 1}'
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" \
+  "$HEALTH_API_URL/data-collection/garmin/me/sync?days=1"
 ```
-- `days`: 同步最近N天的数据（默认1天，最多730天）
-- 返回同步成功的天数和运动记录数
-- 如果返回404说明用户未配置 Garmin 凭证，提示去设置页面配置
-- 同步完成后可以用 health-query 技能查询最新数据
+
+参数说明：
+- `days`: 同步最近N天的数据（默认1天），通过 URL query 参数传递
+- 返回同步结果，包含同步的天数和记录数
+
+错误处理：
+- 404: 用户未绑定 Garmin 账号，提示去「设置 → Garmin」页面绑定
+- 400: Garmin 同步已禁用或凭据无效，提示去设置页面检查
+- 成功后告知用户数据已同步，并简要说明同步了哪些数据
+
+**重要**：收到同步请求后必须直接调用 API 执行同步，不要回复"请手动操作"。
