@@ -66,10 +66,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=6, minute=0),
     },
     
-    # 每日 09:02 北京时间同步 Garmin 数据（仅 user_id=3）
+    # 每日 09:01 北京时间同步 Garmin 数据（已同步则跳过）
     "sync-garmin-daily": {
         "task": "app.tasks.garmin_sync.sync_all_users_garmin",
-        "schedule": crontab(hour=1, minute=2),  # UTC 01:02 = 北京 09:02
+        "schedule": crontab(hour=1, minute=1),  # UTC 01:01 = 北京 09:01
     },
     # "sync-garmin-6hourly": {
     #     "task": "app.tasks.garmin_sync.sync_all_users_garmin",
@@ -136,10 +136,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=30),
     },
 
-    # 每日 07:30 早安健康摘要
+    # 每日 09:30 早安健康摘要（等 Garmin 09:01 同步完成后推送）
     "morning-health-summary": {
         "task": "app.tasks.notifications.send_morning_health_summary",
-        "schedule": crontab(hour=7, minute=30),
+        "schedule": crontab(hour=1, minute=30),  # UTC 01:30 = 北京 09:30
     },
 
     # 每12小时续期 Garmin OAuth session
@@ -148,10 +148,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour="*/12", minute=15),
     },
 
-    # 每日 07:35 健康简报（写入 AI 对话）
+    # 每日 09:32 健康简报（写入 AI 对话，等 Garmin 同步后）
     "daily-briefing-message": {
         "task": "app.tasks.notifications.generate_daily_briefing_message",
-        "schedule": crontab(hour=7, minute=35),
+        "schedule": crontab(hour=1, minute=32),  # UTC 01:32 = 北京 09:32
     },
 
     # 每周一 09:05 周报（写入 AI 对话）

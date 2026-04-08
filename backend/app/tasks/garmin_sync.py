@@ -152,8 +152,12 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
 def sync_all_users_garmin():
     """
     同步所有用户的 Garmin 数据（定时任务）
+    如果用户今天已手动同步过，则跳过。
     """
+    from app.utils.timezone import get_china_today
+
     logger.info("开始批量同步所有用户 Garmin 数据")
+    today = get_china_today()
 
     with SessionLocal() as db:
         from app.models.user import GarminCredential
@@ -163,15 +167,22 @@ def sync_all_users_garmin():
             GarminCredential.credentials_valid == True
         ).all()
 
-        user_ids = [c.user_id for c in credentials]
+        dispatched = []
+        skipped = []
+        for c in credentials:
+            # 如果今天已同步过，跳过
+            if c.last_sync_at and c.last_sync_at.date() >= today:
+                skipped.append(c.user_id)
+                logger.info(f"用户 {c.user_id} 今日已同步({c.last_sync_at})，跳过")
+            else:
+                dispatched.append(c.user_id)
 
-    logger.info(f"发现 {len(user_ids)} 个活跃的 Garmin 账户")
+    logger.info(f"发现 {len(dispatched) + len(skipped)} 个活跃账户，派发 {len(dispatched)} 个，跳过 {len(skipped)} 个")
 
-    # 为每个用户创建异步任务
-    for user_id in user_ids:
+    for user_id in dispatched:
         sync_user_garmin_data.delay(user_id)
 
-    return {"status": "dispatched", "count": len(user_ids)}
+    return {"status": "dispatched", "count": len(dispatched), "skipped": len(skipped)}
 
 
 @celery_app.task(bind=True, max_retries=2, time_limit=300)
