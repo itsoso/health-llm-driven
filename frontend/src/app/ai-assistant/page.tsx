@@ -20,7 +20,7 @@ import InlineResponse from '@/components/assistant/InlineResponse';
 import ChatView from '@/components/assistant/ChatView';
 import ExerciseCard from '@/components/assistant/ExerciseCard';
 import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
-import PushupCard from '@/components/assistant/PushupCard';
+import StrengthCard from '@/components/assistant/StrengthCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
 
 declare global {
@@ -95,6 +95,7 @@ export default function AIAssistantPage() {
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   const [showAppsMenu, setShowAppsMenu] = useState(false);
+  const [showMoreDashboard, setShowMoreDashboard] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -496,28 +497,46 @@ export default function AIAssistantPage() {
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
                   <div className="grid grid-cols-2 gap-2.5">
-                    <PushupCard />
-                    <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
+                    <StrengthCard exerciseType="俯卧撑" icon="💪" dailyTarget={100} color="#3b82f6"
+                      colorLight="bg-blue-50" colorText="text-blue-600" colorBorder="border-blue-200"
+                      colorBar="bg-blue-500" colorBarLight="bg-blue-200" />
+                    <StrengthCard exerciseType="深蹲" icon="🦵" dailyTarget={100} color="#8b5cf6"
+                      colorLight="bg-violet-50" colorText="text-violet-600" colorBorder="border-violet-200"
+                      colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
                   </div>
                   <div className="grid grid-cols-2 gap-2.5">
+                    <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
                     <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
-                    {dashboard.exerciseToday.length > 0 && (
-                      <ExerciseCard exerciseToday={dashboard.exerciseToday} />
-                    )}
                   </div>
                   <SupplementGuideCard />
-                  <TrendsCard garminHistory={dashboard.garminHistory} />
-                  <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
 
-                  {/* Quick Ask */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {QUICK_ASKS.map(q => (
-                      <button key={q.label} onClick={() => handleSend(q.text)}
-                        className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-[11px] text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 active:scale-[0.97] transition-all">
-                        {q.label}
+                  {/* 折叠区：趋势 + 快速记录 + 快捷问题 */}
+                  {!showMoreDashboard ? (
+                    <button onClick={() => setShowMoreDashboard(true)}
+                      className="w-full py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
+                      展开更多 ▾
+                    </button>
+                  ) : (
+                    <>
+                      {dashboard.exerciseToday.length > 0 && (
+                        <ExerciseCard exerciseToday={dashboard.exerciseToday} />
+                      )}
+                      <TrendsCard garminHistory={dashboard.garminHistory} />
+                      <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
+                      <div className="flex flex-wrap gap-1.5">
+                        {QUICK_ASKS.map(q => (
+                          <button key={q.label} onClick={() => handleSend(q.text)}
+                            className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-[11px] text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 active:scale-[0.97] transition-all">
+                            {q.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={() => setShowMoreDashboard(false)}
+                        className="w-full py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-400 hover:text-gray-600 transition-all">
+                        收起 ▴
                       </button>
-                    ))}
-                  </div>
+                    </>
+                  )}
 
                   {/* Inline AI Response */}
                   {inlineResponse && (
