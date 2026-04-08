@@ -73,10 +73,9 @@ export default function SupplementCheckin({ supplementStatus, onStatusChange }: 
   let lastTiming = '';
 
   return (
-    <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+    <div className="rounded-2xl p-4" style={{ background: 'linear-gradient(135deg, #fff5f7 0%, #ffffff 100%)', boxShadow: '0 1px 3px rgba(255,100,130,0.08)' }}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#FF6482' }} />
           <span className="text-xs font-semibold" style={{ color: '#1C1C1E' }}>💊 补剂打卡</span>
         </div>
         <span className="text-[11px]" style={{ color: '#8E8E93' }}>{checked}/{total}</span>

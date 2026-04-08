@@ -11,7 +11,6 @@ interface DataGridProps {
 
 export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisToday, weightStats }: DataGridProps) {
   const router = useRouter();
-  const cardStyle = { boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
   const pressStyle = 'active:scale-[0.98] transition-all duration-150 cursor-pointer';
 
   const sleepDeep = todayGarmin?.deep_sleep_duration || 0;
@@ -28,29 +27,27 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
     <div className="space-y-3">
       {/* Row 1: Sleep (2/3) + Diet (1/3) */}
       <div className="grid grid-cols-3 gap-3">
-        {/* Sleep */}
+        {/* Sleep - indigo tint */}
         {sleepTotal > 0 && (
-          <div className={`col-span-2 rounded-2xl bg-white p-4 ${pressStyle}`} style={cardStyle}
+          <div className={`col-span-2 rounded-2xl p-4 ${pressStyle}`}
+            style={{ background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)', boxShadow: '0 1px 3px rgba(94,92,230,0.08)' }}
             onClick={() => router.push('/garmin')}>
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#5E5CE6' }} />
-                <span className="text-xs font-semibold" style={{ color: '#1C1C1E' }}>睡眠</span>
-              </div>
-              <span className="text-xs" style={{ color: '#AEAEB2' }}>{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
+              <span className="text-xs font-semibold" style={{ color: '#5E5CE6' }}>😴 睡眠分析</span>
+              <span className="text-xs" style={{ color: '#8E8E93' }}>{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
             </div>
             <div className="flex items-end gap-4">
               <div>
-                <span className="text-4xl font-extrabold" style={{ color: '#1C1C1E' }}>{todayGarmin?.sleep_score || '--'}</span>
-                <span className="text-sm ml-1" style={{ color: '#AEAEB2' }}>分</span>
+                <span className="text-4xl font-extrabold" style={{ color: '#3634A3' }}>{todayGarmin?.sleep_score || '--'}</span>
+                <span className="text-sm ml-1" style={{ color: '#8E8E93' }}>分</span>
               </div>
               <div className="flex-1 space-y-1.5">
-                <div className="flex h-2 rounded-full overflow-hidden">
+                <div className="flex h-2.5 rounded-full overflow-hidden">
                   {sleepDeep > 0 && <div style={{ width: `${(sleepDeep / sleepTotal) * 100}%`, background: '#3634A3' }} className="rounded-l-full" />}
                   {sleepRem > 0 && <div style={{ width: `${(sleepRem / sleepTotal) * 100}%`, background: '#5E5CE6' }} />}
-                  {sleepLight > 0 && <div style={{ width: `${(sleepLight / sleepTotal) * 100}%`, background: '#A5A4F3' }} className="rounded-r-full" />}
+                  {sleepLight > 0 && <div style={{ width: `${(sleepLight / sleepTotal) * 100}%`, background: '#B4B3F1' }} className="rounded-r-full" />}
                 </div>
-                <div className="flex items-center gap-3 text-[10px]" style={{ color: '#8E8E93' }}>
+                <div className="flex items-center gap-3 text-[10px]" style={{ color: '#6E6DAA' }}>
                   <span>深睡 {fmtMin(sleepDeep)}</span>
                   <span>REM {fmtMin(sleepRem)}</span>
                   <span>浅睡 {fmtMin(sleepLight)}</span>
@@ -66,27 +63,27 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           </div>
         )}
 
-        {/* Diet */}
-        <div className={`rounded-2xl bg-white p-4 ${pressStyle}`} style={cardStyle}
+        {/* Diet - warm orange tint */}
+        <div className={`rounded-2xl p-4 ${pressStyle}`}
+          style={{ background: 'linear-gradient(135deg, #fff8f0 0%, #fffcf8 100%)', boxShadow: '0 1px 3px rgba(255,149,0,0.08)' }}
           onClick={() => router.push('/diet')}>
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#FF9500' }} />
-            <span className="text-xs font-semibold" style={{ color: '#1C1C1E' }}>饮食</span>
+          <span className="text-xs font-semibold" style={{ color: '#FF9500' }}>🍽️ 饮食</span>
+          <div className="mt-2">
+            <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+              {dietToday?.total_calories ? Math.round(dietToday.total_calories) : 0}
+              <span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>kcal</span>
+            </div>
+            {dietToday?.meals_count > 0 && <div className="text-[10px] mb-1" style={{ color: '#AEAEB2' }}>{dietToday.meals_count}餐</div>}
           </div>
-          <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
-            {dietToday?.total_calories ? Math.round(dietToday.total_calories) : 0}
-            <span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>kcal</span>
-          </div>
-          {dietToday?.meals_count > 0 && <div className="text-[10px] mb-2" style={{ color: '#AEAEB2' }}>{dietToday.meals_count}餐</div>}
           <div className="flex gap-2 mt-2">
             {[
-              { label: '蛋白', val: Math.round(dietToday?.total_protein || 0), color: '#FF3B30' },
+              { label: '蛋白', val: Math.round(dietToday?.total_protein || 0), color: '#FF6B6B' },
               { label: '碳水', val: Math.round(dietToday?.total_carbs || 0), color: '#FF9500' },
-              { label: '脂肪', val: Math.round(dietToday?.total_fat || 0), color: '#FFCC00' },
+              { label: '脂肪', val: Math.round(dietToday?.total_fat || 0), color: '#FFD60A' },
             ].map(m => (
               <div key={m.label} className="flex-1 text-center">
                 <div className="text-xs font-bold" style={{ color: '#1C1C1E' }}>{m.val}g</div>
-                <div className="h-1 rounded-full mt-0.5 opacity-70" style={{ background: m.color }} />
+                <div className="h-1 rounded-full mt-0.5" style={{ background: m.color, opacity: 0.7 }} />
                 <div className="text-[9px] mt-0.5" style={{ color: '#AEAEB2' }}>{m.label}</div>
               </div>
             ))}
@@ -96,15 +93,13 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
 
       {/* Row 2: BP + Weight */}
       <div className="grid grid-cols-2 gap-3">
-        {/* Blood Pressure */}
+        {/* Blood Pressure - subtle red tint */}
         {bpLatest && bpLatest.total_records > 0 && (
-          <div className={`rounded-2xl bg-white p-4 ${pressStyle}`} style={cardStyle}
+          <div className={`rounded-2xl p-4 ${pressStyle}`}
+            style={{ background: 'linear-gradient(135deg, #fff5f5 0%, #fffbfb 100%)', boxShadow: '0 1px 3px rgba(255,59,48,0.06)' }}
             onClick={() => router.push('/blood-pressure')}>
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#FF3B30' }} />
-                <span className="text-xs font-semibold" style={{ color: '#1C1C1E' }}>血压</span>
-              </div>
+              <span className="text-xs font-semibold" style={{ color: '#FF3B30' }}>🩺 血压</span>
               {(() => {
                 const isNormal = bpLatest.normal_count >= bpLatest.total_records * 0.8;
                 return (
@@ -125,13 +120,11 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           </div>
         )}
 
-        {/* Weight */}
-        <div className="rounded-2xl bg-white p-4" style={cardStyle}>
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#007AFF' }} />
-            <span className="text-xs font-semibold" style={{ color: '#1C1C1E' }}>体重</span>
-          </div>
-          <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+        {/* Weight - blue tint */}
+        <div className="rounded-2xl p-4"
+          style={{ background: 'linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%)', boxShadow: '0 1px 3px rgba(0,122,255,0.06)' }}>
+          <span className="text-xs font-semibold" style={{ color: '#007AFF' }}>⚖️ 体重</span>
+          <div className="mt-2 text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
             {weightStats?.current_weight || '--'}
             <span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>kg</span>
           </div>

@@ -94,8 +94,11 @@ export default function StrengthCard({
   const weekDays = ['一', '二', '三', '四', '五', '六', '日'];
   const todayIdx = (new Date().getDay() + 6) % 7; // 0=周一, 6=周日
 
+  const ringColor = color;
+  const lightBg = `${color}08`;
+
   return (
-    <div className="rounded-2xl bg-white p-4" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+    <div className="rounded-2xl p-4" style={{ background: `linear-gradient(135deg, ${lightBg} 0%, #ffffff 100%)`, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-lg">{icon}</span>
@@ -108,15 +111,16 @@ export default function StrengthCard({
 
       <div className="flex items-center gap-4">
         <div className="relative shrink-0">
-          <svg width={48} height={48} className="-rotate-90">
-            <circle cx={24} cy={24} r={20} fill="none" stroke="#E5E5EA" strokeWidth={4} />
-            <circle cx={24} cy={24} r={20} fill="none" stroke="#30D158"
-              strokeWidth={4} strokeDasharray={`${2 * Math.PI * 20 * Math.min(pct, 100) / 100} ${2 * Math.PI * 20}`}
-              strokeLinecap="round" className="transition-all duration-500" />
+          <svg width={64} height={64} className="-rotate-90">
+            <circle cx={32} cy={32} r={26} fill="none" stroke="#E5E5EA" strokeWidth={5} />
+            <circle cx={32} cy={32} r={26} fill="none" stroke={pct >= 100 ? '#30D158' : ringColor}
+              strokeWidth={5} strokeDasharray={`${2 * Math.PI * 26 * Math.min(pct, 100) / 100} ${2 * Math.PI * 26}`}
+              strokeLinecap="round" className="transition-all duration-500"
+              style={{ filter: `drop-shadow(0 0 3px ${ringColor}44)` }} />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-sm font-extrabold" style={{ color: '#1C1C1E' }}>{todayTotal}</span>
-            <span className="text-[7px]" style={{ color: '#AEAEB2' }}>/{dailyTarget}</span>
+            <span className="text-lg font-extrabold" style={{ color: '#1C1C1E' }}>{todayTotal}</span>
+            <span className="text-[8px]" style={{ color: '#AEAEB2' }}>/{dailyTarget}</span>
           </div>
         </div>
 
@@ -127,13 +131,14 @@ export default function StrengthCard({
               <button key={n} onClick={() => recordExercise(n)} disabled={recording}
                 className="px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95"
                 style={{
-                  background: recording ? '#E5E5EA' : '#F2F2F7',
-                  color: recording ? '#AEAEB2' : '#1C1C1E',
+                  background: recording ? '#E5E5EA' : `${color}10`,
+                  color: recording ? '#AEAEB2' : color,
+                  border: `1px solid ${recording ? '#E5E5EA' : `${color}20`}`,
                 }}>+{n}</button>
             ))}
           </div>
           {todayTotal > 0 && (
-            <div className="text-[10px] mt-1" style={{ color: '#8E8E93' }}>{todaySets}组 · {pct}%</div>
+            <div className="text-[10px] mt-1.5" style={{ color: '#8E8E93' }}>{todaySets}组 · {pct}%</div>
           )}
         </div>
       </div>
@@ -142,11 +147,11 @@ export default function StrengthCard({
         <div className="mt-3 pt-2.5" style={{ borderTop: '1px solid #E5E5EA' }}>
           <div className="flex items-end gap-1 h-7">
             {weekData.map((val, i) => {
-              const h = maxWeek > 0 ? Math.max(2, (val / maxWeek) * 28) : 2;
+              const barH = maxWeek > 0 ? Math.max(2, (val / maxWeek) * 28) : 2;
               const isToday = i === todayIdx;
               return (
                 <div key={i} className="flex-1 rounded-sm transition-all"
-                  style={{ height: `${h}px`, background: isToday ? '#30D158' : val > 0 ? 'rgba(48,209,88,0.3)' : '#E5E5EA' }} />
+                  style={{ height: `${barH}px`, background: isToday ? color : val > 0 ? `${color}40` : '#E5E5EA' }} />
               );
             })}
           </div>

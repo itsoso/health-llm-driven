@@ -107,13 +107,12 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
   const maxWeek = Math.max(...weekData, 30); // min 30min scale
 
   return (
-    <div className="bg-white rounded-2xl p-4 cursor-pointer active:scale-[0.98] transition-all duration-150"
-      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
+    <div className="rounded-2xl p-4 cursor-pointer active:scale-[0.98] transition-all duration-150"
+      style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)', boxShadow: '0 1px 3px rgba(48,209,88,0.08)' }}
       onClick={() => router.push('/workout')}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#30D158' }} />
           <span className="text-lg">🏅</span>
           <span className="text-sm font-bold" style={{ color: '#1C1C1E' }}>运动</span>
         </div>
