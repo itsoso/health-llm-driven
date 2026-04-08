@@ -510,8 +510,8 @@ export default function AIAssistantPage() {
                   {/* 折叠区：跑步 · 补剂 · 鼻炎 · 趋势等，默认收起 */}
                   {!showMoreDashboard ? (
                     <button onClick={() => setShowMoreDashboard(true)}
-                      className="w-full py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
-                      展开更多 ▾
+                      className="w-full py-2.5 rounded-xl border border-gray-300 bg-gray-50 text-sm text-gray-500 font-medium hover:text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-all">
+                      ▾ 展开更多
                     </button>
                   ) : (
                     <>
@@ -535,8 +535,8 @@ export default function AIAssistantPage() {
                         ))}
                       </div>
                       <button onClick={() => setShowMoreDashboard(false)}
-                        className="w-full py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-400 hover:text-gray-600 transition-all">
-                        收起 ▴
+                        className="w-full py-2.5 rounded-xl border border-gray-300 bg-gray-50 text-sm text-gray-500 font-medium hover:text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-all">
+                        ▴ 收起
                       </button>
                     </>
                   )}
