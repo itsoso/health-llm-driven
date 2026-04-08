@@ -121,7 +121,7 @@ export function useDashboardData() {
       api.get('/checkin/me/today'),                     // 0
       api.get(`/diet/records/me/date/${today}`),        // 1
       api.get('/weight/records/me/stats'),              // 2
-      api.get('/environment/weather/forecast?days=1'),  // 3
+      api.get('/environment/weather/forecast?days=2'),  // 3
       api.get('/blood-pressure/records/me/stats'),      // 4
       api.get('/mood/records/me/today'),                // 5
       api.get('/medication/today/me'),                  // 6
@@ -136,15 +136,22 @@ export function useDashboardData() {
     if (ok2(0)) partial2.rhinitisToday = ok2(0);
     if (ok2(1)) partial2.dietToday = ok2(1);
     if (ok2(2)) partial2.weightStats = ok2(2);
-    // merge forecast into weather
+    // merge forecast into weather (today + tomorrow)
     const fc = ok2(3);
     if (fc) {
-      const todayFc = fc?.forecasts?.[0] || (Array.isArray(fc) ? fc[0] : null);
-      if (todayFc) {
+      const forecasts = fc?.forecasts || (Array.isArray(fc) ? fc : []);
+      const todayFc = forecasts[0] || null;
+      const tomorrowFc = forecasts[1] || null;
+      if (todayFc || tomorrowFc) {
         setData(prev => {
           const wd = { ...(prev.weatherData || {}) };
-          wd.temp_min = todayFc.temp_min;
-          wd.temp_max = todayFc.temp_max;
+          if (todayFc) {
+            wd.temp_min = todayFc.temp_min;
+            wd.temp_max = todayFc.temp_max;
+          }
+          if (tomorrowFc) {
+            wd.tomorrow = tomorrowFc;
+          }
           return { ...prev, weatherData: wd };
         });
       }

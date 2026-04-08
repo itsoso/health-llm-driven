@@ -86,6 +86,9 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
                 <span className="text-[10px] text-emerald-200/60">
                   {weatherData.city} {Math.round(weatherData.temperature ?? 0)}° {weatherData.weather || ''}
                   {airData ? ` · AQI ${airData.aqi || '--'}` : ''}
+                  {weatherData.tomorrow && (
+                    <> · 明 {weatherData.tomorrow.weather || ''} {weatherData.tomorrow.temp_min != null ? `${Math.round(weatherData.tomorrow.temp_min)}~${Math.round(weatherData.tomorrow.temp_max)}°` : ''}</>
+                  )}
                 </span>
               )}
             </div>
