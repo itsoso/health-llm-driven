@@ -1,5 +1,5 @@
 'use client';
-import AnimatedRing from '@/components/charts/AnimatedRing';
+import { useState, useEffect } from 'react';
 
 interface HeroCardProps {
   user: any;
@@ -13,16 +13,74 @@ interface HeroCardProps {
   onRefresh: () => void;
 }
 
-function MiniRing({ value, max, color, size = 36 }: { value: number; max: number; color: string; size?: number }) {
-  const pct = Math.min(100, Math.round((value / max) * 100));
-  const r = (size - 5) / 2;
+/* ── Animated score ring ── */
+function ScoreRing({ score, size = 80 }: { score: number; size?: number }) {
+  const strokeWidth = 6;
+  const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
+  const target = c - (score / 100) * c;
+  const [offset, setOffset] = useState(c);
+
+  useEffect(() => {
+    const t = setTimeout(() => setOffset(target), 80);
+    return () => clearTimeout(t);
+  }, [target, c]);
+
+  const color = score >= 80 ? '#4ade80' : score >= 60 ? '#fbbf24' : '#f87171';
+  const glowColor = score >= 80 ? 'rgba(74,222,128,0.35)' : score >= 60 ? 'rgba(251,191,36,0.35)' : 'rgba(248,113,113,0.35)';
+
   return (
-    <svg width={size} height={size} className="shrink-0 -rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={4} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={4}
-        strokeDasharray={`${c * pct / 100} ${c}`} strokeLinecap="round" className="transition-all duration-700" />
-    </svg>
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', filter: `drop-shadow(0 0 8px ${glowColor})` }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={strokeWidth} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
+          strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 1.5s cubic-bezier(0.4,0,0.2,1)' }} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[28px] font-black text-white leading-none">{score || '--'}</span>
+        <span className="text-[9px] text-white/50 mt-0.5">健康分</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Progress ring with value inside ── */
+function ProgressRing({
+  value, max, color, label, unit, size = 56, format
+}: {
+  value: number; max: number; color: string; label: string; unit?: string; size?: number;
+  format?: (v: number) => string;
+}) {
+  const strokeWidth = 4.5;
+  const r = (size - strokeWidth) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.min(100, Math.round((value / Math.max(max, 1)) * 100));
+  const [offset, setOffset] = useState(c);
+
+  useEffect(() => {
+    const target = c - (pct / 100) * c;
+    const t = setTimeout(() => setOffset(target), 120);
+    return () => clearTimeout(t);
+  }, [pct, c]);
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={strokeWidth} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
+            strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+            style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)', filter: `drop-shadow(0 0 4px ${color}44)` }} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[13px] font-bold text-white leading-none">
+            {format ? format(value) : (value >= 10000 ? value.toLocaleString() : value)}
+          </span>
+        </div>
+      </div>
+      <span className="text-[9px] text-white/45">{label}{unit ? unit : ''}</span>
+    </div>
   );
 }
 
@@ -32,7 +90,7 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
   const displayName = user?.name || user?.username || '';
   const score = healthScore?.total_score || 0;
 
-  // Core vitals - only show the most important 3
+  // Garmin vitals
   const sleepScore = todayGarmin?.sleep_score;
   const hrv = todayGarmin?.hrv;
   const bodyBattery = todayGarmin?.body_battery_current ?? todayGarmin?.body_battery_most_charged;
@@ -42,7 +100,6 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
   const steps = todayGarmin?.steps || 0;
   const activeMin = todayGarmin?.active_minutes || 0;
 
-  // Determine today's focus message
   const getFocusMessage = () => {
     const issues: string[] = [];
     if (hrv && hrv < 40) issues.push('HRV偏低，注意恢复');
@@ -58,110 +115,82 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
   };
 
   return (
-    <div className="rounded-3xl p-5 relative overflow-hidden shadow-lg"
-      style={{ background: 'linear-gradient(135deg, #065f46 0%, #047857 40%, #059669 100%)' }}>
-      <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }} />
-      <div className="relative z-10">
-        {/* Row 1: Score + Greeting */}
+    <div className="rounded-3xl relative overflow-hidden shadow-xl"
+      style={{ background: 'linear-gradient(145deg, #053f30 0%, #065f46 30%, #047857 60%, #059669 100%)' }}>
+
+      {/* Subtle dot pattern overlay */}
+      <div className="absolute inset-0 opacity-[0.04]"
+        style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+
+      {/* Ambient light blobs */}
+      <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full" style={{ background: 'rgba(52,211,153,0.12)' }} />
+      <div className="absolute -bottom-20 -left-10 w-36 h-36 rounded-full" style={{ background: 'rgba(16,185,129,0.08)' }} />
+
+      <div className="relative z-10 p-5">
+        {/* ── Row 1: Score Ring + Greeting ── */}
         <div className="flex items-center gap-4 mb-4">
-          <div className="relative shrink-0">
-            <AnimatedRing score={score} size={68} strokeWidth={5} />
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-extrabold text-white">{score || '--'}</span>
-              <span className="text-[8px] text-emerald-200/60">健康分</span>
-            </div>
-          </div>
+          <ScoreRing score={score} size={80} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <h1 className="text-lg font-bold text-white">{greeting}{displayName ? `，${displayName}` : ''}</h1>
+              <h1 className="text-xl font-bold text-white tracking-wide">
+                {greeting}，{displayName}
+              </h1>
               <button onClick={onRefresh}
-                className="text-[10px] text-white/50 hover:text-white flex items-center gap-1 bg-white/10 rounded-full px-2.5 py-1">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                刷新
+                className="text-[10px] text-white/40 hover:text-white/80 flex items-center gap-1 bg-white/8 hover:bg-white/15 rounded-full px-2.5 py-1 transition-all backdrop-blur-sm">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
               </button>
             </div>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <p className="text-emerald-200/70 text-xs">{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</p>
+            <p className="text-[11px] text-emerald-200/55 mt-1 leading-relaxed">
+              {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}
               {weatherData && (
-                <span className="text-[10px] text-emerald-200/60">
-                  {weatherData.city} {Math.round(weatherData.temperature ?? 0)}° {weatherData.weather || ''}
+                <> · {weatherData.city} {Math.round(weatherData.temperature ?? 0)}° {weatherData.weather || ''}
                   {airData ? ` · AQI ${airData.aqi || '--'}${airData.pm25 ? ` · PM2.5 ${airData.pm25}` : ''}` : ''}
                   {weatherData.tomorrow && (
                     <> · 明 {weatherData.tomorrow.weather || ''} {weatherData.tomorrow.temp_min != null ? `${Math.round(weatherData.tomorrow.temp_min)}~${Math.round(weatherData.tomorrow.temp_max)}°` : ''}</>
                   )}
-                </span>
+                </>
               )}
-            </div>
-            <p className="text-xs text-emerald-100/80 mt-1.5 font-medium">{getFocusMessage()}</p>
+            </p>
+            <p className="text-xs text-emerald-100/70 mt-1 font-medium">{getFocusMessage()}</p>
           </div>
         </div>
 
-        {/* Row 2: Core Vitals - 大数字突出 */}
+        {/* ── Row 2: Glass vitals cards ── */}
         <div className="grid grid-cols-4 gap-2 mb-3">
-          <div className="bg-white/10 rounded-2xl p-2.5 text-center">
-            <div className="text-[10px] text-white/50 mb-0.5">😴 睡眠</div>
-            <div className={`text-xl font-extrabold ${sleepScore && sleepScore < 60 ? 'text-amber-300' : 'text-white'}`}>
-              {sleepScore ?? '--'}<span className="text-[9px] font-normal text-white/40">分</span>
-            </div>
-          </div>
-          <div className="bg-white/10 rounded-2xl p-2.5 text-center">
-            <div className="text-[10px] text-white/50 mb-0.5">💓 HRV</div>
-            <div className={`text-xl font-extrabold ${hrv && hrv < 40 ? 'text-red-300' : 'text-white'}`}>
-              {hrv ?? '--'}<span className="text-[9px] font-normal text-white/40">ms</span>
-            </div>
-          </div>
-          <div className="bg-white/10 rounded-2xl p-2.5 text-center">
-            <div className="text-[10px] text-white/50 mb-0.5">🔋 能量</div>
-            <div className={`text-xl font-extrabold ${bodyBattery != null && bodyBattery < 30 ? 'text-amber-300' : 'text-white'}`}>
-              {bodyBattery ?? '--'}
-            </div>
-          </div>
-          <div className="bg-white/10 rounded-2xl p-2.5 text-center">
-            <div className="text-[10px] text-white/50 mb-0.5">❤️ 心率</div>
-            <div className="text-xl font-extrabold text-white">
-              {restingHR ?? '--'}<span className="text-[9px] font-normal text-white/40">bpm</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Row 3: Progress Rings - 今日进度 */}
-        <div className="flex items-center justify-between bg-white/8 rounded-2xl px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <MiniRing value={steps} max={8000} color="#818cf8" />
-            <div>
-              <div className="text-sm font-bold text-white">{steps.toLocaleString()}</div>
-              <div className="text-[9px] text-white/40">步数</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <MiniRing value={activeMin} max={30} color="#f59e0b" />
-            <div>
-              <div className="text-sm font-bold text-white">{activeMin}</div>
-              <div className="text-[9px] text-white/40">活动min</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <MiniRing value={waterToday.total_ml} max={waterToday.goal_ml} color="#3b82f6" />
-            <div>
-              <div className="text-sm font-bold text-white">{waterToday.total_ml}</div>
-              <div className="text-[9px] text-white/40">饮水ml</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <MiniRing value={suppChecked} max={Math.max(suppTotal, 1)} color="#a78bfa" />
-            <div>
-              <div className="text-sm font-bold text-white">{suppChecked}/{suppTotal}</div>
-              <div className="text-[9px] text-white/40">补剂</div>
-            </div>
-          </div>
-          {stress != null && (
-            <div className="flex items-center gap-2">
-              <MiniRing value={Math.max(0, 100 - stress)} max={100} color={stress > 40 ? '#f87171' : '#34d399'} />
-              <div>
-                <div className="text-sm font-bold text-white">{stress}</div>
-                <div className="text-[9px] text-white/40">压力</div>
+          {[
+            { icon: '🌙', label: '睡眠', value: sleepScore, unit: '分', warn: sleepScore != null && sleepScore < 60 },
+            { icon: '💓', label: 'HRV', value: hrv, unit: 'ms', warn: hrv != null && hrv < 40 },
+            { icon: '⚡', label: '能量', value: bodyBattery, unit: '', warn: bodyBattery != null && bodyBattery < 30 },
+            { icon: '❤️', label: '心率', value: restingHR, unit: 'bpm', warn: false },
+          ].map((item) => (
+            <div key={item.label}
+              className="rounded-2xl p-2.5 text-center backdrop-blur-sm border border-white/[0.06]"
+              style={{ background: 'rgba(255,255,255,0.07)' }}>
+              <div className="text-[10px] text-white/45 mb-1">
+                <span className="mr-0.5">{item.icon}</span>{item.label}
+              </div>
+              <div className={`text-xl font-extrabold leading-none ${item.warn ? 'text-amber-300' : 'text-white'}`}>
+                {item.value ?? '--'}
+                {item.unit && <span className="text-[9px] font-normal text-white/35 ml-0.5">{item.unit}</span>}
               </div>
             </div>
+          ))}
+        </div>
+
+        {/* ── Row 3: Progress rings ── */}
+        <div className="flex items-center justify-between px-1">
+          <ProgressRing value={steps} max={10000} color="#a78bfa" label="步数"
+            format={(v) => v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v.toLocaleString()} />
+          <ProgressRing value={activeMin} max={30} color="#fb923c" label="活动min" />
+          <ProgressRing value={waterToday.total_ml} max={waterToday.goal_ml} color="#3b82f6" label="饮水ml" />
+          <ProgressRing value={suppChecked} max={Math.max(suppTotal, 1)} color="#4ade80" label="补剂"
+            format={(v) => `${v}/${suppTotal}`} />
+          {stress != null && (
+            <ProgressRing value={Math.max(0, 100 - stress)} max={100}
+              color={stress > 40 ? '#f87171' : '#2dd4bf'} label="压力"
+              format={() => String(stress)} />
           )}
         </div>
       </div>
