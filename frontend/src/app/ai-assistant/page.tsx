@@ -507,7 +507,13 @@ export default function AIAssistantPage() {
                       colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
                   </div>
 
-                  {/* 折叠区：跑步 · 补剂 · 鼻炎 · 趋势等，默认收起 */}
+                  {/* 跑步 + 补剂打卡（常驻展示） */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <RunningCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
+                    <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
+                  </div>
+
+                  {/* 折叠区：补剂指南以下，默认收起 */}
                   {!showMoreDashboard ? (
                     <button onClick={() => setShowMoreDashboard(true)}
                       className="w-full py-2.5 rounded-xl border border-gray-300 bg-gray-50 text-sm text-gray-500 font-medium hover:text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-all">
@@ -515,10 +521,6 @@ export default function AIAssistantPage() {
                     </button>
                   ) : (
                     <>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <RunningCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
-                        <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
-                      </div>
                       <SupplementGuideCard />
                       <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
                       {dashboard.exerciseToday.length > 0 && (
