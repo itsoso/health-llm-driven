@@ -249,71 +249,119 @@ def _build_slots(
 
 
 def _get_item_tips(supp, ctx: dict) -> List[str]:
-    """为单个补剂生成上下文相关提示"""
+    """为单个补剂生成上下文相关提示
+
+    优先级：description 提供基础服用方式 → 规则引擎追加上下文提示
+    """
     tips = []
     name_lower = (supp.name or "").lower()
-    category_lower = (supp.category or "").lower()
+    desc = supp.description or ""
 
-    # 规则0: 益生菌空腹
+    # ── 基础提示：从 description 提取服用方式（始终显示） ──
+    if desc:
+        # description 格式通常是 "服用方式；功效说明"
+        parts = desc.split("；")
+        if parts:
+            tips.append(f"📌 {parts[0]}")  # 第一段是服用方式
+
+    # ── 规则匹配：补剂特有的注意事项 ──
+
+    # 益生菌空腹
     if any(k in name_lower for k in ("益生菌", "probio", "乳酸菌")):
-        tips.append("🫙 早餐前空腹服用，胃酸最低时活菌存活率最高")
+        if not desc:
+            tips.append("🫙 早餐前空腹服用，胃酸最低时活菌存活率最高")
 
-    # 规则0b: 甲基化组合
+    # 甲基化组合
     if any(k in name_lower for k in ("叶酸", "mthf", "folate")):
-        tips.append("🧬 活性叶酸，随餐与甲基B12+B6同服效果最佳")
+        if not desc:
+            tips.append("🧬 活性叶酸，随餐与甲基B12+B6同服效果最佳")
     if any(k in name_lower for k in ("甲基b12", "methyl b12", "methylcobalamin")):
-        tips.append("🧬 甲基化循环核心底物，也可舌下含服提高吸收率")
+        if not desc:
+            tips.append("🧬 甲基化循环核心底物，也可舌下含服提高吸收率")
 
-    # 规则1: 脂溶性维生素随餐服用
-    fat_soluble = any(k in name_lower for k in ("vitamin d", "维生素d", "d3", "vitamin a", "维生素a",
-                                                   "vitamin e", "维生素e", "vitamin k", "维生素k",
-                                                   "omega", "鱼油", "coq10", "辅酶"))
-    if fat_soluble:
+    # TMG (甜菜碱)
+    if any(k in name_lower for k in ("tmg", "甜菜碱", "betaine")):
+        if not desc:
+            tips.append("🧬 随餐服用，甲基化供体，支持同型半胱氨酸代谢")
+
+    # NAC 与 VC 间隔
+    if "nac" in name_lower:
+        if not desc:
+            tips.append("💊 空腹服用吸收最佳，与VC间隔1h")
+
+    # MitoQ
+    if "mitoq" in name_lower:
+        if not desc:
+            tips.append("⚡ 空腹服用最佳，靶向线粒体抗氧化")
+
+    # 肌酸
+    if any(k in name_lower for k in ("肌酸", "creatine")):
+        if not desc:
+            tips.append("💪 随含碳水餐服用+充足水，胰岛素促进吸收")
+
+    # 脂溶性维生素随餐
+    fat_soluble = any(k in name_lower for k in (
+        "vitamin d", "维生素d", "d3", "vitamin a", "维生素a",
+        "vitamin e", "维生素e", "vitamin k", "维生素k",
+        "omega", "鱼油", "fish oil", "coq10", "辅酶"
+    ))
+    if fat_soluble and not desc:
         tips.append("🍳 随餐服用，脂溶性需油脂辅助吸收")
 
-    # 规则2: 锌/镁随餐避免胃不适
-    if any(k in name_lower for k in ("zinc", "锌", "magnesium", "镁")):
-        tips.append("🍚 随餐服用，减少胃部不适")
+    # 锌/镁随餐
+    if any(k in name_lower for k in ("zinc", "锌")) and not desc:
+        tips.append("🍚 随餐服用减少胃不适，不与铁/钙同时")
+    if any(k in name_lower for k in ("magnesium", "镁")) and not desc:
+        tips.append("🌙 睡前服用，甘氨酸+镁双重镇静")
 
-    # 规则3: 注射日窗口（如睾酮注射后避免大量抗氧化剂）
+    # B族复合
+    if any(k in name_lower for k in ("b-complex", "b complex", "复合维生素b", "b族")):
+        if not desc:
+            tips.append("🧠 随早餐服用，B族支持甲基化和神经功能")
+
+    # ── 动态上下文规则（基于当日身体状态） ──
+
+    # 注射日
     if ctx.get("is_injection_day"):
         is_antioxidant = any(k in name_lower for k in (
             "抗氧化", "antioxidant", "vitamin c", "维生素c", "vc",
-            "glutathione", "谷胱甘肽", "nac"
+            "glutathione", "谷胱甘肽", "nac", "mitoq"
         ))
         if is_antioxidant:
-            tips.append("💉 注射日：大剂量抗氧化剂可能影响药效，建议间隔4h+")
+            tips.append("💉 注射日：建议与注射间隔4h+")
 
-    # 规则4: 高强度运动后不宜立即服用抗氧化剂（影响运动适应）
+    # 高强度运动后
     if ctx.get("high_intensity"):
         is_antioxidant = any(k in name_lower for k in (
             "vitamin c", "维生素c", "vc", "vitamin e", "维生素e",
             "nac", "glutathione", "谷胱甘肽"
         ))
         if is_antioxidant:
-            tips.append("🏃 高强度运动后2h内避免服用，以保留运动适应信号")
+            tips.append("🏃 运动后2h内避免服用，保留运动适应信号")
 
-    # 规则5: 睡眠差 / HRV低 → 强调镁和B族
+    # 睡眠差 / HRV低
     if ctx.get("sleep_quality") == "poor" or ctx.get("hrv_below_avg"):
-        if any(k in name_lower for k in ("magnesium", "镁", "mag")):
-            tips.append("😴 睡眠欠佳，镁有助放松和睡眠改善")
+        if any(k in name_lower for k in ("magnesium", "镁", "mag", "甘氨酸镁")):
+            tips.append("😴 睡眠欠佳，今晚可适当加量")
         if any(k in name_lower for k in ("b6", "b12", "b族", "b-complex", "甲基b")):
             tips.append("😴 HRV偏低，B族支持神经修复")
 
-    # 规则6: 鼻炎发作 → 强调槲皮素/VC/益生菌
+    # 鼻炎发作
     if ctx.get("rhinitis_active"):
         if any(k in name_lower for k in ("quercetin", "槲皮素")):
-            tips.append("👃 鼻炎活跃期，槲皮素是天然抗组胺")
+            tips.append("👃 鼻炎活跃，可加量至1000mg")
         if any(k in name_lower for k in ("vitamin c", "维生素c", "vc")):
-            tips.append("👃 鼻炎期间VC支持免疫，可适当加量")
+            tips.append("👃 鼻炎期间可加量至1000mg")
         if any(k in name_lower for k in ("probio", "益生菌", "乳酸菌")):
-            tips.append("👃 益生菌调节免疫平衡，对过敏有辅助作用")
+            tips.append("👃 过敏期确保按时服用")
+        if any(k in name_lower for k in ("vitamin d", "维生素d", "d3")):
+            tips.append("👃 D3调节Th1/Th2免疫平衡，对鼻炎重要")
 
-    # 规则7: 铁剂与钙/茶/咖啡间隔
+    # 铁剂
     if any(k in name_lower for k in ("iron", "铁")):
         tips.append("☕ 与咖啡/茶/钙间隔2h，搭配VC促进吸收")
 
-    # 规则8: 褪黑素仅睡前
+    # 褪黑素仅睡前
     if any(k in name_lower for k in ("melatonin", "褪黑素")):
         if supp.timing != "bedtime":
             tips.append("⚠️ 建议调整到睡前30分钟服用")
