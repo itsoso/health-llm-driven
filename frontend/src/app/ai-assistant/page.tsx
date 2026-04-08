@@ -94,8 +94,6 @@ export default function AIAssistantPage() {
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   const [showAppsMenu, setShowAppsMenu] = useState(false);
-  const [agentMode, setAgentMode] = useState(false);
-  const [agentToolStatus, setAgentToolStatus] = useState<string[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -169,11 +167,9 @@ export default function AIAssistantPage() {
     setTimeout(() => inlineResponseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
     try {
       let fullText = '';
-      const streamFn = agentMode ? agentApi.streamMessage : openclawApi.streamMessage;
-      for await (const event of streamFn(msg, conversationId)) {
+      for await (const event of agentApi.streamMessage(msg, conversationId)) {
         if (event.event === 'agent_start') {
-          fullText += '🤖 Agent 模式启动...\n\n';
-          setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
+          // Agent 启动，静默跳过
         } else if (event.event === 'tool_call') {
           const toolName = event.data?.tool || '';
           const round = event.data?.round || '';
@@ -229,29 +225,26 @@ export default function AIAssistantPage() {
       const waitTimer2 = setTimeout(() => { if (firstToken) setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '⏳ 正在调用多个 AI 模型进行深度分析，请耐心等待...' } : m)); }, 30000);
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
 
-      const streamSource = agentMode
-        ? agentApi.streamMessage(finalMsg, conversationId)
-        : openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
+      // 有附件走 OpenClaw（支持图片/文件），纯文本走 Agent
+      const hasMedia = !!(finalImageBase64 || finalFileBase64);
+      const streamSource = hasMedia
+        ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName)
+        : agentApi.streamMessage(finalMsg, conversationId);
 
       for await (const event of streamSource) {
         if (event.event === 'agent_start') {
           if (firstToken) { firstToken = false; clearTimeout(waitTimer); clearTimeout(waitTimer2); setLoading(false); }
-          setAgentToolStatus([]);
-          setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '🤖 Agent 模式启动，正在分析...\n\n' } : m));
         } else if (event.event === 'tool_call') {
           const toolName = event.data?.tool || '';
           const round = event.data?.round || '';
-          const statusLine = `🔧 调用工具: \`${toolName}\` (第${round}轮)\n`;
-          setAgentToolStatus(prev => [...prev, `${toolName}(${round})`]);
-          buf.content += statusLine;
+          buf.content += `🔧 调用工具: \`${toolName}\` (第${round}轮)\n`;
           if (!buf.timer) {
             buf.timer = setTimeout(() => { const b = buf.content; buf.content = ''; buf.timer = null; setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: m.content + b } : m)); }, 50);
           }
         } else if (event.event === 'tool_result') {
           const toolName = event.data?.tool || '';
           const success = event.data?.success;
-          const statusLine = `${success ? '✅' : '❌'} ${toolName} ${success ? '完成' : '失败'}\n\n`;
-          buf.content += statusLine;
+          buf.content += `${success ? '✅' : '❌'} ${toolName} ${success ? '完成' : '失败'}\n\n`;
           if (!buf.timer) {
             buf.timer = setTimeout(() => { const b = buf.content; buf.content = ''; buf.timer = null; setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: m.content + b } : m)); }, 50);
           }
@@ -267,7 +260,6 @@ export default function AIAssistantPage() {
           if (!conversationId && event.data.conversation_id) setConversationId(event.data.conversation_id);
           if (event.data.message_id) { setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, id: event.data.message_id } : m)); setDoneMessageIds(prev => new Set(prev).add(event.data.message_id)); }
           handleDoneEvent(event.data);
-          setAgentToolStatus([]);
           dashboard.loadDashboardData();
         } else if (event.event === 'error') {
           clearTimeout(waitTimer); clearTimeout(waitTimer2);
@@ -574,13 +566,6 @@ export default function AIAssistantPage() {
                   placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '用一句完整目标开始，例如：分析今天状态，或帮我安排训练恢复'}
                   className={`flex-1 bg-transparent text-sm outline-none ${isWelcome ? 'text-gray-600 placeholder-gray-300' : 'text-white placeholder:text-slate-500'}`}
                   disabled={isRecording} />
-                <button onClick={() => setAgentMode(!agentMode)}
-                  className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${agentMode
-                    ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/30 hover:bg-amber-600'
-                    : isWelcome ? 'text-gray-400 hover:text-amber-600 hover:bg-amber-50 border border-gray-200' : 'text-slate-400 hover:text-amber-400 hover:bg-white/5 border border-white/10'}`}
-                  title={agentMode ? 'Agent 模式：深度分析，可调用工具' : '切换到 Agent 模式（深度分析）'}>
-                  {agentMode ? '🤖 Agent' : '🤖'}
-                </button>
                 {inlineMode && (
                   <button onClick={() => { setInlineMode(false); setInlineResponse(null); setMessages([]); setConversationId(undefined); }}
                     className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200 transition-all" title="切换到完整对话模式">新开对话</button>
