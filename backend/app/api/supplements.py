@@ -19,6 +19,7 @@ from app.schemas.supplement import (
     SupplementWithRecord
 )
 from app.services.supplement_recommendation import SupplementRecommendationService
+from app.services.daily_supplement_guide import get_daily_supplement_guide
 from app.utils.redis_cache import (
     cache_supplement_recommendation,
     get_cached_supplement_recommendation,
@@ -381,6 +382,23 @@ def get_my_supplement_stats(
         })
     
     return stats
+
+
+# ========== 每日补剂动态指南 ==========
+
+@router.get("/daily-guide")
+def get_supplement_daily_guide(
+    target_date: Optional[date] = Query(None, description="目标日期，默认今天"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """每日补剂动态指南 — 基于身体状况/运动/鼻炎/天气等生成个性化提醒"""
+    try:
+        guide = get_daily_supplement_guide(db, current_user.id, target_date)
+        return guide
+    except Exception as e:
+        logger.error(f"[补剂指南] 生成失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"生成每日补剂指南失败: {str(e)}")
 
 
 # ========== 补剂科学推荐 ==========

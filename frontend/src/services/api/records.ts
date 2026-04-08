@@ -203,6 +203,9 @@ export const supplementApi = {
   // 科学推荐
   getScientificRecommendation: (targetDate?: string, debug: boolean = false) =>
     api.post('/supplements/scientific-recommendation', { target_date: targetDate, debug }),
+  // 每日补剂动态指南
+  getDailyGuide: (targetDate?: string) =>
+    api.get('/supplements/daily-guide', { params: targetDate ? { target_date: targetDate } : {} }),
 };
 
 // 儿童狗狗空间

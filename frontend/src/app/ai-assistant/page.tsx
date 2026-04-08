@@ -19,6 +19,7 @@ import QuickRecordBar from '@/components/assistant/QuickRecordBar';
 import InlineResponse from '@/components/assistant/InlineResponse';
 import ChatView from '@/components/assistant/ChatView';
 import ExerciseCard from '@/components/assistant/ExerciseCard';
+import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
 
 declare global {
@@ -467,6 +468,7 @@ export default function AIAssistantPage() {
                   {dashboard.exerciseToday.length > 0 && (
                     <ExerciseCard exerciseToday={dashboard.exerciseToday} />
                   )}
+                  <SupplementGuideCard />
                   <TrendsCard garminHistory={dashboard.garminHistory} />
                   <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
 
