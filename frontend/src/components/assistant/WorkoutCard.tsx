@@ -64,7 +64,7 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
   // All workouts sorted by date desc
   const workouts = useMemo(() => {
     return [...workoutRecent]
-      .sort((a: any, b: any) => (b.record_date || '').localeCompare(a.record_date || ''));
+      .sort((a: any, b: any) => (b.workout_date || '').localeCompare(a.workout_date || ''));
   }, [workoutRecent]);
 
   const weekCount = workouts.length;
@@ -73,7 +73,7 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
 
   // Latest workout
   const latest = workouts[0];
-  const latestInfo = latest ? getActivityInfo(latest.activity_type || latest.sport_type || '') : null;
+  const latestInfo = latest ? getActivityInfo(latest.workout_type || latest.activity_type || '') : null;
 
   // Today's Garmin summary
   const steps = todayGarmin?.steps || 0;
@@ -92,7 +92,7 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
 
     const byDate: Record<string, number> = {};
     for (const w of workouts) {
-      const d = (w.record_date || '').slice(0, 10);
+      const d = (w.workout_date || '').slice(0, 10);
       byDate[d] = (byDate[d] || 0) + (w.duration_seconds || 0) / 60; // minutes
     }
     const days: number[] = [];
@@ -134,11 +134,11 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
       {workouts.length > 0 && (
         <div className="space-y-1 mb-1">
           {workouts.slice(0, 2).map((w: any, i: number) => {
-            const info = getActivityInfo(w.activity_type || w.sport_type || '');
+            const info = getActivityInfo(w.workout_type || w.activity_type || '');
             const dist = w.distance_meters ? (w.distance_meters / 1000).toFixed(1) : null;
             const dur = formatDuration(w.duration_seconds);
             const pace = w.distance_meters ? formatPace(w.distance_meters, w.duration_seconds) : null;
-            const dateStr = (w.record_date || '').slice(5, 10);
+            const dateStr = (w.workout_date || '').slice(5, 10);
             return (
               <div key={i} className="flex items-center gap-2 text-[10px] bg-emerald-50 rounded-lg px-2.5 py-1.5">
                 <span>{info.emoji}</span>
