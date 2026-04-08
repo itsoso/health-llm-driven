@@ -73,10 +73,13 @@ export default function SupplementCheckin({ supplementStatus, onStatusChange }: 
   let lastTiming = '';
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+    <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs font-semibold text-gray-600">💊 补剂打卡</span>
-        <span className="text-[11px] text-gray-400">{checked}/{total}</span>
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#FF6482' }} />
+          <span className="text-xs font-semibold" style={{ color: '#1C1C1E' }}>💊 补剂打卡</span>
+        </div>
+        <span className="text-[11px]" style={{ color: '#8E8E93' }}>{checked}/{total}</span>
       </div>
       {visible.map((s: any, i: number) => {
         const taken = s.record?.taken || s.is_taken || s.checked;
@@ -87,19 +90,19 @@ export default function SupplementCheckin({ supplementStatus, onStatusChange }: 
         lastTiming = s._timing;
         return (
           <div key={i}>
-            {showHeader && <p className="text-[10px] font-medium text-gray-400 mt-2 mb-0.5 first:mt-0">{timingLabels[s._timing]}</p>}
+            {showHeader && <p className="text-[10px] font-medium mt-2 mb-0.5 first:mt-0" style={{ color: '#8E8E93' }}>{timingLabels[s._timing]}</p>}
             <div className="flex items-center gap-2 py-1 cursor-pointer group" onClick={() => toggleSupp(suppId, !!taken)}>
-              <div className={`w-4.5 h-4.5 rounded flex items-center justify-center shrink-0 transition-all ${taken ? 'bg-emerald-500' : 'border-2 border-gray-300 group-hover:border-emerald-400'}`} style={{ width: 18, height: 18 }}>
+              <div className="w-4.5 h-4.5 rounded flex items-center justify-center shrink-0 transition-all" style={{ width: 18, height: 18, ...(taken ? { background: '#FF6482' } : { border: '2px solid #AEAEB2' }) }}>
                 {taken && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
               </div>
-              <span className={`flex-1 text-sm ${taken ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{name}</span>
-              {dosage && <span className="text-[10px] text-gray-400">{dosage}</span>}
+              <span className={`flex-1 text-sm ${taken ? 'line-through' : ''}`} style={{ color: taken ? '#AEAEB2' : '#1C1C1E' }}>{name}</span>
+              {dosage && <span className="text-[10px]" style={{ color: '#AEAEB2' }}>{dosage}</span>}
             </div>
           </div>
         );
       })}
       {hasMore && (
-        <button onClick={() => setExpanded(!expanded)} className="w-full mt-1.5 py-1 text-xs text-emerald-600 hover:text-emerald-700">
+        <button onClick={() => setExpanded(!expanded)} className="w-full mt-1.5 py-1 text-xs" style={{ color: '#007AFF' }}>
           {expanded ? '收起' : `展开全部 (${flat.length})`}
         </button>
       )}

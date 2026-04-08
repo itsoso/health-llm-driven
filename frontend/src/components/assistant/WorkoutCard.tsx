@@ -107,26 +107,28 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
   const maxWeek = Math.max(...weekData, 30); // min 30min scale
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow"
+    <div className="bg-white rounded-2xl p-4 cursor-pointer active:scale-[0.98] transition-all duration-150"
+      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
       onClick={() => router.push('/workout')}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#30D158' }} />
           <span className="text-lg">🏅</span>
-          <span className="text-sm font-bold text-gray-800">运动</span>
+          <span className="text-sm font-bold" style={{ color: '#1C1C1E' }}>运动</span>
         </div>
-        <span className="text-[10px] text-gray-400">本周{weekCount}次</span>
+        <span className="text-[10px]" style={{ color: '#8E8E93' }}>本周{weekCount}次</span>
       </div>
 
       {/* Today's Garmin Activity */}
       <div className="flex items-center gap-3 mb-2">
         <div className="flex-1 flex items-baseline gap-1">
-          <span className="text-2xl font-extrabold text-gray-800">{steps.toLocaleString()}</span>
-          <span className="text-[10px] text-gray-400">步</span>
+          <span className="text-2xl font-extrabold" style={{ color: '#1C1C1E' }}>{steps.toLocaleString()}</span>
+          <span className="text-[10px]" style={{ color: '#8E8E93' }}>步</span>
         </div>
         <div className="text-right">
-          <div className="text-xs font-bold text-orange-500">{activeCal > 0 ? `${activeCal}kcal` : '--'}</div>
-          <div className="text-[10px] text-gray-400">{activeMin}min活动</div>
+          <div className="text-xs font-bold" style={{ color: '#FF9500' }}>{activeCal > 0 ? `${activeCal}kcal` : '--'}</div>
+          <div className="text-[10px]" style={{ color: '#8E8E93' }}>{activeMin}min活动</div>
         </div>
       </div>
 
@@ -140,14 +142,14 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
             const pace = w.distance_meters ? formatPace(w.distance_meters, w.duration_seconds) : null;
             const dateStr = (w.workout_date || '').slice(5, 10);
             return (
-              <div key={i} className="flex items-center gap-2 text-[10px] bg-emerald-50 rounded-lg px-2.5 py-1.5">
+              <div key={i} className="flex items-center gap-2 text-[10px] rounded-lg px-2.5 py-1.5" style={{ background: '#F2F2F7' }}>
                 <span>{info.emoji}</span>
-                <span className="font-semibold text-emerald-700">{info.label}</span>
-                {dist && <span className="text-emerald-600">{dist}km</span>}
-                {pace && <span className="text-emerald-500">{pace}</span>}
-                <span className="text-gray-500">{dur}</span>
-                {w.calories > 0 && <span className="text-orange-500">{w.calories}kcal</span>}
-                <span className="ml-auto text-gray-400">{dateStr}</span>
+                <span className="font-semibold" style={{ color: '#30D158' }}>{info.label}</span>
+                {dist && <span style={{ color: '#30D158' }}>{dist}km</span>}
+                {pace && <span style={{ color: '#30D158' }}>{pace}</span>}
+                <span style={{ color: '#8E8E93' }}>{dur}</span>
+                {w.calories > 0 && <span style={{ color: '#FF9500' }}>{w.calories}kcal</span>}
+                <span className="ml-auto" style={{ color: '#8E8E93' }}>{dateStr}</span>
               </div>
             );
           })}
@@ -156,27 +158,27 @@ export default function WorkoutCard({ todayGarmin, workoutRecent }: WorkoutCardP
 
       {/* Week summary */}
       {weekCount > 0 && (
-        <div className="text-[10px] text-gray-400 mb-1">
+        <div className="text-[10px] mb-1" style={{ color: '#8E8E93' }}>
           本周 {formatDuration(weekDuration)} · {weekCalories}kcal
         </div>
       )}
 
       {/* Week sparkline */}
       {weekData.some(v => v > 0) && (
-        <div className="mt-2 pt-2 border-t border-gray-50">
+        <div className="mt-2 pt-2" style={{ borderTop: '1px solid #E5E5EA' }}>
           <div className="flex items-end gap-1 h-7">
             {weekData.map((val, i) => {
               const h = maxWeek > 0 ? Math.max(2, (val / maxWeek) * 28) : 2;
               const isToday = i === todayIdx;
               return (
-                <div key={i} className={`flex-1 rounded-sm transition-all ${isToday ? 'bg-emerald-500' : val > 0 ? 'bg-emerald-200' : 'bg-gray-100'}`}
-                  style={{ height: `${h}px` }} />
+                <div key={i} className="flex-1 rounded-sm transition-all"
+                  style={{ height: `${h}px`, background: isToday ? '#30D158' : val > 0 ? 'rgba(48,209,88,0.3)' : '#E5E5EA' }} />
               );
             })}
           </div>
           <div className="flex gap-1 mt-0.5">
             {weekDays.map((d, i) => (
-              <div key={i} className={`flex-1 text-center text-[8px] ${i === todayIdx ? 'text-gray-500 font-bold' : 'text-gray-300'}`}>
+              <div key={i} className={`flex-1 text-center text-[8px] ${i === todayIdx ? 'font-bold' : ''}`} style={{ color: i === todayIdx ? '#8E8E93' : '#AEAEB2' }}>
                 {d}
               </div>
             ))}

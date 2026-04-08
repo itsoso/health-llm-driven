@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { api } from '@/services/api';
 
 interface QuickRecordBarProps {
@@ -10,9 +9,7 @@ interface QuickRecordBarProps {
 }
 
 export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhinitisUpdate }: QuickRecordBarProps) {
-  const router = useRouter();
   const [quickToast, setQuickToast] = useState<string | null>(null);
-  const [navExpanded, setNavExpanded] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
   const showToast = (msg: string) => { setQuickToast(msg); setTimeout(() => setQuickToast(null), 1500); };
@@ -62,56 +59,23 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
     }},
   ];
 
-  const navItems = [
-    { href: '/supplements', icon: '💊', name: '补剂' },
-    { href: '/diet', icon: '🍽️', name: '饮食' },
-    { href: '/water', icon: '💧', name: '饮水' },
-    { href: '/rhinitis', icon: '👃', name: '鼻炎' },
-    { href: '/mood', icon: '😊', name: '情绪' },
-    { href: '/workout', icon: '🏋️', name: '运动' },
-    { href: '/supplement-products', icon: '📦', name: '产品库' },
-    { href: '/sleep', icon: '🌙', name: '睡眠' },
-    { href: '/weight', icon: '⚖️', name: '体重' },
-    { href: '/heart-rate', icon: '❤️', name: '心率' },
-    { href: '/blood-pressure', icon: '🩺', name: '血压' },
-    { href: '/garmin', icon: '⌚', name: 'Garmin' },
-    { href: '/genetic', icon: '🧬', name: '基因' },
-    { href: '/massage', icon: '💆', name: '按摩' },
-    { href: '/medical-exams', icon: '📋', name: '体检' },
-    { href: '/settings', icon: '⚙️', name: '设置' },
-  ];
-
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">快速记录</span>
-        <div className="flex-1 flex gap-1.5 overflow-x-auto">
-          {quickActions.map((a, i) => (
-            <button key={i} onClick={async () => { try { await a.action(); } catch (e) { console.error(e); } }}
-              className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-100 bg-gray-50/80 text-[11px] text-gray-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 active:scale-95 transition-all">
-              <span className="text-sm">{a.icon}</span>
-              <span className="font-medium">{a.label}</span>
-            </button>
-          ))}
-        </div>
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-medium shrink-0" style={{ color: '#8E8E93' }}>快速记录</span>
+      <div className="flex-1 flex gap-1.5 overflow-x-auto">
+        {quickActions.map((a, i) => (
+          <button key={i} onClick={async () => { try { await a.action(); } catch (e) { console.error(e); } }}
+            className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95"
+            style={{ background: '#F2F2F7', color: '#1C1C1E' }}>
+            <span className="text-sm">{a.icon}</span>
+            <span>{a.label}</span>
+          </button>
+        ))}
       </div>
       {quickToast && (
-        <div className="mb-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-medium text-center">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-white text-xs font-medium animate-in fade-in slide-in-from-top duration-200"
+          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.12)', color: '#1C1C1E' }}>
           {quickToast}
-        </div>
-      )}
-      <button onClick={() => setNavExpanded(!navExpanded)} className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-gray-400 hover:text-gray-600 transition">
-        <span>{navExpanded ? '收起快捷入口' : '展开快捷入口'}</span>
-        <span className={`transition-transform ${navExpanded ? 'rotate-180' : ''}`}>▾</span>
-      </button>
-      {navExpanded && (
-        <div className="grid grid-cols-7 gap-1 mt-1">
-          {navItems.map(item => (
-            <button key={item.href} onClick={() => router.push(item.href)} className="flex flex-col items-center gap-0.5 py-1.5 rounded-lg hover:bg-gray-50 active:scale-95 transition-all">
-              <span className="text-lg">{item.icon}</span>
-              <span className="text-[10px] text-gray-500 font-medium">{item.name}</span>
-            </button>
-          ))}
         </div>
       )}
     </div>

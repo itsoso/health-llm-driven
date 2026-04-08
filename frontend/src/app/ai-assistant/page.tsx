@@ -47,15 +47,19 @@ const QUICK_ASKS = [
 
 
 function Toast({ color, title, subtitle, onClose, action }: { color: string; title: string; subtitle: string; onClose: () => void; action?: { label: string; onClick: () => void } }) {
-  const colors: Record<string, string> = { emerald: 'border-emerald-300/20 bg-emerald-500/90', cyan: 'border-cyan-300/20 bg-cyan-500/90', blue: 'border-blue-300/20 bg-blue-500/95' };
+  const dotColors: Record<string, string> = { emerald: '#30D158', cyan: '#00C7BE', blue: '#007AFF' };
   return (
-    <div className="absolute left-1/2 top-5 z-20 w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
-      <div className={`rounded-[24px] border ${colors[color] || colors.emerald} px-5 py-4 text-white shadow-2xl backdrop-blur-xl`}>
-        <div className="flex items-start justify-between gap-4">
-          <div><div className="text-sm font-semibold">{title}</div><div className="mt-1 text-xs text-white/80">{subtitle}</div></div>
-          <button onClick={onClose} className="text-white/60 hover:text-white">×</button>
+    <div className="fixed left-1/2 top-5 z-[60] w-[min(92vw,420px)] -translate-x-1/2 animate-in fade-in slide-in-from-top duration-300">
+      <div className="rounded-2xl bg-white px-5 py-4" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
+        <div className="flex items-start gap-3">
+          <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: dotColors[color] || dotColors.emerald }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold" style={{ color: '#1C1C1E' }}>{title}</div>
+            <div className="mt-0.5 text-xs" style={{ color: '#8E8E93' }}>{subtitle}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 text-lg leading-none">×</button>
         </div>
-        {action && <button onClick={action.onClick} className="mt-3 w-full rounded-2xl bg-white/15 px-3 py-2 text-sm font-medium text-white hover:bg-white/20">{action.label}</button>}
+        {action && <button onClick={action.onClick} className="mt-3 w-full rounded-xl px-3 py-2 text-sm font-medium transition-colors" style={{ background: '#F2F2F7', color: '#007AFF' }}>{action.label}</button>}
       </div>
     </div>
   );
@@ -476,7 +480,7 @@ export default function AIAssistantPage() {
 
       {/* Background */}
       {isWelcome ? (
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #f0fdf4 0%, #f9fafb 25%)' }} />
+        <div className="absolute inset-0" style={{ background: '#F2F2F7' }} />
       ) : (
         <>
           <div className="absolute inset-0 bg-gradient-to-br from-[#04111f] via-[#0b1b24] to-[#041428]" />
@@ -499,14 +503,14 @@ export default function AIAssistantPage() {
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-4 py-6">
-            <div className="mx-auto max-w-6xl">
+            <div className="mx-auto max-w-2xl">
               {isWelcome ? (
-                <div className="max-w-5xl mx-auto space-y-3">
+                <div className="space-y-3 pb-44">
                   <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
                   {/* 力量训练：俯卧撑 · 深蹲 */}
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-3">
                     <StrengthCard exerciseType="俯卧撑" icon="💪" dailyTarget={100} color="#3b82f6"
                       colorLight="bg-blue-50" colorText="text-blue-600" colorBorder="border-blue-200"
                       colorBar="bg-blue-500" colorBarLight="bg-blue-200" />
@@ -515,11 +519,8 @@ export default function AIAssistantPage() {
                       colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
                   </div>
 
-                  {/* 快速记录 */}
-                  <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
-
                   {/* 运动 + 补剂打卡（常驻展示） */}
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-3">
                     <WorkoutCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
                     <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
                   </div>
@@ -585,37 +586,55 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          {/* Input bar */}
-          <div className={`px-4 py-4 ${isWelcome ? 'bg-transparent' : 'border-t border-white/10 bg-slate-950/55 backdrop-blur-2xl'}`}>
-            <div className={`mx-auto max-w-5xl ${isWelcome ? 'rounded-2xl bg-white border border-gray-200 shadow-sm' : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'}`}>
-              <div className="flex items-center gap-3 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-                <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml" className="hidden" onChange={handleImageUpload} />
-                <button onClick={() => fileInputRef.current?.click()} disabled={imageUploading}
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${isWelcome ? 'text-gray-400 hover:text-gray-600' : imageUploading ? 'bg-white/15 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`} title="上传图片或文件">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
-                </button>
-                <button onClick={handleVoiceToggle}
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${isWelcome ? (isRecording ? 'text-red-500' : 'text-gray-400 hover:text-gray-600') : isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`} title={isRecording ? '停止录音' : '语音输入'}>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    {isRecording ? <rect x="6" y="6" width="12" height="12" rx="2" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />}
-                  </svg>
-                </button>
-                <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste}
-                  placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '用一句完整目标开始，例如：分析今天状态，或帮我安排训练恢复'}
-                  className={`flex-1 bg-transparent text-sm outline-none ${isWelcome ? 'text-gray-600 placeholder-gray-300' : 'text-white placeholder:text-slate-500'}`}
-                  disabled={isRecording} />
-                {inlineMode && (
-                  <button onClick={() => { setInlineMode(false); setInlineResponse(null); setMessages([]); setConversationId(undefined); }}
-                    className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200 transition-all" title="切换到完整对话模式">新开对话</button>
-                )}
-                {!inlineMode && hasMessages && (
-                  <button onClick={() => { setInlineMode(true); setMessages([]); setConversationId(undefined); }}
-                    className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-gray-500 hover:bg-gray-100 border border-gray-200 transition-all" title="返回首页">首页</button>
-                )}
-                <button onClick={() => handleSend()} disabled={!inputText.trim() && !pendingImage && !pendingFile}
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all active:scale-95 ${(inputText.trim() || pendingImage || pendingFile) ? 'bg-green-500 hover:bg-green-600 text-white shadow-sm' : isWelcome ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white/8 text-slate-500 cursor-not-allowed'}`}>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" /></svg>
-                </button>
+          {/* Bottom fixed area */}
+          <div className={`${isWelcome ? 'absolute bottom-0 left-0 right-0 z-30' : ''}`}>
+            {/* Quick record bar (welcome mode only) */}
+            {isWelcome && (
+              <div className="px-4 pt-3 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #E5E5EA' }}>
+                <div className="mx-auto max-w-2xl">
+                  <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
+                </div>
+              </div>
+            )}
+            {/* Input */}
+            <div className="px-4 py-3" style={isWelcome ? { background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } : undefined}>
+              <div className={`mx-auto max-w-2xl ${isWelcome ? 'rounded-[24px] border border-gray-200' : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'}`}
+                style={isWelcome ? { background: '#F2F2F7' } : undefined}>
+                <div className="flex items-center gap-3 px-4 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+                  <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml" className="hidden" onChange={handleImageUpload} />
+                  <button onClick={() => fileInputRef.current?.click()} disabled={imageUploading}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all"
+                    style={isWelcome ? { color: '#AEAEB2' } : { color: imageUploading ? '#fff' : '#94a3b8' }} title="上传图片或文件">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
+                  </button>
+                  <button onClick={handleVoiceToggle}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all"
+                    style={isWelcome ? { color: isRecording ? '#FF3B30' : '#AEAEB2' } : { color: isRecording ? '#fff' : '#94a3b8', background: isRecording ? '#FF3B30' : undefined }} title={isRecording ? '停止录音' : '语音输入'}>
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      {isRecording ? <rect x="6" y="6" width="12" height="12" rx="2" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />}
+                    </svg>
+                  </button>
+                  <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste}
+                    placeholder={isRecording ? '正在录音...' : (pendingImage || pendingFile) ? '输入描述或问题（可直接发送）' : '用一句完整目标开始...'}
+                    className="flex-1 bg-transparent text-sm outline-none"
+                    style={isWelcome ? { color: '#1C1C1E' } : { color: '#fff' }}
+                    disabled={isRecording} />
+                  {inlineMode && (
+                    <button onClick={() => { setInlineMode(false); setInlineResponse(null); setMessages([]); setConversationId(undefined); }}
+                      className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all"
+                      style={{ color: '#007AFF', borderColor: 'rgba(0,122,255,0.25)' }}>新开对话</button>
+                  )}
+                  {!inlineMode && hasMessages && (
+                    <button onClick={() => { setInlineMode(true); setMessages([]); setConversationId(undefined); }}
+                      className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all"
+                      style={{ color: '#8E8E93', borderColor: '#E5E5EA' }}>首页</button>
+                  )}
+                  <button onClick={() => handleSend()} disabled={!inputText.trim() && !pendingImage && !pendingFile}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all active:scale-95"
+                    style={{ background: (inputText.trim() || pendingImage || pendingFile) ? '#007AFF' : (isWelcome ? '#E5E5EA' : 'rgba(255,255,255,0.08)'), color: (inputText.trim() || pendingImage || pendingFile) ? '#fff' : '#AEAEB2' }}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" /></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

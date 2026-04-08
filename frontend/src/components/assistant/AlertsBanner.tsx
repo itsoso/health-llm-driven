@@ -45,10 +45,11 @@ export default function AlertsBanner({ waterToday, todayGarmin, onWaterRecord, o
   return (
     <div className="space-y-2">
       {alerts.map((a, i) => (
-        <div key={i} className="rounded-xl px-4 py-2.5 flex items-center gap-3" style={{ background: a.bg, border: `1px solid ${a.color}20` }}>
+        <div key={i} className="rounded-2xl bg-white px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition-all duration-150"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
           <span className="text-base shrink-0">{a.icon}</span>
           <span className="flex-1 text-sm font-medium" style={{ color: a.color }}>{a.text}</span>
-          <button onClick={a.onAction} className="shrink-0 px-3 py-1 rounded-lg text-xs font-semibold text-white active:scale-95" style={{ background: a.color }}>{a.actionLabel}</button>
+          <button onClick={a.onAction} className="shrink-0 px-3 py-1 rounded-full text-xs font-semibold text-white active:scale-95 transition-all" style={{ background: a.color }}>{a.actionLabel}</button>
         </div>
       ))}
     </div>

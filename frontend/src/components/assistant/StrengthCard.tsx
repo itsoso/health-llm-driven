@@ -95,66 +95,65 @@ export default function StrengthCard({
   const todayIdx = (new Date().getDay() + 6) % 7; // 0=周一, 6=周日
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <div className="rounded-2xl bg-white p-4" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-lg">{icon}</span>
-          <span className="text-sm font-bold text-gray-800">{exerciseType}</span>
+          <span className="text-sm font-bold" style={{ color: '#1C1C1E' }}>{exerciseType}</span>
         </div>
-        <button onClick={() => setShowDetail(!showDetail)} className="text-[10px] text-gray-400 hover:text-gray-600">
+        <button onClick={() => setShowDetail(!showDetail)} className="text-[10px] hover:opacity-70" style={{ color: '#8E8E93' }}>
           {showDetail ? '收起' : '详情'}
         </button>
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Ring */}
         <div className="relative shrink-0">
-          <svg width={72} height={72} className="-rotate-90">
-            <circle cx={36} cy={36} r={30} fill="none" stroke="#f3f4f6" strokeWidth={6} />
-            <circle cx={36} cy={36} r={30} fill="none" stroke={pct >= 100 ? '#10b981' : color}
-              strokeWidth={6} strokeDasharray={`${2 * Math.PI * 30 * pct / 100} ${2 * Math.PI * 30}`}
+          <svg width={48} height={48} className="-rotate-90">
+            <circle cx={24} cy={24} r={20} fill="none" stroke="#E5E5EA" strokeWidth={4} />
+            <circle cx={24} cy={24} r={20} fill="none" stroke="#30D158"
+              strokeWidth={4} strokeDasharray={`${2 * Math.PI * 20 * Math.min(pct, 100) / 100} ${2 * Math.PI * 20}`}
               strokeLinecap="round" className="transition-all duration-500" />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-lg font-extrabold text-gray-800">{todayTotal}</span>
-            <span className="text-[8px] text-gray-400">/ {dailyTarget}</span>
+            <span className="text-sm font-extrabold" style={{ color: '#1C1C1E' }}>{todayTotal}</span>
+            <span className="text-[7px]" style={{ color: '#AEAEB2' }}>/{dailyTarget}</span>
           </div>
         </div>
 
-        {/* Buttons */}
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] text-gray-400 mb-1.5">第{todaySets + 1}组</div>
-          <div className="flex flex-wrap gap-1">
+          <div className="text-[10px] mb-1.5" style={{ color: '#8E8E93' }}>第{todaySets + 1}组</div>
+          <div className="flex flex-wrap gap-1.5">
             {quickAmounts.map(n => (
               <button key={n} onClick={() => recordExercise(n)} disabled={recording}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all active:scale-95 ${
-                  recording ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : `${colorLight} ${colorText} hover:opacity-80 border ${colorBorder}`
-                }`}>+{n}</button>
+                className="px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95"
+                style={{
+                  background: recording ? '#E5E5EA' : '#F2F2F7',
+                  color: recording ? '#AEAEB2' : '#1C1C1E',
+                }}>+{n}</button>
             ))}
           </div>
           {todayTotal > 0 && (
-            <div className="text-[10px] text-gray-400 mt-1">{todaySets}组 · {pct}%</div>
+            <div className="text-[10px] mt-1" style={{ color: '#8E8E93' }}>{todaySets}组 · {pct}%</div>
           )}
         </div>
       </div>
 
-      {/* Week bar */}
       {weekData.length > 0 && (
-        <div className="mt-3 pt-2.5 border-t border-gray-50">
+        <div className="mt-3 pt-2.5" style={{ borderTop: '1px solid #E5E5EA' }}>
           <div className="flex items-end gap-1 h-7">
             {weekData.map((val, i) => {
               const h = maxWeek > 0 ? Math.max(2, (val / maxWeek) * 28) : 2;
               const isToday = i === todayIdx;
               return (
-                <div key={i} className={`flex-1 rounded-sm transition-all ${isToday ? colorBar : val > 0 ? colorBarLight : 'bg-gray-100'}`}
-                  style={{ height: `${h}px` }} />
+                <div key={i} className="flex-1 rounded-sm transition-all"
+                  style={{ height: `${h}px`, background: isToday ? '#30D158' : val > 0 ? 'rgba(48,209,88,0.3)' : '#E5E5EA' }} />
               );
             })}
           </div>
           <div className="flex gap-1 mt-0.5">
             {weekDays.map((d, i) => (
-              <div key={i} className={`flex-1 text-center text-[8px] ${i === todayIdx ? 'text-gray-500 font-bold' : 'text-gray-300'}`}>
+              <div key={i} className="flex-1 text-center text-[8px] font-medium"
+                style={{ color: i === todayIdx ? '#1C1C1E' : '#AEAEB2' }}>
                 {d}
               </div>
             ))}
@@ -162,14 +161,13 @@ export default function StrengthCard({
         </div>
       )}
 
-      {/* Detail */}
       {showDetail && records.length > 0 && (
-        <div className="mt-2.5 pt-2.5 border-t border-gray-100 space-y-1">
+        <div className="mt-2.5 pt-2.5 space-y-1" style={{ borderTop: '1px solid #E5E5EA' }}>
           {records.map((r, i) => (
             <div key={r.id} className="flex items-center justify-between text-xs">
-              <span className="text-gray-500">第{i + 1}组</span>
-              <span className="font-bold text-gray-700">{r.reps} 个</span>
-              <span className="text-gray-400">{new Date(r.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+              <span style={{ color: '#8E8E93' }}>第{i + 1}组</span>
+              <span className="font-bold" style={{ color: '#1C1C1E' }}>{r.reps} 个</span>
+              <span style={{ color: '#AEAEB2' }}>{new Date(r.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           ))}
         </div>
