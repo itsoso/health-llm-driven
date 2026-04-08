@@ -31,8 +31,8 @@ PyJWT==2.8.0
 slowapi==0.1.9
 # PDF解析
 PyMuPDF>=1.27.0
-# Garmin Connect集成（可选，社区库）
-# garminconnect==0.2.0  # 取消注释以启用Garmin Connect集成
+# Garmin Connect集成
+garminconnect==0.2.0
 # 知识库RAG系统
 chromadb==0.6.3
 # 测试依赖
