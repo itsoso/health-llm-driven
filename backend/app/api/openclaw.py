@@ -97,6 +97,10 @@ async def stream_message(
 
     service = OpenClawService(db)
 
+    # 提取当前用户的 auth token（多租户：Skill 调用时使用用户自己的凭证）
+    auth_header = request.headers.get("authorization", "")
+    user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+
     async def generate():
         full_reply = ""
         try:
@@ -107,6 +111,7 @@ async def stream_message(
                 is_admin=current_user.is_admin,
                 image_base64=req.image_base64,
                 image_type=req.image_type or "jpeg",
+                user_auth_token=user_token,
             ):
                 if event.get("event") == "token":
                     full_reply += event.get("data", {}).get("content", "")
@@ -137,6 +142,7 @@ async def stream_message(
 
 @router.post("/send", summary="OpenClaw 非流式对话")
 async def send_message(
+    request: Request,
     req: OpenClawSendRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
@@ -158,6 +164,10 @@ async def send_message(
 
     service = OpenClawService(db)
 
+    # 提取当前用户的 auth token
+    auth_header = request.headers.get("authorization", "")
+    user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+
     full_reply = ""
     conversation_id = None
     message_id = None
@@ -170,6 +180,7 @@ async def send_message(
             is_admin=current_user.is_admin,
             image_base64=req.image_base64,
             image_type=req.image_type or "jpeg",
+            user_auth_token=user_token,
         ):
             evt_type = event.get("event")
             if evt_type == "token":

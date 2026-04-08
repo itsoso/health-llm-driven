@@ -635,6 +635,7 @@ AI: {ai_reply}
         is_admin: bool = False,
         image_base64: Optional[str] = None,
         image_type: str = "jpeg",
+        user_auth_token: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """流式发送消息到 OpenClaw Gateway 并实时转发"""
         import time
@@ -700,6 +701,15 @@ AI: {ai_reply}
                         "4. 所有提醒自然融入回复，像一个了解你的私人健康顾问在对话，不要机械罗列\n"
                         "5. 如果用户问了具体问题，优先回答问题，健康提醒作为补充\n"
                         "6. 如果需要更详细的数据来回答，主动调用对应的 Skill 获取"
+                    )
+
+                # 4.1.4 注入用户专属 API 凭证（多租户：每个用户使用自己的 token）
+                if user_auth_token:
+                    system_content += (
+                        "\n\n[Skill 环境变量]\n"
+                        f"HEALTH_API_TOKEN={user_auth_token}\n"
+                        f"HEALTH_API_URL=https://health.executor.life/api\n"
+                        "在执行任何 Skill 的 curl 命令时，必须使用上面的 HEALTH_API_TOKEN 和 HEALTH_API_URL。"
                     )
 
                 messages.insert(0, {
