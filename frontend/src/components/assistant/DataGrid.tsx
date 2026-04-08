@@ -124,22 +124,7 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
     </div>
   );
 
-  // Rhinitis
-  cards.push(
-    <div key="rhinitis" className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm">
-      <span className="text-xs font-semibold text-gray-600">👃 鼻炎</span>
-      <div className="flex items-center gap-4 mt-1.5">
-        <div className="text-center">
-          <div className="text-2xl font-extrabold text-gray-800">{rhinitisToday?.sneeze_count || 0}</div>
-          <div className="text-[10px] text-gray-400">喷嚏</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-extrabold text-gray-800">{rhinitisToday?.nasal_wash_count || 0}<span className="text-sm font-normal text-gray-400">/2</span></div>
-          <div className="text-[10px] text-gray-400">洗鼻</div>
-        </div>
-      </div>
-    </div>
-  );
+  // Rhinitis — 已移至折叠区 QuickRecordBar
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">

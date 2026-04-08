@@ -497,7 +497,7 @@ export default function AIAssistantPage() {
                   <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
-                  {/* 四大主力：俯卧撑 · 深蹲 · 跑步 · 补剂 */}
+                  {/* 力量训练：俯卧撑 · 深蹲 */}
                   <div className="grid grid-cols-2 gap-2.5">
                     <StrengthCard exerciseType="俯卧撑" icon="💪" dailyTarget={100} color="#3b82f6"
                       colorLight="bg-blue-50" colorText="text-blue-600" colorBorder="border-blue-200"
@@ -506,13 +506,8 @@ export default function AIAssistantPage() {
                       colorLight="bg-violet-50" colorText="text-violet-600" colorBorder="border-violet-200"
                       colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
                   </div>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <RunningCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
-                    <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
-                  </div>
-                  <SupplementGuideCard />
 
-                  {/* 折叠区：趋势 + 快速记录 + 快捷问题 */}
+                  {/* 折叠区：跑步 · 补剂 · 鼻炎 · 趋势等，默认收起 */}
                   {!showMoreDashboard ? (
                     <button onClick={() => setShowMoreDashboard(true)}
                       className="w-full py-2 rounded-xl border border-gray-200 bg-white text-xs text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
@@ -520,6 +515,11 @@ export default function AIAssistantPage() {
                     </button>
                   ) : (
                     <>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <RunningCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
+                        <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
+                      </div>
+                      <SupplementGuideCard />
                       <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
                       {dashboard.exerciseToday.length > 0 && (
                         <ExerciseCard exerciseToday={dashboard.exerciseToday} />
