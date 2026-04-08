@@ -112,16 +112,24 @@ def get_daily_supplement_guide(
     alerts = _generate_alerts(ctx, active_supps)
     medications = _build_medication_section(active_meds, med_log_ids, today)
 
+    # ── 4. 动态推荐（基于上下文强调/调整） ─────────
+    recommendations = _generate_recommendations(ctx, active_supps, taken_records)
+
     return {
         "date": today.isoformat(),
         "slots": slots,
         "alerts": alerts,
+        "recommendations": recommendations,
         "medications": medications,
         "context": {
             "sleep_quality": ctx.get("sleep_quality"),
+            "sleep_score": ctx.get("sleep_score"),
             "hrv_status": ctx.get("hrv_status"),
+            "hrv_value": ctx.get("hrv_value"),
             "has_exercise": ctx.get("has_exercise", False),
+            "exercise_types": ctx.get("exercise_types", []),
             "rhinitis_active": ctx.get("rhinitis_active", False),
+            "sneeze_count": ctx.get("sneeze_count", 0),
             "is_injection_day": ctx.get("is_injection_day", False),
         },
         "summary": _build_summary(active_supps, taken_records),
@@ -245,6 +253,16 @@ def _get_item_tips(supp, ctx: dict) -> List[str]:
     tips = []
     name_lower = (supp.name or "").lower()
     category_lower = (supp.category or "").lower()
+
+    # 规则0: 益生菌空腹
+    if any(k in name_lower for k in ("益生菌", "probio", "乳酸菌")):
+        tips.append("🫙 早餐前空腹服用，胃酸最低时活菌存活率最高")
+
+    # 规则0b: 甲基化组合
+    if any(k in name_lower for k in ("叶酸", "mthf", "folate")):
+        tips.append("🧬 活性叶酸，随餐与甲基B12+B6同服效果最佳")
+    if any(k in name_lower for k in ("甲基b12", "methyl b12", "methylcobalamin")):
+        tips.append("🧬 甲基化循环核心底物，也可舌下含服提高吸收率")
 
     # 规则1: 脂溶性维生素随餐服用
     fat_soluble = any(k in name_lower for k in ("vitamin d", "维生素d", "d3", "vitamin a", "维生素a",
@@ -379,3 +397,133 @@ def _build_summary(supps: list, taken_records: dict) -> Dict[str, Any]:
         "remaining": total - taken,
         "completion_rate": round(taken / total * 100) if total > 0 else 0,
     }
+
+
+# ── 动态推荐引擎 ─────────────────────────────────────
+# 基于整合医学评估报告的服用顺序和交互规则
+
+def _generate_recommendations(
+    ctx: dict, supps: list, taken_records: dict
+) -> List[Dict[str, Any]]:
+    """基于当前身体状况生成动态服用建议"""
+    recs = []
+    supp_names = {(s.name or "").lower() for s in supps}
+    hour = datetime.now().hour
+
+    # ── 服用顺序建议（基于当前时间段） ──
+    if hour < 11:
+        recs.append({
+            "type": "order",
+            "icon": "📋",
+            "title": "早晨服用顺序",
+            "message": "空腹先服益生菌 → 等15min → MitoQ+NAC → 早餐随餐：叶酸+B12+D3K2+鱼油+肌酸+槲皮素+VC+B6",
+            "priority": "high",
+        })
+    elif 17 <= hour < 20:
+        recs.append({
+            "type": "order",
+            "icon": "📋",
+            "title": "晚餐服用提醒",
+            "message": "锌随晚餐服用，不要与早晨的钙/铁同时",
+            "priority": "medium",
+        })
+    elif hour >= 21:
+        recs.append({
+            "type": "order",
+            "icon": "📋",
+            "title": "睡前提醒",
+            "message": "甘氨酸镁在睡前30-60分钟服用，促进深度睡眠",
+            "priority": "medium",
+        })
+
+    # ── 交互提醒 ──
+    has_nac = any("nac" in n for n in supp_names)
+    has_vc = any(k in n for n in supp_names for k in ("维生素c", "vitamin c"))
+    if has_nac and has_vc:
+        recs.append({
+            "type": "interaction",
+            "icon": "⚠️",
+            "title": "NAC 与 VC 交互",
+            "message": "NAC 和维生素C 建议间隔1小时服用，NAC 空腹先服",
+            "priority": "medium",
+        })
+
+    # ── 甲基化通路强调 ──
+    has_folate = any(k in n for n in supp_names for k in ("叶酸", "mthf", "folate"))
+    has_b12 = any(k in n for n in supp_names for k in ("b12", "甲基b"))
+    if has_folate and has_b12:
+        recs.append({
+            "type": "synergy",
+            "icon": "🧬",
+            "title": "甲基化协同",
+            "message": "5-MTHF + 甲基B12 + B6 是甲基化循环三驾马车，一起随餐服用效果最佳",
+            "priority": "low",
+        })
+
+    # ── 基于身体状态的动态调整 ──
+    if ctx.get("sleep_quality") == "poor":
+        recs.append({
+            "type": "adjust",
+            "icon": "😴",
+            "title": "睡眠恢复方案",
+            "message": f"睡眠评分 {ctx.get('sleep_score', '偏低')}，今晚甘氨酸镁可加至3粒，B6支持GABA合成帮助入睡",
+            "priority": "high",
+        })
+
+    if ctx.get("rhinitis_active"):
+        sneezes = ctx.get("sneeze_count", 0)
+        msg = "鼻炎活跃"
+        if sneezes:
+            msg = f"今日已打喷嚏{sneezes}次"
+        recs.append({
+            "type": "adjust",
+            "icon": "👃",
+            "title": "鼻炎应对加强",
+            "message": f"{msg}，建议：①槲皮素今日可加至1000mg ②VC加至1000mg ③确保益生菌已服用 ④需要时服用西替利嗪",
+            "priority": "high",
+        })
+
+    if ctx.get("has_exercise"):
+        types = ctx.get("exercise_types", [])
+        ex_str = "、".join(types[:3]) if types else "运动"
+        if ctx.get("high_intensity"):
+            recs.append({
+                "type": "adjust",
+                "icon": "🏋️",
+                "title": "运动后恢复",
+                "message": f"今日{ex_str}（高强度），运动后2h再服VC/NAC；肌酸今日尤其重要，确保已服用",
+                "priority": "high",
+            })
+        else:
+            recs.append({
+                "type": "adjust",
+                "icon": "💪",
+                "title": "运动日营养",
+                "message": f"今日{ex_str}，肌酸+Omega-3支持肌肉恢复，确保已随餐服用",
+                "priority": "medium",
+            })
+
+    if ctx.get("hrv_below_avg"):
+        hrv_val = ctx.get("hrv_value")
+        recs.append({
+            "type": "adjust",
+            "icon": "💓",
+            "title": "HRV恢复建议",
+            "message": f"HRV {hrv_val}ms 低于均值，Omega-3+镁+B族是改善HRV的核心三件套",
+            "priority": "high",
+        })
+
+    if ctx.get("is_injection_day"):
+        recs.append({
+            "type": "timing",
+            "icon": "💉",
+            "title": "注射日时间规划",
+            "message": "注射前正常服用补剂，注射后4小时内避免大剂量VC/NAC/MitoQ",
+            "priority": "high",
+        })
+
+    # 排序: high > medium > low
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    recs.sort(key=lambda r: priority_order.get(r.get("priority", "low"), 2))
+
+    return recs
