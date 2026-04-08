@@ -216,19 +216,69 @@ class AgentExecutor:
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict]
     ) -> Any:
-        """调用 Hermes 模型（通过 OpenAI 兼容接口）"""
-        from app.services.llm.factory import get_provider
+        """调用 LLM（优先走 OpenClaw Gateway，回退到默认 provider）"""
+        agent_base = settings.agent_base_url
+        agent_key = settings.agent_api_key
+        model = settings.agent_model or settings.llm_model
 
+        if agent_base and agent_key:
+            # 走 OpenClaw Gateway chatCompletions（去掉第三方代理）
+            return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
+
+        # 回退到默认 provider
+        from app.services.llm.factory import get_provider
         provider = get_provider()
-        result = await provider.chat(
-            messages=messages,
-            model=getattr(settings, "agent_model", None) or settings.llm_model,
-            temperature=0.3,
-            max_tokens=4000,
-            stream=False,
-            tools=tools,
+        return await provider.chat(
+            messages=messages, model=model,
+            temperature=0.3, max_tokens=4000, stream=False, tools=tools,
         )
-        return result
+
+    async def _call_llm_direct(
+        self, messages: List[Dict], tools: List[Dict],
+        model: str, base_url: str, api_key: str,
+    ) -> Any:
+        """直接调用 OpenAI 兼容的 chatCompletions 端点"""
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 4000,
+        }
+        if tools:
+            payload["tools"] = [{"type": "function", "function": t["function"]} if "function" in t else t for t in tools]
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code != 200:
+                raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
+            data = resp.json()
+
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+
+        # 解析 tool_calls
+        if msg.get("tool_calls"):
+            return {
+                "content": msg.get("content") or "",
+                "tool_calls": [
+                    {
+                        "id": tc.get("id", f"call_{i}"),
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"].get("arguments", "{}"),
+                        },
+                    }
+                    for i, tc in enumerate(msg["tool_calls"])
+                ],
+            }
+        return msg.get("content") or ""
 
     async def _execute_tool(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_vision_model: str = "qwen-vl-max"
     agent_model: Optional[str] = None  # Hermes Agent 专用模型（默认复用 llm_model）
+    agent_base_url: Optional[str] = None  # Agent 专用 LLM 端点（默认复用 OpenClaw Gateway）
+    agent_api_key: Optional[str] = None  # Agent 专用 API Key
     llm_vision_api_key: Optional[str] = None  # 独立 Vision API key（如 DashScope）
     llm_vision_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
