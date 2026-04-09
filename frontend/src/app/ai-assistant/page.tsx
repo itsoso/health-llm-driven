@@ -240,8 +240,10 @@ export default function AIAssistantPage() {
 
       for await (const event of streamSource) {
         if (event.event === 'agent_start') {
-          if (firstToken) { firstToken = false; clearTimeout(waitTimer); clearTimeout(waitTimer2); setLoading(false); }
+          // Don't setLoading(false) here — keep loading indicator until first real content
+          clearTimeout(waitTimer); clearTimeout(waitTimer2);
         } else if (event.event === 'tool_call') {
+          if (firstToken) { firstToken = false; setLoading(false); }
           const toolName = event.data?.tool || '';
           const round = event.data?.round || '';
           buf.content += `🔧 调用工具: \`${toolName}\` (第${round}轮)\n`;

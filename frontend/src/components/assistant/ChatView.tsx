@@ -26,7 +26,7 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
         <div key={msg.id} className={`group flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {msg.role === 'assistant' && (
             <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${STYLE.badgeClass}`}>
-              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+              <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" /></svg>
             </div>
           )}
           {msg.role === 'user' && msg.created_at && (
@@ -70,7 +70,7 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
       {loading && (
         <div className="flex gap-4">
           <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${STYLE.badgeClass}`}>
-            <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+            <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" /></svg>
           </div>
           <div className={`rounded-[28px] px-5 py-4 ${STYLE.bubbleClass}`}>
             <div className="flex gap-2">
