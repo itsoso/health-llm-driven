@@ -357,12 +357,37 @@ class AgentExecutor:
         """执行健康数据记录"""
         rtype = args.get("record_type", "")
         data = args.get("data", {})
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # 补全 diet 必填字段
+        if rtype == "diet":
+            data.setdefault("record_date", today)
+            data.setdefault("meal_type", "snack")
+            # food_items 必须是字符串
+            if isinstance(data.get("food_items"), list):
+                data["food_items"] = ", ".join(
+                    (f.get("name", str(f)) if isinstance(f, dict) else str(f))
+                    for f in data["food_items"]
+                )
+            elif not data.get("food_items"):
+                data["food_items"] = data.get("description", data.get("notes", "未知食物"))
+
+        # 补全 weight 必填字段
+        if rtype == "weight":
+            data.setdefault("record_date", today)
+            # 兼容 LLM 传 value/weight_kg 等字段名
+            if "weight" not in data and "value" in data:
+                data["weight"] = data.pop("value")
+            if "weight" not in data and "weight_kg" in data:
+                data["weight"] = data.pop("weight_kg")
 
         record_map = {
             "water": ("/water/records/quick", "POST", {"amount": data.get("amount", 250)}),
             "weight": ("/weight/records", "POST", data),
             "blood_pressure": ("/blood-pressure/records", "POST", data),
             "exercise": ("/exercise/records", "POST", data),
+            "diet": ("/diet/records", "POST", data),
+            "supplement": ("/supplements/records", "POST", data),
             "rhinitis": ("/health-checkin/me/rhinitis", "POST", data),
             "mood": ("/mood/records", "POST", data),
         }
@@ -370,7 +395,9 @@ class AgentExecutor:
         if rtype in record_map:
             path, method, payload = record_map[rtype]
             if method == "POST":
-                return await self._api_post(f"{base}{path}", headers, payload)
+                result = await self._api_post(f"{base}{path}", headers, payload)
+                logger.info(f"[health_record] type={rtype} result={result[:200]}")
+                return result
         return f"Error: 不支持的记录类型 {rtype}"
 
     async def _exec_health_analysis(

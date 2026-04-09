@@ -54,7 +54,15 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
                     },
                     "data": {
                         "type": "object",
-                        "description": "记录的具体数据，根据 record_type 不同而不同",
+                        "description": """记录的具体数据。各类型必填字段：
+- weight: {"weight": 72.2, "record_date": "2026-04-09"}
+- diet: {"meal_type": "breakfast|lunch|dinner|snack", "food_items": "牛奶200ml", "calories": 120, "record_date": "2026-04-09"}
+- water: {"amount": 300}（毫升）
+- blood_pressure: {"systolic": 120, "diastolic": 80, "record_date": "2026-04-09"}
+- exercise: {"exercise_type": "pushup", "count": 50}
+- rhinitis: {"sneezing": 2, "congestion": 1, "runny_nose": 0}
+- mood: {"score": 7, "notes": "心情不错"}
+必须调用此工具才能真正保存数据，不要只在回复中说"已记录"而不调用工具。""",
                     },
                 },
                 "required": ["record_type", "data"],
