@@ -31,7 +31,7 @@ function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', filter: `drop-shadow(0 0 6px ${glowColor})` }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={strokeWidth} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={strokeWidth} />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
           strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
           style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)' }} />
@@ -47,8 +47,8 @@ function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
 function ProgressRing({ value, max, color, label, format }: {
   value: number; max: number; color: string; label: string; format?: (v: number) => string;
 }) {
-  const size = 50;
-  const strokeWidth = 4;
+  const size = 52;
+  const strokeWidth = 4.5;
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
   const pct = Math.min(100, Math.round((value / Math.max(max, 1)) * 100));
@@ -63,19 +63,19 @@ function ProgressRing({ value, max, color, label, format }: {
   const display = format ? format(value) : (value >= 10000 ? (value / 1000).toFixed(1) + 'k' : value.toLocaleString());
 
   return (
-    <div className="flex flex-col items-center gap-0.5">
+    <div className="flex flex-col items-center gap-1">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={strokeWidth} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={strokeWidth} />
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
             strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
             style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)', filter: `drop-shadow(0 0 3px ${color}55)` }} />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-[12px] font-bold text-white leading-none">{display}</span>
+          <span className="text-[13px] font-bold text-white leading-none">{display}</span>
         </div>
       </div>
-      <span className="text-[9px] text-white/45">{label}</span>
+      <span className="text-[10px] text-white/50">{label}</span>
     </div>
   );
 }
@@ -108,21 +108,27 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
     return '保持节奏，持续追踪';
   };
 
+  const vitals = [
+    { label: '睡眠', value: sleepScore, unit: '分', color: '#5E5CE6', warn: sleepScore != null && sleepScore < 60 },
+    { label: 'HRV', value: hrv, unit: 'ms', color: '#BF5AF2', warn: hrv != null && hrv < 40 },
+    { label: '能量', value: bodyBattery, unit: '', color: '#FF9500', warn: bodyBattery != null && bodyBattery < 30 },
+    { label: '心率', value: restingHR, unit: 'bpm', color: '#FF3B30', warn: false },
+  ];
+
   return (
     <div className="rounded-[20px] relative overflow-hidden"
       style={{ background: 'linear-gradient(135deg, #1a3a2a 0%, #1e4d3d 35%, #1a5c4a 65%, #186850 100%)' }}>
 
       {/* Ambient glow */}
       <div className="absolute -top-20 -right-20 w-52 h-52 rounded-full" style={{ background: 'rgba(52,211,153,0.08)' }} />
-      <div className="absolute -bottom-16 -left-10 w-40 h-40 rounded-full" style={{ background: 'rgba(16,185,129,0.06)' }} />
 
       <div className="relative z-10 p-5">
         {/* Row 1: Score + Greeting */}
-        <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-4 mb-5">
           <ScoreRing score={score} size={72} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <h1 className="text-lg font-bold text-white tracking-wide">
+              <h1 className="text-xl font-bold text-white tracking-wide">
                 {greeting}，{displayName}
               </h1>
               <button onClick={onRefresh}
@@ -132,7 +138,7 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
                 </svg>
               </button>
             </div>
-            <p className="text-[11px] text-white/40 mt-0.5 leading-relaxed">
+            <p className="text-[11px] text-white/40 mt-1 leading-relaxed">
               {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}
               {weatherData && (
                 <> · {weatherData.city} {Math.round(weatherData.temperature ?? 0)}° {weatherData.weather || ''}
@@ -143,34 +149,28 @@ export default function HeroCard({ user, healthScore, todayGarmin, waterToday, s
                 </>
               )}
             </p>
-            <p className="text-xs text-emerald-200/70 font-medium mt-0.5">{getFocusMessage()}</p>
+            <p className="text-xs text-emerald-200/70 font-medium mt-1">{getFocusMessage()}</p>
           </div>
         </div>
 
-        {/* Row 2: Vitals - frosted glass cards */}
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          {[
-            { icon: '🌙', label: '睡眠', value: sleepScore, unit: '分', warn: sleepScore != null && sleepScore < 60 },
-            { icon: '💜', label: 'HRV', value: hrv, unit: 'ms', warn: hrv != null && hrv < 40 },
-            { icon: '⚡', label: '能量', value: bodyBattery, unit: '', warn: bodyBattery != null && bodyBattery < 30 },
-            { icon: '❤️', label: '心率', value: restingHR, unit: 'bpm', warn: false },
-          ].map(item => (
-            <div key={item.label}
-              className="rounded-xl p-2 text-center backdrop-blur-sm"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div className="text-[10px] text-white/40 mb-0.5">
-                <span className="mr-0.5">{item.icon}</span>{item.label}
+        {/* Row 2: Vitals — large numbers, clear contrast */}
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {vitals.map(item => (
+            <div key={item.label} className="text-center py-3 rounded-xl"
+              style={{ background: 'rgba(255,255,255,0.07)' }}>
+              <div className="text-[10px] text-white/50 mb-1.5">{item.label}</div>
+              <div className="flex items-baseline justify-center gap-0.5">
+                <span className={`text-[28px] font-black leading-none tracking-tight ${item.warn ? 'text-amber-300' : 'text-white'}`}>
+                  {item.value ?? '--'}
+                </span>
+                {item.unit && <span className="text-[11px] text-white/40 font-medium">{item.unit}</span>}
               </div>
-              <div className={`text-lg font-extrabold leading-none ${item.warn ? 'text-amber-300' : 'text-white'}`}>
-                {item.value ?? '--'}
-              </div>
-              {item.unit && <span className="text-[9px] text-white/30">{item.unit}</span>}
             </div>
           ))}
         </div>
 
         {/* Row 3: Progress rings */}
-        <div className="flex items-center justify-between px-1">
+        <div className="flex items-center justify-between px-2">
           <ProgressRing value={steps} max={10000} color="#a78bfa" label="步数"
             format={(v) => v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v.toLocaleString()} />
           <ProgressRing value={activeMin} max={30} color="#fb923c" label="活动min" />
