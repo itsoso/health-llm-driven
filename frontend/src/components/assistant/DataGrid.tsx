@@ -121,8 +121,9 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
         )}
 
         {/* Weight - blue tint */}
-        <div className="rounded-2xl p-4"
-          style={{ background: 'linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%)', boxShadow: '0 1px 3px rgba(0,122,255,0.06)' }}>
+        <div className="rounded-2xl p-4 cursor-pointer hover:shadow-md transition-shadow"
+          style={{ background: 'linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%)', boxShadow: '0 1px 3px rgba(0,122,255,0.06)' }}
+          onClick={() => router.push('/weight')}>
           <span className="text-xs font-semibold" style={{ color: '#007AFF' }}>⚖️ 体重</span>
           <div className="mt-2 text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
             {weightStats?.current_weight || '--'}
