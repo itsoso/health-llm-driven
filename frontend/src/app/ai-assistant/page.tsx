@@ -503,7 +503,7 @@ export default function AIAssistantPage() {
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-4 py-6">
-            <div className="mx-auto max-w-2xl">
+            <div className="mx-auto max-w-4xl">
               {isWelcome ? (
                 <div className="space-y-3 pb-44">
                   <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
@@ -591,14 +591,14 @@ export default function AIAssistantPage() {
             {/* Quick record bar (welcome mode only) */}
             {isWelcome && (
               <div className="px-4 pt-3 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #E5E5EA' }}>
-                <div className="mx-auto max-w-2xl">
+                <div className="mx-auto max-w-4xl">
                   <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
                 </div>
               </div>
             )}
             {/* Input */}
             <div className="px-4 py-3" style={isWelcome ? { background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } : undefined}>
-              <div className={`mx-auto max-w-2xl ${isWelcome ? 'rounded-[24px] border border-gray-200' : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'}`}
+              <div className={`mx-auto max-w-4xl ${isWelcome ? 'rounded-[24px] border border-gray-200' : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'}`}
                 style={isWelcome ? { background: '#F2F2F7' } : undefined}>
                 <div className="flex items-center gap-3 px-4 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
                   <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml" className="hidden" onChange={handleImageUpload} />
