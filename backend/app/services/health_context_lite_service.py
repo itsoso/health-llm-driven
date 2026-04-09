@@ -557,18 +557,46 @@ def _build_context(db: Session, user_id: int) -> str:
     except Exception:
         pass
 
-    # ── 13. 基因特征 ────────────────────────────────────
+    # ── 13. 基因特征（区分风险/优势/用药安全）────────────────
     try:
         from app.models.genetic_data import GeneticVariant
         genetic_variants = db.query(GeneticVariant).filter(
             GeneticVariant.user_id == user_id
         ).order_by(
-            case((GeneticVariant.risk_level == "high", 0), (GeneticVariant.risk_level == "medium", 1), else_=2)
-        ).limit(8).all()
+            # 用药安全基因最优先，然后风险基因，最后优势/中性
+            case(
+                (GeneticVariant.category == "drug_sensitivity", 0),
+                (GeneticVariant.variant_nature == "risk", 1),
+                (GeneticVariant.variant_nature == "neutral", 2),
+                (GeneticVariant.variant_nature == "protective", 3),
+                else_=4,
+            )
+        ).limit(12).all()
 
         if genetic_variants:
-            gene_items = [f"{v.gene_name} {v.genotype}({v.result_label})" for v in genetic_variants]
-            parts.append(f"基因特征: {' | '.join(gene_items)}")
+            drug_genes = []
+            risk_genes = []
+            protective_genes = []
+            for v in genetic_variants:
+                nature = getattr(v, "variant_nature", "neutral") or "neutral"
+                label = f"{v.gene_name} {v.genotype}({v.result_label})"
+                if v.category == "drug_sensitivity":
+                    drug_genes.append(label)
+                elif nature == "risk":
+                    risk_genes.append(label)
+                elif nature == "protective":
+                    protective_genes.append(f"{v.gene_name} {v.genotype}[优势]({v.result_label})")
+                else:
+                    risk_genes.append(label)  # neutral 归入普通展示
+
+            gene_parts = []
+            if drug_genes:
+                gene_parts.append(f"⚠️用药安全: {' | '.join(drug_genes)}")
+            if risk_genes:
+                gene_parts.append(f"风险基因: {' | '.join(risk_genes)}")
+            if protective_genes:
+                gene_parts.append(f"优势基因: {' | '.join(protective_genes)}")
+            parts.append("基因特征:\n" + "\n".join(gene_parts))
     except Exception:
         pass
 

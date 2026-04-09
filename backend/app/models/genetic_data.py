@@ -31,6 +31,7 @@ class GeneticVariant(Base):
     genotype = Column(String(50))
     result_label = Column(String(100))
     risk_level = Column(String(20), default="info")  # low/medium/high/info
+    variant_nature = Column(String(20), default="neutral")  # protective/risk/neutral — 区分优势基因vs风险基因
     description = Column(Text)
     health_implications = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
