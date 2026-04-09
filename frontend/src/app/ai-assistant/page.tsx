@@ -111,7 +111,7 @@ export default function AIAssistantPage() {
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  useEffect(() => { if (messages.length > 0 && !inlineMode) scrollToBottom(); }, [messages, inlineMode]);
 
   // ── Conversations ──
   const loadConversations = useCallback(async () => {
