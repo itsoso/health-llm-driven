@@ -1,0 +1,275 @@
+"""
+Twin 层的薄数据收集器 —— 过渡期。
+
+为什么存在：
+  理想状态下，twin/builder.py 只调用 service 层函数，不直接读 model。
+  但当前 service 层对几个领域（water/checkin/supplement/BP/medical_exam）
+  还没有聚合函数。与其阻塞 Phase 0，不如把这些直接查询隔离到这里，
+  下一阶段逐步上提到各自的 service 模块。
+
+约束：
+  - 每个函数只做一件事：取"最新/今日"状态并返回简单 dict
+  - 不做任何计算/LLM/告警
+  - 失败返回空字典或 None，不抛异常
+"""
+
+import logging
+from datetime import date
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_WATER_GOAL_ML = 2000
+
+
+# ─────────────────────────────── water ────────────────────────────────
+
+
+def fetch_water_today(db: Session, user_id: int) -> Dict[str, Any]:
+    """今日饮水总量。"""
+    try:
+        from app.models.daily_health import WaterIntake
+
+        today = date.today()
+        records = (
+            db.query(WaterIntake)
+            .filter(
+                WaterIntake.user_id == user_id,
+                WaterIntake.record_date == today,
+            )
+            .all()
+        )
+        total_ml = sum(int(getattr(r, "amount_ml", 0) or 0) for r in records)
+        return {
+            "total_ml": total_ml,
+            "entries_count": len(records),
+            "goal_ml": DEFAULT_WATER_GOAL_ML,
+            "progress_pct": round(total_ml / DEFAULT_WATER_GOAL_ML * 100, 1) if total_ml else 0.0,
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] water 失败: {e}")
+        return {"total_ml": 0, "entries_count": 0, "goal_ml": DEFAULT_WATER_GOAL_ML, "progress_pct": 0.0}
+
+
+# ─────────────────────────── health_checkin (rhinitis) ────────────────
+
+
+def fetch_health_checkin_today(db: Session, user_id: int) -> Dict[str, Any]:
+    """今日健康打卡 —— 含鼻炎字段。"""
+    try:
+        from app.models.health_checkin import HealthCheckin
+
+        today = date.today()
+        record = (
+            db.query(HealthCheckin)
+            .filter(
+                HealthCheckin.user_id == user_id,
+                HealthCheckin.checkin_date == today,
+            )
+            .first()
+        )
+        if not record:
+            return {}
+        return {
+            "nasal_wash_count": record.nasal_wash_count or 0,
+            "sneeze_count": record.sneeze_count or 0,
+            "daily_score": record.daily_score,
+            "running_distance_km": record.running_distance,
+            "squats_count": record.squats_count or 0,
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] health_checkin 失败: {e}")
+        return {}
+
+
+# ─────────────────────────── supplement ───────────────────────────────
+
+
+def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
+    """今日补剂打卡状态。"""
+    try:
+        from app.models.supplement import SupplementDefinition, SupplementRecord
+
+        today = date.today()
+        active = (
+            db.query(SupplementDefinition)
+            .filter(
+                SupplementDefinition.user_id == user_id,
+                SupplementDefinition.is_active == True,  # noqa: E712
+            )
+            .order_by(SupplementDefinition.sort_order)
+            .all()
+        )
+
+        taken_ids = {
+            r.supplement_id
+            for r in db.query(SupplementRecord)
+            .filter(
+                SupplementRecord.user_id == user_id,
+                SupplementRecord.record_date == today,
+                SupplementRecord.taken == True,  # noqa: E712
+            )
+            .all()
+        }
+
+        items = [
+            {
+                "id": s.id,
+                "name": s.name,
+                "dosage": s.dosage,
+                "timing": s.timing,
+                "taken": s.id in taken_ids,
+            }
+            for s in active
+        ]
+
+        return {
+            "active_supplements": items,
+            "taken_today_count": sum(1 for i in items if i["taken"]),
+            "total_active_count": len(items),
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] supplement 失败: {e}")
+        return {"active_supplements": [], "taken_today_count": 0, "total_active_count": 0}
+
+
+# ─────────────────────────── blood pressure ───────────────────────────
+
+
+def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str, Any]]:
+    """最近一次血压。"""
+    try:
+        from app.models.blood_pressure import BloodPressureRecord
+
+        record = (
+            db.query(BloodPressureRecord)
+            .filter(BloodPressureRecord.user_id == user_id)
+            .order_by(desc(BloodPressureRecord.record_date))
+            .first()
+        )
+        if not record:
+            return None
+        return {
+            "systolic": record.systolic,
+            "diastolic": record.diastolic,
+            "pulse": record.pulse,
+            "record_date": record.record_date,
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] blood_pressure 失败: {e}")
+        return None
+
+
+# ─────────────────────────── medical exam abnormal ────────────────────
+
+
+def fetch_medical_exam_abnormal(db: Session, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    """最近化验单中的异常项。取最近 3 份化验单里的异常条目。"""
+    try:
+        from app.models.medical_exam import MedicalExam, MedicalExamItem
+
+        exams = (
+            db.query(MedicalExam)
+            .filter(MedicalExam.user_id == user_id)
+            .order_by(desc(MedicalExam.exam_date))
+            .limit(3)
+            .all()
+        )
+        if not exams:
+            return []
+
+        exam_map = {e.id: e for e in exams}
+        items = (
+            db.query(MedicalExamItem)
+            .filter(
+                MedicalExamItem.exam_id.in_(list(exam_map.keys())),
+                MedicalExamItem.is_abnormal == True,  # noqa: E712
+            )
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "item_name": it.item_name,
+                "value": it.value if it.value is not None else it.value_text,
+                "unit": it.unit,
+                "reference_range": it.reference_range,
+                "result": it.result,
+                "exam_date": exam_map[it.exam_id].exam_date if it.exam_id in exam_map else None,
+                "exam_type": exam_map[it.exam_id].exam_type if it.exam_id in exam_map else None,
+            }
+            for it in items
+        ]
+    except Exception as e:
+        logger.warning(f"[twin.collectors] medical_exam 失败: {e}")
+        return []
+
+
+def fetch_latest_exam_meta(db: Session, user_id: int) -> Dict[str, Any]:
+    """最近一份化验单的元信息。"""
+    try:
+        from app.models.medical_exam import MedicalExam
+
+        exam = (
+            db.query(MedicalExam)
+            .filter(MedicalExam.user_id == user_id)
+            .order_by(desc(MedicalExam.exam_date))
+            .first()
+        )
+        if not exam:
+            return {}
+        return {"exam_date": exam.exam_date, "exam_type": exam.exam_type}
+    except Exception as e:
+        logger.warning(f"[twin.collectors] latest_exam_meta 失败: {e}")
+        return {}
+
+
+# ─────────────────────────── genetic variants (categorized) ───────────
+
+
+def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, List[Dict[str, Any]]]:
+    """按类别分组的基因变异。"""
+    try:
+        from app.models.genetic_data import GeneticVariant
+
+        variants = (
+            db.query(GeneticVariant)
+            .filter(GeneticVariant.user_id == user_id)
+            .all()
+        )
+
+        drug_sens: List[Dict[str, Any]] = []
+        risk: List[Dict[str, Any]] = []
+        protective: List[Dict[str, Any]] = []
+
+        for v in variants:
+            item = {
+                "gene_name": v.gene_name,
+                "variant_name": getattr(v, "variant_name", None),
+                "genotype": getattr(v, "genotype", None),
+                "result_label": getattr(v, "result_label", None),
+                "risk_level": getattr(v, "risk_level", None),
+                "category": getattr(v, "category", None),
+            }
+            category = (getattr(v, "category", "") or "").lower()
+            nature = (getattr(v, "variant_nature", "") or "").lower()
+            if "drug" in category:
+                drug_sens.append(item)
+            elif nature == "protective":
+                protective.append(item)
+            elif nature == "risk":
+                risk.append(item)
+
+        return {
+            "total": len(variants),
+            "drug_sensitivity": drug_sens[:10],
+            "risk": risk[:10],
+            "protective": protective[:10],
+        }
+    except Exception as e:
+        logger.warning(f"[twin.collectors] genetic 失败: {e}")
+        return {"total": 0, "drug_sensitivity": [], "risk": [], "protective": []}

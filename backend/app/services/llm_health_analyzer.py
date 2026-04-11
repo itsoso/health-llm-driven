@@ -720,6 +720,24 @@ class LLMHealthAnalyzer:
                 yesterday_data, recent_data, rule_analysis, user_context, environment_data
             )
 
+            # [Phase 0 dogfood] Digital Health Twin 统一状态快照
+            # 作为额外结构化上下文注入 prompt —— 为 Phase 1 Safety Guardian 的
+            # 统一 context 访问做铺垫。失败降级为空字符串不影响主流程。
+            try:
+                from app.twin.builder import build_twin
+                from app.twin.formatter import twin_to_prompt_blob
+
+                twin = build_twin(db, user_id)
+                twin_blob = twin_to_prompt_blob(twin)
+                if twin_blob:
+                    health_prompt += f"\n\n[健康孪生快照]\n{twin_blob}\n"
+                    logger.info(
+                        f"[twin] injected into prompt: user={user_id}, "
+                        f"sources={twin.meta.data_sources}, build_ms={twin.meta.build_ms}"
+                    )
+            except Exception as twin_err:
+                logger.warning(f"[twin] prompt 注入失败（降级）: {twin_err}")
+
             # 基因画像（完整基因检测数据，用于个性化建议）
             genetic_profile = self._build_genetic_profile_context(db, user_id)
             if genetic_profile:

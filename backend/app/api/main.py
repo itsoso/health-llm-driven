@@ -101,6 +101,7 @@ from app.api import (
     chronic_risk,  # 慢病风险评估
     multi_source_integration,  # 多源数据整合
     agent,  # Hermes Agent 模式
+    twin,  # Digital Health Twin（Phase 0：统一状态视图）
 )
 
 api_router = APIRouter()
@@ -149,7 +150,8 @@ api_router.include_router(knowledge.router, tags=["knowledge-base"])  # 知识�
 api_router.include_router(environment.router, tags=["environment"])  # 环境数据
 api_router.include_router(disease_tracking.router, tags=["disease-tracking"])  # 疾病追踪
 api_router.include_router(ai_scheduler.router, tags=["ai-scheduler"])  # AI 日程编排引擎
-api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])  # 数字孪生
+api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])  # 数字孪生（旧：生理计算器）
+api_router.include_router(twin.router, tags=["twin"])  # Digital Health Twin（新：统一状态视图）
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
 api_router.include_router(smart_reminder.router, tags=["reminders"])  # 智能提醒
 api_router.include_router(review.router, tags=["review"])  # 每日复盘
