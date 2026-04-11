@@ -57,6 +57,26 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
       });
       showToast(`已记录莫米松鼻喷 (${timeStr})`);
     }},
+    { icon: '💊', label: '西替利嗪+1', action: async () => {
+      const medsRes = await api.get('/medication/medications/me');
+      const meds = medsRes.data || [];
+      let med = meds.find((m: any) => m.name === '盐酸西替利嗪片' || m.name === '西替利嗪' || m.name === 'Cetirizine Hydrochloride');
+      if (!med) {
+        const createRes = await api.post('/medication/medications', {
+          name: '盐酸西替利嗪片', dosage: '10mg', frequency: '每日1次',
+          times_per_day: 1, category: 'otc', purpose: '过敏性鼻炎/抗组胺',
+          notes: '口服抗组胺药，通常睡前服用'
+        });
+        med = createRes.data;
+      }
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      await api.post('/medication/logs', {
+        medication_id: med.id, taken_time: timeStr, status: 'taken',
+        actual_dosage: '10mg', notes: `${today} ${timeStr} 口服`
+      });
+      showToast(`已记录西替利嗪 10mg (${timeStr})`);
+    }},
     { icon: '💉', label: '替尔泊肽', action: async () => {
       const medsRes = await api.get('/medication/medications/me');
       const meds = medsRes.data || [];

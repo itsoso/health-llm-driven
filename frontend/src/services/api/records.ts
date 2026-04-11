@@ -219,6 +219,24 @@ export const supplementAuditApi = {
     api.patch(`/supplement-audits/me/items/${itemId}`, payload),
 };
 
+// 健康咨询 (Health Consultation) — 多层级症状咨询追踪，含 hypotheses/actions/predictions/red_flags + 自动回测
+export const healthConsultationApi = {
+  listMine: (limit: number = 20) =>
+    api.get('/health-consultations/me', { params: { limit } }),
+  getActive: () => api.get('/health-consultations/me/active'),
+  getById: (id: number) => api.get(`/health-consultations/me/${id}`),
+  create: (payload: any) => api.post('/health-consultations/me', payload),
+  updateItem: (itemId: number, payload: {
+    status?: string;
+    user_note?: string;
+    outcome?: string;
+    actual_value?: string;
+    meta_patch?: Record<string, any>;
+  }) => api.patch(`/health-consultations/me/items/${itemId}`, payload),
+  // 自动回测 predictions: 对比 garmin_data / medical_indicators 给出建议 status
+  verifyPredictions: (id: number) => api.post(`/health-consultations/me/${id}/verify`),
+};
+
 // 儿童狗狗空间
 export const excretionApi = {
   createRecord: (data: Partial<ExcretionRecord>) =>
