@@ -11,6 +11,7 @@ import { useDashboardData } from '@/hooks/useDashboardData';
 // Dashboard components
 import HeroCard from '@/components/assistant/HeroCard';
 import AlertsBanner from '@/components/assistant/AlertsBanner';
+import SafetyPanel from '@/components/assistant/SafetyPanel';
 import DataGrid from '@/components/assistant/DataGrid';
 import ActivityCard from '@/components/assistant/ActivityCard';
 import SupplementCheckin from '@/components/assistant/SupplementCheckin';
@@ -516,6 +517,7 @@ export default function AIAssistantPage() {
               {isWelcome ? (
                 <div className="space-y-3 pb-44">
                   <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
+                  <SafetyPanel />
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
                   {/* 力量训练：俯卧撑 · 深蹲 */}
