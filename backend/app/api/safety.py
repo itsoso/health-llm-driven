@@ -156,28 +156,45 @@ async def explain_alert(
         "请给出个性化解读和具体行动。"
     )
 
-    try:
-        from app.services.llm import get_llm_provider
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
 
-        provider = get_llm_provider()
-        result = await provider.chat(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-            max_tokens=600,
-        )
+    # 先尝试默认 provider，失败则回退到 OpenClaw
+    async def _try_provider(provider_type: Optional[str]) -> Optional[str]:
+        try:
+            from app.services.llm import get_llm_provider
+            from app.services.llm.factory import create_llm_provider
 
-        # 防御：provider 可能返回 dict 形态（tool_calls 场景），我们只要文本
-        if isinstance(result, dict):
-            explanation = result.get("content") or result.get("message") or str(result)
-        else:
-            explanation = str(result or "").strip()
+            provider = (
+                create_llm_provider(provider_type)
+                if provider_type
+                else get_llm_provider()
+            )
+            result = await provider.chat(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=600,
+            )
+            if isinstance(result, dict):
+                text = result.get("content") or result.get("message") or ""
+            else:
+                text = str(result or "")
+            text = text.strip()
+            return text if text else None
+        except Exception as inner:
+            logger.warning(
+                f"[safety.explain] provider={provider_type or 'default'} 失败: "
+                f"{str(inner)[:200]}"
+            )
+            return None
 
-        if not explanation:
-            raise ValueError("LLM 返回空内容")
+    explanation = await _try_provider(None)  # 默认 provider
+    if not explanation:
+        explanation = await _try_provider("openclaw")  # fallback
 
+    if explanation:
         _EXPLAIN_CACHE[cache_key] = (now, explanation)
         return ExplainResponse(
             rule_id=req.rule_id,
@@ -185,14 +202,14 @@ async def explain_alert(
             generated_at=datetime.utcnow(),
             cached=False,
         )
-    except Exception as e:
-        logger.warning(f"[safety.explain] LLM 调用失败: {e}")
-        fallback = (
-            (req.message or "") + "\n\n[个性化解读暂不可用，请稍后重试]"
-        ).strip()
-        return ExplainResponse(
-            rule_id=req.rule_id,
-            explanation=fallback,
-            generated_at=datetime.utcnow(),
-            cached=False,
-        )
+
+    # 两个 provider 都失败 → 降级
+    fallback = (
+        (req.message or "") + "\n\n[个性化解读服务暂时不可用（LLM 服务超限），请稍后重试]"
+    ).strip()
+    return ExplainResponse(
+        rule_id=req.rule_id,
+        explanation=fallback,
+        generated_at=datetime.utcnow(),
+        cached=False,
+    )
