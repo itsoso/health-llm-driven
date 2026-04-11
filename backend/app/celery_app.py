@@ -82,10 +82,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0),
     },
     
-    # 每周一 9:00 生成周报
+    # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)
+    # v2: 聚合数据 + 跨实体行动对照 + prediction 中期校验 + 基因对齐度评分
     "weekly-report": {
         "task": "app.tasks.health_analysis.generate_weekly_reports",
-        "schedule": crontab(hour=9, minute=0, day_of_week=1),
+        "schedule": crontab(hour=20, minute=30, day_of_week=0),  # 周日 20:30 北京时间
     },
     
     # 每日清理过期数据

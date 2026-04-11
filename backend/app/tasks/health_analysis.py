@@ -49,32 +49,50 @@ def generate_daily_plan_for_all():
 @celery_app.task
 def generate_weekly_reports():
     """
-    生成周报（每周一9:00执行）
+    生成升级版周报 (每周日 20:30 北京时间执行)
+
+    v2 升级: 跨实体反馈引擎
+    - 基础数据聚合 (来自 health_report_service)
+    - Cross-reference active supplement_audits 和 health_consultations
+    - Predictions 中期校验 (consultation.verify_predictions)
+    - 基因对齐度评分 (FADS1/IL-6/ALDH2/KCNJ11/PPARGC1A/MTHFR 等)
+    - 落 health_reports 表, ai_analysis 含完整 markdown
     """
-    logger.info("开始生成周报")
-    
+    logger.info("开始生成升级版周报 (Sunday 20:30)")
+
     with SessionLocal() as db:
         users = db.query(User).filter(User.is_active == True).all()
-        
+
         today = get_china_today()
-        week_start = today - timedelta(days=7)
-        
+        # 本周 = 最近过去的周一 ~ 今天(周日)
+        # today.weekday() 周一=0, 周日=6
+        days_since_monday = today.weekday()  # 周日 = 6
+        week_start = today - timedelta(days=days_since_monday)
+        week_end = today
+
         generated_count = 0
-        
+        failed_count = 0
+
         for user in users:
             try:
                 from app.services.weekly_report_service import weekly_report_service
-                report = weekly_report_service.generate_report(db, user.id, week_start, today)
-                if report.get("days_with_data", 0) > 0:
+                report = weekly_report_service.build_enhanced_review(
+                    db, user.id, week_start, week_end
+                )
+                if report:
                     generated_count += 1
-                    logger.info(f"用户 {user.id} 周报生成成功: {report.get('days_with_data')}天数据")
+                    logger.info(
+                        f"用户 {user.id} 升级周报生成成功: report_id={report.id} "
+                        f"score={report.health_score}"
+                    )
                 else:
-                    logger.info(f"用户 {user.id} 本周无数据，跳过")
+                    logger.info(f"用户 {user.id} 本周无数据, 跳过")
             except Exception as e:
-                logger.error(f"用户 {user.id} 周报生成失败: {e}")
-    
-    logger.info(f"周报生成完成，共 {generated_count} 份")
-    return {"generated_count": generated_count}
+                failed_count += 1
+                logger.error(f"用户 {user.id} 周报生成失败: {e}", exc_info=True)
+
+    logger.info(f"升级周报生成完成: {generated_count} 成功 / {failed_count} 失败")
+    return {"generated_count": generated_count, "failed_count": failed_count}
 
 
 @celery_app.task
