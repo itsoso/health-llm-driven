@@ -65,7 +65,11 @@ class AgentExecutor:
         yield {"event": "agent_start", "data": {"message": "Agent 正在分析..."}}
 
         try:
+            import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
+                # 多轮间加间隔，防止触发 Nginx 限流
+                if round_idx > 0:
+                    await _asyncio_loop.sleep(2)
                 # 调用 LLM（非流式，需要完整解析 tool_call）
                 response = await self._call_llm(messages, tools)
 
@@ -265,13 +269,13 @@ class AgentExecutor:
             "Authorization": f"Bearer {api_key}",
         }
 
-        max_retries = 3
+        max_retries = 5
         for attempt in range(max_retries):
             async with httpx.AsyncClient(timeout=120.0) as client:
                 resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code == 429:
-                    wait = (attempt + 1) * 5  # 5s, 10s, 15s
-                    logger.warning(f"OpenClaw Gateway 429 限流，第{attempt+1}次重试，等待{wait}s")
+                    wait = min(10 * (2 ** attempt), 60)  # 10s, 20s, 40s, 60s, 60s
+                    logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")
                     await _asyncio.sleep(wait)
                     continue
                 if resp.status_code != 200:
@@ -279,7 +283,7 @@ class AgentExecutor:
                 data = resp.json()
                 break
         else:
-            raise RuntimeError("OpenClaw Gateway 429 限流，已重试3次仍失败，请稍后再试")
+            raise RuntimeError("AI 服务暂时繁忙，请稍后再试（已重试5次）")
 
         choice = data.get("choices", [{}])[0]
         msg = choice.get("message", {})

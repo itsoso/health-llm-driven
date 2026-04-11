@@ -153,6 +153,24 @@ def get_today_exercises(
     return records
 
 
+@router.delete("/exercise/{exercise_id}")
+def delete_exercise_record(
+    exercise_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """删除单条锻炼记录（本人）"""
+    record = db.query(ExerciseRecord).filter(
+        ExerciseRecord.id == exercise_id,
+        ExerciseRecord.user_id == current_user.id,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    db.delete(record)
+    db.commit()
+    return {"message": "已删除", "id": exercise_id}
+
+
 @router.get("/exercise/me", response_model=List[ExerciseRecordResponse])
 def get_my_exercises(
     days: int = 7,

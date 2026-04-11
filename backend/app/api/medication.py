@@ -140,6 +140,26 @@ async def log_medication(
     }
 
 
+@router.delete("/logs/{log_id}")
+async def delete_medication_log(
+    log_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """删除一条服药日志（本人），用于撤销误点的快速打卡"""
+    from app.models.medication import MedicationLog
+    log = db.query(MedicationLog).filter(
+        MedicationLog.id == log_id,
+        MedicationLog.user_id == current_user.id,
+    ).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    db.delete(log)
+    db.commit()
+    logger.info(f"[MedAPI] 用户 {current_user.id} 删除服药日志 {log_id}")
+    return {"message": "已删除", "id": log_id}
+
+
 @router.get("/today/me")
 async def get_today_status(
     current_user: User = Depends(get_current_user_required),

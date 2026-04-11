@@ -1,6 +1,8 @@
 'use client';
+import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/services/api';
+import { useToast } from '@/contexts/ToastContext';
 
 interface AlertsBannerProps {
   waterToday: { total_ml: number; goal_ml: number; count: number };
@@ -11,14 +13,35 @@ interface AlertsBannerProps {
 
 export default function AlertsBanner({ waterToday, todayGarmin, onWaterRecord, onAskAI }: AlertsBannerProps) {
   const router = useRouter();
+  const { showToast } = useToast();
+  const lockRef = useRef<Set<string>>(new Set());
   const hour = new Date().getHours();
   const today = new Date().toISOString().slice(0, 10);
 
   const quickDrinkWater = async (amount: number) => {
+    const key = `alert-water-${amount}`;
+    if (lockRef.current.has(key)) return;
+    lockRef.current.add(key);
     try {
-      await api.post('/water/records', { record_date: today, amount, drink_type: '水', user_id: 0 });
+      const res = await api.post('/water/records', { record_date: today, amount, drink_type: '水', user_id: 0 });
+      const newId = res.data?.id;
       onWaterRecord(amount);
-    } catch (e) { console.error('记录饮水失败', e); }
+      showToast(`已记录喝水 ${amount}ml`, {
+        type: 'success',
+        onUndo: async () => {
+          if (newId) {
+            try { await api.delete(`/water/records/${newId}`); } catch (e) { console.error('撤销失败', e); }
+          }
+          onWaterRecord(-amount);
+        },
+      });
+    } catch (e: any) {
+      console.error('记录饮水失败', e);
+      const msg = e?.response?.data?.detail || e?.message || '操作失败';
+      showToast(`记录饮水失败：${msg}`, 'error');
+    } finally {
+      lockRef.current.delete(key);
+    }
   };
 
   const alerts: { icon: string; text: string; actionLabel: string; onAction: () => void; color: string; bg: string }[] = [];

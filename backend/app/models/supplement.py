@@ -42,6 +42,9 @@ class SupplementProduct(Base):
     usage_advice = Column(Text)
     precautions = Column(Text)
 
+    # 深度分析（AI 洞察：机制/独特价值/适用人群/避坑/搭配）
+    analysis = Column(Text)
+
     # 基因 & 健康关联
     gene_relevance = Column(JSON, default=list)
     # [{"gene":"MTHFR","genotype":"CT/TT","relevance":"需要活性叶酸5-MTHF"}]

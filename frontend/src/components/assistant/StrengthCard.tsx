@@ -78,16 +78,39 @@ export default function StrengthCard({
     if (recording) return;
     setRecording(true);
     try {
-      await api.post('/daily-health/exercise', {
+      const res = await api.post('/daily-health/exercise', {
         record_date: today, exercise_type: exerciseType,
         reps: count, sets: 1,
         intensity: count >= 30 ? 'high' : count >= 15 ? 'medium' : 'low',
       });
+      const newRecord: ExerciseRecord = {
+        id: res.data?.id ?? Date.now(),
+        reps: count,
+        created_at: res.data?.created_at || new Date().toISOString(),
+      };
       setTodayTotal(prev => prev + count);
       setTodaySets(prev => prev + 1);
-      setRecords(prev => [...prev, { id: Date.now(), reps: count, created_at: new Date().toISOString() }]);
+      setRecords(prev => [...prev, newRecord]);
     } catch (e) { console.error('记录失败', e); }
     finally { setRecording(false); }
+  };
+
+  const deleteRecord = async (record: ExerciseRecord) => {
+    // temp id from Date.now() (>1e12) — not yet synced; force reload from server
+    if (!record?.id || record.id > 1e12) {
+      await loadData();
+      return;
+    }
+    if (!confirm(`删除这条 ${record.reps} 个${exerciseType}记录？`)) return;
+    try {
+      await api.delete(`/daily-health/exercise/${record.id}`);
+      setRecords(prev => prev.filter(r => r.id !== record.id));
+      setTodayTotal(prev => Math.max(0, prev - record.reps));
+      setTodaySets(prev => Math.max(0, prev - 1));
+    } catch (e) {
+      console.error('删除失败', e);
+      alert('删除失败，请重试');
+    }
   };
 
   const maxWeek = Math.max(...weekData, dailyTarget);
@@ -169,10 +192,20 @@ export default function StrengthCard({
       {showDetail && records.length > 0 && (
         <div className="mt-2.5 pt-2.5 space-y-1" style={{ borderTop: '1px solid #E5E5EA' }}>
           {records.map((r, i) => (
-            <div key={r.id} className="flex items-center justify-between text-xs">
+            <div key={r.id} className="flex items-center justify-between text-xs gap-2">
               <span style={{ color: '#8E8E93' }}>第{i + 1}组</span>
-              <span className="font-bold" style={{ color: '#1C1C1E' }}>{r.reps} 个</span>
+              <span className="font-bold flex-1 text-right" style={{ color: '#1C1C1E' }}>{r.reps} 个</span>
               <span style={{ color: '#AEAEB2' }}>{new Date(r.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+              <button
+                onClick={() => deleteRecord(r)}
+                className="w-5 h-5 rounded-full flex items-center justify-center transition-all hover:bg-red-50 active:scale-90"
+                title={`删除这条 ${r.reps} 个记录`}
+                style={{ color: '#FF453A' }}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           ))}
         </div>
