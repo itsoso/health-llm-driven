@@ -47,8 +47,33 @@ def _safe_avg(values: List) -> float:
     return sum(valid) / len(valid) if valid else 0.0
 
 
-def _time_to_minutes(t: Optional[time]) -> Optional[float]:
-    return t.hour * 60 + t.minute if t else None
+def _time_to_minutes(t) -> Optional[float]:
+    """接受 datetime.time / datetime / ISO 字符串 / None，统一转分钟数。"""
+    if t is None:
+        return None
+    # 已经是 time 或 datetime 对象
+    if hasattr(t, "hour") and hasattr(t, "minute"):
+        return t.hour * 60 + t.minute
+    # 字符串：尝试解析 'HH:MM' 或 ISO 格式
+    if isinstance(t, str):
+        s = t.strip()
+        if not s:
+            return None
+        try:
+            # 'HH:MM' 或 'HH:MM:SS'
+            parts = s.split(":")
+            if len(parts) >= 2:
+                return int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            pass
+        try:
+            # ISO datetime fallback
+            from datetime import datetime as _dt
+            dt = _dt.fromisoformat(s.replace("Z", "+00:00"))
+            return dt.hour * 60 + dt.minute
+        except (ValueError, TypeError):
+            return None
+    return None
 
 
 def _std_dev(values: List[float]) -> float:

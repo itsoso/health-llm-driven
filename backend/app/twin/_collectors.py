@@ -11,6 +11,7 @@ Twin 层的薄数据收集器 —— 过渡期。
   - 每个函数只做一件事：取"最新/今日"状态并返回简单 dict
   - 不做任何计算/LLM/告警
   - 失败返回空字典或 None，不抛异常
+  - 异常后 rollback，防止污染事务影响后续 collector
 """
 
 import logging
@@ -23,6 +24,14 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 DEFAULT_WATER_GOAL_ML = 2000
+
+
+def _safe_rollback(db: Session) -> None:
+    """静默回滚，防止一个失败的查询污染整个事务。"""
+    try:
+        db.rollback()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ─────────────────────────────── water ────────────────────────────────
@@ -51,6 +60,7 @@ def fetch_water_today(db: Session, user_id: int) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] water 失败: {e}")
+        _safe_rollback(db)
         return {"total_ml": 0, "entries_count": 0, "goal_ml": DEFAULT_WATER_GOAL_ML, "progress_pct": 0.0}
 
 
@@ -82,6 +92,7 @@ def fetch_health_checkin_today(db: Session, user_id: int) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] health_checkin 失败: {e}")
+        _safe_rollback(db)
         return {}
 
 
@@ -133,6 +144,7 @@ def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] supplement 失败: {e}")
+        _safe_rollback(db)
         return {"active_supplements": [], "taken_today_count": 0, "total_active_count": 0}
 
 
@@ -160,6 +172,7 @@ def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str,
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] blood_pressure 失败: {e}")
+        _safe_rollback(db)
         return None
 
 
@@ -167,7 +180,12 @@ def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str,
 
 
 def fetch_medical_exam_abnormal(db: Session, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-    """最近化验单中的异常项。取最近 3 份化验单里的异常条目。"""
+    """最近化验单中的异常项。取最近 3 份化验单里的异常条目。
+
+    注意：`medical_exam_items.is_abnormal` 是 varchar(20) 不是 bool，
+    值可能是 'true'/'yes'/'偏高'/'偏低'/'异常' 等字符串。
+    在 Python 侧过滤而不是 SQL，避免类型不匹配。
+    """
     try:
         from app.models.medical_exam import MedicalExam, MedicalExamItem
 
@@ -184,28 +202,44 @@ def fetch_medical_exam_abnormal(db: Session, user_id: int, limit: int = 10) -> L
         exam_map = {e.id: e for e in exams}
         items = (
             db.query(MedicalExamItem)
-            .filter(
-                MedicalExamItem.exam_id.in_(list(exam_map.keys())),
-                MedicalExamItem.is_abnormal == True,  # noqa: E712
-            )
-            .limit(limit)
+            .filter(MedicalExamItem.exam_id.in_(list(exam_map.keys())))
             .all()
         )
 
-        return [
-            {
-                "item_name": it.item_name,
-                "value": it.value if it.value is not None else it.value_text,
-                "unit": it.unit,
-                "reference_range": it.reference_range,
-                "result": it.result,
-                "exam_date": exam_map[it.exam_id].exam_date if it.exam_id in exam_map else None,
-                "exam_type": exam_map[it.exam_id].exam_type if it.exam_id in exam_map else None,
-            }
-            for it in items
-        ]
+        abnormal_labels = {
+            "true", "yes", "1", "异常", "偏高", "偏低",
+            "高", "低", "阳性", "abnormal", "high", "low",
+        }
+        result: List[Dict[str, Any]] = []
+        for it in items:
+            flag = (it.is_abnormal or "").strip().lower()
+            # 既接受字符串标志，也接受 result 字段里的标记
+            is_ab = flag in abnormal_labels or (
+                it.result and str(it.result).strip().lower() in abnormal_labels
+            )
+            if not is_ab:
+                continue
+            result.append(
+                {
+                    "item_name": it.item_name,
+                    "value": it.value if it.value is not None else it.value_text,
+                    "unit": it.unit,
+                    "reference_range": it.reference_range,
+                    "result": it.result,
+                    "exam_date": exam_map[it.exam_id].exam_date if it.exam_id in exam_map else None,
+                    "exam_type": exam_map[it.exam_id].exam_type if it.exam_id in exam_map else None,
+                }
+            )
+            if len(result) >= limit:
+                break
+        return result
     except Exception as e:
         logger.warning(f"[twin.collectors] medical_exam 失败: {e}")
+        # 清理被污染的事务，避免影响后续 collectors
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return []
 
 
@@ -225,6 +259,7 @@ def fetch_latest_exam_meta(db: Session, user_id: int) -> Dict[str, Any]:
         return {"exam_date": exam.exam_date, "exam_type": exam.exam_type}
     except Exception as e:
         logger.warning(f"[twin.collectors] latest_exam_meta 失败: {e}")
+        _safe_rollback(db)
         return {}
 
 
@@ -272,4 +307,5 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] genetic 失败: {e}")
+        _safe_rollback(db)
         return {"total": 0, "drug_sensitivity": [], "risk": [], "protective": []}
