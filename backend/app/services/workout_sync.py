@@ -14,6 +14,10 @@ try:
     GARMINCONNECT_AVAILABLE = True
 except ImportError:
     GARMINCONNECT_AVAILABLE = False
+except Exception as _garmin_load_err:  # noqa: BLE001
+    Garmin = None  # type: ignore
+    GARMINCONNECT_AVAILABLE = False
+    logger.warning(f"garminconnect 加载失败（将禁用 workout_sync）: {_garmin_load_err}")
 
 
 # 运动类型映射（Garmin类型 -> 系统类型）

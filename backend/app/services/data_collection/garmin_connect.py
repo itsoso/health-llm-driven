@@ -21,6 +21,14 @@ try:
 except ImportError:
     GARMINCONNECT_AVAILABLE = False
     logger.warning("garminconnect库未安装，请运行: pip install garminconnect")
+except Exception as _garmin_load_err:  # noqa: BLE001
+    # garth 在某些 pydantic 版本下加载时抛 ValueError (timestamp_gmt 重复)
+    # 不让它把整个后端启动带崩。
+    Garmin = None  # type: ignore
+    GARMINCONNECT_AVAILABLE = False
+    logger.warning(
+        f"garminconnect 加载失败（将禁用 Garmin 同步）: {_garmin_load_err}"
+    )
 
 
 class GarminAuthenticationError(Exception):
