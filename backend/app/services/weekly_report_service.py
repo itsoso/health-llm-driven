@@ -133,7 +133,14 @@ class WeeklyReportService:
         report.comparison = comparison
 
         # 扩展 ai_recommendations 也塞一份 link 索引
-        recs = dict(report.ai_recommendations or {})
+        # health_report_service 返回的是 list 或 dict, 统一包装成 dict
+        existing_recs = report.ai_recommendations
+        if isinstance(existing_recs, list):
+            recs: Dict[str, Any] = {"items": existing_recs}
+        elif isinstance(existing_recs, dict):
+            recs = dict(existing_recs)
+        else:
+            recs = {}
         recs["linked_supplement_audit_ids"] = cross_ref.get("linked_audit_ids", [])
         recs["linked_consultation_ids"] = cross_ref.get("linked_consultation_ids", [])
         report.ai_recommendations = recs
@@ -544,9 +551,14 @@ class WeeklyReportService:
                 lines.append(f"- ❌ **{m['gene']}**: {m['check']} = {m['actual']} (未达标)")
             lines.append("")
 
-        # 5. 建议 (从 report.ai_recommendations)
-        recs = report.ai_recommendations or {}
-        items = recs.get("items") or recs.get("next_week_must_do") or []
+        # 5. 建议 (从 report.ai_recommendations, 可能是 list 或 dict)
+        raw_recs = report.ai_recommendations
+        if isinstance(raw_recs, dict):
+            items = raw_recs.get("items") or raw_recs.get("next_week_must_do") or []
+        elif isinstance(raw_recs, list):
+            items = raw_recs
+        else:
+            items = []
         if items and isinstance(items, list):
             lines.append("## 💡 下周行动建议\n")
             for i, rec in enumerate(items[:10], 1):
