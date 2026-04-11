@@ -208,6 +208,17 @@ export const supplementApi = {
     api.get('/supplements/daily-guide', { params: targetDate ? { target_date: targetDate } : {} }),
 };
 
+// 补剂审计 (Supplement Audit) — 长周期决策文档，带 action item 状态追踪
+export const supplementAuditApi = {
+  listMine: (limit: number = 20) =>
+    api.get('/supplement-audits/me', { params: { limit } }),
+  getActive: () => api.get('/supplement-audits/me/active'),
+  getById: (auditId: number) => api.get(`/supplement-audits/me/${auditId}`),
+  create: (payload: any) => api.post('/supplement-audits/me', payload),
+  updateItem: (itemId: number, payload: { status?: string; user_note?: string; rejected_reason?: string }) =>
+    api.patch(`/supplement-audits/me/items/${itemId}`, payload),
+};
+
 // 儿童狗狗空间
 export const excretionApi = {
   createRecord: (data: Partial<ExcretionRecord>) =>

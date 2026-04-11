@@ -37,6 +37,26 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
       onRhinitisUpdate((prev: any) => ({ ...prev, sneeze_count: cur + 1 }));
       showToast(`已记录喷嚏 ${cur + 1} 次`);
     }},
+    { icon: '🌿', label: '莫米松+1', action: async () => {
+      const medsRes = await api.get('/medication/medications/me');
+      const meds = medsRes.data || [];
+      let med = meds.find((m: any) => m.name === '糠酸莫米松鼻喷雾剂' || m.name === '莫米松' || m.name === 'Mometasone Furoate Nasal Spray');
+      if (!med) {
+        const createRes = await api.post('/medication/medications', {
+          name: '糠酸莫米松鼻喷雾剂', dosage: '每侧2喷', frequency: '每日1-2次',
+          times_per_day: 1, category: 'prescription', purpose: '过敏性鼻炎',
+          notes: '内舒拿；每侧鼻孔各 2 喷'
+        });
+        med = createRes.data;
+      }
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      await api.post('/medication/logs', {
+        medication_id: med.id, taken_time: timeStr, status: 'taken',
+        actual_dosage: '每侧2喷', notes: `${today} ${timeStr} 鼻喷`
+      });
+      showToast(`已记录莫米松鼻喷 (${timeStr})`);
+    }},
     { icon: '💉', label: '替尔泊肽', action: async () => {
       const medsRes = await api.get('/medication/medications/me');
       const meds = medsRes.data || [];

@@ -95,6 +95,8 @@ from app.models.assistant_openclaw import (
 from app.models.conversation_memory import ConversationMemory
 # 对话分享
 from app.models.shared_conversation import SharedConversation
+# 补剂审计
+from app.models.supplement_audit import SupplementAudit, SupplementAuditItem
 
 __all__ = [
     "User",
@@ -221,4 +223,7 @@ __all__ = [
     "ConversationMemory",
     # 对话分享
     "SharedConversation",
+    # 补剂审计
+    "SupplementAudit",
+    "SupplementAuditItem",
 ]

@@ -17,6 +17,7 @@ from app.api import (
     daily_recommendation,
     supplements,
     supplement_products,
+    supplement_audits,
     # habits,  # 已废弃，模块已移除
     weight,
     blood_pressure,
@@ -127,6 +128,7 @@ api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tag
 api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
 api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
 api_router.include_router(supplement_products.router, tags=["supplement-products"])  # 产品知识库（prefix在router中定义）
+api_router.include_router(supplement_audits.router)  # 补剂审计（prefix已在router中定义）
 # api_router.include_router(habits.router, prefix="/habits", tags=["habits"])  # 已废弃，模块已移除
 api_router.include_router(weight.router, prefix="/weight", tags=["weight"])
 api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=["blood-pressure"])
