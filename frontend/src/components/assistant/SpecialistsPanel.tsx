@@ -242,7 +242,6 @@ export default function SpecialistsPanel({
     setError(null);
     try {
       const res = await runOrchestrator({ query, stream: false });
-      // 过滤掉 safety_guardian（它已经在 SafetyPanel 独立展示）
       setFindings(res.findings.filter((f) => f.specialist_name !== 'safety_guardian'));
       setUsedSpecialists(res.used_specialists);
       setTwinBuildMs(res.twin_build_ms || 0);
@@ -253,9 +252,33 @@ export default function SpecialistsPanel({
     }
   }, [query]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // 按需触发 — 不在首页加载时自动调 orchestrator（节省 LLM 调用）
+  // 用户点"运行专家舰队"按钮才触发
+
+  if (!loading && findings.length === 0 && !error) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[11px] font-semibold" style={{ color: '#0f172a' }}>专家舰队</span>
+          <span className="text-[10px]" style={{ color: '#94a3b8' }}>· 10 个专家待命</span>
+        </div>
+        <button
+          onClick={load}
+          className="w-full rounded-2xl px-4 py-3 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+          style={{
+            background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)',
+            border: '1px solid #e9d5ff',
+            boxShadow: '0 1px 3px rgba(124,58,237,0.08)',
+          }}
+        >
+          <span className="text-sm">🚀</span>
+          <span className="text-xs font-semibold" style={{ color: '#7c3aed' }}>
+            运行专家舰队 · 综合分析
+          </span>
+        </button>
+      </div>
+    );
+  }
 
   if (loading && findings.length === 0) {
     return (
@@ -280,7 +303,7 @@ export default function SpecialistsPanel({
   }
 
   if (findings.length === 0) {
-    return null;  // 没有专家参与就不显示
+    return null;
   }
 
   return (

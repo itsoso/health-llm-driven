@@ -419,6 +419,8 @@ export default function AIAssistantPage() {
       const parts = [];
       if (d?.success_count > 0) parts.push(`${d.success_count}天健康数据`);
       if (d?.activities_count > 0) parts.push(`${d.activities_count}条运动`);
+      // 同步后 invalidate Twin + Safety 缓存，让面板下次拿最新数据
+      api.post('/twin/me/invalidate').catch(() => {});
       await dashboard.loadDashboardData(true);
       showToast(parts.length > 0 ? `同步成功：${parts.join('、')}` : '数据已是最新', 'success');
     } catch {

@@ -62,6 +62,18 @@ def get_my_safety_report(
         timing: {twin_build_ms, evaluate_ms}
       }
     """
+    # Safety report 缓存（5min，Twin 更新时会 invalidate）
+    import hashlib as _hl
+    _safety_cache_key = f"safety:v1:{current_user.id}"
+    try:
+        from app.utils.redis_cache import RedisCache
+        _cached_safety = RedisCache.get(_safety_cache_key)
+        if _cached_safety and not severity_min:
+            _cached_safety["_cached"] = True
+            return _cached_safety
+    except Exception:
+        pass
+
     twin = build_twin(db, current_user.id)
     report = evaluate_safety(twin)
 
@@ -102,8 +114,16 @@ def get_my_safety_report(
         report.alerts = [a for a in report.alerts if int(a.severity) >= severity_min]
 
     result = report.model_dump_for_api()
-    # 附加已忽略的告警数量（前端可展示"N 条已忽略"）
     result["dismissed_count"] = len(dismissed_ids)
+
+    # 写缓存（5min TTL，和 Twin 缓存对齐）
+    if not severity_min:
+        try:
+            from app.utils.redis_cache import RedisCache
+            RedisCache.set(_safety_cache_key, result, ttl=300)
+        except Exception:
+            pass
+
     return result
 
 

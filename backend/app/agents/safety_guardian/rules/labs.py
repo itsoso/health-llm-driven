@@ -287,6 +287,40 @@ def wbc_pattern_lymphocytosis(twin: HealthTwin) -> Optional[Alert]:
 
 
 @register
+def labs_data_stale(twin: HealthTwin) -> Optional[Alert]:
+    """化验数据超过 6 个月未更新 —— 提醒复查。"""
+    from datetime import date, timedelta
+
+    last_date = twin.labs.last_exam_date
+    if last_date is None:
+        return None
+
+    if isinstance(last_date, str):
+        try:
+            last_date = date.fromisoformat(last_date)
+        except ValueError:
+            return None
+
+    days_old = (date.today() - last_date).days
+    if days_old < 180:
+        return None
+
+    months = days_old // 30
+    return Alert(
+        rule_id="labs.data_stale",
+        category="labs",
+        severity=Severity.INFO,
+        title=f"化验数据已 {months} 个月未更新",
+        message=(
+            f"最近一次化验是 {last_date}（{months} 个月前）。"
+            "超过 6 个月的化验数据可能已不反映当前状态，基于旧数据的告警可能不再准确。"
+        ),
+        action="建议安排一次复查（肝功能、血常规、血脂、血糖），更新后系统会自动用最新数据重新评估。",
+        data_citation={"last_exam_date": str(last_date), "days_old": days_old},
+    )
+
+
+@register
 def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
     """
     通用 catch-all：对尚未被上面规则识别的异常项做温和提醒。
