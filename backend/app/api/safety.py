@@ -87,6 +87,21 @@ def get_my_safety_report(
     return report.model_dump_for_api()
 
 
+@router.post("/knowledge/index")
+def build_knowledge_index(
+    force: bool = Query(False),
+    current_user: User = Depends(get_current_user_required),
+):
+    """触发知识库索引构建（得到 wiki → ChromaDB）。"""
+    try:
+        from app.agents.knowledge_librarian.indexer import build_index
+
+        result = build_index(force=force)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/rules")
 def list_rules(
     current_user: User = Depends(get_current_user_required),

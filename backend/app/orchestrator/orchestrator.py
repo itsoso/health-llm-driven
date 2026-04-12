@@ -232,7 +232,7 @@ async def run_orchestrator(
     twin = build_twin(db, user_id)
     intent = classify_intent(req.query)
     specialists = _select_specialists(intent, twin, req.specialists)
-    findings = _run_specialists(twin, specialists, {"query": req.query})
+    findings = _run_specialists(twin, specialists, {"query": req.query, "db": db})
 
     system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings)
 
@@ -286,7 +286,7 @@ async def stream_orchestrator(
             },
         )
 
-        findings = _run_specialists(twin, specialists, {"query": req.query})
+        findings = _run_specialists(twin, specialists, {"query": req.query, "db": db})
         for f in findings:
             yield _sse("specialist", f.model_dump(mode="json"))
 

@@ -137,6 +137,8 @@ def _build_registry() -> List[Specialist]:
         RhinitisSpecialist,
     )
     from app.agents.fuel_strategist import FuelStrategistSpecialist
+    from app.agents.knowledge_librarian.librarian import KnowledgeLibrarianSpecialist
+    from app.agents.longitudinal_analyst.analyst import LongitudinalAnalystSpecialist
     from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
     from app.agents.movement_coach import MovementCoachSpecialist
     from app.agents.recovery_coach import RecoveryCoachSpecialist
@@ -151,6 +153,9 @@ def _build_registry() -> List[Specialist]:
         HypertensionSpecialist(),
         MetabolicSpecialist(),
         RhinitisSpecialist(),
+        # 知识 + 长期分析
+        KnowledgeLibrarianSpecialist(),
+        LongitudinalAnalystSpecialist(),
     ]
 
 
