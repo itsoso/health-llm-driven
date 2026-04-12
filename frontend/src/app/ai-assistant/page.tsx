@@ -536,9 +536,10 @@ export default function AIAssistantPage() {
 
   const visibleDashboardCardIds = dashboardLayout.order.filter((id) => !dashboardLayout.hidden.includes(id));
   const isMobileLayout = layoutDevice === 'mobile';
+  const showFooterLayoutControls = dashboardEditMode || dashboardLayout.hidden.length > 0;
   const welcomeBottomPaddingClass = getWelcomeContentBottomPaddingClass({
     isMobile: isMobileLayout,
-    hasFooterControls: true,
+    hasFooterControls: showFooterLayoutControls,
   });
 
   const handleDashboardDragEnd = (event: DragEndEvent) => {
@@ -810,7 +811,7 @@ export default function AIAssistantPage() {
                 </div>
               </div>
             )}
-            {isWelcome && (
+            {isWelcome && showFooterLayoutControls && (
               <div className="px-4 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
                 <div className={`mx-auto max-w-7xl rounded-2xl border border-gray-200/80 bg-white/90 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${isMobileLayout ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -872,6 +873,19 @@ export default function AIAssistantPage() {
                     className="flex-1 bg-transparent text-sm outline-none"
                     style={isWelcome ? { color: '#1C1C1E' } : { color: '#fff' }}
                     disabled={isRecording} />
+                  {isWelcome && !showFooterLayoutControls && (
+                    <button
+                      onClick={() => setDashboardEditMode(true)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-400 transition-all hover:border-violet-300 hover:text-violet-700"
+                      title="编辑布局"
+                      aria-label="编辑布局"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h10M4 12h16M4 17h7" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18 6v2M14 11v2M12 16v2" />
+                      </svg>
+                    </button>
+                  )}
                   {inlineMode && (
                     <button onClick={() => { setInlineMode(false); setInlineResponse(null); setMessages([]); setConversationId(undefined); }}
                       className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all"
