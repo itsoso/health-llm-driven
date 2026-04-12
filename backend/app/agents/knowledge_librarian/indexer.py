@@ -20,7 +20,10 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-WIKI_DIR = Path(os.path.expanduser("~/work/personal/down-dedao/wiki"))
+# 本地开发用 ~/work/personal/down-dedao/wiki，服务器用 /opt/health-app/knowledge/dedao-wiki
+_LOCAL_WIKI = Path(os.path.expanduser("~/work/personal/down-dedao/wiki"))
+_SERVER_WIKI = Path("/opt/health-app/knowledge/dedao-wiki")
+WIKI_DIR = _LOCAL_WIKI if _LOCAL_WIKI.exists() else _SERVER_WIKI
 CHROMA_PERSIST_DIR = Path(__file__).parent.parent.parent.parent / "data" / "knowledge_chromadb"
 COLLECTION_NAME = "health_knowledge"
 
