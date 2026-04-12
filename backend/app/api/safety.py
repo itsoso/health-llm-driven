@@ -65,6 +65,22 @@ def get_my_safety_report(
     twin = build_twin(db, current_user.id)
     report = evaluate_safety(twin)
 
+    # 审计日志（旁路，失败不影响响应）
+    try:
+        from app.agents.audit import log_safety_evaluation
+
+        log_safety_evaluation(
+            db=db,
+            user_id=current_user.id,
+            alerts_count=len(report.alerts),
+            result_summary=f"{report.critical_count}crit/{report.high_count}high/{report.medium_count}med",
+            twin_build_ms=report.twin_build_ms,
+            evaluate_ms=report.evaluate_ms,
+            twin_sources=twin.meta.data_sources,
+        )
+    except Exception:
+        pass
+
     if severity_min > 0:
         report.alerts = [a for a in report.alerts if int(a.severity) >= severity_min]
 
@@ -80,6 +96,45 @@ def list_rules(
         "total": registry.count(),
         "rules": [name for name, _ in registry.all_rules()],
     }
+
+
+@router.get("/audit")
+def get_audit_logs(
+    limit: int = Query(20, ge=1, le=100),
+    agent_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """查看 agent 审计日志：系统为什么告诉我这个。"""
+    try:
+        from sqlalchemy import desc
+
+        from app.models.agent_audit_log import AgentAuditLog
+
+        q = db.query(AgentAuditLog).filter(AgentAuditLog.user_id == current_user.id)
+        if agent_type:
+            q = q.filter(AgentAuditLog.agent_type == agent_type)
+        logs = q.order_by(desc(AgentAuditLog.created_at)).limit(limit).all()
+        return [
+            {
+                "id": log.id,
+                "agent_type": log.agent_type,
+                "action": log.action,
+                "query": log.query,
+                "result_summary": log.result_summary,
+                "alerts_count": log.alerts_count,
+                "findings_count": log.findings_count,
+                "twin_build_ms": log.twin_build_ms,
+                "evaluate_ms": log.evaluate_ms,
+                "total_ms": log.total_ms,
+                "twin_sources": log.twin_sources,
+                "intent_categories": log.intent_categories,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ]
+    except Exception as e:
+        return {"error": str(e), "logs": []}
 
 
 # ─────────────────────────── LLM 解释端点 ────────────────────────

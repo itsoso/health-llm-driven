@@ -103,7 +103,7 @@ class TestSchemaDefaults:
 class TestBuilderEmptyDB:
     def test_build_on_empty_db_returns_valid_twin(self, db):
         """空数据库 + 不存在的用户 → 不抛异常，返回空 Twin。"""
-        twin = build_twin(db, user_id=9999)
+        twin = build_twin(db, user_id=9999, use_cache=False)
         assert isinstance(twin, HealthTwin)
         assert twin.meta.user_id == 9999
         assert twin.meta.build_ms >= 0
@@ -120,7 +120,7 @@ class TestBuilderEmptyDB:
 
     def test_build_time_under_2s_empty(self, db):
         """空库构建应该极快，< 2 秒（给 CI 留余量）。"""
-        twin = build_twin(db, user_id=1)
+        twin = build_twin(db, user_id=1, use_cache=False)
         assert twin.meta.build_ms < 2000
 
 
@@ -158,7 +158,7 @@ class TestBuilderWithPartialData:
         db.add(water)
         db.commit()
 
-        twin = build_twin(db, user_id=user.id)
+        twin = build_twin(db, user_id=user.id, use_cache=False)
         assert twin.behavioral.water_ml_today == 500
         assert "water" in twin.meta.data_sources
 
@@ -190,7 +190,7 @@ class TestBuilderWithPartialData:
         db.add(checkin)
         db.commit()
 
-        twin = build_twin(db, user_id=user.id)
+        twin = build_twin(db, user_id=user.id, use_cache=False)
         assert twin.behavioral.sneeze_count_today == 7
         assert twin.behavioral.nasal_wash_count_today == 2
         assert twin.chronic.rhinitis_today.get("daily_score") == 75

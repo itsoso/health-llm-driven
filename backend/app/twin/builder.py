@@ -48,8 +48,26 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────── 入口 ─────────────────────────────────
 
 
-def build_twin(db: Session, user_id: int) -> HealthTwin:
-    """构建用户的 Digital Health Twin。"""
+def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
+    """
+    构建用户的 Digital Health Twin。
+
+    use_cache=True 时先尝试 Redis 缓存（5 min TTL），命中则直接返回
+    反序列化的 HealthTwin 对象，避免重复 DB 查询。
+    所有内部调用方（safety/orchestrator）默认走缓存。
+    """
+    if use_cache:
+        from app.twin.cache import get_cached_twin, set_cached_twin
+
+        cached = get_cached_twin(user_id)
+        if cached is not None:
+            try:
+                twin = HealthTwin.model_validate(cached)
+                twin.meta.cache_status = "hit"
+                return twin
+            except Exception:
+                pass  # 缓存反序列化失败，重新构建
+
     t0 = time.monotonic()
     sources: Set[str] = set()
 
@@ -74,6 +92,17 @@ def build_twin(db: Session, user_id: int) -> HealthTwin:
 
     twin.meta.data_sources = sorted(sources)
     twin.meta.build_ms = int((time.monotonic() - t0) * 1000)
+    twin.meta.cache_status = "miss"
+
+    # 写入缓存供后续调用复用（safety/orchestrator 共享同一个 Twin）
+    if use_cache:
+        try:
+            from app.twin.cache import set_cached_twin
+
+            set_cached_twin(user_id, twin.model_dump(mode="json"))
+        except Exception:
+            pass
+
     return twin
 
 

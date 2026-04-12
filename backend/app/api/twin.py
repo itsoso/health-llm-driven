@@ -13,12 +13,7 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.user import User
 from app.twin.builder import build_twin
-from app.twin.cache import (
-    TWIN_CACHE_TTL_SECONDS,
-    get_cached_twin,
-    invalidate_twin,
-    set_cached_twin,
-)
+from app.twin.cache import invalidate_twin
 
 logger = logging.getLogger(__name__)
 
@@ -39,22 +34,9 @@ def get_my_twin(
     - 返回结构：`{meta, physiological, body_composition, labs, medication, supplement,
        genetic, environment, behavioral, mental, chronic, goals, freshness}`
     """
-    user_id = current_user.id
-
-    if not fresh:
-        cached = get_cached_twin(user_id)
-        if cached is not None:
-            cached.setdefault("meta", {})
-            cached["meta"]["cache_status"] = "hit"
-            return cached
-
-    twin = build_twin(db, user_id)
-    payload = twin.model_dump(mode="json")
-    payload.setdefault("meta", {})
-    payload["meta"]["cache_status"] = "miss"
-
-    set_cached_twin(user_id, payload, ttl=TWIN_CACHE_TTL_SECONDS)
-    return payload
+    # build_twin 自身带缓存（use_cache=True），fresh 时绕过
+    twin = build_twin(db, current_user.id, use_cache=not fresh)
+    return twin.model_dump(mode="json")
 
 
 @router.post("/me/invalidate")

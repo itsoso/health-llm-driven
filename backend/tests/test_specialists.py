@@ -23,6 +23,8 @@ from app.orchestrator.specialists import all_specialists
 from app.twin.schema import (
     BehavioralState,
     BodyCompositionState,
+    CgmContext,
+    EnvironmentalState,
     GeneticContext,
     HealthTwin,
     LabsContext,
@@ -256,6 +258,174 @@ class TestMovementCoach:
 
 
 # ───────────────────── Orchestrator 集成（Readiness → Movement）──
+
+
+# ───────────────────── Mental Health ──────────────────
+
+
+class TestMentalHealthCompanion:
+    def test_applies_on_mental_intent(self):
+        from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
+
+        s = MentalHealthCompanionSpecialist()
+        intent = classify_intent("我最近情绪很低落")
+        assert s.applies_to(intent, _empty_twin()) is True
+
+    def test_crisis_detection(self):
+        from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
+
+        s = MentalHealthCompanionSpecialist()
+        t = _empty_twin()
+        t.mental = MentalState(mood_7d_avg=2.0, energy_7d_avg=3.0, stress_7d_avg=8.0)
+        finding = s.run(t, {})
+        assert finding.raw.get("has_crisis_signal") is True
+        crisis = next((f for f in finding.findings if f.get("type") == "crisis_warning"), None)
+        assert crisis is not None
+        assert "hotlines" in crisis
+
+    def test_no_crisis_when_mood_ok(self):
+        from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
+
+        s = MentalHealthCompanionSpecialist()
+        t = _empty_twin()
+        t.mental = MentalState(mood_7d_avg=7.0, energy_7d_avg=6.5)
+        finding = s.run(t, {})
+        assert finding.raw.get("has_crisis_signal") is False
+
+    def test_support_actions_generated(self):
+        from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
+
+        s = MentalHealthCompanionSpecialist()
+        t = _empty_twin()
+        t.mental = MentalState(mood_7d_avg=4.0, stress_7d_avg=7.0, sleep_quality_7d_avg=5.0)
+        t.physiological = PhysiologicalState(stress_level_current=65)
+        finding = s.run(t, {})
+        actions = [f for f in finding.findings if f.get("type") == "support_action"]
+        assert len(actions) >= 2
+
+
+# ───────────────────── Chronic: Rhinitis ─────────────
+
+
+class TestRhinitisSpecialist:
+    def test_applies_on_rhinitis_data(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+
+        s = RhinitisSpecialist()
+        t = _empty_twin()
+        t.behavioral = BehavioralState(sneeze_count_today=5, nasal_wash_count_today=2)
+        intent = classify_intent("你好")
+        assert s.applies_to(intent, t) is True
+
+    def test_severity_classification(self):
+        from app.agents.chronic_specialists.rhinitis import _rhinitis_severity
+
+        assert _rhinitis_severity(0, 0) == "stable"
+        assert _rhinitis_severity(5, 1) == "mild"
+        assert _rhinitis_severity(12, 3) == "moderate"
+        assert _rhinitis_severity(25, 5) == "severe"
+
+    def test_env_trigger_high_aqi(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+
+        s = RhinitisSpecialist()
+        t = _empty_twin()
+        t.behavioral = BehavioralState(sneeze_count_today=3, nasal_wash_count_today=1)
+        t.environment = EnvironmentalState(aqi=120, humidity_pct=80)
+        finding = s.run(t, {})
+        env_triggers = [f for f in finding.findings if f.get("type") == "env_trigger"]
+        assert len(env_triggers) >= 1  # AQI 120 > 100
+
+
+# ───────────────────── Chronic: Hypertension ─────────
+
+
+class TestHypertensionSpecialist:
+    def test_bp_classification(self):
+        from app.agents.chronic_specialists.hypertension import _bp_stage
+
+        assert _bp_stage(115, 75) == "normal"
+        assert _bp_stage(125, 78) == "elevated"
+        assert _bp_stage(135, 85) == "stage1"
+        assert _bp_stage(155, 95) == "stage2"
+        assert _bp_stage(185, 125) == "crisis"
+        assert _bp_stage(None, None) == "unknown"
+
+    def test_specialist_produces_findings(self):
+        from app.agents.chronic_specialists import HypertensionSpecialist
+
+        s = HypertensionSpecialist()
+        t = _empty_twin()
+        t.labs = LabsContext(blood_pressure_systolic=155, blood_pressure_diastolic=95)
+        finding = s.run(t, {})
+        assert "stage2" in finding.raw.get("stage", "")
+        actions = [f for f in finding.findings if f.get("type") == "action"]
+        assert len(actions) >= 2
+
+
+# ───────────────────── Chronic: Metabolic ────────────
+
+
+class TestMetabolicSpecialist:
+    def test_metabolic_syndrome_detection(self):
+        from app.agents.chronic_specialists.metabolic import _metabolic_syndrome_criteria
+
+        t = _empty_twin()
+        t.body_composition = BodyCompositionState(bmi=30.0)
+        t.labs = LabsContext(
+            triglycerides=2.0, hdl=0.9,
+            blood_pressure_systolic=140, blood_pressure_diastolic=90,
+            blood_glucose=6.0,
+        )
+        result = _metabolic_syndrome_criteria(t)
+        assert result["is_metabolic_syndrome"] is True
+        assert result["criteria_hit"] >= 3
+
+    def test_no_metabolic_syndrome_normal(self):
+        from app.agents.chronic_specialists.metabolic import _metabolic_syndrome_criteria
+
+        t = _empty_twin()
+        t.body_composition = BodyCompositionState(bmi=22.0)
+        t.labs = LabsContext(blood_pressure_systolic=118, blood_pressure_diastolic=76)
+        result = _metabolic_syndrome_criteria(t)
+        assert result["is_metabolic_syndrome"] is False
+
+
+# ───────────────────── needsSkill regex regression ───
+
+
+class TestNeedsSkillRegex:
+    """确保 needsSkill 正则不会误命中通用查询。"""
+
+    def test_diet_queries_match(self):
+        """饮食记录意图应命中。"""
+        import re
+
+        pattern = r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐"
+        assert re.search(pattern, "记录午餐：牛奶200ml")
+        assert re.search(pattern, "我吃了一个苹果")
+        assert re.search(pattern, "打卡洗鼻")
+        assert re.search(pattern, "记录今天血压 120/80")
+
+    def test_general_queries_no_match(self):
+        """通用查询不应命中。"""
+        import re
+
+        pattern = r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐"
+        assert not re.search(pattern, "分析我的健康状况")
+        assert not re.search(pattern, "我最近HRV怎么样")
+        assert not re.search(pattern, "今天天气如何")
+
+    def test_borderline_correctly_matches(self):
+        """边界情况：含有关键字但语义确实是记录。"""
+        import re
+
+        pattern = r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐"
+        assert re.search(pattern, "帮我记录体重72kg")
+        assert re.search(pattern, "早餐吃的燕麦")
+
+
+# ───────────────────── Orchestrator + memory ─────────
 
 
 @pytest.mark.asyncio

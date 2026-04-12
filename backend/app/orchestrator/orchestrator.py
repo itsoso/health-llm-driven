@@ -120,6 +120,21 @@ def _build_synthesis_prompt(
 
     return system_prompt, user_prompt
 
+    return system_prompt, user_prompt
+
+
+def _inject_memory(db: Session, user_id: int, user_prompt: str) -> str:
+    """注入用户对话记忆（过敏/医嘱/偏好等）。失败降级。"""
+    try:
+        from app.services.conversation_memory_service import get_relevant_memories
+
+        memories = get_relevant_memories(db, user_id, limit=5)
+        if memories:
+            return user_prompt + f"\n\n【用户历史偏好/记忆】\n{memories}\n"
+    except Exception:
+        pass
+    return user_prompt
+
 
 # ───────────────────── LLM 调用（带回退） ─────────────────
 
@@ -220,6 +235,10 @@ async def run_orchestrator(
     findings = _run_specialists(twin, specialists, {"query": req.query})
 
     system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings)
+
+    # 注入对话记忆（用户历史偏好/医嘱/过敏等）
+    user_prompt = _inject_memory(db, user_id, user_prompt)
+
     synthesis = await _call_llm(system_prompt, user_prompt)
 
     return OrchestratorResponse(
@@ -272,6 +291,7 @@ async def stream_orchestrator(
             yield _sse("specialist", f.model_dump(mode="json"))
 
         system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings)
+        user_prompt = _inject_memory(db, user_id, user_prompt)
 
         # 流式 LLM
         async for chunk in _stream_llm(system_prompt, user_prompt):

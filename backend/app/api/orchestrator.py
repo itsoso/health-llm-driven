@@ -37,6 +37,24 @@ async def chat(
     返回完整 OrchestratorResponse（intent + findings + synthesis）。
     """
     response = await run_orchestrator(db, current_user.id, req)
+
+    # 审计日志
+    try:
+        from app.agents.audit import log_orchestrator_run
+
+        log_orchestrator_run(
+            db=db,
+            user_id=current_user.id,
+            query=req.query,
+            intent_categories=response.intent.categories,
+            used_specialists=response.used_specialists,
+            findings_count=sum(len(f.findings) for f in response.findings),
+            twin_build_ms=response.twin_build_ms,
+            total_ms=response.total_ms,
+        )
+    except Exception:
+        pass
+
     return response.model_dump(mode="json")
 
 
