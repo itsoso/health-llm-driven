@@ -25,45 +25,45 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
 
   return (
     <div className="space-y-3">
-      {/* Row 1: Sleep (2/3) + Diet (1/3) */}
-      <div className="grid grid-cols-3 gap-3">
-        {/* Sleep - indigo tint */}
-        {sleepTotal > 0 && (
-          <div className={`col-span-2 rounded-2xl p-4 ${pressStyle}`}
-            style={{ background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)', boxShadow: '0 1px 3px rgba(94,92,230,0.08)' }}
-            onClick={() => router.push('/garmin')}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold" style={{ color: '#5E5CE6' }}>😴 睡眠分析</span>
-              <span className="text-xs" style={{ color: '#8E8E93' }}>{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
+      {/* Row 1: 睡眠（整行） */}
+      {sleepTotal > 0 && (
+        <div className={`rounded-2xl p-4 ${pressStyle}`}
+          style={{ background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)', boxShadow: '0 1px 3px rgba(94,92,230,0.08)' }}
+          onClick={() => router.push('/garmin')}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold" style={{ color: '#5E5CE6' }}>😴 睡眠分析</span>
+            <span className="text-xs" style={{ color: '#8E8E93' }}>{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
+          </div>
+          <div className="flex items-end gap-4">
+            <div>
+              <span className="text-4xl font-extrabold" style={{ color: '#3634A3' }}>{todayGarmin?.sleep_score || '--'}</span>
+              <span className="text-sm ml-1" style={{ color: '#8E8E93' }}>分</span>
             </div>
-            <div className="flex items-end gap-4">
-              <div>
-                <span className="text-4xl font-extrabold" style={{ color: '#3634A3' }}>{todayGarmin?.sleep_score || '--'}</span>
-                <span className="text-sm ml-1" style={{ color: '#8E8E93' }}>分</span>
+            <div className="flex-1 space-y-1.5">
+              <div className="flex h-2.5 rounded-full overflow-hidden">
+                {sleepDeep > 0 && <div style={{ width: `${(sleepDeep / sleepTotal) * 100}%`, background: '#3634A3' }} className="rounded-l-full" />}
+                {sleepRem > 0 && <div style={{ width: `${(sleepRem / sleepTotal) * 100}%`, background: '#5E5CE6' }} />}
+                {sleepLight > 0 && <div style={{ width: `${(sleepLight / sleepTotal) * 100}%`, background: '#B4B3F1' }} className="rounded-r-full" />}
               </div>
-              <div className="flex-1 space-y-1.5">
-                <div className="flex h-2.5 rounded-full overflow-hidden">
-                  {sleepDeep > 0 && <div style={{ width: `${(sleepDeep / sleepTotal) * 100}%`, background: '#3634A3' }} className="rounded-l-full" />}
-                  {sleepRem > 0 && <div style={{ width: `${(sleepRem / sleepTotal) * 100}%`, background: '#5E5CE6' }} />}
-                  {sleepLight > 0 && <div style={{ width: `${(sleepLight / sleepTotal) * 100}%`, background: '#B4B3F1' }} className="rounded-r-full" />}
-                </div>
-                <div className="flex items-center gap-3 text-[10px]" style={{ color: '#6E6DAA' }}>
-                  <span>深睡 {fmtMin(sleepDeep)}</span>
-                  <span>REM {fmtMin(sleepRem)}</span>
-                  <span>浅睡 {fmtMin(sleepLight)}</span>
-                </div>
+              <div className="flex items-center gap-3 text-[10px]" style={{ color: '#6E6DAA' }}>
+                <span>深睡 {fmtMin(sleepDeep)}</span>
+                <span>REM {fmtMin(sleepRem)}</span>
+                <span>浅睡 {fmtMin(sleepLight)}</span>
               </div>
-            </div>
-            <div className="flex items-center gap-3 mt-2 text-xs">
-              <span className="font-semibold" style={{ color: todayGarmin?.hrv && todayGarmin.hrv < 40 ? '#FF3B30' : '#5E5CE6' }}>
-                HRV {todayGarmin?.hrv || '--'}ms
-              </span>
-              {spo2 && <span className="font-semibold" style={{ color: spo2 < 92 ? '#FF3B30' : '#5E5CE6' }}>SpO2 {spo2}%</span>}
             </div>
           </div>
-        )}
+          <div className="flex items-center gap-3 mt-2 text-xs">
+            <span className="font-semibold" style={{ color: todayGarmin?.hrv && todayGarmin.hrv < 40 ? '#FF3B30' : '#5E5CE6' }}>
+              HRV {todayGarmin?.hrv || '--'}ms
+            </span>
+            {spo2 && <span className="font-semibold" style={{ color: spo2 < 92 ? '#FF3B30' : '#5E5CE6' }}>SpO2 {spo2}%</span>}
+          </div>
+        </div>
+      )}
 
-        {/* Diet - warm orange tint */}
+      {/* Row 2: 饮食 + 鼻炎 */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* 饮食 */}
         <div className={`rounded-2xl p-4 ${pressStyle}`}
           style={{ background: 'linear-gradient(135deg, #fff8f0 0%, #fffcf8 100%)', boxShadow: '0 1px 3px rgba(255,149,0,0.08)' }}
           onClick={() => router.push('/diet')}>
@@ -89,11 +89,42 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
             ))}
           </div>
         </div>
+
+        {/* 鼻炎 */}
+        <div className={`rounded-2xl p-4 ${pressStyle}`}
+          style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #fffbf0 100%)', boxShadow: '0 1px 3px rgba(52,199,89,0.08)' }}
+          onClick={() => router.push('/rhinitis')}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold" style={{ color: '#30D158' }}>👃 鼻炎</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+              style={{
+                background: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FEF2F2' : '#F0FDF4',
+                color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF3B30' : '#30D158',
+              }}>
+              {(rhinitisToday?.sneeze_count ?? 0) >= 10 ? '活跃' : '稳定'}
+            </span>
+          </div>
+          <div className="flex items-end gap-5 mt-3">
+            <div>
+              <div className="text-[10px]" style={{ color: '#AEAEB2' }}>洗鼻</div>
+              <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+                {rhinitisToday?.nasal_wash_count ?? 0}
+                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px]" style={{ color: '#AEAEB2' }}>喷嚏</div>
+              <div className="text-3xl font-extrabold" style={{ color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF9500' : '#1C1C1E' }}>
+                {rhinitisToday?.sneeze_count ?? 0}
+                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Row 2: BP + Weight */}
+      {/* Row 3: 血压 + 体重 */}
       <div className="grid grid-cols-2 gap-3">
-        {/* Blood Pressure - subtle red tint */}
         {bpLatest && bpLatest.total_records > 0 && (
           <div className={`rounded-2xl p-4 ${pressStyle}`}
             style={{ background: 'linear-gradient(135deg, #fff5f5 0%, #fffbfb 100%)', boxShadow: '0 1px 3px rgba(255,59,48,0.06)' }}
@@ -120,7 +151,6 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           </div>
         )}
 
-        {/* Weight - blue tint */}
         <div className="rounded-2xl p-4 cursor-pointer hover:shadow-md transition-shadow"
           style={{ background: 'linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%)', boxShadow: '0 1px 3px rgba(0,122,255,0.06)' }}
           onClick={() => router.push('/weight')}>
@@ -137,40 +167,6 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           )}
         </div>
       </div>
-
-      {/* Row 3: Rhinitis — 合并为一张卡片 */}
-      {(rhinitisToday?.nasal_wash_count > 0 || rhinitisToday?.sneeze_count > 0 || rhinitisToday?.nasal_wash_count === 0) && (
-        <div className={`rounded-2xl p-4 ${pressStyle}`}
-          style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #fffbf0 100%)', boxShadow: '0 1px 3px rgba(52,199,89,0.08)' }}
-          onClick={() => router.push('/rhinitis')}>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold" style={{ color: '#30D158' }}>👃 鼻炎管理</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-              style={{
-                background: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FEF2F2' : '#F0FDF4',
-                color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF3B30' : '#30D158',
-              }}>
-              {(rhinitisToday?.sneeze_count ?? 0) >= 10 ? '活跃' : '稳定'}
-            </span>
-          </div>
-          <div className="flex items-end gap-6">
-            <div>
-              <div className="text-[10px] mb-1" style={{ color: '#AEAEB2' }}>洗鼻</div>
-              <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
-                {rhinitisToday?.nasal_wash_count ?? 0}
-                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] mb-1" style={{ color: '#AEAEB2' }}>喷嚏</div>
-              <div className="text-3xl font-extrabold" style={{ color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF9500' : '#1C1C1E' }}>
-                {rhinitisToday?.sneeze_count ?? 0}
-                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
