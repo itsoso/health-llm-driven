@@ -1,7 +1,5 @@
 'use client';
-
 import { useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
 
 interface DataGridProps {
   todayGarmin: any;
@@ -11,96 +9,9 @@ interface DataGridProps {
   weightStats: any;
 }
 
-function BaseCard({
-  children,
-  onClick,
-  background,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  background: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full rounded-[28px] p-4 text-left transition-all duration-200 active:scale-[0.985] hover:shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
-      style={{
-        background,
-        boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function TinyBadge({ label, tone }: { label: string; tone: 'green' | 'orange' | 'red' | 'blue' }) {
-  const styles = {
-    green: { background: 'rgba(52, 199, 89, 0.12)', color: '#16A34A' },
-    orange: { background: 'rgba(255, 149, 0, 0.12)', color: '#D97706' },
-    red: { background: 'rgba(255, 59, 48, 0.12)', color: '#DC2626' },
-    blue: { background: 'rgba(0, 122, 255, 0.10)', color: '#2563EB' },
-  }[tone];
-
-  return (
-    <span
-      className="rounded-full px-2 py-1 text-[10px] font-semibold tracking-[0.02em]"
-      style={styles}
-    >
-      {label}
-    </span>
-  );
-}
-
-function MetricPill({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent: string;
-}) {
-  return (
-    <div
-      className="rounded-2xl px-3 py-2"
-      style={{ background: '#FFFFFF', boxShadow: 'inset 0 0 0 1px rgba(15,23,42,0.04)' }}
-    >
-      <div className="text-[10px] font-medium uppercase tracking-[0.08em]" style={{ color: '#94A3B8' }}>
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-semibold" style={{ color: accent }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function NutritionBar({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-[11px]">
-        <span style={{ color: '#64748B' }}>{label}</span>
-        <span className="font-semibold" style={{ color: '#0F172A' }}>{value}g</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/80">
-        <div className="h-full rounded-full" style={{ width: '100%', background: color }} />
-      </div>
-    </div>
-  );
-}
-
 export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisToday, weightStats }: DataGridProps) {
   const router = useRouter();
+  const pressStyle = 'active:scale-[0.98] transition-all duration-150 cursor-pointer';
 
   const sleepDeep = todayGarmin?.deep_sleep_duration || 0;
   const sleepRem = todayGarmin?.rem_sleep_duration || 0;
@@ -110,178 +21,151 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
   const sleepM = sleepTotal % 60;
   const spo2 = todayGarmin?.spo2_avg;
 
-  const fmtMin = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60}m` : `${m}m`);
-  const sleepStatusTone = (todayGarmin?.sleep_score || 0) >= 85 ? 'green' : (todayGarmin?.sleep_score || 0) >= 75 ? 'blue' : 'orange';
-  const rhinitisStable = (rhinitisToday?.sneeze_count ?? 0) < 10;
-  const bpNormal = bpLatest && bpLatest.total_records > 0
-    ? bpLatest.normal_count >= bpLatest.total_records * 0.8
-    : true;
+  const fmtMin = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h${m % 60}m` : `${m}m`;
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3">
+      {/* Row 1: 睡眠（整行） */}
       {sleepTotal > 0 && (
-        <BaseCard
-          onClick={() => router.push('/garmin')}
-          background="linear-gradient(180deg, rgba(245,247,255,0.98) 0%, rgba(238,242,255,0.96) 100%)"
-        >
-          <div className="flex items-start justify-between gap-4">
+        <div className={`rounded-2xl p-4 ${pressStyle}`}
+          style={{ background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)', boxShadow: '0 1px 3px rgba(94,92,230,0.08)' }}
+          onClick={() => router.push('/garmin')}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold" style={{ color: '#5E5CE6' }}>😴 睡眠分析</span>
+            <span className="text-xs" style={{ color: '#8E8E93' }}>{sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}</span>
+          </div>
+          <div className="flex items-end gap-4">
             <div>
-              <div className="text-[11px] font-semibold tracking-[0.08em]" style={{ color: '#6366F1' }}>
-                睡眠
+              <span className="text-4xl font-extrabold" style={{ color: '#3634A3' }}>{todayGarmin?.sleep_score || '--'}</span>
+              <span className="text-sm ml-1" style={{ color: '#8E8E93' }}>分</span>
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <div className="flex h-2.5 rounded-full overflow-hidden">
+                {sleepDeep > 0 && <div style={{ width: `${(sleepDeep / sleepTotal) * 100}%`, background: '#3634A3' }} className="rounded-l-full" />}
+                {sleepRem > 0 && <div style={{ width: `${(sleepRem / sleepTotal) * 100}%`, background: '#5E5CE6' }} />}
+                {sleepLight > 0 && <div style={{ width: `${(sleepLight / sleepTotal) * 100}%`, background: '#B4B3F1' }} className="rounded-r-full" />}
               </div>
-              <div className="mt-2 flex items-end gap-2">
-                <span className="text-5xl font-semibold tracking-[-0.04em]" style={{ color: '#312E81' }}>
-                  {todayGarmin?.sleep_score || '--'}
-                </span>
-                <span className="pb-2 text-sm" style={{ color: '#7C83A3' }}>分</span>
+              <div className="flex items-center gap-3 text-[10px]" style={{ color: '#6E6DAA' }}>
+                <span>深睡 {fmtMin(sleepDeep)}</span>
+                <span>REM {fmtMin(sleepRem)}</span>
+                <span>浅睡 {fmtMin(sleepLight)}</span>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <TinyBadge label={sleepStatusTone === 'green' ? '恢复良好' : sleepStatusTone === 'blue' ? '状态平稳' : '建议早睡'} tone={sleepStatusTone} />
-              <div className="text-sm font-medium" style={{ color: '#7C83A3' }}>
-                {sleepH}h{sleepM > 0 ? `${sleepM}m` : ''}
-              </div>
-            </div>
           </div>
-
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/70">
-            {sleepDeep > 0 && <div className="h-full float-left" style={{ width: `${(sleepDeep / sleepTotal) * 100}%`, background: '#3730A3' }} />}
-            {sleepRem > 0 && <div className="h-full float-left" style={{ width: `${(sleepRem / sleepTotal) * 100}%`, background: '#6366F1' }} />}
-            {sleepLight > 0 && <div className="h-full float-left" style={{ width: `${(sleepLight / sleepTotal) * 100}%`, background: '#C7D2FE' }} />}
+          <div className="flex items-center gap-3 mt-2 text-xs">
+            <span className="font-semibold" style={{ color: todayGarmin?.hrv && todayGarmin.hrv < 40 ? '#FF3B30' : '#5E5CE6' }}>
+              HRV {todayGarmin?.hrv || '--'}ms
+            </span>
+            {spo2 && <span className="font-semibold" style={{ color: spo2 < 92 ? '#FF3B30' : '#5E5CE6' }}>SpO2 {spo2}%</span>}
           </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
-            <MetricPill label="深睡" value={fmtMin(sleepDeep)} accent="#3730A3" />
-            <MetricPill label="REM" value={fmtMin(sleepRem)} accent="#6366F1" />
-            <MetricPill label="浅睡" value={fmtMin(sleepLight)} accent="#7C83A3" />
-            <MetricPill label="HRV" value={`${todayGarmin?.hrv || '--'}ms`} accent={todayGarmin?.hrv && todayGarmin.hrv < 40 ? '#DC2626' : '#4F46E5'} />
-            {spo2 && <MetricPill label="SpO2" value={`${spo2}%`} accent={spo2 < 92 ? '#DC2626' : '#4F46E5'} />}
-          </div>
-        </BaseCard>
+        </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-        <BaseCard
-          onClick={() => router.push('/diet')}
-          background="linear-gradient(180deg, rgba(255,250,245,0.98) 0%, rgba(255,247,237,0.96) 100%)"
-        >
-          <div className="flex items-start justify-between gap-4">
+      {/* Row 2: 饮食 + 鼻炎 */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* 饮食 */}
+        <div className={`rounded-2xl p-4 ${pressStyle}`}
+          style={{ background: 'linear-gradient(135deg, #fff8f0 0%, #fffcf8 100%)', boxShadow: '0 1px 3px rgba(255,149,0,0.08)' }}
+          onClick={() => router.push('/diet')}>
+          <span className="text-xs font-semibold" style={{ color: '#FF9500' }}>🍽️ 饮食</span>
+          <div className="mt-2">
+            <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+              {dietToday?.total_calories ? Math.round(dietToday.total_calories) : 0}
+              <span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>kcal</span>
+            </div>
+            {dietToday?.meals_count > 0 && <div className="text-[10px] mb-1" style={{ color: '#AEAEB2' }}>{dietToday.meals_count}餐</div>}
+          </div>
+          <div className="flex gap-2 mt-2">
+            {[
+              { label: '蛋白', val: Math.round(dietToday?.total_protein || 0), color: '#FF6B6B' },
+              { label: '碳水', val: Math.round(dietToday?.total_carbs || 0), color: '#FF9500' },
+              { label: '脂肪', val: Math.round(dietToday?.total_fat || 0), color: '#FFD60A' },
+            ].map(m => (
+              <div key={m.label} className="flex-1 text-center">
+                <div className="text-xs font-bold" style={{ color: '#1C1C1E' }}>{m.val}g</div>
+                <div className="h-1 rounded-full mt-0.5" style={{ background: m.color, opacity: 0.7 }} />
+                <div className="text-[9px] mt-0.5" style={{ color: '#AEAEB2' }}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 鼻炎 */}
+        <div className={`rounded-2xl p-4 ${pressStyle}`}
+          style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #fffbf0 100%)', boxShadow: '0 1px 3px rgba(52,199,89,0.08)' }}
+          onClick={() => router.push('/rhinitis')}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold" style={{ color: '#30D158' }}>👃 鼻炎</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+              style={{
+                background: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FEF2F2' : '#F0FDF4',
+                color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF3B30' : '#30D158',
+              }}>
+              {(rhinitisToday?.sneeze_count ?? 0) >= 10 ? '活跃' : '稳定'}
+            </span>
+          </div>
+          <div className="flex items-end gap-5 mt-3">
             <div>
-              <div className="text-[11px] font-semibold tracking-[0.08em]" style={{ color: '#F97316' }}>
-                饮食
-              </div>
-              <div className="mt-3 flex items-end gap-1.5">
-                <span className="text-4xl font-semibold tracking-[-0.04em]" style={{ color: '#0F172A' }}>
-                  {dietToday?.total_calories ? Math.round(dietToday.total_calories) : 0}
-                </span>
-                <span className="pb-1 text-xs" style={{ color: '#94A3B8' }}>kcal</span>
+              <div className="text-[10px]" style={{ color: '#AEAEB2' }}>洗鼻</div>
+              <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+                {rhinitisToday?.nasal_wash_count ?? 0}
+                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
               </div>
             </div>
-            <div className="text-right">
-              <TinyBadge label={`${dietToday?.meals_count || 0} 餐`} tone="orange" />
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            <NutritionBar label="蛋白质" value={Math.round(dietToday?.total_protein || 0)} color="#FB7185" />
-            <NutritionBar label="碳水" value={Math.round(dietToday?.total_carbs || 0)} color="#FB923C" />
-            <NutritionBar label="脂肪" value={Math.round(dietToday?.total_fat || 0)} color="#FACC15" />
-          </div>
-        </BaseCard>
-
-        <BaseCard
-          onClick={() => router.push('/rhinitis')}
-          background="linear-gradient(180deg, rgba(243,252,247,0.98) 0%, rgba(249,250,239,0.96) 100%)"
-        >
-          <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px] font-semibold tracking-[0.08em]" style={{ color: '#10B981' }}>
-                鼻炎
-              </div>
-              <div className="mt-2 text-sm" style={{ color: '#64748B' }}>
-                今日护理与症状
-              </div>
-            </div>
-            <TinyBadge label={rhinitisStable ? '稳定' : '活跃'} tone={rhinitisStable ? 'green' : 'orange'} />
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white/80 px-4 py-3">
-              <div className="text-[11px] font-medium" style={{ color: '#94A3B8' }}>洗鼻</div>
-              <div className="mt-2 flex items-end gap-1">
-                <span className="text-4xl font-semibold tracking-[-0.04em]" style={{ color: '#111827' }}>{rhinitisToday?.nasal_wash_count ?? 0}</span>
-                <span className="pb-1 text-xs" style={{ color: '#94A3B8' }}>次</span>
-              </div>
-            </div>
-            <div className="rounded-2xl bg-white/80 px-4 py-3">
-              <div className="text-[11px] font-medium" style={{ color: '#94A3B8' }}>喷嚏</div>
-              <div className="mt-2 flex items-end gap-1">
-                <span className="text-4xl font-semibold tracking-[-0.04em]" style={{ color: rhinitisStable ? '#111827' : '#F97316' }}>{rhinitisToday?.sneeze_count ?? 0}</span>
-                <span className="pb-1 text-xs" style={{ color: '#94A3B8' }}>次</span>
+              <div className="text-[10px]" style={{ color: '#AEAEB2' }}>喷嚏</div>
+              <div className="text-3xl font-extrabold" style={{ color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF9500' : '#1C1C1E' }}>
+                {rhinitisToday?.sneeze_count ?? 0}
+                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
               </div>
             </div>
           </div>
-        </BaseCard>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+      {/* Row 3: 血压 + 体重 */}
+      <div className="grid grid-cols-2 gap-3">
         {bpLatest && bpLatest.total_records > 0 && (
-          <BaseCard
-            onClick={() => router.push('/blood-pressure')}
-            background="linear-gradient(180deg, rgba(255,247,247,0.98) 0%, rgba(255,250,250,0.96) 100%)"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-[11px] font-semibold tracking-[0.08em]" style={{ color: '#EF4444' }}>
-                  血压
-                </div>
-                <div className="mt-3 flex items-end gap-1.5">
-                  <span className="text-4xl font-semibold tracking-[-0.04em]" style={{ color: '#111827' }}>
-                    {Math.round(bpLatest.average_systolic)}/{Math.round(bpLatest.average_diastolic)}
+          <div className={`rounded-2xl p-4 ${pressStyle}`}
+            style={{ background: 'linear-gradient(135deg, #fff5f5 0%, #fffbfb 100%)', boxShadow: '0 1px 3px rgba(255,59,48,0.06)' }}
+            onClick={() => router.push('/blood-pressure')}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold" style={{ color: '#FF3B30' }}>🩺 血压</span>
+              {(() => {
+                const isNormal = bpLatest.normal_count >= bpLatest.total_records * 0.8;
+                return (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                    style={{ background: isNormal ? '#E8FAF0' : '#FEF2F2', color: isNormal ? '#30D158' : '#FF3B30' }}>
+                    {isNormal ? '正常' : '偏高'}
                   </span>
-                  <span className="pb-1 text-xs" style={{ color: '#94A3B8' }}>mmHg</span>
-                </div>
-              </div>
-              <TinyBadge label={bpNormal ? '正常' : '偏高'} tone={bpNormal ? 'green' : 'red'} />
+                );
+              })()}
             </div>
-
-            <div className="mt-4 flex items-center gap-5 text-sm" style={{ color: '#64748B' }}>
-              <span>脉搏 {bpLatest.average_pulse ? Math.round(bpLatest.average_pulse) : '--'}</span>
-              <span>{bpLatest.total_records} 次记录</span>
+            <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+              {Math.round(bpLatest.average_systolic)}<span className="text-lg font-normal" style={{ color: '#AEAEB2' }}>/</span>{Math.round(bpLatest.average_diastolic)}
+              <span className="text-[10px] font-normal ml-1" style={{ color: '#AEAEB2' }}>mmHg</span>
             </div>
-          </BaseCard>
+            <div className="text-[10px] mt-1" style={{ color: '#8E8E93' }}>
+              脉搏 {bpLatest.average_pulse ? Math.round(bpLatest.average_pulse) : '--'} · {bpLatest.total_records}次
+            </div>
+          </div>
         )}
 
-        <BaseCard
-          onClick={() => router.push('/weight')}
-          background="linear-gradient(180deg, rgba(243,247,255,0.98) 0%, rgba(248,250,255,0.96) 100%)"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-[11px] font-semibold tracking-[0.08em]" style={{ color: '#3B82F6' }}>
-                体重
-              </div>
-              <div className="mt-3 flex items-end gap-1.5">
-                <span className="text-4xl font-semibold tracking-[-0.04em]" style={{ color: '#111827' }}>
-                  {weightStats?.current_weight || '--'}
-                </span>
-                <span className="pb-1 text-xs" style={{ color: '#94A3B8' }}>kg</span>
-              </div>
+        <div className="rounded-2xl p-4 cursor-pointer hover:shadow-md transition-shadow"
+          style={{ background: 'linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%)', boxShadow: '0 1px 3px rgba(0,122,255,0.06)' }}
+          onClick={() => router.push('/weight')}>
+          <span className="text-xs font-semibold" style={{ color: '#007AFF' }}>⚖️ 体重</span>
+          <div className="mt-2 text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
+            {weightStats?.current_weight || '--'}
+            <span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>kg</span>
+          </div>
+          {weightStats?.weight_change_30d != null && (
+            <div className="text-[10px] font-semibold mt-1"
+              style={{ color: weightStats.weight_change_30d > 0 ? '#FF3B30' : '#30D158' }}>
+              30天 {weightStats.weight_change_30d > 0 ? '+' : ''}{weightStats.weight_change_30d}kg {weightStats.weight_change_30d <= 0 ? '↓' : '↑'}
             </div>
-            {weightStats?.weight_change_30d != null && (
-              <TinyBadge
-                label={`30天 ${weightStats.weight_change_30d > 0 ? '+' : ''}${weightStats.weight_change_30d}kg`}
-                tone={weightStats.weight_change_30d > 0 ? 'red' : 'green'}
-              />
-            )}
-          </div>
-
-          <div className="mt-4 text-sm" style={{ color: '#64748B' }}>
-            {weightStats?.weight_change_30d != null
-              ? `近 30 天${weightStats.weight_change_30d <= 0 ? '稳步下降' : '略有上升'}`
-              : '记录你的长期体重趋势'}
-          </div>
-        </BaseCard>
+          )}
+        </div>
       </div>
     </div>
   );
