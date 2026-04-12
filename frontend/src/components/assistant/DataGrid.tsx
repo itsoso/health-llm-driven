@@ -137,6 +137,37 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           )}
         </div>
       </div>
+
+      {/* Row 3: Rhinitis (nasal wash + sneeze) */}
+      {(rhinitisToday?.nasal_wash_count > 0 || rhinitisToday?.sneeze_count > 0 || rhinitisToday?.nasal_wash_count === 0) && (
+        <div className="grid grid-cols-2 gap-3">
+          {/* 洗鼻 */}
+          <div className={`rounded-2xl p-4 ${pressStyle}`}
+            style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #f8fdf8 100%)', boxShadow: '0 1px 3px rgba(52,199,89,0.08)' }}
+            onClick={() => router.push('/rhinitis')}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold" style={{ color: '#30D158' }}>👃 洗鼻</span>
+            </div>
+            <div className="text-4xl font-extrabold" style={{ color: '#1C1C1E' }}>
+              {rhinitisToday?.nasal_wash_count ?? 0}
+              <span className="text-sm font-normal ml-1" style={{ color: '#AEAEB2' }}>次</span>
+            </div>
+          </div>
+
+          {/* 喷嚏 */}
+          <div className={`rounded-2xl p-4 ${pressStyle}`}
+            style={{ background: 'linear-gradient(135deg, #fef2f2 0%, #fefafa 100%)', boxShadow: '0 1px 3px rgba(255,59,48,0.06)' }}
+            onClick={() => router.push('/rhinitis')}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold" style={{ color: '#FF9500' }}>🤧 喷嚏</span>
+            </div>
+            <div className="text-4xl font-extrabold" style={{ color: '#1C1C1E' }}>
+              {rhinitisToday?.sneeze_count ?? 0}
+              <span className="text-sm font-normal ml-1" style={{ color: '#AEAEB2' }}>次</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

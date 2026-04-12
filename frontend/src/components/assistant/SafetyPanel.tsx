@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  dismissSafetyAlert,
   explainSafetyAlert,
   getSafetyReport,
   SafetyAlert,
@@ -50,9 +51,10 @@ interface AlertCardProps {
   alert: SafetyAlert;
   expanded: boolean;
   onToggle: () => void;
+  onDismiss: (ruleId: string) => void;
 }
 
-function AlertCard({ alert, expanded, onToggle }: AlertCardProps) {
+function AlertCard({ alert, expanded, onToggle, onDismiss }: AlertCardProps) {
   const style = SEVERITY_STYLE[alert.severity.value] || SEVERITY_STYLE[0];
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
@@ -210,6 +212,15 @@ function AlertCard({ alert, expanded, onToggle }: AlertCardProps) {
               ))}
             </div>
           )}
+
+          {/* 忽略/已知 */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onDismiss(alert.rule_id); }}
+            className="text-[11px] font-medium px-3 py-1 rounded-full active:scale-95 transition-all"
+            style={{ background: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0' }}
+          >
+            已知 · 忽略此项
+          </button>
         </div>
       )}
     </div>
@@ -413,6 +424,19 @@ export default function SafetyPanel() {
           alert={alert}
           expanded={expandedId === alert.rule_id}
           onToggle={() => setExpandedId(expandedId === alert.rule_id ? null : alert.rule_id)}
+          onDismiss={async (ruleId) => {
+            try {
+              await dismissSafetyAlert(ruleId, 'known');
+              // 从列表中移除
+              setReport((prev) => prev ? {
+                ...prev,
+                alerts: prev.alerts.filter((a) => a.rule_id !== ruleId),
+                summary: { ...prev.summary, total: prev.summary.total - 1 },
+              } : prev);
+            } catch (e) {
+              console.error('忽略失败', e);
+            }
+          }}
         />
       ))}
 

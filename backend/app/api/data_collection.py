@@ -245,6 +245,12 @@ async def sync_my_garmin_data(
         )
         
         if result.get("success_count", 0) > 0:
+            # Garmin 数据更新后 invalidate Twin cache，确保下次读到最新数据
+            try:
+                from app.twin.cache import invalidate_twin
+                invalidate_twin(user_id)
+            except Exception:
+                pass
             return {
                 "status": "success",
                 "message": result.get("message", "同步成功"),

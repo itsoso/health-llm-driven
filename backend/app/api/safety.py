@@ -81,10 +81,88 @@ def get_my_safety_report(
     except Exception:
         pass
 
+    # 过滤用户已忽略/已知的告警
+    try:
+        from app.models.dismissed_alert import DismissedAlert
+
+        dismissed_ids = {
+            d.rule_id
+            for d in db.query(DismissedAlert.rule_id)
+            .filter(DismissedAlert.user_id == current_user.id)
+            .all()
+        }
+        if dismissed_ids:
+            dismissed_alerts = [a for a in report.alerts if a.rule_id in dismissed_ids]
+            report.alerts = [a for a in report.alerts if a.rule_id not in dismissed_ids]
+    except Exception:
+        dismissed_ids = set()
+        dismissed_alerts = []
+
     if severity_min > 0:
         report.alerts = [a for a in report.alerts if int(a.severity) >= severity_min]
 
-    return report.model_dump_for_api()
+    result = report.model_dump_for_api()
+    # 附加已忽略的告警数量（前端可展示"N 条已忽略"）
+    result["dismissed_count"] = len(dismissed_ids)
+    return result
+
+
+@router.post("/dismiss")
+def dismiss_alert(
+    rule_id: str = Query(...),
+    reason: str = Query("known", description="known / resolved / false_positive"),
+    note: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """忽略/标记已知某条告警。下次 /safety/me 不再返回该 rule_id。"""
+    from app.models.dismissed_alert import DismissedAlert
+
+    existing = db.query(DismissedAlert).filter(
+        DismissedAlert.user_id == current_user.id,
+        DismissedAlert.rule_id == rule_id,
+    ).first()
+    if existing:
+        return {"message": "已忽略", "rule_id": rule_id}
+
+    d = DismissedAlert(user_id=current_user.id, rule_id=rule_id, reason=reason, note=note)
+    db.add(d)
+    db.commit()
+    return {"message": "已忽略", "rule_id": rule_id, "reason": reason}
+
+
+@router.delete("/dismiss")
+def restore_alert(
+    rule_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """恢复之前忽略的告警。"""
+    from app.models.dismissed_alert import DismissedAlert
+
+    d = db.query(DismissedAlert).filter(
+        DismissedAlert.user_id == current_user.id,
+        DismissedAlert.rule_id == rule_id,
+    ).first()
+    if d:
+        db.delete(d)
+        db.commit()
+    return {"message": "已恢复", "rule_id": rule_id}
+
+
+@router.get("/dismissed")
+def list_dismissed(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """列出所有已忽略的告警。"""
+    from app.models.dismissed_alert import DismissedAlert
+
+    items = db.query(DismissedAlert).filter(DismissedAlert.user_id == current_user.id).all()
+    return [
+        {"rule_id": d.rule_id, "reason": d.reason, "note": d.note, "dismissed_at": d.dismissed_at.isoformat() if d.dismissed_at else None}
+        for d in items
+    ]
 
 
 @router.post("/knowledge/index")

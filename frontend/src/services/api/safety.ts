@@ -46,6 +46,22 @@ export const getSafetyReport = async (severityMin?: number): Promise<SafetyRepor
   return res.data;
 };
 
+/** 忽略/标记已知某条告警。 */
+export const dismissSafetyAlert = async (
+  ruleId: string,
+  reason: string = 'known',
+  note?: string
+): Promise<void> => {
+  await api.post('/safety/dismiss', null, {
+    params: { rule_id: ruleId, reason, ...(note ? { note } : {}) },
+  });
+};
+
+/** 恢复之前忽略的告警。 */
+export const restoreSafetyAlert = async (ruleId: string): Promise<void> => {
+  await api.delete('/safety/dismiss', { params: { rule_id: ruleId } });
+};
+
 /** 列出所有已注册的规则（调试用）。 */
 export const listSafetyRules = async (): Promise<{ total: number; rules: string[] }> => {
   const res = await api.get('/safety/rules');

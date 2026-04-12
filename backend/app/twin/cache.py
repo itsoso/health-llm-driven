@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
-TWIN_CACHE_TTL_SECONDS = 300  # 5 min
+TWIN_CACHE_TTL_SECONDS = 60  # 1 min（用户同步 Garmin 后希望立即看到最新数据）
 _KEY_PREFIX = "twin:v1:"
 
 
