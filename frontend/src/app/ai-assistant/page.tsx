@@ -740,50 +740,9 @@ export default function AIAssistantPage() {
             <div className="mx-auto max-w-7xl">
               {isWelcome ? (
                 <div className="space-y-3 pb-44">
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-gray-200 bg-white/90 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-gray-800">自定义首页布局</div>
-                      <div className="text-xs text-gray-500">
-                        当前同步到{layoutDevice === 'mobile' ? '移动端' : '网页端'}
-                        {layoutSaving ? ' · 正在同步' : layoutLoaded ? ' · 已连接云端' : ' · 正在加载'}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => setDashboardEditMode((current) => !current)}
-                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${dashboardEditMode ? 'bg-violet-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700'}`}
-                      >
-                        {dashboardEditMode ? '完成编辑' : '编辑布局'}
-                      </button>
-                      <button
-                        onClick={handleResetDashboardLayout}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-gray-700"
-                      >
-                        重置默认
-                      </button>
-                    </div>
-                  </div>
-
                   {layoutSaveError && (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                       {layoutSaveError}
-                    </div>
-                  )}
-
-                  {dashboardLayout.hidden.length > 0 && (
-                    <div className="rounded-2xl border border-gray-200 bg-white px-3 py-3">
-                      <div className="mb-2 text-xs font-medium text-gray-500">已隐藏卡片</div>
-                      <div className="flex flex-wrap gap-2">
-                        {dashboardLayout.hidden.map((cardId) => (
-                          <button
-                            key={cardId}
-                            onClick={() => handleRestoreDashboardCard(cardId)}
-                            className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
-                          >
-                            恢复 {DASHBOARD_CARD_LABELS[cardId] || cardId}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   )}
 
@@ -852,6 +811,45 @@ export default function AIAssistantPage() {
               <div className="px-4 pt-3 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #E5E5EA' }}>
                 <div className="mx-auto max-w-7xl">
                   <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
+                </div>
+              </div>
+            )}
+            {isWelcome && (
+              <div className="px-4 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+                <div className="mx-auto max-w-7xl rounded-2xl border border-gray-200/80 bg-white/90 px-3 py-2 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0 text-[11px] text-gray-500">
+                      布局同步到{layoutDevice === 'mobile' ? '移动端' : '网页端'}
+                      {layoutSaving ? ' · 正在同步' : layoutLoaded ? ' · 已连接云端' : ' · 正在加载'}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {dashboardLayout.hidden.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {dashboardLayout.hidden.map((cardId) => (
+                            <button
+                              key={cardId}
+                              onClick={() => handleRestoreDashboardCard(cardId)}
+                              className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                            >
+                              恢复 {DASHBOARD_CARD_LABELS[cardId] || cardId}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setDashboardEditMode((current) => !current)}
+                        className={`rounded-full px-3 py-1 text-[11px] font-medium transition-all ${dashboardEditMode ? 'bg-violet-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700'}`}
+                      >
+                        {dashboardEditMode ? '完成编辑' : '编辑布局'}
+                      </button>
+                      <button
+                        onClick={handleResetDashboardLayout}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-gray-700"
+                      >
+                        重置默认
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
