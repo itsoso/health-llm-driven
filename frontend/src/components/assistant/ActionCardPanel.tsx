@@ -130,7 +130,7 @@ function simpleMarkdown(md: string): string {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded text-[11px]">$1</code>')
-    .replace(/^- (.+)$/gm, '<li class="ml-3">• $1</li>')
+    .replace(/^- (.+)$/gm, '<li class="ml-3 list-disc list-inside">$1</li>')
     .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-3">$1</li>')
     .replace(/\n\n/g, '<br/><br/>')
     .replace(/\n/g, '<br/>');
