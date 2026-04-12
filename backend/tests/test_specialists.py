@@ -1,0 +1,312 @@
+"""
+3 个新 specialist 的单元测试：Recovery / Fuel / Movement。
+
+测试策略：
+- 构造合成 Twin（不依赖数据库）
+- 每个 specialist 至少：
+  - applies_to 正反例
+  - run 产出结构
+  - 关键算法的边界（readiness 缺数据/过载/正常）
+"""
+
+from datetime import datetime
+from typing import List
+
+import pytest
+
+from app.agents.fuel_strategist import FuelStrategistSpecialist
+from app.agents.movement_coach import MovementCoachSpecialist
+from app.agents.recovery_coach import RecoveryCoachSpecialist, compute_readiness
+from app.orchestrator.intent import classify_intent
+from app.orchestrator.schema import SpecialistFinding
+from app.orchestrator.specialists import all_specialists
+from app.twin.schema import (
+    BehavioralState,
+    BodyCompositionState,
+    GeneticContext,
+    HealthTwin,
+    LabsContext,
+    MedicationState,
+    MentalState,
+    PhysiologicalState,
+    SupplementState,
+    TwinMeta,
+)
+
+
+def _empty_twin() -> HealthTwin:
+    return HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+
+
+def _rich_twin() -> HealthTwin:
+    t = _empty_twin()
+    t.physiological = PhysiologicalState(
+        hrv_latest=55.0,
+        hrv_7d_avg=58.0,
+        sleep_score_latest=78,
+        sleep_duration_h_latest=7.2,
+        body_battery_current=65,
+        stress_level_current=35,
+        resting_hr=52,
+    )
+    t.body_composition = BodyCompositionState(
+        weight_kg=72.0, tdee_kcal=2700, bmr_kcal=1600, bmi=22.1, bmi_category="正常"
+    )
+    t.behavioral = BehavioralState(
+        diet_calories_today=1800,
+        diet_protein_g_today=110,
+        diet_carbs_g_today=200,
+        meals_logged_today=3,
+        water_ml_today=1500,
+        water_goal_ml=2000,
+        workouts_this_week=4,
+        training_load_7d=350,
+        acute_chronic_ratio=1.1,
+        acwr_zone="optimal",
+    )
+    return t
+
+
+# ───────────────────── Registry ───────────────────────
+
+
+class TestRegistration:
+    def test_all_four_specialists_present(self):
+        names = {s.name for s in all_specialists()}
+        assert "safety_guardian" in names
+        assert "recovery_coach" in names
+        assert "fuel_strategist" in names
+        assert "movement_coach" in names
+
+    def test_ordering_places_recovery_before_movement(self):
+        """Movement Coach 依赖 Recovery Coach 的 readiness_zone，必须后执行。"""
+        names = [s.name for s in all_specialists()]
+        assert names.index("recovery_coach") < names.index("movement_coach")
+
+
+# ───────────────────── Recovery Coach ────────────────
+
+
+class TestRecoveryCoach:
+    def test_readiness_empty_twin(self):
+        b = compute_readiness(_empty_twin())
+        assert b.score == 0
+        assert b.zone == "unknown"
+        assert len(b.missing_components) >= 4
+
+    def test_readiness_rich_data(self):
+        b = compute_readiness(_rich_twin())
+        assert 50 <= b.score <= 100
+        assert b.zone in ("moderate", "light", "hard")
+        # 所有组件都应存在
+        assert set(b.components.keys()) == {
+            "hrv", "sleep_quality", "sleep_duration", "body_battery", "stress"
+        }
+
+    def test_readiness_partial_data_reweights(self):
+        t = _empty_twin()
+        t.physiological = PhysiologicalState(
+            sleep_score_latest=90,
+            sleep_duration_h_latest=8.0,
+        )
+        b = compute_readiness(t)
+        # 只有 2 个组件有数据，权重应该重分配
+        assert len(b.components) == 2
+        # 两个组件都 >0.8 → score 至少 75+
+        assert b.score >= 60
+
+    def test_readiness_acwr_overload_penalty(self):
+        t = _rich_twin()
+        t.behavioral.acute_chronic_ratio = 1.7
+        b = compute_readiness(t)
+        assert b.penalty == 15
+
+    def test_specialist_applies_on_recovery_intent(self):
+        s = RecoveryCoachSpecialist()
+        intent = classify_intent("我今天好累")
+        # "累" 在 recovery 关键字里
+        assert "recovery" in intent.categories
+        assert s.applies_to(intent, _empty_twin()) is True
+
+    def test_specialist_run_produces_findings(self):
+        s = RecoveryCoachSpecialist()
+        finding = s.run(_rich_twin(), {})
+        assert finding.specialist_name == "recovery_coach"
+        # 第一条必为 readiness_score
+        assert finding.findings[0]["type"] == "readiness_score"
+        # 至少应有一条 action
+        assert any(f.get("type") == "action" for f in finding.findings)
+        assert finding.raw.get("zone") is not None
+
+
+# ───────────────────── Fuel Strategist ────────────────
+
+
+class TestFuelStrategist:
+    def test_applies_on_fuel_intent(self):
+        s = FuelStrategistSpecialist()
+        intent = classify_intent("今天吃什么好")
+        assert "fuel" in intent.categories
+        assert s.applies_to(intent, _empty_twin()) is True
+
+    def test_run_computes_energy_and_protein(self):
+        s = FuelStrategistSpecialist()
+        finding = s.run(_rich_twin(), {})
+        # 找到 energy finding
+        energy = next(f for f in finding.findings if f.get("type") == "energy")
+        assert energy["remaining_kcal"] == 900  # 2700 - 1800
+        assert energy["progress_pct"] in (66, 67)
+
+        protein = next(f for f in finding.findings if f.get("type") == "protein")
+        # target = 72 * 1.8 (training_load > 200) = 129.6 → 130
+        assert protein["target_g"] == 130
+        # 110 / 130 ≈ 85%
+        assert 80 <= protein["progress_pct"] <= 90
+
+    def test_protein_target_low_activity(self):
+        """训练负荷低时用 1.4 g/kg。"""
+        from app.agents.fuel_strategist.strategist import _protein_target_g
+
+        assert _protein_target_g(70.0, 100) == 70.0 * 1.4
+        assert _protein_target_g(70.0, 250) == 70.0 * 1.8
+        assert _protein_target_g(None, 200) is None
+
+    def test_hydration_low_warning(self):
+        s = FuelStrategistSpecialist()
+        t = _rich_twin()
+        t.behavioral.water_ml_today = 400
+        finding = s.run(t, {})
+        hyd = next(f for f in finding.findings if f.get("type") == "hydration")
+        assert hyd["status"] == "low"
+
+    def test_gene_nudge_mthfr(self):
+        from app.agents.fuel_strategist.strategist import _gene_nudges
+
+        t = _empty_twin()
+        t.genetic = GeneticContext(
+            has_profile=True,
+            risk_variants=[
+                {"gene_name": "MTHFR", "genotype": "TT", "result_label": "poor"},
+            ],
+        )
+        nudges = _gene_nudges(t)
+        assert any(n["gene"] == "MTHFR" for n in nudges)
+
+
+# ───────────────────── Movement Coach ────────────────
+
+
+class TestMovementCoach:
+    def test_training_status_classification(self):
+        from app.agents.movement_coach.coach import _training_status
+
+        assert _training_status(1.1, 4) == "optimal"
+        assert _training_status(1.4, 4) == "peaking"
+        assert _training_status(1.7, 4) == "overload"
+        assert _training_status(0.6, 2) == "undertrained"
+        assert _training_status(0.3, 1) == "detraining"
+        assert _training_status(None, None) == "unknown"
+
+    def test_intensity_matrix_overload(self):
+        """过载状态下无论 readiness 如何都应限制强度。"""
+        from app.agents.movement_coach.coach import _today_intensity
+
+        code, _ = _today_intensity("overload", "hard")
+        assert code in ("low", "rest")
+
+        code, _ = _today_intensity("overload", "moderate")
+        assert code in ("low", "rest")
+
+    def test_intensity_optimal_with_readiness(self):
+        from app.agents.movement_coach.coach import _today_intensity
+
+        code, _ = _today_intensity("optimal", "hard")
+        assert code == "high"
+        code, _ = _today_intensity("optimal", "rest")
+        assert code == "rest"
+
+    def test_specialist_run_with_readiness_context(self):
+        s = MovementCoachSpecialist()
+        t = _rich_twin()
+        t.behavioral.acute_chronic_ratio = 1.7  # 过载
+        finding = s.run(t, {"readiness_zone": "hard"})
+        pres = next(f for f in finding.findings if f.get("type") == "today_prescription")
+        # 尽管 readiness=hard，过载必须限制
+        assert pres["intensity"] in ("low", "rest")
+        assert pres["based_on_readiness"] == "hard"
+
+    def test_specialist_applies_on_movement_intent(self):
+        s = MovementCoachSpecialist()
+        intent = classify_intent("我今天能跑步吗")
+        assert s.applies_to(intent, _empty_twin()) is True
+
+    def test_actn3_gene_bias(self):
+        s = MovementCoachSpecialist()
+        t = _rich_twin()
+        t.genetic = GeneticContext(
+            has_profile=True,
+            drug_sensitivity=[
+                {"gene_name": "ACTN3", "genotype": "RR", "result_label": "power-biased"},
+            ],
+        )
+        finding = s.run(t, {})
+        gene_items = [f for f in finding.findings if f.get("type") == "gene_bias"]
+        assert len(gene_items) == 1
+        assert "力量" in gene_items[0]["bias"] or "爆发" in gene_items[0]["bias"]
+
+
+# ───────────────────── Orchestrator 集成（Readiness → Movement）──
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_propagates_readiness(monkeypatch, db):
+    """端到端验证 Recovery Coach 的 readiness_zone 会传到 Movement Coach。"""
+    import uuid
+
+    from app.models.user import User
+    from app.orchestrator import OrchestratorRequest
+    from app.orchestrator import orchestrator as orch_mod
+
+    user = User(
+        username=f"prop_{uuid.uuid4().hex[:6]}",
+        email=f"prop_{uuid.uuid4().hex[:6]}@x.com",
+        hashed_password="x",
+        name="prop test",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # 伪造 LLM
+    async def fake_llm(sp, up):
+        return "(fake synthesis)"
+
+    monkeypatch.setattr(orch_mod, "_call_llm", fake_llm)
+
+    # 伪造 build_twin 返回 rich twin
+    def fake_build(db_, user_id):
+        return _rich_twin()
+
+    monkeypatch.setattr(orch_mod, "build_twin", fake_build)
+
+    req = OrchestratorRequest(
+        query="我今天能不能高强度训练",
+        specialists=["recovery_coach", "movement_coach"],
+        stream=False,
+    )
+    resp = await orch_mod.run_orchestrator(db, user.id, req)
+
+    assert "recovery_coach" in resp.used_specialists
+    assert "movement_coach" in resp.used_specialists
+
+    # Movement Coach 的 finding 应该带上 based_on_readiness
+    movement_finding = next(
+        f for f in resp.findings if f.specialist_name == "movement_coach"
+    )
+    prescription = next(
+        item for item in movement_finding.findings
+        if item.get("type") == "today_prescription"
+    )
+    assert prescription["based_on_readiness"] is not None

@@ -52,12 +52,24 @@ def _select_specialists(
 def _run_specialists(
     twin: HealthTwin, specialists: List, context: Dict
 ) -> List[SpecialistFinding]:
-    """顺序调用每个 specialist，收集结构化 finding。"""
+    """
+    顺序调用每个 specialist，收集结构化 finding。
+
+    关键: context 是**可变的**共享字典，前面的 specialist 可以往里写东西给后面用。
+    例如 Recovery Coach 把 readiness_zone 写入后，Movement Coach 的处方能据此调整。
+    """
+    ctx = dict(context)  # 不污染调用方
     findings: List[SpecialistFinding] = []
     for sp in specialists:
         try:
-            finding = sp.run(twin, context)
+            finding = sp.run(twin, ctx)
             findings.append(finding)
+            # 把 Recovery Coach 的 readiness_zone 写入 ctx，供 Movement Coach 读
+            if sp.name == "recovery_coach":
+                zone = (finding.raw or {}).get("zone")
+                if zone:
+                    ctx["readiness_zone"] = zone
+                    ctx["readiness_score"] = (finding.raw or {}).get("score")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator] specialist {sp.name} 失败: {e}")
     return findings
