@@ -233,9 +233,10 @@ export default function AIAssistantPage() {
       const waitTimer2 = setTimeout(() => { if (firstToken) setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '⏳ 正在调用多个 AI 模型进行深度分析，请耐心等待...' } : m)); }, 30000);
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
 
-      // 有附件走 OpenClaw（支持图片/文件），纯文本走 Agent
+      // 路由决策：有附件走 OpenClaw；涉及数据记录的意图也走 OpenClaw（skill 才能写库）；其余纯文本走 Agent
       const hasMedia = !!(finalImageBase64 || finalFileBase64);
-      const streamSource = hasMedia
+      const needsSkill = /记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐/.test(finalMsg);
+      const streamSource = (hasMedia || needsSkill)
         ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName)
         : agentApi.streamMessage(finalMsg, conversationId);
 

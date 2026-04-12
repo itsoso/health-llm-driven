@@ -105,6 +105,7 @@ from app.api import (
     safety,  # Safety Guardian（Phase 1：药物/基因/急性阈值安全裁决）
     orchestrator,  # Orchestrator（Phase 2：意图路由 + 专家调度 + LLM 合并）
     cgm,  # CGM 连续血糖监测
+    personal_outcome,  # 长期健康改善曲线
 )
 
 api_router = APIRouter()
@@ -158,6 +159,7 @@ api_router.include_router(twin.router, tags=["twin"])  # Digital Health Twin（�
 api_router.include_router(safety.router, tags=["safety"])  # Safety Guardian（药物/基因/急性阈值裁决）
 api_router.include_router(orchestrator.router, tags=["orchestrator"])  # Orchestrator 综合分析
 api_router.include_router(cgm.router, tags=["cgm"])  # CGM 连续血糖监测
+api_router.include_router(personal_outcome.router, tags=["personal-outcome"])  # 长期健康改善
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
 api_router.include_router(smart_reminder.router, tags=["reminders"])  # 智能提醒
 api_router.include_router(review.router, tags=["review"])  # 每日复盘

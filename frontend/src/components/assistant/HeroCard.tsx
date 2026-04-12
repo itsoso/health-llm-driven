@@ -78,9 +78,9 @@ function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
 }
 
 function VitalTile({
-  label, value, unit, bg, fg, icon,
+  label, value, unit, bg, fg, icon, sub,
 }: {
-  label: string; value: any; unit: string; bg: string; fg: string; icon: string;
+  label: string; value: any; unit: string; bg: string; fg: string; icon: string; sub?: string;
 }) {
   return (
     <div
@@ -102,6 +102,11 @@ function VitalTile({
         </span>
         {unit && <span className="text-[11px] font-medium" style={{ color: C.mute }}>{unit}</span>}
       </div>
+      {sub && (
+        <div className="mt-1 text-[10px] font-medium" style={{ color: fg, opacity: 0.65 }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
@@ -161,7 +166,9 @@ export default function HeroCard({
 
   const sleepScore = todayGarmin?.sleep_score;
   const hrv = todayGarmin?.hrv;
-  const bodyBattery = todayGarmin?.body_battery_current ?? todayGarmin?.body_battery_most_charged;
+  const bodyBatteryCurrent = todayGarmin?.body_battery_current;
+  const bodyBatteryPeak = todayGarmin?.body_battery_most_charged;
+  const bodyBattery = bodyBatteryCurrent ?? bodyBatteryPeak;
   const restingHR = todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate;
   const stress = todayGarmin?.stress_level;
   const steps = todayGarmin?.steps || 0;
@@ -232,7 +239,12 @@ export default function HeroCard({
                 <span>📍 {weatherData.city}</span>
                 <span style={{ color: C.ink, fontWeight: 600 }}>{Math.round(weatherData.temperature ?? 0)}°</span>
                 <span>{weatherData.weather || ''}</span>
-                {airData && <span style={{ color: C.mute }}>· AQI {airData.aqi || '—'}</span>}
+                {airData && (
+                  <span style={{ color: C.mute }}>
+                    · AQI {airData.aqi || '—'}
+                    {airData.pm25 != null && <span> · PM2.5 {airData.pm25}</span>}
+                  </span>
+                )}
               </span>
             )}
             {weatherData?.tomorrow && (
@@ -266,7 +278,17 @@ export default function HeroCard({
           <div className="grid grid-cols-4 gap-2.5">
             <VitalTile label="睡眠" value={sleepScore} unit="分" bg={C.sleepBg} fg={C.sleepFg} icon="🌙" />
             <VitalTile label="HRV" value={hrv} unit="ms" bg={C.hrvBg} fg={C.hrvFg} icon="💓" />
-            <VitalTile label="能量" value={bodyBattery} unit="" bg={C.energyBg} fg={C.energyFg} icon="⚡" />
+            <VitalTile
+              label="能量"
+              value={bodyBatteryCurrent ?? bodyBatteryPeak ?? null}
+              unit=""
+              bg={C.energyBg}
+              fg={C.energyFg}
+              icon="⚡"
+              sub={bodyBatteryPeak != null && bodyBatteryCurrent != null && bodyBatteryPeak !== bodyBatteryCurrent
+                ? `峰 ${bodyBatteryPeak}`
+                : undefined}
+            />
             <VitalTile label="心率" value={restingHR} unit="bpm" bg={C.hrBg} fg={C.hrFg} icon="❤️" />
           </div>
         </div>
