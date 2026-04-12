@@ -230,6 +230,8 @@ deploy_frontend() {
 
     ssh $SERVER "
         cd $REMOTE_PATH && \
+        echo '暂存服务器本地改动...' && \
+        git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
         git pull && \
         cd frontend && \
         echo '安装依赖...' && \
@@ -257,6 +259,8 @@ deploy_backend() {
     # 3. 部署代码
     ssh $SERVER "
         cd $REMOTE_PATH && \
+        echo '暂存服务器本地改动...' && \
+        git stash push -u -m auto-deploy-stash >/dev/null 2>&1 || true && \
         git pull && \
         cd backend && \
         echo '激活虚拟环境...' && \
