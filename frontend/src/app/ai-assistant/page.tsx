@@ -35,6 +35,7 @@ import {
   AssistantLayoutDevice,
   detectAssistantLayoutDevice,
   getDefaultDashboardLayout,
+  getWelcomeContentBottomPaddingClass,
   normalizeDashboardLayout,
 } from '@/components/assistant/dashboardLayout';
 
@@ -534,6 +535,11 @@ export default function AIAssistantPage() {
   };
 
   const visibleDashboardCardIds = dashboardLayout.order.filter((id) => !dashboardLayout.hidden.includes(id));
+  const isMobileLayout = layoutDevice === 'mobile';
+  const welcomeBottomPaddingClass = getWelcomeContentBottomPaddingClass({
+    isMobile: isMobileLayout,
+    hasFooterControls: true,
+  });
 
   const handleDashboardDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -659,16 +665,6 @@ export default function AIAssistantPage() {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/personal-outcome')}
-              className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold text-white transition-all active:scale-95 hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)', boxShadow: '0 2px 8px rgba(124,58,237,0.25)' }}
-              title="查看你的长期健康改善曲线">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l6-6 4 4 8-8" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M14 7h7v7" />
-              </svg>
-              时间机器
-            </button>
             {!showHistory && (
               <button onClick={toggleHistory} className="text-gray-400 hover:text-gray-600 transition-colors" title="历史记录">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
@@ -739,7 +735,7 @@ export default function AIAssistantPage() {
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <div className="mx-auto max-w-7xl">
               {isWelcome ? (
-                <div className="space-y-3 pb-44">
+                <div className={`space-y-3 ${welcomeBottomPaddingClass}`}>
                   {layoutSaveError && (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                       {layoutSaveError}
@@ -816,7 +812,7 @@ export default function AIAssistantPage() {
             )}
             {isWelcome && (
               <div className="px-4 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
-                <div className="mx-auto max-w-7xl rounded-2xl border border-gray-200/80 bg-white/90 px-3 py-2 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                <div className={`mx-auto max-w-7xl rounded-2xl border border-gray-200/80 bg-white/90 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${isMobileLayout ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0 text-[11px] text-gray-500">
                       布局同步到{layoutDevice === 'mobile' ? '移动端' : '网页端'}
@@ -829,7 +825,7 @@ export default function AIAssistantPage() {
                             <button
                               key={cardId}
                               onClick={() => handleRestoreDashboardCard(cardId)}
-                              className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                              className={`rounded-full border border-gray-200 bg-gray-50 text-[11px] text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 ${isMobileLayout ? 'px-2 py-0.5' : 'px-2.5 py-1'}`}
                             >
                               恢复 {DASHBOARD_CARD_LABELS[cardId] || cardId}
                             </button>
@@ -838,13 +834,13 @@ export default function AIAssistantPage() {
                       )}
                       <button
                         onClick={() => setDashboardEditMode((current) => !current)}
-                        className={`rounded-full px-3 py-1 text-[11px] font-medium transition-all ${dashboardEditMode ? 'bg-violet-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700'}`}
+                        className={`rounded-full text-[11px] font-medium transition-all ${isMobileLayout ? 'px-2.5 py-0.5' : 'px-3 py-1'} ${dashboardEditMode ? 'bg-violet-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700'}`}
                       >
                         {dashboardEditMode ? '完成编辑' : '编辑布局'}
                       </button>
                       <button
                         onClick={handleResetDashboardLayout}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-gray-700"
+                        className={`rounded-full border border-gray-200 bg-white text-[11px] font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-gray-700 ${isMobileLayout ? 'px-2.5 py-0.5' : 'px-3 py-1'}`}
                       >
                         重置默认
                       </button>
@@ -854,10 +850,10 @@ export default function AIAssistantPage() {
               </div>
             )}
             {/* Input */}
-            <div className="px-4 py-3" style={isWelcome ? { background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } : undefined}>
+            <div className="px-4 py-3" style={isWelcome ? { background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
               <div className={`mx-auto max-w-7xl ${isWelcome ? 'rounded-[24px] border border-gray-200' : 'rounded-[30px] border border-white/10 bg-white/[0.04] shadow-[0_20px_60px_rgba(2,6,23,0.35)]'}`}
                 style={isWelcome ? { background: '#F2F2F7' } : undefined}>
-                <div className="flex items-center gap-3 px-4 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+                <div className={`flex items-center ${isMobileLayout ? 'gap-2 px-3 py-2' : 'gap-3 px-4 py-2.5'} pb-[max(0.625rem,env(safe-area-inset-bottom))]`}>
                   <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.csv,.json,.py,.js,.ts,.html,.xml,.log,.yaml,.yml" className="hidden" onChange={handleImageUpload} />
                   <button onClick={() => fileInputRef.current?.click()} disabled={imageUploading}
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all"

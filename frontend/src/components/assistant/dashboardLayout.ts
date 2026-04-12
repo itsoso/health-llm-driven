@@ -63,3 +63,19 @@ export function detectAssistantLayoutDevice(): AssistantLayoutDevice {
 
   return isMobileUserAgent || isCapacitor ? 'mobile' : 'web';
 }
+
+export function getWelcomeContentBottomPaddingClass({
+  isMobile,
+  hasFooterControls,
+}: {
+  isMobile: boolean;
+  hasFooterControls: boolean;
+}): string {
+  if (isMobile && hasFooterControls) {
+    return 'pb-72';
+  }
+  if (isMobile) {
+    return 'pb-56';
+  }
+  return 'pb-44';
+}

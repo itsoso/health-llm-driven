@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { DASHBOARD_CARD_IDS, getDefaultDashboardLayout, normalizeDashboardLayout } from '../dashboardLayout';
+import {
+  DASHBOARD_CARD_IDS,
+  getDefaultDashboardLayout,
+  getWelcomeContentBottomPaddingClass,
+  normalizeDashboardLayout,
+} from '../dashboardLayout';
 
 describe('dashboardLayout', () => {
   it('returns a complete default layout', () => {
@@ -32,5 +37,11 @@ describe('dashboardLayout', () => {
       ],
       hidden: ['action_cards'],
     });
+  });
+
+  it('uses larger bottom padding on mobile when footer controls are shown', () => {
+    expect(getWelcomeContentBottomPaddingClass({ isMobile: false, hasFooterControls: false })).toBe('pb-44');
+    expect(getWelcomeContentBottomPaddingClass({ isMobile: true, hasFooterControls: false })).toBe('pb-56');
+    expect(getWelcomeContentBottomPaddingClass({ isMobile: true, hasFooterControls: true })).toBe('pb-72');
   });
 });
