@@ -13,6 +13,8 @@ import HeroCard from '@/components/assistant/HeroCard';
 import AlertsBanner from '@/components/assistant/AlertsBanner';
 import SafetyPanel from '@/components/assistant/SafetyPanel';
 import SpecialistsPanel from '@/components/assistant/SpecialistsPanel';
+import ActionCardPanel from '@/components/assistant/ActionCardPanel';
+import { pinMessageToCard } from '@/services/api/actionCard';
 import DataGrid from '@/components/assistant/DataGrid';
 import ActivityCard from '@/components/assistant/ActivityCard';
 import SupplementCheckin from '@/components/assistant/SupplementCheckin';
@@ -235,7 +237,7 @@ export default function AIAssistantPage() {
 
       // 路由决策：有附件走 OpenClaw；涉及数据记录的意图也走 OpenClaw（skill 才能写库）；其余纯文本走 Agent
       const hasMedia = !!(finalImageBase64 || finalFileBase64);
-      const needsSkill = /记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐/.test(finalMsg);
+      const needsSkill = /记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐|固化到|钉到首页|保存到首页|加到计划/.test(finalMsg);
       const streamSource = (hasMedia || needsSkill)
         ? openclawApi.streamMessage(finalMsg, conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName)
         : agentApi.streamMessage(finalMsg, conversationId);
@@ -520,6 +522,7 @@ export default function AIAssistantPage() {
                 <div className="space-y-3 pb-44">
                   <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
                   <SafetyPanel />
+                  <ActionCardPanel />
                   <SpecialistsPanel />
                   <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
                   <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
@@ -574,7 +577,7 @@ export default function AIAssistantPage() {
                   )}
                 </div>
               ) : (
-                <ChatView messages={messages} loading={loading} doneMessageIds={doneMessageIds} messageFeedback={messageFeedback} onFeedback={handleFeedback} />
+                <ChatView messages={messages} loading={loading} doneMessageIds={doneMessageIds} messageFeedback={messageFeedback} onFeedback={handleFeedback} onPinMessage={async (content, msgId) => { try { await pinMessageToCard({ content, source_id: String(msgId), card_type: 'plan' }); showToast('已固化到首页', 'success'); } catch { showToast('固化失败', 'error'); } }} />
               )}
               <div ref={messagesEndRef} />
             </div>

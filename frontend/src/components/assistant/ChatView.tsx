@@ -9,6 +9,7 @@ interface ChatViewProps {
   doneMessageIds: Set<number>;
   messageFeedback: Record<number, 1 | 5>;
   onFeedback: (msgId: number, rating: 1 | 5) => void;
+  onPinMessage?: (content: string, msgId: number) => void;
 }
 
 const STYLE = {
@@ -17,7 +18,7 @@ const STYLE = {
   userBubbleClass: 'bg-gradient-to-br from-emerald-500 via-cyan-500 to-sky-500 text-white shadow-[0_20px_50px_rgba(20,184,166,0.35)]',
 };
 
-export default function ChatView({ messages, loading, doneMessageIds, messageFeedback, onFeedback }: ChatViewProps) {
+export default function ChatView({ messages, loading, doneMessageIds, messageFeedback, onFeedback, onPinMessage }: ChatViewProps) {
   const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content));
 
   return (
@@ -63,6 +64,11 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
               <button onClick={() => onFeedback(msg.id, 1)} className={`rounded-full p-1.5 transition-all ${messageFeedback[msg.id] === 1 ? 'bg-white/20 text-red-300' : 'text-white/30 hover:bg-white/10 hover:text-white/60'}`} title="not helpful">
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z" /></svg>
               </button>
+              {onPinMessage && (
+                <button onClick={() => onPinMessage(msg.content, msg.id)} className="rounded-full p-1.5 transition-all text-white/30 hover:bg-white/10 hover:text-amber-300" title="固化到首页">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                </button>
+              )}
             </div>
           )}
         </div>

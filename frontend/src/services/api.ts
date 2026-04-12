@@ -25,3 +25,4 @@ export * from './api/family';
 export * from './api/personalOutcome';
 export * from './api/safety';
 export * from './api/orchestrator';
+export * from './api/actionCard';
