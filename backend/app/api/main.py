@@ -103,6 +103,7 @@ from app.api import (
     agent,  # Hermes Agent 模式
     twin,  # Digital Health Twin（Phase 0：统一状态视图）
     safety,  # Safety Guardian（Phase 1：药物/基因/急性阈值安全裁决）
+    orchestrator,  # Orchestrator（Phase 2：意图路由 + 专家调度 + LLM 合并）
 )
 
 api_router = APIRouter()
@@ -154,6 +155,7 @@ api_router.include_router(ai_scheduler.router, tags=["ai-scheduler"])  # AI 日�
 api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])  # 数字孪生（旧：生理计算器）
 api_router.include_router(twin.router, tags=["twin"])  # Digital Health Twin（新：统一状态视图）
 api_router.include_router(safety.router, tags=["safety"])  # Safety Guardian（药物/基因/急性阈值裁决）
+api_router.include_router(orchestrator.router, tags=["orchestrator"])  # Orchestrator 综合分析
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
 api_router.include_router(smart_reminder.router, tags=["reminders"])  # 智能提醒
 api_router.include_router(review.router, tags=["review"])  # 每日复盘

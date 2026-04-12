@@ -24,3 +24,4 @@ export * from './api/content';
 export * from './api/family';
 export * from './api/personalOutcome';
 export * from './api/safety';
+export * from './api/orchestrator';
