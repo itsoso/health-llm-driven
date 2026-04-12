@@ -1,8 +1,6 @@
-"""
-用户画像 API - executor.life
-"""
+"""用户画像 API - executor.life"""
 import json
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
@@ -12,12 +10,95 @@ from app.models.user_profile import UserProfile, HealthGoal
 from app.schemas.user_profile import (
     UserProfileCreate, UserProfileUpdate, UserProfileResponse,
     HealthGoalCreate, HealthGoalUpdate, HealthGoalResponse,
-    PrivacySettings, DetectedLocation, ManualLocation, ManualLocationUpdate
+    PrivacySettings, DetectedLocation, ManualLocation, ManualLocationUpdate,
+    AssistantDashboardLayouts,
 )
 from app.api.auth import get_current_user_required
 from datetime import date
 
 router = APIRouter(prefix="/profile", tags=["用户画像"])
+
+
+def parse_json_field(field_value: Any, default: Any):
+    if field_value is None:
+        return default
+    if isinstance(field_value, str):
+        try:
+            return json.loads(field_value)
+        except Exception:
+            return default
+    return field_value
+
+
+def get_default_assistant_dashboard_layouts() -> dict[str, dict[str, list[str]]]:
+    return {
+        "web": {"order": [], "hidden": []},
+        "mobile": {"order": [], "hidden": []},
+    }
+
+
+def normalize_assistant_dashboard_layouts(field_value: Any) -> AssistantDashboardLayouts:
+    return AssistantDashboardLayouts(**parse_json_field(field_value, get_default_assistant_dashboard_layouts()))
+
+
+def build_profile_response(profile: UserProfile) -> UserProfileResponse:
+    return UserProfileResponse(
+        id=profile.id,
+        user_id=profile.user_id,
+        gender=profile.gender,
+        birth_date=profile.birth_date,
+        height_cm=profile.height_cm,
+        blood_type=profile.blood_type,
+        current_weight_kg=profile.current_weight_kg,
+        target_weight_kg=profile.target_weight_kg,
+        body_fat_percentage=profile.body_fat_percentage,
+        muscle_mass_kg=profile.muscle_mass_kg,
+        target_steps=profile.target_steps if profile.target_steps is not None else 8000,
+        target_sleep_hours=profile.target_sleep_hours if profile.target_sleep_hours is not None else 7.5,
+        target_water_ml=profile.target_water_ml if profile.target_water_ml is not None else 2000,
+        target_calories_burn=profile.target_calories_burn,
+        target_exercise_minutes=profile.target_exercise_minutes if profile.target_exercise_minutes is not None else 30,
+        chronic_conditions=parse_json_field(profile.chronic_conditions, []),
+        allergies=parse_json_field(profile.allergies, []),
+        family_history=parse_json_field(profile.family_history, []),
+        surgeries=parse_json_field(profile.surgeries, []),
+        current_medications=parse_json_field(profile.current_medications, []),
+        exercise_frequency=profile.exercise_frequency,
+        diet_preference=profile.diet_preference,
+        smoking_status=profile.smoking_status,
+        alcohol_consumption=profile.alcohol_consumption,
+        usual_sleep_time=profile.usual_sleep_time,
+        usual_wake_time=profile.usual_wake_time,
+        sleep_environment=parse_json_field(profile.sleep_environment, {}),
+        work_type=profile.work_type,
+        work_hours_per_day=profile.work_hours_per_day,
+        sitting_hours_per_day=profile.sitting_hours_per_day,
+        city=profile.city,
+        timezone=profile.timezone or "Asia/Shanghai",
+        devices=parse_json_field(profile.devices, []),
+        assistant_dashboard_layouts=normalize_assistant_dashboard_layouts(profile.assistant_dashboard_layouts),
+        privacy_settings=PrivacySettings(**parse_json_field(profile.privacy_settings, {
+            "weight": True, "height": True, "age": True,
+            "gender": True, "city": True, "location": True
+        })),
+        age=profile.age,
+        bmi=profile.bmi,
+        bmi_category=profile.bmi_category,
+        detected_location=DetectedLocation(
+            city=profile.detected_city,
+            region=profile.detected_region,
+            country=profile.detected_country
+        ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
+        location_updated_at=profile.location_updated_at,
+        manual_location=ManualLocation(
+            city=profile.manual_city,
+            region=profile.manual_region,
+            country=profile.manual_country
+        ) if profile.manual_city or profile.manual_region or profile.manual_country else None,
+        use_manual_location=profile.use_manual_location or False,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+    )
 
 
 # =====================================================
@@ -30,8 +111,6 @@ async def get_my_profile(
     db: Session = Depends(get_db)
 ):
     """获取当前用户的画像"""
-    import json
-    
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
     
     if not profile:
@@ -41,76 +120,7 @@ async def get_my_profile(
         db.commit()
         db.refresh(profile)
     
-    # 处理 JSON 字段（数据库中可能是字符串）
-    def parse_json_field(field_value, default):
-        if field_value is None:
-            return default
-        if isinstance(field_value, str):
-            try:
-                return json.loads(field_value)
-            except:
-                return default
-        return field_value
-    
-    # 构建响应数据，处理所有可能为 None 的字段
-    response_data = {
-        "id": profile.id,
-        "user_id": profile.user_id,
-        "gender": profile.gender,
-        "birth_date": profile.birth_date,
-        "height_cm": profile.height_cm,
-        "blood_type": profile.blood_type,
-        "current_weight_kg": profile.current_weight_kg,
-        "target_weight_kg": profile.target_weight_kg,
-        "body_fat_percentage": profile.body_fat_percentage,
-        "muscle_mass_kg": profile.muscle_mass_kg,
-        "target_steps": profile.target_steps if profile.target_steps is not None else 8000,
-        "target_sleep_hours": profile.target_sleep_hours if profile.target_sleep_hours is not None else 7.5,
-        "target_water_ml": profile.target_water_ml if profile.target_water_ml is not None else 2000,
-        "target_calories_burn": profile.target_calories_burn,
-        "target_exercise_minutes": profile.target_exercise_minutes if profile.target_exercise_minutes is not None else 30,
-        "chronic_conditions": parse_json_field(profile.chronic_conditions, []),
-        "allergies": parse_json_field(profile.allergies, []),
-        "family_history": parse_json_field(profile.family_history, []),
-        "surgeries": parse_json_field(profile.surgeries, []),
-        "current_medications": parse_json_field(profile.current_medications, []),
-        "exercise_frequency": profile.exercise_frequency,
-        "diet_preference": profile.diet_preference,
-        "smoking_status": profile.smoking_status,
-        "alcohol_consumption": profile.alcohol_consumption,
-        "usual_sleep_time": profile.usual_sleep_time,
-        "usual_wake_time": profile.usual_wake_time,
-        "sleep_environment": parse_json_field(profile.sleep_environment, {}),
-        "work_type": profile.work_type,
-        "work_hours_per_day": profile.work_hours_per_day,
-        "sitting_hours_per_day": profile.sitting_hours_per_day,
-        "city": profile.city,
-        "timezone": profile.timezone or "Asia/Shanghai",
-        "devices": parse_json_field(profile.devices, []),
-        "privacy_settings": PrivacySettings(**parse_json_field(profile.privacy_settings, {
-            "weight": True, "height": True, "age": True,
-            "gender": True, "city": True, "location": True
-        })),
-        "age": profile.age,
-        "bmi": profile.bmi,
-        "bmi_category": profile.bmi_category,
-        "detected_location": DetectedLocation(
-            city=profile.detected_city,
-            region=profile.detected_region,
-            country=profile.detected_country
-        ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
-        "location_updated_at": profile.location_updated_at,
-        "manual_location": ManualLocation(
-            city=profile.manual_city,
-            region=profile.manual_region,
-            country=profile.manual_country
-        ) if profile.manual_city or profile.manual_region or profile.manual_country else None,
-        "use_manual_location": profile.use_manual_location or False,
-        "created_at": profile.created_at,
-        "updated_at": profile.updated_at
-    }
-
-    return UserProfileResponse(**response_data)
+    return build_profile_response(profile)
 
 
 @router.put("/me", response_model=UserProfileResponse)
@@ -130,81 +140,21 @@ async def update_my_profile(
     # 更新非空字段
     update_data = profile_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
+        if key == "assistant_dashboard_layouts" and value is not None:
+            current_layouts = normalize_assistant_dashboard_layouts(profile.assistant_dashboard_layouts).model_dump()
+            for device, layout in value.items():
+                current_layouts[device] = {
+                    "order": list(layout.get("order", [])),
+                    "hidden": list(layout.get("hidden", [])),
+                }
+            setattr(profile, key, current_layouts)
+            continue
         setattr(profile, key, value)
     
     db.commit()
     db.refresh(profile)
-    
-    # 处理 JSON 字段（数据库中可能是字符串）
-    def parse_json_field(field_value, default):
-        if field_value is None:
-            return default
-        if isinstance(field_value, str):
-            try:
-                return json.loads(field_value)
-            except:
-                return default
-        return field_value
-    
-    # 构建响应数据，处理所有可能为 None 的字段
-    response_data = {
-        "id": profile.id,
-        "user_id": profile.user_id,
-        "gender": profile.gender,
-        "birth_date": profile.birth_date,
-        "height_cm": profile.height_cm,
-        "blood_type": profile.blood_type,
-        "current_weight_kg": profile.current_weight_kg,
-        "target_weight_kg": profile.target_weight_kg,
-        "body_fat_percentage": profile.body_fat_percentage,
-        "muscle_mass_kg": profile.muscle_mass_kg,
-        "target_steps": profile.target_steps if profile.target_steps is not None else 8000,
-        "target_sleep_hours": profile.target_sleep_hours if profile.target_sleep_hours is not None else 7.5,
-        "target_water_ml": profile.target_water_ml if profile.target_water_ml is not None else 2000,
-        "target_calories_burn": profile.target_calories_burn,
-        "target_exercise_minutes": profile.target_exercise_minutes if profile.target_exercise_minutes is not None else 30,
-        "chronic_conditions": parse_json_field(profile.chronic_conditions, []),
-        "allergies": parse_json_field(profile.allergies, []),
-        "family_history": parse_json_field(profile.family_history, []),
-        "surgeries": parse_json_field(profile.surgeries, []),
-        "current_medications": parse_json_field(profile.current_medications, []),
-        "exercise_frequency": profile.exercise_frequency,
-        "diet_preference": profile.diet_preference,
-        "smoking_status": profile.smoking_status,
-        "alcohol_consumption": profile.alcohol_consumption,
-        "usual_sleep_time": profile.usual_sleep_time,
-        "usual_wake_time": profile.usual_wake_time,
-        "sleep_environment": parse_json_field(profile.sleep_environment, {}),
-        "work_type": profile.work_type,
-        "work_hours_per_day": profile.work_hours_per_day,
-        "sitting_hours_per_day": profile.sitting_hours_per_day,
-        "city": profile.city,
-        "timezone": profile.timezone or "Asia/Shanghai",
-        "devices": parse_json_field(profile.devices, []),
-        "privacy_settings": PrivacySettings(**parse_json_field(profile.privacy_settings, {
-            "weight": True, "height": True, "age": True,
-            "gender": True, "city": True, "location": True
-        })),
-        "age": profile.age,
-        "bmi": profile.bmi,
-        "bmi_category": profile.bmi_category,
-        "detected_location": DetectedLocation(
-            city=profile.detected_city,
-            region=profile.detected_region,
-            country=profile.detected_country
-        ) if profile.detected_city or profile.detected_region or profile.detected_country else None,
-        "location_updated_at": profile.location_updated_at,
-        "manual_location": ManualLocation(
-            city=profile.manual_city,
-            region=profile.manual_region,
-            country=profile.manual_country
-        ) if profile.manual_city or profile.manual_region or profile.manual_country else None,
-        "use_manual_location": profile.use_manual_location or False,
-        "created_at": profile.created_at,
-        "updated_at": profile.updated_at
-    }
 
-    return UserProfileResponse(**response_data)
+    return build_profile_response(profile)
 
 
 @router.post("/me/refresh-location")

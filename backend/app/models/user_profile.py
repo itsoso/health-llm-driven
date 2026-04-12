@@ -67,6 +67,9 @@ class UserProfile(Base):
     # === 设备信息 ===
     devices = Column(JSON, default=list)  # ["Garmin Fenix 7", "Apple Watch", "小米体重秤"]
 
+    # === AI 助理首页布局 ===
+    assistant_dashboard_layouts = Column(JSON, default=dict)  # {"web": {"order": [], "hidden": []}, "mobile": {"order": [], "hidden": []}}
+
     # === 隐私设置 ===
     # 控制哪些字段对外部API可见
     privacy_settings = Column(JSON, default=lambda: {

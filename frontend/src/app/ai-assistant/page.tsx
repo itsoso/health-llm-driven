@@ -14,7 +14,10 @@ import AlertsBanner from '@/components/assistant/AlertsBanner';
 import SafetyPanel from '@/components/assistant/SafetyPanel';
 import SpecialistsPanel from '@/components/assistant/SpecialistsPanel';
 import ActionCardPanel from '@/components/assistant/ActionCardPanel';
+import SortableCard from '@/components/assistant/SortableCard';
 import { pinMessageToCard } from '@/services/api/actionCard';
+import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import DataGrid from '@/components/assistant/DataGrid';
 import ActivityCard from '@/components/assistant/ActivityCard';
 import SupplementCheckin from '@/components/assistant/SupplementCheckin';
@@ -27,6 +30,13 @@ import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
 import StrengthCard from '@/components/assistant/StrengthCard';
 import WorkoutCard from '@/components/assistant/WorkoutCard';
 import HistorySidebar from '@/components/assistant/HistorySidebar';
+import {
+  AssistantDashboardDeviceLayout,
+  AssistantLayoutDevice,
+  detectAssistantLayoutDevice,
+  getDefaultDashboardLayout,
+  normalizeDashboardLayout,
+} from '@/components/assistant/dashboardLayout';
 
 declare global {
   interface Window { webkitSpeechRecognition: any; SpeechRecognition: any; }
@@ -48,6 +58,22 @@ const QUICK_ASKS = [
   { text: '查看今日 AI 洞察和健康分析详情', label: 'AI 洞察' },
   { text: '分析我最近的HRV趋势，给出恢复建议', label: '趋势报告' },
 ];
+
+const DASHBOARD_CARD_LABELS: Record<string, string> = {
+  hero: '今日总览',
+  safety: '安全守护',
+  action_cards: '行动卡片',
+  specialists: '专家协作',
+  alerts: '提醒横幅',
+  data_grid: '健康数据',
+  strength: '力量训练',
+  workout_supplement: '运动与补剂',
+  supplement_guide: '补剂指南',
+  activity: '活动摘要',
+  exercise: '今日练习',
+  trends: '趋势分析',
+  quick_asks: '快捷提问',
+};
 
 
 function Toast({ color, title, subtitle, onClose, action }: { color: string; title: string; subtitle: string; onClose: () => void; action?: { label: string; onClick: () => void } }) {
@@ -104,15 +130,34 @@ export default function AIAssistantPage() {
   const [pendingImage, setPendingImage] = useState<{base64: string; type: string} | null>(null);
   const [pendingFile, setPendingFile] = useState<{base64: string; name: string} | null>(null);
   const [showAppsMenu, setShowAppsMenu] = useState(false);
-  const [showMoreDashboard, setShowMoreDashboard] = useState(false);
+  const [dashboardEditMode, setDashboardEditMode] = useState(false);
+  const [layoutDevice, setLayoutDevice] = useState<AssistantLayoutDevice>('web');
+  const [dashboardLayout, setDashboardLayout] = useState<AssistantDashboardDeviceLayout>(getDefaultDashboardLayout);
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const appsMenuRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const layoutHydratedRef = useRef(false);
+  const layoutSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
+  useEffect(() => { setLayoutDevice(detectAssistantLayoutDevice()); }, []);
+  useEffect(() => () => {
+    if (layoutSaveTimerRef.current) {
+      clearTimeout(layoutSaveTimerRef.current);
+    }
+  }, []);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   useEffect(() => { if (messages.length > 0 && !inlineMode) scrollToBottom(); }, [messages, inlineMode]);
@@ -142,6 +187,65 @@ export default function AIAssistantPage() {
     loadConversations();
     dashboard.loadDashboardData();
   }, [loadConversations, dashboard.loadDashboardData, router]);
+
+  useEffect(() => {
+    if (!localStorage.getItem('auth_token')) return;
+
+    let cancelled = false;
+    const loadDashboardLayout = async () => {
+      try {
+        const response = await api.get('/profile/me');
+        if (cancelled) return;
+        const rawLayout = response.data?.assistant_dashboard_layouts?.[layoutDevice];
+        setDashboardLayout(normalizeDashboardLayout(rawLayout));
+        setLayoutSaveError(null);
+      } catch {
+        if (cancelled) return;
+        setDashboardLayout(getDefaultDashboardLayout());
+        setLayoutSaveError('云端布局加载失败，已使用默认布局');
+      } finally {
+        if (cancelled) return;
+        layoutHydratedRef.current = true;
+        setLayoutLoaded(true);
+      }
+    };
+
+    setLayoutLoaded(false);
+    layoutHydratedRef.current = false;
+    loadDashboardLayout();
+
+    return () => { cancelled = true; };
+  }, [layoutDevice]);
+
+  useEffect(() => {
+    if (!layoutHydratedRef.current || !layoutLoaded) return;
+
+    if (layoutSaveTimerRef.current) {
+      clearTimeout(layoutSaveTimerRef.current);
+    }
+
+    layoutSaveTimerRef.current = setTimeout(async () => {
+      setLayoutSaving(true);
+      setLayoutSaveError(null);
+      try {
+        await api.put('/profile/me', {
+          assistant_dashboard_layouts: {
+            [layoutDevice]: dashboardLayout,
+          },
+        });
+      } catch {
+        setLayoutSaveError('布局同步失败，请稍后重试');
+      } finally {
+        setLayoutSaving(false);
+      }
+    }, 500);
+
+    return () => {
+      if (layoutSaveTimerRef.current) {
+        clearTimeout(layoutSaveTimerRef.current);
+      }
+    };
+  }, [dashboardLayout, layoutDevice, layoutLoaded]);
 
   // ── Send logic ──
   const isPostWorkoutMessage = (msg: string) => {
@@ -429,6 +533,120 @@ export default function AIAssistantPage() {
     }
   };
 
+  const visibleDashboardCardIds = dashboardLayout.order.filter((id) => !dashboardLayout.hidden.includes(id));
+
+  const handleDashboardDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = visibleDashboardCardIds.indexOf(String(active.id));
+    const newIndex = visibleDashboardCardIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const reorderedVisibleIds = arrayMove(visibleDashboardCardIds, oldIndex, newIndex);
+    const hiddenIds = dashboardLayout.order.filter((id) => dashboardLayout.hidden.includes(id));
+    setDashboardLayout({
+      order: [...reorderedVisibleIds, ...hiddenIds],
+      hidden: dashboardLayout.hidden,
+    });
+  };
+
+  const handleHideDashboardCard = (cardId: string) => {
+    if (dashboardLayout.hidden.includes(cardId)) return;
+    setDashboardLayout((current) => ({
+      ...current,
+      hidden: [...current.hidden, cardId],
+    }));
+  };
+
+  const handleRestoreDashboardCard = (cardId: string) => {
+    setDashboardLayout((current) => ({
+      ...current,
+      hidden: current.hidden.filter((id) => id !== cardId),
+    }));
+  };
+
+  const handleResetDashboardLayout = () => {
+    setDashboardLayout(getDefaultDashboardLayout());
+    setDashboardEditMode(false);
+  };
+
+  const renderDashboardCard = (cardId: string) => {
+    switch (cardId) {
+      case 'hero':
+        return (
+          <HeroCard
+            user={user}
+            healthScore={dashboard.healthScore}
+            todayGarmin={dashboard.todayGarmin}
+            waterToday={dashboard.waterToday}
+            suppChecked={suppChecked}
+            suppTotal={suppTotal}
+            weatherData={dashboard.weatherData}
+            airData={dashboard.airData}
+            onRefresh={handleRefresh}
+          />
+        );
+      case 'safety':
+        return <SafetyPanel />;
+      case 'action_cards':
+        return <ActionCardPanel />;
+      case 'specialists':
+        return <SpecialistsPanel />;
+      case 'alerts':
+        return <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />;
+      case 'data_grid':
+        return <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />;
+      case 'strength':
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            <StrengthCard exerciseType="俯卧撑" icon="💪" dailyTarget={100} color="#3b82f6"
+              colorLight="bg-blue-50" colorText="text-blue-600" colorBorder="border-blue-200"
+              colorBar="bg-blue-500" colorBarLight="bg-blue-200" />
+            <StrengthCard exerciseType="深蹲" icon="🦵" dailyTarget={100} color="#8b5cf6"
+              colorLight="bg-violet-50" colorText="text-violet-600" colorBorder="border-violet-200"
+              colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
+          </div>
+        );
+      case 'workout_supplement':
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            <WorkoutCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
+            <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
+          </div>
+        );
+      case 'supplement_guide':
+        return <SupplementGuideCard />;
+      case 'activity':
+        return <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />;
+      case 'exercise':
+        if (dashboard.exerciseToday.length === 0) {
+          if (!dashboardEditMode) return null;
+          return (
+            <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-5 text-sm text-gray-500">
+              今日练习卡片当前无内容。你仍然可以调整它在首页中的位置，等有训练数据后会自动显示。
+            </div>
+          );
+        }
+        return <ExerciseCard exerciseToday={dashboard.exerciseToday} />;
+      case 'trends':
+        return <TrendsCard garminHistory={dashboard.garminHistory} />;
+      case 'quick_asks':
+        return (
+          <div className="flex flex-wrap gap-1.5 rounded-2xl bg-white px-3 py-3">
+            {QUICK_ASKS.map(q => (
+              <button key={q.label} onClick={() => handleSend(q.text)}
+                className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-[11px] text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 active:scale-[0.97] transition-all">
+                {q.label}
+              </button>
+            ))}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
       {/* Header */}
@@ -522,54 +740,76 @@ export default function AIAssistantPage() {
             <div className="mx-auto max-w-7xl">
               {isWelcome ? (
                 <div className="space-y-3 pb-44">
-                  <HeroCard user={user} healthScore={dashboard.healthScore} todayGarmin={dashboard.todayGarmin} waterToday={dashboard.waterToday} suppChecked={suppChecked} suppTotal={suppTotal} weatherData={dashboard.weatherData} airData={dashboard.airData} onRefresh={handleRefresh} />
-                  <SafetyPanel />
-                  <ActionCardPanel />
-                  <SpecialistsPanel />
-                  <AlertsBanner waterToday={dashboard.waterToday} todayGarmin={dashboard.todayGarmin} onWaterRecord={handleWaterRecord} onAskAI={(text) => handleSend(text)} />
-                  <DataGrid todayGarmin={dashboard.todayGarmin} dietToday={dashboard.dietToday} bpLatest={dashboard.bpLatest} rhinitisToday={dashboard.rhinitisToday} weightStats={dashboard.weightStats} />
-                  {/* 力量训练：俯卧撑 · 深蹲 */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <StrengthCard exerciseType="俯卧撑" icon="💪" dailyTarget={100} color="#3b82f6"
-                      colorLight="bg-blue-50" colorText="text-blue-600" colorBorder="border-blue-200"
-                      colorBar="bg-blue-500" colorBarLight="bg-blue-200" />
-                    <StrengthCard exerciseType="深蹲" icon="🦵" dailyTarget={100} color="#8b5cf6"
-                      colorLight="bg-violet-50" colorText="text-violet-600" colorBorder="border-violet-200"
-                      colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-gray-200 bg-white/90 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-800">自定义首页布局</div>
+                      <div className="text-xs text-gray-500">
+                        当前同步到{layoutDevice === 'mobile' ? '移动端' : '网页端'}
+                        {layoutSaving ? ' · 正在同步' : layoutLoaded ? ' · 已连接云端' : ' · 正在加载'}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setDashboardEditMode((current) => !current)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${dashboardEditMode ? 'bg-violet-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700'}`}
+                      >
+                        {dashboardEditMode ? '完成编辑' : '编辑布局'}
+                      </button>
+                      <button
+                        onClick={handleResetDashboardLayout}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-gray-700"
+                      >
+                        重置默认
+                      </button>
+                    </div>
                   </div>
 
-                  {/* 运动 + 补剂打卡（常驻展示） */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <WorkoutCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} />
-                    <SupplementCheckin supplementStatus={dashboard.supplementStatus} onStatusChange={dashboard.setSupplementStatus} />
-                  </div>
+                  {layoutSaveError && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                      {layoutSaveError}
+                    </div>
+                  )}
 
-                  {/* 折叠区：补剂指南以下，默认收起 */}
-                  {!showMoreDashboard ? (
-                    <button onClick={() => setShowMoreDashboard(true)}
-                      className="w-full py-2.5 rounded-xl border border-gray-300 bg-gray-50 text-sm text-gray-500 font-medium hover:text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-all">
-                      ▾ 展开更多
-                    </button>
-                  ) : (
-                    <>
-                      <SupplementGuideCard />
-                      <ActivityCard todayGarmin={dashboard.todayGarmin} workoutRecent={dashboard.workoutRecent} medToday={dashboard.medToday} />
-                      {dashboard.exerciseToday.length > 0 && (
-                        <ExerciseCard exerciseToday={dashboard.exerciseToday} />
-                      )}
-                      <TrendsCard garminHistory={dashboard.garminHistory} />
-                      <div className="flex flex-wrap gap-1.5">
-                        {QUICK_ASKS.map(q => (
-                          <button key={q.label} onClick={() => handleSend(q.text)}
-                            className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-[11px] text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 active:scale-[0.97] transition-all">
-                            {q.label}
+                  {dashboardLayout.hidden.length > 0 && (
+                    <div className="rounded-2xl border border-gray-200 bg-white px-3 py-3">
+                      <div className="mb-2 text-xs font-medium text-gray-500">已隐藏卡片</div>
+                      <div className="flex flex-wrap gap-2">
+                        {dashboardLayout.hidden.map((cardId) => (
+                          <button
+                            key={cardId}
+                            onClick={() => handleRestoreDashboardCard(cardId)}
+                            className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                          >
+                            恢复 {DASHBOARD_CARD_LABELS[cardId] || cardId}
                           </button>
                         ))}
                       </div>
-                      <button onClick={() => setShowMoreDashboard(false)}
-                        className="w-full py-2.5 rounded-xl border border-gray-300 bg-gray-50 text-sm text-gray-500 font-medium hover:text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-all">
-                        ▴ 收起
-                      </button>
+                    </div>
+                  )}
+
+                  {dashboardEditMode ? (
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
+                      <SortableContext items={visibleDashboardCardIds} strategy={verticalListSortingStrategy}>
+                        <div className="space-y-3">
+                          {visibleDashboardCardIds.map((cardId) => {
+                            const content = renderDashboardCard(cardId);
+                            if (!content) return null;
+                            return (
+                              <SortableCard key={cardId} id={cardId} editMode onHide={handleHideDashboardCard}>
+                                {content}
+                              </SortableCard>
+                            );
+                          })}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  ) : (
+                    <>
+                      {visibleDashboardCardIds.map((cardId) => {
+                        const content = renderDashboardCard(cardId);
+                        if (!content) return null;
+                        return <div key={cardId}>{content}</div>;
+                      })}
                     </>
                   )}
 

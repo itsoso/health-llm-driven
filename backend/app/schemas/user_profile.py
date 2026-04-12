@@ -42,6 +42,24 @@ class ManualLocationUpdate(BaseModel):
     country: Optional[str] = Field(None, description="手工输入的国家")
 
 
+class AssistantDashboardDeviceLayout(BaseModel):
+    """单设备首页布局配置"""
+    order: List[str] = Field(default_factory=list, description="首页卡片顺序")
+    hidden: List[str] = Field(default_factory=list, description="隐藏的首页卡片")
+
+
+class AssistantDashboardLayouts(BaseModel):
+    """AI 助理首页布局，按设备分别存储"""
+    web: AssistantDashboardDeviceLayout = Field(default_factory=AssistantDashboardDeviceLayout)
+    mobile: AssistantDashboardDeviceLayout = Field(default_factory=AssistantDashboardDeviceLayout)
+
+
+class AssistantDashboardLayoutsUpdate(BaseModel):
+    """AI 助理首页布局更新（允许只更新一个设备）"""
+    web: Optional[AssistantDashboardDeviceLayout] = None
+    mobile: Optional[AssistantDashboardDeviceLayout] = None
+
+
 # =====================================================
 # 用户画像 Schemas
 # =====================================================
@@ -98,6 +116,12 @@ class UserProfileBase(BaseModel):
     # 设备信息
     devices: List[str] = Field(default_factory=list, description="设备列表")
 
+    # AI 助理首页布局
+    assistant_dashboard_layouts: AssistantDashboardLayouts = Field(
+        default_factory=AssistantDashboardLayouts,
+        description="AI 助理首页布局配置（按设备分开）"
+    )
+
     # 隐私设置
     privacy_settings: Optional[PrivacySettings] = Field(
         default_factory=lambda: PrivacySettings(),
@@ -143,6 +167,7 @@ class UserProfileUpdate(BaseModel):
     city: Optional[str] = None
     timezone: Optional[str] = None
     devices: Optional[List[str]] = None
+    assistant_dashboard_layouts: Optional[AssistantDashboardLayoutsUpdate] = None
     privacy_settings: Optional[PrivacySettings] = None
 
 

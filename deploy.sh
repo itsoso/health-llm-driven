@@ -261,8 +261,14 @@ deploy_backend() {
         cd backend && \
         echo '激活虚拟环境...' && \
         source venv/bin/activate && \
+        echo '加载环境变量...' && \
+        set -a && source .env && set +a && \
         echo '安装依赖...' && \
         pip install -r requirements.txt -q && \
+        echo '应用数据库迁移...' && \
+        if [ -f migrations/20260412_120000_add_assistant_dashboard_layouts_to_user_profiles.sql ]; then \
+            psql \"\$DATABASE_URL\" -f migrations/20260412_120000_add_assistant_dashboard_layouts_to_user_profiles.sql; \
+        fi && \
         echo '重启后端服务...' && \
         systemctl restart health-backend && \
         echo '重启 Celery worker & beat...' && \
