@@ -91,6 +91,64 @@ psql $DATABASE_URL -f backend/migrations/create_xxx_tables.sql
 
 ## Architecture
 
+### Multi-Agent Health System (核心架构)
+
+```
+用户对话框
+    ↓
+Orchestrator (L4)  ← 意图路由 + 专家调度 + LLM 合成
+    ↓
+10 Specialists (L3) ← 每个专家读 Twin、产出结构化 Finding
+    ↓
+Digital Health Twin (L2) ← 13 语义分区的统一状态视图 (Redis 5min 缓存)
+    ↓
+Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/药物
+```
+
+**Orchestrator** (`app/orchestrator/`):
+- `intent.py` — 关键字意图分类（safety/labs/recovery/fuel/movement/mental/chronic/knowledge/longitudinal）
+- `specialists.py` — 10 个 specialist 注册表，按依赖顺序执行
+- `orchestrator.py` — `run_orchestrator` (非流式) / `stream_orchestrator` (SSE)
+- 共享 context：Recovery Coach 的 readiness_zone 自动传递给 Movement Coach
+- 对话记忆：注入 `conversation_memory_service` 到 LLM prompt
+- LLM 失败自动回退 OpenClaw provider
+
+**10 Specialists** (`app/agents/`):
+
+| Specialist | 模块 | 职责 |
+|---|---|---|
+| SafetyGuardian | `agents/safety_guardian/` | 47 条确定性规则（药物/基因/急性阈值/CGM/训练负荷） |
+| RecoveryCoach | `agents/recovery_coach/` | Readiness 0-100 加权评分（HRV/睡眠/压力/电量） |
+| FuelStrategist | `agents/fuel_strategist/` | TDEE-摄入缺口 + 蛋白目标 + 基因驱动营养（MTHFR/APOE/FTO） |
+| MovementCoach | `agents/movement_coach/` | ACWR × readiness 决策矩阵 + ACTN3 基因偏好 |
+| MentalHealthCompanion | `agents/mental_health_companion/` | 危机检测 + 非药物行动 + 心理援助热线（Tier 5 隐私） |
+| HypertensionSpecialist | `agents/chronic_specialists/` | ACC/AHA BP 分级 + 降压药识别 |
+| MetabolicSpecialist | `agents/chronic_specialists/` | 代谢综合征判定（5 项命中 3 项）+ CGM TIR |
+| RhinitisSpecialist | `agents/chronic_specialists/` | 症状分级 + AQI/湿度环境关联 + 用药依从性 |
+| KnowledgeLibrarian | `agents/knowledge_librarian/` | 得到 wiki 69 篇 → ChromaDB RAG 检索 |
+| LongitudinalAnalyst | `agents/longitudinal_analyst/` | 6 个月趋势 + 干预事件×指标变化因果叙事 |
+
+**Safety Guardian 规则分类** (`agents/safety_guardian/rules/`):
+- `vitals.py` (9): BP/HR/SpO2/stress/sleep 急性阈值
+- `labs.py` (6): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别
+- `ddi.py` (7): GLP-1×磺脲、华法林×NSAID、SSRI×MAOI 等
+- `dsi.py` (7): 鱼油×抗凝、钙×铁、维K×华法林、圣约翰草等
+- `pgx.py` (9): CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR
+- `training_load.py` (3): ACWR 过载/欠训练/零运动
+- `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
+
+**Digital Health Twin** (`app/twin/`):
+- `schema.py` — 13 语义分区 Pydantic 模型（physiological/body/labs/cgm/meds/supplement/genetic/env/behavioral/mental/chronic/goals/freshness）
+- `builder.py` — 从 service 层聚合，Redis 函数级缓存（use_cache=True），失败降级
+- `_collectors.py` — 过渡期薄 SQL 层（water/checkin/supplement/BP/exam/gene），事务安全回滚
+- `cache.py` — Redis 5min TTL
+- `formatter.py` — `twin_to_prompt_blob()` 生成紧凑 LLM 上下文文本
+
+**Agent 审计日志** (`app/agents/audit.py` + `models/agent_audit_log.py`):
+- 每次 Safety/Orchestrator 评估自动写入（旁路，失败不影响）
+- `GET /api/v1/safety/audit` 查询用户的 agent 决策历史
+- SQLite/PostgreSQL 双兼容 JSONColumn
+
 ### Request Flow (Web)
 
 ```
@@ -100,19 +158,56 @@ Browser → Next.js (localhost:3000)
 
 The Next.js `rewrites` in `next.config.js` proxies `/api/:path*` to the backend's `/api/v1/:path*`. Frontend code in `services/api.ts` uses relative `/api` paths (web) or absolute URLs (native app via Capacitor).
 
+### AI Chat Routing (智能助理对话路由)
+
+```
+用户输入
+    ↓
+needsSkill 正则匹配？(记录/打卡/吃了/早午晚餐...)
+    ↓ YES                    ↓ NO
+OpenClaw Gateway          Agent Executor / Orchestrator
+(skill 写入数据库)        (纯分析/问答)
+```
+
+- **数据记录意图** → 走 OpenClaw（skill 才能调 POST API 写入）
+- **分析/知识/问答** → 走 Orchestrator（10 specialist 协作）
+- **有附件（图片/文件）** → 走 OpenClaw（支持多模态）
+
 ### Backend Structure
 
 - **Entry point**: `backend/main.py` — creates FastAPI app, sets up CORS, rate limiting, DB tables
-- **Router registry**: `backend/app/api/main.py` — imports and mounts all ~80 API routers
+- **Router registry**: `backend/app/api/main.py` — imports and mounts all 100+ API routers
 - **Config**: `backend/app/config.py` — Pydantic `Settings` class, reads from `.env`
 - **Database**: `backend/app/database.py` — SQLAlchemy engine (PostgreSQL in prod, SQLite for tests)
-- **Models**: `backend/app/models/` — SQLAlchemy ORM models
-- **Services**: `backend/app/services/` — business logic layer (called by API routes)
+- **Models**: `backend/app/models/` — 64 SQLAlchemy ORM models（含 `cgm_reading.py`、`agent_audit_log.py`）
+- **Services**: `backend/app/services/` — business logic layer（含 `cgm/` CGM 服务）
+- **Twin**: `backend/app/twin/` — Digital Health Twin（schema/builder/cache/formatter/collectors）
+- **Agents**: `backend/app/agents/` — 多 Agent 舰队（safety_guardian/recovery_coach/fuel_strategist/movement_coach/mental_health_companion/chronic_specialists/knowledge_librarian/longitudinal_analyst）
+- **Orchestrator**: `backend/app/orchestrator/` — 意图路由 + 专家调度 + LLM 合成
 - **Schemas**: `backend/app/schemas/` — Pydantic request/response models
-- **Tasks**: `backend/app/tasks/` — Celery async tasks (Garmin sync, notifications, anomaly detection)
-- **Scheduler**: `backend/app/scheduler.py` — Garmin data sync scheduler with OAuth token caching, rate limit handling, VO2Max extraction
-- **Skills**: `backend/skills/` — OpenClaw skill definitions (10 skills, each with `SKILL.md`)
-- **Tests**: `backend/tests/` — pytest with SQLite in-memory DB; fixtures in `conftest.py`
+- **Tasks**: `backend/app/tasks/` — Celery async tasks
+- **Skills**: `backend/skills/` — OpenClaw skill definitions
+- **Knowledge**: `backend/data/knowledge_chromadb/` — 得到 wiki 知识库索引（302 chunks from 69 篇健康文章）
+- **Tests**: `backend/tests/` — 104 agent/twin/safety 测试 + 800+ 总测试
+
+### New API Endpoints (Multi-Agent System)
+
+| 端点 | 方法 | 职责 |
+|---|---|---|
+| `/api/v1/twin/me` | GET | 用户的 Digital Health Twin（13 分区状态快照） |
+| `/api/v1/twin/me/invalidate` | POST | 手动使 Twin 缓存失效 |
+| `/api/v1/safety/me` | GET | Safety Guardian 安全告警报告（47 规则） |
+| `/api/v1/safety/rules` | GET | 列出所有已注册的安全规则 |
+| `/api/v1/safety/explain` | POST | 对单条告警请求 LLM 个性化解读 |
+| `/api/v1/safety/audit` | GET | Agent 审计日志查询 |
+| `/api/v1/safety/knowledge/index` | POST | 触发知识库索引构建 |
+| `/api/v1/orchestrator/chat` | POST | 非流式综合分析（10 specialist 协作） |
+| `/api/v1/orchestrator/chat/stream` | POST | SSE 流式综合分析 |
+| `/api/v1/cgm/readings` | POST/GET | CGM 血糖读数 CRUD |
+| `/api/v1/cgm/readings/batch` | POST | CGM 批量导入（幂等） |
+| `/api/v1/cgm/readings/latest` | GET | 最新 CGM 读数 |
+| `/api/v1/cgm/readings/summary` | GET | CGM 24h 摘要（TIR/GMI/CV） |
+| `/api/v1/personal-outcome/me/timeline` | GET | 长期健康改善时间序列 |
 
 ### Test Fixtures
 
@@ -121,39 +216,68 @@ The Next.js `rewrites` in `next.config.js` proxies `/api/:path*` to the backend'
 - `client(db)` — FastAPI TestClient with DB dependency override
 - `sample_user_data`, `sample_basic_health_data`, `sample_medical_exam_data` — reusable test data
 
+**Agent-specific tests** (104 tests):
+- `tests/test_twin_builder.py` (20): schema defaults, builder empty/partial, formatter, API shape
+- `tests/test_safety_guardian.py` (32): 各规则类别正反例, severity 排序, API shape
+- `tests/test_orchestrator.py` (18): intent, specialist registry, run e2e, API shape
+- `tests/test_specialists.py` (34): Recovery/Fuel/Movement/Mental/Chronic 单测, needsSkill 回归
+
 ### Frontend Structure
 
 - **Pages**: `frontend/src/app/*/page.tsx` — Next.js App Router (~50+ pages)
-- **API client**: `frontend/src/services/api.ts` — Axios instance with JWT auth interceptor
-- **Auth**: `frontend/src/contexts/AuthContext.tsx` — React Context for auth state, token in `localStorage` as `auth_token`
-- **Route guard**: `frontend/src/components/ProtectedRoute.tsx` — redirects to `/login` or `/onboarding`
+- **API client**: `frontend/src/services/api.ts` — Barrel re-export（含 `api/safety.ts`、`api/orchestrator.ts`）
+- **Auth**: `frontend/src/contexts/AuthContext.tsx` — React Context for auth state
+- **Route guard**: `frontend/src/components/ProtectedRoute.tsx`
+- **AI Assistant components** (`components/assistant/`):
+  - `SafetyPanel.tsx` — 安全告警卡片 + 颜色分级 + 展开/折叠 + LLM 解读 + AI 综合分析弹窗
+  - `SpecialistsPanel.tsx` — 10 specialist 结果面板 + 类型化渲染（readiness/进度条/处方/危机红框）
+  - `HeroCard.tsx` — 仪表盘主卡（含 PM2.5 + 电量峰值/当前）
+  - `QuickRecordBar.tsx` — 快速打卡 + undo 撤销 + action-lock 防双击
+  - `AlertsBanner.tsx` — 饮水/血氧/HRV 实时提醒
 
 ### Auth Pattern
 
 Backend uses JWT tokens. Frontend stores token in `localStorage` under key `auth_token`. Axios request interceptor in `api.ts` attaches `Authorization: Bearer {token}` header automatically.
 
-### Adding a New Feature (typical pattern)
+### Adding a New Specialist (新 Agent 开发模式)
 
-1. **Backend**: Create model in `models/`, schema in `schemas/`, service in `services/`, router in `api/`
-2. **Register router**: Add import and `api_router.include_router()` in `api/main.py`
-3. **Frontend**: Add API methods in `services/api.ts`, create page in `app/{feature}/page.tsx`
+1. 创建 `backend/app/agents/{name}/` 目录
+2. 实现 Specialist Protocol: `applies_to(intent, twin) -> bool` + `run(twin, context) -> SpecialistFinding`
+3. 在 `backend/app/orchestrator/specialists.py` 的 `_build_registry()` 里注册
+4. 注意循环导入：`__init__.py` 不要 import specialist 类（由 specialists.py 直接 import）
+5. 写测试到 `tests/test_specialists.py`
+
+### Adding a New Safety Rule
+
+1. 在 `backend/app/agents/safety_guardian/rules/` 下对应文件写函数
+2. 加 `@register` 装饰器（自动注册，无需修改 engine）
+3. 函数签名: `(twin: HealthTwin) -> Optional[Alert] | List[Alert]`
+4. 在 `engine.py` 的 `_load_rule_modules()` 里 import 新模块（如果是新文件）
+5. 写测试到 `tests/test_safety_guardian.py`
 
 ### OpenClaw Integration
 
-Two distinct AI paths in the `/ai-assistant` page:
-- **Health Assistant tab**: Backend builds health context → LLM API → parses action responses
-- **OpenClaw tab**: Pure proxy to OpenClaw Gateway → `POST /api/v1/openclaw/stream` (SSE)
+- **OpenClaw Gateway**: `POST /api/v1/openclaw/stream` (SSE) — 需要数据写入的对话走这里
+- **Orchestrator**: `POST /api/v1/orchestrator/chat` — 分析/知识/问答走这里
+- 前端 `handleSend()` 通过 `needsSkill` 正则自动路由
 
-OpenClaw Gateway runs on a separate server (47.237.191.17, SSH port 22222) behind Nginx SSL at `bot.executor.life`.
-
-**Skills system**: Each skill in `backend/skills/<name>/SKILL.md` defines the API endpoints, parameters, and behavior that OpenClaw can invoke. When modifying API routes used by OpenClaw, update the corresponding SKILL.md — do not add backend alias routes to accommodate AI guesses.
+**Skills system**: Each skill in `backend/skills/<name>/SKILL.md` defines the API endpoints, parameters, and behavior that OpenClaw can invoke.
 
 ### LLM Configuration
 
 Backend supports multiple LLM providers via `app/config.py`:
 - `LLM_PROVIDER`: `openai` | `ollama` | `openclaw`
 - Separate vision model config (`LLM_VISION_MODEL`)
-- OpenClaw Analyze: dedicated multi-model analysis endpoint (`OPENCLAW_ANALYZE_*`)
+- OpenClaw model: `OPENCLAW_MODEL=openclaw:main`（冒号自动转斜杠）
+- LLM 失败自动回退到 OpenClaw provider
+
+### Knowledge Base (知识库)
+
+- **来源**: `~/work/personal/down-dedao/wiki/`（本地）或 `/opt/health-app/knowledge/dedao-wiki/`（服务器）
+- **索引**: ChromaDB 持久化到 `backend/data/knowledge_chromadb/`
+- **规模**: 137 篇 MD → 69 篇健康相关 → 302 个 chunks
+- **触发索引**: `POST /api/v1/safety/knowledge/index` 或 `build_index(force=True)`
+- **检索**: `search_knowledge(query, n_results=5)` → 语义向量搜索
 
 ## Infrastructure
 
@@ -223,9 +347,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 - 部署后自动运行，低于阈值自动回滚
 - 任何改动不应导致健康度评分下降
 
-## Architecture Layers (三层分离)
-
-借鉴 autoresearch 的 prepare.py（不可变）→ train.py（可变）→ program.md（指令）模式：
+## Architecture Layers (四层分离)
 
 ### 不可变核心层 (Frozen Core) — 修改需 review
 
@@ -233,25 +355,43 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 |------|------|
 | `backend/app/database.py` | 数据库连接、会话管理、get_db |
 | `backend/app/config.py` | Pydantic Settings、环境变量 |
-| `backend/app/models/*.py` | SQLAlchemy ORM 模型 |
+| `backend/app/models/*.py` | SQLAlchemy ORM 模型（64 个） |
+| `backend/app/twin/schema.py` | Digital Health Twin Pydantic schema（13 分区） |
 | `backend/main.py` 中间件部分 | 安全头、CORS、限流、请求上下文 |
 | `backend/tests/conftest.py` | 测试基础设施 |
 | `deploy.sh` | 部署流程（含备份与回滚） |
+
+### Agent 层 (Agent Fleet) — 确定性规则 + 结构化裁决
+
+| 目录 | 职责 |
+|------|------|
+| `backend/app/twin/` | Digital Health Twin 构建 + 缓存 + 格式化 |
+| `backend/app/agents/safety_guardian/` | 47 条安全规则引擎（不依赖 LLM） |
+| `backend/app/agents/recovery_coach/` | Readiness 评分 + 恢复行动 |
+| `backend/app/agents/fuel_strategist/` | 营养缺口 + 基因驱动饮食 |
+| `backend/app/agents/movement_coach/` | ACWR + 训练处方 |
+| `backend/app/agents/mental_health_companion/` | 危机检测 + 非药物支持 |
+| `backend/app/agents/chronic_specialists/` | 鼻炎/高血压/代谢 专科管理 |
+| `backend/app/agents/knowledge_librarian/` | 得到 wiki RAG 检索 |
+| `backend/app/agents/longitudinal_analyst/` | 长期趋势 + 因果叙事 |
+| `backend/app/orchestrator/` | 意图路由 + 专家调度 + LLM 合成 |
+| `backend/app/agents/audit.py` | Agent 审计日志 |
 
 ### 可变业务层 (Mutable Business) — 自由迭代
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | API 路由 |
-| `backend/app/services/*.py` | 业务逻辑 |
+| `backend/app/api/*.py` | API 路由（100+ 个） |
+| `backend/app/services/*.py` | 业务逻辑（含 `cgm/` CGM 服务） |
 | `backend/app/tasks/*.py` | Celery 异步任务 |
-| `frontend/src/app/*/page.tsx` | 前端页面 |
-| `frontend/src/components/*.tsx` | 前端组件 |
+| `frontend/src/app/*/page.tsx` | 前端页面（50+ 个） |
+| `frontend/src/components/*.tsx` | 前端组件（含 SafetyPanel/SpecialistsPanel） |
 
 ### 指令层 (Instructions) — 定义 AI Agent 行为
 
 | 文件 | 职责 |
 |------|------|
-| `CLAUDE.md` | Claude Code 工作指南 |
+| `CLAUDE.md` | Claude Code 工作指南（本文件） |
 | `AGENTS.md` | AI Agent 开发规范 |
 | `backend/skills/*/SKILL.md` | OpenClaw Skill 定义 |
+| `backend/data/knowledge_chromadb/` | 得到 wiki 知识库索引（302 chunks） |
