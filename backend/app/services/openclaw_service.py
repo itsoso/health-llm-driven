@@ -178,8 +178,15 @@ class OpenClawService:
         if settings.openclaw_api_key:
             headers["Authorization"] = f"Bearer {settings.openclaw_api_key}"
 
+        # Gateway 要求 model 格式 "openclaw" 或 "openclaw/<agentId>"
+        # env 可能写成 "openclaw:main"（冒号分隔），这里兼容转换
+        raw_model = settings.openclaw_model or "openclaw"
+        model = raw_model.replace(":", "/") if ":" in raw_model else raw_model
+        if not model.startswith("openclaw"):
+            model = "openclaw"
+
         payload = {
-            "model": "default",
+            "model": model,
             "messages": messages,
             "stream": True,
             "user": session_key,
