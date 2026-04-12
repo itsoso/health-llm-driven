@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.twin import _collectors
 from app.twin.schema import (
     BodyCompositionState,
+    CgmContext,
     DataFreshness,
     EnvironmentalState,
     GeneticContext,
@@ -68,6 +69,7 @@ def build_twin(db: Session, user_id: int) -> HealthTwin:
     _fill_diet_today(db, user_id, twin, sources)
     _fill_environment(db, user_id, twin, sources)
     _fill_goals(db, user_id, twin, sources)
+    _fill_cgm(db, user_id, twin, sources)
     _fill_collectors(db, user_id, twin, sources)
 
     twin.meta.data_sources = sorted(sources)
@@ -375,6 +377,42 @@ def _fill_goals(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) 
             sources.add("goals")
     except Exception as e:
         logger.warning(f"[twin] goals 失败: {e}")
+
+
+# ─────────────────────────── 9.5 CGM 连续血糖 ───────────────────────
+
+
+def _fill_cgm(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """调用 CgmService 填充 CgmContext。失败静默降级。"""
+    try:
+        from app.services.cgm import CgmService
+
+        svc = CgmService()
+        summary = svc.get_24h_summary(db, user_id)
+        if summary.count == 0 and summary.latest_mg_dl is None:
+            return  # 没 CGM 数据就跳过
+
+        twin.cgm = CgmContext(
+            has_cgm=True,
+            latest_mg_dl=summary.latest_mg_dl,
+            latest_trend_arrow=summary.latest_trend_arrow,
+            mean_24h_mg_dl=summary.mean_mg_dl,
+            std_24h_mg_dl=summary.std_mg_dl,
+            cv_24h_pct=summary.cv_pct,
+            tir_24h_pct=summary.tir_pct,
+            time_below_24h_pct=summary.time_below_pct,
+            time_above_24h_pct=summary.time_above_pct,
+            gmi_estimated_a1c=summary.gmi,
+            severe_low_count_24h=summary.severe_low_count,
+            severe_high_count_24h=summary.severe_high_count,
+            readings_count_24h=summary.count,
+        )
+
+        # 同时把最新读数同步到 labs.blood_glucose（如果最近 1 小时内）
+        if summary.latest_mg_dl is not None:
+            sources.add("cgm")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] cgm 失败: {e}")
 
 
 # ─────────────────────────── 10. 直接收集器 ───────────────────────────

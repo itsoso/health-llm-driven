@@ -80,6 +80,28 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if body_parts:
         lines.append("身体: " + ", ".join(body_parts))
 
+    # ─── CGM 连续血糖
+    c = twin.cgm
+    if c.has_cgm and (c.latest_mg_dl or c.readings_count_24h):
+        cgm_parts: List[str] = []
+        if c.latest_mg_dl:
+            arrow = f" {c.latest_trend_arrow}" if c.latest_trend_arrow else ""
+            cgm_parts.append(f"最新 {c.latest_mg_dl:.0f}mg/dL{arrow}")
+        if c.mean_24h_mg_dl:
+            cgm_parts.append(f"24h均 {c.mean_24h_mg_dl:.0f}")
+        if c.cv_24h_pct:
+            cgm_parts.append(f"CV {c.cv_24h_pct:.0f}%")
+        if c.tir_24h_pct is not None:
+            cgm_parts.append(f"TIR {c.tir_24h_pct:.0f}%")
+        if c.gmi_estimated_a1c:
+            cgm_parts.append(f"GMI≈A1C {c.gmi_estimated_a1c}")
+        if c.severe_low_count_24h or c.severe_high_count_24h:
+            cgm_parts.append(
+                f"24h 严重值: 低{c.severe_low_count_24h}次/高{c.severe_high_count_24h}次"
+            )
+        if cgm_parts:
+            lines.append("CGM: " + ", ".join(cgm_parts))
+
     # ─── 化验 / 生物标志物
     L = twin.labs
     lab_parts: List[str] = []

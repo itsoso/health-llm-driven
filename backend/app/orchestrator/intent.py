@@ -45,8 +45,10 @@ _CATEGORY_KEYWORDS = {
         "workout", "exercise plan", "train", "running",
     ],
     "mental": [
-        "情绪", "压力大", "焦虑", "抑郁", "心情不好", "情绪低落",
-        "stress", "mood", "anxiety", "depression",
+        "情绪", "压力大", "压力很大", "压力好大", "压力太大",
+        "焦虑", "抑郁", "心情", "心情不好", "情绪低落", "情绪不好",
+        "心烦", "烦躁", "难过", "沮丧", "低落",
+        "stress", "mood", "anxiety", "depression", "down", "overwhelmed",
     ],
     "chronic": [
         "鼻炎", "喷嚏不停", "过敏性鼻炎", "高血压", "糖尿病", "甲状腺",

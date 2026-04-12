@@ -286,7 +286,13 @@ class HealthAnalysisService:
             }
     
     def _build_analysis_prompt(self, health_data: Dict[str, Any]) -> str:
-        """构建分析提示词"""
+        """
+        构建分析提示词。
+
+        [Phase 3 深度清理] 不再手工格式化 Garmin/BasicHealth 字段，
+        改为依赖 analyze_health_issues 注入的 Twin 快照 + Safety 告警。
+        本函数只负责保留体检/疾病的结构化列表（Twin 当前不展开到条目级）。
+        """
         prompt = f"""
 请分析以下个人健康数据，识别存在的健康问题，并提供详细的健康指导建议。
 
@@ -295,20 +301,14 @@ class HealthAnalysisService:
 - 性别: {health_data['user'].get('gender', '未知')}
 - 出生日期: {health_data['user'].get('birth_date', '未知')}
 
-## 基础健康数据
-{self._format_basic_health(health_data.get('basic_health', {}))}
-
 ## 体检数据
 {self._format_medical_exams(health_data.get('medical_exams', []))}
 
 ## 疾病记录
 {self._format_diseases(health_data.get('diseases', []))}
 
-## Garmin可穿戴设备数据（最近30天）
-{self._format_garmin_data(health_data.get('garmin_data', []))}
-
 ## 分析要求
-请基于以上数据：
+请基于以上数据 + 后续注入的 Digital Health Twin 快照 + 规则引擎告警：
 1. 明确指出当前存在的健康问题（按严重程度排序）
 2. 分析每个问题的可能原因
 3. 提供详细的、可执行的健康指导建议
@@ -318,36 +318,7 @@ class HealthAnalysisService:
 请用中文回答，结构清晰，建议具体可执行。
 """
         return prompt
-    
-    def _format_basic_health(self, data: Dict[str, Any]) -> str:
-        """格式化基础健康数据"""
-        if not data or not any(data.values()):
-            return "暂无基础健康数据"
-        
-        lines = []
-        if data.get('height'):
-            lines.append(f"- 身高: {data['height']} cm")
-        if data.get('weight'):
-            lines.append(f"- 体重: {data['weight']} kg")
-        if data.get('bmi'):
-            lines.append(f"- BMI: {data['bmi']}")
-        if data.get('systolic_bp') and data.get('diastolic_bp'):
-            lines.append(f"- 血压: {data['systolic_bp']}/{data['diastolic_bp']} mmHg")
-        if data.get('total_cholesterol'):
-            lines.append(f"- 总胆固醇: {data['total_cholesterol']} mmol/L")
-        if data.get('ldl_cholesterol'):
-            lines.append(f"- LDL胆固醇: {data['ldl_cholesterol']} mmol/L")
-        if data.get('hdl_cholesterol'):
-            lines.append(f"- HDL胆固醇: {data['hdl_cholesterol']} mmol/L")
-        if data.get('triglycerides'):
-            lines.append(f"- 甘油三酯: {data['triglycerides']} mmol/L")
-        if data.get('blood_glucose'):
-            lines.append(f"- 血糖: {data['blood_glucose']} mmol/L")
-        if data.get('record_date'):
-            lines.append(f"- 记录日期: {data['record_date']}")
-        
-        return "\n".join(lines) if lines else "暂无基础健康数据"
-    
+
     def _format_medical_exams(self, exams: List[Dict[str, Any]]) -> str:
         """格式化体检数据"""
         if not exams:
@@ -386,26 +357,10 @@ class HealthAnalysisService:
         
         return "\n".join(lines)
     
-    def _format_garmin_data(self, garmin_data: List[Dict[str, Any]]) -> str:
-        """格式化Garmin数据"""
-        if not garmin_data:
-            return "暂无Garmin数据"
-        
-        # 计算平均值
-        avg_hr = sum(d.get('avg_heart_rate', 0) or 0 for d in garmin_data) / len(garmin_data) if garmin_data else 0
-        avg_sleep_score = sum(d.get('sleep_score', 0) or 0 for d in garmin_data) / len(garmin_data) if garmin_data else 0
-        avg_sleep_duration = sum(d.get('total_sleep_duration', 0) or 0 for d in garmin_data) / len(garmin_data) if garmin_data else 0
-        avg_steps = sum(d.get('steps', 0) or 0 for d in garmin_data) / len(garmin_data) if garmin_data else 0
-        
-        lines = [
-            f"- 平均心率: {avg_hr:.1f} bpm",
-            f"- 平均睡眠分数: {avg_sleep_score:.1f}/100",
-            f"- 平均睡眠时长: {avg_sleep_duration:.1f} 分钟",
-            f"- 平均步数: {avg_steps:.0f} 步",
-        ]
-        
-        return "\n".join(lines)
-    
+    # [Phase 3 deep cleanup] _format_garmin_data 和 _format_basic_health 已删除。
+    # Twin.physiological / Twin.labs / Twin.body_composition 提供同样的字段且结构化。
+    # 需要汇总文本时使用 twin_to_prompt_blob(twin)。
+
     def _extract_issues(self, analysis_text: str) -> List[str]:
         """从分析文本中提取健康问题（简化实现）"""
         # 这里可以要求LLM返回JSON格式，或者使用更复杂的文本解析
@@ -437,30 +392,21 @@ class HealthAnalysisService:
         if not provider:
             return "个性化建议服务暂不可用"
 
-        health_data = self.collect_user_health_data(db, user_id, days=7)
-        
-        # 检查是否有健康数据
-        garmin_data = health_data.get('garmin_data', [])
-        if not garmin_data:
-            return f"该日期暂无健康数据记录，建议先同步Garmin数据或记录健康信息后再获取个性化建议。"
-        
-        # 检查是否有有效的健康数据（至少有一些非空字段）
-        has_valid_data = any(
-            data.get('sleep_score') or 
-            data.get('steps') or 
-            data.get('avg_heart_rate') or 
-            data.get('resting_heart_rate')
-            for data in garmin_data
-        )
-        
-        if not has_valid_data:
-            return f"该日期暂无有效的健康数据记录，建议先同步Garmin数据后再获取个性化建议。"
-        
+        # [Phase 3 deep cleanup] 不再调用 collect_user_health_data —— 直接从 Twin 取状态。
+        from app.twin.builder import build_twin
+        from app.twin.formatter import twin_to_prompt_blob
+
+        twin = build_twin(db, user_id)
+        twin_blob = twin_to_prompt_blob(twin)
+
+        if not twin_blob:
+            return f"该日期暂无有效的健康数据，建议先同步Garmin数据或记录健康信息后再获取个性化建议。"
+
         prompt = f"""
 基于以下个人健康数据，为{checkin_date}这一天的健康打卡提供个性化建议。
 
-## 最近一周的健康数据
-{self._format_garmin_data(garmin_data)}
+## 当前健康状态（Digital Health Twin 快照）
+{twin_blob}
 
 请提供：
 1. 今日锻炼建议（考虑最近的睡眠质量和身体电量）
@@ -954,21 +900,30 @@ class HealthAnalysisService:
         return "\n".join(lines) if lines else "该维度无趋势数据"
 
     def _format_data_for_dimension(self, dim_key: str, health_data: dict) -> str:
-        """为特定维度格式化数据"""
+        """
+        为特定维度格式化数据。
+
+        [Phase 3 deep cleanup] cardiovascular/metabolic 维度不再调用已删除的
+        _format_basic_health，改为从 _twin_blob（由 analyze_health_structured
+        注入）取快照，再用 Python 聚合计算趋势。
+        """
+        twin_blob = health_data.get("_twin_blob") or ""
+
         if dim_key == "cardiovascular":
-            basic = health_data.get("basic_health", {})
+            lines = []
+            if twin_blob:
+                lines.append(twin_blob)
             garmin = health_data.get("garmin_data", [])
-            lines = [self._format_basic_health(basic)]
             if garmin:
                 recent = garmin[:7]
                 avg_rhr = self._safe_avg([d.get("resting_heart_rate") for d in recent])
                 avg_hrv = self._safe_avg([d.get("hrv") for d in recent])
                 avg_stress = self._safe_avg([d.get("stress_level") for d in recent])
                 lines.append(f"近7天: 静息心率均值={avg_rhr}, HRV均值={avg_hrv}, 压力均值={avg_stress}")
-            return "\n".join(lines)
+            return "\n".join(lines) if lines else "无心血管相关数据"
 
         elif dim_key == "metabolic":
-            return self._format_basic_health(health_data.get("basic_health", {}))
+            return twin_blob or "无代谢相关数据"
 
         elif dim_key == "sleep_recovery":
             garmin = health_data.get("garmin_data", [])[:14]

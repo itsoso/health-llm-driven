@@ -83,6 +83,7 @@ def _load_rule_modules() -> None:
         dsi,
         pgx,
         training_load,
+        cgm,
     )
 
 

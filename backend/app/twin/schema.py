@@ -92,6 +92,27 @@ class LabsContext(BaseModel):
     # 每项 {item_name, value, unit, reference_range, exam_date}
 
 
+class CgmContext(BaseModel):
+    """CGM 连续血糖监测状态。"""
+
+    has_cgm: bool = False
+    latest_mg_dl: Optional[float] = None
+    latest_trend_arrow: Optional[str] = None
+    latest_measured_at: Optional[datetime] = None
+
+    # 24h 摘要
+    mean_24h_mg_dl: Optional[float] = None
+    std_24h_mg_dl: Optional[float] = None
+    cv_24h_pct: Optional[float] = None
+    tir_24h_pct: Optional[float] = None         # Time in Range 70-180
+    time_below_24h_pct: Optional[float] = None  # < 70
+    time_above_24h_pct: Optional[float] = None  # > 180
+    gmi_estimated_a1c: Optional[float] = None   # Glucose Management Indicator
+    severe_low_count_24h: int = 0
+    severe_high_count_24h: int = 0
+    readings_count_24h: int = 0
+
+
 # ─────────────────────────── Medication / Supplement ───────────────────
 
 
@@ -217,6 +238,7 @@ class HealthTwin(BaseModel):
     physiological: PhysiologicalState = Field(default_factory=PhysiologicalState)
     body_composition: BodyCompositionState = Field(default_factory=BodyCompositionState)
     labs: LabsContext = Field(default_factory=LabsContext)
+    cgm: CgmContext = Field(default_factory=CgmContext)
     medication: MedicationState = Field(default_factory=MedicationState)
     supplement: SupplementState = Field(default_factory=SupplementState)
     genetic: GeneticContext = Field(default_factory=GeneticContext)

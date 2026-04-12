@@ -131,15 +131,26 @@ class SafetyGuardianSpecialist:
 
 # Lazy import 避免循环依赖（specialists 包里的 agent 也可能引用 orchestrator.schema）
 def _build_registry() -> List[Specialist]:
+    from app.agents.chronic_specialists import (
+        HypertensionSpecialist,
+        MetabolicSpecialist,
+        RhinitisSpecialist,
+    )
     from app.agents.fuel_strategist import FuelStrategistSpecialist
+    from app.agents.mental_health_companion import MentalHealthCompanionSpecialist
     from app.agents.movement_coach import MovementCoachSpecialist
     from app.agents.recovery_coach import RecoveryCoachSpecialist
 
     return [
-        SafetyGuardianSpecialist(),     # 安全优先
-        RecoveryCoachSpecialist(),      # 在 MovementCoach 之前，让 readiness 先算出来
+        SafetyGuardianSpecialist(),            # 安全优先
+        RecoveryCoachSpecialist(),             # 在 MovementCoach 之前
         FuelStrategistSpecialist(),
-        MovementCoachSpecialist(),      # 可能从 context 读 readiness_zone
+        MovementCoachSpecialist(),             # 从 context 读 readiness_zone
+        MentalHealthCompanionSpecialist(),     # Tier 5 隐私
+        # 慢病专科
+        HypertensionSpecialist(),
+        MetabolicSpecialist(),
+        RhinitisSpecialist(),
     ]
 
 
