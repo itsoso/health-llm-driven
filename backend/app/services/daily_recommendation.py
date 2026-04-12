@@ -675,9 +675,39 @@ class DailyRecommendationService:
             rule_analysis=rule_analysis,
             environment_data=environment_data
         )
-        
+
         # 合并结果
         rule_result["llm_analysis"] = llm_result
+
+        # [Phase 3] 注入 Safety Guardian 的结构化告警到 rule_result。
+        # 这些是基于规则引擎的确定性裁决，独立于 LLM 推理，供消费方引用。
+        try:
+            from app.agents.safety_guardian import evaluate_safety
+            from app.twin.builder import build_twin
+
+            _twin = build_twin(db, user_id)
+            _safety_report = evaluate_safety(_twin)
+            rule_result["safety_alerts"] = [
+                {
+                    "rule_id": a.rule_id,
+                    "category": a.category,
+                    "severity": a.severity.label,
+                    "severity_zh": a.severity.label_zh,
+                    "title": a.title,
+                    "message": a.message,
+                    "action": a.action,
+                    "requires_medical_attention": a.requires_medical_attention,
+                }
+                for a in _safety_report.alerts
+            ]
+            rule_result["safety_summary"] = {
+                "total": len(_safety_report.alerts),
+                "critical": _safety_report.critical_count,
+                "high": _safety_report.high_count,
+            }
+        except Exception as _safe_err:
+            logger.warning(f"[daily_recommendation] Safety 注入失败: {_safe_err}")
+            rule_result["safety_alerts"] = []
         
         # 如果LLM分析成功，用LLM的建议增强规则建议
         if llm_result.get("available") and "today_actions" in llm_result:

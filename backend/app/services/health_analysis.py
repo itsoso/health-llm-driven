@@ -197,6 +197,35 @@ class HealthAnalysisService:
         # 构建提示词
         prompt = self._build_analysis_prompt(health_data)
 
+        # [Phase 3 refactor] 注入 Twin 快照 + Safety Guardian 告警作为额外上下文。
+        # Twin 是所有 agent 共享的规范化健康状态视图；Safety Guardian 给出确定性裁决。
+        # 失败降级（不影响旧代码路径）。
+        try:
+            from app.agents.safety_guardian import evaluate_safety
+            from app.twin.builder import build_twin
+            from app.twin.formatter import twin_to_prompt_blob
+
+            twin = build_twin(db, user_id)
+            twin_blob = twin_to_prompt_blob(twin)
+            if twin_blob:
+                prompt += f"\n\n## 健康孪生快照（统一规范化状态视图）\n{twin_blob}\n"
+
+            # Safety Guardian 的结构化告警
+            safety_report = evaluate_safety(twin)
+            if safety_report.alerts:
+                prompt += "\n\n## 安全告警（来自规则引擎，非 LLM 推理）\n"
+                for a in safety_report.alerts[:8]:
+                    prompt += f"- [{a.severity.label_zh}] {a.title}: {a.message}\n"
+                    if a.action:
+                        prompt += f"  建议: {a.action}\n"
+
+            logger.info(
+                f"[health_analysis] Twin + Safety 注入完成: "
+                f"sources={len(twin.meta.data_sources)}, alerts={len(safety_report.alerts)}"
+            )
+        except Exception as _inject_err:
+            logger.warning(f"[health_analysis] Twin/Safety 注入失败（降级）: {_inject_err}")
+
         try:
             analysis_text = asyncio.run(
                 provider.chat(
@@ -560,6 +589,30 @@ class HealthAnalysisService:
         # 1. 收集数据（90天用于趋势，30天用于当前状态）
         health_data = self.collect_user_health_data(db, user_id, days=90)
 
+        # 1.5 [Phase 3] 构建 Twin 和 Safety 告警作为维度分析的增强上下文。
+        #     在 health_data 的基础上补充一个 "_twin_blob" / "_safety_alerts" 键，
+        #     供 _analyze_dimension 在构建 prompt 时使用（可选）。
+        try:
+            from app.agents.safety_guardian import evaluate_safety
+            from app.twin.builder import build_twin
+            from app.twin.formatter import twin_to_prompt_blob
+
+            twin = build_twin(db, user_id)
+            health_data["_twin_blob"] = twin_to_prompt_blob(twin)
+            safety_report = evaluate_safety(twin)
+            health_data["_safety_alerts"] = [
+                {
+                    "severity": a.severity.label_zh,
+                    "title": a.title,
+                    "action": a.action,
+                }
+                for a in safety_report.alerts[:8]
+            ]
+        except Exception as _e:
+            logger.warning(f"[health_analysis.structured] Twin/Safety 注入失败: {_e}")
+            health_data["_twin_blob"] = ""
+            health_data["_safety_alerts"] = []
+
         # 2. 计算趋势
         trends = self._compute_metric_trends(health_data)
 
@@ -644,6 +697,22 @@ class HealthAnalysisService:
         trend_text = self._format_trends_for_dimension(dim_key, trends)
         data_text = self._format_data_for_dimension(dim_key, health_data)
 
+        # [Phase 3] Twin + Safety 增强上下文（来自 analyze_health_structured 注入）
+        twin_blob = health_data.get("_twin_blob") or ""
+        safety_alerts = health_data.get("_safety_alerts") or []
+
+        twin_section = ""
+        if twin_blob:
+            twin_section = f"\n## 统一健康快照（Digital Health Twin）\n{twin_blob}\n"
+
+        safety_section = ""
+        if safety_alerts:
+            lines = [
+                f"- [{a['severity']}] {a['title']}" + (f" — {a['action']}" if a.get('action') else "")
+                for a in safety_alerts
+            ]
+            safety_section = f"\n## 规则引擎告警（非推理，必须参考）\n" + "\n".join(lines) + "\n"
+
         prompt = f"""分析以下用户的{dim_config['label']}维度健康数据。
 
 ## 数据
@@ -651,7 +720,7 @@ class HealthAnalysisService:
 
 ## 趋势（过去90天）
 {trend_text}
-
+{twin_section}{safety_section}
 ## 参考知识
 {knowledge_context[:2000] if knowledge_context else '无额外参考'}
 
