@@ -41,8 +41,8 @@ export default function StrengthCard({
       const res = await dailyHealthApi.getTodayExercises();
       const all: any[] = Array.isArray(res.data) ? res.data : [];
       const filtered = all.filter((e: any) => e.exercise_type === exerciseType);
-      setTodayTotal(filtered.reduce((s: number, e: any) => s + (e.reps || 0), 0));
-      setTodaySets(filtered.length);
+      setTodayTotal(filtered.reduce((s: number, e: any) => s + (e.reps || 0) * (e.sets || 1), 0));
+      setTodaySets(filtered.reduce((s: number, e: any) => s + (e.sets || 1), 0));
       setRecords(filtered.map((e: any) => ({
         id: e.id, reps: e.reps || 0,
         created_at: e.created_at || e.record_date,
@@ -55,7 +55,7 @@ export default function StrengthCard({
       const byDate: Record<string, number> = {};
       for (const e of recs.filter((e: any) => e.exercise_type === exerciseType)) {
         const d = (e.record_date || '').slice(0, 10);
-        byDate[d] = (byDate[d] || 0) + (e.reps || 0);
+        byDate[d] = (byDate[d] || 0) + (e.reps || 0) * (e.sets || 1);
       }
       // 本周一到周日
       const now = new Date();
