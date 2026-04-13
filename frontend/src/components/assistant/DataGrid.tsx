@@ -7,9 +7,10 @@ interface DataGridProps {
   bpLatest: any;
   rhinitisToday: any;
   weightStats: any;
+  medToday?: any[];
 }
 
-export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisToday, weightStats }: DataGridProps) {
+export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisToday, weightStats, medToday }: DataGridProps) {
   const router = useRouter();
   const pressStyle = 'active:scale-[0.98] transition-all duration-150 cursor-pointer';
 
@@ -90,37 +91,70 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           </div>
         </div>
 
-        {/* 鼻炎 */}
-        <div className={`rounded-2xl p-4 ${pressStyle}`}
-          style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #fffbf0 100%)', boxShadow: '0 1px 3px rgba(52,199,89,0.08)' }}
-          onClick={() => router.push('/rhinitis')}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold" style={{ color: '#30D158' }}>👃 鼻炎</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-              style={{
-                background: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FEF2F2' : '#F0FDF4',
-                color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF3B30' : '#30D158',
-              }}>
-              {(rhinitisToday?.sneeze_count ?? 0) >= 10 ? '活跃' : '稳定'}
-            </span>
-          </div>
-          <div className="flex items-end gap-5 mt-3">
-            <div>
-              <div className="text-[10px]" style={{ color: '#AEAEB2' }}>洗鼻</div>
-              <div className="text-3xl font-extrabold" style={{ color: '#1C1C1E' }}>
-                {rhinitisToday?.nasal_wash_count ?? 0}
-                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
+        {/* 鼻炎管理（症状 + 用药） */}
+        {(() => {
+          // 从 medToday 提取鼻炎相关药物
+          const rhinitisMeds = (medToday || []).filter((m: any) =>
+            ['莫米松', '西替利嗪', '氯雷他定', 'mometasone', 'cetirizine'].some(k =>
+              (m.name || '').toLowerCase().includes(k.toLowerCase())
+            )
+          );
+          return (
+            <div className={`rounded-2xl p-4 ${pressStyle}`}
+              style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #fffbf0 100%)', boxShadow: '0 1px 3px rgba(52,199,89,0.08)' }}
+              onClick={() => router.push('/rhinitis')}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold" style={{ color: '#30D158' }}>👃 鼻炎</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                  style={{
+                    background: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FEF2F2' : '#F0FDF4',
+                    color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF3B30' : '#30D158',
+                  }}>
+                  {(rhinitisToday?.sneeze_count ?? 0) >= 10 ? '活跃' : '稳定'}
+                </span>
               </div>
-            </div>
-            <div>
-              <div className="text-[10px]" style={{ color: '#AEAEB2' }}>喷嚏</div>
-              <div className="text-3xl font-extrabold" style={{ color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF9500' : '#1C1C1E' }}>
-                {rhinitisToday?.sneeze_count ?? 0}
-                <span className="text-xs font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
+              {/* 症状 */}
+              <div className="flex items-end gap-5">
+                <div>
+                  <div className="text-[10px]" style={{ color: '#AEAEB2' }}>洗鼻</div>
+                  <div className="text-2xl font-extrabold" style={{ color: '#1C1C1E' }}>
+                    {rhinitisToday?.nasal_wash_count ?? 0}<span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px]" style={{ color: '#AEAEB2' }}>喷嚏</div>
+                  <div className="text-2xl font-extrabold" style={{ color: (rhinitisToday?.sneeze_count ?? 0) >= 10 ? '#FF9500' : '#1C1C1E' }}>
+                    {rhinitisToday?.sneeze_count ?? 0}<span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>次</span>
+                  </div>
+                </div>
               </div>
+              {/* 用药 */}
+              {rhinitisMeds.length > 0 && (
+                <div className="mt-2 pt-2 space-y-1" style={{ borderTop: '1px solid rgba(52,199,89,0.15)' }}>
+                  {rhinitisMeds.map((med: any) => {
+                    const taken = (med.taken_count || 0) > 0;
+                    const lastLog = med.logs?.[0];
+                    const shortName = (med.name || '').includes('莫米松') ? '莫米松' : (med.name || '').includes('西替利嗪') ? '西替利嗪' : med.name?.split(' ')[0] || med.name;
+                    return (
+                      <div key={med.medication_id} className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px]">{taken ? '✅' : '⬜'}</span>
+                          <span className="text-[11px] font-medium" style={{ color: taken ? '#1C1C1E' : '#AEAEB2' }}>{shortName}</span>
+                          <span className="text-[10px]" style={{ color: '#AEAEB2' }}>{med.dosage}</span>
+                        </div>
+                        {lastLog ? (
+                          <span className="text-[10px] font-medium" style={{ color: '#30D158' }}>{lastLog.time}</span>
+                        ) : (
+                          <span className="text-[10px]" style={{ color: '#AEAEB2' }}>未服</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
+          );
+        })()}
       </div>
 
       {/* Row 3: 血压 + 体重 */}
