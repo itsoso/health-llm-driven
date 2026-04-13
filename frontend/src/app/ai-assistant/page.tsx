@@ -811,39 +811,34 @@ export default function AIAssistantPage() {
                 </div>
               </div>
             )}
-            {isWelcome && showFooterLayoutControls && (
+            {isWelcome && dashboardEditMode && (
               <div className="px-4 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
-                <div className={`mx-auto max-w-7xl rounded-2xl border border-gray-200/80 bg-white/90 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${isMobileLayout ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
+                <div className={`mx-auto max-w-7xl rounded-2xl border border-violet-200 bg-violet-50/80 shadow-sm ${isMobileLayout ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0 text-[11px] text-gray-500">
-                      布局同步到{layoutDevice === 'mobile' ? '移动端' : '网页端'}
-                      {layoutSaving ? ' · 正在同步' : layoutLoaded ? ' · 已连接云端' : ' · 正在加载'}
+                    <div className="min-w-0 text-[11px] text-violet-600 font-medium">
+                      编辑模式 · 拖拽排序 / 隐藏卡片
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {dashboardLayout.hidden.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {dashboardLayout.hidden.map((cardId) => (
-                            <button
-                              key={cardId}
-                              onClick={() => handleRestoreDashboardCard(cardId)}
-                              className={`rounded-full border border-gray-200 bg-gray-50 text-[11px] text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 ${isMobileLayout ? 'px-2 py-0.5' : 'px-2.5 py-1'}`}
-                            >
-                              恢复 {DASHBOARD_CARD_LABELS[cardId] || cardId}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      {dashboardLayout.hidden.length > 0 && dashboardLayout.hidden.map((cardId) => (
+                        <button
+                          key={cardId}
+                          onClick={() => handleRestoreDashboardCard(cardId)}
+                          className={`rounded-full border border-gray-200 bg-white text-[11px] text-gray-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 ${isMobileLayout ? 'px-2 py-0.5' : 'px-2.5 py-1'}`}
+                        >
+                          恢复 {DASHBOARD_CARD_LABELS[cardId] || cardId}
+                        </button>
+                      ))}
                       <button
-                        onClick={() => setDashboardEditMode((current) => !current)}
-                        className={`rounded-full text-[11px] font-medium transition-all ${isMobileLayout ? 'px-2.5 py-0.5' : 'px-3 py-1'} ${dashboardEditMode ? 'bg-violet-600 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700'}`}
+                        onClick={() => setDashboardEditMode(false)}
+                        className="rounded-full bg-violet-600 text-white text-[11px] font-medium px-3 py-1 transition-all"
                       >
-                        {dashboardEditMode ? '完成编辑' : '编辑布局'}
+                        完成编辑
                       </button>
                       <button
                         onClick={handleResetDashboardLayout}
-                        className={`rounded-full border border-gray-200 bg-white text-[11px] font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-gray-700 ${isMobileLayout ? 'px-2.5 py-0.5' : 'px-3 py-1'}`}
+                        className={`rounded-full border border-gray-200 bg-white text-[11px] text-gray-500 transition-all hover:border-gray-300 ${isMobileLayout ? 'px-2.5 py-0.5' : 'px-3 py-1'}`}
                       >
-                        重置默认
+                        重置
                       </button>
                     </div>
                   </div>
