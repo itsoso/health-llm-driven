@@ -33,6 +33,8 @@ export default function StrengthCard({
   const [showDetail, setShowDetail] = useState(false);
   const [recording, setRecording] = useState(false);
   const [weekData, setWeekData] = useState<number[]>([]);
+  const [coachingNote, setCoachingNote] = useState<{checklist?: string; issues?: string; title?: string} | null>(null);
+  const [showCoaching, setShowCoaching] = useState(false);
 
   const today = new Date().toISOString().slice(0, 10);
   const pct = Math.min(100, Math.round((todayTotal / dailyTarget) * 100));
@@ -71,26 +73,34 @@ export default function StrengthCard({
       }
       setWeekData(days);
     } catch {}
+
+    // 加载教练笔记
+    try {
+      const cn = await api.get(`/exercise-coaching/me/${encodeURIComponent(exerciseType)}`);
+      if (cn.data) setCoachingNote(cn.data);
+    } catch {}
   }, [exerciseType]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const recordExercise = async (count: number) => {
+  const recordExercise = async (count: number, setsCount: number = 1) => {
     if (recording) return;
     setRecording(true);
     try {
+      const total = count * setsCount;
       const res = await api.post('/daily-health/exercise', {
         record_date: today, exercise_type: exerciseType,
-        reps: count, sets: 1,
+        reps: count, sets: setsCount,
         intensity: count >= 30 ? 'high' : count >= 15 ? 'medium' : 'low',
       });
       const newRecord: ExerciseRecord = {
         id: res.data?.id ?? Date.now(),
         reps: count,
+        sets: setsCount,
         created_at: res.data?.created_at || new Date().toISOString(),
       };
-      setTodayTotal(prev => prev + count);
-      setTodaySets(prev => prev + 1);
+      setTodayTotal(prev => prev + total);
+      setTodaySets(prev => prev + setsCount);
       setRecords(prev => [...prev, newRecord]);
     } catch (e) { console.error('记录失败', e); }
     finally { setRecording(false); }
@@ -149,7 +159,7 @@ export default function StrengthCard({
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] mb-1.5" style={{ color: '#8E8E93' }}>第{todaySets + 1}组</div>
+          <div className="text-[10px] mb-1" style={{ color: '#8E8E93' }}>单组快录</div>
           <div className="flex flex-wrap gap-1.5">
             {quickAmounts.map(n => (
               <button key={n} onClick={() => recordExercise(n)} disabled={recording}
@@ -159,6 +169,24 @@ export default function StrengthCard({
                   color: recording ? '#AEAEB2' : color,
                   border: `1px solid ${recording ? '#E5E5EA' : `${color}20`}`,
                 }}>+{n}</button>
+            ))}
+          </div>
+          {/* 多组快录 */}
+          <div className="text-[10px] mt-2 mb-1" style={{ color: '#8E8E93' }}>多组快录</div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { sets: 3, reps: 10, label: '3×10' },
+              { sets: 4, reps: 12, label: '4×12' },
+              { sets: 4, reps: 15, label: '4×15' },
+              { sets: 5, reps: 10, label: '5×10' },
+            ].map(p => (
+              <button key={p.label} onClick={() => recordExercise(p.reps, p.sets)} disabled={recording}
+                className="px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95"
+                style={{
+                  background: recording ? '#E5E5EA' : `${color}08`,
+                  color: recording ? '#AEAEB2' : color,
+                  border: `1px solid ${recording ? '#E5E5EA' : `${color}30`}`,
+                }}>{p.label}</button>
             ))}
           </div>
           {todayTotal > 0 && (
@@ -215,6 +243,27 @@ export default function StrengthCard({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 教练笔记（上次动作纠正要点） */}
+      {coachingNote && (coachingNote.checklist || coachingNote.issues) && (
+        <div className="mt-2.5 pt-2" style={{ borderTop: '1px solid #E5E5EA' }}>
+          <button
+            onClick={() => setShowCoaching(!showCoaching)}
+            className="w-full flex items-center justify-between text-[10px] font-medium"
+            style={{ color: '#FF9500' }}
+          >
+            <span>📋 动作要点</span>
+            <span style={{ color: '#AEAEB2' }}>{showCoaching ? '收起' : '展开'}</span>
+          </button>
+          {showCoaching && (
+            <div className="mt-1.5 space-y-1 text-[10px] leading-relaxed" style={{ color: '#475569' }}>
+              {(coachingNote.checklist || coachingNote.issues || '').split('\n').filter(Boolean).map((line, i) => (
+                <div key={i}>{line}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
