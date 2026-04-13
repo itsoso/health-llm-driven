@@ -226,30 +226,36 @@ def get_my_weight_stats(
 ):
     """获取当前用户体重统计（需要登录）"""
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(WeightRecord).filter(
         WeightRecord.user_id == current_user.id,
         WeightRecord.record_date >= start_date
     ).order_by(desc(WeightRecord.record_date)).all()
-    
+
     if not records:
         return WeightStats(total_records=0)
-    
+
     weights = [r.weight for r in records if r.weight]
-    
-    # 计算30天变化
-    weight_change = None
+
+    # 30 天变化
+    weight_change_30d = None
     if len(records) >= 2:
-        latest = records[0].weight
-        oldest = records[-1].weight
-        weight_change = round(latest - oldest, 2)
-    
+        weight_change_30d = round(records[0].weight - records[-1].weight, 2)
+
+    # 7 天变化
+    weight_change_7d = None
+    seven_days_ago = date.today() - timedelta(days=7)
+    recent_7d = [r for r in records if r.record_date >= seven_days_ago and r.weight]
+    if len(recent_7d) >= 2:
+        weight_change_7d = round(recent_7d[0].weight - recent_7d[-1].weight, 2)
+
     return WeightStats(
         current_weight=records[0].weight if records else None,
         highest_weight=max(weights) if weights else None,
         lowest_weight=min(weights) if weights else None,
         average_weight=round(sum(weights) / len(weights), 2) if weights else None,
-        weight_change_30d=weight_change,
+        weight_change_7d=weight_change_7d,
+        weight_change_30d=weight_change_30d,
         total_records=len(records)
     )
 

@@ -159,12 +159,20 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
             {weightStats?.current_weight || '--'}
             <span className="text-[10px] font-normal ml-0.5" style={{ color: '#AEAEB2' }}>kg</span>
           </div>
-          {weightStats?.weight_change_30d != null && (
-            <div className="text-[10px] font-semibold mt-1"
-              style={{ color: weightStats.weight_change_30d > 0 ? '#FF3B30' : '#30D158' }}>
-              30天 {weightStats.weight_change_30d > 0 ? '+' : ''}{weightStats.weight_change_30d}kg {weightStats.weight_change_30d <= 0 ? '↓' : '↑'}
-            </div>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {weightStats?.weight_change_7d != null && (
+              <span className="text-[10px] font-semibold"
+                style={{ color: weightStats.weight_change_7d > 0 ? '#FF3B30' : weightStats.weight_change_7d < 0 ? '#30D158' : '#8E8E93' }}>
+                7天 {weightStats.weight_change_7d > 0 ? '+' : ''}{weightStats.weight_change_7d}kg
+              </span>
+            )}
+            {weightStats?.weight_change_30d != null && (
+              <span className="text-[10px] font-semibold"
+                style={{ color: weightStats.weight_change_30d > 0 ? '#FF3B30' : weightStats.weight_change_30d < 0 ? '#30D158' : '#8E8E93' }}>
+                30天 {weightStats.weight_change_30d > 0 ? '+' : ''}{weightStats.weight_change_30d}kg
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
