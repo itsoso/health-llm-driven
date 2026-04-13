@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, chatApi, openclawApi, agentApi, sharedApi, feedbackApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
 import NotificationCenter from '@/components/NotificationCenter';
@@ -497,13 +497,13 @@ export default function AIAssistantPage() {
   const isWelcome = inlineMode || (!hasMessages && !loading);
 
   // Supplement dedup (for HeroCard's suppChecked/suppTotal)
-  const suppDeduped = (() => {
+  const suppDeduped = useMemo(() => {
     const seen = new Set<string>();
     return dashboard.supplementStatus.filter((s: any) => {
       const key = `${s.supplement?.name || s.supplement_name || s.name}_${s.supplement?.timing || s.timing || 'morning'}`;
       if (seen.has(key)) return false; seen.add(key); return true;
     });
-  })();
+  }, [dashboard.supplementStatus]);
   const suppChecked = suppDeduped.filter((s: any) => s.record?.taken || s.is_taken || s.checked).length;
   const suppTotal = suppDeduped.length;
 
@@ -516,7 +516,7 @@ export default function AIAssistantPage() {
     }));
   };
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     showToast('正在同步 Garmin 数据（含运动和睡眠）...', 'info');
     try {
       const res = await api.post('/data-collection/garmin/me/sync?days=1');
@@ -532,7 +532,7 @@ export default function AIAssistantPage() {
       await dashboard.loadDashboardData(true);
       showToast('同步失败，已刷新本地数据', 'error');
     }
-  };
+  }, [showToast, dashboard]);
 
   const visibleDashboardCardIds = dashboardLayout.order.filter((id) => !dashboardLayout.hidden.includes(id));
   const isMobileLayout = layoutDevice === 'mobile';
@@ -578,7 +578,7 @@ export default function AIAssistantPage() {
     setDashboardEditMode(false);
   };
 
-  const renderDashboardCard = (cardId: string) => {
+  const renderDashboardCard = useCallback((cardId: string) => {
     switch (cardId) {
       case 'hero':
         return (
@@ -652,7 +652,7 @@ export default function AIAssistantPage() {
       default:
         return null;
     }
-  };
+  }, [user, dashboard, suppChecked, suppTotal, handleRefresh, dashboardEditMode]);
 
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>

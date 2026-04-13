@@ -32,7 +32,6 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import html2canvas from 'html2canvas';
 
 // 来源类型映射
 const sourceTypeLabels: Record<string, string> = {
@@ -252,6 +251,7 @@ function ShareModal({
 
     setIsCapturing(true);
     try {
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(contentRef.current, {
         backgroundColor: '#1e293b',
         scale: 2,

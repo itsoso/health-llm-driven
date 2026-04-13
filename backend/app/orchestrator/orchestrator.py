@@ -53,25 +53,64 @@ def _run_specialists(
     twin: HealthTwin, specialists: List, context: Dict
 ) -> List[SpecialistFinding]:
     """
-    顺序调用每个 specialist，收集结构化 finding。
+    并行调用 specialist，收集结构化 finding。
 
-    关键: context 是**可变的**共享字典，前面的 specialist 可以往里写东西给后面用。
-    例如 Recovery Coach 把 readiness_zone 写入后，Movement Coach 的处方能据此调整。
+    依赖关系: Recovery Coach 把 readiness_zone 写入 context，Movement Coach 读取。
+    策略: Recovery Coach 先同步执行 → 其余 specialist 并发执行。
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     ctx = dict(context)  # 不污染调用方
     findings: List[SpecialistFinding] = []
+
+    # ---- Phase 1: 先跑 recovery_coach（如果在列表中）----
+    recovery_sp = None
+    rest_specialists = []
     for sp in specialists:
+        if sp.name == "recovery_coach":
+            recovery_sp = sp
+        else:
+            rest_specialists.append(sp)
+
+    if recovery_sp:
         try:
-            finding = sp.run(twin, ctx)
+            finding = recovery_sp.run(twin, ctx)
             findings.append(finding)
-            # 把 Recovery Coach 的 readiness_zone 写入 ctx，供 Movement Coach 读
-            if sp.name == "recovery_coach":
-                zone = (finding.raw or {}).get("zone")
-                if zone:
-                    ctx["readiness_zone"] = zone
-                    ctx["readiness_score"] = (finding.raw or {}).get("score")
+            zone = (finding.raw or {}).get("zone")
+            if zone:
+                ctx["readiness_zone"] = zone
+                ctx["readiness_score"] = (finding.raw or {}).get("score")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[orchestrator] specialist {recovery_sp.name} 失败: {e}")
+
+    # ---- Phase 2: 其余 specialist 并发执行 ----
+    if not rest_specialists:
+        return findings
+
+    def _run_one(sp):
+        try:
+            return sp, sp.run(twin, ctx)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator] specialist {sp.name} 失败: {e}")
+            return sp, None
+
+    # 最多开 4 个线程（specialist 都是 CPU-bound 计算 + 少量 IO）
+    max_workers = min(len(rest_specialists), 4)
+    ordered_findings = [None] * len(rest_specialists)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(_run_one, sp): idx
+            for idx, sp in enumerate(rest_specialists)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            sp, finding = future.result()
+            if finding:
+                ordered_findings[idx] = finding
+
+    # 保持原始注册顺序
+    findings.extend(f for f in ordered_findings if f is not None)
     return findings
 
 
@@ -117,8 +156,6 @@ def _build_synthesis_prompt(
         f"【专家裁决】\n{findings_text}\n\n"
         "请基于以上信息写回答。"
     )
-
-    return system_prompt, user_prompt
 
     return system_prompt, user_prompt
 

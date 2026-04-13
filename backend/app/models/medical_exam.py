@@ -1,5 +1,5 @@
 """体检数据模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Enum, JSON
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Enum, JSON, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -36,6 +36,9 @@ class ExamType(str, enum.Enum):
 class MedicalExam(Base):
     """体检记录"""
     __tablename__ = "medical_exams"
+    __table_args__ = (
+        Index("idx_medical_exams_user_date", "user_id", "exam_date"),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -68,6 +71,9 @@ class MedicalExam(Base):
 class MedicalExamItem(Base):
     """体检项目明细"""
     __tablename__ = "medical_exam_items"
+    __table_args__ = (
+        Index("idx_medical_exam_items_exam_id", "exam_id"),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     exam_id = Column(Integer, ForeignKey("medical_exams.id"), nullable=False)

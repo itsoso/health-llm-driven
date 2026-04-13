@@ -562,24 +562,34 @@ class HealthAnalysisService:
         # 2. 计算趋势
         trends = self._compute_metric_trends(health_data)
 
-        # 3. 分维度分析
-        dimension_results = {}
-        for dim_key, dim_config in self.ANALYSIS_DIMENSIONS.items():
-            try:
-                dim_result = self._analyze_dimension(
+        # 3. 分维度并行分析（5 个维度互相独立，asyncio.gather 并发）
+        async def _run_all_dimensions():
+            tasks = {
+                dim_key: self._analyze_dimension_async(
                     provider, dim_key, dim_config, health_data, trends
                 )
-                dimension_results[dim_key] = dim_result
-            except Exception as e:
-                logger.error(f"维度 {dim_key} 分析失败: {e}")
+                for dim_key, dim_config in self.ANALYSIS_DIMENSIONS.items()
+            }
+            results = await asyncio.gather(
+                *tasks.values(), return_exceptions=True
+            )
+            return dict(zip(tasks.keys(), results))
+
+        raw_results = asyncio.run(_run_all_dimensions())
+        dimension_results = {}
+        for dim_key, result in raw_results.items():
+            if isinstance(result, Exception):
+                logger.error(f"维度 {dim_key} 分析失败: {result}")
                 dimension_results[dim_key] = {
-                    "label": dim_config["label"],
+                    "label": self.ANALYSIS_DIMENSIONS[dim_key]["label"],
                     "score": None,
                     "risk_level": "unknown",
                     "findings": [],
                     "recommendations": [],
-                    "error": str(e),
+                    "error": str(result),
                 }
+            else:
+                dimension_results[dim_key] = result
 
         # 4. 跨维度协同效应
         synergies = self._evaluate_synergies(dimension_results)
@@ -623,6 +633,97 @@ class HealthAnalysisService:
             logger.error(f"保存结构化分析缓存失败: {e}")
 
         return result
+
+    async def _analyze_dimension_async(
+        self,
+        provider,
+        dim_key: str,
+        dim_config: dict,
+        health_data: dict,
+        trends: dict,
+    ) -> dict:
+        """对单个维度进行 LLM 分析（async 版本，供 gather 并发调用）"""
+        # 加载知识库上下文
+        knowledge_context = self._load_knowledge_context(dim_config.get("knowledge_files", []))
+
+        # 加载阈值参考
+        ref_content = self._load_ref_content(dim_config.get("ref_file", ""))
+
+        # 构建维度专用 prompt
+        trend_text = self._format_trends_for_dimension(dim_key, trends)
+        data_text = self._format_data_for_dimension(dim_key, health_data)
+
+        # [Phase 3] Twin + Safety 增强上下文
+        twin_blob = health_data.get("_twin_blob") or ""
+        safety_alerts = health_data.get("_safety_alerts") or []
+
+        twin_section = ""
+        if twin_blob:
+            twin_section = f"\n## 统一健康快照（Digital Health Twin）\n{twin_blob}\n"
+
+        safety_section = ""
+        if safety_alerts:
+            lines = [
+                f"- [{a['severity']}] {a['title']}" + (f" — {a['action']}" if a.get('action') else "")
+                for a in safety_alerts
+            ]
+            safety_section = f"\n## 规则引擎告警（非推理，必须参考）\n" + "\n".join(lines) + "\n"
+
+        prompt = f"""分析以下用户的{dim_config['label']}维度健康数据。
+
+## 数据
+{data_text}
+
+## 趋势（过去90天）
+{trend_text}
+{twin_section}{safety_section}
+## 参考知识
+{knowledge_context[:2000] if knowledge_context else '无额外参考'}
+
+## 参考阈值
+{ref_content[:1500] if ref_content else '使用通用标准'}
+
+请以 JSON 格式返回分析结果，格式如下：
+{{
+  "score": 0-100的评分,
+  "risk_level": "normal/caution/warning",
+  "findings": ["发现1", "发现2"],
+  "recommendations": ["建议1", "建议2"],
+  "evidence_level": "A/B/C"
+}}
+
+只返回 JSON，不要其他内容。用中文填写 findings 和 recommendations。"""
+
+        response = await provider.chat(
+            messages=[
+                {"role": "system", "content": f"你是{dim_config['label']}领域的健康分析专家。基于循证医学给出评估。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=800,
+        )
+
+        # 解析 JSON 响应
+        try:
+            json_str = response.strip()
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+            parsed = json.loads(json_str.strip())
+            parsed["label"] = dim_config["label"]
+            return parsed
+        except (json.JSONDecodeError, IndexError):
+            logger.warning(f"维度 {dim_key} LLM 返回非 JSON，使用文本解析")
+            return {
+                "label": dim_config["label"],
+                "score": 60,
+                "risk_level": "caution",
+                "findings": self._extract_issues(response)[:3],
+                "recommendations": self._extract_recommendations(response)[:3],
+                "evidence_level": "C",
+                "raw_response": response[:500],
+            }
 
     def _analyze_dimension(
         self,

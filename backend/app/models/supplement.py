@@ -1,5 +1,5 @@
 """补剂管理模型"""
-from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Text, Boolean, Time, Numeric, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Date, ForeignKey, Text, Boolean, Time, Numeric, JSON, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -63,6 +63,9 @@ class SupplementProduct(Base):
 class SupplementDefinition(Base):
     """补剂定义 - 用户的补剂列表"""
     __tablename__ = "supplement_definitions"
+    __table_args__ = (
+        Index("idx_supplement_definitions_user_active", "user_id", "is_active"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -88,6 +91,9 @@ class SupplementDefinition(Base):
 class SupplementRecord(Base):
     """补剂打卡记录"""
     __tablename__ = "supplement_records"
+    __table_args__ = (
+        Index("idx_supplement_records_user_date", "user_id", "record_date", "taken"),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     supplement_id = Column(Integer, ForeignKey("supplement_definitions.id"), nullable=False)

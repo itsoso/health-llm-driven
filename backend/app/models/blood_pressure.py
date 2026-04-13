@@ -1,5 +1,5 @@
 """血压追踪模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -8,6 +8,9 @@ from app.database import Base
 class BloodPressureRecord(Base):
     """血压记录"""
     __tablename__ = "blood_pressure_records"
+    __table_args__ = (
+        Index("idx_blood_pressure_records_user_date", "user_id", "record_date"),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

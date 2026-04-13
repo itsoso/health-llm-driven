@@ -1,5 +1,5 @@
 """健康打卡模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, JSON, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -8,6 +8,9 @@ from app.database import Base
 class HealthCheckin(Base):
     """健康打卡记录"""
     __tablename__ = "health_checkins"
+    __table_args__ = (
+        Index("idx_health_checkins_user_date", "user_id", "checkin_date"),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
