@@ -120,10 +120,46 @@ function CardItem({
 
 // 极简 markdown → HTML（不引入重依赖）
 function simpleMarkdown(md: string): string {
-  return md
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  // 先处理表格（在 HTML 转义之前提取）
+  const lines = md.split('\n');
+  const result: string[] = [];
+  let inTable = false;
+  let tableRows: string[] = [];
+
+  const flushTable = () => {
+    if (tableRows.length < 2) {
+      result.push(...tableRows);
+    } else {
+      let html = '<table class="w-full text-[11px] my-2 border-collapse">';
+      tableRows.forEach((row, i) => {
+        // 跳过分隔行 |---|---|
+        if (/^\|[\s\-:]+\|/.test(row)) return;
+        const cells = row.split('|').filter(c => c.trim() !== '');
+        const tag = i === 0 ? 'th' : 'td';
+        const style = i === 0
+          ? 'class="text-left font-semibold py-1 px-2 border-b border-gray-200 bg-gray-50"'
+          : 'class="py-1 px-2 border-b border-gray-100"';
+        html += '<tr>' + cells.map(c => `<${tag} ${style}>${c.trim()}</${tag}>`).join('') + '</tr>';
+      });
+      html += '</table>';
+      result.push(html);
+    }
+    tableRows = [];
+    inTable = false;
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      inTable = true;
+      tableRows.push(line);
+    } else {
+      if (inTable) flushTable();
+      result.push(line);
+    }
+  }
+  if (inTable) flushTable();
+
+  return result.join('\n')
     .replace(/^### (.+)$/gm, '<h4 class="font-semibold mt-2 mb-1">$1</h4>')
     .replace(/^## (.+)$/gm, '<h3 class="font-semibold text-sm mt-3 mb-1">$1</h3>')
     .replace(/^# (.+)$/gm, '<h2 class="font-bold text-sm mt-3 mb-1">$1</h2>')
@@ -132,8 +168,8 @@ function simpleMarkdown(md: string): string {
     .replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded text-[11px]">$1</code>')
     .replace(/^- (.+)$/gm, '<li class="ml-3 list-disc list-inside">$1</li>')
     .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-3">$1</li>')
-    .replace(/\n\n/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>');
+    .replace(/(?<!\n)\n(?!\n|<)/g, '<br/>')
+    .replace(/\n\n+/g, '<br/><br/>');
 }
 
 export default function ActionCardPanel() {
