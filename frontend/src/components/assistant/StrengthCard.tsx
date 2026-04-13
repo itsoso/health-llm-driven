@@ -18,6 +18,7 @@ interface StrengthCardProps {
 interface ExerciseRecord {
   id: number;
   reps: number;
+  sets: number;
   created_at: string;
 }
 
@@ -44,7 +45,7 @@ export default function StrengthCard({
       setTodayTotal(filtered.reduce((s: number, e: any) => s + (e.reps || 0) * (e.sets || 1), 0));
       setTodaySets(filtered.reduce((s: number, e: any) => s + (e.sets || 1), 0));
       setRecords(filtered.map((e: any) => ({
-        id: e.id, reps: e.reps || 0,
+        id: e.id, reps: e.reps || 0, sets: e.sets || 1,
         created_at: e.created_at || e.record_date,
       })));
     } catch {}
@@ -127,9 +128,9 @@ export default function StrengthCard({
           <span className="text-lg">{icon}</span>
           <span className="text-sm font-bold" style={{ color: '#1C1C1E' }}>{exerciseType}</span>
         </div>
-        <button onClick={() => setShowDetail(!showDetail)} className="text-[10px] hover:opacity-70" style={{ color: '#8E8E93' }}>
-          {showDetail ? '收起' : '详情'}
-        </button>
+        <span className="text-[10px]" style={{ color: '#8E8E93' }}>
+          目标 {dailyTarget}
+        </span>
       </div>
 
       <div className="flex items-center gap-4">
@@ -166,15 +167,43 @@ export default function StrengthCard({
         </div>
       </div>
 
+      {/* 今日每组详情（始终显示） */}
+      {records.length > 0 && (
+        <div className="mt-2.5 pt-2 space-y-1" style={{ borderTop: '1px solid #E5E5EA' }}>
+          <div className="text-[9px] font-medium mb-1" style={{ color: '#AEAEB2' }}>今日记录</div>
+          {records.map((r, i) => (
+            <div key={r.id} className="flex items-center text-[11px] gap-2">
+              <span className="shrink-0 font-medium" style={{ color: '#8E8E93' }}>{r.sets}组×{r.reps}</span>
+              <span className="font-bold" style={{ color }}>{r.reps * r.sets}个</span>
+              <span className="flex-1 text-right text-[10px]" style={{ color: '#AEAEB2' }}>
+                {new Date(r.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <button
+                onClick={() => deleteRecord(r)}
+                className="w-4 h-4 rounded-full flex items-center justify-center transition-all hover:bg-red-50 active:scale-90 shrink-0"
+                title="删除" style={{ color: '#FF453A' }}>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 本周柱状图 */}
       {weekData.length > 0 && (
-        <div className="mt-3 pt-2.5" style={{ borderTop: '1px solid #E5E5EA' }}>
+        <div className="mt-2.5 pt-2" style={{ borderTop: '1px solid #E5E5EA' }}>
           <div className="flex items-end gap-1 h-7">
             {weekData.map((val, i) => {
               const barH = maxWeek > 0 ? Math.max(2, (val / maxWeek) * 28) : 2;
               const isToday = i === todayIdx;
               return (
-                <div key={i} className="flex-1 rounded-sm transition-all"
-                  style={{ height: `${barH}px`, background: isToday ? color : val > 0 ? `${color}40` : '#E5E5EA' }} />
+                <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                  {val > 0 && <span className="text-[7px] font-medium" style={{ color: isToday ? color : '#AEAEB2' }}>{val}</span>}
+                  <div className="w-full rounded-sm transition-all"
+                    style={{ height: `${barH}px`, background: isToday ? color : val > 0 ? `${color}40` : '#E5E5EA' }} />
+                </div>
               );
             })}
           </div>
@@ -186,28 +215,6 @@ export default function StrengthCard({
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {showDetail && records.length > 0 && (
-        <div className="mt-2.5 pt-2.5 space-y-1" style={{ borderTop: '1px solid #E5E5EA' }}>
-          {records.map((r, i) => (
-            <div key={r.id} className="flex items-center justify-between text-xs gap-2">
-              <span style={{ color: '#8E8E93' }}>第{i + 1}组</span>
-              <span className="font-bold flex-1 text-right" style={{ color: '#1C1C1E' }}>{r.reps} 个</span>
-              <span style={{ color: '#AEAEB2' }}>{new Date(r.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-              <button
-                onClick={() => deleteRecord(r)}
-                className="w-5 h-5 rounded-full flex items-center justify-center transition-all hover:bg-red-50 active:scale-90"
-                title={`删除这条 ${r.reps} 个记录`}
-                style={{ color: '#FF453A' }}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ))}
         </div>
       )}
     </div>
