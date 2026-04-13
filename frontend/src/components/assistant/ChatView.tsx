@@ -35,7 +35,7 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
               {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
             </span>
           )}
-          <div className={`max-w-[min(100%,48rem)] rounded-[28px] px-5 py-4 ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.bubbleClass}`}>
+          <div className={`${msg.role === 'user' ? 'max-w-[min(85%,36rem)]' : 'max-w-[min(100%,72rem)]'} rounded-[28px] px-5 py-4 ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.bubbleClass}`}>
             {msg.role === 'assistant' ? (
               <div className="text-sm leading-8 text-white"><MarkdownRenderer content={msg.content} variant="dark" /></div>
             ) : (
