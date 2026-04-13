@@ -454,6 +454,44 @@ def daily_anomaly_check():
 
     logger.info(f"[异常检测] 完成，共检测 {len(user_ids)} 个用户，发现 {total_alerts} 个异常")
 
+    # Phase 1 Safety Guardian 集成：基于 Twin 的确定性规则裁决
+    safety_total = 0
+    try:
+        from app.agents.safety_guardian import evaluate_safety
+        from app.twin.builder import build_twin
+
+        with SessionLocal() as db2:
+            for user_id in user_ids:
+                try:
+                    twin = build_twin(db2, user_id, use_cache=False)
+                    report = evaluate_safety(twin)
+                    if report.critical_count > 0 or report.high_count > 0:
+                        safety_total += report.critical_count + report.high_count
+                        logger.warning(
+                            f"[Safety Guardian] 用户 {user_id} 发现 "
+                            f"{report.critical_count} CRITICAL / {report.high_count} HIGH 告警"
+                        )
+                        # 写入审计日志
+                        try:
+                            from app.agents.audit import log_safety_evaluation
+                            log_safety_evaluation(
+                                db=db2,
+                                user_id=user_id,
+                                alerts_count=len(report.alerts),
+                                result_summary=f"scheduled: {report.critical_count}C/{report.high_count}H/{report.medium_count}M",
+                                twin_build_ms=report.twin_build_ms,
+                                evaluate_ms=report.evaluate_ms,
+                                twin_sources=twin.meta.data_sources,
+                            )
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.error(f"[Safety Guardian] 用户 {user_id} 评估失败: {e}")
+    except Exception as e:
+        logger.error(f"[Safety Guardian] 模块加载失败: {e}")
+
+    logger.info(f"[Safety Guardian] 定时评估完成，{safety_total} 条高优先级告警")
+
 
 @celery_app.task(time_limit=600)
 def daily_trend_analysis():
