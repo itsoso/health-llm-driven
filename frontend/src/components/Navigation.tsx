@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -204,20 +205,13 @@ export default function Navigation() {
               href="/"
               className="flex items-center space-x-2 text-base font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap group"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
-                src="/logo.png" 
-                alt="自由是自律的泡沫" 
-                width={32} 
-                height={32} 
+              <Image
+                src="/logo.png"
+                alt="自由是自律的泡沫"
+                width={32}
+                height={32}
                 className="rounded-lg flex-shrink-0 shadow-md group-hover:shadow-purple-500/20 transition-all"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  const span = document.createElement('span');
-                  span.textContent = '🏥';
-                  span.className = 'text-lg';
-                  e.currentTarget.parentNode?.insertBefore(span, e.currentTarget);
-                }}
+                priority
               />
               <span className="hidden sm:inline text-xl tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
             </Link>

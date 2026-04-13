@@ -16,10 +16,10 @@ Twin 层的薄数据收集器 —— 过渡期。
 
 import logging
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +100,28 @@ def fetch_health_checkin_today(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
-    """今日补剂打卡状态。"""
+    """今日补剂打卡状态。单次 LEFT JOIN 查询代替两次独立查询。"""
     try:
         from app.models.supplement import SupplementDefinition, SupplementRecord
 
         today = date.today()
-        active = (
-            db.query(SupplementDefinition)
+
+        # LEFT JOIN: active supplements + today's taken records
+        rows = (
+            db.query(
+                SupplementDefinition.id,
+                SupplementDefinition.name,
+                SupplementDefinition.dosage,
+                SupplementDefinition.timing,
+                SupplementRecord.taken,
+            )
+            .outerjoin(
+                SupplementRecord,
+                (SupplementRecord.supplement_id == SupplementDefinition.id)
+                & (SupplementRecord.user_id == user_id)
+                & (SupplementRecord.record_date == today)
+                & (SupplementRecord.taken == True),  # noqa: E712
+            )
             .filter(
                 SupplementDefinition.user_id == user_id,
                 SupplementDefinition.is_active == True,  # noqa: E712
@@ -115,26 +130,15 @@ def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
             .all()
         )
 
-        taken_ids = {
-            r.supplement_id
-            for r in db.query(SupplementRecord)
-            .filter(
-                SupplementRecord.user_id == user_id,
-                SupplementRecord.record_date == today,
-                SupplementRecord.taken == True,  # noqa: E712
-            )
-            .all()
-        }
-
         items = [
             {
-                "id": s.id,
-                "name": s.name,
-                "dosage": s.dosage,
-                "timing": s.timing,
-                "taken": s.id in taken_ids,
+                "id": row[0],
+                "name": row[1],
+                "dosage": row[2],
+                "timing": row[3],
+                "taken": row[4] is True,
             }
-            for s in active
+            for row in rows
         ]
 
         return {
@@ -179,8 +183,12 @@ def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str,
 # ─────────────────────────── medical exam abnormal ────────────────────
 
 
-def fetch_medical_exam_abnormal(db: Session, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-    """最近化验单中的异常项。取最近 3 份化验单里的异常条目。
+def fetch_medical_exam_abnormal(
+    db: Session, user_id: int, limit: int = 10
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """最近化验单中的异常项 + 最新化验元信息（单次 joinedload 查询）。
+
+    返回 (abnormal_items, latest_exam_meta)。
 
     注意：`medical_exam_items.is_abnormal` 是 varchar(20) 不是 bool，
     值可能是 'true'/'yes'/'偏高'/'偏低'/'异常' 等字符串。
@@ -191,60 +199,58 @@ def fetch_medical_exam_abnormal(db: Session, user_id: int, limit: int = 10) -> L
 
         exams = (
             db.query(MedicalExam)
+            .options(joinedload(MedicalExam.items))
             .filter(MedicalExam.user_id == user_id)
             .order_by(desc(MedicalExam.exam_date))
             .limit(3)
             .all()
         )
         if not exams:
-            return []
+            return [], {}
 
-        exam_map = {e.id: e for e in exams}
-        items = (
-            db.query(MedicalExamItem)
-            .filter(MedicalExamItem.exam_id.in_(list(exam_map.keys())))
-            .all()
-        )
+        # 最新化验元信息
+        latest_meta = {"exam_date": exams[0].exam_date, "exam_type": exams[0].exam_type}
 
         abnormal_labels = {
             "true", "yes", "1", "异常", "偏高", "偏低",
             "高", "低", "阳性", "abnormal", "high", "low",
         }
         result: List[Dict[str, Any]] = []
-        for it in items:
-            flag = (it.is_abnormal or "").strip().lower()
-            # 既接受字符串标志，也接受 result 字段里的标记
-            is_ab = flag in abnormal_labels or (
-                it.result and str(it.result).strip().lower() in abnormal_labels
-            )
-            if not is_ab:
-                continue
-            result.append(
-                {
-                    "item_name": it.item_name,
-                    "value": it.value if it.value is not None else it.value_text,
-                    "unit": it.unit,
-                    "reference_range": it.reference_range,
-                    "result": it.result,
-                    "exam_date": exam_map[it.exam_id].exam_date if it.exam_id in exam_map else None,
-                    "exam_type": exam_map[it.exam_id].exam_type if it.exam_id in exam_map else None,
-                }
-            )
-            if len(result) >= limit:
-                break
-        return result
+        for exam in exams:
+            for it in exam.items:
+                flag = (it.is_abnormal or "").strip().lower()
+                is_ab = flag in abnormal_labels or (
+                    it.result and str(it.result).strip().lower() in abnormal_labels
+                )
+                if not is_ab:
+                    continue
+                result.append(
+                    {
+                        "item_name": it.item_name,
+                        "value": it.value if it.value is not None else it.value_text,
+                        "unit": it.unit,
+                        "reference_range": it.reference_range,
+                        "result": it.result,
+                        "exam_date": exam.exam_date,
+                        "exam_type": exam.exam_type,
+                    }
+                )
+                if len(result) >= limit:
+                    return result, latest_meta
+        return result, latest_meta
     except Exception as e:
         logger.warning(f"[twin.collectors] medical_exam 失败: {e}")
-        # 清理被污染的事务，避免影响后续 collectors
         try:
             db.rollback()
         except Exception:
             pass
-        return []
+        return [], {}
 
 
+# fetch_latest_exam_meta 已合并到 fetch_medical_exam_abnormal 中（Phase 3.2）
+# 保留旧签名供外部调用者向后兼容
 def fetch_latest_exam_meta(db: Session, user_id: int) -> Dict[str, Any]:
-    """最近一份化验单的元信息。"""
+    """最近一份化验单的元信息。已合并入 fetch_medical_exam_abnormal。"""
     try:
         from app.models.medical_exam import MedicalExam
 

@@ -1,27 +1,22 @@
 """
 Digital Health Twin 组装器。
 
-调用顺序（每步独立 try/except，任一失败不影响其他）：
-  1. MultiSourceIntegrationService.get_integrated_profile  → wearable/body/labs/diet/genetic highlights
-  2. DigitalTwinService.calculate_bmr/tdee                  → 派生生理指标
-  3. SleepAnalysisService.get_deep_analysis                 → 睡眠深度分析
-  4. MedicationService.get_today_status/get_adherence_stats → 药物 on-board
-  5. MoodService.get_stats                                  → 情绪 7d
-  6. ExerciseRecoveryService.get_training_load              → 训练负荷 ACWR
-  7. DietRecommendationService.get_today_intake             → 饮食今日
-  8. DailyRecommendationService.get_environment_data_sync   → 环境
-  9. GoalManagementService.get_user_goals                   → 当前目标
- 10. _collectors.*                                          → water/checkin/supplement/bp/exam/genetic
+调用策略（Phase 3 并行优化）：
+  Phase A: _fill_integrated_profile               → 先执行（下游依赖 BP）
+  Phase B: _fill_physiological_derived ~ _fill_cgm → 8 个并行（各自独立 DB 会话）
+  Phase C: _fill_collectors                        → 最后执行（读取 Phase A 写入的 BP）
 
 约束：
-  - 禁止直接 import SQLAlchemy model（model 访问集中在 _collectors.py）
-  - 每步都是可选的，二次异常也不能让整个 build_twin 崩
+  - Phase B 每个线程创建独立 DB 会话（SQLAlchemy Session 不线程安全）
+  - 每步都是可选的，异常不能让整个 build_twin 崩
+  - twin 对象的并发写入安全：各 _fill_* 写入不同字段，无竞争
 """
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
-from typing import Any, Dict, Set
+from typing import Any, Callable, Dict, List, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -78,16 +73,46 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         )
     )
 
+    # ── Phase A: integrated_profile 先行（下游 _fill_collectors 依赖 BP 字段）──
     _fill_integrated_profile(db, user_id, twin, sources)
-    _fill_physiological_derived(db, user_id, twin)
-    _fill_sleep_deep(db, user_id, twin, sources)
-    _fill_medication(db, user_id, twin, sources)
-    _fill_mood(db, user_id, twin, sources)
-    _fill_training_load(db, user_id, twin, sources)
-    _fill_diet_today(db, user_id, twin, sources)
-    _fill_environment(db, user_id, twin, sources)
-    _fill_goals(db, user_id, twin, sources)
-    _fill_cgm(db, user_id, twin, sources)
+
+    # ── Phase B: 8 个独立步骤并行执行 ──
+    # 每个线程使用独立 DB 会话（SQLAlchemy Session 不线程安全）
+    from app.database import SessionLocal
+
+    parallel_fillers: List[Tuple[str, Callable]] = [
+        ("physiological_derived", lambda s: _fill_physiological_derived(s, user_id, twin)),
+        ("sleep_deep",            lambda s: _fill_sleep_deep(s, user_id, twin, sources)),
+        ("medication",            lambda s: _fill_medication(s, user_id, twin, sources)),
+        ("mood",                  lambda s: _fill_mood(s, user_id, twin, sources)),
+        ("training_load",         lambda s: _fill_training_load(s, user_id, twin, sources)),
+        ("diet_today",            lambda s: _fill_diet_today(s, user_id, twin, sources)),
+        ("environment",           lambda s: _fill_environment(s, user_id, twin, sources)),
+        ("goals",                 lambda s: _fill_goals(s, user_id, twin, sources)),
+        ("cgm",                   lambda s: _fill_cgm(s, user_id, twin, sources)),
+    ]
+
+    def _run_filler(name: str, fn: Callable) -> None:
+        thread_db = SessionLocal()
+        try:
+            fn(thread_db)
+        except Exception as e:
+            logger.warning(f"[twin] {name} 并行执行失败: {e}")
+        finally:
+            thread_db.close()
+
+    max_workers = min(len(parallel_fillers), 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_run_filler, name, fn): name
+            for name, fn in parallel_fillers
+        }
+        for future in as_completed(futures):
+            exc = future.exception()
+            if exc:
+                logger.warning(f"[twin] {futures[future]} 线程异常: {exc}")
+
+    # ── Phase C: collectors 最后执行（依赖 Phase A 的 BP 数据）──
     _fill_collectors(db, user_id, twin, sources)
 
     twin.meta.data_sources = sorted(sources)
@@ -479,13 +504,12 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
             twin.labs.blood_pressure_date = bp.get("record_date")
             sources.add("blood_pressure")
 
-    # — Medical exam abnormal
-    abnormal = _collectors.fetch_medical_exam_abnormal(db, user_id)
+    # — Medical exam abnormal + latest meta (单次 joinedload 查询)
+    abnormal, latest_exam = _collectors.fetch_medical_exam_abnormal(db, user_id)
     if abnormal:
         twin.labs.flagged_abnormal = abnormal
         sources.add("medical_exam")
 
-    latest_exam = _collectors.fetch_latest_exam_meta(db, user_id)
     if latest_exam:
         twin.labs.last_exam_date = latest_exam.get("exam_date")
         twin.labs.last_exam_type = latest_exam.get("exam_type")

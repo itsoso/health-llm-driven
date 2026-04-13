@@ -1,4 +1,5 @@
 import api, { API_BASE_URL } from './client';
+import { parseFullSSE } from '@/utils/sseParser';
 
 export interface OrchestratorRequest {
   query: string;
@@ -86,61 +87,23 @@ export const streamOrchestrator = async (
     throw new Error('Orchestrator stream: no body');
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // SSE frames separated by double newline
-    let idx;
-    while ((idx = buffer.indexOf('\n\n')) !== -1) {
-      const frame = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      parseAndDispatch(frame, handlers);
+  await parseFullSSE(res, ({ event, data }) => {
+    switch (event) {
+      case 'intent':
+        handlers.onIntent?.(data);
+        break;
+      case 'specialist':
+        handlers.onSpecialist?.(data);
+        break;
+      case 'chunk':
+        handlers.onChunk?.(typeof data === 'string' ? data : JSON.stringify(data));
+        break;
+      case 'done':
+        handlers.onDone?.(data);
+        break;
+      case 'error':
+        handlers.onError?.(typeof data === 'string' ? data : data?.detail || 'unknown error');
+        break;
     }
-  }
+  }, signal);
 };
-
-function parseAndDispatch(frame: string, handlers: OrchestratorStreamHandlers) {
-  const lines = frame.split('\n');
-  let event = 'message';
-  const dataLines: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith('event:')) {
-      event = line.slice(6).trim();
-    } else if (line.startsWith('data:')) {
-      dataLines.push(line.slice(5).trim());
-    }
-  }
-  const dataStr = dataLines.join('\n');
-  if (!dataStr) return;
-
-  let parsed: any = dataStr;
-  try {
-    parsed = JSON.parse(dataStr);
-  } catch {
-    // plain string payload (e.g. chunk of prose)
-  }
-
-  switch (event) {
-    case 'intent':
-      handlers.onIntent?.(parsed);
-      break;
-    case 'specialist':
-      handlers.onSpecialist?.(parsed);
-      break;
-    case 'chunk':
-      handlers.onChunk?.(typeof parsed === 'string' ? parsed : JSON.stringify(parsed));
-      break;
-    case 'done':
-      handlers.onDone?.(parsed);
-      break;
-    case 'error':
-      handlers.onError?.(typeof parsed === 'string' ? parsed : parsed?.detail || 'unknown error');
-      break;
-  }
-}

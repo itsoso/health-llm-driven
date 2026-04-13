@@ -1,4 +1,5 @@
 import api, { API_BASE_URL } from './client';
+import { parseSimpleSSE } from '@/utils/sseParser';
 
 export interface ActivitySavedData {
   type: string;
@@ -163,27 +164,7 @@ export const openclawApi = {
       throw new Error(`OpenClaw stream request failed: ${response.status}`);
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {
-            // skip malformed JSON
-          }
-        }
-      }
-    }
+    yield* parseSimpleSSE(response);
   },
 };
 
@@ -236,27 +217,7 @@ export const assistantOpenclawApi = {
       throw new Error(`Assistant OpenClaw stream request failed: ${response.status}`);
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            yield data;
-          } catch {
-            // skip malformed JSON
-          }
-        }
-      }
-    }
+    yield* parseSimpleSSE(response);
   },
 };
 
@@ -277,26 +238,7 @@ export const agentApi = {
       throw new Error(`Agent stream request failed: ${response.status}`);
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            yield JSON.parse(line.slice(6));
-          } catch {
-            // skip
-          }
-        }
-      }
-    }
+    yield* parseSimpleSSE(response);
   },
 
   listTools: () => api.get('/agent/tools'),
