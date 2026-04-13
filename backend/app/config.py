@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """应用设置"""
     
     # === LLM Provider 统一配置 ===
-    llm_provider: str = "openai"  # openai | ollama | openclaw
+    llm_provider: str = "openclaw"  # openclaw | openai | ollama（默认 openclaw 避免 openai proxy 429）
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"

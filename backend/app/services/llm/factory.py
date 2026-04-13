@@ -29,7 +29,7 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
         ValueError: 未知的 provider 类型
     """
     if provider_type is None:
-        provider_type = getattr(settings, "llm_provider", "openai")
+        provider_type = getattr(settings, "llm_provider", "openclaw")
 
     provider_type = provider_type.lower().strip()
     logger.info(f"[LLM Factory] 创建 provider: {provider_type}")
@@ -39,11 +39,15 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
     elif provider_type == "ollama":
         return _create_ollama_provider()
     elif provider_type == "openclaw":
-        return _create_openclaw_provider()
+        try:
+            return _create_openclaw_provider()
+        except Exception as e:
+            logger.warning(f"[LLM Factory] OpenClaw 创建失败，回退到 OpenAI: {e}")
+            return _create_openai_provider()
     else:
         raise ValueError(
             f"未知的 LLM provider 类型: {provider_type!r}，"
-            f"支持的类型: openai, ollama, openclaw"
+            f"支持的类型: openclaw, openai, ollama"
         )
 
 
