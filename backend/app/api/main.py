@@ -108,6 +108,7 @@ from app.api import (
     personal_outcome,  # 长期健康改善曲线
     action_card,  # 对话固化 ActionCard
     exercise_coaching,  # 运动动作指导笔记
+    rhinitis_trend,  # 鼻炎趋势数据
 )
 
 api_router = APIRouter()
@@ -164,6 +165,7 @@ api_router.include_router(cgm.router, tags=["cgm"])  # CGM 连续血糖监测
 api_router.include_router(personal_outcome.router, tags=["personal-outcome"])  # 长期健康改善
 api_router.include_router(action_card.router, tags=["action-cards"])  # 对话固化 ActionCard
 api_router.include_router(exercise_coaching.router, tags=["exercise-coaching"])  # 运动动作指导
+api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])  # 鼻炎趋势
 api_router.include_router(notification.router, tags=["notification"])  # 推送通知
 api_router.include_router(smart_reminder.router, tags=["reminders"])  # 智能提醒
 api_router.include_router(review.router, tags=["review"])  # 每日复盘

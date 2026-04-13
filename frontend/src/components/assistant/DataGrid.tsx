@@ -1,5 +1,7 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { api } from '@/services/api';
 
 interface DataGridProps {
   todayGarmin: any;
@@ -13,6 +15,13 @@ interface DataGridProps {
 export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisToday, weightStats, medToday }: DataGridProps) {
   const router = useRouter();
   const pressStyle = 'active:scale-[0.98] transition-all duration-150 cursor-pointer';
+
+  // 鼻炎趋势数据
+  const [rhinitisTrend, setRhinitisTrend] = useState<any>(null);
+  const [showTrend, setShowTrend] = useState(false);
+  useEffect(() => {
+    api.get('/rhinitis-trend/me?days=7').then(r => setRhinitisTrend(r.data)).catch(() => {});
+  }, []);
 
   const sleepDeep = todayGarmin?.deep_sleep_duration || 0;
   const sleepRem = todayGarmin?.rem_sleep_duration || 0;
@@ -156,6 +165,60 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
           );
         })()}
       </div>
+
+      {/* 鼻炎 7 天趋势（折叠） */}
+      {rhinitisTrend && rhinitisTrend.daily && rhinitisTrend.daily.length > 0 && (
+        <div className="rounded-2xl px-4 py-3" style={{ background: '#fafff8', border: '1px solid #d9f2d0' }}>
+          <button
+            onClick={() => setShowTrend(!showTrend)}
+            className="w-full flex items-center justify-between text-[10px] font-medium"
+            style={{ color: '#30D158' }}
+          >
+            <span>📊 7 天趋势 · 喷嚏 {rhinitisTrend.summary?.total_sneeze}次 · 洗鼻 {rhinitisTrend.summary?.total_wash}次 · 用药 {rhinitisTrend.summary?.med_adherence_pct}%</span>
+            <span style={{ color: '#AEAEB2' }}>{showTrend ? '收起' : '展开'}</span>
+          </button>
+          {showTrend && (
+            <div className="mt-2 space-y-1">
+              {/* 柱状图 */}
+              <div className="flex items-end gap-1 h-10">
+                {rhinitisTrend.daily.map((d: any, i: number) => {
+                  const maxVal = Math.max(...rhinitisTrend.daily.map((x: any) => x.sneeze || 0), 1);
+                  const h = Math.max(2, ((d.sneeze || 0) / maxVal) * 40);
+                  const isToday = d.date === new Date().toISOString().slice(0, 10);
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                      {(d.sneeze || 0) > 0 && <span className="text-[7px]" style={{ color: isToday ? '#FF9500' : '#AEAEB2' }}>{d.sneeze}</span>}
+                      <div className="w-full rounded-sm" style={{ height: `${h}px`, background: isToday ? '#FF9500' : (d.sneeze || 0) > 0 ? '#FFD9A8' : '#E5E5EA' }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-1">
+                {rhinitisTrend.daily.map((d: any, i: number) => (
+                  <div key={i} className="flex-1 text-center text-[7px]" style={{ color: '#AEAEB2' }}>
+                    {d.date.slice(5)}
+                  </div>
+                ))}
+              </div>
+              {/* 每天明细 */}
+              <div className="mt-1.5 space-y-0.5">
+                {rhinitisTrend.daily.map((d: any) => (
+                  <div key={d.date} className="flex items-center text-[10px] gap-2">
+                    <span className="w-12 shrink-0" style={{ color: '#8E8E93' }}>{d.date.slice(5)}</span>
+                    <span style={{ color: (d.sneeze || 0) >= 5 ? '#FF9500' : '#1C1C1E' }}>🤧{d.sneeze || 0}</span>
+                    <span style={{ color: '#30D158' }}>👃{d.wash || 0}</span>
+                    {d.meds && d.meds.length > 0 && d.meds.map((m: any, mi: number) => (
+                      <span key={mi} className="text-[9px]" style={{ color: m.taken ? '#30D158' : '#AEAEB2' }}>
+                        {m.taken ? '✅' : '⬜'}{m.name}{m.time ? ` ${m.time}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Row 3: 血压 + 体重 */}
       <div className="grid grid-cols-2 gap-3">
