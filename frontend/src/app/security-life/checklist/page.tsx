@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { securityLifeApi } from '@/services/api'
+import { securityLifeApi } from '@/services/api/content';
 import { systemDefinitions } from '@/data/security-life/systemDefinitions'
 import { Plus, Trash2, X } from 'lucide-react'
 

@@ -13,7 +13,8 @@
  * - "详细解读" 是可选的 LLM 调用，按需付费
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   dismissSafetyAlert,
   explainSafetyAlert,
@@ -230,9 +231,20 @@ function AlertCard({ alert, expanded, onToggle, onDismiss }: AlertCardProps) {
 // ─────────────────────── 主面板 ───────────────────────────
 
 export default function SafetyPanel() {
-  const [report, setReport] = useState<SafetyReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const {
+    data: report,
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useQuery<SafetyReport>({
+    queryKey: ['safety-report'],
+    queryFn: () => getSafetyReport(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const loadReport = () => { refetch(); };
+  const error = queryError ? (queryError as any)?.response?.data?.detail || (queryError as Error).message || '加载安全报告失败' : null;
   const [showAll, setShowAll] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -299,23 +311,6 @@ export default function SafetyPanel() {
     setSynthOpen(false);
     setSynthStreaming(false);
   }, []);
-
-  const loadReport = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getSafetyReport();
-      setReport(data);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || e?.message || '加载安全报告失败');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadReport();
-  }, [loadReport]);
 
   const visibleAlerts = useMemo(() => {
     if (!report) return [];
@@ -427,12 +422,8 @@ export default function SafetyPanel() {
           onDismiss={async (ruleId) => {
             try {
               await dismissSafetyAlert(ruleId, 'known');
-              // 从列表中移除
-              setReport((prev) => prev ? {
-                ...prev,
-                alerts: prev.alerts.filter((a) => a.rule_id !== ruleId),
-                summary: { ...prev.summary, total: prev.summary.total - 1 },
-              } : prev);
+              // 刷新报告
+              queryClient.invalidateQueries({ queryKey: ['safety-report'] });
             } catch (e) {
               console.error('忽略失败', e);
             }

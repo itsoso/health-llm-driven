@@ -1,6 +1,8 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
-import { api, dailyHealthApi, healthScoreApi, supplementApi } from '@/services/api';
+import { api } from '@/services/api/client';
+import { dailyHealthApi, healthScoreApi } from '@/services/api/health';
+import { supplementApi } from '@/services/api/records';
 
 /**
  * Dashboard data 聚合 hook

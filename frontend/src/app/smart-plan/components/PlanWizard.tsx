@@ -5,7 +5,7 @@ import {
   Check, Loader2, Sparkles, Target, TrendingUp, ArrowRight, Lightbulb, AlertTriangle,
   X, Plus, CloudRain, Sun, Cloud, Snowflake, Wind, Plane, Activity, Brain
 } from 'lucide-react';
-import { smartPlanApi } from '@/services/api';
+import { smartPlanApi } from '@/services/api/content';
 import { AnalyzeData, categoryConfig } from './types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

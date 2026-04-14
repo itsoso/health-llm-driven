@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { api, dailyHealthApi } from '@/services/api';
+import { api } from '@/services/api/client';
+import { dailyHealthApi } from '@/services/api/health';
 
 interface StrengthCardProps {
   exerciseType: string;

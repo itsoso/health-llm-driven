@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 const DAILY_TARGET = 1200; // 9岁儿童每日饮水目标(ml)
 const MAX_AMOUNT = 2000; // 每日最高上限(ml)

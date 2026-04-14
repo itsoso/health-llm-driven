@@ -9,7 +9,7 @@ import {
   PolarAngleAxis, PolarRadiusAxis, Radar,
 } from 'recharts';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { bodyCompositionApi, BodyAnalysisItem } from '@/services/api';
+import { bodyCompositionApi, BodyAnalysisItem } from '@/services/api/health';
 
 type Tab = 'trend' | 'analysis';
 

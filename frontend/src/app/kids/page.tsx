@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { chatApi, openclawApi, dmApi, ChatMessage, Conversation } from '@/services/api';
+import { chatApi, openclawApi, ChatMessage, Conversation } from '@/services/api/ai';
+import { dmApi } from '@/services/api/social';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
 import KidsChatBubble from '@/components/kids/KidsChatBubble';

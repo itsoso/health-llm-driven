@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { excretionApi, ExcretionRecord, ExcretionStats } from '@/services/api';
+import { excretionApi, ExcretionRecord, ExcretionStats } from '@/services/api/records';
 import { format } from 'date-fns';
 
 const BRISTOL_SCALE = [

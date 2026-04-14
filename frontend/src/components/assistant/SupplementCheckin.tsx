@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supplementApi } from '@/services/api';
+import { supplementApi } from '@/services/api/records';
 
 const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
 const SUPP_PAGE_SIZE = 6;

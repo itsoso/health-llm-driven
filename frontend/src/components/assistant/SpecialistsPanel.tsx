@@ -12,7 +12,8 @@
  * - 不做 LLM 合成（那是 SafetyPanel 的"AI 综合分析"职责）
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { runOrchestrator, OrchestratorFinding } from '@/services/api/orchestrator';
 
 // ─── 类别元数据 ─────────────────────────
@@ -231,29 +232,23 @@ export default function SpecialistsPanel({
 }: {
   query?: string;
 }) {
-  const [findings, setFindings] = useState<OrchestratorFinding[]>([]);
-  const [usedSpecialists, setUsedSpecialists] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [twinBuildMs, setTwinBuildMs] = useState(0);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await runOrchestrator({ query, stream: false });
-      setFindings(res.findings.filter((f) => f.specialist_name !== 'safety_guardian'));
-      setUsedSpecialists(res.used_specialists);
-      setTwinBuildMs(res.twin_build_ms || 0);
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || e?.message || '加载专家分析失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [query]);
-
-  // 按需触发 — 不在首页加载时自动调 orchestrator（节省 LLM 调用）
-  // 用户点"运行专家舰队"按钮才触发
+  const {
+    data: orchestratorResult,
+    isLoading: loading,
+    error: queryError,
+    refetch: load,
+    isFetched,
+  } = useQuery({
+    queryKey: ['specialists', query],
+    queryFn: () => runOrchestrator({ query, stream: false }),
+    enabled: false, // 按需触发 — 用户点"运行专家舰队"按钮
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const findings = orchestratorResult?.findings?.filter((f) => f.specialist_name !== 'safety_guardian') ?? [];
+  const usedSpecialists = orchestratorResult?.used_specialists ?? [];
+  const twinBuildMs = orchestratorResult?.twin_build_ms ?? 0;
+  const error = queryError ? (queryError as any)?.response?.data?.detail || (queryError as Error).message || '加载专家分析失败' : null;
 
   if (!loading && findings.length === 0 && !error) {
     return (
@@ -263,7 +258,7 @@ export default function SpecialistsPanel({
           <span className="text-[10px]" style={{ color: '#94a3b8' }}>· 10 个专家待命</span>
         </div>
         <button
-          onClick={load}
+          onClick={() => load()}
           className="w-full rounded-2xl px-4 py-3 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
           style={{
             background: 'linear-gradient(135deg, #f0f0ff 0%, #f8f7ff 100%)',
@@ -295,7 +290,7 @@ export default function SpecialistsPanel({
         style={{ background: '#fef2f2', border: '1px solid #fecaca' }}
       >
         <span className="text-xs" style={{ color: '#dc2626' }}>专家分析失败：{error}</span>
-        <button onClick={load} className="ml-auto text-xs underline" style={{ color: '#dc2626' }}>
+        <button onClick={() => load()} className="ml-auto text-xs underline" style={{ color: '#dc2626' }}>
           重试
         </button>
       </div>
@@ -316,7 +311,7 @@ export default function SpecialistsPanel({
           · {usedSpecialists.length} 个专家参与 · Twin {twinBuildMs}ms
         </span>
         <button
-          onClick={load}
+          onClick={() => load()}
           className="ml-auto text-[10px]"
           style={{ color: '#94a3b8' }}
           title="重新运行"

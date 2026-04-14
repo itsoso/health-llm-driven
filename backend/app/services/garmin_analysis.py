@@ -394,6 +394,7 @@ class GarminAnalysisService:
             "heart_rate": self.analyze_heart_rate(db, user_id, days),
             "body_battery": self.analyze_body_battery(db, user_id, days),
             "activity": self.analyze_activity(db, user_id, days),
+            "spo2": self.analyze_spo2(db, user_id, days),
         }
     
     def _assess_sleep_quality(

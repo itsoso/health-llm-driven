@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { friendsApi, pkChallengeApi, FriendInfo } from '@/services/api';
-import { api } from '@/services/api';
+import { friendsApi, pkChallengeApi, FriendInfo } from '@/services/api/social';
+import { api } from '@/services/api/client';
 
 interface CheckinTemplateOption {
   id: number;

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bell, X, AlertTriangle, Heart, Sparkles, Clock, CheckCircle, Info } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { notificationApi } from '@/services/api';
+import { notificationApi } from '@/services/api/user';
 
 interface NotificationLog {
   id: number;

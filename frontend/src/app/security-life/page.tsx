@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
-import { securityLifeApi } from '@/services/api'
+import { securityLifeApi } from '@/services/api/content';
 import { basketDefaults } from '@/data/security-life/basketDefaults'
 import { redLineDefinitions } from '@/data/security-life/redLineDefinitions'
 import { systemDefinitions } from '@/data/security-life/systemDefinitions'

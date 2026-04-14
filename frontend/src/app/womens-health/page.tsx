@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { womensHealthApi, MenstrualCycleItem, CyclePrediction, CycleStats, CycleCalendar, CycleSymptomItem } from '@/services/api';
+import { womensHealthApi, MenstrualCycleItem, CyclePrediction, CycleStats, CycleCalendar, CycleSymptomItem } from '@/services/api/health';
 
 const FLOW_OPTIONS = [
   { value: 'light', label: '少量', color: 'bg-pink-200' },

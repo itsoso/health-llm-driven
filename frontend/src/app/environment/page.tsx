@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 interface WeatherData {
   available: boolean;

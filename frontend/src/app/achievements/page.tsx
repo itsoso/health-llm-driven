@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { achievementApi } from '@/services/api';
+import { achievementApi } from '@/services/api/user';
 
 interface Achievement {
   id: number;

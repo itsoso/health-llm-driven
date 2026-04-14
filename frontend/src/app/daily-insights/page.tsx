@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dailyRecommendationApi, externalRecommendationApi, ExternalRecommendation } from '@/services/api';
+import { dailyRecommendationApi } from '@/services/api/health';
+import { externalRecommendationApi, ExternalRecommendation } from '@/services/api/content';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { DailyRecommendation, statusColors, statusLabels } from './types';

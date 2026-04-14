@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { groupApi, GroupMsgData, GroupMemberInfo } from '@/services/api';
+import { groupApi, GroupMsgData, GroupMemberInfo } from '@/services/api/social';
 
 const AVATAR_EMOJIS = ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🦁', '🐯', '🐸'];
 const getEmoji = (id: number) => AVATAR_EMOJIS[id % AVATAR_EMOJIS.length];

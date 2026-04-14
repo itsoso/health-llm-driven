@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { workoutGuidanceApi } from '@/services/api';
+import { workoutGuidanceApi } from '@/services/api/content';
 import { WORKOUT_TYPES, HR_ZONE_COLORS } from './components/workoutUtils';
 import { WorkoutSummary, WorkoutStats, WorkoutDetail } from './components/workoutTypes';
 import WorkoutList from './components/WorkoutList';

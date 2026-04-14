@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { activityStatusApi, ActivityStatusData, ActivityTimelineItem, ActivityStatsData } from '@/services/api';
+import { activityStatusApi, ActivityStatusData, ActivityTimelineItem, ActivityStatsData } from '@/services/api/social';
 
 const CATEGORIES = [
   { value: 'studying', label: '学习', emoji: '📚', color: 'bg-blue-500' },

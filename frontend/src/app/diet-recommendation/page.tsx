@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { dietRecommendationApi } from '@/services/api'
+import { dietRecommendationApi } from '@/services/api/content';
 import { 
   ChartBarIcon, 
   FireIcon, 

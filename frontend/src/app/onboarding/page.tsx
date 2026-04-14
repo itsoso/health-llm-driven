@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { onboardingApi } from '@/services/api';
+import { onboardingApi } from '@/services/api/user';
 
 const DEFAULT_TEMPLATES = [
   { name: '俯卧撑', icon: '💪', category: 'exercise' },

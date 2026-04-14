@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Conversation } from '@/services/api';
+import { Conversation } from '@/services/api/ai';
 import { relativeTime } from '@/utils/timeFormat';
 
 interface HistorySidebarProps {

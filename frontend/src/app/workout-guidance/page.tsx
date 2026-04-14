@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { workoutGuidanceApi, goalApi } from '@/services/api';
+import { goalApi } from '@/services/api/user';
+import { workoutGuidanceApi } from '@/services/api/content';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 
 // 心率区间颜色

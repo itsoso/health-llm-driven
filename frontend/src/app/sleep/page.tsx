@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { sleepApi, SleepRecordData, SleepStats } from '@/services/api';
+import { sleepApi, SleepRecordData, SleepStats } from '@/services/api/records';
 import { format } from 'date-fns';
 
 const QUALITY_LABELS = ['', '很差', '较差', '一般', '较好', '很好'];

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supplementApi } from '@/services/api'
+import { supplementApi } from '@/services/api/records';
 import { 
   SparklesIcon,
   ClockIcon,

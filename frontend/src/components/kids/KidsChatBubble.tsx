@@ -2,7 +2,7 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChatMessage } from '@/services/api';
+import { ChatMessage } from '@/services/api/ai';
 
 interface KidsChatBubbleProps {
   message: ChatMessage;

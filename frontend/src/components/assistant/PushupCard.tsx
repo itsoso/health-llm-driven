@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { api, dailyHealthApi } from '@/services/api';
+import { api } from '@/services/api/client';
+import { dailyHealthApi } from '@/services/api/health';
 
 const DAILY_TARGET = 100;
 const QUICK_AMOUNTS = [10, 15, 20, 30, 50];

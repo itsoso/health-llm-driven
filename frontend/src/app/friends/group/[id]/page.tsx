@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { groupApi, GroupMsgData, GroupMemberInfo } from '@/services/api';
+import { groupApi, GroupMsgData, GroupMemberInfo } from '@/services/api/social';
 import { ArrowLeft, Send, Users, UserMinus, UserPlus, LogOut, Settings, X } from 'lucide-react';
 
 export default function GroupChatPage() {

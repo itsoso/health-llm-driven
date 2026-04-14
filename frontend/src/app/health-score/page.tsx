@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { healthScoreApi, HealthScoreDimension } from '@/services/api';
+import { healthScoreApi, HealthScoreDimension } from '@/services/api/health';
 
 function ScoreGauge({ score, grade, size = 160 }: { score: number; grade?: string; size?: number }) {
   const r = (size - 12) / 2;

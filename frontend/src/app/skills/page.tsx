@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { api, openclawSkillsApi } from '@/services/api';
+import { api } from '@/services/api/client';
+import { openclawSkillsApi } from '@/services/api/ai';
 import { useAuth } from '@/contexts/AuthContext';
 
 // API 路径前缀（代理 + Raw URL 共用）

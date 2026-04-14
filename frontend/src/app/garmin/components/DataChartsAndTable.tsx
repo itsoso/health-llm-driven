@@ -332,6 +332,77 @@ export default function DataChartsAndTable({
         </div>
       </div>
 
+      {/* 血氧饱和度趋势图 */}
+      <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">血氧饱和度 (SpO2) 趋势</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis
+              dataKey="date"
+              stroke="#6b7280"
+              style={{ fontSize: '12px', fontWeight: 500 }}
+            />
+            <YAxis
+              stroke="#6b7280"
+              style={{ fontSize: '12px', fontWeight: 500 }}
+              label={{ value: 'SpO2 (%)', angle: -90, position: 'insideLeft', style: { fontSize: '12px', fontWeight: 600 } }}
+              domain={[88, 100]}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'white',
+                border: '2px solid #e5e7eb',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 500
+              }}
+              formatter={(value: any) => value ? `${value}%` : '-'}
+            />
+            <Legend
+              wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="spo2Avg"
+              stroke="#06b6d4"
+              strokeWidth={3}
+              dot={{ fill: '#06b6d4', r: 5 }}
+              name="平均血氧"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="spo2Min"
+              stroke="#f97316"
+              strokeWidth={2}
+              dot={{ fill: '#f97316', r: 4 }}
+              name="最低血氧"
+              connectNulls
+            />
+            {/* 参考线：95% 警戒线 */}
+            <Line
+              type="monotone"
+              dataKey={() => 95}
+              stroke="#ef4444"
+              strokeWidth={1}
+              strokeDasharray="5 5"
+              dot={false}
+              name="警戒线 (95%)"
+              legendType="none"
+            />
+          </LineChart>
+        </ResponsiveContainer>
+        <div className="mt-4 text-sm text-gray-600">
+          <p className="font-semibold mb-2">血氧饱和度参考值：</p>
+          <ul className="space-y-1">
+            <li>• <span className="text-green-700 font-medium">&ge;96%</span>：正常范围</li>
+            <li>• <span className="text-yellow-700 font-medium">93-95%</span>：偏低，建议关注呼吸和睡眠质量</li>
+            <li>• <span className="text-red-700 font-medium">&lt;93%</span>：异常偏低，建议就医检查</li>
+          </ul>
+        </div>
+      </div>
+
       {/* 呼吸频率趋势图 */}
       <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
         <h2 className="text-2xl font-bold mb-6 text-gray-900">呼吸频率趋势</h2>
@@ -444,7 +515,10 @@ export default function DataChartsAndTable({
                 <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">身体电量</th>
                 <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">压力</th>
                 <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">白天呼吸</th>
-                <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">睡眠呼吸</th>
+                <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">睡眠呼吸</th>
+                <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">血氧均值</th>
+                <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">血氧最低</th>
+                <th className="px-5 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">血氧最高</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -561,7 +635,7 @@ export default function DataChartsAndTable({
                         ? `${item.avg_respiration_awake.toFixed(1)}` : '-'}
                     </span>
                   </td>
-                  <td className="px-5 py-4 whitespace-nowrap text-sm">
+                  <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
                     <span className={`font-semibold ${
                       item.avg_respiration_sleep === null || item.avg_respiration_sleep === undefined ? 'text-gray-500' :
                       item.avg_respiration_sleep > 18 ? 'text-orange-700' :
@@ -570,6 +644,31 @@ export default function DataChartsAndTable({
                     }`}>
                       {item.avg_respiration_sleep !== null && item.avg_respiration_sleep !== undefined
                         ? `${item.avg_respiration_sleep.toFixed(1)}` : '-'}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                    <span className={`font-semibold ${
+                      item.spo2_avg === null || item.spo2_avg === undefined ? 'text-gray-500' :
+                      item.spo2_avg >= 96 ? 'text-green-700' :
+                      item.spo2_avg >= 93 ? 'text-yellow-700' :
+                      'text-orange-700'
+                    }`}>
+                      {item.spo2_avg !== null && item.spo2_avg !== undefined ? `${item.spo2_avg}%` : '-'}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 whitespace-nowrap text-sm border-r border-gray-100">
+                    <span className={`font-semibold ${
+                      item.spo2_min === null || item.spo2_min === undefined ? 'text-gray-500' :
+                      item.spo2_min >= 95 ? 'text-green-700' :
+                      item.spo2_min >= 90 ? 'text-orange-700' :
+                      'text-red-700'
+                    }`}>
+                      {item.spo2_min !== null && item.spo2_min !== undefined ? `${item.spo2_min}%` : '-'}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 whitespace-nowrap text-sm">
+                    <span className="font-semibold text-gray-900">
+                      {item.spo2_max !== null && item.spo2_max !== undefined ? `${item.spo2_max}%` : '-'}
                     </span>
                   </td>
                 </tr>

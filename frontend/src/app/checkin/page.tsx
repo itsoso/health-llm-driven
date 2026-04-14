@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useCelebration } from '@/components/AchievementCelebration';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 interface CheckinTemplate {
   id: number;

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { dmApi, friendsApi, DMResponse } from '@/services/api';
+import { dmApi, friendsApi, DMResponse } from '@/services/api/social';
 
 export default function KidsChatPage() {
   const params = useParams();

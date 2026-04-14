@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { securityLifeApi } from '@/services/api'
+import { securityLifeApi } from '@/services/api/content';
 
 export default function ProfilePage() {
   const qc = useQueryClient()

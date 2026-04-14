@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 interface Application {
   id: number;

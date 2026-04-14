@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useToast } from '@/contexts/ToastContext';
 

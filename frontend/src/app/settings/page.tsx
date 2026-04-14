@@ -5,10 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import {
-  assistantOpenclawBindingApi,
-  AssistantOpenClawBindingStatus,
-} from '@/services/api';
+import { assistantOpenclawBindingApi, AssistantOpenClawBindingStatus } from '@/services/api/ai';
 import { formatDateTime } from '@/utils/timezone';
 import GarminSection, { extractErrorMsg } from './components/GarminSection';
 import UserProfileSection from './components/UserProfileSection';

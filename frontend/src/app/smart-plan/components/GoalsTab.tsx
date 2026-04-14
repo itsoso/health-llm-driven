@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Target, TrendingUp, Trash2 } from 'lucide-react';
-import { smartPlanApi } from '@/services/api';
+import { smartPlanApi } from '@/services/api/content';
 import { GoalListItem, PeriodGoal, GoalMetric } from './types';
 import { DebugPanel } from './DebugPanel';
 

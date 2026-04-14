@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { kidsPlanApi, KidsPlanHistoryResponse, KidsPlanDaySummary } from '@/services/api';
+import { kidsPlanApi, KidsPlanHistoryResponse, KidsPlanDaySummary } from '@/services/api/content';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO, subMonths, addMonths } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

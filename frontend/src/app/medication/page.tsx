@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { medicationApi, MedicationItem, MedicationTodayStatus } from '@/services/api';
+import { medicationApi, MedicationItem, MedicationTodayStatus } from '@/services/api/records';
 
 function MedicationContent() {
   const queryClient = useQueryClient();

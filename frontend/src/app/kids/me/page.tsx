@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { api, moodApi } from '@/services/api';
+import { api } from '@/services/api/client';
+import { moodApi } from '@/services/api/records';
 import { compressImage } from '@/utils/imageCompress';
 
 export default function KidsMePage() {

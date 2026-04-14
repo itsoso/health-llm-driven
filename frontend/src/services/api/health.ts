@@ -203,6 +203,8 @@ export const garminAnalysisApi = {
     api.get('/garmin-analysis/me/body-battery', { params: { days } }),
   analyzeMyActivity: (days: number = 7) =>
     api.get('/garmin-analysis/me/activity', { params: { days } }),
+  analyzeMySpO2: (days: number = 7) =>
+    api.get('/garmin-analysis/me/spo2', { params: { days } }),
 };
 
 // 数据收集状态

@@ -6,7 +6,7 @@ import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay } 
 import { zhCN } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { moodApi, MoodRecord, MoodStats } from '@/services/api';
+import { moodApi, MoodRecord, MoodStats } from '@/services/api/records';
 
 // 情绪 Emoji 映射
 const MOOD_EMOJIS: Record<number, { emoji: string; label: string; color: string }> = {

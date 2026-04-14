@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { kidsPetApi, KidsPetState } from '@/services/api';
+import { kidsPetApi, KidsPetState } from '@/services/api/content';
 
 interface Breed {
   id: string;

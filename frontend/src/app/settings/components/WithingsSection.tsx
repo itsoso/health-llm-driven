@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, QueryClient } from '@tanstack/react-query';
-import { withingsApi, deviceApi } from '@/services/api';
+import { withingsApi, deviceApi } from '@/services/api/devices';
 import { formatDateTime } from '@/utils/timezone';
 import { extractErrorMsg } from './GarminSection';
 

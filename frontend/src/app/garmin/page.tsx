@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { dailyHealthApi, garminAnalysisApi, dataCollectionStatusApi } from '@/services/api';
+import { dailyHealthApi, garminAnalysisApi } from '@/services/api/health';
+import { dataCollectionStatusApi } from '@/services/api/devices';
 import { format, subDays } from 'date-fns';
 import DataChartsAndTable from './components/DataChartsAndTable';
 import SleepAnalysisPanel from './components/SleepAnalysisPanel';
@@ -13,7 +14,7 @@ function GarminContent() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
   const [days, setDays] = useState(7);
-  const [activeTab, setActiveTab] = useState<'data' | 'sleep' | 'heart' | 'battery' | 'activity' | 'comprehensive'>('data');
+  const [activeTab, setActiveTab] = useState<'data' | 'sleep' | 'heart' | 'spo2' | 'battery' | 'activity' | 'comprehensive'>('data');
   
   // 分页状态
   const [currentPage, setCurrentPage] = useState(1);
@@ -64,6 +65,13 @@ function GarminContent() {
     enabled: !!userId && (activeTab === 'activity' || activeTab === 'comprehensive'),
   });
 
+  // 获取血氧分析
+  const { data: spo2Analysis } = useQuery({
+    queryKey: ['garmin-spo2', userId, days],
+    queryFn: () => garminAnalysisApi.analyzeMySpO2(days),
+    enabled: !!userId && (activeTab === 'spo2' || activeTab === 'comprehensive'),
+  });
+
   // 获取综合分析
   const { data: comprehensiveAnalysis } = useQuery({
     queryKey: ['garmin-comprehensive', userId, days],
@@ -93,6 +101,9 @@ function GarminContent() {
       stressLevel: item.stress_level,
       respirationAwake: item.avg_respiration_awake,
       respirationSleep: item.avg_respiration_sleep,
+      spo2Avg: item.spo2_avg,
+      spo2Min: item.spo2_min,
+      spo2Max: item.spo2_max,
     })) || [];
 
   if (loadingData) {
@@ -158,6 +169,7 @@ function GarminContent() {
               { id: 'data', label: '原始数据', icon: '📈' },
               { id: 'sleep', label: '睡眠分析', icon: '😴' },
               { id: 'heart', label: '心率分析', icon: '❤️' },
+              { id: 'spo2', label: '血氧分析', icon: '🫁' },
               { id: 'battery', label: '身体电量', icon: '🔋' },
               { id: 'activity', label: '活动分析', icon: '🏃' },
               { id: 'comprehensive', label: '综合分析', icon: '🔍' },
@@ -227,6 +239,75 @@ function GarminContent() {
               </div>
             ) : (
               <p className="text-gray-700 font-medium">{heartAnalysis.data.message}</p>
+            )}
+          </div>
+        )}
+
+        {/* 血氧分析 */}
+        {activeTab === 'spo2' && spo2Analysis?.data && (
+          <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">血氧饱和度分析</h2>
+            {spo2Analysis.data.status === 'success' ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-5 bg-cyan-50 rounded-xl border-2 border-cyan-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">平均血氧</p>
+                    <p className="text-3xl font-bold text-cyan-700">{spo2Analysis.data.average_spo2}%</p>
+                  </div>
+                  <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">最低血氧</p>
+                    <p className={`text-3xl font-bold ${
+                      spo2Analysis.data.min_spo2 && spo2Analysis.data.min_spo2 < 95 ? 'text-orange-700' : 'text-blue-700'
+                    }`}>{spo2Analysis.data.min_spo2 ?? '-'}%</p>
+                  </div>
+                  <div className="p-5 bg-orange-50 rounded-xl border-2 border-orange-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">低于95%天数</p>
+                    <p className={`text-3xl font-bold ${
+                      spo2Analysis.data.below_95_days > 0 ? 'text-orange-700' : 'text-green-700'
+                    }`}>{spo2Analysis.data.below_95_days} 天</p>
+                  </div>
+                  <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">分析天数</p>
+                    <p className="text-3xl font-bold text-green-700">{spo2Analysis.data.days_analyzed} 天</p>
+                  </div>
+                </div>
+
+                {/* 最新数据 */}
+                {spo2Analysis.data.latest && (
+                  <div className="p-5 bg-gray-50 rounded-xl border-2 border-gray-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">最新数据 ({spo2Analysis.data.latest.date})</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-600">平均</p>
+                        <p className="text-xl font-bold text-gray-900">{spo2Analysis.data.latest.avg}%</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-600">最低</p>
+                        <p className={`text-xl font-bold ${
+                          spo2Analysis.data.latest.min && spo2Analysis.data.latest.min < 95 ? 'text-orange-700' : 'text-gray-900'
+                        }`}>{spo2Analysis.data.latest.min ?? '-'}%</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-600">最高</p>
+                        <p className="text-xl font-bold text-gray-900">{spo2Analysis.data.latest.max ?? '-'}%</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 参考值 */}
+                <div className="p-5 bg-cyan-50 rounded-xl border-2 border-cyan-200">
+                  <h3 className="text-lg font-bold mb-3 text-cyan-900">血氧参考值</h3>
+                  <ul className="list-disc list-inside space-y-2">
+                    <li className="text-gray-900 font-medium leading-7"><span className="text-green-700 font-semibold">96-100%</span>：正常范围</li>
+                    <li className="text-gray-900 font-medium leading-7"><span className="text-yellow-700 font-semibold">93-95%</span>：偏低，建议关注</li>
+                    <li className="text-gray-900 font-medium leading-7"><span className="text-orange-700 font-semibold">90-92%</span>：低血氧，建议就医</li>
+                    <li className="text-gray-900 font-medium leading-7"><span className="text-red-700 font-semibold">&lt;90%</span>：严重低血氧，需紧急处理</li>
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-700 font-medium">{spo2Analysis.data.message}</p>
             )}
           </div>
         )}
@@ -342,6 +423,22 @@ function GarminContent() {
                       {comprehensiveAnalysis.data.body_battery.average_most_charged?.toFixed(0) ?? comprehensiveAnalysis.data.body_battery.average_charged?.toFixed(0)}/100
                     </p>
                     <p className="text-sm font-semibold text-gray-700 mt-2">平均峰值</p>
+                  </div>
+                )}
+
+                {/* 血氧 */}
+                {comprehensiveAnalysis.data.spo2?.status === 'success' && (
+                  <div className="p-5 bg-cyan-50 rounded-xl border-2 border-cyan-200">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900">血氧饱和度</h3>
+                    <p className="text-3xl font-bold text-cyan-700">
+                      {comprehensiveAnalysis.data.spo2.average_spo2}%
+                    </p>
+                    <p className="text-sm font-semibold text-gray-700 mt-2">
+                      最低 {comprehensiveAnalysis.data.spo2.min_spo2 ?? '-'}%
+                      {comprehensiveAnalysis.data.spo2.below_95_days > 0 && (
+                        <span className="text-orange-700 ml-2">({comprehensiveAnalysis.data.spo2.below_95_days}天低于95%)</span>
+                      )}
+                    </p>
                   </div>
                 )}
               </div>

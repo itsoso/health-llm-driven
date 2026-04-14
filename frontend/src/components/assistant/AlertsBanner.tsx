@@ -1,7 +1,7 @@
 'use client';
 import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 import { useToast } from '@/contexts/ToastContext';
 
 interface AlertsBannerProps {

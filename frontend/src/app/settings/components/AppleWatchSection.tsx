@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, QueryClient } from '@tanstack/react-query';
-import { deviceApi } from '@/services/api';
+import { deviceApi } from '@/services/api/devices';
 import { formatDateTime } from '@/utils/timezone';
 import { extractErrorMsg } from './GarminSection';
 

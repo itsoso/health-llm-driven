@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 interface CheckinTemplate {
   id: number;

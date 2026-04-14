@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
-import { kidsPlanApi, KidsPlanItem, KidsPlanDaySummary } from '@/services/api';
+import { kidsPlanApi, KidsPlanItem, KidsPlanDaySummary } from '@/services/api/content';
 
 interface PlanItem extends KidsPlanItem {}
 

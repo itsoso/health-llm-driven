@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { vocabularyApi, VocabularyWord } from '@/services/api';
+import { vocabularyApi, VocabularyWord } from '@/services/api/ai';
 import { useKidsTheme } from '@/contexts/KidsThemeContext';
 
 type TabKey = 'all' | 'review' | 'mastered';

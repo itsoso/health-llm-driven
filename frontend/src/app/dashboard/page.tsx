@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dailyHealthApi, garminAnalysisApi, basicHealthApi, dataCollectionApi, healthTrendApi, healthScoreApi, api } from '@/services/api';
+import { api } from '@/services/api/client';
+import { dailyHealthApi, garminAnalysisApi, basicHealthApi, healthTrendApi, healthScoreApi } from '@/services/api/health';
+import { dataCollectionApi } from '@/services/api/devices';
 import { useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import {

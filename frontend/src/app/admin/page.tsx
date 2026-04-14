@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import UserManagementTab from './components/UserManagementTab';
 import GarminSyncTab from './components/GarminSyncTab';

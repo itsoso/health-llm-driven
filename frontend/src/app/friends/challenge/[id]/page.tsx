@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
-import { pkChallengeApi, PKChallengeDetailData } from '@/services/api';
+import { pkChallengeApi, PKChallengeDetailData } from '@/services/api/social';
 
 export default function ChallengeDetailPage() {
   const params = useParams();

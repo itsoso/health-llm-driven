@@ -1,6 +1,6 @@
 'use client';
 import { useRef } from 'react';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 import { useToast } from '@/contexts/ToastContext';
 
 interface QuickRecordBarProps {

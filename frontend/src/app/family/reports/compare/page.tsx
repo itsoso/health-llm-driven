@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { familyApi } from '@/services/api';
+import { familyApi } from '@/services/api/family';
 
 interface ComparisonIndicator {
   name: string;

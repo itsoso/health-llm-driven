@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { moodApi } from '@/services/api';
+import { moodApi } from '@/services/api/records';
 
 const MOODS = [
   { score: 1, emoji: '😢', label: '难过', color: 'bg-red-100 border-red-300 hover:bg-red-200', activeColor: 'bg-red-200 border-red-400 ring-4 ring-red-200' },

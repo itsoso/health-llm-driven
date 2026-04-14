@@ -4,11 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import {
-  friendsApi, pkChallengeApi, dmApi, groupApi,
-  FriendInfo, FriendRequestData, UserSearchResultData,
-  PKChallengeData, PKStatsData, GroupListItem,
-} from '@/services/api';
+import { friendsApi, pkChallengeApi, dmApi, groupApi, FriendInfo, FriendRequestData, UserSearchResultData, PKChallengeData, PKStatsData, GroupListItem } from '@/services/api/social';
 
 type Tab = 'friends' | 'requests' | 'challenges' | 'groups';
 

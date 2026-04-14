@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, chatApi, openclawApi, agentApi, sharedApi, feedbackApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api';
+import { api } from '@/services/api/client';
+import { feedbackApi } from '@/services/api/user';
+import { chatApi, openclawApi, agentApi, sharedApi, ChatMessage, Conversation, DietSavedData, ActivitySavedData } from '@/services/api/ai';
 import NotificationCenter from '@/components/NotificationCenter';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';

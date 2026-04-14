@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 interface DataGridProps {
   todayGarmin: any;

@@ -1,6 +1,6 @@
 'use client';
 
-import { ChatMessage } from '@/services/api';
+import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 
 interface ChatViewProps {

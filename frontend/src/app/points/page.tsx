@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, Cell,
 } from 'recharts';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { dailyPointsApi, PointItemData } from '@/services/api';
+import { dailyPointsApi, PointItemData } from '@/services/api/social';
 
 const CATEGORY_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
   exercise: { label: '运动', color: '#f97316', icon: '🏃' },

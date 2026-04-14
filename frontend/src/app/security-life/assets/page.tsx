@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { securityLifeApi } from '@/services/api'
+import { securityLifeApi } from '@/services/api/content';
 import { Plus, Trash2, Save, X } from 'lucide-react'
 
 const PROPERTY_TYPES = ['自住核心区', '投资非核心', '西部避险']

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/services/api';
+import { api } from '@/services/api/client';
 
 export default function Home() {
   const { data: healthStatus } = useQuery({

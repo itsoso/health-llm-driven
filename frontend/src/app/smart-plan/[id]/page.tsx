@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { smartPlanApi } from '@/services/api';
+import { smartPlanApi } from '@/services/api/content';
 import {
   Calendar, ChevronLeft, Check, Circle, Star,
   Loader2, Trash2, Dumbbell, Utensils, Moon, Sparkles, MoreHorizontal

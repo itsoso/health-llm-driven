@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { familyApi } from '@/services/api';
+import { familyApi } from '@/services/api/family';
 
 interface Report { id: number; report_date: string; hospital: string | null; title: string | null; status: string; abnormal_count: number; ai_summary: string | null; }
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { familyApi } from '@/services/api';
+import { familyApi } from '@/services/api/family';
 
 // ── Types ────────────────────────────────────────────────
 interface FamilyMember {
@@ -474,7 +474,7 @@ function DailyCheckTab({ report, onRun, onSend, sending }: { report: DailyCheckR
       <button
         onClick={async () => {
           try {
-            const res = await (await import('@/services/api')).familyApi.getWeeklyDigest();
+            const res = await (await import('@/services/api/family')).familyApi.getWeeklyDigest();
             alert(res.data.digest_text || '暂无周报数据');
           } catch { alert('获取周报失败'); }
         }}

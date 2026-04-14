@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalRecommendation } from '@/services/api';
+import { ExternalRecommendation } from '@/services/api/content';
 import { MarkdownContent } from './MarkdownContent';
 
 type DateRange = 'today' | 'week' | 'month' | 'all';
