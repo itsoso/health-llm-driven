@@ -220,10 +220,35 @@ async def list_conversations(
 ):
     service = OpenClawService(db)
     convs = service.get_conversations(current_user.id, limit)
+    from app.models.openclaw import OpenClawMessage
+    # 批量获取每个对话的最后一条用户消息作为预览
+    conv_ids = [c.id for c in convs]
+    last_msgs = {}
+    if conv_ids:
+        from sqlalchemy import func
+        subq = (
+            db.query(
+                OpenClawMessage.conversation_id,
+                func.max(OpenClawMessage.id).label("max_id")
+            )
+            .filter(
+                OpenClawMessage.conversation_id.in_(conv_ids),
+                OpenClawMessage.role == "user"
+            )
+            .group_by(OpenClawMessage.conversation_id)
+            .subquery()
+        )
+        rows = (
+            db.query(OpenClawMessage.conversation_id, OpenClawMessage.content)
+            .join(subq, OpenClawMessage.id == subq.c.max_id)
+            .all()
+        )
+        last_msgs = {r[0]: r[1][:50] for r in rows}
     return [
         {
             "id": c.id,
             "title": c.title,
+            "last_message": last_msgs.get(c.id),
             "created_at": str(c.created_at),
             "updated_at": str(c.updated_at),
         }

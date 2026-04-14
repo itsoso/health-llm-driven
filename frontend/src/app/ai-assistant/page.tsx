@@ -99,6 +99,7 @@ export default function AIAssistantPage() {
   const appsMenuRef = useRef<HTMLDivElement>(null);
   const layoutHydratedRef = useRef(false);
   const layoutSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const convCacheRef = useRef<Map<number, ChatMessage[]>>(new Map());
 
   // ── Conversations ──
   const loadConversations = useCallback(async () => {
@@ -129,8 +130,19 @@ export default function AIAssistantPage() {
 
   const loadConversation = useCallback(async (convId: number) => {
     try {
+      // 使用缓存避免重复请求
+      const cached = convCacheRef.current.get(convId);
+      if (cached) {
+        setMessages(cached);
+        setDoneMessageIds(new Set(cached.filter((m: ChatMessage) => m.role === 'assistant').map((m: ChatMessage) => m.id)));
+        setConversationId(convId);
+        setInlineMode(false);
+        setInlineResponse(null);
+        return;
+      }
       const response = await openclawApi.getConversation(convId);
       const msgs = response.data.messages || [];
+      convCacheRef.current.set(convId, msgs);
       setMessages(msgs);
       setDoneMessageIds(new Set(msgs.filter((m: ChatMessage) => m.role === 'assistant').map((m: ChatMessage) => m.id)));
       setConversationId(convId);

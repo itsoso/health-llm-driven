@@ -63,8 +63,10 @@ class OpenClawService:
     def get_conversation_detail(
         self, user_id: int, conversation_id: int
     ) -> Optional[OpenClawConversation]:
+        from sqlalchemy.orm import joinedload
         return (
             self.db.query(OpenClawConversation)
+            .options(joinedload(OpenClawConversation.messages))
             .filter(
                 OpenClawConversation.id == conversation_id,
                 OpenClawConversation.user_id == user_id,
