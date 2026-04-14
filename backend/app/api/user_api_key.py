@@ -497,9 +497,16 @@ async def get_external_health_data(
             GeneticVariant.category
         ).all()
         if variants:
+            # 按 gene_name + variant_name 去重，保留最新的一条
+            seen = {}
+            for v in variants:
+                key = (v.gene_name, v.variant_name)
+                if key not in seen:
+                    seen[key] = v
+            unique_variants = list(seen.values())
             response["genetic_profile"] = {
-                "total_variants": len(variants),
-                "high_risk_count": sum(1 for v in variants if v.risk_level == "high"),
+                "total_variants": len(unique_variants),
+                "high_risk_count": sum(1 for v in unique_variants if v.risk_level == "high"),
                 "variants": [
                     {
                         "gene": v.gene_name,
@@ -508,10 +515,10 @@ async def get_external_health_data(
                         "result": v.result_label,
                         "risk_level": v.risk_level,
                         "category": v.category,
-                        "description": v.description,
+                        "description": v.description if v.description != v.result_label else None,
                         "health_implications": v.health_implications,
                     }
-                    for v in variants
+                    for v in unique_variants
                 ]
             }
     except Exception:

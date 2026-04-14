@@ -283,11 +283,19 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
             .all()
         )
 
+        # 按 gene_name + variant_name 去重，保留首条（risk_level desc 排序后优先高风险）
+        seen = {}
+        for v in variants:
+            key = (v.gene_name, getattr(v, "variant_name", None))
+            if key not in seen:
+                seen[key] = v
+        unique_variants = list(seen.values())
+
         drug_sens: List[Dict[str, Any]] = []
         risk: List[Dict[str, Any]] = []
         protective: List[Dict[str, Any]] = []
 
-        for v in variants:
+        for v in unique_variants:
             item = {
                 "gene_name": v.gene_name,
                 "variant_name": getattr(v, "variant_name", None),
@@ -306,7 +314,7 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
                 risk.append(item)
 
         return {
-            "total": len(variants),
+            "total": len(unique_variants),
             "drug_sensitivity": drug_sens[:10],
             "risk": risk[:10],
             "protective": protective[:10],
