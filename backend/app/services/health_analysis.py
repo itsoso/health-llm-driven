@@ -578,11 +578,30 @@ class HealthAnalysisService:
         trends = self._compute_metric_trends(health_data)
 
         # 3. 分维度并行分析（5 个维度互相独立，asyncio.gather 并发）
+        #    每个维度结果独立缓存到 Redis（1h TTL），失败重试只补跑失败维度
+        from app.utils.redis_cache import RedisCache
+
+        DIM_CACHE_TTL = 3600  # 维度级缓存 1 小时
+        dim_cache_prefix = f"dim_analysis:{user_id}:{today.isoformat()}"
+
+        async def _run_dimension_with_cache(dim_key: str, dim_config: dict):
+            # 先查维度级缓存
+            if not force_refresh:
+                cached = RedisCache.get(f"{dim_cache_prefix}:{dim_key}")
+                if cached:
+                    return cached
+
+            result = await self._analyze_dimension_async(
+                provider, dim_key, dim_config, health_data, trends
+            )
+            # 成功后写入维度缓存
+            if result.get("score") is not None:
+                RedisCache.set(f"{dim_cache_prefix}:{dim_key}", result, ttl=DIM_CACHE_TTL)
+            return result
+
         async def _run_all_dimensions():
             tasks = {
-                dim_key: self._analyze_dimension_async(
-                    provider, dim_key, dim_config, health_data, trends
-                )
+                dim_key: _run_dimension_with_cache(dim_key, dim_config)
                 for dim_key, dim_config in self.ANALYSIS_DIMENSIONS.items()
             }
             results = await asyncio.gather(

@@ -14,10 +14,11 @@ import AlertsBanner from '@/components/assistant/AlertsBanner';
 import SafetyPanel from '@/components/assistant/SafetyPanel';
 import SpecialistsPanel from '@/components/assistant/SpecialistsPanel';
 import ActionCardPanel from '@/components/assistant/ActionCardPanel';
-import SortableCard from '@/components/assistant/SortableCard';
 import { pinMessageToCard } from '@/services/api/actionCard';
-import { DndContext, closestCenter, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import dynamic from 'next/dynamic';
+
+const DndDashboard = dynamic(() => import('@/components/assistant/DndDashboard'), { ssr: false });
+import { arrayMove } from '@/components/assistant/DndDashboard';
 import DataGrid from '@/components/assistant/DataGrid';
 import ActivityCard from '@/components/assistant/ActivityCard';
 import SupplementCheckin from '@/components/assistant/SupplementCheckin';
@@ -145,12 +146,6 @@ export default function AIAssistantPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const layoutHydratedRef = useRef(false);
   const layoutSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    })
-  );
 
   useEffect(() => { document.title = 'AI 助理 | 健康管理'; }, []);
   useEffect(() => { setLayoutDevice(detectAssistantLayoutDevice()); }, []);
@@ -542,14 +537,7 @@ export default function AIAssistantPage() {
     hasFooterControls: showFooterLayoutControls,
   });
 
-  const handleDashboardDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = visibleDashboardCardIds.indexOf(String(active.id));
-    const newIndex = visibleDashboardCardIds.indexOf(String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
-
+  const handleDashboardDragEnd = (oldIndex: number, newIndex: number) => {
     const reorderedVisibleIds = arrayMove(visibleDashboardCardIds, oldIndex, newIndex);
     const hiddenIds = dashboardLayout.order.filter((id) => dashboardLayout.hidden.includes(id));
     setDashboardLayout({
@@ -744,21 +732,12 @@ export default function AIAssistantPage() {
                   )}
 
                   {dashboardEditMode ? (
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDashboardDragEnd}>
-                      <SortableContext items={visibleDashboardCardIds} strategy={verticalListSortingStrategy}>
-                        <div className="space-y-3">
-                          {visibleDashboardCardIds.map((cardId) => {
-                            const content = renderDashboardCard(cardId);
-                            if (!content) return null;
-                            return (
-                              <SortableCard key={cardId} id={cardId} editMode onHide={handleHideDashboardCard}>
-                                {content}
-                              </SortableCard>
-                            );
-                          })}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
+                    <DndDashboard
+                      cardIds={visibleDashboardCardIds}
+                      renderCard={renderDashboardCard}
+                      onDragEnd={handleDashboardDragEnd}
+                      onHideCard={handleHideDashboardCard}
+                    />
                   ) : (
                     <>
                       {visibleDashboardCardIds.map((cardId) => {

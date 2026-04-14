@@ -384,9 +384,19 @@ def _fill_diet_today(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
 
 def _fill_environment(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
     try:
-        from app.services.daily_recommendation import DailyRecommendationService
+        from app.utils.redis_cache import RedisCache
 
-        env = DailyRecommendationService().get_environment_data_sync(db, user_id)
+        ENV_CACHE_KEY = f"twin_env:{user_id}"
+        ENV_CACHE_TTL = 3600  # 环境数据 1 小时缓存（天气/AQI 变化缓慢）
+
+        # 先查缓存
+        env = RedisCache.get(ENV_CACHE_KEY)
+        if not env:
+            from app.services.daily_recommendation import DailyRecommendationService
+            env = DailyRecommendationService().get_environment_data_sync(db, user_id)
+            if env:
+                RedisCache.set(ENV_CACHE_KEY, env, ttl=ENV_CACHE_TTL)
+
         if not env:
             return
 
