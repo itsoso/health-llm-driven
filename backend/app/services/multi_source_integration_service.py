@@ -4,7 +4,7 @@ import math
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import desc, func
+from sqlalchemy import case, desc, distinct, func
 from sqlalchemy.orm import Session
 
 from app.models.basic_health import BasicHealthData
@@ -119,25 +119,34 @@ class MultiSourceIntegrationService:
         c30 = date.today() - timedelta(days=30)
         si: Dict[str, Any] = {}
 
-        # Garmin
-        g30 = db.query(GarminData).filter(GarminData.user_id == user_id, GarminData.record_date >= c30).all()
+        # Garmin — SQL 聚合替代全量加载
+        g_stats = db.query(
+            func.count(distinct(GarminData.record_date)).label("days"),
+            func.sum(case((GarminData.avg_heart_rate.isnot(None), 1), else_=0)).label("hr_cnt"),
+            func.sum(case((GarminData.sleep_score.isnot(None), 1), else_=0)).label("sleep_cnt"),
+            func.sum(case((GarminData.hrv.isnot(None), 1), else_=0)).label("hrv_cnt"),
+            func.sum(case((GarminData.spo2_avg.isnot(None), 1), else_=0)).label("spo2_cnt"),
+        ).filter(GarminData.user_id == user_id, GarminData.record_date >= c30).first()
         g_total = db.query(func.count(GarminData.id)).filter(GarminData.user_id == user_id).scalar() or 0
         g_last = db.query(func.max(GarminData.record_date)).filter(GarminData.user_id == user_id).scalar()
-        g_days = len(set(g.record_date for g in g30)); n = max(g_days, 1)
+        g_days = g_stats.days if g_stats else 0; n = max(g_days, 1)
         g_cov = round(g_days / 30, 2)
         si["garmin"] = {
             "status": "活跃" if g_last and (date.today() - g_last).days <= 7 else ("部分活跃" if g_last else "未接入"),
             "coverage_30d": g_cov, "total_records": g_total,
             "last_update": str(g_last) if g_last else None, "missing_days_30d": 30 - g_days,
             "key_metrics": {k: {"coverage": round(cnt / n, 2), "status": "充足" if cnt / n > 0.7 else "部分"} for k, cnt in [
-                ("heart_rate", sum(1 for g in g30 if g.avg_heart_rate)), ("sleep", sum(1 for g in g30 if g.sleep_score)),
-                ("hrv", sum(1 for g in g30 if g.hrv)), ("spo2", sum(1 for g in g30 if g.spo2_avg))]}}
+                ("heart_rate", g_stats.hr_cnt or 0), ("sleep", g_stats.sleep_cnt or 0),
+                ("hrv", g_stats.hrv_cnt or 0), ("spo2", g_stats.spo2_cnt or 0)]}}
 
-        # Diet
-        d30 = db.query(DietRecord).filter(DietRecord.user_id == user_id, DietRecord.record_date >= c30).all()
+        # Diet — SQL 聚合替代全量加载
+        d_stats = db.query(
+            func.count(distinct(DietRecord.record_date)).label("days"),
+            func.count(DietRecord.id).label("total_30d"),
+        ).filter(DietRecord.user_id == user_id, DietRecord.record_date >= c30).first()
         d_total = db.query(func.count(DietRecord.id)).filter(DietRecord.user_id == user_id).scalar() or 0
         d_last = db.query(func.max(DietRecord.record_date)).filter(DietRecord.user_id == user_id).scalar()
-        d_days = len(set(d.record_date for d in d30)); avg_m = round(len(d30) / max(d_days, 1), 1)
+        d_days = d_stats.days if d_stats else 0; avg_m = round((d_stats.total_30d or 0) / max(d_days, 1), 1)
         si["diet"] = {"status": "活跃" if d_last and (date.today() - d_last).days <= 7 else ("部分活跃" if d_last else "未接入"),
                       "coverage_30d": round(d_days / 30, 2), "total_records": d_total,
                       "last_update": str(d_last) if d_last else None, "avg_meals_per_day": avg_m}

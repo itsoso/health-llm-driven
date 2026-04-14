@@ -78,7 +78,12 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                     user_id=user_id,
                     client=workout_client
                 )
-                workout_result = asyncio.run(workout_sync_service.sync_activities(db, user_id, days))
+
+                # 单次 event loop 完成所有 async 操作
+                async def _async_sync():
+                    return await workout_sync_service.sync_activities(db, user_id, days)
+
+                workout_result = asyncio.run(_async_sync())
                 synced_activities = workout_result.get("synced_count", 0)
                 logger.info(f"用户 {user_id} 运动活动同步完成: {synced_activities} 条")
 
@@ -121,7 +126,11 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                 alerts = anomaly_svc.detect_anomalies(user_id)
                 if alerts:
                     logger.info(f"用户 {user_id} 检测到 {len(alerts)} 个健康异常")
-                    asyncio.run(anomaly_svc.send_alerts(user_id, alerts))
+
+                    async def _send_alerts():
+                        await anomaly_svc.send_alerts(user_id, alerts)
+
+                    asyncio.run(_send_alerts())
             except Exception as e:
                 logger.warning(f"健康异常检测失败: {e}")
 
@@ -216,30 +225,27 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
             workout_data = service._build_workout_data(workout)
             prompt = service._build_prompt(user_id, workout, workout_data)
 
-            # 异步调用 OpenClaw 多模型分析
-            analysis = asyncio.run(service.openclaw.analyze(prompt))
+            # 单次 event loop 完成分析 + 推送通知
+            async def _analyze_and_notify():
+                result = await service.openclaw.analyze(prompt)
+                service._save_analysis_result(user_id, workout_id, prompt, result)
 
-            # 保存分析结果
-            service._save_analysis_result(user_id, workout_id, prompt, analysis)
-
-            # 发送推送通知
-            aggregation = (analysis.get("aggregation") or "")[:200]
-            activity = workout.activity_type or "运动"
-            title = f"运动分析完成: {activity}"
-            content = aggregation or "你的运动数据已分析完成，点击查看详情"
-            try:
-                from app.services.notification.push_service import PushService
-                push_service = PushService(db)
-                asyncio.run(
-                    push_service.send_notification(
+                aggregation = (result.get("aggregation") or "")[:200]
+                activity = workout.activity_type or "运动"
+                try:
+                    from app.services.notification.push_service import PushService
+                    push_svc = PushService(db)
+                    await push_svc.send_notification(
                         user_id=user_id,
                         notification_type="workout_analysis",
-                        title=title,
-                        content=content,
+                        title=f"运动分析完成: {activity}",
+                        content=aggregation or "你的运动数据已分析完成，点击查看详情",
                     )
-                )
-            except Exception as e:
-                logger.warning(f"[自动分析] 推送通知失败: {e}")
+                except Exception as push_err:
+                    logger.warning(f"[自动分析] 推送通知失败: {push_err}")
+                return result
+
+            analysis = asyncio.run(_analyze_and_notify())
 
             logger.info(f"[自动分析] 完成: user={user_id} workout={workout_id} status={analysis.get('status')}")
             return {"status": "success", "workout_id": workout_id}
@@ -254,52 +260,55 @@ def renew_garmin_sessions(self):
     """
     续期所有用户的 Garmin OAuth session（每 12 小时运行一次）
 
-    对每个 sync_enabled=True 且有 garth_session 的用户：
-    1. 加载 session，尝试调用轻量 API 验证有效性
-    2. 若失效，尝试 garth token refresh
-    3. 若 refresh 失败，尝试 curl_cffi 重新登录（最后手段）
+    改为分派子任务：每个用户一个 renew_single_garmin_session task，
+    用 countdown 错开 30 秒，避免阻塞 worker。
     """
-    logger.info("[session-renew] 开始续期 Garmin sessions")
+    logger.info("[session-renew] 开始分派续期任务")
 
     from app.models.user import GarminCredential
-    from app.services.auth import garmin_credential_service
-
-    renewed = 0
-    failed = 0
-    skipped = 0
 
     with SessionLocal() as db:
         credentials = db.query(GarminCredential).filter(
             GarminCredential.sync_enabled == True,
             GarminCredential.garth_session.isnot(None),
         ).all()
+        user_ids = [c.user_id for c in credentials]
 
-        logger.info(f"[session-renew] 发现 {len(credentials)} 个需要检查的 session")
+    logger.info(f"[session-renew] 发现 {len(user_ids)} 个需要检查的 session，分派子任务")
 
-        import time as _time
-        for i, cred in enumerate(credentials):
-            user_id = cred.user_id
-            prefix = f"[session-renew][user={user_id}]"
+    for i, user_id in enumerate(user_ids):
+        renew_single_garmin_session.apply_async(
+            args=[user_id],
+            countdown=i * 30,  # 每个用户错开 30 秒
+        )
 
-            # 用户间延迟 30 秒，避免短时间内多次 SSO 登录触发 Garmin 限流
-            if i > 0:
-                _time.sleep(30)
+    return {"dispatched": len(user_ids)}
 
-            try:
-                result = _renew_single_session(db, cred, prefix)
-                if result == "renewed":
-                    renewed += 1
-                elif result == "valid":
-                    skipped += 1
-                else:
-                    failed += 1
-            except Exception as e:
-                logger.error(f"{prefix} 续期异常: {e}", exc_info=True)
-                failed += 1
 
-    summary = f"[session-renew] 完成: 续期成功={renewed}, 仍有效={skipped}, 失败={failed}"
-    logger.info(summary)
-    return {"renewed": renewed, "skipped": skipped, "failed": failed}
+@celery_app.task(bind=True, max_retries=1, time_limit=120)
+def renew_single_garmin_session(self, user_id: int):
+    """续期单个用户的 Garmin session（由 renew_garmin_sessions 分派）"""
+    from app.models.user import GarminCredential
+
+    prefix = f"[session-renew][user={user_id}]"
+
+    with SessionLocal() as db:
+        cred = db.query(GarminCredential).filter(
+            GarminCredential.user_id == user_id,
+            GarminCredential.sync_enabled == True,
+            GarminCredential.garth_session.isnot(None),
+        ).first()
+
+        if not cred:
+            logger.info(f"{prefix} 凭据不存在或已禁用，跳过")
+            return {"status": "skipped"}
+
+        try:
+            result = _renew_single_session(db, cred, prefix)
+            return {"status": result}
+        except Exception as e:
+            logger.error(f"{prefix} 续期异常: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e)}
 
 
 def _renew_single_session(db, cred, prefix: str) -> str:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.config import settings
 from app.models.basic_health import BasicHealthData
 from app.models.medical_exam import MedicalExam, MedicalExamItem
@@ -51,8 +51,10 @@ class HealthAnalysisService:
             BasicHealthData.user_id == user_id
         ).order_by(BasicHealthData.record_date.desc()).first()
         
-        # 获取最近的体检数据
-        recent_exams = db.query(MedicalExam).filter(
+        # 获取最近的体检数据（eager load items 避免 N+1）
+        recent_exams = db.query(MedicalExam).options(
+            joinedload(MedicalExam.items)
+        ).filter(
             MedicalExam.user_id == user_id
         ).order_by(MedicalExam.exam_date.desc()).limit(3).all()
         
@@ -62,8 +64,21 @@ class HealthAnalysisService:
             DiseaseRecord.status.in_(["active", "chronic"])
         ).all()
         
-        # 获取Garmin数据（最近N天）
-        garmin_data = db.query(GarminData).filter(
+        # 获取Garmin数据（最近N天，只加载需要的列）
+        garmin_cols = [
+            GarminData.record_date,
+            GarminData.avg_heart_rate,
+            GarminData.resting_heart_rate,
+            GarminData.hrv,
+            GarminData.sleep_score,
+            GarminData.total_sleep_duration,
+            GarminData.deep_sleep_duration,
+            GarminData.rem_sleep_duration,
+            GarminData.body_battery_charged,
+            GarminData.stress_level,
+            GarminData.steps,
+        ]
+        garmin_rows = db.query(*garmin_cols).filter(
             GarminData.user_id == user_id,
             GarminData.record_date >= start_date,
             GarminData.record_date <= end_date
@@ -123,19 +138,19 @@ class HealthAnalysisService:
             ],
             "garmin_data": [
                 {
-                    "record_date": data.record_date.isoformat(),
-                    "avg_heart_rate": data.avg_heart_rate,
-                    "resting_heart_rate": data.resting_heart_rate,
-                    "hrv": data.hrv,
-                    "sleep_score": data.sleep_score,
-                    "total_sleep_duration": data.total_sleep_duration,
-                    "deep_sleep_duration": data.deep_sleep_duration,
-                    "rem_sleep_duration": data.rem_sleep_duration,
-                    "body_battery_charged": data.body_battery_charged,
-                    "stress_level": data.stress_level,
-                    "steps": data.steps,
+                    "record_date": row.record_date.isoformat(),
+                    "avg_heart_rate": row.avg_heart_rate,
+                    "resting_heart_rate": row.resting_heart_rate,
+                    "hrv": row.hrv,
+                    "sleep_score": row.sleep_score,
+                    "total_sleep_duration": row.total_sleep_duration,
+                    "deep_sleep_duration": row.deep_sleep_duration,
+                    "rem_sleep_duration": row.rem_sleep_duration,
+                    "body_battery_charged": row.body_battery_charged,
+                    "stress_level": row.stress_level,
+                    "steps": row.steps,
                 }
-                for data in garmin_data
+                for row in garmin_rows
             ],
         }
     
