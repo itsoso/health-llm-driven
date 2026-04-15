@@ -90,7 +90,7 @@ class VectorStoreService:
                 logger.warning("OpenAI 未配置，将使用 Chroma 默认 embeddings")
 
             # 初始化 DashScope 容灾客户端
-            fallback_key = os.environ.get("LLM_VISION_API_KEY")  # DashScope key
+            fallback_key = getattr(settings, "llm_vision_api_key", None)
             if OPENAI_AVAILABLE and fallback_key:
                 self._fallback_client = OpenAI(
                     api_key=fallback_key,
