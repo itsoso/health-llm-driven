@@ -172,7 +172,7 @@ export default function HeroCard({
   const restingHR = todayGarmin?.resting_heart_rate || todayGarmin?.avg_heart_rate;
   const stress = todayGarmin?.stress_level;
   const steps = todayGarmin?.steps || 0;
-  const activeMin = todayGarmin?.active_minutes || 0;
+  const activeMin = Math.max(todayGarmin?.active_minutes || 0, (todayGarmin?.moderate_intensity_minutes || 0) + (todayGarmin?.vigorous_intensity_minutes || 0));
 
   const focus = (() => {
     if (hrv != null && hrv < 40) return { level: 'warn', text: 'HRV 偏低' };
