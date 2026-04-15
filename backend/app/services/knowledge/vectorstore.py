@@ -46,8 +46,10 @@ class VectorStoreService:
         self.client = None
         self.collection = None
         self.openai_client = None
-        self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-v3")
+        self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
         self._embedding_disabled_until = 0  # 熔断时间戳
+        self._fallback_client = None  # DashScope 容灾客户端
+        self._fallback_model = "text-embedding-v3"
 
         self._initialize()
     
@@ -86,6 +88,15 @@ class VectorStoreService:
                 logger.info("OpenAI embeddings 已启用")
             else:
                 logger.warning("OpenAI 未配置，将使用 Chroma 默认 embeddings")
+
+            # 初始化 DashScope 容灾客户端
+            fallback_key = os.environ.get("LLM_VISION_API_KEY")  # DashScope key
+            if OPENAI_AVAILABLE and fallback_key:
+                self._fallback_client = OpenAI(
+                    api_key=fallback_key,
+                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                )
+                logger.info("DashScope embeddings 容灾已启用")
                 
         except Exception as e:
             logger.error(f"向量存储初始化失败: {e}")
@@ -97,55 +108,50 @@ class VectorStoreService:
     def _get_embeddings(self, texts: List[str], batch_size: int = 50) -> List[List[float]]:
         """
         获取文本的向量表示（分批处理）
-        
-        Args:
-            texts: 要转换的文本列表
-            batch_size: 每批处理的文本数量，默认 50
-            
-        Returns:
-            向量列表
+        OpenAI 优先，失败自动 fallback 到 DashScope
         """
-        if not self.openai_client:
+        if not self.openai_client and not self._fallback_client:
             return None
 
-        # 熔断检查：配额耗尽后 10 分钟内不再请求
         import time
-        if time.time() < self._embedding_disabled_until:
-            return None
+        # 熔断期内直接走 fallback
+        use_fallback = time.time() < self._embedding_disabled_until
 
+        if not use_fallback and self.openai_client:
+            result = self._call_embedding(self.openai_client, self.embedding_model, texts, batch_size)
+            if result is not None:
+                return result
+            # 主路径失败，尝试 fallback
+            logger.warning("OpenAI embeddings 失败，尝试 DashScope 容灾")
+
+        if self._fallback_client:
+            result = self._call_embedding(self._fallback_client, self._fallback_model, texts, batch_size)
+            if result is not None:
+                return result
+
+        return None
+
+    def _call_embedding(self, client, model: str, texts: List[str], batch_size: int) -> List[List[float]]:
+        """调用单个 embedding 提供商"""
+        import time
         try:
             all_embeddings = []
             total_batches = (len(texts) + batch_size - 1) // batch_size
-            
-            logger.info(f"开始生成 embeddings，共 {len(texts)} 个文档，{total_batches} 批")
-            
+
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
-                batch_num = i // batch_size + 1
-                
-                logger.info(f"处理第 {batch_num}/{total_batches} 批，{len(batch)} 个文档...")
-                
-                response = self.openai_client.embeddings.create(
-                    model=self.embedding_model,
-                    input=batch
-                )
-                
-                batch_embeddings = [item.embedding for item in response.data]
-                all_embeddings.extend(batch_embeddings)
-                
-                logger.info(f"第 {batch_num} 批完成")
-            
-            logger.info(f"所有 embeddings 生成完成，共 {len(all_embeddings)} 个")
+                response = client.embeddings.create(model=model, input=batch)
+                all_embeddings.extend([item.embedding for item in response.data])
+
+            logger.info(f"embeddings 完成({model})，共 {len(all_embeddings)} 个")
             return all_embeddings
-            
+
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"OpenAI embeddings 失败: {error_msg}")
-            # 配额耗尽或 429 → 熔断 10 分钟，避免无意义重试
+            logger.error(f"embeddings 失败({model}): {error_msg}")
             if "insufficient_quota" in error_msg or "429" in error_msg:
-                import time
                 self._embedding_disabled_until = time.time() + 600
-                logger.warning("OpenAI embeddings 配额耗尽/限流，熔断 10 分钟")
+                logger.warning(f"{model} 配额耗尽/限流，熔断 10 分钟")
             return None
     
     def add_documents(
