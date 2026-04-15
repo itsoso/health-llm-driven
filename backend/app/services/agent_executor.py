@@ -271,17 +271,25 @@ class AgentExecutor:
 
         max_retries = 5
         for attempt in range(max_retries):
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(url, headers=headers, json=payload)
-                if resp.status_code == 429:
-                    wait = min(10 * (2 ** attempt), 60)  # 10s, 20s, 40s, 60s, 60s
-                    logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    resp = await client.post(url, headers=headers, json=payload)
+                    if resp.status_code == 429:
+                        wait = min(10 * (2 ** attempt), 60)  # 10s, 20s, 40s, 60s, 60s
+                        logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")
+                        await _asyncio.sleep(wait)
+                        continue
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
+                    data = resp.json()
+                    break
+            except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+                if attempt < max_retries - 1:
+                    wait = min(5 * (2 ** attempt), 30)
+                    logger.warning(f"LLM API 超时/连接错误({type(e).__name__})，第{attempt+1}/{max_retries}次重试，等待{wait}s")
                     await _asyncio.sleep(wait)
                     continue
-                if resp.status_code != 200:
-                    raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
-                data = resp.json()
-                break
+                raise
         else:
             raise RuntimeError("AI 服务暂时繁忙，请稍后再试（已重试5次）")
 

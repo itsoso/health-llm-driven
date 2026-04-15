@@ -47,7 +47,8 @@ class VectorStoreService:
         self.collection = None
         self.openai_client = None
         self.embedding_model = "text-embedding-3-small"
-        
+        self._embedding_disabled_until = 0  # 熔断时间戳
+
         self._initialize()
     
     def _initialize(self):
@@ -106,7 +107,12 @@ class VectorStoreService:
         """
         if not self.openai_client:
             return None
-            
+
+        # 熔断检查：配额耗尽后 10 分钟内不再请求
+        import time
+        if time.time() < self._embedding_disabled_until:
+            return None
+
         try:
             all_embeddings = []
             total_batches = (len(texts) + batch_size - 1) // batch_size
@@ -133,7 +139,13 @@ class VectorStoreService:
             return all_embeddings
             
         except Exception as e:
-            logger.error(f"OpenAI embeddings 失败: {e}")
+            error_msg = str(e)
+            logger.error(f"OpenAI embeddings 失败: {error_msg}")
+            # 配额耗尽或 429 → 熔断 10 分钟，避免无意义重试
+            if "insufficient_quota" in error_msg or "429" in error_msg:
+                import time
+                self._embedding_disabled_until = time.time() + 600
+                logger.warning("OpenAI embeddings 配额耗尽/限流，熔断 10 分钟")
             return None
     
     def add_documents(
