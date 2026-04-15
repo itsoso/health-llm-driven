@@ -4,6 +4,7 @@
 提供天气、空气质量和综合健康建议接口
 """
 
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -18,6 +19,58 @@ from app.services.environment import weather_service, air_quality_service, envir
 
 router = APIRouter(prefix="/environment", tags=["environment"])
 logger = logging.getLogger(__name__)
+
+
+def _resolve_city(db: Session, user_id: int) -> str:
+    """解析用户当前城市：行程 > 手动设置 > IP检测 > 静态城市 > 杭州"""
+    today = date.today()
+
+    # 1. 行程：今天是否在旅途中
+    try:
+        from app.models.trip import Trip, TripItem
+        ongoing_trip = db.query(Trip).filter(
+            Trip.user_id == user_id,
+            Trip.start_date <= today,
+            Trip.end_date >= today,
+        ).first()
+        if ongoing_trip:
+            today_items = db.query(TripItem).filter(
+                TripItem.trip_id == ongoing_trip.id,
+                TripItem.item_date == today,
+            ).order_by(TripItem.item_order).all()
+            for item in reversed(today_items):
+                if item.item_type in ('flight', 'train', 'bus') and item.destination:
+                    # 提取城市名（去掉 "市"/"区" 等后缀）
+                    city = item.destination.strip()
+                    for suffix in ('市', '区', '县', '省', '自治区'):
+                        if city.endswith(suffix) and len(city) > 2:
+                            city = city[:-len(suffix)]
+                            break
+                    return city
+            for item in today_items:
+                if item.item_type in ('activity', 'hotel', 'other') and item.location:
+                    city = item.location.strip()
+                    for suffix in ('市', '区', '县', '省', '自治区'):
+                        if city.endswith(suffix) and len(city) > 2:
+                            city = city[:-len(suffix)]
+                            break
+                    return city
+            if ongoing_trip.destination:
+                return ongoing_trip.destination
+    except Exception:
+        pass
+
+    # 2. 用户画像：手动 > IP检测 > city字段
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if profile:
+        if profile.use_manual_location and profile.manual_city:
+            return profile.manual_city
+        if profile.detected_city:
+            return profile.detected_city
+        if profile.city:
+            return profile.city
+
+    return "杭州"
 
 
 class EnvironmentQuery(BaseModel):
@@ -40,14 +93,10 @@ async def get_weather(
     
     支持通过城市名或经纬度查询
     """
-    # 如果没有提供位置，尝试从用户画像获取
+    # 如果没有提供位置，智能解析用户当前城市
     if not city and (lat is None or lon is None):
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if profile and profile.city:
-            city = profile.city
-        else:
-            city = "杭州"  # 默认城市
-    
+        city = _resolve_city(db, current_user.id)
+
     weather = await weather_service.get_current_weather(city, lat, lon)
     exercise_advice = weather_service.get_exercise_advice(weather)
     
@@ -70,12 +119,8 @@ async def get_weather_forecast(
     获取未来几天的天气预报
     """
     if not city and (lat is None or lon is None):
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if profile and profile.city:
-            city = profile.city
-        else:
-            city = "杭州"
-    
+        city = _resolve_city(db, current_user.id)
+
     forecast = await weather_service.get_weather_forecast(city, lat, lon, days)
     return forecast
 
@@ -94,12 +139,8 @@ async def get_air_quality(
     包含 AQI、PM2.5、PM10 等指标及健康建议
     """
     if not city and (lat is None or lon is None):
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-        if profile and profile.city:
-            city = profile.city
-        else:
-            city = "杭州"
-    
+        city = _resolve_city(db, current_user.id)
+
     # 优先使用和风天气空气质量API
     aqi = await weather_service.get_air_quality(city, lat, lon)
     if not aqi.get("available"):
@@ -123,13 +164,10 @@ async def get_environment_advice(
     """
     # 获取用户画像中的城市和健康状况
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    
+
     if not city and (lat is None or lon is None):
-        if profile and profile.city:
-            city = profile.city
-        else:
-            city = "杭州"
-    
+        city = _resolve_city(db, current_user.id)
+
     # 获取用户的慢性病列表
     user_conditions = []
     if profile:
@@ -157,17 +195,14 @@ async def get_morning_briefing(
     适合每天早上查看的简洁环境健康信息
     """
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    
+
     if not city:
-        if profile and profile.city:
-            city = profile.city
-        else:
-            city = "杭州"
-    
+        city = _resolve_city(db, current_user.id)
+
     user_conditions = []
     if profile:
         user_conditions = profile.chronic_conditions or []
-    
+
     briefing = await environment_advisor.get_morning_briefing(
         city=city,
         user_conditions=user_conditions
@@ -190,13 +225,10 @@ async def get_exercise_suitability(
     返回综合评分和推荐活动
     """
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
-    
+
     if not city and (lat is None or lon is None):
-        if profile and profile.city:
-            city = profile.city
-        else:
-            city = "杭州"
-    
+        city = _resolve_city(db, current_user.id)
+
     user_conditions = profile.chronic_conditions if profile else []
     
     advice = await environment_advisor.get_comprehensive_advice(

@@ -167,7 +167,9 @@ export function useDashboardData() {
         const forecastRaw = pick(results, 10);
         if (weatherRaw) {
           const wd = weatherRaw?.weather || weatherRaw || {};
-          wd.city = profile?.city || '';
+          wd.city = (profile?.use_manual_location && profile?.manual_location?.city)
+            ? profile.manual_location.city
+            : profile?.detected_location?.city || profile?.city || '';
           // 合并今日 min/max + 明日预报
           const forecasts =
             forecastRaw?.forecasts ||
