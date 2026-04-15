@@ -4,10 +4,12 @@
 - 饮水记录（碰一下 = 250ml）
 - 大便计时（碰一下开始，再碰一下结束）
 - 小便记录（碰一下即记录）
+- 补剂打卡（碰一下 = 打卡指定补剂）
+- 补剂分组打卡（碰一下 = 打卡该时段所有补剂）
 """
 import logging
 from datetime import date, datetime, time, timezone, timedelta
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -45,9 +47,11 @@ class BowelTimer(Base):
 
 class NfcTapRequest(BaseModel):
     """NFC 碰触请求"""
-    action: str = Field(..., pattern="^(water|bowel|urine)$")
+    action: str = Field(..., pattern="^(water|bowel|urine|supplement|supplement_group)$")
     amount_ml: Optional[int] = Field(250, ge=50, le=2000)  # 仅 water 使用
     drink_type: Optional[str] = "水"  # 仅 water 使用
+    supplement_id: Optional[int] = None  # supplement action 用
+    timing: Optional[str] = None  # supplement_group action 用（morning/noon/evening/bedtime）
     on_behalf_of: Optional[int] = None  # 代记：目标用户 ID（需管理员权限）
 
 
@@ -90,7 +94,12 @@ def nfc_tap(
 
     # 防抖：同一用户同一动作 8 秒内去重（bowel 除外，因为它是状态切换）
     if req.action != "bowel":
-        dedup_key = (target_user_id, req.action)
+        if req.action == "supplement":
+            dedup_key = (target_user_id, f"supplement_{req.supplement_id}")
+        elif req.action == "supplement_group":
+            dedup_key = (target_user_id, f"supplement_group_{req.timing}")
+        else:
+            dedup_key = (target_user_id, req.action)
         last = _last_tap.get(dedup_key)
         if last and (now_utc - last).total_seconds() < _DEDUP_SECONDS:
             return NfcTapResponse(
@@ -109,6 +118,14 @@ def nfc_tap(
         resp = _handle_bowel(db, target_user_id, today, current_time, now_utc)
     elif req.action == "urine":
         resp = _record_urine(db, target_user_id, today, current_time)
+    elif req.action == "supplement":
+        if not req.supplement_id:
+            raise HTTPException(status_code=400, detail="supplement 动作需要提供 supplement_id")
+        resp = _record_supplement(db, target_user_id, today, current_time, req.supplement_id)
+    elif req.action == "supplement_group":
+        if not req.timing:
+            raise HTTPException(status_code=400, detail="supplement_group 动作需要提供 timing（morning/noon/evening/bedtime）")
+        resp = _record_supplement_group(db, target_user_id, today, current_time, req.timing)
     else:
         raise HTTPException(status_code=400, detail=f"未知动作: {req.action}")
 
@@ -235,4 +252,91 @@ def _record_urine(db: Session, user_id: int, today: date, current_time: time):
         status="recorded",
         message=f"已记录小便 {current_time.strftime('%H:%M')}",
         record_id=record.id,
+    )
+
+
+def _record_supplement(db: Session, user_id: int, today: date, current_time: time, supplement_id: int):
+    """打卡单个补剂"""
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+
+    supp = db.query(SupplementDefinition).filter(
+        SupplementDefinition.id == supplement_id,
+        SupplementDefinition.user_id == user_id,
+        SupplementDefinition.is_active == True,
+    ).first()
+    if not supp:
+        raise HTTPException(status_code=404, detail=f"补剂 {supplement_id} 不存在或已停用")
+
+    # Upsert: 同一天同一补剂只保留一条
+    record = db.query(SupplementRecord).filter(
+        SupplementRecord.supplement_id == supplement_id,
+        SupplementRecord.record_date == today,
+    ).first()
+    if record:
+        record.taken = True
+        record.taken_time = current_time
+    else:
+        record = SupplementRecord(
+            supplement_id=supplement_id,
+            user_id=user_id,
+            record_date=today,
+            taken=True,
+            taken_time=current_time,
+        )
+        db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    logger.info(f"NFC 补剂打卡: user={user_id}, {supp.name}")
+    return NfcTapResponse(
+        status="recorded",
+        message=f"已打卡 {supp.name}（{supp.dosage or ''}）",
+        record_id=record.id,
+    )
+
+
+def _record_supplement_group(db: Session, user_id: int, today: date, current_time: time, timing: str):
+    """按时段分组打卡所有补剂"""
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+
+    supps = db.query(SupplementDefinition).filter(
+        SupplementDefinition.user_id == user_id,
+        SupplementDefinition.timing == timing,
+        SupplementDefinition.is_active == True,
+    ).all()
+
+    if not supps:
+        return NfcTapResponse(
+            status="recorded",
+            message=f"{timing} 时段没有活跃补剂",
+        )
+
+    names = []
+    for supp in supps:
+        record = db.query(SupplementRecord).filter(
+            SupplementRecord.supplement_id == supp.id,
+            SupplementRecord.record_date == today,
+        ).first()
+        if record:
+            record.taken = True
+            record.taken_time = current_time
+        else:
+            record = SupplementRecord(
+                supplement_id=supp.id,
+                user_id=user_id,
+                record_date=today,
+                taken=True,
+                taken_time=current_time,
+            )
+            db.add(record)
+        names.append(supp.name)
+
+    db.commit()
+    logger.info(f"NFC 分组打卡: user={user_id}, timing={timing}, count={len(names)}")
+
+    TIMING_LABEL = {"morning": "早上", "noon": "午间", "evening": "晚间", "bedtime": "睡前"}
+    label = TIMING_LABEL.get(timing, timing)
+    return NfcTapResponse(
+        status="recorded",
+        message=f"已打卡{label} {len(names)} 种补剂：{', '.join(names)}",
     )
