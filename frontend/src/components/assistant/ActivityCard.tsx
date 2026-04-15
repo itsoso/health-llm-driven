@@ -10,6 +10,10 @@ interface ActivityCardProps {
 export default function ActivityCard({ todayGarmin, workoutRecent, medToday }: ActivityCardProps) {
   const router = useRouter();
 
+  // active_minutes 可能偏低，取 active_minutes 和 (moderate + vigorous) 的较大值
+  const intensityMinutes = (todayGarmin?.moderate_intensity_minutes || 0) + (todayGarmin?.vigorous_intensity_minutes || 0);
+  const displayMinutes = Math.max(todayGarmin?.active_minutes || 0, intensityMinutes);
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 cursor-pointer" onClick={() => router.push('/garmin')}>
       <div className="flex items-center justify-between mb-2">
@@ -17,7 +21,7 @@ export default function ActivityCard({ todayGarmin, workoutRecent, medToday }: A
         {todayGarmin?.active_calories > 0 && <span className="text-[10px] font-bold text-orange-500">{todayGarmin.active_calories}kcal</span>}
       </div>
       <div className="text-2xl font-bold text-gray-800 leading-tight">
-        {todayGarmin?.active_minutes || 0}<span className="text-xs font-normal text-gray-400 ml-0.5">min</span>
+        {displayMinutes}<span className="text-xs font-normal text-gray-400 ml-0.5">min</span>
       </div>
       <div className="text-[10px] text-gray-500 mt-1">
         {todayGarmin?.steps ? `${todayGarmin.steps.toLocaleString()} 步` : '0 步'}
