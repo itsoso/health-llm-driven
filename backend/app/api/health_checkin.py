@@ -7,7 +7,6 @@ from app.database import get_db
 from app.schemas.health_checkin import HealthCheckinCreate, HealthCheckinResponse
 from app.models.health_checkin import HealthCheckin
 from app.models.user import User
-from app.services.health_analysis import HealthAnalysisService
 from app.api.deps import get_current_user_required
 
 router = APIRouter()
@@ -59,21 +58,11 @@ def create_health_checkin(
     # 创建新记录
     checkin_data = checkin.model_dump()
     checkin_data["user_id"] = user_id
-    
-    # 如果没有提供个性化建议，尝试自动生成（失败不影响保存）
-    if not checkin.personalized_advice:
-        try:
-            analysis_service = HealthAnalysisService()
-            advice = analysis_service.generate_personalized_advice(
-                db, user_id, checkin.checkin_date
-            )
-            checkin_data["personalized_advice"] = advice
-        except Exception as e:
-            logger.warning(f"生成个性化建议失败: {e}")
-            checkin_data["personalized_advice"] = None
-            # 回滚事务，避免后续操作因 InFailedSqlTransaction 失败
-            db.rollback()
-    
+
+    # 个性化建议改为异步生成（不阻塞打卡保存）
+    # 同步 LLM 调用曾导致 POST /checkin/ 耗时 20-35 秒
+    checkin_data["personalized_advice"] = None
+
     logger.info(f"创建新记录: {checkin_data}")
     db_checkin = HealthCheckin(**checkin_data)
     db.add(db_checkin)
