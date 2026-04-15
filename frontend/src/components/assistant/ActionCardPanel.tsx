@@ -16,6 +16,7 @@ import {
 } from '@/services/api/actionCard';
 
 const TYPE_STYLE: Record<string, { bg: string; border: string; fg: string; icon: string }> = {
+  guide: { bg: '#f0fdfa', border: '#99f6e4', fg: '#0d9488', icon: '📖' },
   plan: { bg: '#faf5ff', border: '#e9d5ff', fg: '#7c3aed', icon: '📋' },
   insight: { bg: '#eff6ff', border: '#bfdbfe', fg: '#2563eb', icon: '💡' },
   recommendation: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#16a34a', icon: '✅' },

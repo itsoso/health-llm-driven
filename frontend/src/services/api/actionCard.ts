@@ -4,7 +4,7 @@ export interface ActionCard {
   id: number;
   title: string;
   content: string;
-  card_type: 'plan' | 'insight' | 'recommendation' | 'note';
+  card_type: 'plan' | 'insight' | 'recommendation' | 'note' | 'guide';
   color: string | null;
   source_type: 'conversation' | 'orchestrator' | 'manual';
   source_id: string | null;
