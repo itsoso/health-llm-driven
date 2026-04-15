@@ -369,7 +369,7 @@ async def get_external_health_data(
         ).first()
 
         if garmin:
-            day_data["garmin"] = {
+            garmin_data = {
                 "steps": garmin.steps,
                 "sleep_score": garmin.sleep_score,
                 "sleep_duration_hours": round(garmin.total_sleep_duration / 60, 1) if garmin.total_sleep_duration else None,
@@ -380,11 +380,11 @@ async def get_external_health_data(
                 "heart_rate_resting": garmin.resting_heart_rate,
                 "heart_rate_max": garmin.max_heart_rate,
                 "hrv": garmin.hrv_7day_avg,
-                "body_battery_high": garmin.body_battery_most_charged,  # 最高电量值
-                "body_battery_low": garmin.body_battery_lowest,  # 最低电量值
-                "body_battery_current": garmin.body_battery_current,  # 当前电量
-                "body_battery_charged": garmin.body_battery_charged,  # 今日充电量
-                "body_battery_drained": garmin.body_battery_drained,  # 今日消耗量
+                "body_battery_high": garmin.body_battery_most_charged,
+                "body_battery_low": garmin.body_battery_lowest,
+                "body_battery_current": garmin.body_battery_current,
+                "body_battery_charged": garmin.body_battery_charged,
+                "body_battery_drained": garmin.body_battery_drained,
                 "stress_avg": garmin.stress_level,
                 "calories_total": garmin.calories_burned,
                 "calories_active": garmin.active_calories,
@@ -392,6 +392,7 @@ async def get_external_health_data(
                 "floors_climbed": garmin.floors_climbed,
                 "spo2_avg": garmin.spo2_avg,
             }
+            day_data["garmin"] = {k: v for k, v in garmin_data.items() if v is not None}
 
         # 运动记录
         workouts = db.query(WorkoutRecord).filter(
@@ -463,14 +464,18 @@ async def get_external_health_data(
         ).first()
 
         if weight_record:
-            day_data["weight"] = {
+            weight_data = {
                 "weight_kg": weight_record.weight,
                 "body_fat_percentage": weight_record.body_fat_percentage,
                 "muscle_mass_kg": weight_record.muscle_mass_kg,
             }
+            day_data["weight"] = {k: v for k, v in weight_data.items() if v is not None}
 
         result_data.append(day_data)
         current_date += timedelta(days=1)
+
+    # 过滤空天（只有 date 字段的天不返回）
+    result_data = [d for d in result_data if len(d) > 1]
 
     # 构建响应
     response = {
@@ -497,28 +502,39 @@ async def get_external_health_data(
             GeneticVariant.category
         ).all()
         if variants:
-            # 按 gene_name + variant_name 去重，保留最新的一条
+            # 按 gene_name + variant_name 去重
             seen = {}
             for v in variants:
                 key = (v.gene_name, v.variant_name)
                 if key not in seen:
                     seen[key] = v
             unique_variants = list(seen.values())
+
+            # 只返回可操作变异（high/medium/drug_sensitivity），info/low 用摘要代替
+            actionable = [v for v in unique_variants
+                          if v.risk_level in ("high", "medium")
+                          or "drug" in (v.category or "").lower()]
+            skipped = [v for v in unique_variants if v not in actionable]
+
+            from collections import Counter
+            skipped_summary = Counter(v.category for v in skipped)
+
             response["genetic_profile"] = {
                 "total_variants": len(unique_variants),
                 "high_risk_count": sum(1 for v in unique_variants if v.risk_level == "high"),
+                "returned_variants": len(actionable),
+                "omitted_low_risk": len(skipped),
+                "omitted_categories": dict(skipped_summary),
                 "variants": [
-                    {
+                    {k: v for k, v in {
                         "gene": v.gene_name,
                         "variant": v.variant_name,
                         "genotype": v.genotype,
                         "result": v.result_label,
                         "risk_level": v.risk_level,
                         "category": v.category,
-                        "description": v.description if v.description != v.result_label else None,
-                        "health_implications": v.health_implications,
-                    }
-                    for v in unique_variants
+                    }.items() if v is not None}
+                    for v in actionable
                 ]
             }
     except Exception:
