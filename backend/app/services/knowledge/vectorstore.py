@@ -46,7 +46,7 @@ class VectorStoreService:
         self.client = None
         self.collection = None
         self.openai_client = None
-        self.embedding_model = "text-embedding-3-small"
+        self.embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-v3")
         self._embedding_disabled_until = 0  # 熔断时间戳
 
         self._initialize()
