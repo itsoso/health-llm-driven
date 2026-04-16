@@ -84,23 +84,23 @@ function VitalTile({
 }) {
   return (
     <div
-      className="relative rounded-2xl p-3.5 overflow-hidden"
+      className="relative rounded-2xl p-2.5 sm:p-3.5 overflow-hidden"
       style={{ background: bg, border: `1px solid ${fg}1a` }}
     >
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] font-semibold tracking-wider uppercase" style={{ color: fg, opacity: 0.75 }}>
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="text-[9px] sm:text-[10px] font-semibold tracking-wider uppercase" style={{ color: fg, opacity: 0.75 }}>
           {label}
         </span>
-        <span className="text-[13px] leading-none opacity-60">{icon}</span>
+        <span className="text-[12px] leading-none opacity-60">{icon}</span>
       </div>
       <div className="flex items-baseline gap-0.5">
         <span
           className="font-semibold leading-none"
-          style={{ fontSize: 30, letterSpacing: '-0.035em', color: C.ink }}
+          style={{ fontSize: 24, letterSpacing: '-0.035em', color: C.ink }}
         >
           {value ?? '—'}
         </span>
-        {unit && <span className="text-[11px] font-medium" style={{ color: C.mute }}>{unit}</span>}
+        {unit && <span className="text-[10px] font-medium" style={{ color: C.mute }}>{unit}</span>}
       </div>
       {sub && (
         <div className="mt-1 text-[10px] font-medium" style={{ color: fg, opacity: 0.65 }}>
@@ -121,24 +121,24 @@ function CounterChip({
   const fillWidth = raw > 0 ? `max(10px, ${pct}%)` : '0%';
   return (
     <div className="min-w-0">
-      <div className="flex items-baseline justify-between gap-1 mb-2">
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="text-[11px] font-semibold tracking-wide" style={{ color: C.sub }}>{label}</span>
-          <span className="text-[10px] font-semibold tabular-nums" style={{ color }}>
+      <div className="flex items-baseline justify-between gap-0.5 mb-1.5">
+        <div className="flex items-baseline gap-1 min-w-0">
+          <span className="text-[10px] font-semibold tracking-wide whitespace-nowrap" style={{ color: C.sub }}>{label}</span>
+          <span className="text-[9px] font-semibold tabular-nums" style={{ color }}>
             {pct}%
           </span>
         </div>
         <div className="flex items-baseline gap-0.5 truncate">
-          <span className="text-[15px] font-semibold leading-none tabular-nums" style={{ color: C.ink, letterSpacing: '-0.02em' }}>
+          <span className="text-[13px] font-semibold leading-none tabular-nums" style={{ color: C.ink, letterSpacing: '-0.02em' }}>
             {value}
           </span>
-          {sub && <span className="text-[10px] font-medium" style={{ color: C.mute }}>{sub}</span>}
+          {sub && <span className="text-[9px] font-medium truncate" style={{ color: C.mute }}>{sub}</span>}
         </div>
       </div>
       <div
         className="relative rounded-full overflow-hidden"
         style={{
-          height: 8,
+          height: 6,
           background: 'rgba(28,27,31,0.09)',
           boxShadow: 'inset 0 1px 2px rgba(28,27,31,0.06)',
         }}
@@ -217,49 +217,22 @@ export default function HeroCard({
         boxShadow: '0 1px 2px rgba(28,27,31,0.04), 0 12px 32px -12px rgba(28,27,31,0.10)',
       }}
     >
-      <div className="relative px-6 py-5">
-        {/* ── Top row: greeting + focus + weather + refresh ── */}
-        <div className="flex items-center justify-between gap-3 mb-5">
-          <div className="flex items-center gap-2.5 min-w-0">
+      <div className="relative px-4 sm:px-6 py-4 sm:py-5">
+        {/* ── Top row: greeting + focus + refresh ── */}
+        <div className="flex items-center justify-between gap-2 mb-3 sm:mb-5">
+          <div className="flex items-center gap-2 min-w-0">
             <h1 className="font-semibold leading-none truncate"
-              style={{ fontSize: 19, color: C.ink, letterSpacing: '-0.02em' }}>
+              style={{ fontSize: 17, color: C.ink, letterSpacing: '-0.02em' }}>
               {greeting}，{displayName}
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-semibold shrink-0"
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold shrink-0"
               style={{ background: focusPalette.bg, color: focusPalette.fg }}>
               <span className="w-[5px] h-[5px] rounded-full" style={{ background: focusPalette.dot }} />
               {focus.text}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {weatherData && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
-                style={{ background: 'rgba(255,255,255,0.65)', border: `1px solid ${C.divider}`, color: C.sub, backdropFilter: 'blur(6px)' }}>
-                <span>📍 {weatherData.city}</span>
-                <span style={{ color: C.ink, fontWeight: 600 }}>{Math.round(weatherData.temperature ?? 0)}°</span>
-                <span>{weatherData.weather || ''}</span>
-                {airData && (
-                  <span style={{ color: C.mute }}>
-                    · AQI {airData.aqi || '—'}
-                    {airData.pm25 != null && <span> · PM2.5 {airData.pm25}</span>}
-                  </span>
-                )}
-              </span>
-            )}
-            {weatherData?.tomorrow && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium"
-                style={{ background: 'rgba(255,255,255,0.65)', border: `1px solid ${C.divider}`, color: C.sub, backdropFilter: 'blur(6px)' }}>
-                <span style={{ color: C.mute }}>明</span>
-                <span>{weatherData.tomorrow.weather || ''}</span>
-                {weatherData.tomorrow.temp_min != null && (
-                  <span style={{ color: C.ink, fontWeight: 600 }}>
-                    {Math.round(weatherData.tomorrow.temp_min)}–{Math.round(weatherData.tomorrow.temp_max)}°
-                  </span>
-                )}
-              </span>
-            )}
-            <span className="text-[11px] hidden lg:inline" style={{ color: C.mute }}>{dateStr}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={onRefresh}
               className="p-1.5 rounded-full transition-all active:scale-90 hover:bg-black/5"
               style={{ color: C.mute }} title="刷新">
@@ -270,12 +243,32 @@ export default function HeroCard({
           </div>
         </div>
 
-        {/* ── Hero row: score ring + 4 vital tiles ── */}
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'auto 1fr' }}>
-          <div className="flex items-center">
-            <ScoreRing score={score} size={96} />
+        {/* ── Weather bar (compact on mobile) ── */}
+        {weatherData && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[10px] sm:text-[11px]">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium"
+              style={{ background: 'rgba(255,255,255,0.65)', border: `1px solid ${C.divider}`, color: C.sub }}>
+              📍 {weatherData.city} {Math.round(weatherData.temperature ?? 0)}°
+              {weatherData.weather ? ` ${weatherData.weather}` : ''}
+              {airData ? ` · AQI ${airData.aqi || '—'}` : ''}
+              {airData?.pm25 != null ? ` · PM2.5 ${airData.pm25}` : ''}
+            </span>
+            {weatherData.tomorrow && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium"
+                style={{ background: 'rgba(255,255,255,0.65)', border: `1px solid ${C.divider}`, color: C.sub }}>
+                明 {weatherData.tomorrow.weather || ''}
+                {weatherData.tomorrow.temp_min != null && ` ${Math.round(weatherData.tomorrow.temp_min)}–${Math.round(weatherData.tomorrow.temp_max)}°`}
+              </span>
+            )}
           </div>
-          <div className="grid grid-cols-4 gap-2.5">
+        )}
+
+        {/* ── Hero row: score ring + 4 vital tiles ── */}
+        <div className="flex gap-3 sm:gap-4">
+          <div className="flex items-center shrink-0">
+            <ScoreRing score={score} size={80} />
+          </div>
+          <div className="grid grid-cols-2 gap-2 flex-1">
             <VitalTile label="睡眠" value={sleepScore} unit="分" bg={C.sleepBg} fg={C.sleepFg} icon="🌙" />
             <VitalTile label="HRV" value={hrv} unit="ms" bg={C.hrvBg} fg={C.hrvFg} icon="💓" />
             <VitalTile
@@ -293,10 +286,12 @@ export default function HeroCard({
           </div>
         </div>
 
-        {/* ── Bottom strip: 5 counters ── */}
-        <div className="mt-4 pt-4 grid grid-cols-5 gap-5" style={{ borderTop: `1px solid ${C.divider}` }}>
+        {/* ── Bottom strip: 5 counters (horizontal scroll on mobile) ── */}
+        <div className="mt-3 pt-3 flex gap-3 overflow-x-auto no-scrollbar" style={{ borderTop: `1px solid ${C.divider}` }}>
           {counters.map((c) => (
-            <CounterChip key={c.label} {...c} />
+            <div key={c.label} className="shrink-0 min-w-0" style={{ flex: '1 0 0' }}>
+              <CounterChip {...c} />
+            </div>
           ))}
         </div>
       </div>
