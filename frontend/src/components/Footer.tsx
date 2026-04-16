@@ -1,7 +1,13 @@
 /**
  * 页脚组件 - 包含备案信息
  */
+'use client';
+import { usePathname } from 'next/navigation';
+
 export default function Footer() {
+  const pathname = usePathname();
+  if (pathname?.startsWith('/ai-assistant')) return null;
+
   return (
     <footer className="mt-auto py-4 px-4 border-t border-gray-200 bg-white">
       <div className="max-w-7xl mx-auto">

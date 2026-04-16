@@ -281,7 +281,7 @@ export default function AIAssistantPage() {
   };
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK, overscrollBehavior: 'none' }}>
+    <div className="fixed inset-0 z-[100] overflow-hidden" style={{ fontFamily: UI_FONT_STACK, overscrollBehavior: 'none' }}>
       {/* Header */}
       <header className="relative z-50 backdrop-blur-md bg-white/80 border-b border-gray-100" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="max-w-7xl mx-auto px-4 h-12 flex items-center justify-between">
