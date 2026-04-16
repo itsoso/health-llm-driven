@@ -161,7 +161,7 @@ export default function WelcomeDashboard({
   }, [user, dashboard, suppChecked, suppTotal, handleRefresh, handleWaterRecord, handleSend, dashboardEditMode]);
 
   return (
-    <div className={`space-y-3 ${welcomeBottomPaddingClass}`}>
+    <div className={`space-y-3 overflow-x-hidden ${welcomeBottomPaddingClass}`}>
       {layoutSaveError && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           {layoutSaveError}

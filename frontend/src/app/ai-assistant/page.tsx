@@ -281,10 +281,10 @@ export default function AIAssistantPage() {
   };
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK, overscrollBehavior: 'none' }}>
       {/* Header */}
       <header className="relative z-50 backdrop-blur-md bg-white/80 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={handleNewChat} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center"><span className="text-white text-sm font-bold">H</span></div>
@@ -359,7 +359,7 @@ export default function AIAssistantPage() {
           {planCreatedNotification && <Toast color="blue" title="智能计划已生成" subtitle={planCreatedNotification.message} onClose={() => setPlanCreatedNotification(null)} action={{ label: '前往智能计划', onClick: () => { setPlanCreatedNotification(null); router.push('/smart-plan'); } }} />}
 
           {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4">
             <div className="mx-auto max-w-7xl">
               {isWelcome ? (
                 <WelcomeDashboard
