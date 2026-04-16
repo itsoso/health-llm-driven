@@ -117,40 +117,17 @@ function CounterChip({
   label: string; value: string; sub: string; raw: number; max: number; color: string;
 }) {
   const pct = Math.min(100, Math.round((raw / Math.max(max, 1)) * 100));
-  // minimum visible width so small values (1%) still show a clear marker
   const fillWidth = raw > 0 ? `max(10px, ${pct}%)` : '0%';
   return (
-    <div className="min-w-0">
-      <div className="flex items-baseline justify-between gap-0.5 mb-1.5">
-        <div className="flex items-baseline gap-1 min-w-0">
-          <span className="text-[10px] font-semibold tracking-wide whitespace-nowrap" style={{ color: C.sub }}>{label}</span>
-          <span className="text-[9px] font-semibold tabular-nums" style={{ color }}>
-            {pct}%
-          </span>
-        </div>
-        <div className="flex items-baseline gap-0.5 truncate">
-          <span className="text-[13px] font-semibold leading-none tabular-nums" style={{ color: C.ink, letterSpacing: '-0.02em' }}>
-            {value}
-          </span>
-          {sub && <span className="text-[9px] font-medium truncate" style={{ color: C.mute }}>{sub}</span>}
-        </div>
+    <div className="min-w-0 text-center">
+      <div className="text-[9px] font-semibold mb-0.5" style={{ color: C.sub }}>{label} <span style={{ color }}>{pct}%</span></div>
+      <div className="flex items-baseline justify-center gap-0.5 leading-none mb-1">
+        <span className="text-[13px] font-bold tabular-nums" style={{ color: C.ink, letterSpacing: '-0.02em' }}>{value}</span>
+        {sub && <span className="text-[8px] font-medium" style={{ color: C.mute }}>{sub}</span>}
       </div>
-      <div
-        className="relative rounded-full overflow-hidden"
-        style={{
-          height: 6,
-          background: 'rgba(28,27,31,0.09)',
-          boxShadow: 'inset 0 1px 2px rgba(28,27,31,0.06)',
-        }}
-      >
-        <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{
-            width: fillWidth,
-            background: `linear-gradient(90deg, ${color}cc, ${color})`,
-            boxShadow: `0 0 8px ${color}66, 0 1px 2px ${color}55`,
-          }}
-        />
+      <div className="relative rounded-full overflow-hidden mx-auto" style={{ height: 5, background: 'rgba(28,27,31,0.09)' }}>
+        <div className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{ width: fillWidth, background: `linear-gradient(90deg, ${color}cc, ${color})` }} />
       </div>
     </div>
   );
