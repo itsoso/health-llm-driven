@@ -116,19 +116,14 @@ class TestSyncStreamCodeReview:
 
 
 class TestCeleryBeatScheduleReview:
-    """验证 Celery beat 不再调度 Garmin 同步"""
+    """验证 Celery beat 包含 Garmin 4小时同步调度"""
 
-    def test_garmin_beat_disabled(self):
-        """验证 Celery beat 中 Garmin 同步任务已注释掉"""
-        with open("app/celery_app.py", "r") as f:
-            source = f.read()
-
-        # 不应有未注释的 sync_all_users_garmin 调度
-        lines = source.split("\n")
-        for line in lines:
-            stripped = line.strip()
-            if "sync_all_users_garmin" in stripped and not stripped.startswith("#"):
-                pytest.fail(f"Celery beat 中不应有未注释的 Garmin 同步调度: {stripped}")
+    def test_garmin_beat_enabled_4hourly(self):
+        """验证 Celery beat 中有 Garmin 4小时同步任务"""
+        from app.celery_app import celery_app
+        schedule = celery_app.conf.beat_schedule
+        garmin_tasks = [k for k, v in schedule.items() if "sync_all_users_garmin" in v.get("task", "")]
+        assert len(garmin_tasks) >= 1, "Celery beat 中应有 Garmin 同步调度"
 
 
 # ============================================================

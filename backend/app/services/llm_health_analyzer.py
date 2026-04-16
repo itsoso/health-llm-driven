@@ -440,11 +440,12 @@ class LLMHealthAnalyzer:
         if chronic_conditions or allergies or medications:
             user_info += "\n健康状况:"
             if chronic_conditions:
-                user_info += f"\n- 慢性病: {', '.join(chronic_conditions)}"
+                user_info += f"\n- 慢性病: {', '.join(str(c) for c in chronic_conditions)}"
             if allergies:
-                user_info += f"\n- 过敏: {', '.join(allergies)}"
+                user_info += f"\n- 过敏: {', '.join(str(a) for a in allergies)}"
             if medications:
-                user_info += f"\n- 正在服用药物: {', '.join(medications)}"
+                med_names = [m.get('name', str(m)) if isinstance(m, dict) else str(m) for m in medications]
+                user_info += f"\n- 正在服用药物: {', '.join(med_names)}"
         
         # 添加生活习惯（如果有）
         lifestyle = user_context.get('lifestyle', {})

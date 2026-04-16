@@ -15,8 +15,8 @@ class UserResponse(BaseModel):
     """用户响应"""
     id: int
     name: str
-    birth_date: date
-    gender: str
+    birth_date: Optional[date] = None
+    gender: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
