@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { registerPushNotifications } from '@/services/pushNotifications';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -73,6 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (contentType && contentType.includes('application/json')) {
           const userData = await res.json();
           setUser(userData);
+          // Agent Native: 登录成功后注册 iOS 推送
+          registerPushNotifications().catch(() => {});
         } else {
           console.error('获取用户信息：服务器返回非JSON响应');
           localStorage.removeItem('auth_token');

@@ -23,6 +23,12 @@ THRESHOLDS = {
     "stress_high_days": 2,      # 连续2天以上
     "spo2_critical": 95,        # 血氧低于95%
     "battery_low": 30,          # Body Battery晨起低于30
+    # 趋势检测阈值
+    "rhr_trend_days": 3,        # 连续3天RHR逐日上升
+    "rhr_trend_step": 2,        # 每天比前一天高≥2 bpm
+    "hrv_trend_days": 3,        # 连续3天HRV逐日下降
+    "hrv_trend_step": 5,        # 每天比前一天低≥5 ms
+    "multi_metric_min_hits": 2, # 多指标恶化：3项中命中≥2项
 }
 
 
@@ -46,6 +52,10 @@ class AnomalyDetectionService:
             self._check_stress_high,
             self._check_spo2_low,
             self._check_battery_low,
+            # 趋势检测器（Agent Native Phase 1）
+            self._check_rhr_trend,
+            self._check_hrv_trend,
+            self._check_multi_metric_deterioration,
         ]
 
         for checker in checkers:
@@ -294,6 +304,152 @@ class AnomalyDetectionService:
                 threshold_value=low_threshold,
                 detection_date=check_date,
                 message=f"身体电量偏低：最高充电仅 {today.body_battery_most_charged}（阈值 {low_threshold}），注意休息",
+            )
+        return None
+
+    # ─────────────── 趋势检测器（Agent Native Phase 1）────────────────
+
+    def _get_recent_garmin_sorted(self, user_id: int, check_date: date, days: int = 5) -> List[GarminData]:
+        """获取最近N天数据（含当天），按日期正序排列"""
+        start_date = check_date - timedelta(days=days - 1)
+        return self.db.query(GarminData).filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= start_date,
+            GarminData.record_date <= check_date,
+        ).order_by(GarminData.record_date.asc()).all()
+
+    def _check_rhr_trend(self, user_id: int, check_date: date) -> Optional[AnomalyAlert]:
+        """检测连续N天静息心率逐日上升（趋势恶化）"""
+        required_days = THRESHOLDS["rhr_trend_days"]
+        step = THRESHOLDS["rhr_trend_step"]
+
+        data = self._get_recent_garmin_sorted(user_id, check_date, days=required_days + 1)
+        rhr_series = [(d.record_date, d.resting_heart_rate) for d in data if d.resting_heart_rate]
+        if len(rhr_series) < required_days + 1:
+            return None
+
+        # 取最近 required_days+1 天，检查连续上升
+        recent = rhr_series[-(required_days + 1):]
+        rising_days = 0
+        for i in range(1, len(recent)):
+            if recent[i][1] - recent[i - 1][1] >= step:
+                rising_days += 1
+            else:
+                rising_days = 0  # 中断则重置
+
+        if rising_days >= required_days:
+            first_val = recent[-(required_days + 1)][1]
+            last_val = recent[-1][1]
+            return AnomalyAlert(
+                user_id=user_id,
+                alert_type="rhr_rising_trend",
+                severity="warning",
+                metric_name="resting_heart_rate",
+                current_value=last_val,
+                baseline_value=first_val,
+                deviation_pct=round((last_val - first_val) / first_val * 100, 1) if first_val else None,
+                detection_date=check_date,
+                message=f"静息心率连续 {required_days} 天上升：{first_val}→{last_val} bpm，可能提示过度训练或身体不适",
+            )
+        return None
+
+    def _check_hrv_trend(self, user_id: int, check_date: date) -> Optional[AnomalyAlert]:
+        """检测连续N天HRV逐日下降（趋势恶化）"""
+        required_days = THRESHOLDS["hrv_trend_days"]
+        step = THRESHOLDS["hrv_trend_step"]
+
+        data = self._get_recent_garmin_sorted(user_id, check_date, days=required_days + 1)
+        hrv_series = [(d.record_date, d.hrv) for d in data if d.hrv]
+        if len(hrv_series) < required_days + 1:
+            return None
+
+        recent = hrv_series[-(required_days + 1):]
+        declining_days = 0
+        for i in range(1, len(recent)):
+            if recent[i - 1][1] - recent[i][1] >= step:
+                declining_days += 1
+            else:
+                declining_days = 0
+
+        if declining_days >= required_days:
+            first_val = recent[-(required_days + 1)][1]
+            last_val = recent[-1][1]
+            return AnomalyAlert(
+                user_id=user_id,
+                alert_type="hrv_declining_trend",
+                severity="warning",
+                metric_name="hrv",
+                current_value=last_val,
+                baseline_value=first_val,
+                deviation_pct=round((first_val - last_val) / first_val * 100, 1) if first_val else None,
+                detection_date=check_date,
+                message=f"HRV 连续 {required_days} 天下降：{first_val}→{last_val} ms，自主神经调节能力可能在减弱",
+            )
+        return None
+
+    def _check_multi_metric_deterioration(self, user_id: int, check_date: date) -> Optional[AnomalyAlert]:
+        """检测多指标同时恶化（综合预警）
+
+        检查 3 个指标近 3 天 vs 前 4 天均值：
+        - sleep_score 下降 >10%
+        - stress_level 上升 >15%
+        - HRV 下降 >15%
+        命中 ≥2 项 → 触发综合恶化预警
+        """
+        data = self._get_recent_garmin_sorted(user_id, check_date, days=7)
+        if len(data) < 5:
+            return None
+
+        # 分成两段：前半段（baseline）和后半段（recent）
+        mid = len(data) - 3
+        baseline = data[:mid]
+        recent = data[mid:]
+
+        hits = []
+        details = []
+
+        def _avg(items, attr):
+            vals = [getattr(d, attr) for d in items if getattr(d, attr) is not None]
+            return sum(vals) / len(vals) if vals else None
+
+        # Sleep score
+        base_sleep = _avg(baseline, 'sleep_score')
+        recent_sleep = _avg(recent, 'sleep_score')
+        if base_sleep and recent_sleep and base_sleep > 0:
+            change = (base_sleep - recent_sleep) / base_sleep * 100
+            if change > 10:
+                hits.append('sleep')
+                details.append(f"睡眠评分下降{change:.0f}%({base_sleep:.0f}→{recent_sleep:.0f})")
+
+        # Stress level
+        base_stress = _avg(baseline, 'stress_level')
+        recent_stress = _avg(recent, 'stress_level')
+        if base_stress and recent_stress and base_stress > 0:
+            change = (recent_stress - base_stress) / base_stress * 100
+            if change > 15:
+                hits.append('stress')
+                details.append(f"压力上升{change:.0f}%({base_stress:.0f}→{recent_stress:.0f})")
+
+        # HRV
+        base_hrv = _avg(baseline, 'hrv')
+        recent_hrv = _avg(recent, 'hrv')
+        if base_hrv and recent_hrv and base_hrv > 0:
+            change = (base_hrv - recent_hrv) / base_hrv * 100
+            if change > 15:
+                hits.append('hrv')
+                details.append(f"HRV下降{change:.0f}%({base_hrv:.0f}→{recent_hrv:.0f})")
+
+        min_hits = THRESHOLDS["multi_metric_min_hits"]
+        if len(hits) >= min_hits:
+            return AnomalyAlert(
+                user_id=user_id,
+                alert_type="multi_metric_deterioration",
+                severity="warning",
+                metric_name=",".join(hits),
+                current_value=len(hits),
+                threshold_value=min_hits,
+                detection_date=check_date,
+                message=f"多指标同步恶化（{len(hits)}/{3}）：{'；'.join(details)}。建议减少训练强度、优先睡眠恢复",
             )
         return None
 

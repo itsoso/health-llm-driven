@@ -120,7 +120,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
             except Exception as e:
                 logger.warning(f"检测新运动触发分析失败: {e}")
 
-            # 触发健康异常检测
+            # 触发健康异常检测（含趋势检测器）
             try:
                 from app.services.anomaly_detection_service import AnomalyDetectionService
                 anomaly_svc = AnomalyDetectionService(db)
@@ -134,6 +134,32 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                     asyncio.run(_send_alerts())
             except Exception as e:
                 logger.warning(f"健康异常检测失败: {e}")
+
+            # Post-sync Safety Guardian 评估（Agent Native Phase 1）
+            # 仅在 anomaly detection 未产生告警时运行，避免重复通知
+            if not alerts:
+                try:
+                    from app.twin.builder import build_twin
+                    from app.agents.safety_guardian import evaluate_safety
+                    twin = build_twin(db, user_id, use_cache=False)
+                    safety_report = evaluate_safety(twin)
+                    critical_alerts = [a for a in safety_report.alerts if int(a.severity) >= 3]
+                    if critical_alerts:
+                        from app.services.notification.push_service import PushService
+                        push_svc = PushService(db)
+                        for sa in critical_alerts[:3]:
+                            async def _push_safety(alert=sa):
+                                await push_svc.send_notification(
+                                    user_id=user_id,
+                                    notification_type="health_alert",
+                                    title=f"[{alert.severity.label_zh}] {alert.title}",
+                                    content=alert.message,
+                                    respect_quiet_hours=False,
+                                )
+                            asyncio.run(_push_safety())
+                        logger.info(f"用户 {user_id} Safety Guardian 发现 {len(critical_alerts)} 条 critical 告警，已推送")
+                except Exception as e:
+                    logger.warning(f"Post-sync Safety Guardian 评估失败: {e}")
 
             # 更新同步状态
             garmin_credential_service.update_sync_status(db, user_id)
