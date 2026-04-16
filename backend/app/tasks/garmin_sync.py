@@ -217,7 +217,7 @@ def sync_all_users_garmin():
 
     logger.info("开始批量同步所有用户 Garmin 数据")
     now = get_china_now()
-    min_interval = timedelta(hours=3)
+    min_interval = timedelta(hours=1, minutes=30)
 
     with SessionLocal() as db:
         from app.models.user import GarminCredential
