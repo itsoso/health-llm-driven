@@ -407,10 +407,10 @@ export default function AIAssistantPage() {
             </div>
           )}
 
-          {/* Bottom fixed area */}
-          <div className={`${isWelcome ? 'absolute bottom-0 left-0 right-0 z-30' : ''}`} style={{ paddingBottom: isWelcome ? 'env(safe-area-inset-bottom, 0px)' : undefined }}>
+          {/* Bottom fixed area — 钉在 viewport 底部 */}
+          <div className={`${isWelcome ? 'fixed bottom-0 left-0 right-0 z-[110]' : ''}`} style={isWelcome ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } : undefined}>
             {isWelcome && (
-              <div className="px-4 pt-3 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #E5E5EA' }}>
+              <div className="px-4 pt-2 pb-1 border-t border-gray-100/60">
                 <div className="mx-auto max-w-7xl">
                   <QuickRecordBar rhinitisToday={dashboard.rhinitisToday} onWaterRecord={handleWaterRecord} onRhinitisUpdate={dashboard.setRhinitisToday} />
                 </div>
