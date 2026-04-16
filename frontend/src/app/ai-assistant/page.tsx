@@ -164,7 +164,7 @@ export default function AIAssistantPage() {
       try {
         const response = await api.get('/profile/me');
         if (cancelled) return;
-        const rawLayout = response.data?.assistant_dashboard_layouts?.[layoutDevice];
+        const rawLayout = response.data?.assistant_dashboard_layouts?.['web'];
         setDashboardLayout(normalizeDashboardLayout(rawLayout));
         setLayoutSaveError(null);
       } catch {
@@ -190,7 +190,7 @@ export default function AIAssistantPage() {
       setLayoutSaving(true);
       setLayoutSaveError(null);
       try {
-        await api.put('/profile/me', { assistant_dashboard_layouts: { [layoutDevice]: dashboardLayout } });
+        await api.put('/profile/me', { assistant_dashboard_layouts: { web: dashboardLayout } });
       } catch {
         setLayoutSaveError('布局同步失败，请稍后重试');
       } finally { setLayoutSaving(false); }
@@ -346,7 +346,7 @@ export default function AIAssistantPage() {
         </>
       )}
 
-      <div className="relative flex overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
+      <div className="relative flex overflow-hidden" style={{ height: 'calc(100dvh - 56px)' }}>
         {showHistory && (
           <HistorySidebar conversations={conversations} currentConversationId={conversationId} onLoadConversation={loadConversation} onNewChat={handleNewChat} onClose={toggleHistory} onDelete={handleDeleteConversation} onShare={handleShareConversation} />
         )}
