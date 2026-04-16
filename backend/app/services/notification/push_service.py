@@ -29,6 +29,7 @@ class PushService:
         self.db = db
         self._wechat_service = None
         self._ios_service = None
+        self._telegram_service = None
     
     @property
     def wechat(self):
@@ -45,6 +46,14 @@ class PushService:
             from .ios_push import IOSPushService
             self._ios_service = IOSPushService()
         return self._ios_service
+
+    @property
+    def telegram(self):
+        """延迟加载 Telegram 推送服务"""
+        if self._telegram_service is None:
+            from .telegram_push import TelegramPushService
+            self._telegram_service = TelegramPushService()
+        return self._telegram_service
     
     def get_user_settings(self, user_id: int) -> Optional[UserNotificationSetting]:
         """获取用户推送设置"""
@@ -164,6 +173,9 @@ class PushService:
                     channels.append(NotificationChannel.WECHAT.value)
                 if settings.ios_push_enabled and settings.ios_device_token:
                     channels.append(NotificationChannel.IOS_APNS.value)
+            # Telegram 作为兜底通道（不依赖用户设置，只要配了 bot token）
+            if self.telegram.configured:
+                channels.append("telegram")
         
         if not channels:
             logger.warning(f"用户 {user_id} 没有可用的推送渠道")
@@ -182,6 +194,10 @@ class PushService:
                 elif channel == NotificationChannel.IOS_APNS.value:
                     result = await self._send_ios(
                         user_id, settings, notification_type, title, content, data
+                    )
+                elif channel == "telegram":
+                    result = await self._send_telegram(
+                        user_id, notification_type, title, content, data
                     )
                 else:
                     result = {"success": False, "error": f"不支持的渠道: {channel}"}
@@ -258,6 +274,22 @@ class PushService:
             title=title,
             body=content,
             data=data
+        )
+
+    async def _send_telegram(
+        self,
+        user_id: int,
+        notification_type: str,
+        title: str,
+        content: str,
+        data: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """发送 Telegram 推送（Agent Native 告警通道）"""
+        severity = (data or {}).get("severity", "info")
+        return await self.telegram.send_health_alert(
+            title=title,
+            message=content,
+            severity=severity,
         )
     
     def _get_wechat_template(

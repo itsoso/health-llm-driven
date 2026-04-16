@@ -187,13 +187,14 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
 @celery_app.task
 def sync_all_users_garmin():
     """
-    同步所有用户的 Garmin 数据（定时任务）
-    如果用户今天已手动同步过，则跳过。
+    同步所有用户的 Garmin 数据（定时任务，每 4 小时运行）
+    如果用户 3 小时内已同步过，则跳过（避免 Garmin API 限流）。
     """
-    from app.utils.timezone import get_china_today
+    from app.utils.timezone import get_china_now
 
     logger.info("开始批量同步所有用户 Garmin 数据")
-    today = get_china_today()
+    now = get_china_now()
+    min_interval = timedelta(hours=3)
 
     with SessionLocal() as db:
         from app.models.user import GarminCredential
@@ -206,10 +207,10 @@ def sync_all_users_garmin():
         dispatched = []
         skipped = []
         for c in credentials:
-            # 如果今天已同步过，跳过
-            if c.last_sync_at and c.last_sync_at.date() >= today:
+            # 如果 3 小时内已同步过，跳过
+            if c.last_sync_at and (now - c.last_sync_at.replace(tzinfo=now.tzinfo) if c.last_sync_at.tzinfo is None else now - c.last_sync_at) < min_interval:
                 skipped.append(c.user_id)
-                logger.info(f"用户 {c.user_id} 今日已同步({c.last_sync_at})，跳过")
+                logger.info(f"用户 {c.user_id} 近期已同步({c.last_sync_at})，跳过")
             else:
                 dispatched.append(c.user_id)
 

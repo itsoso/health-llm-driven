@@ -1138,3 +1138,197 @@ def _generate_weekly_report_for_user(user_id: int, today: date):
         # 写入独立「每周健康周报」对话（与日报分开，避免混排）
         _write_weekly_report_message(db, user_id, report_md)
         logger.info(f"[周报简报] 用户 {user_id} 周报已写入对话")
+
+
+# ─────────────────── Agent Native: 随访提醒 ───────────────────
+
+
+@celery_app.task(time_limit=120)
+def check_action_card_followups():
+    """
+    扫描 ActionCard 待办项，对超期未完成的卡片推送随访提醒。
+
+    规则：
+    - card_type='guide' 且 status='active' 且 content 含「待办」段落
+    - 创建超过 7 天仍 active 的 recommendation/plan 卡片
+    - 每张卡片每 7 天最多提醒 1 次（防骚扰）
+    """
+    import asyncio
+    from app.models.action_card import ActionCard
+    from app.models.notification import NotificationLog
+    from app.services.notification.push_service import PushService
+
+    logger.info("[随访提醒] 开始扫描")
+
+    now = datetime.utcnow()
+    stale_threshold = now - timedelta(days=7)
+    reminder_cooldown = now - timedelta(days=7)
+
+    with SessionLocal() as db:
+        # 查找超过7天未完成的 active 卡片
+        stale_cards = db.query(ActionCard).filter(
+            ActionCard.status == "active",
+            ActionCard.card_type.in_(["guide", "plan", "recommendation"]),
+            ActionCard.created_at <= stale_threshold,
+        ).all()
+
+        if not stale_cards:
+            logger.info("[随访提醒] 无超期卡片")
+            return {"reminded": 0}
+
+        push_svc = PushService(db)
+        reminded = 0
+
+        for card in stale_cards:
+            # 检查是否最近已提醒过（通过 notification_log 去重）
+            recent_reminder = db.query(NotificationLog).filter(
+                NotificationLog.user_id == card.user_id,
+                NotificationLog.notification_type == "ai_advice",
+                NotificationLog.title.contains(f"卡片#{card.id}"),
+                NotificationLog.created_at >= reminder_cooldown,
+            ).first()
+            if recent_reminder:
+                continue
+
+            days_ago = (now - card.created_at.replace(tzinfo=None)).days if card.created_at else 0
+            title = f"随访提醒 · 卡片#{card.id}"
+            content = f"「{card.title}」已创建 {days_ago} 天，还有未完成的待办事项。打开查看进度。"
+
+            try:
+                asyncio.run(push_svc.send_notification(
+                    user_id=card.user_id,
+                    notification_type="ai_advice",
+                    title=title,
+                    content=content,
+                    data={"card_id": card.id, "card_type": card.card_type},
+                ))
+                reminded += 1
+            except Exception as e:
+                logger.warning(f"[随访提醒] 卡片 {card.id} 提醒失败: {e}")
+
+    logger.info(f"[随访提醒] 完成，提醒 {reminded} 张卡片")
+    return {"reminded": reminded}
+
+
+# ─────────────────── Agent Native: 保健医生周报 ───────────────────
+
+
+@celery_app.task(time_limit=300)
+def generate_doctor_weekly_report():
+    """
+    生成保健医生周报 — 每周一自动运行。
+
+    聚合过去 7 天的健康数据，生成结构化摘要，
+    通过 Telegram 推送。便于保健医生快速了解用户状况。
+    """
+    import asyncio
+    from app.models.daily_health import GarminData
+    from app.services.notification.telegram_push import TelegramPushService
+
+    logger.info("[医生周报] 开始生成")
+
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+
+    with SessionLocal() as db:
+        from app.models.user import GarminCredential
+
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True,
+        ).all()
+
+        telegram = TelegramPushService()
+        if not telegram.configured:
+            logger.info("[医生周报] Telegram 未配置，跳过")
+            return {"status": "skipped", "reason": "telegram_not_configured"}
+
+        generated = 0
+        for cred in credentials:
+            user_id = cred.user_id
+            try:
+                user = db.query(User).filter(User.id == user_id).first()
+                user_name = user.name if user else f"用户{user_id}"
+
+                # 获取 7 天 Garmin 数据
+                garmin_data = db.query(GarminData).filter(
+                    GarminData.user_id == user_id,
+                    GarminData.record_date >= week_ago,
+                    GarminData.record_date <= today,
+                ).order_by(GarminData.record_date).all()
+
+                if not garmin_data:
+                    continue
+
+                # 计算周均值
+                def _avg(attr):
+                    vals = [getattr(g, attr) for g in garmin_data if getattr(g, attr) is not None]
+                    return round(sum(vals) / len(vals), 1) if vals else None
+
+                def _trend(attr):
+                    vals = [getattr(g, attr) for g in garmin_data if getattr(g, attr) is not None]
+                    if len(vals) < 3:
+                        return "数据不足"
+                    first_half = sum(vals[:len(vals)//2]) / (len(vals)//2)
+                    second_half = sum(vals[len(vals)//2:]) / (len(vals) - len(vals)//2)
+                    diff_pct = (second_half - first_half) / first_half * 100 if first_half else 0
+                    if diff_pct > 5:
+                        return "↑上升"
+                    elif diff_pct < -5:
+                        return "↓下降"
+                    return "→稳定"
+
+                avg_rhr = _avg("resting_heart_rate")
+                avg_hrv = _avg("hrv")
+                avg_sleep = _avg("sleep_score")
+                avg_stress = _avg("stress_level")
+                avg_steps = _avg("steps")
+                avg_spo2 = _avg("spo2_avg")
+
+                # 检查本周告警
+                from app.models.anomaly_alert import AnomalyAlert
+                week_alerts = db.query(AnomalyAlert).filter(
+                    AnomalyAlert.user_id == user_id,
+                    AnomalyAlert.detection_date >= week_ago,
+                ).all()
+                alert_summary = f"{len(week_alerts)} 条告警" if week_alerts else "无告警"
+                alert_types = list(set(a.alert_type for a in week_alerts))
+
+                report = (
+                    f"📊 *{user_name} 周报* ({week_ago} ~ {today})\n\n"
+                    f"❤️ 静息心率: {avg_rhr or '-'} bpm ({_trend('resting_heart_rate')})\n"
+                    f"💚 HRV: {avg_hrv or '-'} ms ({_trend('hrv')})\n"
+                    f"😴 睡眠评分: {avg_sleep or '-'} ({_trend('sleep_score')})\n"
+                    f"😤 压力: {avg_stress or '-'} ({_trend('stress_level')})\n"
+                    f"👣 日均步数: {int(avg_steps) if avg_steps else '-'}\n"
+                    f"🫁 血氧: {avg_spo2 or '-'}%\n\n"
+                    f"⚠️ 本周告警: {alert_summary}\n"
+                )
+                if alert_types:
+                    report += f"  类型: {', '.join(alert_types)}\n"
+
+                # 标注关注点
+                concerns = []
+                if avg_hrv and avg_hrv < 40:
+                    concerns.append("HRV 偏低，关注自主神经调节")
+                if avg_sleep and avg_sleep < 60:
+                    concerns.append("睡眠评分偏低")
+                if avg_stress and avg_stress > 50:
+                    concerns.append("压力持续偏高")
+                if avg_rhr and avg_rhr > 75:
+                    concerns.append("静息心率偏高")
+
+                if concerns:
+                    report += "\n🔍 *关注点:*\n" + "\n".join(f"  • {c}" for c in concerns)
+                else:
+                    report += "\n✅ 本周各项指标正常"
+
+                asyncio.run(telegram.send_message(report))
+                generated += 1
+                logger.info(f"[医生周报] 用户 {user_id} 周报已发送 Telegram")
+
+            except Exception as e:
+                logger.warning(f"[医生周报] 用户 {user_id} 生成失败: {e}")
+
+    logger.info(f"[医生周报] 完成，生成 {generated} 份")
+    return {"generated": generated}

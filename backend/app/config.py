@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     apns_team_id: Optional[str] = None
     apns_private_key_path: Optional[str] = None
     apns_bundle_id: str = "life.executor.health"
+
+    # Telegram 推送配置（Agent Native 告警通道）
+    telegram_bot_token: Optional[str] = None
+    telegram_alert_chat_id: Optional[str] = None  # 默认告警推送的 chat_id
     
     @property
     def effective_database_url(self) -> str:

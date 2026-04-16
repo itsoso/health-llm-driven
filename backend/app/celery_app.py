@@ -66,15 +66,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=6, minute=0),
     },
     
-    # 每日 09:01 北京时间同步 Garmin 数据（已同步则跳过）
-    "sync-garmin-daily": {
+    # 每4小时同步 Garmin 数据（Agent Native: 提频以支持趋势检测）
+    "sync-garmin-4hourly": {
         "task": "app.tasks.garmin_sync.sync_all_users_garmin",
-        "schedule": crontab(hour=1, minute=1),  # UTC 01:01 = 北京 09:01
+        "schedule": crontab(hour="1,5,9,13", minute=1),  # UTC → 北京 09:01/13:01/17:01/21:01
     },
-    # "sync-garmin-6hourly": {
-    #     "task": "app.tasks.garmin_sync.sync_all_users_garmin",
-    #     "schedule": crontab(hour="*/6", minute=0),
-    # },
     
     # 每日 22:00 发送睡眠提醒
     "sleep-reminder": {
@@ -159,6 +155,18 @@ celery_app.conf.beat_schedule = {
     "weekly-report-message": {
         "task": "app.tasks.notifications.generate_weekly_report_message",
         "schedule": crontab(hour=9, minute=5, day_of_week=1),
+    },
+
+    # Agent Native: 随访提醒（每天 10:00 扫描超期 ActionCard）
+    "action-card-followup": {
+        "task": "app.tasks.notifications.check_action_card_followups",
+        "schedule": crontab(hour=10, minute=0),
+    },
+
+    # Agent Native: 保健医生周报（每周一 09:15 Telegram 推送）
+    "doctor-weekly-report": {
+        "task": "app.tasks.notifications.generate_doctor_weekly_report",
+        "schedule": crontab(hour=9, minute=15, day_of_week=1),
     },
 }
 
