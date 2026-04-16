@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,12 +21,26 @@ router = APIRouter()
 
 
 class AgentRequest(BaseModel):
-    message: str
+    message: str = Field(max_length=10000)
     conversation_id: Optional[int] = None
     image_base64: Optional[str] = None
-    image_type: Optional[str] = None  # jpeg, png, etc.
+    image_type: Optional[str] = None
     file_base64: Optional[str] = None
     file_name: Optional[str] = None
+
+    @field_validator("image_base64")
+    @classmethod
+    def check_image_size(cls, v: Optional[str]) -> Optional[str]:
+        if v and len(v) > 10_000_000:  # ~7.5MB image
+            raise ValueError("图片太大，最大支持约 7.5MB")
+        return v
+
+    @field_validator("file_base64")
+    @classmethod
+    def check_file_size(cls, v: Optional[str]) -> Optional[str]:
+        if v and len(v) > 15_000_000:  # ~11MB file
+            raise ValueError("文件太大，最大支持约 11MB")
+        return v
 
 
 @router.post("/stream", summary="统一健康助理流式对话")

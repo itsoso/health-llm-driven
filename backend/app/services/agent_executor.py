@@ -1,11 +1,10 @@
-"""Hermes Agent 执行器 — 结构化工具调用 + 多步推理循环
+"""统一健康 Agent 执行器 — 结构化工具调用 + 多步推理循环
 
-路径 B 方案：复杂任务走 Agent 执行器（Hermes 模型 + tool_call），
-普通对话仍走 OpenClaw。
+所有对话（记录、查询、分析、图片识别）统一走此入口。
 
 流程：
   1. 注入健康上下文 + tool schemas
-  2. 调用 Hermes 模型（OpenAI 兼容）
+  2. 调用 LLM（OpenAI 兼容）
   3. 解析 tool_call → 执行 Health API
   4. 将 tool_result 返回模型 → 循环直到无更多 tool_call
   5. 最终回答通过 SSE 流式输出
@@ -13,7 +12,7 @@
 import json
 import logging
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone, timedelta
 from typing import AsyncGenerator, Dict, Any, List, Optional
 
 import httpx
@@ -24,8 +23,9 @@ from app.services.tool_schema_registry import get_health_tools
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ROUNDS = 6  # 最多 6 轮工具调用，防止死循环
-AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"  # 可通过 config 覆盖
+MAX_TOOL_ROUNDS = 6
+AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 class AgentExecutor:
@@ -34,6 +34,7 @@ class AgentExecutor:
     def __init__(self, db: Session):
         self.db = db
         self._current_user_id: Optional[int] = None
+        self._http_client: Optional[httpx.AsyncClient] = None
 
     async def run_stream(
         self,
@@ -92,6 +93,7 @@ class AgentExecutor:
         full_reply = ""
         yield {"event": "agent_start", "data": {"message": "Agent 正在分析..."}}
 
+        self._http_client = httpx.AsyncClient(timeout=30.0)
         try:
             import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
@@ -144,15 +146,16 @@ class AgentExecutor:
                         # 写操作成功后内联安全检查
                         if func_name == "health_record" and "Error" not in result:
                             try:
-                                from app.agents.safety_guardian.guardian import SafetyGuardian
-                                guardian = SafetyGuardian()
-                                alerts = guardian.evaluate(self.db, user_id)
-                                critical = [a for a in alerts if a.get("severity") in ("critical", "high")]
+                                from app.twin.builder import build_twin
+                                from app.agents.safety_guardian import evaluate_safety
+                                twin = build_twin(self.db, user_id, use_cache=True)
+                                report = evaluate_safety(twin)
+                                critical = [a for a in report.alerts if int(a.severity) >= 3]
                                 if critical:
-                                    alert_msgs = "; ".join(a.get("message", "") for a in critical[:3])
+                                    alert_msgs = "; ".join(a.title for a in critical[:3])
                                     result += f"\n\n⚠️ 安全提示: {alert_msgs}"
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"Safety check after write failed: {e}")
 
                         # 追加 tool_result 到 messages
                         messages.append({
@@ -196,6 +199,10 @@ class AgentExecutor:
             error_msg = f"Agent 执行遇到问题: {str(e)}"
             yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
+        finally:
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
 
         # 6. 保存回复
         ai_msg = svc.save_message(conv.id, "assistant", full_reply)
@@ -395,7 +402,7 @@ class AgentExecutor:
         except json.JSONDecodeError:
             return f"Error: 参数解析失败: {args_raw}"
 
-        base_url = "https://health.executor.life/api"
+        base_url = getattr(settings, "health_api_base_url", None) or "https://health.executor.life/api"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
 
         try:
@@ -448,23 +455,25 @@ class AgentExecutor:
         path = endpoint_map.get(dim, endpoint_map["comprehensive"])
         result = await self._api_get(f"{base}{path}", headers)
 
-        # 如果查的是体检指标，从结果中过滤特定指标
-        if dim == "medical_exam" and indicator:
+        # 如果查的是体检或基因指标，从结果中过滤特定指标
+        if indicator and dim in ("medical_exam", "genetic"):
             try:
-                import json as _json
-                data = _json.loads(result)
-                items = data if isinstance(data, list) else data.get("data", [])
+                parsed = json.loads(result)
+                items = parsed if isinstance(parsed, list) else parsed.get("data", [])
                 matched = []
-                for exam in items:
-                    for item in (exam.get("items") or []):
-                        name = str(item.get("item_name", "") or item.get("name", "")).upper()
-                        if indicator.upper() in name:
-                            matched.append({
-                                "exam_date": exam.get("exam_date"),
-                                **item
-                            })
+                if dim == "medical_exam":
+                    for exam in items:
+                        for item in (exam.get("items") or []):
+                            name = str(item.get("item_name", "") or item.get("name", "")).upper()
+                            if indicator.upper() in name:
+                                matched.append({"exam_date": exam.get("exam_date"), **item})
+                elif dim == "genetic":
+                    for v in items:
+                        gene = str(v.get("gene_name", "") or v.get("gene", "")).upper()
+                        if indicator.upper() in gene:
+                            matched.append(v)
                 if matched:
-                    return _json.dumps(matched, ensure_ascii=False, default=str)
+                    return json.dumps(matched, ensure_ascii=False, default=str)
             except Exception:
                 pass
 
@@ -476,7 +485,7 @@ class AgentExecutor:
         """执行健康数据记录"""
         rtype = args.get("record_type", "")
         data = args.get("data", {})
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
         # 补全 diet 必填字段
         if rtype == "diet":
@@ -519,8 +528,7 @@ class AgentExecutor:
                 # 查找匹配的补剂定义
                 lookup = await self._api_get(f"{base}/supplements/me/definitions", headers)
                 try:
-                    import json as _json
-                    supps = _json.loads(lookup)
+                    supps = json.loads(lookup)
                     supps = supps if isinstance(supps, list) else supps.get("data", [])
                     matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
                     if matched:
@@ -530,37 +538,37 @@ class AgentExecutor:
                         )
                         return result
                     return f"未找到名为 '{name}' 的活跃补剂"
-                except Exception:
-                    pass
-            # 回退到旧接口
-            data.setdefault("record_date", today)
-            data.setdefault("taken", True)
+                except Exception as e:
+                    return f"Error: 补剂查找失败: {e}"
+            return "Error: 需要提供补剂名称（supplement_name）"
 
         # medication: 用药记录
         if rtype == "medication":
             med_name = data.get("medication_name", data.get("name", ""))
-            if med_name:
-                # 查找 medication_id
-                meds_raw = await self._api_get(f"{base}/medication/medications/me", headers)
-                try:
-                    import json as _json
-                    meds = _json.loads(meds_raw)
-                    meds = meds if isinstance(meds, list) else meds.get("data", [])
-                    matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
-                    if matched:
-                        from datetime import datetime as _dt
-                        taken_time = data.get("taken_time", _dt.now().isoformat())
-                        result = await self._api_post(
-                            f"{base}/medication/logs", headers,
-                            {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
-                        )
-                        return result
-                    return f"未找到名为 '{med_name}' 的活跃药物"
-                except Exception as e:
-                    return f"Error: 用药记录失败: {e}"
+            if not med_name:
+                return "Error: 需要提供药物名称（medication_name）"
+            # 查找 medication_id
+            meds_raw = await self._api_get(f"{base}/medication/medications/me", headers)
+            try:
+                meds = json.loads(meds_raw)
+                meds = meds if isinstance(meds, list) else meds.get("data", [])
+                matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
+                if matched:
+                    taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
+                    result = await self._api_post(
+                        f"{base}/medication/logs", headers,
+                        {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
+                    )
+                    return result
+                return f"未找到名为 '{med_name}' 的活跃药物"
+            except Exception as e:
+                return f"Error: 用药记录失败: {e}"
 
         record_map = {
-            "water": ("/water/records/quick", "POST", {"amount": data.get("amount", 250)}),
+            "water": ("/water/records/quick", "POST", {
+                "amount": data.get("amount", 250),
+                **({"drink_type": data["drink_type"]} if data.get("drink_type") else {}),
+            }),
             "weight": ("/weight/records", "POST", data),
             "blood_pressure": ("/blood-pressure/records", "POST", data),
             "exercise": ("/exercise/records", "POST", data),
@@ -569,10 +577,18 @@ class AgentExecutor:
             "rhinitis": ("/health-checkin/me/rhinitis", "POST", data),
             "mood": ("/mood/records", "POST", data),
             "illness": ("/illness/episodes", "POST", data),
-            "symptom": ("/disease/profiles/{}/symptoms".format(data.get("profile_id", 1)), "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
         }
+
+        # symptom 需要 profile_id
+        if rtype == "symptom":
+            profile_id = data.get("profile_id")
+            if not profile_id:
+                return "Error: 症状记录需要提供 profile_id（疾病档案 ID）"
+            return await self._api_post(
+                f"{base}/disease/profiles/{profile_id}/symptoms", headers, data
+            )
 
         if rtype in record_map:
             path, method, payload = record_map[rtype]
@@ -661,30 +677,42 @@ class AgentExecutor:
 
     async def _api_get(self, url: str, headers: dict) -> str:
         """HTTP GET"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code != 200:
-                return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
-            # 截断过长的响应
-            text = resp.text
-            if len(text) > 3000:
-                text = text[:3000] + "\n...(数据已截断)"
-            return text
+        client = self._http_client or httpx.AsyncClient(timeout=30.0)
+        resp = await client.get(url, headers=headers)
+        if resp.status_code != 200:
+            return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
+        text = resp.text
+        if len(text) > 3000:
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list) and len(parsed) > 10:
+                    parsed = parsed[:10]
+                    return json.dumps(parsed, ensure_ascii=False, default=str) + "\n...(仅显示前10条)"
+                elif isinstance(parsed, dict):
+                    for k, v in parsed.items():
+                        if isinstance(v, list) and len(v) > 10:
+                            parsed[k] = v[:10]
+                    truncated = json.dumps(parsed, ensure_ascii=False, default=str)
+                    if len(truncated) > 4000:
+                        truncated = truncated[:4000] + "...}"
+                    return truncated
+            except Exception:
+                pass
+            text = text[:3000] + "\n...(数据已截断)"
+        return text
 
     async def _api_post(self, url: str, headers: dict, data: dict) -> str:
         """HTTP POST"""
-        headers = {**headers, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, headers=headers, json=data)
-            if resp.status_code not in (200, 201):
-                return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
-            return resp.text
+        client = self._http_client or httpx.AsyncClient(timeout=30.0)
+        resp = await client.post(url, headers={**headers, "Content-Type": "application/json"}, json=data)
+        if resp.status_code not in (200, 201):
+            return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
+        return resp.text
 
     async def _api_patch(self, url: str, headers: dict, data: dict) -> str:
         """HTTP PATCH"""
-        headers = {**headers, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.patch(url, headers=headers, json=data)
-            if resp.status_code not in (200, 201):
-                return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
-            return resp.text
+        client = self._http_client or httpx.AsyncClient(timeout=30.0)
+        resp = await client.patch(url, headers={**headers, "Content-Type": "application/json"}, json=data)
+        if resp.status_code not in (200, 201):
+            return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
+        return resp.text

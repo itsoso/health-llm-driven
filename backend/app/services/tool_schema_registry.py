@@ -14,7 +14,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "health_query",
-            "description": "查询用户的健康数据，包括步数、心率、HRV、睡眠、血压、体重、运动、补剂状态等。当用户问起健康指标、体能数据或每日统计时使用。",
+            "description": "查询用户的健康数据。支持维度：Garmin 体征（步数/心率/HRV/睡眠/血氧/压力/身体电量）、体重、血压、运动、饮食、饮水、补剂依从、体检指标（如 HCY/LDL）、基因位点（如 MTHFR）、用药记录。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -156,6 +156,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {},
+                "required": [],
             },
         },
     },

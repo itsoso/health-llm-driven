@@ -99,6 +99,11 @@ export function useChat(deps: UseChatDeps) {
         } else if (event.event === 'token') {
           fullText += event.data?.content || '';
           d.setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
+        } else if (event.event === 'error') {
+          const errMsg = event.data?.message || '请求失败';
+          fullText += `\n❌ ${errMsg}`;
+          d.setInlineResponse(prev => prev ? { ...prev, answer: fullText, loading: false } : null);
+          return;
         } else if (event.event === 'done') {
           if (event.data?.conversation_id && !d.conversationId) d.setConversationId(event.data.conversation_id);
           d.dashboardRefreshAfterAction();
@@ -135,12 +140,14 @@ export function useChat(deps: UseChatDeps) {
     let workoutAnalysisPromise: Promise<any> | null = isWorkoutDone ? api.post('/workout/post-run-analyze?format=full').catch(() => null) : null;
 
     const aiMsgId = Date.now() + 1;
+    let waitTimer: NodeJS.Timeout | undefined;
+    let waitTimer2: NodeJS.Timeout | undefined;
+    const buf = { content: '', timer: null as NodeJS.Timeout | null };
     try {
       d.setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', created_at: new Date().toISOString() }]);
       let gotDone = false, firstToken = true;
-      const waitTimer = setTimeout(() => { if (firstToken) d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '⏳ AI 正在思考中，复杂分析可能需要 1-2 分钟...' } : m)); }, 8000);
-      const waitTimer2 = setTimeout(() => { if (firstToken) d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '⏳ 正在调用多个 AI 模型进行深度分析，请耐心等待...' } : m)); }, 30000);
-      const buf = { content: '', timer: null as NodeJS.Timeout | null };
+      waitTimer = setTimeout(() => { if (firstToken) d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '⏳ AI 正在思考中，复杂分析可能需要 1-2 分钟...' } : m)); }, 8000);
+      waitTimer2 = setTimeout(() => { if (firstToken) d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '⏳ 正在调用多个 AI 模型进行深度分析，请耐心等待...' } : m)); }, 30000);
 
       const hasMedia = !!(finalImageBase64 || finalFileBase64);
       // 统一走 Agent — 消除双脑架构
@@ -215,7 +222,11 @@ export function useChat(deps: UseChatDeps) {
       d.loadConversations();
     } catch {
       d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '抱歉，请求失败了，请稍后再试。' } : m));
-    } finally { d.setLoading(false); }
+    } finally {
+      d.setLoading(false);
+      clearTimeout(waitTimer); clearTimeout(waitTimer2);
+      if (buf.timer) { clearTimeout(buf.timer); buf.timer = null; }
+    }
   }, [handleInlineSend]);
 
   return { handleSend, handleInlineSend };
