@@ -9,6 +9,14 @@ html, body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* iOS Safe Area 适配 */
+html {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
 /* 隐藏滚动条（HeroCard 计数器横向滚动用） */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

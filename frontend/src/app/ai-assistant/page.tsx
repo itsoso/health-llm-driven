@@ -283,8 +283,8 @@ export default function AIAssistantPage() {
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ fontFamily: UI_FONT_STACK, overscrollBehavior: 'none' }}>
       {/* Header */}
-      <header className="relative z-50 backdrop-blur-md bg-white/80 border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+      <header className="relative z-50 backdrop-blur-md bg-white/80 border-b border-gray-100" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <div className="max-w-7xl mx-auto px-4 h-12 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={handleNewChat} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center"><span className="text-white text-sm font-bold">H</span></div>
@@ -346,7 +346,7 @@ export default function AIAssistantPage() {
         </>
       )}
 
-      <div className="relative flex overflow-hidden" style={{ height: 'calc(100dvh - 56px)' }}>
+      <div className="relative flex overflow-hidden" style={{ height: 'calc(100dvh - 48px - env(safe-area-inset-top, 0px))' }}>
         {showHistory && (
           <HistorySidebar conversations={conversations} currentConversationId={conversationId} onLoadConversation={loadConversation} onNewChat={handleNewChat} onClose={toggleHistory} onDelete={handleDeleteConversation} onShare={handleShareConversation} />
         )}
@@ -408,7 +408,7 @@ export default function AIAssistantPage() {
           )}
 
           {/* Bottom fixed area */}
-          <div className={`${isWelcome ? 'absolute bottom-0 left-0 right-0 z-30' : ''}`}>
+          <div className={`${isWelcome ? 'absolute bottom-0 left-0 right-0 z-30' : ''}`} style={{ paddingBottom: isWelcome ? 'env(safe-area-inset-bottom, 0px)' : undefined }}>
             {isWelcome && (
               <div className="px-4 pt-3 pb-2" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid #E5E5EA' }}>
                 <div className="mx-auto max-w-7xl">
