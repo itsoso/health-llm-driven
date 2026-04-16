@@ -359,7 +359,7 @@ export default function AIAssistantPage() {
           {planCreatedNotification && <Toast color="blue" title="智能计划已生成" subtitle={planCreatedNotification.message} onClose={() => setPlanCreatedNotification(null)} action={{ label: '前往智能计划', onClick: () => { setPlanCreatedNotification(null); router.push('/smart-plan'); } }} />}
 
           {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-3 sm:py-4">
             <div className="mx-auto max-w-7xl">
               {isWelcome ? (
                 <WelcomeDashboard

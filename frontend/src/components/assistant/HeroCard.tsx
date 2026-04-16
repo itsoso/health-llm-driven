@@ -286,12 +286,10 @@ export default function HeroCard({
           </div>
         </div>
 
-        {/* ── Bottom strip: 5 counters (horizontal scroll on mobile) ── */}
-        <div className="mt-3 pt-3 flex gap-3 overflow-x-auto no-scrollbar" style={{ borderTop: `1px solid ${C.divider}` }}>
+        {/* ── Bottom strip: 5 counters ── */}
+        <div className="mt-3 pt-3 grid grid-cols-5 gap-1.5 sm:gap-3" style={{ borderTop: `1px solid ${C.divider}` }}>
           {counters.map((c) => (
-            <div key={c.label} className="shrink-0 min-w-0" style={{ flex: '1 0 0' }}>
-              <CounterChip {...c} />
-            </div>
+            <CounterChip key={c.label} {...c} />
           ))}
         </div>
       </div>

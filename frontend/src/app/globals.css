@@ -5,8 +5,15 @@
 /* iOS Capacitor: 防止水平溢出和橡皮筋效果 */
 html, body {
   overflow-x: hidden;
-  overscroll-behavior: none;
+  overscroll-behavior-x: none;
   -webkit-overflow-scrolling: touch;
+  max-width: 100vw;
+}
+
+/* 所有直接子容器限制宽度 */
+#__next, [data-nextjs-scroll-focus-boundary] {
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* iOS Safe Area 适配 */
