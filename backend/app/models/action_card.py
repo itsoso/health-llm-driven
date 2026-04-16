@@ -10,7 +10,7 @@ ActionCard —— 对话产出固化到首页的行动卡片。
 - manual: 用户手动创建
 """
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -43,5 +43,11 @@ class ActionCard(Base):
     completed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 干预效果追踪（Agent Native Phase 2）
+    checklist = Column(JSON, default=list)  # [{"item": "约耳鼻喉科", "done": false}, ...]
+    last_assessed_at = Column(DateTime(timezone=True))  # 上次 LLM 评估时间
+    assessment_count = Column(Integer, default=0)  # 累计评估次数
+    latest_assessment = Column(JSON)  # 最近一次评估结果 {"score":N, "summary":"..."}
 
     user = relationship("User", backref="action_cards")

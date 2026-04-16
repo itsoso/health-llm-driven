@@ -121,6 +121,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                 logger.warning(f"检测新运动触发分析失败: {e}")
 
             # 触发健康异常检测（含趋势检测器）
+            alerts = []
             try:
                 from app.services.anomaly_detection_service import AnomalyDetectionService
                 anomaly_svc = AnomalyDetectionService(db)
@@ -135,14 +136,20 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
             except Exception as e:
                 logger.warning(f"健康异常检测失败: {e}")
 
-            # Post-sync Safety Guardian 评估（Agent Native Phase 1）
-            # 仅在 anomaly detection 未产生告警时运行，避免重复通知
-            if not alerts:
+            # 构建 Twin + Safety 评估（Agent Loop 和 Safety 推送共用）
+            twin = None
+            safety_report = None
+            try:
+                from app.twin.builder import build_twin
+                from app.agents.safety_guardian import evaluate_safety
+                twin = build_twin(db, user_id, use_cache=False)
+                safety_report = evaluate_safety(twin)
+            except Exception as e:
+                logger.warning(f"Post-sync Twin/Safety 构建失败: {e}")
+
+            # Safety Guardian 推送 critical 告警（仅在 anomaly 无告警时）
+            if not alerts and safety_report:
                 try:
-                    from app.twin.builder import build_twin
-                    from app.agents.safety_guardian import evaluate_safety
-                    twin = build_twin(db, user_id, use_cache=False)
-                    safety_report = evaluate_safety(twin)
                     critical_alerts = [a for a in safety_report.alerts if int(a.severity) >= 3]
                     if critical_alerts:
                         from app.services.notification.push_service import PushService
@@ -159,7 +166,23 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                             asyncio.run(_push_safety())
                         logger.info(f"用户 {user_id} Safety Guardian 发现 {len(critical_alerts)} 条 critical 告警，已推送")
                 except Exception as e:
-                    logger.warning(f"Post-sync Safety Guardian 评估失败: {e}")
+                    logger.warning(f"Safety Guardian 推送失败: {e}")
+
+            # Agent Planning Loop（自主推理，决定是否主动干预）
+            if twin:
+                try:
+                    from app.services.agent_loop import post_sync_reasoning
+
+                    async def _agent_loop():
+                        return await post_sync_reasoning(db, user_id, twin, alerts, safety_report)
+
+                    loop_result = asyncio.run(_agent_loop())
+                    if loop_result.get("action") == "notify":
+                        logger.info(f"用户 {user_id} Agent Loop 主动推送: {loop_result.get('title')}")
+                    else:
+                        logger.debug(f"用户 {user_id} Agent Loop: {loop_result.get('action')}")
+                except Exception as e:
+                    logger.warning(f"Agent Planning Loop 失败（不影响同步）: {e}")
 
             # 更新同步状态
             garmin_credential_service.update_sync_status(db, user_id)

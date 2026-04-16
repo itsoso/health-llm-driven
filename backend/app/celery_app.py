@@ -28,6 +28,7 @@ celery_app = Celery(
         "app.tasks.garmin_sync",
         "app.tasks.notifications",
         "app.tasks.health_analysis",
+        "app.tasks.intervention_assessment",
     ]
 )
 
@@ -167,6 +168,12 @@ celery_app.conf.beat_schedule = {
     "doctor-weekly-report": {
         "task": "app.tasks.notifications.generate_doctor_weekly_report",
         "schedule": crontab(hour=9, minute=15, day_of_week=1),
+    },
+
+    # Agent Native: 干预效果评估（每周一 11:00 LLM 评估 ActionCard 效果）
+    "intervention-assessment": {
+        "task": "app.tasks.intervention_assessment.assess_active_interventions",
+        "schedule": crontab(hour=11, minute=0, day_of_week=1),
     },
 }
 
