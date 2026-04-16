@@ -3,7 +3,6 @@ import os
 import uuid
 import logging
 import base64
-import imghdr
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -67,9 +66,13 @@ def generate_filename(extension: str, category: str = "other") -> str:
 
 
 def validate_image_content(content: bytes) -> None:
-    """验证上传内容是否为允许的图片格式"""
-    detected = imghdr.what(None, h=content)
-    if detected not in {"jpeg", "png", "gif", "webp"}:
+    """验证上传内容是否为允许的图片格式（magic number 检测，替代废弃的 imghdr）"""
+    header = content[:12]
+    is_jpeg = header[:2] == b'\xff\xd8'
+    is_png = header[:8] == b'\x89PNG\r\n\x1a\n'
+    is_gif = header[:3] in (b'GIF', )
+    is_webp = header[:4] == b'RIFF' and header[8:12] == b'WEBP'
+    if not (is_jpeg or is_png or is_gif or is_webp):
         raise HTTPException(status_code=400, detail="文件内容不是有效图片")
 
 

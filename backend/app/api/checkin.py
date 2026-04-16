@@ -1,7 +1,7 @@
 """
 打卡系统 API - executor.life
 """
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -51,7 +51,7 @@ def _auto_complete_plan_items(user_id: int, template_id: int, checkin_date: date
 
         for item in items:
             item.is_completed = True
-            item.completed_at = datetime.utcnow()
+            item.completed_at = datetime.now(UTC)
 
         # 更新完成率
         total = db.query(func.count(PlanItem.id)).filter(PlanItem.plan_id == plan.id).scalar()

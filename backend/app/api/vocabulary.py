@@ -1,5 +1,5 @@
 """单词本 API"""
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -88,7 +88,7 @@ async def submit_review(
         raise HTTPException(status_code=404, detail="单词不存在")
 
     word.review_count = (word.review_count or 0) + 1
-    word.last_reviewed_at = datetime.utcnow()
+    word.last_reviewed_at = datetime.now(UTC)
 
     if req.is_correct:
         word.correct_count = (word.correct_count or 0) + 1

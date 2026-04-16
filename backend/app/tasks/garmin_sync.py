@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.daily_health import WorkoutRecord, WorkoutAnalysisResult
@@ -99,7 +99,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
 
             # 检测新同步的运动并触发自动分析
             try:
-                twelve_hours_ago = datetime.utcnow() - timedelta(hours=12)
+                twelve_hours_ago = datetime.now(UTC) - timedelta(hours=12)
                 analyzed_workout_ids = {
                     r.workout_id for r in db.query(WorkoutAnalysisResult.workout_id).filter(
                         WorkoutAnalysisResult.user_id == user_id
@@ -414,7 +414,7 @@ def _renew_single_session(db, cred, prefix: str) -> str:
         session_data = cffi_login_and_get_session(cred.garmin_email, password, is_cn=is_cn)
 
         cred.garth_session = json.dumps(session_data)
-        cred.session_expires_at = datetime.utcnow() + timedelta(hours=23)
+        cred.session_expires_at = datetime.now(UTC) + timedelta(hours=23)
         cred.login_locked_until = None
         cred.credentials_valid = True
         cred.last_error = None
@@ -450,7 +450,7 @@ def _save_session_to_db(db, cred, garth_client):
                         session_data[filename] = json.load(f)
 
         cred.garth_session = json.dumps(session_data)
-        cred.session_expires_at = datetime.utcnow() + timedelta(hours=23)
+        cred.session_expires_at = datetime.now(UTC) + timedelta(hours=23)
         cred.last_error = None
         cred.error_count = 0
         db.commit()

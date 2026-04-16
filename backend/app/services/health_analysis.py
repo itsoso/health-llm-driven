@@ -3,7 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from sqlalchemy.orm import Session, joinedload
 from app.config import settings
 from app.models.basic_health import BasicHealthData
@@ -277,7 +277,7 @@ class HealthAnalysisService:
             
             if cached:
                 cached.analysis_result = result
-                cached.updated_at = datetime.utcnow()
+                cached.updated_at = datetime.now(UTC)
             else:
                 cached = HealthAnalysisCache(
                     user_id=user_id,
@@ -656,7 +656,7 @@ class HealthAnalysisService:
             ).first()
             if cached:
                 cached.analysis_result = result
-                cached.updated_at = datetime.utcnow()
+                cached.updated_at = datetime.now(UTC)
             else:
                 cached = HealthAnalysisCache(
                     user_id=user_id, analysis_date=today, analysis_result=result

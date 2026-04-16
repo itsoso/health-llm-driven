@@ -1,6 +1,6 @@
 """对话分享模型 — 生成公网可访问的对话快照"""
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, JSON, Boolean
 from app.database import Base
 
@@ -28,6 +28,6 @@ class SharedConversation(Base):
     sharer_name = Column(String(50), nullable=True)
 
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     expires_at = Column(DateTime, nullable=True)  # None = 永不过期
     view_count = Column(Integer, default=0)

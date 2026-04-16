@@ -1,5 +1,5 @@
 """用户认证服务"""
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
@@ -60,9 +60,9 @@ class AuthService:
         """创建JWT访问令牌"""
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(UTC) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
@@ -164,7 +164,7 @@ class GarminCredentialService:
             credential.requires_mfa = requires_mfa  # 更新MFA标志
             credential.error_count = 0
             credential.last_error = None
-            credential.updated_at = datetime.utcnow()
+            credential.updated_at = datetime.now(UTC)
         else:
             # 创建新凭证
             credential = GarminCredential(
@@ -233,7 +233,7 @@ class GarminCredentialService:
         """更新同步状态（同步成功时调用）"""
         credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
         if credential:
-            credential.last_sync_at = last_sync_at or datetime.utcnow()
+            credential.last_sync_at = last_sync_at or datetime.now(UTC)
             credential.credentials_valid = True  # 同步成功表示凭证有效
             credential.error_count = 0  # 重置错误计数
             credential.last_error = None

@@ -1,5 +1,5 @@
 """交互反馈模型 — OpenClaw Native 自我优化基础设施"""
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, Index
 from app.database import Base
 
@@ -35,7 +35,7 @@ class InteractionFeedback(Base):
     # 响应质量指标
     response_time_ms = Column(Integer, nullable=True)  # 响应耗时
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("ix_feedback_skill_version", "skill_used", "skill_version"),
@@ -76,7 +76,7 @@ class SkillMetrics(Base):
     is_production = Column(Boolean, default=False)  # 是否为当前生产版本
     is_canary = Column(Boolean, default=False)  # 是否为灰度测试版本
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("ix_skill_metrics_lookup", "skill_name", "skill_version", "date", unique=True),
@@ -105,7 +105,7 @@ class SkillOptimizationLog(Base):
     old_avg_rating = Column(Float, nullable=True)
     new_avg_rating = Column(Float, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     resolved_at = Column(DateTime, nullable=True)
 
     __table_args__ = (

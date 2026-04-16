@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 import json
 import logging
 
-from datetime import datetime
+from datetime import UTC, datetime
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
@@ -815,7 +815,7 @@ def get_knowledge_feedback(
         from sqlalchemy import func
         from datetime import timedelta
 
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
 
         rhinitis_episodes = db.query(
             func.count(IllnessEpisode.id),

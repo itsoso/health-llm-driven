@@ -1,5 +1,5 @@
 """成就徽章模型"""
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, UniqueConstraint, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -21,7 +21,7 @@ class BadgeDefinition(Base):
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     user_badges = relationship("UserBadge", back_populates="badge")
 
@@ -33,7 +33,7 @@ class UserBadge(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     badge_id = Column(Integer, ForeignKey("badge_definitions.id"), nullable=False, index=True)
-    unlocked_at = Column(DateTime, default=datetime.utcnow)
+    unlocked_at = Column(DateTime, default=lambda: datetime.now(UTC))
     progress_value = Column(Float, default=0)
     notified = Column(Boolean, default=False)
 

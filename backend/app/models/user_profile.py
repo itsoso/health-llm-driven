@@ -2,7 +2,7 @@
 用户画像模型 - executor.life 健康模块
 包含用户的基本信息、健康目标、疾病历史等
 """
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Optional, List
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, JSON, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
@@ -95,8 +95,8 @@ class UserProfile(Base):
     use_manual_location = Column(Boolean, default=False)  # 是否使用手工输入的位置
 
     # === 时间戳 ===
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # 关系
     user = relationship("User", back_populates="profile")
@@ -166,6 +166,6 @@ class HealthGoal(Base):
     ai_suggestions = Column(JSON, default=list)  # AI给出的达成建议
     
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     completed_at = Column(DateTime, nullable=True)

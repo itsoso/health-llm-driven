@@ -15,7 +15,7 @@ Digital Health Twin 组装器。
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Callable, Dict, List, Set, Tuple
 
 from sqlalchemy.orm import Session
@@ -69,7 +69,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
     twin = HealthTwin(
         meta=TwinMeta(
             user_id=user_id,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(UTC),
         )
     )
 

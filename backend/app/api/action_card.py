@@ -10,7 +10,7 @@ ActionCard API —— 对话固化到首页。
 
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -179,7 +179,7 @@ def update_card(
     if body.status is not None:
         card.status = body.status
         if body.status == "completed":
-            card.completed_at = datetime.utcnow()
+            card.completed_at = datetime.now(UTC)
     if body.priority is not None:
         card.priority = body.priority
     if body.is_visible is not None:

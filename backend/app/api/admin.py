@@ -1,6 +1,6 @@
 """管理员API"""
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
@@ -625,7 +625,7 @@ async def get_all_users_sync_status(
         lock_remaining_minutes = 0
         if hasattr(cred, 'login_locked_until') and cred.login_locked_until:
             from datetime import datetime
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             locked_until = cred.login_locked_until
             if hasattr(locked_until, 'tzinfo') and locked_until.tzinfo is not None:
                 locked_until = locked_until.replace(tzinfo=None)

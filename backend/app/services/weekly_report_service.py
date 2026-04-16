@@ -432,7 +432,7 @@ class WeeklyReportService:
                     SupplementDefinition.is_active == True,  # noqa: E712
                     SupplementDefinition.name.ilike("%methyl%folate%"),
                 )
-                .subquery()
+                .scalar_subquery()
             )
             days = (
                 db.query(func.count(func.distinct(SupplementRecord.record_date)))

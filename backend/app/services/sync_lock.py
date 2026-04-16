@@ -1,6 +1,6 @@
 """Garmin 同步去重锁 — 防止多个入口并发同步同一用户"""
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ def acquire_sync_lock(db: Session, user_id: int) -> bool:
         True: 获取成功，可以开始同步
         False: 另一个同步正在进行中
     """
-    timeout_threshold = datetime.utcnow() - timedelta(minutes=SYNC_LOCK_TIMEOUT_MINUTES)
+    timeout_threshold = datetime.now(UTC) - timedelta(minutes=SYNC_LOCK_TIMEOUT_MINUTES)
 
     try:
         result = db.execute(
@@ -27,7 +27,7 @@ def acquire_sync_lock(db: Session, user_id: int) -> bool:
                 "WHERE user_id = :uid "
                 "AND (sync_in_progress = false OR sync_started_at < :timeout OR sync_started_at IS NULL)"
             ),
-            {"uid": user_id, "now": datetime.utcnow(), "timeout": timeout_threshold}
+            {"uid": user_id, "now": datetime.now(UTC), "timeout": timeout_threshold}
         )
         db.commit()
         acquired = result.rowcount == 1

@@ -236,7 +236,7 @@ async def list_conversations(
                 OpenClawMessage.role == "user"
             )
             .group_by(OpenClawMessage.conversation_id)
-            .subquery()
+            .scalar_subquery()
         )
         rows = (
             db.query(OpenClawMessage.conversation_id, OpenClawMessage.content)

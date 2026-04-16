@@ -8,7 +8,7 @@
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta, date
+from datetime import UTC, datetime, timedelta, date
 from typing import List, Dict, Any
 from app.services.data_collection.garmin_connect import GarminConnectService, GarminAuthenticationError, probe_sso_availability
 from app.services.auth import garmin_credential_service
@@ -152,7 +152,7 @@ async def sync_user_garmin_data(
     try:
         cred = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
         if cred and cred.login_locked_until:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             locked_until = cred.login_locked_until
             if locked_until.tzinfo is not None:
                 locked_until = locked_until.replace(tzinfo=None)
@@ -185,7 +185,7 @@ async def sync_user_garmin_data(
                     from app.services.data_collection.garmin_connect import LOGIN_LOCK_MINUTES_SCHEDULE
                     lock_index = min((cred.error_count or 1) - 1, len(LOGIN_LOCK_MINUTES_SCHEDULE) - 1)
                     lock_minutes = LOGIN_LOCK_MINUTES_SCHEDULE[max(lock_index, 0)]
-                    lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
+                    lock_until = datetime.now(UTC) + timedelta(minutes=lock_minutes)
                     cred.login_locked_until = lock_until
                     db.commit()
                     logger.warning(

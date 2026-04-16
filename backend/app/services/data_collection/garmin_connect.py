@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
@@ -391,7 +391,7 @@ class GarminConnectService:
                 
                 if cred:
                     cred.garth_session = json.dumps(session_data)
-                    cred.session_expires_at = datetime.utcnow() + timedelta(hours=TOKEN_CACHE_HOURS)
+                    cred.session_expires_at = datetime.now(UTC) + timedelta(hours=TOKEN_CACHE_HOURS)
                     db.commit()
                     logger.info(f"{prefix} ✅ garth session 已缓存到数据库")
                     return True
@@ -433,7 +433,7 @@ class GarminConnectService:
                 exp = cred.session_expires_at
                 if hasattr(exp, 'tzinfo') and exp.tzinfo is not None:
                     exp = exp.replace(tzinfo=None)
-                if exp < datetime.utcnow():
+                if exp < datetime.now(UTC):
                     logger.info(f"{prefix} 缓存的 garth session 已过期")
                     return False
             
@@ -537,7 +537,7 @@ class GarminConnectService:
             ).first()
 
             if cred and cred.login_locked_until:
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
                 locked_until = cred.login_locked_until
                 # 统一为 naive datetime 比较，避免 offset-naive vs offset-aware 错误
                 if locked_until.tzinfo is not None:
@@ -583,7 +583,7 @@ class GarminConnectService:
                         exp = cred.session_expires_at
                         if hasattr(exp, 'tzinfo') and exp.tzinfo:
                             exp = exp.replace(tzinfo=None)
-                        has_valid_session = exp > datetime.utcnow()
+                        has_valid_session = exp > datetime.now(UTC)
                     except Exception:
                         has_valid_session = False
 
@@ -596,7 +596,7 @@ class GarminConnectService:
                         logger.info(f"{prefix} Cloudflare/429 但有有效 session，不设锁定")
                     else:
                         lock_minutes = 30
-                        lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
+                        lock_until = datetime.now(UTC) + timedelta(minutes=lock_minutes)
                         cred.login_locked_until = lock_until
                         logger.warning(
                             f"{prefix} ⚠️ Cloudflare/429 限流且无 session，锁定 {lock_minutes} 分钟"
@@ -608,7 +608,7 @@ class GarminConnectService:
                     if cred.error_count >= LOGIN_FAIL_THRESHOLD:
                         lock_index = min(cred.error_count - 1, len(LOGIN_LOCK_MINUTES_SCHEDULE) - 1)
                         lock_minutes = LOGIN_LOCK_MINUTES_SCHEDULE[lock_index]
-                        lock_until = datetime.utcnow() + timedelta(minutes=lock_minutes)
+                        lock_until = datetime.now(UTC) + timedelta(minutes=lock_minutes)
                         cred.login_locked_until = lock_until
                         logger.warning(
                             f"{prefix} ⚠️ 登录失败，累计 {cred.error_count} 次，锁定 {lock_minutes} 分钟"
@@ -744,7 +744,7 @@ class GarminConnectService:
             locked_until = self._check_login_lock(db)
             if locked_until:
                 locked_naive = locked_until.replace(tzinfo=None) if locked_until.tzinfo else locked_until
-                remaining_minutes = int((locked_naive - datetime.utcnow()).total_seconds() / 60) + 1
+                remaining_minutes = int((locked_naive - datetime.now(UTC)).total_seconds() / 60) + 1
                 error_msg = f"⏳ 登录已被暂停，请 {remaining_minutes} 分钟后再试。连续登录失败会导致 Garmin 账号被锁定，请先确认密码正确。"
                 logger.warning(f"{prefix} {error_msg}")
                 raise GarminLoginLockedError(error_msg, locked_until)

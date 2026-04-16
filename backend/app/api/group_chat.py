@@ -157,7 +157,7 @@ async def list_groups(
 ):
     my_group_ids = db.query(GroupMember.group_id).filter(
         GroupMember.user_id == current_user.id
-    ).subquery()
+    ).scalar_subquery()
 
     groups = db.query(GroupChat).filter(
         GroupChat.id.in_(my_group_ids)

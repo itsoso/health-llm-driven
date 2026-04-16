@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, JSON, ForeignKey, Text, Index
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -25,8 +25,8 @@ class PeriodGoal(Base):
 
     # 用户反馈
     user_feedback = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     metrics = relationship("PeriodGoalMetric", back_populates="goal", cascade="all, delete-orphan")
 

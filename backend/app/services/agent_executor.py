@@ -13,7 +13,7 @@
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import AsyncGenerator, Dict, Any, List, Optional
 
 import httpx
@@ -199,7 +199,7 @@ class AgentExecutor:
 
         # 6. 保存回复
         ai_msg = svc.save_message(conv.id, "assistant", full_reply)
-        conv.updated_at = datetime.utcnow()
+        conv.updated_at = datetime.now(UTC)
         self.db.commit()
 
         elapsed_ms = int((time.time() - start_time) * 1000)

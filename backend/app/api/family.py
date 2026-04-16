@@ -244,7 +244,7 @@ async def switch_to_member(
     # 验证权限：目标用户必须在同一家庭组，且当前用户是 owner 或有编辑权限
     my_groups = db.query(FamilyMember.family_group_id).filter(
         FamilyMember.user_id == current_user.id
-    ).subquery()
+    ).scalar_subquery()
 
     target_member = db.query(FamilyMember).filter(
         FamilyMember.user_id == target_user_id,
@@ -270,12 +270,12 @@ async def switch_to_member(
     # 生成带 acting_as 的 JWT Token（有效期 4 小时）
     from app.services.auth import SECRET_KEY, ALGORITHM
     from jose import jwt
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
     token_data = {
         "sub": str(target_user_id),
         "acting_as": target_user_id,
         "original_user": current_user.id,
-        "exp": datetime.utcnow() + timedelta(hours=4),
+        "exp": datetime.now(UTC) + timedelta(hours=4),
     }
     proxy_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
 

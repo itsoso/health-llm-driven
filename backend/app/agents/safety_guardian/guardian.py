@@ -13,7 +13,7 @@ Safety Guardian 主入口。
 
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.agents.safety_guardian.engine import evaluate_rules, registry
 from app.agents.safety_guardian.schema import SafetyReport
@@ -34,7 +34,7 @@ def evaluate_safety(twin: HealthTwin) -> SafetyReport:
 
     report = SafetyReport(
         user_id=twin.meta.user_id,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(UTC),
         alerts=alerts,
         total_rules_evaluated=registry.count(),
         twin_build_ms=twin.meta.build_ms,

@@ -53,7 +53,7 @@ async def get_conversations(
         )
         .filter(or_(DirectMessage.sender_id == uid, DirectMessage.receiver_id == uid))
         .group_by(friend_id_col)
-        .subquery()
+        .scalar_subquery()
     )
 
     # 连接获取最新消息详情

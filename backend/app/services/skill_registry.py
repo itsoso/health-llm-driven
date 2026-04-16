@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -185,7 +185,7 @@ class SkillRegistry:
         new_manifest = copy.deepcopy(manifest)
         new_manifest["versions"].append({
             "version": new_version,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "changelog": changelog,
             "status": "canary",  # 新版本先作为 canary
         })
@@ -354,7 +354,7 @@ class SkillRegistry:
             "versions": [
                 {
                     "version": fm.get("version", "1.0.0"),
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                     "changelog": "初始版本",
                     "status": "production",
                 }

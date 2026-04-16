@@ -2,7 +2,7 @@
 通知推送任务
 """
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func as sa_func
 from app.celery_app import celery_app
 from app.database import SessionLocal
@@ -692,7 +692,7 @@ def _write_briefing_message(db, user_id: int, content: str):
         content=content,
     )
     db.add(msg)
-    conv.updated_at = datetime.utcnow()
+    conv.updated_at = datetime.now(UTC)
     db.commit()
 
 
@@ -720,7 +720,7 @@ def _write_weekly_report_message(db, user_id: int, content: str):
     conv = _get_or_create_weekly_conversation(db, user_id)
     msg = OpenClawMessage(conversation_id=conv.id, role="assistant", content=content)
     db.add(msg)
-    conv.updated_at = datetime.utcnow()
+    conv.updated_at = datetime.now(UTC)
     db.commit()
 
 
@@ -1160,7 +1160,7 @@ def check_action_card_followups():
 
     logger.info("[随访提醒] 开始扫描")
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     stale_threshold = now - timedelta(days=7)
     reminder_cooldown = now - timedelta(days=7)
 

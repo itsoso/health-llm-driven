@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, JSON, ForeignKey, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -23,8 +23,8 @@ class WeeklyPlan(Base):
     completion_rate = Column(Float, default=0.0)
     ai_model = Column(String(100), nullable=True)
     user_feedback = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     items = relationship("PlanItem", back_populates="plan", cascade="all, delete-orphan")
 
@@ -48,6 +48,6 @@ class PlanItem(Base):
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime, nullable=True)
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     plan = relationship("WeeklyPlan", back_populates="items")

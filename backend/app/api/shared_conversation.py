@@ -139,8 +139,8 @@ def get_shared_conversation(
 
     # 检查过期
     if shared.expires_at:
-        from datetime import datetime
-        if datetime.utcnow() > shared.expires_at:
+        from datetime import UTC, datetime
+        if datetime.now(UTC) > shared.expires_at:
             raise HTTPException(status_code=410, detail="分享链接已过期")
 
     # 更新浏览计数

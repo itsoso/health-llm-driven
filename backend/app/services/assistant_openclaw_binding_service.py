@@ -3,7 +3,7 @@ import base64
 import hashlib
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -32,8 +32,9 @@ class AssistantOpenClawBindingService:
             or getattr(settings, "garmin_encryption_key", None)
         )
         if not encryption_key:
-            secret = settings.secret_key or "assistant-openclaw-fallback-secret"
-            encryption_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+            if not settings.secret_key:
+                raise ValueError("SECRET_KEY 未配置，无法加密 OpenClaw 凭据")
+            encryption_key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())
         self._fernet = Fernet(encryption_key)
 
     @property
@@ -53,7 +54,7 @@ class AssistantOpenClawBindingService:
 
     @staticmethod
     def _utcnow() -> datetime:
-        return datetime.utcnow()
+        return datetime.now(UTC)
 
     def _health_check_ttl(self) -> timedelta:
         ttl_seconds = max(int(getattr(settings, "assistant_openclaw_health_check_ttl_seconds", 60) or 0), 0)

@@ -1,7 +1,7 @@
 """智能助理专用 OpenClaw 对话代理服务"""
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import AsyncGenerator, Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -161,7 +161,7 @@ class AssistantOpenClawService:
             yield {"event": "token", "data": {"content": token}}
 
         ai_msg = self.save_message(conv.id, "assistant", full_response)
-        conv.updated_at = datetime.utcnow()
+        conv.updated_at = datetime.now(UTC)
         self.db.commit()
 
         yield {

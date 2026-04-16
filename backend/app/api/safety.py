@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -290,7 +290,7 @@ async def explain_alert(
         return ExplainResponse(
             rule_id=req.rule_id,
             explanation=cached[1],
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(UTC),
             cached=True,
         )
 
@@ -367,7 +367,7 @@ async def explain_alert(
         return ExplainResponse(
             rule_id=req.rule_id,
             explanation=explanation,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(UTC),
             cached=False,
         )
 
@@ -378,6 +378,6 @@ async def explain_alert(
     return ExplainResponse(
         rule_id=req.rule_id,
         explanation=fallback,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(UTC),
         cached=False,
     )

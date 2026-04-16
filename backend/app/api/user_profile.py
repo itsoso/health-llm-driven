@@ -193,11 +193,11 @@ async def refresh_my_location(
     location = await service.get_location_from_ip(client_ip)
 
     if location:
-        from datetime import datetime
+        from datetime import UTC, datetime
         profile.detected_city = location.city
         profile.detected_region = location.region
         profile.detected_country = location.country
-        profile.location_updated_at = datetime.utcnow()
+        profile.location_updated_at = datetime.now(UTC)
         profile.last_ip = client_ip
         db.commit()
         db.refresh(profile)
@@ -391,8 +391,8 @@ async def update_goal(
     
     # 如果状态变为completed，记录完成时间
     if goal_data.status == "completed":
-        from datetime import datetime
-        goal.completed_at = datetime.utcnow()
+        from datetime import UTC, datetime
+        goal.completed_at = datetime.now(UTC)
     
     db.commit()
     db.refresh(goal)
@@ -442,8 +442,8 @@ async def update_goal_progress(
     # 检查是否达成目标
     if goal.target_value and current_value >= goal.target_value:
         goal.status = "completed"
-        from datetime import datetime
-        goal.completed_at = datetime.utcnow()
+        from datetime import UTC, datetime
+        goal.completed_at = datetime.now(UTC)
     
     db.commit()
     db.refresh(goal)

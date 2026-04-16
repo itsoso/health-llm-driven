@@ -237,7 +237,7 @@ async def list_challenges(
     # 先找到我参与的挑战ID
     my_challenge_ids = db.query(ChallengeParticipant.challenge_id).filter(
         ChallengeParticipant.user_id == current_user.id,
-    ).subquery()
+    ).scalar_subquery()
 
     query = db.query(PKChallenge).filter(PKChallenge.id.in_(my_challenge_ids))
     if status:

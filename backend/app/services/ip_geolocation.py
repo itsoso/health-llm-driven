@@ -5,7 +5,7 @@ IP 地理位置服务 - 基于 IP 地址获取用户位置信息
 import httpx
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class IPGeolocationService:
             return True
 
         # 超过更新间隔
-        update_threshold = datetime.utcnow() - timedelta(hours=self.UPDATE_INTERVAL_HOURS)
+        update_threshold = datetime.now(UTC) - timedelta(hours=self.UPDATE_INTERVAL_HOURS)
         if last_update < update_threshold:
             return True
 
@@ -221,7 +221,7 @@ async def update_user_location(
         user_profile.detected_city = location.city
         user_profile.detected_region = location.region
         user_profile.detected_country = location.country
-        user_profile.location_updated_at = datetime.utcnow()
+        user_profile.location_updated_at = datetime.now(UTC)
         user_profile.last_ip = client_ip
 
         db.add(user_profile)

@@ -1,5 +1,5 @@
 """Garmin运动活动同步服务"""
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 import json
@@ -284,7 +284,7 @@ class WorkoutSyncService:
                         expires = cred.session_expires_at
                         if expires.tzinfo:
                             expires = expires.replace(tzinfo=None)
-                        if expires > datetime.utcnow():
+                        if expires > datetime.now(UTC):
                             session_data = json.loads(cred.garth_session)
                             self.client = self._create_patched_client()
                             with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,6 +1,6 @@
 """交互反馈服务 — 收集、聚合、查询反馈数据"""
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional, List
 from sqlalchemy import func, and_, case
 from sqlalchemy.orm import Session
@@ -116,7 +116,7 @@ class FeedbackService:
     def aggregate_daily_metrics(self, db: Session, date: Optional[datetime] = None):
         """聚合指定日期的 Skill 指标（由定时任务调用）"""
         if date is None:
-            date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            date = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
 
         start = date.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
@@ -180,7 +180,7 @@ class FeedbackService:
 
     def get_skill_performance(self, db: Session, days: int = 7) -> list:
         """获取所有 Skill 最近 N 天的性能概览"""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
 
         rows = db.query(
             SkillMetrics.skill_name,
@@ -227,7 +227,7 @@ class FeedbackService:
 
     def get_low_performing_skills(self, db: Session, days: int = 7, threshold: float = 0.8) -> list:
         """找出需要优化的 Skill（success_rate 低于阈值）"""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
 
         rows = db.query(
             SkillMetrics.skill_name,

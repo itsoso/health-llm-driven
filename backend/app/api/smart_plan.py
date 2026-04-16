@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -208,7 +208,7 @@ async def update_plan_item(
         raise HTTPException(status_code=404, detail="计划项不存在")
 
     item.is_completed = update.is_completed
-    item.completed_at = datetime.utcnow() if update.is_completed else None
+    item.completed_at = datetime.now(UTC) if update.is_completed else None
     db.commit()
 
     service = SmartPlanService(db)

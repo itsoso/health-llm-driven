@@ -1,5 +1,5 @@
 """Kids每日计划数据模型"""
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, Date, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -17,7 +17,7 @@ class KidsDailyPlan(Base):
     awarded_tier = Column(Integer, default=0)  # 当天已发放积分的最高阶梯(0-5)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     user = relationship("User", backref="kids_daily_plans")
 

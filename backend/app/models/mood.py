@@ -1,5 +1,5 @@
 """情绪追踪数据模型"""
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Index, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -46,7 +46,7 @@ class MoodRecord(Base):
 
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     # 关系
     user = relationship("User", backref="mood_records")

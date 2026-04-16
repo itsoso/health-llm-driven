@@ -1,5 +1,5 @@
 """活动状态数据模型"""
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -25,7 +25,7 @@ class ActivityStatus(Base):
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     user = relationship("User", backref="activity_statuses")
 

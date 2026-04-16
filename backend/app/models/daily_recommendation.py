@@ -1,7 +1,7 @@
 """每日建议数据模型"""
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, JSON, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import UTC, datetime
 from app.database import Base
 
 
@@ -21,8 +21,8 @@ class DailyRecommendation(Base):
     seven_day_recommendation = Column(JSON, nullable=True)  # 存储完整的7天建议JSON
     
     # 元数据
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # 关系
     user = relationship("User", back_populates="daily_recommendations")

@@ -4,7 +4,7 @@
 提供各数据源的状态概览，帮助用户了解数据完整性。
 """
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -31,7 +31,7 @@ def get_data_health_status(
     """
     user_id = current_user.id
     today = date.today()
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     return {
         "garmin": _garmin_status(db, user_id, now),

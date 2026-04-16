@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import AsyncGenerator, Dict, List, Optional
 
 import httpx
@@ -661,7 +661,7 @@ AI: {ai_reply}
         if skill_response is not None:
             yield {"event": "token", "data": {"content": skill_response}}
             ai_msg = self.save_message(conv.id, "assistant", skill_response)
-            conv.updated_at = datetime.utcnow()
+            conv.updated_at = datetime.now(UTC)
             self.db.commit()
             yield {"event": "done", "data": {"conversation_id": conv.id, "message_id": ai_msg.id}}
             return
@@ -776,7 +776,7 @@ AI: {ai_reply}
             logger.debug(f"记忆提取跳过: {e}")
 
         # 7. 更新会话时间
-        conv.updated_at = datetime.utcnow()
+        conv.updated_at = datetime.now(UTC)
         self.db.commit()
 
         # 8. 记录隐式反馈（skill 调用、成功/失败、响应时间）

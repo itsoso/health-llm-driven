@@ -1,5 +1,5 @@
 """每日健康分析与建议服务"""
-from datetime import date, timedelta, datetime
+from datetime import UTC, date, timedelta, datetime
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
@@ -1003,7 +1003,7 @@ class DailyRecommendationService:
             cached.one_day_recommendation = one_day_rec
             cached.seven_day_recommendation = seven_day_rec
             cached.analysis_date = analysis_date
-            cached.updated_at = datetime.utcnow()
+            cached.updated_at = datetime.now(UTC)
         else:
             # 创建新记录
             cached = DailyRecommendation(

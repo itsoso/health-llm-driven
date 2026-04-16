@@ -9,7 +9,7 @@ Safety Guardian 的数据模型 —— Alert + Severity。
 - 不绑定 LLM，纯结构化
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
 
@@ -67,7 +67,7 @@ class Alert(BaseModel):
         False,
         description="是否建议联系真人医生 —— CRITICAL 级必 True",
     )
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def model_dump_for_api(self) -> Dict[str, Any]:
         """前端友好的 JSON 输出（severity 带中英文标签）。"""
@@ -84,7 +84,7 @@ class SafetyReport(BaseModel):
     """Safety Guardian 一次评估的完整结果。"""
 
     user_id: int
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     alerts: List[Alert] = Field(default_factory=list)
     total_rules_evaluated: int = 0
     twin_build_ms: int = 0

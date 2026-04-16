@@ -1,6 +1,6 @@
 """Orchestrator 数据模型。"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -53,4 +53,4 @@ class OrchestratorResponse(BaseModel):
     used_specialists: List[str] = Field(default_factory=list)
     twin_build_ms: int = 0
     total_ms: int = 0
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

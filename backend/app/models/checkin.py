@@ -2,7 +2,7 @@
 打卡系统模型 - executor.life 健康模块
 支持自定义打卡项目，追踪微小可叠加的进步
 """
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from typing import Optional, List
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Time, JSON, ForeignKey, Text, Boolean, Index
 from sqlalchemy.orm import relationship
@@ -59,8 +59,8 @@ class CheckinTemplate(Base):
     sort_order = Column(Integer, default=0)  # 排序顺序
     
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # 关系
     records = relationship("CheckinRecord", back_populates="template", cascade="all, delete-orphan")
@@ -82,7 +82,7 @@ class CheckinRecord(Base):
     
     # 打卡日期和时间
     checkin_date = Column(Date, nullable=False, index=True)
-    checkin_time = Column(DateTime, default=datetime.utcnow)
+    checkin_time = Column(DateTime, default=lambda: datetime.now(UTC))
     
     # 完成情况
     value = Column(Float, nullable=False)  # 实际完成量
@@ -113,8 +113,8 @@ class CheckinRecord(Base):
     photos = Column(JSON, default=list)  # 图片URL列表
     
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # 关系
     template = relationship("CheckinTemplate", back_populates="records")
