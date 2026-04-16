@@ -2,9 +2,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { registerPushNotifications } from '@/services/pushNotifications';
+import { API_BASE_URL } from '@/services/api/client';
 
-// 使用相对路径，通过Next.js代理到后端
-const API_BASE = '/api';
+const API_BASE = API_BASE_URL;
 
 interface User {
   id: number;
