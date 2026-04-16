@@ -221,17 +221,28 @@ export const assistantOpenclawApi = {
   },
 };
 
-// ===== Agent 模式 API (Hermes) =====
+// ===== 统一健康 Agent API =====
 export const agentApi = {
-  streamMessage: async function* (message: string, conversationId?: number) {
+  streamMessage: async function* (
+    message: string,
+    conversationId?: number,
+    imageBase64?: string,
+    imageType?: string,
+    fileBase64?: string,
+    fileName?: string,
+  ) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const body: Record<string, any> = { message, conversation_id: conversationId };
+    if (imageBase64) { body.image_base64 = imageBase64; body.image_type = imageType || 'jpeg'; }
+    if (fileBase64) { body.file_base64 = fileBase64; body.file_name = fileName; }
+
     const response = await fetch(`${API_BASE_URL}/agent/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ message, conversation_id: conversationId }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

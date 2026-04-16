@@ -1,7 +1,7 @@
-"""Agent API — Hermes Agent 模式端点
+"""Unified Health Agent API — 统一健康助理端点
 
-路径 B：复杂任务走 Agent 执行器（结构化工具调用 + 多步推理），
-普通对话仍走 OpenClaw /openclaw/stream。
+所有对话（记录、查询、分析、图片识别）统一走此入口。
+OpenClaw 降级为 fallback 渠道。
 """
 import json
 import logging
@@ -23,16 +23,20 @@ router = APIRouter()
 class AgentRequest(BaseModel):
     message: str
     conversation_id: Optional[int] = None
+    image_base64: Optional[str] = None
+    image_type: Optional[str] = None  # jpeg, png, etc.
+    file_base64: Optional[str] = None
+    file_name: Optional[str] = None
 
 
-@router.post("/stream", summary="Agent 模式流式对话")
+@router.post("/stream", summary="统一健康助理流式对话")
 async def agent_stream(
     request: Request,
     req: AgentRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """Hermes Agent 模式 — 结构化工具调用 + 多步推理
+    """统一健康 Agent — 记录 + 查询 + 分析 + 图片识别
 
     SSE 事件类型：
     - agent_start: Agent 开始
@@ -42,7 +46,7 @@ async def agent_stream(
     - done: 完成 {conversation_id, message_id, elapsed_ms, mode}
     - error: 错误
     """
-    if not req.message.strip():
+    if not req.message.strip() and not req.image_base64 and not req.file_base64:
         raise HTTPException(status_code=400, detail="消息不能为空")
 
     from app.services.agent_executor import AgentExecutor
@@ -58,6 +62,10 @@ async def agent_stream(
                 message=req.message.strip(),
                 conversation_id=req.conversation_id,
                 user_auth_token=user_token,
+                image_base64=req.image_base64,
+                image_type=req.image_type,
+                file_base64=req.file_base64,
+                file_name=req.file_name,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:

@@ -29,10 +29,11 @@ AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"  # 可通过 config 覆盖
 
 
 class AgentExecutor:
-    """Hermes Agent 执行器"""
+    """统一健康 Agent 执行器"""
 
     def __init__(self, db: Session):
         self.db = db
+        self._current_user_id: Optional[int] = None
 
     async def run_stream(
         self,
@@ -40,15 +41,27 @@ class AgentExecutor:
         message: str,
         conversation_id: Optional[int] = None,
         user_auth_token: Optional[str] = None,
+        image_base64: Optional[str] = None,
+        image_type: Optional[str] = None,
+        file_base64: Optional[str] = None,
+        file_name: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         start_time = time.time()
+        self._current_user_id = user_id
 
         # 1. 获取或创建会话（复用 OpenClaw 的对话管理）
         from app.services.openclaw_service import OpenClawService
         svc = OpenClawService(self.db)
         conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
-        svc.save_message(conv.id, "user", message)
+
+        # 保存用户消息（含图片标记）
+        user_content = message
+        if image_base64:
+            user_content += f"\n[附图: {image_type or 'jpeg'}]"
+        if file_base64 and file_name:
+            user_content += f"\n[附件: {file_name}]"
+        svc.save_message(conv.id, "user", user_content)
 
         # 2. 构建 system prompt（复用健康上下文）
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
@@ -56,6 +69,21 @@ class AgentExecutor:
         # 3. 构建对话历史
         messages = svc.build_messages(conv.id, limit=15)
         messages.insert(0, {"role": "system", "content": system_content})
+
+        # 如果有图片，替换最后一条 user 消息为多模态格式
+        if image_base64:
+            user_msg_content = [
+                {"type": "text", "text": message},
+                {"type": "image_url", "image_url": {"url": f"data:image/{image_type or 'jpeg'};base64,{image_base64}"}},
+            ]
+            # 替换 messages 中最后一条 user 角色的 content
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    messages[i]["content"] = user_msg_content
+                    break
+
+        # 有图片时使用 vision model
+        use_vision = bool(image_base64)
 
         # 4. 工具定义
         tools = get_health_tools()
@@ -71,7 +99,9 @@ class AgentExecutor:
                 if round_idx > 0:
                     await _asyncio_loop.sleep(2)
                 # 调用 LLM（非流式，需要完整解析 tool_call）
-                response = await self._call_llm(messages, tools)
+                response = await self._call_llm(messages, tools, use_vision=use_vision)
+                # 图片只在第一轮传，后续轮次不需要 vision model
+                use_vision = False
 
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
@@ -110,6 +140,19 @@ class AgentExecutor:
                         result = await self._execute_tool(
                             func_name, func_args, user_auth_token
                         )
+
+                        # 写操作成功后内联安全检查
+                        if func_name == "health_record" and "Error" not in result:
+                            try:
+                                from app.agents.safety_guardian.guardian import SafetyGuardian
+                                guardian = SafetyGuardian()
+                                alerts = guardian.evaluate(self.db, user_id)
+                                critical = [a for a in alerts if a.get("severity") in ("critical", "high")]
+                                if critical:
+                                    alert_msgs = "; ".join(a.get("message", "") for a in critical[:3])
+                                    result += f"\n\n⚠️ 安全提示: {alert_msgs}"
+                            except Exception:
+                                pass
 
                         # 追加 tool_result 到 messages
                         messages.append({
@@ -173,21 +216,38 @@ class AgentExecutor:
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str]
     ) -> str:
-        """构建 Agent 的 system prompt"""
+        """构建统一 Agent 的 system prompt"""
         parts = [
-            "你是用户的 AI 健康助理（Agent 模式）。你可以通过工具调用获取和记录用户的健康数据。",
+            "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
+            "你是唯一的对话入口——用户的所有健康相关请求（记录数据、查询指标、深度分析、图片识别）都由你处理。",
             "",
             "## 工作方式",
             "1. 分析用户请求，决定需要调用哪些工具",
-            "2. 调用工具获取数据",
+            "2. 调用工具获取或记录数据",
             "3. 基于返回的数据进行分析和推理",
             "4. 给出有据可依的建议",
+            "5. 复合意图时在一次对话中同时处理（如'记一下吃了鱼油，看看对基因有什么影响' → 先记录后查询）",
+            "",
+            "## 数据记录规则",
+            "- 饮水、补剂打卡：直接执行，不需确认",
+            "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
+            "- 用户说'吃了XX'：药瓶/保健品名(鱼油/维C/B族等) → record_type=supplement；食物 → record_type=diet",
+            "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
+            "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
+            "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
+            "- 图片：用户发食物照片 → 识别食物后用 health_record(type=diet) 记录",
+            "",
+            "## 分析规则",
+            "- 简单查询（'今天步数多少'）→ health_query",
+            "- 趋势分析（'最近睡眠怎么样'）→ health_analysis",
+            "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
             "",
             "## 行为准则",
             "- 数据驱动：引用具体数据，不要泛泛而谈",
             "- 主动分析：不仅回答问题，还要发现潜在问题",
             "- 中文回复：简洁实用，给出可执行的建议",
             "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
+            "- 涉及药物的建议：附加'请咨询医生'免责声明",
             "",
             "## 基因解读规则（必须遵守）",
             "- 标记为[优势]的基因是保护性基因，不要误判为需要干预的风险基因",
@@ -228,11 +288,20 @@ class AgentExecutor:
         return "\n".join(parts)
 
     async def _call_llm(
-        self, messages: List[Dict], tools: List[Dict]
+        self, messages: List[Dict], tools: List[Dict], use_vision: bool = False
     ) -> Any:
         """调用 LLM（优先走 OpenClaw Gateway，回退到默认 provider）"""
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
+
+        # 有图片时使用 vision model
+        if use_vision and settings.llm_vision_base_url and settings.llm_vision_api_key:
+            model = settings.llm_vision_model or "qwen-vl-max"
+            return await self._call_llm_direct(
+                messages, tools, model,
+                settings.llm_vision_base_url, settings.llm_vision_api_key
+            )
+
         model = settings.agent_model or settings.llm_model
 
         if agent_base and agent_key:
@@ -340,6 +409,8 @@ class AgentExecutor:
                 return await self._exec_environment(base_url, headers, args)
             elif tool_name == "supplement_guide":
                 return await self._exec_supplement_guide(base_url, headers, args)
+            elif tool_name == "manage_plan":
+                return await self._exec_manage_plan(base_url, headers, args)
             else:
                 return f"Error: 未知工具 {tool_name}"
         except Exception as e:
@@ -352,6 +423,7 @@ class AgentExecutor:
         """执行健康数据查询"""
         dim = args.get("dimension", "comprehensive")
         days = args.get("days", 7)
+        indicator = args.get("indicator", "")
 
         endpoint_map = {
             "comprehensive": f"/garmin-analysis/me/comprehensive?days={days}",
@@ -364,14 +436,39 @@ class AgentExecutor:
             "stress": f"/garmin-analysis/me/stress?days={days}",
             "weight": "/weight/records/me/recent?limit=10",
             "blood_pressure": "/blood-pressure/records/me/recent?limit=10",
-            "supplements": f"/supplements/me/date/{datetime.now().strftime('%Y-%m-%d')}",
+            "supplements": f"/supplements/me/stats?days={days}",
             "water": "/water/records/me/today",
             "diet": "/diet/records/me/today",
             "exercise": "/exercise/me/today",
+            "medical_exam": "/medical-exams/me",
+            "genetic": "/genetic/variants/me",
+            "medication": "/medication/medications/me",
         }
 
         path = endpoint_map.get(dim, endpoint_map["comprehensive"])
-        return await self._api_get(f"{base}{path}", headers)
+        result = await self._api_get(f"{base}{path}", headers)
+
+        # 如果查的是体检指标，从结果中过滤特定指标
+        if dim == "medical_exam" and indicator:
+            try:
+                import json as _json
+                data = _json.loads(result)
+                items = data if isinstance(data, list) else data.get("data", [])
+                matched = []
+                for exam in items:
+                    for item in (exam.get("items") or []):
+                        name = str(item.get("item_name", "") or item.get("name", "")).upper()
+                        if indicator.upper() in name:
+                            matched.append({
+                                "exam_date": exam.get("exam_date"),
+                                **item
+                            })
+                if matched:
+                    return _json.dumps(matched, ensure_ascii=False, default=str)
+            except Exception:
+                pass
+
+        return result
 
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
@@ -385,7 +482,6 @@ class AgentExecutor:
         if rtype == "diet":
             data.setdefault("record_date", today)
             data.setdefault("meal_type", "snack")
-            # food_items 必须是字符串
             if isinstance(data.get("food_items"), list):
                 data["food_items"] = ", ".join(
                     (f.get("name", str(f)) if isinstance(f, dict) else str(f))
@@ -397,11 +493,71 @@ class AgentExecutor:
         # 补全 weight 必填字段
         if rtype == "weight":
             data.setdefault("record_date", today)
-            # 兼容 LLM 传 value/weight_kg 等字段名
             if "weight" not in data and "value" in data:
                 data["weight"] = data.pop("value")
             if "weight" not in data and "weight_kg" in data:
                 data["weight"] = data.pop("weight_kg")
+
+        # 补全 blood_pressure 必填字段
+        if rtype == "blood_pressure":
+            data.setdefault("record_date", today)
+
+        # supplement_group: 按时段批量打卡
+        if rtype == "supplement_group":
+            timing = data.get("timing", "morning")
+            result = await self._api_post(
+                f"{base}/nfc/tap", headers,
+                {"action": "supplement_group", "timing": timing}
+            )
+            logger.info(f"[health_record] supplement_group timing={timing}")
+            return result
+
+        # supplement: 按名称匹配补剂打卡
+        if rtype == "supplement":
+            name = data.get("supplement_name", data.get("name", ""))
+            if name:
+                # 查找匹配的补剂定义
+                lookup = await self._api_get(f"{base}/supplements/me/definitions", headers)
+                try:
+                    import json as _json
+                    supps = _json.loads(lookup)
+                    supps = supps if isinstance(supps, list) else supps.get("data", [])
+                    matched = next((s for s in supps if s.get("is_active") and name.lower() in s.get("name", "").lower()), None)
+                    if matched:
+                        result = await self._api_post(
+                            f"{base}/nfc/tap", headers,
+                            {"action": "supplement", "supplement_id": matched["id"]}
+                        )
+                        return result
+                    return f"未找到名为 '{name}' 的活跃补剂"
+                except Exception:
+                    pass
+            # 回退到旧接口
+            data.setdefault("record_date", today)
+            data.setdefault("taken", True)
+
+        # medication: 用药记录
+        if rtype == "medication":
+            med_name = data.get("medication_name", data.get("name", ""))
+            if med_name:
+                # 查找 medication_id
+                meds_raw = await self._api_get(f"{base}/medication/medications/me", headers)
+                try:
+                    import json as _json
+                    meds = _json.loads(meds_raw)
+                    meds = meds if isinstance(meds, list) else meds.get("data", [])
+                    matched = next((m for m in meds if m.get("is_active") and med_name.lower() in m.get("name", "").lower()), None)
+                    if matched:
+                        from datetime import datetime as _dt
+                        taken_time = data.get("taken_time", _dt.now().isoformat())
+                        result = await self._api_post(
+                            f"{base}/medication/logs", headers,
+                            {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
+                        )
+                        return result
+                    return f"未找到名为 '{med_name}' 的活跃药物"
+                except Exception as e:
+                    return f"Error: 用药记录失败: {e}"
 
         record_map = {
             "water": ("/water/records/quick", "POST", {"amount": data.get("amount", 250)}),
@@ -412,6 +568,10 @@ class AgentExecutor:
             "supplement": ("/supplements/records", "POST", data),
             "rhinitis": ("/health-checkin/me/rhinitis", "POST", data),
             "mood": ("/mood/records", "POST", data),
+            "illness": ("/illness/episodes", "POST", data),
+            "symptom": ("/disease/profiles/{}/symptoms".format(data.get("profile_id", 1)), "POST", data),
+            "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
+            "reminder": ("/reminders/me", "POST", data),
         }
 
         if rtype in record_map:
@@ -428,6 +588,23 @@ class AgentExecutor:
         """执行健康分析"""
         atype = args.get("analysis_type", "comprehensive")
         days = args.get("days", 7)
+        question = args.get("question", "")
+
+        # orchestrator: 多专家协作深度分析
+        if atype == "orchestrator" and question:
+            result = await self._api_post(
+                f"{base}/orchestrator/chat", headers,
+                {"query": question}
+            )
+            return result
+
+        # supplement_effectiveness: 补剂效果评估
+        if atype == "supplement_effectiveness":
+            result = await self._api_post(
+                f"{base}/supplements/scientific-recommendation", headers,
+                {"use_llm": True}
+            )
+            return result
 
         analysis_map = {
             "comprehensive": f"/garmin-analysis/me/comprehensive?days={days}",
@@ -460,6 +637,28 @@ class AgentExecutor:
         """获取补剂指南"""
         return await self._api_get(f"{base}/supplements/daily-guide", headers)
 
+    async def _exec_manage_plan(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """管理健康计划"""
+        action = args.get("action", "")
+        data = args.get("data", {})
+
+        if action == "generate_weekly":
+            return await self._api_post(f"{base}/smart-plan/generate", headers, data)
+        elif action == "complete_item":
+            plan_id = data.get("plan_id")
+            item_id = data.get("item_id")
+            if plan_id and item_id:
+                return await self._api_patch(
+                    f"{base}/smart-plan/{plan_id}/items/{item_id}",
+                    headers, {"is_completed": True}
+                )
+            return "Error: 需要 plan_id 和 item_id"
+        elif action == "save_to_card":
+            return await self._api_post(f"{base}/action-cards/from-message", headers, data)
+        return f"Error: 不支持的计划操作 {action}"
+
     async def _api_get(self, url: str, headers: dict) -> str:
         """HTTP GET"""
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -477,6 +676,15 @@ class AgentExecutor:
         headers = {**headers, "Content-Type": "application/json"}
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, headers=headers, json=data)
+            if resp.status_code not in (200, 201):
+                return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
+            return resp.text
+
+    async def _api_patch(self, url: str, headers: dict, data: dict) -> str:
+        """HTTP PATCH"""
+        headers = {**headers, "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.patch(url, headers=headers, json=data)
             if resp.status_code not in (200, 201):
                 return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
             return resp.text

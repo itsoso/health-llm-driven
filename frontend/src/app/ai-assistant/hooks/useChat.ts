@@ -143,10 +143,13 @@ export function useChat(deps: UseChatDeps) {
       const buf = { content: '', timer: null as NodeJS.Timeout | null };
 
       const hasMedia = !!(finalImageBase64 || finalFileBase64);
-      const needsSkill = /记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐|固化到|钉到首页|保存到首页|加到计划/.test(finalMsg);
-      const streamSource = (hasMedia || needsSkill)
+      // 统一走 Agent — 消除双脑架构
+      // 保留环境变量 fallback: NEXT_PUBLIC_USE_LEGACY_ROUTING=true 时恢复旧路由
+      const useLegacy = process.env.NEXT_PUBLIC_USE_LEGACY_ROUTING === 'true';
+      const needsSkillLegacy = useLegacy && /记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|早餐|午餐|晚餐|加餐|固化到|钉到首页|保存到首页|加到计划/.test(finalMsg);
+      const streamSource = (useLegacy && (hasMedia || needsSkillLegacy))
         ? openclawApi.streamMessage(finalMsg, d.conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName)
-        : agentApi.streamMessage(finalMsg, d.conversationId);
+        : agentApi.streamMessage(finalMsg, d.conversationId, finalImageBase64, finalImageType, finalFileBase64, finalFileName);
 
       for await (const event of streamSource) {
         if (event.event === 'agent_start') {
