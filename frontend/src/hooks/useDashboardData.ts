@@ -140,15 +140,22 @@ export function useDashboardData() {
           partial.garminHistory = [...records].sort((a, b) =>
             (a.record_date || '').localeCompare(b.record_date || '')
           );
-          // 从同一份数据里抽"今日/最新"字段，省掉一次单独请求
-          const latest = [...records]
-            .sort((a, b) =>
-              (b.record_date || '').localeCompare(a.record_date || '')
-            )
-            .find((r) => r.sleep_score || r.hrv || r.steps > 0);
-          if (latest) partial.todayGarmin = latest;
-          else if (records.length > 0)
-            partial.todayGarmin = records[records.length - 1];
+          // 从同一份数据里抽"今日"字段 — 严格按日期匹配，不回退到昨天
+          const todayRecord = records.find((r: any) => r.record_date === today);
+          if (todayRecord) {
+            partial.todayGarmin = todayRecord;
+          } else {
+            // 今天还没有数据时，取最近一条（仅用于睡眠/HRV等非步数字段）
+            const latest = [...records]
+              .sort((a: any, b: any) =>
+                (b.record_date || '').localeCompare(a.record_date || '')
+              )
+              .find((r: any) => r.sleep_score || r.hrv);
+            if (latest) {
+              // 清空步数，避免显示昨天的步数
+              partial.todayGarmin = { ...latest, steps: 0, active_minutes: 0, calories_burned: 0, active_calories: 0 };
+            }
+          }
         }
 
         // 3 — Water today

@@ -57,7 +57,8 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                 user_id=user_id
             )
 
-            end_date = date.today()
+            from app.utils.timezone import get_china_today
+            end_date = get_china_today()
             start_date = end_date - timedelta(days=days - 1)
             sync_result = service.sync_date_range(db, user_id, start_date, end_date)
 
