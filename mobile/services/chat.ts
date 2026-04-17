@@ -20,12 +20,13 @@ export interface Conversation {
 export async function* streamChat(
   message: string,
   conversationId?: number,
+  imageBase64?: string,
+  imageType?: string,
 ): AsyncGenerator<string, void, unknown> {
   const token = await getToken();
   const body: Record<string, any> = { message };
-  if (conversationId) {
-    body.conversation_id = conversationId;
-  }
+  if (conversationId) body.conversation_id = conversationId;
+  if (imageBase64) { body.image_base64 = imageBase64; body.image_type = imageType || 'jpeg'; }
 
   // Use a promise-based wrapper around XHR with chunked callback
   const chunks: string[] = [];

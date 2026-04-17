@@ -9,6 +9,8 @@ import VitalsGrid from '@/components/dashboard/VitalsGrid';
 import ActivityRingBar from '@/components/dashboard/ActivityRingBar';
 import TrendMiniCharts from '@/components/dashboard/TrendMiniCharts';
 import SupplementCheckin from '@/components/dashboard/SupplementCheckin';
+import RhinitisCard from '@/components/dashboard/RhinitisCard';
+import StrengthCard from '@/components/dashboard/StrengthCard';
 import SectionHeader from '@/components/design-system/SectionHeader';
 import HealthCard from '@/components/design-system/HealthCard';
 import { colors, typography, spacing, radii, shadows, metricColors } from '@/constants/theme';
@@ -59,6 +61,8 @@ export default function DashboardScreen() {
   const bpStats = data?.bloodPressureStats;
   const dietRecords = data?.dietRecords?.meals ?? (Array.isArray(data?.dietRecords) ? data.dietRecords : []);
   const medications = data?.medicationToday;
+  const checkin = data?.checkin;
+  const exerciseToday = Array.isArray(data?.exerciseToday) ? data.exerciseToday : [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -98,6 +102,12 @@ export default function DashboardScreen() {
 
         {/* Supplement Checkin */}
         <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} />
+
+        {/* Rhinitis Tracking */}
+        <RhinitisCard checkin={checkin} onUpdate={refetch} />
+
+        {/* Strength Training */}
+        <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
 
         {/* Weekly Trends */}
         <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
