@@ -1,301 +1,248 @@
 import React from 'react';
-import {
-  ScrollView,
-  View,
-  Text,
-  StyleSheet,
-  RefreshControl,
-} from 'react-native';
+import { ScrollView, View, Text, StyleSheet, RefreshControl, ViewStyle, TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDashboardData, useLatestGarmin } from '@/hooks/useDashboardData';
-import ScoreRing from '@/components/ScoreRing';
-import VitalTile from '@/components/VitalTile';
-import CounterChip from '@/components/CounterChip';
+import GreetingHeader from '@/components/dashboard/GreetingHeader';
+import HealthScoreHero from '@/components/dashboard/HealthScoreHero';
+import VitalsGrid from '@/components/dashboard/VitalsGrid';
+import ActivityRingBar from '@/components/dashboard/ActivityRingBar';
+import TrendMiniCharts from '@/components/dashboard/TrendMiniCharts';
+import SupplementCheckin from '@/components/dashboard/SupplementCheckin';
+import SectionHeader from '@/components/design-system/SectionHeader';
+import HealthCard from '@/components/design-system/HealthCard';
+import { colors, typography, spacing, radii, shadows, metricColors } from '@/constants/theme';
 
 export default function DashboardScreen() {
   const { data, isLoading, refetch, isRefetching } = useDashboardData();
   const garmin = useLatestGarmin(data);
 
+  // ── Score ──
   const score = data?.healthScore?.total_score ?? data?.healthScore?.score ?? 0;
-  // total_sleep_duration is in minutes from API
-  const sleepMin = garmin?.total_sleep_duration;
-  const sleep = sleepMin ? (sleepMin / 60) : (garmin?.sleep_hours ?? garmin?.sleep_duration_hours);
-  const hrv = garmin?.hrv_weekly_avg ?? garmin?.hrv;
-  const energy = garmin?.body_battery_most_charged ?? garmin?.body_battery_current ?? garmin?.body_battery_max ?? garmin?.body_battery;
-  const hr = garmin?.resting_heart_rate ?? garmin?.rhr;
-  const steps = garmin?.steps ?? 0;
-  const activeMin = garmin?.active_minutes ?? garmin?.moderate_activity_minutes ?? 0;
-  const stress = garmin?.stress_level ?? garmin?.avg_stress ?? garmin?.stress_avg;
+  const dims = (data?.healthScore?.dimensions || []).map((d: any) => ({
+    name: d.name,
+    score: d.score ?? 0,
+    color: d.name === '运动' ? '#FF6723' : d.name === '睡眠' ? '#BF5AF2' : d.name === '体征' ? '#FF375F' : '#0A8F8F',
+  }));
 
+  // ── Garmin vitals ──
+  const sleepMin = garmin?.total_sleep_duration;
+  const sleepHours = sleepMin ? sleepMin / 60 : null;
+  const deepMin = garmin?.deep_sleep_duration;
+  const deepHours = deepMin ? deepMin / 60 : null;
+  const hr = garmin?.resting_heart_rate;
+  const hrv = garmin?.hrv;
+  const battery = garmin?.body_battery_most_charged ?? garmin?.body_battery_current;
+  const batteryMax = garmin?.body_battery_most_charged;
+  const steps = garmin?.steps ?? 0;
+  const activeMin = garmin?.active_minutes ?? 0;
+  const calories = garmin?.active_calories ?? 0;
+  const stress = garmin?.stress_level;
+  const spo2 = garmin?.spo2_avg;
+
+  // ── Weather ──
+  const weather = data?.weather?.weather ?? data?.weather;
+  const aqi = data?.airQuality;
+  const forecast = data?.weatherForecast?.forecasts;
+  const profile = data?.profile;
+  const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city;
+
+  // ── Other data ──
   const waterTotal = Array.isArray(data?.waterRecords)
     ? data.waterRecords.reduce((s: number, r: any) => s + (r.amount || 0), 0)
     : 0;
-  const suppCount = Array.isArray(data?.supplements)
-    ? data.supplements.length
+  const suppCount = Array.isArray(data?.supplements) ? data.supplements.length : 0;
+  const suppTaken = Array.isArray(data?.supplements)
+    ? data.supplements.filter((s: any) => s.record?.taken || s.is_taken).length
     : 0;
-
-  // weather API returns {weather: {temperature, ...}, exercise_advice: {...}}
-  const weather = data?.weather?.weather ?? data?.weather;
-  const aqi = data?.airQuality;
-
-  const checkin = data?.checkin;
+  const weightStats = data?.weightStats;
+  const bpStats = data?.bloodPressureStats;
   const dietRecords = data?.dietRecords?.meals ?? (Array.isArray(data?.dietRecords) ? data.dietRecords : []);
+  const medications = data?.medicationToday;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={refetch}
-            tintColor="#007AFF"
-          />
-        }
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero Card */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroTop}>
-            <ScoreRing score={score} size={110} strokeWidth={9} />
-            <View style={styles.vitalsGrid}>
-              <VitalTile
-                label="睡眠"
-                value={sleep ? `${Number(sleep).toFixed(1)}` : '--'}
-                unit="h"
-                icon="moon-outline"
-                color="#5856D6"
-              />
-              <VitalTile
-                label="HRV"
-                value={hrv ?? '--'}
-                unit="ms"
-                icon="pulse-outline"
-                color="#30B0C7"
-              />
-              <VitalTile
-                label="电量"
-                value={energy ?? '--'}
-                icon="battery-charging-outline"
-                color="#34C759"
-              />
-              <VitalTile
-                label="心率"
-                value={hr ?? '--'}
-                unit="bpm"
-                icon="fitness-outline"
-                color="#FF3B30"
-              />
-            </View>
-          </View>
-          <View style={styles.counters}>
-            <CounterChip
-              label="步数"
-              value={steps.toLocaleString()}
-              target={8000}
-              color="#FF9500"
-            />
-            <CounterChip
-              label="活动"
-              value={`${activeMin}`}
-              target={30}
-              color="#FF2D55"
-            />
-            <CounterChip
-              label="饮水"
-              value={`${waterTotal}ml`}
-              target={2000}
-              color="#007AFF"
-            />
-            <CounterChip
-              label="补剂"
-              value={`${suppCount}`}
-              color="#AF52DE"
-            />
-            <CounterChip
-              label="压力"
-              value={stress ?? '--'}
-              color="#FF9500"
-            />
-          </View>
+        {/* Greeting */}
+        <GreetingHeader weather={weather} aqi={aqi} forecast={forecast} city={city} />
+
+        {/* Health Score Hero */}
+        <HealthScoreHero totalScore={score} dimensions={dims.length > 0 ? dims : undefined} />
+
+        {/* Today's Vitals */}
+        <SectionHeader title="今日数据" />
+        <VitalsGrid
+          sleep={sleepHours}
+          deepSleep={deepHours}
+          heartRate={hr}
+          hrv={hrv}
+          bodyBattery={battery}
+          batteryMax={batteryMax}
+        />
+
+        {/* Activity Rings */}
+        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
+
+        {/* Quick Stats Row */}
+        <View style={styles.statsRow}>
+          <StatChip icon="water-outline" color={metricColors.water.main} bg={metricColors.water.tint} label="饮水" value={`${waterTotal}`} unit="ml" />
+          <StatChip icon="medical-outline" color={metricColors.supplements.main} bg={metricColors.supplements.tint} label="补剂" value={`${suppTaken}/${suppCount}`} />
+          <StatChip icon="cloudy-outline" color={metricColors.stress.main} bg={metricColors.stress.tint} label="压力" value={stress != null ? `${stress}` : '--'} />
+          <StatChip icon="fitness-outline" color={colors.teal} bg={colors.tintTeal} label="血氧" value={spo2 != null ? `${spo2}%` : '--'} />
         </View>
 
-        {/* Weather / AQI */}
-        {(weather || aqi) && (
-          <View style={styles.weatherBar}>
-            {weather && (
-              <View style={styles.weatherItem}>
-                <Ionicons name="partly-sunny-outline" size={18} color="#FF9500" />
-                <Text style={styles.weatherText}>
-                  {weather.temperature ?? '--'}°C {weather.weather || weather.description || ''}
-                </Text>
-              </View>
-            )}
-            {aqi && (
-              <View style={styles.weatherItem}>
-                <Ionicons name="leaf-outline" size={18} color={getAqiColor(aqi.aqi)} />
-                <Text style={styles.weatherText}>
-                  AQI {aqi.aqi ?? '--'} PM2.5 {aqi.pm25 ?? '--'}
-                </Text>
-              </View>
-            )}
-          </View>
+        {/* Supplement Checkin */}
+        <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} />
+
+        {/* Weekly Trends */}
+        <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
+
+        {/* Medication Status */}
+        {Array.isArray(medications) && medications.length > 0 && (
+          <>
+            <SectionHeader title="用药状态" />
+            <View style={styles.medRow}>
+              {medications.map((m: any) => (
+                <View key={m.medication_id} style={[styles.medChip, { backgroundColor: m.taken_count > 0 ? colors.tintGreen : colors.bgPrimary }]}>
+                  <Ionicons name={m.taken_count > 0 ? 'checkmark-circle' : 'ellipse-outline'} size={14} color={m.taken_count > 0 ? colors.green : colors.labelTertiary} />
+                  <Text style={textStyles.medName} numberOfLines={1}>{m.name}</Text>
+                </View>
+              ))}
+            </View>
+          </>
         )}
 
-        {/* Sleep Card */}
-        <InfoCard
-          title="睡眠分析"
-          icon="moon"
-          iconColor="#5856D6"
-          items={[
-            { label: '总时长', value: sleep ? `${Number(sleep).toFixed(1)}h` : '--' },
-            { label: 'HRV', value: hrv ? `${hrv}ms` : '--' },
-            { label: '深睡', value: garmin?.deep_sleep_duration ? `${(garmin.deep_sleep_duration / 60).toFixed(1)}h` : (garmin?.deep_sleep_hours ? `${Number(garmin.deep_sleep_hours).toFixed(1)}h` : '--') },
-          ]}
-        />
-
-        {/* Diet Card */}
-        <InfoCard
-          title="今日饮食"
-          icon="restaurant"
-          iconColor="#FF9500"
-          items={
-            Array.isArray(dietRecords) && dietRecords.length > 0
-              ? dietRecords.slice(0, 3).map((d: any) => ({
-                  label: d.meal_type || '餐食',
-                  value: d.total_calories ? `${d.total_calories}kcal` : d.description?.slice(0, 20) || '--',
-                }))
-              : [{ label: '暂无', value: '今天还没有饮食记录' }]
-          }
-        />
-
-        {/* Rhinitis Card */}
-        {checkin && (checkin.nasal_wash_count > 0 || checkin.sneeze_count > 0) && (
-          <InfoCard
-            title="鼻炎追踪"
-            icon="water"
-            iconColor="#30B0C7"
-            items={[
-              { label: '洗鼻', value: `${checkin.nasal_wash_count ?? 0}次` },
-              { label: '喷嚏', value: `${checkin.sneeze_count ?? 0}次` },
-              { label: '用药', value: checkin.mometasone ? '已用莫米松' : '未用药' },
-            ]}
-          />
+        {/* Body Stats */}
+        {(weightStats?.current_weight || bpStats?.average_systolic) && (
+          <HealthCard title="身体数据" icon="body-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
+            <View style={styles.bodyRow}>
+              {weightStats?.current_weight != null && (
+                <View style={styles.bodyItem}>
+                  <Text style={textStyles.bodyValue}>{weightStats.current_weight}<Text style={textStyles.bodyUnit}>kg</Text></Text>
+                  <Text style={textStyles.bodyLabel}>体重</Text>
+                  {weightStats.weight_change_7d != null && (
+                    <Text style={[textStyles.bodyChange, { color: weightStats.weight_change_7d <= 0 ? colors.green : colors.red }]}>
+                      7天 {weightStats.weight_change_7d > 0 ? '+' : ''}{weightStats.weight_change_7d}kg
+                    </Text>
+                  )}
+                </View>
+              )}
+              {bpStats?.average_systolic != null && (
+                <View style={styles.bodyItem}>
+                  <Text style={textStyles.bodyValue}>{Math.round(bpStats.average_systolic)}/{Math.round(bpStats.average_diastolic)}</Text>
+                  <Text style={textStyles.bodyLabel}>血压</Text>
+                </View>
+              )}
+            </View>
+          </HealthCard>
         )}
 
-        <View style={{ height: 24 }} />
+        {/* Diet */}
+        <HealthCard title="今日饮食" icon="restaurant-outline" iconColor={colors.orange} iconBg={colors.tintOrange}>
+          {Array.isArray(dietRecords) && dietRecords.length > 0 ? (
+            dietRecords.slice(0, 3).map((d: any, i: number) => (
+              <View key={i} style={styles.dietRow}>
+                <Text style={textStyles.dietType}>{d.meal_type || '餐食'}</Text>
+                <Text style={textStyles.dietDesc} numberOfLines={1}>{d.description || d.food_items || '--'}</Text>
+                {d.total_calories ? <Text style={textStyles.dietCal}>{d.total_calories}kcal</Text> : null}
+              </View>
+            ))
+          ) : (
+            <Text style={textStyles.emptyText}>今天还没有饮食记录</Text>
+          )}
+        </HealthCard>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function InfoCard({
-  title,
-  icon,
-  iconColor,
-  items,
-}: {
-  title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconColor: string;
-  items: { label: string; value: string }[];
-}) {
+// ── Inline Components ──
+
+function StatChip({ icon, color, bg, label, value, unit }: { icon: any; color: string; bg: string; label: string; value: string; unit?: string }) {
   return (
-    <View style={styles.infoCard}>
-      <View style={styles.infoHeader}>
-        <Ionicons name={icon} size={18} color={iconColor} />
-        <Text style={styles.infoTitle}>{title}</Text>
+    <View style={styles.statChip}>
+      <View style={[styles.statIconDot, { backgroundColor: bg }]}>
+        <Ionicons name={icon} size={12} color={color} />
       </View>
-      <View style={styles.infoItems}>
-        {items.map((item, i) => (
-          <View key={i} style={styles.infoItem}>
-            <Text style={styles.infoLabel}>{item.label}</Text>
-            <Text style={styles.infoValue}>{item.value}</Text>
-          </View>
-        ))}
-      </View>
+      <Text style={textStyles.statValue}>{value}{unit ? <Text style={textStyles.statUnit}>{unit}</Text> : null}</Text>
+      <Text style={textStyles.statLabel}>{label}</Text>
     </View>
   );
 }
 
 const getAqiColor = (v: number | null) =>
-  !v ? '#8E8E93' : v <= 50 ? '#34C759' : v <= 100 ? '#FF9500' : '#FF3B30';
+  !v ? colors.labelTertiary : v <= 50 ? colors.green : v <= 100 ? colors.amber : colors.red;
+
+// ── Styles ──
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FDFBF7' },
+  safe: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { flex: 1 },
-  content: { padding: 16 },
-  heroCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 12,
-  },
-  heroTop: {
+  content: { padding: spacing.xl },
+
+  // Stats row
+  statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
-  vitalsGrid: {
+  statChip: {
     flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.md,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    gap: 4,
+    ...shadows.subtle,
   },
-  counters: {
-    flexDirection: 'row',
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 0.5,
-    borderTopColor: '#E5E5EA',
+  statIconDot: {
+    width: 22, height: 22, borderRadius: 7,
+    alignItems: 'center', justifyContent: 'center',
   },
-  weatherBar: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    gap: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  weatherItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  weatherText: { fontSize: 13, color: '#3C3C43' },
-  infoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  infoHeader: {
+
+  // Medication
+  medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  medChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.full,
   },
-  infoTitle: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
-  infoItems: { flexDirection: 'row', gap: 12 },
-  infoItem: {
-    flex: 1,
-    backgroundColor: '#F9F9FB',
-    borderRadius: 10,
-    padding: 10,
-    alignItems: 'center',
-  },
-  infoLabel: { fontSize: 11, color: '#8E8E93', marginBottom: 4 },
-  infoValue: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
+
+  // Body stats
+  bodyRow: { flexDirection: 'row', gap: spacing.xxl },
+  bodyItem: { alignItems: 'center' } as ViewStyle,
+
+  // Diet
+  dietRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: spacing.sm },
+
+  // Environment
+  envRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 6 },
 });
+
+// Text styles kept separate to avoid StyleSheet type conflicts with fontVariant
+const textStyles = {
+  statValue: { fontSize: 16, fontWeight: '700' as const, color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  statUnit: { fontSize: 11, fontWeight: '400' as const, color: colors.labelSecondary } as TextStyle,
+  statLabel: { fontSize: 10, fontWeight: '500' as const, color: colors.labelTertiary } as TextStyle,
+  medName: { fontSize: 13, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
+  bodyValue: { fontSize: 22, fontWeight: '700' as const, color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bodyUnit: { fontSize: 13, color: colors.labelSecondary } as TextStyle,
+  bodyLabel: { fontSize: 11, fontWeight: '500' as const, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
+  bodyChange: { fontSize: 11, fontWeight: '500' as const, marginTop: 2 } as TextStyle,
+  dietType: { fontSize: 11, fontWeight: '500' as const, color: colors.labelSecondary, width: 32 } as TextStyle,
+  dietDesc: { fontSize: 15, color: colors.labelPrimary, flex: 1 } as TextStyle,
+  dietCal: { fontSize: 13, color: colors.labelSecondary } as TextStyle,
+  emptyText: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center' as const, paddingVertical: spacing.lg } as TextStyle,
+  envText: { fontSize: 15, color: colors.labelPrimary } as TextStyle,
+};

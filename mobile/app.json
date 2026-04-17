@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "HealthPilot",
+    "slug": "health-pilot",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.mobile"
+      "bundleIdentifier": "com.executor.healthpilot"
     },
     "android": {
       "adaptiveIcon": {

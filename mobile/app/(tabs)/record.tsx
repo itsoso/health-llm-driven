@@ -1,170 +1,122 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  RefreshControl,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView,
+  RefreshControl, TextStyle, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { recordWater, deleteWater, updateCheckin } from '@/services/records';
 import { fetchDashboardData } from '@/services/dashboard';
+import { recordWater, deleteWater, updateCheckin } from '@/services/records';
+import { colors, spacing, radii, shadows } from '@/constants/theme';
 
-interface QuickAction {
-  label: string;
-  emoji: string;
-  action: () => Promise<{ undo?: () => Promise<void> }>;
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function RecordScreen() {
   const queryClient = useQueryClient();
-  const [undoAction, setUndoAction] = useState<{
-    label: string;
-    fn: () => Promise<void>;
-  } | null>(null);
-  const [undoTimer, setUndoTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-
-  const { data, refetch, isRefetching } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: fetchDashboardData,
-    staleTime: 30_000,
-  });
+  const { data, isLoading, refetch, isRefetching } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboardData, staleTime: 60_000 });
+  const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
 
   const waterTotal = Array.isArray(data?.waterRecords)
     ? data.waterRecords.reduce((s: number, r: any) => s + (r.amount || 0), 0)
     : 0;
-  const nasalWash = data?.checkin?.nasal_wash_count ?? 0;
-  const sneezeCount = data?.checkin?.sneeze_count ?? 0;
+  const checkin = data?.checkin;
 
-  const showUndo = useCallback(
-    (label: string, fn: () => Promise<void>) => {
-      if (undoTimer) clearTimeout(undoTimer);
-      setUndoAction({ label, fn });
-      const timer = setTimeout(() => setUndoAction(null), 5000);
-      setUndoTimer(timer);
-    },
-    [undoTimer],
-  );
+  const showUndo = (label: string, action: () => Promise<void>) => {
+    setUndo({ label, action });
+    setTimeout(() => setUndo(null), 5000);
+  };
 
-  const handleAction = useCallback(
-    async (label: string, fn: () => Promise<{ undo?: () => Promise<void> }>) => {
-      try {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        const result = await fn();
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-        if (result.undo) {
-          showUndo(label, async () => {
-            await result.undo!();
-            queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-          });
-        }
-      } catch (err: any) {
-        Alert.alert('操作失败', err?.message || '请稍后重试');
-      }
-    },
-    [queryClient, showUndo],
-  );
+  const doRecordWater = useCallback(async (amount: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const rec = await recordWater(amount);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      showUndo(`记录 ${amount}ml 饮水`, async () => { await deleteWater(rec.id); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); });
+    } catch {}
+  }, [queryClient]);
 
-  const waterAction = (amount: number): QuickAction => ({
-    label: `${amount}ml`,
-    emoji: '\u{1F4A7}',
-    action: async () => {
-      const record = await recordWater(amount);
-      return { undo: async () => { await deleteWater(record.id); } };
-    },
-  });
+  const doCheckin = useCallback(async (field: string, label: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const current = checkin?.[field] || 0;
+    try {
+      await updateCheckin(field, current + 1);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      showUndo(label, async () => { await updateCheckin(field, current); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); });
+    } catch {}
+  }, [checkin, queryClient]);
 
-  const checkinAction = (
-    label: string,
-    emoji: string,
-    field: string,
-    increment: number,
-  ): QuickAction => ({
-    label,
-    emoji,
-    action: async () => {
-      const current = data?.checkin?.[field] ?? 0;
-      await updateCheckin(field, current + increment);
-      return {
-        undo: async () => {
-          await updateCheckin(field, current);
-        },
-      };
-    },
-  });
-
-  const WATER_ACTIONS: QuickAction[] = [
-    waterAction(300),
-    waterAction(500),
-    waterAction(1000),
-  ];
-
-  const RHINITIS_ACTIONS: QuickAction[] = [
-    checkinAction('洗鼻+1', '\u{1F443}', 'nasal_wash_count', 1),
-    checkinAction('喷嚏+1', '\u{1F927}', 'sneeze_count', 1),
-    checkinAction('莫米松', '\u{1F48A}', 'mometasone', 1),
-    checkinAction('西替利嗪', '\u{1F48A}', 'cetirizine', 1),
-  ];
+  const doMedCheckin = useCallback(async (field: string, label: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await updateCheckin(field, 1);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      showUndo(label, async () => { await updateCheckin(field, 0); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); });
+    } catch {}
+  }, [queryClient]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#007AFF" />
-        }
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Today's counts */}
+        <Text style={txt.screenTitle}>记录</Text>
+        <Text style={txt.dateText}>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</Text>
+
+        {/* Summary chips */}
         <View style={styles.summaryRow}>
-          <SummaryChip label="饮水" value={`${waterTotal}ml`} color="#007AFF" />
-          <SummaryChip label="洗鼻" value={`${nasalWash}次`} color="#30B0C7" />
-          <SummaryChip label="喷嚏" value={`${sneezeCount}次`} color="#FF9500" />
+          <SummaryChip icon="water" color="#64D2FF" label="饮水" value={`${waterTotal}ml`} />
+          <SummaryChip icon="nose" color="#30B0C7" label="洗鼻" value={`${checkin?.nasal_wash_count || 0}次`} />
+          <SummaryChip icon="flash" color="#FF9F0A" label="喷嚏" value={`${checkin?.sneeze_count || 0}次`} />
         </View>
 
-        {/* Water Section */}
-        <Text style={styles.sectionTitle}>饮水</Text>
-        <View style={styles.grid}>
-          {WATER_ACTIONS.map((a) => (
-            <ActionButton
-              key={a.label}
-              label={a.label}
-              emoji={a.emoji}
-              onPress={() => handleAction(a.label, a.action)}
-            />
+        {/* Water */}
+        <Text style={txt.sectionTitle}>饮水</Text>
+        <View style={styles.btnRow}>
+          {[200, 300, 500].map(amt => (
+            <TouchableOpacity key={amt} style={styles.actionBtn} onPress={() => doRecordWater(amt)} activeOpacity={0.7}>
+              <Ionicons name="water" size={20} color="#64D2FF" />
+              <Text style={txt.btnLabel}>{amt}ml</Text>
+            </TouchableOpacity>
           ))}
         </View>
 
-        {/* Rhinitis Section */}
-        <Text style={styles.sectionTitle}>鼻炎管理</Text>
-        <View style={styles.grid}>
-          {RHINITIS_ACTIONS.map((a) => (
-            <ActionButton
-              key={a.label}
-              label={a.label}
-              emoji={a.emoji}
-              onPress={() => handleAction(a.label, a.action)}
-            />
-          ))}
+        {/* Rhinitis */}
+        <Text style={txt.sectionTitle}>鼻炎管理</Text>
+        <View style={styles.btnGrid}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => doCheckin('nasal_wash_count', '洗鼻 +1')} activeOpacity={0.7}>
+            <Text style={styles.emoji}>👃</Text>
+            <Text style={txt.btnLabel}>洗鼻 +1</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => doCheckin('sneeze_count', '喷嚏 +1')} activeOpacity={0.7}>
+            <Text style={styles.emoji}>🤧</Text>
+            <Text style={txt.btnLabel}>喷嚏 +1</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => doMedCheckin('mometasone', '莫米松打卡')} activeOpacity={0.7}>
+            <Text style={styles.emoji}>💊</Text>
+            <Text style={txt.btnLabel}>莫米松</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => doMedCheckin('cetirizine', '西替利嗪打卡')} activeOpacity={0.7}>
+            <Text style={styles.emoji}>💊</Text>
+            <Text style={txt.btnLabel}>西替利嗪</Text>
+          </TouchableOpacity>
         </View>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Undo Snackbar */}
-      {undoAction && (
-        <View style={styles.snackbar}>
-          <Text style={styles.snackbarText}>
-            已记录 {undoAction.label}
-          </Text>
-          <TouchableOpacity
-            onPress={async () => {
-              await undoAction.fn();
-              setUndoAction(null);
-            }}
-          >
-            <Text style={styles.undoText}>撤销</Text>
+      {/* Undo snackbar */}
+      {undo && (
+        <View style={styles.undoBar}>
+          <Text style={txt.undoText}>{undo.label}</Text>
+          <TouchableOpacity onPress={async () => { await undo.action(); setUndo(null); }}>
+            <Text style={txt.undoBtn}>撤销</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -172,101 +124,49 @@ export default function RecordScreen() {
   );
 }
 
-function SummaryChip({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color: string;
-}) {
+function SummaryChip({ icon, color, label, value }: { icon: string; color: string; label: string; value: string }) {
   return (
-    <View style={[styles.summaryChip, { borderColor: color }]}>
-      <Text style={[styles.summaryValue, { color }]}>{value}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
+    <View style={styles.summaryChip}>
+      <Ionicons name={icon as any} size={16} color={color} />
+      <Text style={txt.chipValue}>{value}</Text>
+      <Text style={txt.chipLabel}>{label}</Text>
     </View>
   );
 }
 
-function ActionButton({
-  label,
-  emoji,
-  onPress,
-}: {
-  label: string;
-  emoji: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.7}>
-      <Text style={styles.actionEmoji}>{emoji}</Text>
-      <Text style={styles.actionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FDFBF7' },
-  content: { padding: 16, paddingBottom: 80 },
-  summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+  content: { padding: spacing.xl },
+  summaryRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xxl },
   summaryChip: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    flex: 1, backgroundColor: colors.bgCard, borderRadius: radii.md,
+    padding: spacing.md, alignItems: 'center', gap: 4, ...shadows.subtle,
   },
-  summaryValue: { fontSize: 18, fontWeight: '700' },
-  summaryLabel: { fontSize: 11, color: '#8E8E93', marginTop: 2 },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
-  },
+  btnRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xxl },
+  btnGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.xxl },
   actionBtn: {
-    width: '30%',
-    aspectRatio: 1,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    flex: 1, minWidth: '45%',
+    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    padding: spacing.lg, alignItems: 'center', gap: 6,
+    ...shadows.subtle,
   },
-  actionEmoji: { fontSize: 32, marginBottom: 6 },
-  actionLabel: { fontSize: 14, fontWeight: '600', color: '#1C1C1E' },
-  snackbar: {
-    position: 'absolute',
-    bottom: 100,
-    left: 24,
-    right: 24,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+  emoji: { fontSize: 24 },
+  undoBar: {
+    position: 'absolute', bottom: 100, left: spacing.xl, right: spacing.xl,
+    backgroundColor: '#1C1C1E', borderRadius: radii.full,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    ...shadows.heavy,
   },
-  snackbarText: { color: '#fff', fontSize: 15, fontWeight: '500' },
-  undoText: { color: '#007AFF', fontSize: 15, fontWeight: '700' },
 });
+
+const txt = {
+  screenTitle: { fontSize: 34, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+  dateText: { fontSize: 13, color: colors.labelSecondary, marginTop: 2, marginBottom: spacing.xl } as TextStyle,
+  sectionTitle: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, marginBottom: spacing.md } as TextStyle,
+  chipValue: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  chipLabel: { fontSize: 11, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
+  btnLabel: { fontSize: 14, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
+  undoText: { fontSize: 14, color: '#fff' } as TextStyle,
+  undoBtn: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
+};
