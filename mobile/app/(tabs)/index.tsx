@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
 import { streamChat, getConversations, getConversationMessages, type ChatMessage, type StreamEvent } from '@/services/chat';
 import api from '@/services/api';
@@ -49,9 +49,13 @@ export default function HomeScreen() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ uri: string; base64: string; type: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<any[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
+  const [refreshing, setRefreshing] = useState(false);
+  const qc = useQueryClient();
   const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const plusRotation = useRef(new Animated.Value(0)).current;
@@ -211,10 +215,28 @@ export default function HomeScreen() {
     setIsRecording(false);
     try {
       await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
       recordingRef.current = null;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      sendMessage('[语音消息]');
-    } catch {}
+      if (uri) {
+        // Read audio file as base64 and send to agent
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = (reader.result as string)?.split(',')[1];
+          if (base64) {
+            // Send as voice note — agent will see it as file attachment
+            sendMessage('请听这段语音并回复');
+          } else {
+            sendMessage('[语音] 请根据我说的话回复');
+          }
+        };
+        reader.readAsDataURL(blob);
+      }
+    } catch {
+      sendMessage('[语音] 请根据我说的话回复');
+    }
   }, [isRecording, sendMessage]);
 
   // ── Render ──
@@ -270,10 +292,22 @@ export default function HomeScreen() {
         syncing={syncing}
         onSyncGarmin={async () => {
           setSyncing(true);
-          try { await api.post('/data-collection/garmin/me/sync?days=1'); } catch {}
+          try {
+            await api.post('/data-collection/garmin/me/sync?days=1');
+            qc.invalidateQueries({ queryKey: ['healthScore'] });
+            qc.invalidateQueries({ queryKey: ['garminToday'] });
+            qc.invalidateQueries({ queryKey: ['dashboard'] });
+            qc.invalidateQueries({ queryKey: ['safety'] });
+          } catch {}
           setSyncing(false);
         }}
         onSettings={() => router.push('/settings' as any)}
+        onNewChat={() => { setMessages([]); setConversationId(undefined); }}
+        onHistory={async () => {
+          const convs = await getConversations();
+          setConversations(convs);
+          setShowHistory(true);
+        }}
       />
 
       {/* Critical alerts */}
@@ -295,6 +329,20 @@ export default function HomeScreen() {
           renderItem={renderMessage}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={async () => {
+              setRefreshing(true);
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: ['healthScore'] }),
+                qc.invalidateQueries({ queryKey: ['garminToday'] }),
+                qc.invalidateQueries({ queryKey: ['weather'] }),
+                qc.invalidateQueries({ queryKey: ['aqi'] }),
+                qc.invalidateQueries({ queryKey: ['safety'] }),
+                qc.invalidateQueries({ queryKey: ['dailyRec'] }),
+              ]);
+              setRefreshing(false);
+            }} tintColor={colors.brand} />
+          }
           contentContainerStyle={styles.msgList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListEmptyComponent={
@@ -369,8 +417,41 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-        <View style={{ height: 44 }} />
+        <View style={{ height: 90 }} />
       </KeyboardAvoidingView>
+
+      {/* Conversation history */}
+      <Modal visible={showHistory} transparent animationType="slide" onRequestClose={() => setShowHistory(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setShowHistory(false)}>
+          <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.menuHandle} />
+            <Text style={{ fontSize: 17, fontWeight: '600', color: colors.labelPrimary, marginBottom: 12 }}>对话历史</Text>
+            {conversations.length === 0 ? (
+              <Text style={{ fontSize: 14, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 20 }}>暂无对话</Text>
+            ) : (
+              <FlatList
+                data={conversations.slice(0, 20)}
+                keyExtractor={(item) => `${item.id}`}
+                style={{ maxHeight: 400 }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator }}
+                    onPress={async () => {
+                      setShowHistory(false);
+                      setConversationId(item.id);
+                      const msgs = await getConversationMessages(item.id);
+                      setMessages(msgs.map((m: any, i: number) => ({ id: `h-${m.id || i}`, role: m.role, content: m.content })));
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, color: colors.labelPrimary }} numberOfLines={1}>{item.title || `对话 #${item.id}`}</Text>
+                    <Text style={{ fontSize: 12, color: colors.labelTertiary, marginTop: 2 }}>{item.created_at?.slice(0, 10) || ''}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Plus menu */}
       <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>

@@ -20,6 +20,8 @@ interface Props {
   onSyncGarmin?: () => void;
   syncing?: boolean;
   onSettings?: () => void;
+  onNewChat?: () => void;
+  onHistory?: () => void;
 }
 
 function getAqiColor(v?: number | null): string {
@@ -38,7 +40,7 @@ function sc(score: number): string {
 export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, steps, hr, battery,
-  onSyncGarmin, syncing, onSettings,
+  onSyncGarmin, syncing, onSettings, onNewChat, onHistory,
 }: Props) {
   const hour = new Date().getHours();
   const greeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
@@ -56,6 +58,16 @@ export default function HomeHeader({
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={[txt.greeting, { flex: 1 }]}>{greeting}</Text>
+            {onHistory && (
+              <TouchableOpacity onPress={onHistory} style={styles.settingsBtn} activeOpacity={0.6}>
+                <Ionicons name="chatbubbles-outline" size={18} color={colors.labelTertiary} />
+              </TouchableOpacity>
+            )}
+            {onNewChat && (
+              <TouchableOpacity onPress={onNewChat} style={styles.settingsBtn} activeOpacity={0.6}>
+                <Ionicons name="create-outline" size={18} color={colors.labelTertiary} />
+              </TouchableOpacity>
+            )}
             {onSettings && (
               <TouchableOpacity onPress={onSettings} style={styles.settingsBtn} activeOpacity={0.6}>
                 <Ionicons name="settings-outline" size={18} color={colors.labelTertiary} />

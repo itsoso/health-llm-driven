@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, TextStyle, LayoutAnimation, SectionList,
 } from 'react-native';
+// @ts-ignore - react-native-gesture-handler is bundled with expo-router
+import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -148,9 +150,18 @@ function AlertRow({ alert }: { alert: SafetyAlert }) {
 
 function CardRow({ card, onComplete }: { card: ActionCard; onComplete: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const swipeRef = useRef<Swipeable>(null);
   const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
 
+  const renderRightAction = () => (
+    <TouchableOpacity style={styles.swipeAction} onPress={() => { swipeRef.current?.close(); onComplete(); }}>
+      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+      <Text style={{ fontSize: 12, color: '#fff', fontWeight: '600' }}>完成</Text>
+    </TouchableOpacity>
+  );
+
   return (
+    <Swipeable ref={swipeRef} renderRightActions={renderRightAction} overshootRight={false}>
     <TouchableOpacity style={styles.cardItem} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded(!expanded); }} activeOpacity={0.7}>
       <View style={styles.alertRow}>
         <View style={[styles.alertIconWrap, { backgroundColor: cfg.bg }]}>
@@ -176,6 +187,7 @@ function CardRow({ card, onComplete }: { card: ActionCard; onComplete: () => voi
         </View>
       )}
     </TouchableOpacity>
+    </Swipeable>
   );
 }
 
@@ -225,6 +237,10 @@ const styles = StyleSheet.create({
   completeBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: '#30D158', borderRadius: radii.md, paddingVertical: 10,
+  },
+  swipeAction: {
+    backgroundColor: '#30D158', justifyContent: 'center', alignItems: 'center',
+    width: 70, borderRadius: radii.lg, marginBottom: 8, marginLeft: 8,
   },
 
   // Empty

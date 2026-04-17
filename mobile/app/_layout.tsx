@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { ToastProvider } from '@/hooks/useToast';
 import LoginScreen from '@/app/login';
 import {
   View,
@@ -52,8 +53,10 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <StatusBar style="dark" />
-        <AppContent />
+        <ToastProvider>
+          <StatusBar style="dark" />
+          <AppContent />
+        </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

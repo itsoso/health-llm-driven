@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, TextStyle } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, TextStyle, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchDashboardData } from '@/services/dashboard';
+import api from '@/services/api';
 import { useLatestGarmin } from '@/hooks/useDashboardData';
 import { recordWater, deleteWater } from '@/services/records';
 import VitalsGrid from '@/components/dashboard/VitalsGrid';
@@ -24,6 +25,9 @@ export default function RecordScreen() {
   const { data, refetch, isRefetching } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboardData, staleTime: 60_000 });
   const garmin = useLatestGarmin(data);
   const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
+  const [weightInput, setWeightInput] = useState('');
+  const [bpSysInput, setBpSysInput] = useState('');
+  const [bpDiaInput, setBpDiaInput] = useState('');
   const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
 
   const sleepH = garmin?.total_sleep_duration ? garmin.total_sleep_duration / 60 : null;
@@ -139,6 +143,36 @@ export default function RecordScreen() {
               {!weightStats?.current_weight && !bpStats?.average_systolic && (
                 <Text style={txt.empty}>暂无身体数据</Text>
               )}
+              {/* Quick record */}
+              <View style={styles.quickInputRow}>
+                <TextInput style={styles.quickInput} placeholder="体重 kg" placeholderTextColor={colors.labelTertiary}
+                  keyboardType="decimal-pad" value={weightInput} onChangeText={setWeightInput} />
+                <TouchableOpacity style={styles.quickSaveBtn} onPress={async () => {
+                  const w = parseFloat(weightInput);
+                  if (!w || w < 30 || w > 200) { Alert.alert('请输入有效体重'); return; }
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  try {
+                    await api.post('/weight/records', { weight: w, record_date: new Date().toISOString().split('T')[0] });
+                    setWeightInput(''); qc.invalidateQueries({ queryKey: ['dashboard'] });
+                  } catch { Alert.alert('记录失败'); }
+                }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
+              </View>
+              <View style={styles.quickInputRow}>
+                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="收缩压" placeholderTextColor={colors.labelTertiary}
+                  keyboardType="number-pad" value={bpSysInput} onChangeText={setBpSysInput} />
+                <Text style={txt.bpSlash}>/</Text>
+                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="舒张压" placeholderTextColor={colors.labelTertiary}
+                  keyboardType="number-pad" value={bpDiaInput} onChangeText={setBpDiaInput} />
+                <TouchableOpacity style={styles.quickSaveBtn} onPress={async () => {
+                  const sys = parseInt(bpSysInput), dia = parseInt(bpDiaInput);
+                  if (!sys || !dia || sys < 60 || sys > 250 || dia < 30 || dia > 150) { Alert.alert('请输入有效血压'); return; }
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  try {
+                    await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: new Date().toISOString().split('T')[0] });
+                    setBpSysInput(''); setBpDiaInput(''); qc.invalidateQueries({ queryKey: ['dashboard'] });
+                  } catch { Alert.alert('记录失败'); }
+                }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
@@ -148,10 +182,20 @@ export default function RecordScreen() {
           <HealthCard title="用药状态" icon="medical-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
             <View style={styles.medRow}>
               {medications.map((m: any) => (
-                <View key={m.medication_id} style={[styles.medChip, m.taken_count > 0 && { backgroundColor: '#E8FAF0' }]}>
+                <TouchableOpacity key={m.medication_id}
+                  style={[styles.medChip, m.taken_count > 0 && { backgroundColor: '#E8FAF0' }]}
+                  onPress={async () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    try {
+                      await api.post('/medication/log', { medication_id: m.medication_id, action: m.taken_count > 0 ? 'undo' : 'take' });
+                      qc.invalidateQueries({ queryKey: ['dashboard'] });
+                    } catch {}
+                  }}
+                  activeOpacity={0.7}
+                >
                   <Ionicons name={m.taken_count > 0 ? 'checkmark-circle' : 'ellipse-outline'} size={14} color={m.taken_count > 0 ? '#30D158' : colors.labelTertiary} />
                   <Text style={txt.medName} numberOfLines={1}>{m.name}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </HealthCard>
@@ -238,6 +282,9 @@ const styles = StyleSheet.create({
   // Water
   waterBtnRow: { flexDirection: 'row', gap: spacing.sm },
   waterBtn: { flex: 1, backgroundColor: colors.bgPrimary, borderRadius: radii.md, paddingVertical: 10, alignItems: 'center' },
+  quickInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md },
+  quickInput: { flex: 2, backgroundColor: colors.bgPrimary, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: colors.labelPrimary },
+  quickSaveBtn: { backgroundColor: colors.brand, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 8 },
 
   // Undo
   undoBar: {
@@ -264,6 +311,8 @@ const txt = {
   medName: { fontSize: 13, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
   waterTotal: { fontSize: 14, fontWeight: '700', color: '#64D2FF' } as TextStyle,
   waterBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
+  quickSaveTxt: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
+  bpSlash: { fontSize: 16, color: colors.labelTertiary } as TextStyle,
   empty: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 16 } as TextStyle,
   undoText: { fontSize: 14, color: '#fff' } as TextStyle,
   undoBtn: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
