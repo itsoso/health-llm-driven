@@ -1,120 +1,183 @@
-import React, { useState, useCallback } from 'react';
-import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  RefreshControl, TextStyle, Animated,
-} from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchDashboardData } from '@/services/dashboard';
-import { recordWater, deleteWater, updateCheckin } from '@/services/records';
+import { useLatestGarmin } from '@/hooks/useDashboardData';
+import { recordWater, deleteWater } from '@/services/records';
+import VitalsGrid from '@/components/dashboard/VitalsGrid';
+import ActivityRingBar from '@/components/dashboard/ActivityRingBar';
+import SupplementCheckin from '@/components/dashboard/SupplementCheckin';
+import RhinitisCard from '@/components/dashboard/RhinitisCard';
+import StrengthCard from '@/components/dashboard/StrengthCard';
+import TrendMiniCharts from '@/components/dashboard/TrendMiniCharts';
+import SectionHeader from '@/components/design-system/SectionHeader';
+import HealthCard from '@/components/design-system/HealthCard';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const mealTypeMap: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
 export default function RecordScreen() {
-  const queryClient = useQueryClient();
-  const { data, isLoading, refetch, isRefetching } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboardData, staleTime: 60_000 });
+  const qc = useQueryClient();
+  const { data, refetch, isRefetching } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboardData, staleTime: 60_000 });
+  const garmin = useLatestGarmin(data);
+  const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
   const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
 
-  const waterTotal = Array.isArray(data?.waterRecords)
-    ? data.waterRecords.reduce((s: number, r: any) => s + (r.amount || 0), 0)
-    : 0;
-  const checkin = data?.checkin;
+  const sleepH = garmin?.total_sleep_duration ? garmin.total_sleep_duration / 60 : null;
+  const deepH = garmin?.deep_sleep_duration ? garmin.deep_sleep_duration / 60 : null;
+  const steps = garmin?.steps ?? 0;
+  const activeMin = garmin?.active_minutes ?? 0;
+  const calories = garmin?.active_calories ?? 0;
+  const exerciseToday = Array.isArray(data?.exerciseToday) ? data.exerciseToday : [];
+  const medications = data?.medicationToday;
+  const weightStats = data?.weightStats;
+  const bpStats = data?.bloodPressureStats;
 
-  const showUndo = (label: string, action: () => Promise<void>) => {
-    setUndo({ label, action });
-    setTimeout(() => setUndo(null), 5000);
-  };
+  // Diet data
+  const dietData = data?.dietRecords;
+  const meals = dietData?.meals ?? (Array.isArray(dietData) ? dietData : []);
+  const totalCal = dietData?.total_calories ?? meals.reduce((s: number, m: any) => s + (m.calories || 0), 0);
+  const totalProtein = dietData?.total_protein ?? 0;
+  const totalCarbs = dietData?.total_carbs ?? 0;
+  const totalFat = dietData?.total_fat ?? 0;
 
-  const doRecordWater = useCallback(async (amount: number) => {
+  // Water — API returns {total_amount, target_amount, records: [...]}
+  const waterData = data?.waterRecords;
+  const waterTotal = waterData?.total_amount ?? (Array.isArray(waterData) ? waterData.reduce((s: number, r: any) => s + (r.amount || 0), 0) : 0);
+  const waterTarget = waterData?.target_amount ?? 2000;
+
+  const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
+  const doWater = useCallback(async (amt: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const rec = await recordWater(amount);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      showUndo(`记录 ${amount}ml 饮水`, async () => { await deleteWater(rec.id); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); });
-    } catch {}
-  }, [queryClient]);
-
-  const doCheckin = useCallback(async (field: string, label: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const current = checkin?.[field] || 0;
-    try {
-      await updateCheckin(field, current + 1);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      showUndo(label, async () => { await updateCheckin(field, current); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); });
-    } catch {}
-  }, [checkin, queryClient]);
-
-  const doMedCheckin = useCallback(async (field: string, label: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await updateCheckin(field, 1);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      showUndo(label, async () => { await updateCheckin(field, 0); queryClient.invalidateQueries({ queryKey: ['dashboard'] }); });
-    } catch {}
-  }, [queryClient]);
+    try { const rec = await recordWater(amt); qc.invalidateQueries({ queryKey: ['dashboard'] }); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); qc.invalidateQueries({ queryKey: ['dashboard'] }); }); } catch {}
+  }, [qc]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={txt.screenTitle}>记录</Text>
-        <Text style={txt.dateText}>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</Text>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />} showsVerticalScrollIndicator={false}>
+        <Text style={txt.title}>健康记录</Text>
 
-        {/* Summary chips */}
-        <View style={styles.summaryRow}>
-          <SummaryChip icon="water" color="#64D2FF" label="饮水" value={`${waterTotal}ml`} />
-          <SummaryChip icon="nose" color="#30B0C7" label="洗鼻" value={`${checkin?.nasal_wash_count || 0}次`} />
-          <SummaryChip icon="flash" color="#FF9F0A" label="喷嚏" value={`${checkin?.sneeze_count || 0}次`} />
-        </View>
+        {/* 1. Vitals */}
+        <VitalsGrid sleep={sleepH} deepSleep={deepH} heartRate={garmin?.resting_heart_rate} hrv={garmin?.hrv} bodyBattery={garmin?.body_battery_most_charged ?? garmin?.body_battery_current} batteryMax={garmin?.body_battery_most_charged} />
 
-        {/* Water */}
-        <Text style={txt.sectionTitle}>饮水</Text>
-        <View style={styles.btnRow}>
-          {[200, 300, 500].map(amt => (
-            <TouchableOpacity key={amt} style={styles.actionBtn} onPress={() => doRecordWater(amt)} activeOpacity={0.7}>
-              <Ionicons name="water" size={20} color="#64D2FF" />
-              <Text style={txt.btnLabel}>{amt}ml</Text>
+        {/* 2. Activity */}
+        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
+
+        {/* 3. Rhinitis */}
+        <RhinitisCard checkin={data?.checkin} onUpdate={refetch} />
+
+        {/* 4. Strength */}
+        <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
+
+        {/* 5. Supplements */}
+        <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} />
+
+        {/* 6. Body + Diet (tabbed) */}
+        <View style={styles.tabCard}>
+          <View style={styles.tabHeader}>
+            <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'diet' && styles.tabBtnActive]} onPress={() => setBodyDietTab('diet')}>
+              <Text style={[txt.tabText, bodyDietTab === 'diet' && txt.tabTextActive]}>饮食营养</Text>
             </TouchableOpacity>
-          ))}
+            <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'body' && styles.tabBtnActive]} onPress={() => setBodyDietTab('body')}>
+              <Text style={[txt.tabText, bodyDietTab === 'body' && txt.tabTextActive]}>身体数据</Text>
+            </TouchableOpacity>
+          </View>
+
+          {bodyDietTab === 'diet' ? (
+            <View style={styles.tabContent}>
+              {/* Nutrition summary */}
+              <View style={styles.nutritionRow}>
+                <NutritionCircle label="热量" value={`${Math.round(totalCal)}`} unit="kcal" color="#FF6723" />
+                <NutritionCircle label="蛋白质" value={`${Math.round(totalProtein)}`} unit="g" color="#FF375F" />
+                <NutritionCircle label="碳水" value={`${Math.round(totalCarbs)}`} unit="g" color="#FF9F0A" />
+                <NutritionCircle label="脂肪" value={`${Math.round(totalFat)}`} unit="g" color="#BF5AF2" />
+              </View>
+              {/* Meal list */}
+              {meals.length > 0 ? meals.map((m: any, i: number) => (
+                <View key={i} style={styles.mealRow}>
+                  <View style={styles.mealDot} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={txt.mealType}>{mealTypeMap[m.meal_type] || m.meal_type || '餐食'}</Text>
+                    <Text style={txt.mealFood} numberOfLines={1}>{m.food_items || '--'}</Text>
+                  </View>
+                  <Text style={txt.mealCal}>{m.calories ? `${Math.round(m.calories)}kcal` : ''}</Text>
+                </View>
+              )) : (
+                <Text style={txt.empty}>今天还没有饮食记录</Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.tabContent}>
+              <View style={styles.bodyGrid}>
+                {weightStats?.current_weight != null && (
+                  <View style={styles.bodyCell}>
+                    <Text style={txt.bodyVal}>{weightStats.current_weight}</Text>
+                    <Text style={txt.bodyUnit}>kg 体重</Text>
+                    {weightStats.weight_change_7d != null && (
+                      <Text style={[txt.bodyChange, { color: weightStats.weight_change_7d <= 0 ? '#30D158' : '#FF453A' }]}>
+                        7天 {weightStats.weight_change_7d > 0 ? '+' : ''}{weightStats.weight_change_7d}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                {bpStats?.average_systolic != null && (
+                  <View style={styles.bodyCell}>
+                    <Text style={txt.bodyVal}>{Math.round(bpStats.average_systolic)}/{Math.round(bpStats.average_diastolic)}</Text>
+                    <Text style={txt.bodyUnit}>mmHg 血压</Text>
+                  </View>
+                )}
+                {weightStats?.current_weight != null && (
+                  <View style={styles.bodyCell}>
+                    <Text style={txt.bodyVal}>{(weightStats.current_weight / ((1.75) ** 2)).toFixed(1)}</Text>
+                    <Text style={txt.bodyUnit}>BMI</Text>
+                  </View>
+                )}
+              </View>
+              {!weightStats?.current_weight && !bpStats?.average_systolic && (
+                <Text style={txt.empty}>暂无身体数据</Text>
+              )}
+            </View>
+          )}
         </View>
 
-        {/* Rhinitis */}
-        <Text style={txt.sectionTitle}>鼻炎管理</Text>
-        <View style={styles.btnGrid}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => doCheckin('nasal_wash_count', '洗鼻 +1')} activeOpacity={0.7}>
-            <Text style={styles.emoji}>👃</Text>
-            <Text style={txt.btnLabel}>洗鼻 +1</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => doCheckin('sneeze_count', '喷嚏 +1')} activeOpacity={0.7}>
-            <Text style={styles.emoji}>🤧</Text>
-            <Text style={txt.btnLabel}>喷嚏 +1</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => doMedCheckin('mometasone', '莫米松打卡')} activeOpacity={0.7}>
-            <Text style={styles.emoji}>💊</Text>
-            <Text style={txt.btnLabel}>莫米松</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => doMedCheckin('cetirizine', '西替利嗪打卡')} activeOpacity={0.7}>
-            <Text style={styles.emoji}>💊</Text>
-            <Text style={txt.btnLabel}>西替利嗪</Text>
-          </TouchableOpacity>
-        </View>
+        {/* 7. Medication */}
+        {Array.isArray(medications) && medications.length > 0 && (
+          <HealthCard title="用药状态" icon="medical-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
+            <View style={styles.medRow}>
+              {medications.map((m: any) => (
+                <View key={m.medication_id} style={[styles.medChip, m.taken_count > 0 && { backgroundColor: '#E8FAF0' }]}>
+                  <Ionicons name={m.taken_count > 0 ? 'checkmark-circle' : 'ellipse-outline'} size={14} color={m.taken_count > 0 ? '#30D158' : colors.labelTertiary} />
+                  <Text style={txt.medName} numberOfLines={1}>{m.name}</Text>
+                </View>
+              ))}
+            </View>
+          </HealthCard>
+        )}
+
+        {/* 8. Trends */}
+        <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
+
+        {/* 9. Water (low priority) */}
+        <HealthCard title="饮水" icon="water-outline" iconColor="#64D2FF" iconBg="#E6F5FF"
+          rightAccessory={<Text style={txt.waterTotal}>{waterTotal}/{waterTarget}ml</Text>}>
+          <View style={styles.waterBtnRow}>
+            {[200, 300, 500].map(a => (
+              <TouchableOpacity key={a} style={styles.waterBtn} onPress={() => doWater(a)} activeOpacity={0.7}>
+                <Text style={txt.waterBtnText}>+{a}ml</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </HealthCard>
 
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Undo snackbar */}
       {undo && (
         <View style={styles.undoBar}>
-          <Text style={txt.undoText}>{undo.label}</Text>
+          <Text style={txt.undoText}>已记录 {undo.label}</Text>
           <TouchableOpacity onPress={async () => { await undo.action(); setUndo(null); }}>
             <Text style={txt.undoBtn}>撤销</Text>
           </TouchableOpacity>
@@ -124,49 +187,84 @@ export default function RecordScreen() {
   );
 }
 
-function SummaryChip({ icon, color, label, value }: { icon: string; color: string; label: string; value: string }) {
+function NutritionCircle({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
   return (
-    <View style={styles.summaryChip}>
-      <Ionicons name={icon as any} size={16} color={color} />
-      <Text style={txt.chipValue}>{value}</Text>
-      <Text style={txt.chipLabel}>{label}</Text>
+    <View style={styles.nutriItem}>
+      <View style={[styles.nutriDot, { backgroundColor: `${color}20` }]}>
+        <Text style={[txt.nutriVal, { color }]}>{value}</Text>
+      </View>
+      <Text style={txt.nutriUnit}>{unit}</Text>
+      <Text style={txt.nutriLabel}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  content: { padding: spacing.xl },
-  summaryRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xxl },
-  summaryChip: {
-    flex: 1, backgroundColor: colors.bgCard, borderRadius: radii.md,
-    padding: spacing.md, alignItems: 'center', gap: 4, ...shadows.subtle,
+  content: { padding: spacing.lg },
+
+  // Tabbed card (body + diet)
+  tabCard: {
+    backgroundColor: colors.bgCard, borderRadius: radii.xl,
+    marginBottom: spacing.md, overflow: 'hidden', ...shadows.subtle,
   },
-  btnRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xxl },
-  btnGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.xxl },
-  actionBtn: {
-    flex: 1, minWidth: '45%',
-    backgroundColor: colors.bgCard, borderRadius: radii.lg,
-    padding: spacing.lg, alignItems: 'center', gap: 6,
-    ...shadows.subtle,
+  tabHeader: {
+    flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
   },
-  emoji: { fontSize: 24 },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
+  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: colors.brand },
+  tabContent: { padding: spacing.lg },
+
+  // Nutrition
+  nutritionRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: spacing.md },
+  nutriItem: { alignItems: 'center', gap: 3 },
+  nutriDot: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+
+  // Meals
+  mealRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+  },
+  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.brand },
+
+  // Body grid
+  bodyGrid: { flexDirection: 'row', gap: spacing.md, justifyContent: 'center' },
+  bodyCell: { alignItems: 'center', flex: 1, backgroundColor: colors.bgPrimary, borderRadius: radii.md, padding: spacing.md },
+
+  // Medication
+  medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  medChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.full, backgroundColor: colors.bgPrimary },
+
+  // Water
+  waterBtnRow: { flexDirection: 'row', gap: spacing.sm },
+  waterBtn: { flex: 1, backgroundColor: colors.bgPrimary, borderRadius: radii.md, paddingVertical: 10, alignItems: 'center' },
+
+  // Undo
   undoBar: {
-    position: 'absolute', bottom: 100, left: spacing.xl, right: spacing.xl,
+    position: 'absolute', bottom: 100, left: spacing.lg, right: spacing.lg,
     backgroundColor: '#1C1C1E', borderRadius: radii.full,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    ...shadows.heavy,
+    paddingHorizontal: 16, paddingVertical: 10, ...shadows.heavy,
   },
 });
 
 const txt = {
-  screenTitle: { fontSize: 34, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  dateText: { fontSize: 13, color: colors.labelSecondary, marginTop: 2, marginBottom: spacing.xl } as TextStyle,
-  sectionTitle: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, marginBottom: spacing.md } as TextStyle,
-  chipValue: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  chipLabel: { fontSize: 11, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
-  btnLabel: { fontSize: 14, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
+  title: { fontSize: 28, fontWeight: '700', color: colors.labelPrimary, marginBottom: spacing.md } as TextStyle,
+  tabText: { fontSize: 14, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
+  tabTextActive: { color: colors.brand, fontWeight: '600' } as TextStyle,
+  nutriVal: { fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  nutriUnit: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
+  nutriLabel: { fontSize: 11, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
+  mealType: { fontSize: 12, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
+  mealFood: { fontSize: 13, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
+  mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bodyVal: { fontSize: 22, fontWeight: '800', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bodyUnit: { fontSize: 11, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
+  bodyChange: { fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
+  medName: { fontSize: 13, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
+  waterTotal: { fontSize: 14, fontWeight: '700', color: '#64D2FF' } as TextStyle,
+  waterBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
+  empty: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 16 } as TextStyle,
   undoText: { fontSize: 14, color: '#fff' } as TextStyle,
   undoBtn: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
 };

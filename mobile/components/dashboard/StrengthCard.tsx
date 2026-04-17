@@ -13,7 +13,7 @@ function today(): string {
 interface ExerciseConfig {
   type: string;
   label: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   color: string;
   bg: string;
   quickAmounts: number[];
@@ -21,8 +21,8 @@ interface ExerciseConfig {
 }
 
 const EXERCISES: ExerciseConfig[] = [
-  { type: '俯卧撑', label: '俯卧撑', icon: '💪', color: '#FF6723', bg: '#FFF0E6', quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
-  { type: '深蹲', label: '深蹲', icon: '🦵', color: '#BF5AF2', bg: '#F5E6FF', quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
+  { type: '俯卧撑', label: '俯卧撑', icon: 'body-outline', color: '#FF6723', bg: '#FFF0E6', quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
+  { type: '深蹲', label: '深蹲', icon: 'barbell-outline', color: '#BF5AF2', bg: '#F5E6FF', quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
 ];
 
 interface Props {
@@ -64,8 +64,8 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.iconWrap}>
-          <Text style={{ fontSize: 16 }}>💪</Text>
+        <View style={[styles.iconWrap, { backgroundColor: '#FFF0E6' }]}>
+          <Ionicons name="fitness-outline" size={16} color="#FF6723" />
         </View>
         <Text style={txt.title}>力量训练</Text>
         <Text style={txt.date}>今日</Text>
@@ -78,7 +78,9 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
         return (
           <View key={ex.type} style={styles.exerciseSection}>
             <View style={styles.exerciseHeader}>
-              <Text style={{ fontSize: 18 }}>{ex.icon}</Text>
+              <View style={[styles.exIconDot, { backgroundColor: ex.bg }]}>
+                <Ionicons name={ex.icon} size={14} color={ex.color} />
+              </View>
               <Text style={txt.exerciseName}>{ex.label}</Text>
               <Text style={[txt.exerciseCount, { color: ex.color }]}>{count}</Text>
               <Text style={txt.exerciseTarget}>/ {ex.dailyTarget}</Text>
@@ -119,6 +121,7 @@ const styles = StyleSheet.create({
   iconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#FFF0E6', alignItems: 'center', justifyContent: 'center' },
   exerciseSection: { marginBottom: spacing.md },
   exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  exIconDot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   progressBg: { height: 6, backgroundColor: colors.bgPrimary, borderRadius: 3, marginBottom: spacing.sm, overflow: 'hidden' },
   progressFill: { height: 6, borderRadius: 3 },
   quickRow: { flexDirection: 'row', gap: spacing.sm },

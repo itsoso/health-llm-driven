@@ -1,216 +1,275 @@
 import React, { useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, TextStyle, LayoutAnimation,
+  ActivityIndicator, RefreshControl, TextStyle, LayoutAnimation, SectionList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Markdown from 'react-native-markdown-display';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '@/services/safety';
+import { getActiveCards, completeCard, type ActionCard } from '@/services/actionCards';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
-const SEVERITY_CONFIG: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  critical: { color: '#FF453A', bg: '#FFE8E6', icon: 'alert-circle', label: '严重' },
-  high:     { color: '#FF9F0A', bg: '#FFF5E6', icon: 'alert-circle-outline', label: '高' },
-  medium:   { color: '#FFCC00', bg: '#FFFDF0', icon: 'warning-outline', label: '中' },
-  low:      { color: '#0A8F8F', bg: '#E6F5F5', icon: 'information-circle-outline', label: '关注' },
-  info:     { color: '#8E8E93', bg: '#F2F2F7', icon: 'information-outline', label: '提示' },
+function getSeverityKey(s: any): string { return typeof s === 'string' ? s : s?.label ?? 'info'; }
+
+const SEV: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  critical: { color: '#FF453A', bg: '#FFE8E6', icon: 'alert-circle' },
+  high: { color: '#FF9F0A', bg: '#FFF5E6', icon: 'alert-circle-outline' },
+  medium: { color: '#FFCC00', bg: '#FFFDF0', icon: 'warning-outline' },
+  low: { color: '#0A8F8F', bg: '#E6F5F5', icon: 'information-circle-outline' },
+  info: { color: '#8E8E93', bg: '#F2F2F7', icon: 'information-outline' },
 };
 
-function getSeverityKey(severity: any): string {
-  return typeof severity === 'string' ? severity : severity?.label ?? 'info';
-}
+const CARD_TYPE: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+  guide: { color: '#0A8F8F', bg: '#E6F5F5', icon: 'compass-outline', label: '指南' },
+  plan: { color: '#AF52DE', bg: '#F5E6FF', icon: 'calendar-outline', label: '计划' },
+  recommendation: { color: '#30D158', bg: '#E8FAF0', icon: 'bulb-outline', label: '建议' },
+  reminder: { color: '#FF9F0A', bg: '#FFF5E6', icon: 'alarm-outline', label: '提醒' },
+  insight: { color: '#007AFF', bg: '#E6F0FF', icon: 'analytics-outline', label: '洞察' },
+};
 
-function getSeverityLabel(severity: any): string {
-  return typeof severity === 'string' ? (SEVERITY_CONFIG[severity]?.label ?? severity) : severity?.label_zh ?? severity?.label ?? 'info';
-}
+export default function ActionsScreen() {
+  const qc = useQueryClient();
+  const { data: safetyData, refetch: refetchSafety, isRefetching: sr } = useQuery({ queryKey: ['safety'], queryFn: getSafetyReport });
+  const { data: cardsData, refetch: refetchCards, isRefetching: cr } = useQuery({ queryKey: ['actionCards'], queryFn: getActiveCards });
 
-export default function InsightsScreen() {
-  const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['safety'],
-    queryFn: getSafetyReport,
-  });
-
-  const alerts = (data?.alerts || []).sort((a: any, b: any) => {
+  const alerts = (safetyData?.alerts || []).sort((a: any, b: any) => {
     const order = ['critical', 'high', 'medium', 'low', 'info'];
     return order.indexOf(getSeverityKey(a.severity)) - order.indexOf(getSeverityKey(b.severity));
   });
+  const cards = cardsData || [];
+  const refetchAll = () => { refetchSafety(); refetchCards(); };
 
-  // Group by importance
-  const attention = alerts.filter((a: any) => ['critical', 'high'].includes(getSeverityKey(a.severity)));
-  const suggestions = alerts.filter((a: any) => getSeverityKey(a.severity) === 'medium');
-  const reminders = alerts.filter((a: any) => ['low', 'info'].includes(getSeverityKey(a.severity)));
+  const highAlerts = alerts.filter((a: any) => ['critical', 'high', 'medium'].includes(getSeverityKey(a.severity)));
+  const lowAlerts = alerts.filter((a: any) => ['low', 'info'].includes(getSeverityKey(a.severity)));
 
-  if (isLoading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>;
-  }
+  const sections: { title: string; icon: keyof typeof Ionicons.glyphMap; color: string; count: number; data: any[] }[] = [];
+  if (highAlerts.length > 0) sections.push({ title: '需要关注', icon: 'alert-circle', color: '#FF453A', count: highAlerts.length, data: highAlerts.map((a: any) => ({ type: 'alert', item: a })) });
+  if (cards.length > 0) sections.push({ title: '行动计划', icon: 'rocket-outline', color: colors.brand, count: cards.length, data: cards.map((c: any) => ({ type: 'card', item: c })) });
+  if (lowAlerts.length > 0) sections.push({ title: '日常提醒', icon: 'bulb-outline', color: '#FF9F0A', count: lowAlerts.length, data: lowAlerts.map((a: any) => ({ type: 'alert', item: a })) });
 
-  const sections = [
-    ...(attention.length > 0 ? [{ title: '需要关注', data: attention, color: '#FF453A' }] : []),
-    ...(suggestions.length > 0 ? [{ title: '改善建议', data: suggestions, color: '#FF9F0A' }] : []),
-    ...(reminders.length > 0 ? [{ title: '日常提醒', data: reminders, color: '#0A8F8F' }] : []),
-  ];
-
-  const allItems = sections.flatMap(s => [
-    { type: 'header' as const, title: s.title, color: s.color, count: s.data.length },
-    ...s.data.map((alert: any) => ({ type: 'alert' as const, alert })),
-  ]);
+  const isEmpty = alerts.length === 0 && cards.length === 0;
+  const totalActions = cards.length + highAlerts.length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <Text style={txt.screenTitle}>洞察</Text>
-      {alerts.length === 0 ? (
-        <EmptyState onRefresh={refetch} refreshing={isRefetching} />
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={txt.title}>行动</Text>
+        {totalActions > 0 && (
+          <View style={styles.countBadge}>
+            <Text style={txt.countText}>{totalActions}</Text>
+          </View>
+        )}
+      </View>
+
+      {isEmpty ? (
+        <View style={styles.empty}>
+          <View style={styles.emptyCircle}>
+            <Ionicons name="checkmark-done" size={40} color={colors.brand} />
+          </View>
+          <Text style={txt.emptyTitle}>一切正常</Text>
+          <Text style={txt.emptySub}>暂无待办行动，继续保持</Text>
+        </View>
       ) : (
-        <FlatList
-          data={allItems}
-          keyExtractor={(item, idx) => `${idx}`}
+        <SectionList
+          sections={sections}
+          keyExtractor={(item, idx) => `${item.type}-${idx}`}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
-          ListHeaderComponent={
-            <Text style={txt.summary}>
-              {data?.rules_evaluated ?? 0} 条规则已评估 | {alerts.length} 条洞察
-            </Text>
-          }
-          renderItem={({ item }) =>
-            item.type === 'header' ? (
-              <View style={styles.sectionHeaderRow}>
-                <View style={[styles.sectionDot, { backgroundColor: item.color }]} />
-                <Text style={txt.sectionTitle}>{item.title}</Text>
-                <Text style={txt.sectionCount}>{item.count}</Text>
+          stickySectionHeadersEnabled={false}
+          refreshControl={<RefreshControl refreshing={sr || cr} onRefresh={refetchAll} tintColor={colors.brand} />}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIconWrap, { backgroundColor: `${section.color}18` }]}>
+                <Ionicons name={section.icon} size={14} color={section.color} />
               </View>
-            ) : (
-              <AlertItem alert={item.alert} />
-            )
+              <Text style={txt.sectionTitle}>{section.title}</Text>
+              <View style={[styles.sectionCountBadge, { backgroundColor: `${section.color}18` }]}>
+                <Text style={[txt.sectionCount, { color: section.color }]}>{section.count}</Text>
+              </View>
+            </View>
+          )}
+          renderItem={({ item }) =>
+            item.type === 'alert' ? <AlertRow alert={item.item} /> : <CardRow card={item.item} onComplete={async () => { await completeCard(item.item.id); refetchCards(); }} />
           }
+          SectionSeparatorComponent={() => <View style={{ height: 8 }} />}
         />
       )}
     </SafeAreaView>
   );
 }
 
-function EmptyState({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) {
-  return (
-    <FlatList
-      data={[]}
-      renderItem={() => null}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <View style={styles.emptyCircle}>
-            <Ionicons name="checkmark-circle" size={56} color={colors.green} />
-          </View>
-          <Text style={txt.emptyTitle}>一切正常</Text>
-          <Text style={txt.emptySub}>所有健康指标都在正常范围内</Text>
-        </View>
-      }
-    />
-  );
-}
-
-function AlertItem({ alert }: { alert: SafetyAlert }) {
+function AlertRow({ alert }: { alert: SafetyAlert }) {
   const [expanded, setExpanded] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
-
-  const severityKey = getSeverityKey(alert.severity);
-  const severityLabel = getSeverityLabel(alert.severity);
-  const cfg = SEVERITY_CONFIG[severityKey] || SEVERITY_CONFIG.info;
-
-  const handleExplain = async () => {
-    if (explanation) return;
-    setExplaining(true);
-    try {
-      const result = await explainAlert(alert.rule_id, alert.message);
-      setExplanation(result.explanation);
-    } catch {
-      setExplanation('无法获取解读，请稍后重试');
-    } finally {
-      setExplaining(false);
-    }
-  };
-
-  const toggle = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded(!expanded);
-  };
+  const sk = getSeverityKey(alert.severity);
+  const cfg = SEV[sk] || SEV.info;
 
   return (
-    <TouchableOpacity style={styles.alertCard} onPress={toggle} activeOpacity={0.7}>
-      <View style={[styles.alertAccent, { backgroundColor: cfg.color }]} />
-      <View style={styles.alertBody}>
-        <View style={styles.alertHeader}>
-          <View style={[styles.alertIcon, { backgroundColor: cfg.bg }]}>
-            <Ionicons name={cfg.icon} size={16} color={cfg.color} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={txt.alertTitle}>{alert.title}</Text>
-            <Text style={txt.alertCategory}>{alert.category} · {severityLabel}</Text>
-          </View>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.labelTertiary} />
+    <TouchableOpacity style={styles.alertCard} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded(!expanded); }} activeOpacity={0.7}>
+      <View style={styles.alertRow}>
+        <View style={[styles.alertIconWrap, { backgroundColor: cfg.bg }]}>
+          <Ionicons name={cfg.icon} size={16} color={cfg.color} />
         </View>
-        <Text style={txt.alertMessage} numberOfLines={expanded ? undefined : 2}>{alert.message}</Text>
-        {alert.action && expanded && <Text style={txt.alertAction}>{alert.action}</Text>}
-        {expanded && (
-          <TouchableOpacity style={styles.explainBtn} onPress={handleExplain}>
-            {explaining ? (
-              <ActivityIndicator size="small" color={colors.brand} />
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={14} color={colors.brand} />
-                <Text style={txt.explainText}>AI 解读</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-        {explanation && (
-          <View style={styles.explanationBox}>
-            <Text style={txt.explanation}>{explanation}</Text>
-          </View>
-        )}
+        <View style={{ flex: 1 }}>
+          <Text style={txt.alertTitle} numberOfLines={expanded ? undefined : 2}>{alert.title}</Text>
+          {!expanded && alert.message && <Text style={txt.alertPreview} numberOfLines={1}>{alert.message}</Text>}
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={14} color={colors.labelTertiary} />
       </View>
+      {expanded && (
+        <View style={styles.expandedContent}>
+          <Text style={txt.alertMsg}>{alert.message}</Text>
+          {alert.action && <Text style={txt.alertAction}>→ {alert.action}</Text>}
+          {!explanation && (
+            <TouchableOpacity style={styles.aiBtn} onPress={async () => {
+              setExplaining(true);
+              try { const r = await explainAlert(alert.rule_id, alert.message); setExplanation(r.explanation); } catch { setExplanation('无法获取解读'); } finally { setExplaining(false); }
+            }}>
+              {explaining ? <ActivityIndicator size="small" color={colors.brand} /> : <>
+                <Ionicons name="sparkles" size={13} color={colors.brand} />
+                <Text style={txt.aiText}>AI 解读</Text>
+              </>}
+            </TouchableOpacity>
+          )}
+          {explanation && (
+            <View style={styles.aiResult}>
+              <Ionicons name="sparkles" size={12} color={colors.brand} />
+              <Text style={txt.aiResultText}>{explanation}</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function CardRow({ card, onComplete }: { card: ActionCard; onComplete: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
+
+  return (
+    <TouchableOpacity style={styles.cardItem} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded(!expanded); }} activeOpacity={0.7}>
+      <View style={styles.alertRow}>
+        <View style={[styles.alertIconWrap, { backgroundColor: cfg.bg }]}>
+          <Ionicons name={cfg.icon} size={16} color={cfg.color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={txt.alertTitle} numberOfLines={expanded ? undefined : 2}>{card.title}</Text>
+          </View>
+          {!expanded && <Text style={[txt.typeBadge, { color: cfg.color }]}>{cfg.label}</Text>}
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={14} color={colors.labelTertiary} />
+      </View>
+      {expanded && (
+        <View style={styles.expandedContent}>
+          <View style={styles.mdWrap}>
+            <Markdown style={mdStyles}>{card.content || ''}</Markdown>
+          </View>
+          <TouchableOpacity style={styles.completeBtn} onPress={onComplete} activeOpacity={0.7}>
+            <Ionicons name="checkmark-circle" size={16} color="#fff" />
+            <Text style={txt.completeBtnText}>标记完成</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  list: { padding: spacing.xl, paddingTop: 0 },
-  sectionHeaderRow: {
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: spacing.md,
+  },
+  countBadge: {
+    backgroundColor: colors.brand, borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 2,
+  },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: 100 },
+  sectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginTop: spacing.lg, marginBottom: spacing.sm,
+    paddingVertical: 10,
   },
-  sectionDot: { width: 8, height: 8, borderRadius: 4 },
+  sectionIconWrap: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sectionCountBadge: { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+
+  // Alert card
   alertCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    marginBottom: spacing.sm,
-    overflow: 'hidden',
-    ...shadows.subtle,
+    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    marginBottom: 8, ...shadows.subtle,
   },
-  alertAccent: { width: 4 },
-  alertBody: { flex: 1, padding: spacing.md },
-  alertHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  alertIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  explainBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 0.5, borderTopColor: colors.separator },
-  explanationBox: { backgroundColor: colors.bgPrimary, borderRadius: radii.md, padding: spacing.md, marginTop: spacing.sm },
-  empty: { alignItems: 'center', paddingTop: 120 },
-  emptyCircle: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#E8FAF0', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  alertRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14,
+  },
+  alertIconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  expandedContent: {
+    paddingHorizontal: 14, paddingBottom: 14, paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator, marginTop: -2,
+  },
+  aiBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 },
+  aiResult: {
+    flexDirection: 'row', gap: 6, marginTop: 10,
+    backgroundColor: colors.bgPrimary, borderRadius: radii.md, padding: 12,
+  },
+
+  // Card item
+  cardItem: {
+    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    marginBottom: 8, ...shadows.subtle,
+  },
+  mdWrap: { marginBottom: 10 },
+  completeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#30D158', borderRadius: radii.md, paddingVertical: 10,
+  },
+
+  // Empty
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 80 },
+  emptyCircle: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: colors.brandLight, alignItems: 'center', justifyContent: 'center',
+  },
 });
 
 const txt = {
-  screenTitle: { fontSize: 34, fontWeight: '700', color: colors.labelPrimary, paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: spacing.sm } as TextStyle,
-  summary: { fontSize: 13, fontWeight: '500', color: colors.labelSecondary, marginBottom: spacing.md } as TextStyle,
-  sectionTitle: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1 } as TextStyle,
-  sectionCount: { fontSize: 13, fontWeight: '600', color: colors.labelTertiary } as TextStyle,
-  alertTitle: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  alertCategory: { fontSize: 11, color: colors.labelTertiary, marginTop: 1 } as TextStyle,
-  alertMessage: { fontSize: 14, color: colors.labelSecondary, lineHeight: 20 } as TextStyle,
-  alertAction: { fontSize: 13, color: colors.brand, fontWeight: '500', marginTop: 6 } as TextStyle,
-  explainText: { fontSize: 14, color: colors.brand, fontWeight: '500' } as TextStyle,
-  explanation: { fontSize: 14, color: colors.labelSecondary, lineHeight: 20 } as TextStyle,
-  emptyTitle: { fontSize: 22, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  emptySub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4 } as TextStyle,
+  title: { fontSize: 28, fontWeight: '700', color: colors.labelPrimary, flex: 1 } as TextStyle,
+  countText: { fontSize: 12, fontWeight: '700', color: '#fff' } as TextStyle,
+  sectionTitle: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary, flex: 1 } as TextStyle,
+  sectionCount: { fontSize: 12, fontWeight: '600' } as TextStyle,
+  alertTitle: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary, lineHeight: 20 } as TextStyle,
+  alertPreview: { fontSize: 12, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  alertMsg: { fontSize: 14, color: colors.labelSecondary, lineHeight: 20 } as TextStyle,
+  alertAction: { fontSize: 13, color: colors.brand, fontWeight: '500', marginTop: 8 } as TextStyle,
+  aiText: { fontSize: 13, color: colors.brand, fontWeight: '500' } as TextStyle,
+  aiResultText: { fontSize: 13, color: colors.labelSecondary, lineHeight: 19, flex: 1 } as TextStyle,
+  typeBadge: { fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
+  completeBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' } as TextStyle,
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+  emptySub: { fontSize: 14, color: colors.labelSecondary } as TextStyle,
 };
+
+const mdStyles = StyleSheet.create({
+  body: { fontSize: 14, lineHeight: 20, color: colors.labelSecondary },
+  heading1: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary, marginTop: 10, marginBottom: 4 },
+  heading2: { fontSize: 15, fontWeight: '700', color: colors.labelPrimary, marginTop: 8, marginBottom: 4 },
+  heading3: { fontSize: 14, fontWeight: '600', color: colors.labelPrimary, marginTop: 6, marginBottom: 2 },
+  strong: { fontWeight: '600', color: colors.labelPrimary },
+  paragraph: { marginVertical: 3 },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { flexDirection: 'row', marginVertical: 2 },
+  link: { color: colors.brand },
+  code_inline: { backgroundColor: '#F2F2F7', borderRadius: 4, paddingHorizontal: 4, fontFamily: 'Menlo', fontSize: 12, color: colors.brand },
+  fence: { backgroundColor: '#F2F2F7', borderRadius: 8, padding: 10, fontFamily: 'Menlo', fontSize: 12, marginVertical: 6 },
+  table: { borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 8, marginVertical: 8 },
+  thead: { backgroundColor: '#F2F2F7' },
+  th: { padding: 8, fontWeight: '600', fontSize: 12, color: colors.labelPrimary, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#E5E5EA' },
+  td: { padding: 8, fontSize: 12, color: colors.labelSecondary, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#E5E5EA' },
+  tr: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5EA', flexDirection: 'row' },
+  hr: { backgroundColor: colors.separator, height: 1, marginVertical: 8 },
+  blockquote: { borderLeftWidth: 3, borderLeftColor: colors.brand, paddingLeft: 10, marginVertical: 4, opacity: 0.85 },
+});

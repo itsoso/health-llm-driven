@@ -1,258 +1,478 @@
-import React from 'react';
-import { ScrollView, View, Text, StyleSheet, RefreshControl, ViewStyle, TextStyle } from 'react-native';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
+  KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
+  Alert, Modal, Pressable, Animated, RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useDashboardData, useLatestGarmin } from '@/hooks/useDashboardData';
-import GreetingHeader from '@/components/dashboard/GreetingHeader';
-import HealthScoreHero from '@/components/dashboard/HealthScoreHero';
-import VitalsGrid from '@/components/dashboard/VitalsGrid';
-import ActivityRingBar from '@/components/dashboard/ActivityRingBar';
-import TrendMiniCharts from '@/components/dashboard/TrendMiniCharts';
-import SupplementCheckin from '@/components/dashboard/SupplementCheckin';
-import RhinitisCard from '@/components/dashboard/RhinitisCard';
-import StrengthCard from '@/components/dashboard/StrengthCard';
-import SectionHeader from '@/components/design-system/SectionHeader';
-import HealthCard from '@/components/design-system/HealthCard';
-import { colors, typography, spacing, radii, shadows, metricColors } from '@/constants/theme';
+import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { Audio } from 'expo-av';
+import { useQuery } from '@tanstack/react-query';
+import Markdown from 'react-native-markdown-display';
+import { streamChat, type ChatMessage } from '@/services/chat';
+import api from '@/services/api';
+import { getSafetyReport } from '@/services/safety';
+import HomeHeader from '@/components/dashboard/HomeHeader';
+import { colors, spacing, radii, shadows } from '@/constants/theme';
 
-export default function DashboardScreen() {
-  const { data, isLoading, refetch, isRefetching } = useDashboardData();
-  const garmin = useLatestGarmin(data);
-
-  // ── Score ──
-  const score = data?.healthScore?.total_score ?? data?.healthScore?.score ?? 0;
-  const dims = (data?.healthScore?.dimensions || []).map((d: any) => ({
-    name: d.name,
-    score: d.score ?? 0,
-    color: d.name === '运动' ? '#FF6723' : d.name === '睡眠' ? '#BF5AF2' : d.name === '体征' ? '#FF375F' : '#0A8F8F',
-  }));
-
-  // ── Garmin vitals ──
-  const sleepMin = garmin?.total_sleep_duration;
-  const sleepHours = sleepMin ? sleepMin / 60 : null;
-  const deepMin = garmin?.deep_sleep_duration;
-  const deepHours = deepMin ? deepMin / 60 : null;
-  const hr = garmin?.resting_heart_rate;
-  const hrv = garmin?.hrv;
-  const battery = garmin?.body_battery_most_charged ?? garmin?.body_battery_current;
-  const batteryMax = garmin?.body_battery_most_charged;
-  const steps = garmin?.steps ?? 0;
-  const activeMin = garmin?.active_minutes ?? 0;
-  const calories = garmin?.active_calories ?? 0;
-  const stress = garmin?.stress_level;
-  const spo2 = garmin?.spo2_avg;
-
-  // ── Weather ──
-  const weather = data?.weather?.weather ?? data?.weather;
-  const aqi = data?.airQuality;
-  const forecast = data?.weatherForecast?.forecasts;
-  const profile = data?.profile;
-  const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city;
-
-  // ── Other data ──
-  const waterTotal = Array.isArray(data?.waterRecords)
-    ? data.waterRecords.reduce((s: number, r: any) => s + (r.amount || 0), 0)
-    : 0;
-  const suppCount = Array.isArray(data?.supplements) ? data.supplements.length : 0;
-  const suppTaken = Array.isArray(data?.supplements)
-    ? data.supplements.filter((s: any) => s.record?.taken || s.is_taken).length
-    : 0;
-  const weightStats = data?.weightStats;
-  const bpStats = data?.bloodPressureStats;
-  const dietRecords = data?.dietRecords?.meals ?? (Array.isArray(data?.dietRecords) ? data.dietRecords : []);
-  const medications = data?.medicationToday;
-  const checkin = data?.checkin;
-  const exerciseToday = Array.isArray(data?.exerciseToday) ? data.exerciseToday : [];
-
+function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Greeting */}
-        <GreetingHeader weather={weather} aqi={aqi} forecast={forecast} city={city} />
-
-        {/* Health Score Hero */}
-        <HealthScoreHero totalScore={score} dimensions={dims.length > 0 ? dims : undefined} />
-
-        {/* Today's Vitals */}
-        <SectionHeader title="今日数据" />
-        <VitalsGrid
-          sleep={sleepHours}
-          deepSleep={deepHours}
-          heartRate={hr}
-          hrv={hrv}
-          bodyBattery={battery}
-          batteryMax={batteryMax}
-        />
-
-        {/* Activity Rings */}
-        <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
-
-        {/* Quick Stats Row */}
-        <View style={styles.statsRow}>
-          <StatChip icon="water-outline" color={metricColors.water.main} bg={metricColors.water.tint} label="饮水" value={`${waterTotal}`} unit="ml" />
-          <StatChip icon="medical-outline" color={metricColors.supplements.main} bg={metricColors.supplements.tint} label="补剂" value={`${suppTaken}/${suppCount}`} />
-          <StatChip icon="cloudy-outline" color={metricColors.stress.main} bg={metricColors.stress.tint} label="压力" value={stress != null ? `${stress}` : '--'} />
-          <StatChip icon="fitness-outline" color={colors.teal} bg={colors.tintTeal} label="血氧" value={spo2 != null ? `${spo2}%` : '--'} />
-        </View>
-
-        {/* Supplement Checkin */}
-        <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} />
-
-        {/* Rhinitis Tracking */}
-        <RhinitisCard checkin={checkin} onUpdate={refetch} />
-
-        {/* Strength Training */}
-        <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
-
-        {/* Weekly Trends */}
-        <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
-
-        {/* Medication Status */}
-        {Array.isArray(medications) && medications.length > 0 && (
-          <>
-            <SectionHeader title="用药状态" />
-            <View style={styles.medRow}>
-              {medications.map((m: any) => (
-                <View key={m.medication_id} style={[styles.medChip, { backgroundColor: m.taken_count > 0 ? colors.tintGreen : colors.bgPrimary }]}>
-                  <Ionicons name={m.taken_count > 0 ? 'checkmark-circle' : 'ellipse-outline'} size={14} color={m.taken_count > 0 ? colors.green : colors.labelTertiary} />
-                  <Text style={textStyles.medName} numberOfLines={1}>{m.name}</Text>
-                </View>
-              ))}
-            </View>
-          </>
-        )}
-
-        {/* Body Stats */}
-        {(weightStats?.current_weight || bpStats?.average_systolic) && (
-          <HealthCard title="身体数据" icon="body-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
-            <View style={styles.bodyRow}>
-              {weightStats?.current_weight != null && (
-                <View style={styles.bodyItem}>
-                  <Text style={textStyles.bodyValue}>{weightStats.current_weight}<Text style={textStyles.bodyUnit}>kg</Text></Text>
-                  <Text style={textStyles.bodyLabel}>体重</Text>
-                  {weightStats.weight_change_7d != null && (
-                    <Text style={[textStyles.bodyChange, { color: weightStats.weight_change_7d <= 0 ? colors.green : colors.red }]}>
-                      7天 {weightStats.weight_change_7d > 0 ? '+' : ''}{weightStats.weight_change_7d}kg
-                    </Text>
-                  )}
-                </View>
-              )}
-              {bpStats?.average_systolic != null && (
-                <View style={styles.bodyItem}>
-                  <Text style={textStyles.bodyValue}>{Math.round(bpStats.average_systolic)}/{Math.round(bpStats.average_diastolic)}</Text>
-                  <Text style={textStyles.bodyLabel}>血压</Text>
-                </View>
-              )}
-            </View>
-          </HealthCard>
-        )}
-
-        {/* Diet */}
-        <HealthCard title="今日饮食" icon="restaurant-outline" iconColor={colors.orange} iconBg={colors.tintOrange}>
-          {Array.isArray(dietRecords) && dietRecords.length > 0 ? (
-            dietRecords.slice(0, 3).map((d: any, i: number) => (
-              <View key={i} style={styles.dietRow}>
-                <Text style={textStyles.dietType}>{d.meal_type || '餐食'}</Text>
-                <Text style={textStyles.dietDesc} numberOfLines={1}>{d.description || d.food_items || '--'}</Text>
-                {d.total_calories ? <Text style={textStyles.dietCal}>{d.total_calories}kcal</Text> : null}
-              </View>
-            ))
-          ) : (
-            <Text style={textStyles.emptyText}>今天还没有饮食记录</Text>
-          )}
-        </HealthCard>
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-// ── Inline Components ──
-
-function StatChip({ icon, color, bg, label, value, unit }: { icon: any; color: string; bg: string; label: string; value: string; unit?: string }) {
-  return (
-    <View style={styles.statChip}>
-      <View style={[styles.statIconDot, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={12} color={color} />
-      </View>
-      <Text style={textStyles.statValue}>{value}{unit ? <Text style={textStyles.statUnit}>{unit}</Text> : null}</Text>
-      <Text style={textStyles.statLabel}>{label}</Text>
+    <View style={[{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }, style]}>
+      {children}
     </View>
   );
 }
 
-const getAqiColor = (v: number | null) =>
-  !v ? colors.labelTertiary : v <= 50 ? colors.green : v <= 100 ? colors.amber : colors.red;
+interface UIMessage extends ChatMessage {
+  id: string;
+  streaming?: boolean;
+  imageUri?: string;
+  isBriefing?: boolean;
+}
 
-// ── Styles ──
+let msgCounter = 0;
+function nextId(): string { return `msg-${++msgCounter}-${Date.now()}`; }
+
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export default function HomeScreen() {
+  const [messages, setMessages] = useState<UIMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ uri: string; base64: string; type: string } | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+  const plusRotation = useRef(new Animated.Value(0)).current;
+
+  // ── Data queries ──
+  const { data: scoreData } = useQuery({ queryKey: ['healthScore'], queryFn: () => api.get(`/health-score/daily/me?target_date=${today()}`).then(r => r.data), staleTime: 120_000 });
+  const { data: garminData } = useQuery({ queryKey: ['garminToday'], queryFn: () => api.get(`/daily-health/garmin/me?start_date=${today()}&end_date=${today()}`).then(r => r.data), staleTime: 120_000 });
+  const { data: weatherData } = useQuery({ queryKey: ['weather'], queryFn: () => api.get('/environment/weather').then(r => r.data), staleTime: 300_000 });
+  const { data: aqiData } = useQuery({ queryKey: ['aqi'], queryFn: () => api.get('/environment/air-quality').then(r => r.data), staleTime: 300_000 });
+  const { data: safetyData } = useQuery({ queryKey: ['safety'], queryFn: getSafetyReport, staleTime: 300_000 });
+  const { data: profileData } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
+  const { data: forecastData } = useQuery({ queryKey: ['forecast'], queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
+  const { data: recData, refetch: refetchRec } = useQuery({
+    queryKey: ['dailyRec'],
+    queryFn: () => api.get('/daily-recommendation/me').then(r => r.data).catch(() => null),
+    staleTime: 300_000,
+  });
+
+  const score = scoreData?.total_score ?? 0;
+  const garmin = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
+  const weather = weatherData?.weather ?? weatherData;
+  const city = profileData?.manual_location?.city || profileData?.detected_location?.city || profileData?.city || '';
+  const weatherText = `${city} ${weather?.temperature != null ? Math.round(weather.temperature) + '°C' : ''} ${weather?.weather || ''}`.trim();
+  const tomorrowFc = forecastData?.forecasts?.[1];
+  const tomorrowText = tomorrowFc ? `明天 ${tomorrowFc.weather} ${tomorrowFc.temp_min}~${tomorrowFc.temp_max}°C` : undefined;
+
+  // High-priority alerts only
+  const criticalAlerts = (safetyData?.alerts || []).filter((a: any) => {
+    const sev = typeof a.severity === 'string' ? a.severity : a.severity?.label;
+    return sev === 'critical' || sev === 'high';
+  });
+
+  // ── AI Briefing as first message ──
+  useEffect(() => {
+    if (recData && messages.length === 0) {
+      const text = recData.one_day?.recommendations || recData.one_day?.summary || '';
+      if (text) {
+        setMessages([{
+          id: 'briefing',
+          role: 'assistant',
+          content: `**今日健康简报**\n\n${text}`,
+          isBriefing: true,
+        }]);
+      }
+    }
+  }, [recData]);
+
+  // ── Send ──
+  const sendMessage = useCallback(async (text?: string) => {
+    const msg = (text || input).trim();
+    const hasImage = !!pendingImage;
+    if (!msg && !hasImage) return;
+    if (isStreaming) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    setInput('');
+    const finalMsg = msg || (hasImage ? '请分析这张图片' : '');
+    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUri: pendingImage?.uri };
+    const aId = nextId();
+    const aiMsg: UIMessage = { id: aId, role: 'assistant', content: '', streaming: true };
+
+    setMessages(prev => [...prev, userMsg, aiMsg]);
+    setIsStreaming(true);
+    const imgData = pendingImage;
+    setPendingImage(null);
+
+    try {
+      for await (const token of streamChat(finalMsg, undefined, imgData?.base64, imgData?.type)) {
+        setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + token } : m));
+      }
+    } catch (err: any) {
+      setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content || `[错误] ${err?.message || '请求失败'}` } : m));
+    } finally {
+      setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
+      setIsStreaming(false);
+    }
+  }, [input, isStreaming, pendingImage]);
+
+  // ── Media ──
+  const toggleMenu = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const toOpen = !showMenu;
+    setShowMenu(toOpen);
+    Animated.spring(plusRotation, { toValue: toOpen ? 1 : 0, useNativeDriver: true, friction: 8 }).start();
+  };
+
+  const pickImage = useCallback(async () => {
+    setShowMenu(false);
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.8 });
+    if (!result.canceled && result.assets[0]) {
+      const a = result.assets[0];
+      setPendingImage({ uri: a.uri, base64: a.base64 || '', type: a.mimeType?.split('/')[1] || 'jpeg' });
+    }
+  }, []);
+
+  const takePhoto = useCallback(async () => {
+    setShowMenu(false);
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert('需要相机权限'); return; }
+    const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.8 });
+    if (!result.canceled && result.assets[0]) {
+      const a = result.assets[0];
+      setPendingImage({ uri: a.uri, base64: a.base64 || '', type: a.mimeType?.split('/')[1] || 'jpeg' });
+    }
+  }, []);
+
+  const pickFile = useCallback(async () => {
+    setShowMenu(false);
+    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+    if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
+  }, []);
+
+  // ── Voice ──
+  const startRecording = useCallback(async () => {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) { Alert.alert('需要麦克风权限'); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      recordingRef.current = recording;
+      setIsRecording(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch { Alert.alert('录音启动失败'); }
+  }, []);
+
+  const stopRecordingAndSend = useCallback(async () => {
+    if (!isRecording || !recordingRef.current) return;
+    setIsRecording(false);
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      recordingRef.current = null;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      sendMessage('[语音消息]');
+    } catch {}
+  }, [isRecording, sendMessage]);
+
+  // ── Render ──
+  const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
+    const isUser = item.role === 'user';
+    return (
+      <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
+        {!isUser && (
+          <BrandCircle size={28} style={{ marginRight: 8 }}>
+            <Ionicons name="sparkles" size={12} color="#fff" />
+          </BrandCircle>
+        )}
+        {isUser ? (
+          <View style={[styles.bubble, styles.bubbleUser]}>
+            {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />}
+            <Text style={txt.bubbleUser}>{item.content}</Text>
+          </View>
+        ) : (
+          <View style={[styles.bubble, styles.bubbleAI]}>
+            <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
+            {item.streaming && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 4 }} />}
+          </View>
+        )}
+      </View>
+    );
+  }, []);
+
+  const canSend = (input.trim() || pendingImage) && !isStreaming;
+  const rotate = plusRotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
+
+  // Quick vitals for mini indicators below status bar
+  const sleepH = garmin?.total_sleep_duration ? (garmin.total_sleep_duration / 60).toFixed(1) : '--';
+  const steps = garmin?.steps ?? '--';
+  const hrVal = garmin?.resting_heart_rate ?? '--';
+  const batteryVal = garmin?.body_battery_most_charged ?? garmin?.body_battery_current ?? '--';
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Home Header Card */}
+      <HomeHeader
+        score={score}
+        city={city}
+        temperature={weather?.temperature}
+        weatherDesc={weather?.weather}
+        aqiValue={aqiData?.aqi}
+        pm25={aqiData?.pm25}
+        tomorrowWeather={tomorrowFc?.weather}
+        tomorrowTempRange={tomorrowFc ? `${tomorrowFc.temp_min}~${tomorrowFc.temp_max}°C` : undefined}
+        sleep={`${sleepH}h`}
+        steps={typeof steps === 'number' ? steps.toLocaleString() : `${steps}`}
+        hr={`${hrVal}`}
+        battery={`${batteryVal}`}
+        syncing={syncing}
+        onSyncGarmin={async () => {
+          setSyncing(true);
+          try { await api.post('/data-collection/garmin/me/sync?days=1'); } catch {}
+          setSyncing(false);
+        }}
+      />
+
+      {/* Critical alerts */}
+      {criticalAlerts.length > 0 && (
+        <View style={styles.alertBanner}>
+          <Ionicons name="warning" size={16} color="#FF453A" />
+          <Text style={txt.alertText} numberOfLines={2}>
+            {criticalAlerts[0].title}: {criticalAlerts[0].message}
+          </Text>
+        </View>
+      )}
+
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
+        {/* Messages */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={item => item.id}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.msgList}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          ListEmptyComponent={
+            <View style={styles.welcome}>
+              <BrandCircle size={56} style={{ marginBottom: 12 }}>
+                <Ionicons name="sparkles" size={24} color="#fff" />
+              </BrandCircle>
+              <Text style={txt.welcomeTitle}>健康助理</Text>
+              <Text style={txt.welcomeSub}>说点什么，或试试这些</Text>
+              <View style={styles.sugRow}>
+                {['今天健康如何？', '记录喝了杯水', '分析睡眠质量', '吃了鱼油'].map(s => (
+                  <TouchableOpacity key={s} style={styles.sugChip} onPress={() => sendMessage(s)}>
+                    <Text style={txt.sugText}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          }
+        />
+
+        {/* Pending image */}
+        {pendingImage && (
+          <View style={styles.previewBar}>
+            <Image source={{ uri: pendingImage.uri }} style={styles.previewImg} />
+            <Text style={txt.previewText}>图片已选择</Text>
+            <TouchableOpacity onPress={() => setPendingImage(null)}>
+              <Ionicons name="close-circle" size={20} color={colors.red} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Recording */}
+        {isRecording && (
+          <View style={styles.recordBar}>
+            <View style={styles.recDot} />
+            <Text style={txt.recText}>松手发送...</Text>
+          </View>
+        )}
+
+        {/* Input bar — ChatGPT style: + | [input ... 🎤 ⬆] */}
+        <View style={styles.inputBar}>
+          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn}>
+            <Animated.View style={{ transform: [{ rotate }] }}>
+              <Ionicons name="add" size={22} color={colors.labelPrimary} />
+            </Animated.View>
+          </TouchableOpacity>
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="有问题，尽管问"
+              placeholderTextColor={colors.labelTertiary}
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={() => sendMessage()}
+              returnKeyType="send"
+              multiline
+              maxLength={2000}
+            />
+            <View style={styles.inputActions}>
+              {canSend ? (
+                <TouchableOpacity onPress={() => sendMessage()} style={styles.inlineSendBtn}>
+                  <Ionicons name="arrow-up-circle" size={28} color={colors.brand} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={isRecording ? stopRecordingAndSend : startRecording}
+                  style={[styles.inlineVoiceBtn, isRecording && styles.inlineVoiceBtnActive]}
+                >
+                  <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={20} color={isRecording ? '#fff' : colors.labelTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+        <View style={{ height: 44 }} />
+      </KeyboardAvoidingView>
+
+      {/* Plus menu */}
+      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>
+        <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
+          <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.menuHandle} />
+            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={takePhoto} />
+            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={pickImage} />
+            <MenuItem icon="document-outline" label="文件" desc="上传文档或报告" onPress={pickFile} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6}>
+      <View style={styles.menuIconWrap}>
+        <Ionicons name={icon} size={20} color={colors.labelPrimary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={txt.menuLabel}>{label}</Text>
+        <Text style={txt.menuDesc}>{desc}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  scroll: { flex: 1 },
-  content: { padding: spacing.xl },
-
-  // Stats row
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+  alertBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: spacing.lg, marginBottom: 6,
+    backgroundColor: '#FFF0F0', borderRadius: radii.md,
+    padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: '#FF453A',
   },
-  statChip: {
-    flex: 1,
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.md,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    gap: 4,
-    ...shadows.subtle,
+  msgList: { padding: spacing.md, paddingBottom: 4 },
+  msgRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end' },
+  msgRowUser: { justifyContent: 'flex-end' },
+  msgRowAI: { justifyContent: 'flex-start' },
+  bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+  bubbleUser: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
+  bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
+  msgImage: { width: 160, height: 120, borderRadius: 10, marginBottom: 4 },
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 6,
+    paddingHorizontal: spacing.md, paddingVertical: 6,
+    backgroundColor: colors.bgPrimary,
   },
-  statIconDot: {
-    width: 22, height: 22, borderRadius: 7,
+  plusBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.separator,
     alignItems: 'center', justifyContent: 'center',
   },
-
-  // Medication
-  medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
-  medChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.full,
+  inputWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'flex-end',
+    backgroundColor: colors.bgCard, borderRadius: 22,
+    borderWidth: 1, borderColor: colors.separator,
+    paddingLeft: 14, paddingRight: 4, paddingVertical: 4,
   },
-
-  // Body stats
-  bodyRow: { flexDirection: 'row', gap: spacing.xxl },
-  bodyItem: { alignItems: 'center' } as ViewStyle,
-
-  // Diet
-  dietRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: spacing.sm },
-
-  // Environment
-  envRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 6 },
+  textInput: {
+    flex: 1, fontSize: 15, maxHeight: 90, color: colors.labelPrimary,
+    paddingTop: 6, paddingBottom: 6,
+  },
+  inputActions: {
+    flexDirection: 'row', alignItems: 'center', paddingBottom: 2,
+  },
+  inlineSendBtn: { padding: 2 },
+  inlineVoiceBtn: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  inlineVoiceBtnActive: {
+    backgroundColor: '#FF453A',
+  },
+  previewBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: spacing.md, paddingVertical: 4,
+    backgroundColor: colors.bgCard,
+  },
+  previewImg: { width: 36, height: 36, borderRadius: 6 },
+  recordBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: spacing.lg, paddingVertical: 6,
+    backgroundColor: '#FFF0F0',
+  },
+  recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF453A' },
+  welcome: { alignItems: 'center', paddingTop: 80 },
+  sugRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20, justifyContent: 'center', paddingHorizontal: spacing.xl },
+  sugChip: {
+    backgroundColor: colors.bgCard, borderRadius: radii.full,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: colors.separator,
+  },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
+  menuSheet: {
+    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
+  },
+  menuHandle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: colors.labelQuaternary,
+    alignSelf: 'center', marginBottom: spacing.lg,
+  },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+  },
+  menuIconWrap: {
+    width: 38, height: 38, borderRadius: 12, backgroundColor: colors.bgPrimary,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
 
-// Text styles kept separate to avoid StyleSheet type conflicts with fontVariant
-const textStyles = {
-  statValue: { fontSize: 16, fontWeight: '700' as const, color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  statUnit: { fontSize: 11, fontWeight: '400' as const, color: colors.labelSecondary } as TextStyle,
-  statLabel: { fontSize: 10, fontWeight: '500' as const, color: colors.labelTertiary } as TextStyle,
-  medName: { fontSize: 13, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
-  bodyValue: { fontSize: 22, fontWeight: '700' as const, color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bodyUnit: { fontSize: 13, color: colors.labelSecondary } as TextStyle,
-  bodyLabel: { fontSize: 11, fontWeight: '500' as const, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
-  bodyChange: { fontSize: 11, fontWeight: '500' as const, marginTop: 2 } as TextStyle,
-  dietType: { fontSize: 11, fontWeight: '500' as const, color: colors.labelSecondary, width: 32 } as TextStyle,
-  dietDesc: { fontSize: 15, color: colors.labelPrimary, flex: 1 } as TextStyle,
-  dietCal: { fontSize: 13, color: colors.labelSecondary } as TextStyle,
-  emptyText: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center' as const, paddingVertical: spacing.lg } as TextStyle,
-  envText: { fontSize: 15, color: colors.labelPrimary } as TextStyle,
+const txt = {
+  bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
+  alertText: { fontSize: 13, color: '#FF453A', flex: 1, lineHeight: 18 } as TextStyle,
+  vitalVal: { fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  welcomeTitle: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+  welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4 } as TextStyle,
+  sugText: { fontSize: 13, color: colors.brand } as TextStyle,
+  previewText: { fontSize: 12, color: colors.labelSecondary, flex: 1 } as TextStyle,
+  recText: { fontSize: 13, color: '#FF453A', flex: 1 } as TextStyle,
+  menuLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
+  menuDesc: { fontSize: 12, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
 };
+
+const mdStyles = StyleSheet.create({
+  body: { fontSize: 15, lineHeight: 22, color: colors.labelPrimary },
+  heading2: { fontSize: 16, fontWeight: '700', color: colors.labelPrimary, marginTop: 6, marginBottom: 2 },
+  heading3: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary, marginTop: 4 },
+  strong: { fontWeight: '600' },
+  bullet_list: { marginVertical: 2 },
+  list_item: { flexDirection: 'row', marginVertical: 1 },
+  code_inline: { backgroundColor: '#F2F2F7', borderRadius: 4, paddingHorizontal: 3, fontFamily: 'Menlo', fontSize: 13, color: colors.brand },
+  fence: { backgroundColor: '#F2F2F7', borderRadius: 6, padding: 8, fontFamily: 'Menlo', fontSize: 12, marginVertical: 4 },
+  paragraph: { marginVertical: 2 },
+  link: { color: colors.brand },
+});
