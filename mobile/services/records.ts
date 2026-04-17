@@ -13,10 +13,8 @@ export interface WaterRecord {
 }
 
 export const supplementApi = {
-  recordSupplement: async (supplementId: number, date: string) =>
-    api.post('/supplements/records', { supplement_id: supplementId, record_date: date, taken: true }),
-  deleteSupplementRecord: async (supplementId: number, date: string) =>
-    api.delete(`/supplements/records/${supplementId}?record_date=${date}`),
+  batchCheckin: async (date: string, supplementId: number, taken: boolean) =>
+    api.post('/supplements/records/batch', { record_date: date, checkins: [{ supplement_id: supplementId, taken }] }),
 };
 
 export async function recordWater(amount: number): Promise<WaterRecord> {

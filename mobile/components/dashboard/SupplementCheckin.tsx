@@ -44,15 +44,13 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
 
   const toggleSupp = async (suppId: number, currentTaken: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLocalState(prev => ({ ...prev, [suppId]: !currentTaken }));
+    const newTaken = !currentTaken;
+    setLocalState(prev => ({ ...prev, [suppId]: newTaken }));
     try {
-      if (!currentTaken) {
-        await supplementApi.recordSupplement(suppId, today);
-      } else {
-        await supplementApi.deleteSupplementRecord(suppId, today);
-      }
-      onToggle?.();
+      await supplementApi.batchCheckin(today, suppId, newTaken);
+      // Don't refetch immediately — local state is sufficient
     } catch {
+      // Revert on error
       setLocalState(prev => ({ ...prev, [suppId]: currentTaken }));
     }
   };
