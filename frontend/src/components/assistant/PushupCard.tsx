@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/services/api/client';
 import { dailyHealthApi } from '@/services/api/health';
+import { getLocalDateStr } from '@/utils/timezone';
 
 const DAILY_TARGET = 100;
 const QUICK_AMOUNTS = [10, 15, 20, 30, 50];
@@ -22,7 +23,7 @@ export default function PushupCard() {
   const [recording, setRecording] = useState(false);
   const [weekData, setWeekData] = useState<number[]>([]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateStr();
   const pct = Math.min(100, Math.round((todayTotal / DAILY_TARGET) * 100));
 
   const loadData = useCallback(async () => {

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { supplementApi } from '@/services/api/records';
+import { getLocalDateStr } from '@/utils/timezone';
 
 const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
 const SUPP_PAGE_SIZE = 6;
@@ -50,7 +51,7 @@ export default function SupplementCheckin({ supplementStatus, onStatusChange }: 
   const visible = expanded ? flat : flat.slice(0, SUPP_PAGE_SIZE);
   const hasMore = flat.length > SUPP_PAGE_SIZE;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateStr();
   const toggleSupp = async (suppId: number, currentTaken: boolean) => {
     const newTaken = !currentTaken;
     onStatusChange(prev => prev.map((s: any) => {

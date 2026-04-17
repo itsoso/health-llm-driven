@@ -106,6 +106,17 @@ export function formatTime(dateString: string | null | undefined): string {
  * 获取当前北京时间
  * @returns Date对象（北京时间）
  */
+/**
+ * 获取本地日期字符串 (YYYY-MM-DD)
+ * 替代 new Date().toISOString().slice(0,10)，后者在 UTC+8 凌晨~08:00 会返回前一天
+ */
+export function getLocalDateStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function getBeijingNow(): Date {
   const now = new Date();
   // 转换为北京时间字符串，再转回Date对象

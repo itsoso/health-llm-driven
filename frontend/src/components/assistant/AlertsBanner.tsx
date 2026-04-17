@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/services/api/client';
 import { useToast } from '@/contexts/ToastContext';
+import { getLocalDateStr } from '@/utils/timezone';
 
 interface AlertsBannerProps {
   waterToday: { total_ml: number; goal_ml: number; count: number };
@@ -16,7 +17,7 @@ export default function AlertsBanner({ waterToday, todayGarmin, onWaterRecord, o
   const { showToast } = useToast();
   const lockRef = useRef<Set<string>>(new Set());
   const hour = new Date().getHours();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateStr();
 
   const quickDrinkWater = async (amount: number) => {
     const key = `alert-water-${amount}`;

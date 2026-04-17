@@ -2,6 +2,7 @@
 import { useRef } from 'react';
 import { api } from '@/services/api/client';
 import { useToast } from '@/contexts/ToastContext';
+import { getLocalDateStr } from '@/utils/timezone';
 
 interface QuickRecordBarProps {
   rhinitisToday: any;
@@ -14,7 +15,7 @@ type ActionKey = string;
 export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhinitisUpdate }: QuickRecordBarProps) {
   const { showToast } = useToast();
   const lockRef = useRef<Set<ActionKey>>(new Set());
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateStr();
 
   // --- helpers ------------------------------------------------------------
   const withLock = async (key: ActionKey, fn: () => Promise<void>) => {

@@ -10,11 +10,12 @@ export function useDashboardData() {
   });
 }
 
-// Helper to safely extract nested Garmin data (latest day)
+// Helper to safely extract the most recent Garmin data
 export function useLatestGarmin(data: DashboardData | undefined) {
   if (!data?.garminDaily) return null;
   const days = Array.isArray(data.garminDaily)
     ? data.garminDaily
     : [data.garminDaily];
-  return days.length > 0 ? days[days.length - 1] : null;
+  // API returns newest first, so take the first element
+  return days.length > 0 ? days[0] : null;
 }

@@ -2,9 +2,6 @@ import { getToken } from './auth';
 
 const BASE_URL = 'https://health.executor.life/api';
 
-const SKILL_PATTERN =
-  /记录|打卡|吃了|喝了|喝水|早餐|午餐|晚餐|加餐|补剂|用药|服药|洗鼻|血压|体重|量了/;
-
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -16,48 +13,83 @@ export interface Conversation {
   created_at: string;
 }
 
-function chooseEndpoint(message: string): string {
-  if (SKILL_PATTERN.test(message)) {
-    return '/openclaw/stream';
-  }
-  return '/agent/stream';
-}
-
+/**
+ * Stream chat using XMLHttpRequest (React Native doesn't support ReadableStream).
+ * Uses onprogress to incrementally parse SSE events.
+ */
 export async function* streamChat(
   message: string,
   conversationId?: number,
 ): AsyncGenerator<string, void, unknown> {
   const token = await getToken();
-  const endpoint = chooseEndpoint(message);
   const body: Record<string, any> = { message };
   if (conversationId) {
     body.conversation_id = conversationId;
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  });
+  // Use a promise-based wrapper around XHR with chunked callback
+  const chunks: string[] = [];
+  let resolve: (() => void) | null = null;
+  let done = false;
+  let error: Error | null = null;
+  let processed = 0;
 
-  if (!response.ok) {
-    throw new Error(`Chat request failed: ${response.status}`);
-  }
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', `${BASE_URL}/agent/stream`);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+  xhr.responseType = 'text';
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body');
+  xhr.onprogress = () => {
+    const newText = xhr.responseText.slice(processed);
+    processed = xhr.responseText.length;
+    if (newText) {
+      chunks.push(newText);
+      resolve?.();
+    }
+  };
 
-  const decoder = new TextDecoder();
+  xhr.onload = () => {
+    // Process any remaining text
+    const remaining = xhr.responseText.slice(processed);
+    if (remaining) chunks.push(remaining);
+    done = true;
+    resolve?.();
+  };
+
+  xhr.onerror = () => {
+    error = new Error(`网络请求失败 (status: ${xhr.status})`);
+    done = true;
+    resolve?.();
+  };
+
+  xhr.ontimeout = () => {
+    error = new Error('请求超时');
+    done = true;
+    resolve?.();
+  };
+
+  xhr.timeout = 120000; // 2 min for agent responses
+  xhr.send(JSON.stringify(body));
+
+  // Parse SSE lines from accumulated chunks
   let buffer = '';
 
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    // Wait for new data or completion
+    if (chunks.length === 0 && !done) {
+      await new Promise<void>((r) => { resolve = r; });
+      resolve = null;
+    }
 
-    buffer += decoder.decode(value, { stream: true });
+    if (error) throw error;
+
+    // Process all available chunks
+    while (chunks.length > 0) {
+      buffer += chunks.shift()!;
+    }
+
+    // Parse complete lines
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
 
@@ -69,17 +101,40 @@ export async function* streamChat(
 
       try {
         const parsed = JSON.parse(payload);
-        const text =
-          parsed.choices?.[0]?.delta?.content ||
-          parsed.content ||
-          parsed.text ||
-          parsed.delta ||
-          '';
-        if (text) yield text;
+
+        if (parsed.event === 'token') {
+          const text = parsed.data?.content || '';
+          if (text) yield text;
+        } else if (parsed.event === 'tool_call') {
+          const tool = parsed.data?.tool || '';
+          const round = parsed.data?.round || '';
+          yield `\n🔧 ${tool} (第${round}轮)\n`;
+        } else if (parsed.event === 'tool_result') {
+          const tool = parsed.data?.tool || '';
+          const ok = parsed.data?.success;
+          yield `${ok ? '✅' : '❌'} ${tool} ${ok ? '完成' : '失败'}\n\n`;
+        } else if (parsed.event === 'error') {
+          yield `\n❌ ${parsed.data?.message || '请求失败'}\n`;
+        }
       } catch {
-        // non-JSON SSE line, yield as-is if non-empty
-        if (payload && payload !== '[DONE]') yield payload;
+        // non-JSON line, skip
       }
+    }
+
+    if (done && chunks.length === 0) break;
+  }
+
+  // Process any remaining buffer
+  if (buffer.trim()) {
+    const trimmed = buffer.trim();
+    if (trimmed.startsWith('data:')) {
+      const payload = trimmed.slice(5).trim();
+      try {
+        const parsed = JSON.parse(payload);
+        if (parsed.event === 'token' && parsed.data?.content) {
+          yield parsed.data.content;
+        }
+      } catch { /* skip */ }
     }
   }
 }

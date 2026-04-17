@@ -29,7 +29,9 @@ export default function AlertsScreen() {
 
   const alerts = (data?.alerts || []).sort((a, b) => {
     const order = ['critical', 'high', 'medium', 'low', 'info'];
-    return order.indexOf(a.severity) - order.indexOf(b.severity);
+    const aKey = typeof a.severity === 'string' ? a.severity : (a.severity as any)?.label ?? 'info';
+    const bKey = typeof b.severity === 'string' ? b.severity : (b.severity as any)?.label ?? 'info';
+    return order.indexOf(aKey) - order.indexOf(bKey);
   });
 
   if (isLoading) {
@@ -100,7 +102,14 @@ function AlertItem({ alert }: { alert: SafetyAlert }) {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
 
-  const cfg = SEVERITY_CONFIG[alert.severity] || SEVERITY_CONFIG.info;
+  // severity may be string ("low") or object ({value, label, label_zh})
+  const severityKey = typeof alert.severity === 'string'
+    ? alert.severity
+    : (alert.severity as any)?.label ?? 'info';
+  const severityLabel = typeof alert.severity === 'string'
+    ? alert.severity
+    : (alert.severity as any)?.label_zh ?? (alert.severity as any)?.label ?? 'info';
+  const cfg = SEVERITY_CONFIG[severityKey] || SEVERITY_CONFIG.info;
 
   const handleExplain = async () => {
     if (explanation) return;
@@ -129,7 +138,7 @@ function AlertItem({ alert }: { alert: SafetyAlert }) {
         </View>
         <View style={[styles.severityBadge, { backgroundColor: cfg.bg }]}>
           <Text style={[styles.severityText, { color: cfg.color }]}>
-            {alert.severity}
+            {severityLabel}
           </Text>
         </View>
       </View>

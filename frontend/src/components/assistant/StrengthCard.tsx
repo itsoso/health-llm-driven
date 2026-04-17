@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/services/api/client';
 import { dailyHealthApi } from '@/services/api/health';
+import { getLocalDateStr } from '@/utils/timezone';
 
 interface StrengthCardProps {
   exerciseType: string;
@@ -37,7 +38,7 @@ export default function StrengthCard({
   const [coachingNote, setCoachingNote] = useState<{checklist?: string; issues?: string; title?: string} | null>(null);
   const [showCoaching, setShowCoaching] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateStr();
   const pct = Math.min(100, Math.round((todayTotal / dailyTarget) * 100));
 
   const loadData = useCallback(async () => {

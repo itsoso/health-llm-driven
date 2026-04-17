@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from 'react';
 import { api } from '@/services/api/client';
 import { dailyHealthApi, healthScoreApi } from '@/services/api/health';
 import { supplementApi } from '@/services/api/records';
+import { getLocalDateStr } from '@/utils/timezone';
 
 /**
  * Dashboard data 聚合 hook
@@ -90,10 +91,8 @@ export function useDashboardData() {
         return inFlight.current;
       }
 
-      const today = new Date().toISOString().slice(0, 10);
-      const twoWeeksAgo = new Date(Date.now() - 13 * 86400000)
-        .toISOString()
-        .slice(0, 10);
+      const today = getLocalDateStr();
+      const twoWeeksAgo = getLocalDateStr(new Date(Date.now() - 13 * 86400000));
 
       setLoading(true);
 
@@ -260,7 +259,7 @@ export function useDashboardData() {
    * 只重打真正会变的 4 项（水、补剂、打卡、饮食），而不是整张表
    */
   const refreshAfterAction = useCallback(async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateStr();
     const results = await Promise.allSettled([
       api.get(`/water/records/me/date/${today}`),
       supplementApi.getMyRecordsWithStatus(today),

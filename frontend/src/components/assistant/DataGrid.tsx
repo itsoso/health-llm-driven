@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/services/api/client';
+import { getLocalDateStr } from '@/utils/timezone';
 
 interface DataGridProps {
   todayGarmin: any;
@@ -184,7 +185,7 @@ export default function DataGrid({ todayGarmin, dietToday, bpLatest, rhinitisTod
                 {rhinitisTrend.daily.map((d: any, i: number) => {
                   const maxVal = Math.max(...rhinitisTrend.daily.map((x: any) => x.sneeze || 0), 1);
                   const h = Math.max(2, ((d.sneeze || 0) / maxVal) * 40);
-                  const isToday = d.date === new Date().toISOString().slice(0, 10);
+                  const isToday = d.date === getLocalDateStr();
                   return (
                     <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
                       {(d.sneeze || 0) > 0 && <span className="text-[7px]" style={{ color: isToday ? '#FF9500' : '#AEAEB2' }}>{d.sneeze}</span>}

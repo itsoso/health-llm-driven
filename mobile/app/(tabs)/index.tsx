@@ -17,14 +17,16 @@ export default function DashboardScreen() {
   const { data, isLoading, refetch, isRefetching } = useDashboardData();
   const garmin = useLatestGarmin(data);
 
-  const score = data?.healthScore?.score ?? 0;
-  const sleep = garmin?.sleep_hours ?? garmin?.sleep_duration_hours;
+  const score = data?.healthScore?.total_score ?? data?.healthScore?.score ?? 0;
+  // total_sleep_duration is in minutes from API
+  const sleepMin = garmin?.total_sleep_duration;
+  const sleep = sleepMin ? (sleepMin / 60) : (garmin?.sleep_hours ?? garmin?.sleep_duration_hours);
   const hrv = garmin?.hrv_weekly_avg ?? garmin?.hrv;
-  const energy = garmin?.body_battery_max ?? garmin?.body_battery;
+  const energy = garmin?.body_battery_most_charged ?? garmin?.body_battery_current ?? garmin?.body_battery_max ?? garmin?.body_battery;
   const hr = garmin?.resting_heart_rate ?? garmin?.rhr;
   const steps = garmin?.steps ?? 0;
   const activeMin = garmin?.active_minutes ?? garmin?.moderate_activity_minutes ?? 0;
-  const stress = garmin?.avg_stress ?? garmin?.stress_avg;
+  const stress = garmin?.stress_level ?? garmin?.avg_stress ?? garmin?.stress_avg;
 
   const waterTotal = Array.isArray(data?.waterRecords)
     ? data.waterRecords.reduce((s: number, r: any) => s + (r.amount || 0), 0)
@@ -33,11 +35,12 @@ export default function DashboardScreen() {
     ? data.supplements.length
     : 0;
 
-  const weather = data?.weather;
+  // weather API returns {weather: {temperature, ...}, exercise_advice: {...}}
+  const weather = data?.weather?.weather ?? data?.weather;
   const aqi = data?.airQuality;
 
   const checkin = data?.checkin;
-  const dietRecords = data?.dietRecords;
+  const dietRecords = data?.dietRecords?.meals ?? (Array.isArray(data?.dietRecords) ? data.dietRecords : []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -126,7 +129,7 @@ export default function DashboardScreen() {
               <View style={styles.weatherItem}>
                 <Ionicons name="partly-sunny-outline" size={18} color="#FF9500" />
                 <Text style={styles.weatherText}>
-                  {weather.temperature ?? '--'}°C {weather.description || ''}
+                  {weather.temperature ?? '--'}°C {weather.weather || weather.description || ''}
                 </Text>
               </View>
             )}
@@ -149,7 +152,7 @@ export default function DashboardScreen() {
           items={[
             { label: '总时长', value: sleep ? `${Number(sleep).toFixed(1)}h` : '--' },
             { label: 'HRV', value: hrv ? `${hrv}ms` : '--' },
-            { label: '深睡', value: garmin?.deep_sleep_hours ? `${Number(garmin.deep_sleep_hours).toFixed(1)}h` : '--' },
+            { label: '深睡', value: garmin?.deep_sleep_duration ? `${(garmin.deep_sleep_duration / 60).toFixed(1)}h` : (garmin?.deep_sleep_hours ? `${Number(garmin.deep_sleep_hours).toFixed(1)}h` : '--') },
           ]}
         />
 
