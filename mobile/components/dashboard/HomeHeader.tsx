@@ -19,6 +19,7 @@ interface Props {
   battery?: string;
   onSyncGarmin?: () => void;
   syncing?: boolean;
+  onSettings?: () => void;
 }
 
 function getAqiColor(v?: number | null): string {
@@ -37,7 +38,7 @@ function sc(score: number): string {
 export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, steps, hr, battery,
-  onSyncGarmin, syncing,
+  onSyncGarmin, syncing, onSettings,
 }: Props) {
   const hour = new Date().getHours();
   const greeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
@@ -50,10 +51,17 @@ export default function HomeHeader({
 
   return (
     <View style={styles.card}>
-      {/* Top: greeting + score ring */}
+      {/* Top: greeting + settings + score ring */}
       <View style={styles.topRow}>
         <View style={{ flex: 1 }}>
-          <Text style={txt.greeting}>{greeting}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[txt.greeting, { flex: 1 }]}>{greeting}</Text>
+            {onSettings && (
+              <TouchableOpacity onPress={onSettings} style={styles.settingsBtn} activeOpacity={0.6}>
+                <Ionicons name="settings-outline" size={18} color={colors.labelTertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
           {/* Weather line */}
           <View style={styles.weatherRow}>
             <Ionicons name="location-outline" size={12} color={colors.brand} />
@@ -167,6 +175,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm, paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
   },
+  settingsBtn: { padding: 4 },
 });
 
 const txt = {

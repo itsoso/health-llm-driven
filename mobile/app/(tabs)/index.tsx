@@ -6,13 +6,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useQuery } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
-import { streamChat, type ChatMessage } from '@/services/chat';
+import { streamChat, getConversations, getConversationMessages, type ChatMessage, type StreamEvent } from '@/services/chat';
 import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
@@ -42,6 +43,7 @@ function today(): string {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -49,9 +51,31 @@ export default function HomeScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const plusRotation = useRef(new Animated.Value(0)).current;
+
+  // Load latest conversation on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const convs = await getConversations();
+        if (convs.length > 0) {
+          const latestId = convs[0].id;
+          setConversationId(latestId);
+          const msgs = await getConversationMessages(latestId);
+          if (msgs.length > 0) {
+            setMessages(msgs.map((m: any, i: number) => ({
+              id: `hist-${m.id || i}`,
+              role: m.role,
+              content: m.content,
+            })));
+          }
+        }
+      } catch { /* ignore */ }
+    })();
+  }, []);
 
   // ── Data queries ──
   const { data: scoreData } = useQuery({ queryKey: ['healthScore'], queryFn: () => api.get(`/health-score/daily/me?target_date=${today()}`).then(r => r.data), staleTime: 120_000 });
@@ -81,11 +105,13 @@ export default function HomeScreen() {
     return sev === 'critical' || sev === 'high';
   });
 
-  // ── AI Briefing as first message ──
+  // ── AI Briefing as first message (only if no conversation history loaded) ──
+  const briefingInjected = useRef(false);
   useEffect(() => {
-    if (recData && messages.length === 0) {
+    if (recData && messages.length === 0 && !briefingInjected.current && !conversationId) {
       const text = recData.one_day?.recommendations || recData.one_day?.summary || '';
       if (text) {
+        briefingInjected.current = true;
         setMessages([{
           id: 'briefing',
           role: 'assistant',
@@ -94,7 +120,7 @@ export default function HomeScreen() {
         }]);
       }
     }
-  }, [recData]);
+  }, [recData, conversationId]);
 
   // ── Send ──
   const sendMessage = useCallback(async (text?: string) => {
@@ -116,8 +142,14 @@ export default function HomeScreen() {
     setPendingImage(null);
 
     try {
-      for await (const token of streamChat(finalMsg, undefined, imgData?.base64, imgData?.type)) {
-        setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + token } : m));
+      for await (const evt of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type)) {
+        if (evt.type === 'token' || evt.type === 'tool') {
+          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + (evt.content || '') } : m));
+        } else if (evt.type === 'done') {
+          if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
+        } else if (evt.type === 'error') {
+          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + `\n❌ ${evt.content}` } : m));
+        }
       }
     } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content || `[错误] ${err?.message || '请求失败'}` } : m));
@@ -125,7 +157,7 @@ export default function HomeScreen() {
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }
-  }, [input, isStreaming, pendingImage]);
+  }, [input, isStreaming, pendingImage, conversationId]);
 
   // ── Media ──
   const toggleMenu = () => {
@@ -241,6 +273,7 @@ export default function HomeScreen() {
           try { await api.post('/data-collection/garmin/me/sync?days=1'); } catch {}
           setSyncing(false);
         }}
+        onSettings={() => router.push('/settings' as any)}
       />
 
       {/* Critical alerts */}
@@ -260,6 +293,8 @@ export default function HomeScreen() {
           data={messages}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.msgList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListEmptyComponent={

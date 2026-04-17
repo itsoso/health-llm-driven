@@ -131,7 +131,7 @@ export default function RecordScreen() {
                 )}
                 {weightStats?.current_weight != null && (
                   <View style={styles.bodyCell}>
-                    <Text style={txt.bodyVal}>{(weightStats.current_weight / ((1.75) ** 2)).toFixed(1)}</Text>
+                    <Text style={txt.bodyVal}>{(weightStats.current_weight / ((data?.profile?.height || 175) / 100) ** 2).toFixed(1)}</Text>
                     <Text style={txt.bodyUnit}>BMI</Text>
                   </View>
                 )}

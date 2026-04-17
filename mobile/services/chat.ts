@@ -13,16 +13,23 @@ export interface Conversation {
   created_at: string;
 }
 
+export interface StreamEvent {
+  type: 'token' | 'tool' | 'done' | 'error';
+  content?: string;
+  conversationId?: number;
+  messageId?: number;
+}
+
 /**
  * Stream chat using XMLHttpRequest (React Native doesn't support ReadableStream).
- * Uses onprogress to incrementally parse SSE events.
+ * Yields StreamEvent objects instead of raw strings.
  */
 export async function* streamChat(
   message: string,
   conversationId?: number,
   imageBase64?: string,
   imageType?: string,
-): AsyncGenerator<string, void, unknown> {
+): AsyncGenerator<StreamEvent, void, unknown> {
   const token = await getToken();
   const body: Record<string, any> = { message };
   if (conversationId) body.conversation_id = conversationId;
@@ -105,17 +112,19 @@ export async function* streamChat(
 
         if (parsed.event === 'token') {
           const text = parsed.data?.content || '';
-          if (text) yield text;
+          if (text) yield { type: 'token', content: text };
         } else if (parsed.event === 'tool_call') {
           const tool = parsed.data?.tool || '';
           const round = parsed.data?.round || '';
-          yield `\n🔧 ${tool} (第${round}轮)\n`;
+          yield { type: 'tool', content: `🔧 ${tool} (第${round}轮)\n` };
         } else if (parsed.event === 'tool_result') {
           const tool = parsed.data?.tool || '';
           const ok = parsed.data?.success;
-          yield `${ok ? '✅' : '❌'} ${tool} ${ok ? '完成' : '失败'}\n\n`;
+          yield { type: 'tool', content: `${ok ? '✅' : '❌'} ${tool} ${ok ? '完成' : '失败'}\n\n` };
+        } else if (parsed.event === 'done') {
+          yield { type: 'done', conversationId: parsed.data?.conversation_id, messageId: parsed.data?.message_id };
         } else if (parsed.event === 'error') {
-          yield `\n❌ ${parsed.data?.message || '请求失败'}\n`;
+          yield { type: 'error', content: parsed.data?.message || '请求失败' };
         }
       } catch {
         // non-JSON line, skip
@@ -133,7 +142,7 @@ export async function* streamChat(
       try {
         const parsed = JSON.parse(payload);
         if (parsed.event === 'token' && parsed.data?.content) {
-          yield parsed.data.content;
+          yield { type: 'token', content: parsed.data.content };
         }
       } catch { /* skip */ }
     }
@@ -147,4 +156,14 @@ export async function getConversations(): Promise<Conversation[]> {
   });
   if (!res.ok) return [];
   return res.json();
+}
+
+export async function getConversationMessages(conversationId: number): Promise<ChatMessage[]> {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}/messages?limit=50`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data.messages || []);
 }
