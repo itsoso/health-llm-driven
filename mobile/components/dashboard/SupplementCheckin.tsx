@@ -35,18 +35,17 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
   }
 
   const flat = timingOrder.flatMap(t => (grouped[t] || []).map((s: any) => ({ ...s, _timing: t })));
-  // Default: show uncompleted first, collapse completed
-  const uncompleted = flat.filter((s: any) => {
+  // Show completed first (with strikethrough), then uncompleted
+  const completedItems = flat.filter((s: any) => {
     const id = s.supplement?.id || s.id;
-    const done = id in localState ? localState[id] : (s.record?.taken || s.is_taken || s.checked);
-    return !done;
+    return id in localState ? localState[id] : (s.record?.taken || s.is_taken || s.checked);
   });
-  const completed = flat.filter((s: any) => {
+  const uncompletedItems = flat.filter((s: any) => {
     const id = s.supplement?.id || s.id;
-    const done = id in localState ? localState[id] : (s.record?.taken || s.is_taken || s.checked);
-    return done;
+    return !(id in localState ? localState[id] : (s.record?.taken || s.is_taken || s.checked));
   });
-  const visible = expanded ? flat : [...uncompleted.slice(0, 6), ...(uncompleted.length < 6 ? completed.slice(0, 6 - uncompleted.length) : [])];
+  const sorted = [...completedItems, ...uncompletedItems];
+  const visible = expanded ? sorted : sorted.slice(0, 6);
 
   const today = (() => {
     const d = new Date();
@@ -101,7 +100,7 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
           </React.Fragment>
         );
       })}
-      {flat.length > 6 && (
+      {sorted.length > 6 && (
         <Pressable onPress={() => setExpanded(!expanded)} style={styles.expandBtn}>
           <Text style={txt.expand}>{expanded ? '收起' : `展开全部 (${total})`}</Text>
         </Pressable>

@@ -31,12 +31,13 @@ function MiniChart({ title, data, color, type = 'bar', unit = '' }: Props) {
   }).join(' ');
 
   const latest = data.length > 0 ? data[data.length - 1].value : 0;
+  const displayVal = Number.isInteger(latest) ? `${latest}` : latest.toFixed(1);
 
   return (
     <View style={styles.chartCard}>
       <View style={styles.chartHeader}>
         <Text style={styles.chartTitle}>{title}</Text>
-        <Text style={[styles.chartValue, { color }]}>{latest}{unit}</Text>
+        <Text style={[styles.chartValue, { color }]}>{displayVal}{unit}</Text>
       </View>
       <Svg width={chartW} height={chartH}>
         {type === 'bar' ? (
