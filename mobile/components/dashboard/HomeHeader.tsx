@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm, paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
   },
-  settingsBtn: { padding: 4 },
+  settingsBtn: { padding: 8, minWidth: 36, minHeight: 36, alignItems: 'center' as const, justifyContent: 'center' as const },
 });
 
 const txt = {
