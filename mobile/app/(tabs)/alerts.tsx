@@ -73,6 +73,10 @@ export default function ActionsScreen() {
           </View>
           <Text style={txt.emptyTitle}>一切正常</Text>
           <Text style={txt.emptySub}>暂无待办行动，继续保持</Text>
+          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, backgroundColor: colors.brandLight, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }} onPress={refetchAll}>
+            <Ionicons name="refresh-outline" size={14} color={colors.brand} />
+            <Text style={{ fontSize: 14, fontWeight: '500', color: colors.brand }}>刷新</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <SectionList
@@ -171,7 +175,12 @@ function CardRow({ card, onComplete }: { card: ActionCard; onComplete: () => voi
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={txt.alertTitle} numberOfLines={expanded ? undefined : 2}>{card.title}</Text>
           </View>
-          {!expanded && <Text style={[txt.typeBadge, { color: cfg.color }]}>{cfg.label}</Text>}
+          {!expanded && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={[txt.typeBadge, { color: cfg.color }]}>{cfg.label}</Text>
+              {card.created_at && <Text style={txt.timeStamp}>{card.created_at.slice(0, 10)}</Text>}
+            </View>
+          )}
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={14} color={colors.labelTertiary} />
       </View>
@@ -263,6 +272,7 @@ const txt = {
   aiText: { fontSize: 13, color: colors.brand, fontWeight: '500' } as TextStyle,
   aiResultText: { fontSize: 13, color: colors.labelSecondary, lineHeight: 19, flex: 1 } as TextStyle,
   typeBadge: { fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
+  timeStamp: { fontSize: 10, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
   completeBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' } as TextStyle,
   emptyTitle: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
   emptySub: { fontSize: 14, color: colors.labelSecondary } as TextStyle,

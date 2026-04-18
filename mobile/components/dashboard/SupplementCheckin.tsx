@@ -35,7 +35,18 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
   }
 
   const flat = timingOrder.flatMap(t => (grouped[t] || []).map((s: any) => ({ ...s, _timing: t })));
-  const visible = expanded ? flat : flat.slice(0, 6);
+  // Default: show uncompleted first, collapse completed
+  const uncompleted = flat.filter((s: any) => {
+    const id = s.supplement?.id || s.id;
+    const done = id in localState ? localState[id] : (s.record?.taken || s.is_taken || s.checked);
+    return !done;
+  });
+  const completed = flat.filter((s: any) => {
+    const id = s.supplement?.id || s.id;
+    const done = id in localState ? localState[id] : (s.record?.taken || s.is_taken || s.checked);
+    return done;
+  });
+  const visible = expanded ? flat : [...uncompleted.slice(0, 6), ...(uncompleted.length < 6 ? completed.slice(0, 6 - uncompleted.length) : [])];
 
   const today = (() => {
     const d = new Date();

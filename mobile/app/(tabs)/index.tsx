@@ -153,10 +153,19 @@ export default function HomeScreen() {
     const imgData = pendingImage;
     setPendingImage(null);
 
+    // Slow response indicator
+    let gotFirstToken = false;
+    const slowTimer = setTimeout(() => {
+      if (!gotFirstToken) {
+        setMessages(prev => prev.map(m => m.id === aId && !m.content ? { ...m, content: '⏳ AI 正在思考中...' } : m));
+      }
+    }, 8000);
+
     try {
       for await (const evt of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type)) {
         if (evt.type === 'token' || evt.type === 'tool') {
-          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + (evt.content || '') } : m));
+          if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
+          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
         } else if (evt.type === 'error') {
@@ -166,6 +175,7 @@ export default function HomeScreen() {
     } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content || `[错误] ${err?.message || '请求失败'}` } : m));
     } finally {
+      clearTimeout(slowTimer);
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }
@@ -205,47 +215,12 @@ export default function HomeScreen() {
     if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
   }, []);
 
-  // ── Voice ──
+  // ── Voice (placeholder — STT pending backend support) ──
   const startRecording = useCallback(async () => {
-    try {
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) { Alert.alert('需要麦克风权限'); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      recordingRef.current = recording;
-      setIsRecording(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch { Alert.alert('录音启动失败'); }
+    Alert.alert('语音输入', '语音识别功能即将上线，敬请期待。\n\n你可以直接输入文字，如："记录喝了杯水"');
   }, []);
 
-  const stopRecordingAndSend = useCallback(async () => {
-    if (!isRecording || !recordingRef.current) return;
-    setIsRecording(false);
-    try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (uri) {
-        // Read audio file as base64 and send to agent
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = (reader.result as string)?.split(',')[1];
-          if (base64) {
-            // Send as voice note — agent will see it as file attachment
-            sendMessage('请听这段语音并回复');
-          } else {
-            sendMessage('[语音] 请根据我说的话回复');
-          }
-        };
-        reader.readAsDataURL(blob);
-      }
-    } catch {
-      sendMessage('[语音] 请根据我说的话回复');
-    }
-  }, [isRecording, sendMessage]);
+  const stopRecordingAndSend = useCallback(async () => {}, []);
 
   // ── Render ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
@@ -310,7 +285,7 @@ export default function HomeScreen() {
           setSyncing(false);
         }}
         onSettings={() => router.push('/settings' as any)}
-        onNewChat={() => { setMessages([]); setConversationId(undefined); }}
+        onNewChat={() => { setMessages([]); setConversationId(undefined); briefingInjected.current = false; }}
         onHistory={async () => {
           const convs = await getConversations();
           setConversations(convs);
