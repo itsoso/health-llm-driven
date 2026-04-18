@@ -160,10 +160,10 @@ export async function getConversations(): Promise<Conversation[]> {
 
 export async function getConversationMessages(conversationId: number): Promise<ChatMessage[]> {
   const token = await getToken();
-  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}/messages?limit=50`, {
+  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return [];
   const data = await res.json();
-  return Array.isArray(data) ? data : (data.messages || []);
+  return data.messages || [];
 }
