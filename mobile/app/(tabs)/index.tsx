@@ -55,6 +55,7 @@ export default function HomeScreen() {
   const [syncing, setSyncing] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const qc = useQueryClient();
   const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
@@ -83,10 +84,14 @@ export default function HomeScreen() {
 
   // Scroll to bottom when keyboard appears
   useEffect(() => {
-    const sub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
-    return () => sub.remove();
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
   // ── Data queries ──
@@ -269,6 +274,7 @@ export default function HomeScreen() {
         tomorrowWeather={tomorrowFc?.weather}
         tomorrowTempRange={tomorrowFc ? `${tomorrowFc.temp_min}~${tomorrowFc.temp_max}°C` : undefined}
         sleep={`${sleepH}h`}
+        sleepScore={garmin?.sleep_score}
         steps={typeof steps === 'number' ? steps.toLocaleString() : `${steps}`}
         hr={`${hrVal}`}
         battery={`${batteryVal}`}
@@ -373,9 +379,7 @@ export default function HomeScreen() {
         {/* Input bar — ChatGPT style: + | [input ... 🎤 ⬆] */}
         <View style={styles.inputBar}>
           <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn}>
-            <Animated.View style={{ transform: [{ rotate }] }}>
-              <Ionicons name="add" size={22} color={colors.labelPrimary} />
-            </Animated.View>
+            <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={colors.labelPrimary} />
           </TouchableOpacity>
           <View style={styles.inputWrap}>
             <TextInput
@@ -405,7 +409,7 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-        <View style={{ height: 90 }} />
+        {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
 
       {/* Conversation history */}

@@ -14,6 +14,7 @@ interface Props {
   tomorrowWeather?: string;
   tomorrowTempRange?: string;
   sleep?: string;
+  sleepScore?: number | null;
   steps?: string;
   hr?: string;
   battery?: string;
@@ -39,7 +40,7 @@ function sc(score: number): string {
 
 export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
-  tomorrowWeather, tomorrowTempRange, sleep, steps, hr, battery,
+  tomorrowWeather, tomorrowTempRange, sleep, sleepScore, steps, hr, battery,
   onSyncGarmin, syncing, onSettings, onNewChat, onHistory,
 }: Props) {
   const hour = new Date().getHours();
@@ -119,7 +120,7 @@ export default function HomeHeader({
 
       {/* Vitals strip */}
       <View style={styles.vitalsRow}>
-        <Vital icon="moon-outline" color="#BF5AF2" label="睡眠" value={sleep || '--'} />
+        <Vital icon="moon-outline" color="#BF5AF2" label={sleepScore ? `睡眠 ${sleepScore}分` : '睡眠'} value={sleep || '--'} />
         <View style={styles.vDivider} />
         <Vital icon="footsteps-outline" color="#FF6723" label="步数" value={steps || '--'} />
         <View style={styles.vDivider} />
