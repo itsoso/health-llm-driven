@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, RefreshControl, Keyboard,
+  Alert, Modal, Pressable, Animated, RefreshControl, Keyboard, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -292,10 +292,9 @@ export default function HomeScreen() {
         }}
         onSettings={() => router.push('/settings' as any)}
         onNewChat={() => { setMessages([]); setConversationId(undefined); briefingInjected.current = false; }}
-        onHistory={async () => {
-          const convs = await getConversations();
-          setConversations(convs);
+        onHistory={() => {
           setShowHistory(true);
+          getConversations().then(convs => setConversations(convs)).catch(() => setConversations([]));
         }}
       />
 
@@ -419,27 +418,27 @@ export default function HomeScreen() {
             <View style={styles.menuHandle} />
             <Text style={{ fontSize: 17, fontWeight: '600', color: colors.labelPrimary, marginBottom: 12 }}>对话历史</Text>
             {conversations.length === 0 ? (
-              <Text style={{ fontSize: 14, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 20 }}>暂无对话</Text>
+              <Text style={{ fontSize: 14, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 20 }}>加载中...</Text>
             ) : (
-              <FlatList
-                data={conversations.slice(0, 20)}
-                keyExtractor={(item) => `${item.id}`}
-                style={{ maxHeight: 400 }}
-                renderItem={({ item }) => (
+              <ScrollView style={{ maxHeight: 400 }}>
+                {conversations.slice(0, 20).map((item: any) => (
                   <TouchableOpacity
+                    key={item.id}
                     style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator }}
-                    onPress={async () => {
+                    onPress={() => {
                       setShowHistory(false);
                       setConversationId(item.id);
-                      const msgs = await getConversationMessages(item.id);
-                      setMessages(msgs.map((m: any, i: number) => ({ id: `h-${m.id || i}`, role: m.role, content: m.content })));
+                      getConversationMessages(item.id).then(msgs => {
+                        setMessages(msgs.map((m: any, i: number) => ({ id: `h-${m.id || i}`, role: m.role, content: m.content })));
+                      }).catch(() => {});
                     }}
+                    activeOpacity={0.6}
                   >
                     <Text style={{ fontSize: 15, color: colors.labelPrimary }} numberOfLines={1}>{item.title || `对话 #${item.id}`}</Text>
                     <Text style={{ fontSize: 12, color: colors.labelTertiary, marginTop: 2 }}>{item.created_at?.slice(0, 10) || ''}</Text>
                   </TouchableOpacity>
-                )}
-              />
+                ))}
+              </ScrollView>
             )}
           </Pressable>
         </Pressable>
