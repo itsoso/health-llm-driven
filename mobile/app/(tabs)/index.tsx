@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, RefreshControl,
+  Alert, Modal, Pressable, Animated, RefreshControl, Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,6 +79,14 @@ export default function HomeScreen() {
         }
       } catch { /* ignore */ }
     })();
+  }, []);
+
+  // Scroll to bottom when keyboard appears
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    return () => sub.remove();
   }, []);
 
   // ── Data queries ──
@@ -352,8 +360,13 @@ export default function HomeScreen() {
               </BrandCircle>
               <Text style={txt.welcomeTitle}>健康助理</Text>
               <Text style={txt.welcomeSub}>说点什么，或试试这些</Text>
+              {/* Generate briefing button */}
+              <TouchableOpacity style={styles.briefingBtn} onPress={() => sendMessage('今天健康如何？给我一份简报')} activeOpacity={0.7}>
+                <Ionicons name="sparkles-outline" size={16} color={colors.brand} />
+                <Text style={txt.briefingBtnText}>生成今日健康简报</Text>
+              </TouchableOpacity>
               <View style={styles.sugRow}>
-                {['今天健康如何？', '记录喝了杯水', '分析睡眠质量', '吃了鱼油'].map(s => (
+                {['记录喝了杯水', '分析睡眠质量', '吃了鱼油', '最近HRV趋势'].map(s => (
                   <TouchableOpacity key={s} style={styles.sugChip} onPress={() => sendMessage(s)}>
                     <Text style={txt.sugText}>{s}</Text>
                   </TouchableOpacity>
@@ -542,6 +555,11 @@ const styles = StyleSheet.create({
   },
   recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF453A' },
   welcome: { alignItems: 'center', paddingTop: 80 },
+  briefingBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.brandLight, borderRadius: radii.full,
+    paddingHorizontal: 18, paddingVertical: 10, marginTop: 16, marginBottom: 8,
+  },
   sugRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20, justifyContent: 'center', paddingHorizontal: spacing.xl },
   sugChip: {
     backgroundColor: colors.bgCard, borderRadius: radii.full,
@@ -574,6 +592,7 @@ const txt = {
   welcomeTitle: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
   welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4 } as TextStyle,
   sugText: { fontSize: 13, color: colors.brand } as TextStyle,
+  briefingBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
   previewText: { fontSize: 12, color: colors.labelSecondary, flex: 1 } as TextStyle,
   recText: { fontSize: 13, color: '#FF453A', flex: 1 } as TextStyle,
   menuLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,

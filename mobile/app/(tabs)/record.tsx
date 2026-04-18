@@ -94,10 +94,10 @@ export default function RecordScreen() {
             <View style={styles.tabContent}>
               {/* Nutrition summary */}
               <View style={styles.nutritionRow}>
-                <NutritionCircle label="热量" value={`${Math.round(totalCal)}`} unit="kcal" color="#FF6723" />
-                <NutritionCircle label="蛋白质" value={`${Math.round(totalProtein)}`} unit="g" color="#FF375F" />
-                <NutritionCircle label="碳水" value={`${Math.round(totalCarbs)}`} unit="g" color="#FF9F0A" />
-                <NutritionCircle label="脂肪" value={`${Math.round(totalFat)}`} unit="g" color="#BF5AF2" />
+                <NutritionCircle label="热量" value={`${totalCal.toFixed(0)}`} unit="kcal" color="#FF6723" />
+                <NutritionCircle label="蛋白质" value={`${totalProtein.toFixed(1)}`} unit="g" color="#FF375F" />
+                <NutritionCircle label="碳水" value={`${totalCarbs.toFixed(1)}`} unit="g" color="#FF9F0A" />
+                <NutritionCircle label="脂肪" value={`${totalFat.toFixed(1)}`} unit="g" color="#BF5AF2" />
               </View>
               {/* Meal list */}
               {meals.length > 0 ? meals.map((m: any, i: number) => (
@@ -107,7 +107,7 @@ export default function RecordScreen() {
                     <Text style={txt.mealType}>{mealTypeMap[m.meal_type] || m.meal_type || '餐食'}</Text>
                     <Text style={txt.mealFood} numberOfLines={1}>{m.food_items || '--'}</Text>
                   </View>
-                  <Text style={txt.mealCal}>{m.calories ? `${Math.round(m.calories)}kcal` : ''}</Text>
+                  <Text style={txt.mealCal}>{m.calories ? `${m.calories.toFixed(1)}kcal` : ''}</Text>
                 </View>
               )) : (
                 <Text style={txt.empty}>今天还没有饮食记录</Text>
@@ -118,7 +118,7 @@ export default function RecordScreen() {
               <View style={styles.bodyGrid}>
                 {weightStats?.current_weight != null && (
                   <View style={styles.bodyCell}>
-                    <Text style={txt.bodyVal}>{weightStats.current_weight}</Text>
+                    <Text style={txt.bodyVal}>{weightStats.current_weight.toFixed(1)}</Text>
                     <Text style={txt.bodyUnit}>kg 体重</Text>
                     {weightStats.weight_change_7d != null && (
                       <Text style={[txt.bodyChange, { color: weightStats.weight_change_7d <= 0 ? '#30D158' : '#FF453A' }]}>

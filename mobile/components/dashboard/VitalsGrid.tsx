@@ -36,7 +36,7 @@ export default function VitalsGrid({ sleep, deepSleep, heartRate, hrv, bodyBatte
     },
     {
       label: 'HRV', icon: 'pulse', color: '#5AC8FA', bg: '#E6F8FF',
-      value: hrv != null ? `${Math.round(hrv)}` : '--', unit: 'ms',
+      value: hrv != null ? `${hrv.toFixed(1)}` : '--', unit: 'ms',
     },
     {
       label: '电量', icon: 'battery-charging', color: '#30D158', bg: '#E8FAF0',

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ToastProvider } from '@/hooks/useToast';
 import LoginScreen from '@/app/login';
@@ -9,6 +9,8 @@ import {
   View,
   ActivityIndicator,
   StyleSheet,
+  AppState,
+  Platform,
 } from 'react-native';
 
 export { ErrorBoundary } from 'expo-router';
@@ -50,6 +52,16 @@ function AppContent() {
 }
 
 export default function RootLayout() {
+  // Connect AppState to React Query for auto-refetch on foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (status) => {
+      if (Platform.OS !== 'web') {
+        focusManager.setFocused(status === 'active');
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
