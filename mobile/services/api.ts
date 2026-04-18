@@ -24,15 +24,18 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
+// Global 401 callback — set by AuthProvider to force logout
+let onUnauthorized: (() => void) | null = null;
+export function setOnUnauthorized(cb: () => void) { onUnauthorized = cb; }
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
       try {
         await SecureStore.deleteItemAsync(TOKEN_KEY);
-      } catch {
-        // ignore
-      }
+      } catch {}
+      onUnauthorized?.();
     }
     return Promise.reject(error);
   },

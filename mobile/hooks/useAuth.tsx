@@ -9,10 +9,11 @@ import React, {
 import {
   login as loginApi,
   logout as logoutApi,
-  fetchCurrentUser,
   getToken,
+  fetchCurrentUser,
   type User,
 } from '@/services/auth';
+import { setOnUnauthorized } from '@/services/api';
 
 interface AuthState {
   user: User | null;
@@ -36,6 +37,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Register 401 handler — forces logout on token expiry
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setToken(null);
+      setUser(null);
+    });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
