@@ -140,6 +140,26 @@ async def get_my_recommendations(
         cached_result["cache_source"] = "redis"
         return cached_result
 
+    # 1.5 防止并发重复生成 — Redis 分布式锁
+    import redis
+    try:
+        r = redis.from_url(settings.redis_url)
+        lock_key = f"rec_gen_lock:{current_user.id}:{date_str}"
+        acquired = r.set(lock_key, "1", nx=True, ex=90)  # 90s 锁
+        if not acquired:
+            # 另一个请求正在生成，等待结果
+            import asyncio
+            for _ in range(30):  # 最多等 30s
+                await asyncio.sleep(1)
+                cached_result = get_cached_daily_recommendation(current_user.id, date_str)
+                if cached_result:
+                    cached_result["cached"] = True
+                    cached_result["cache_source"] = "redis"
+                    return cached_result
+            return {"status": "generating", "message": "正在生成中，请稍后刷新"}
+    except Exception:
+        pass  # Redis 不可用时不阻塞
+
     # 2. Redis 未命中，从数据库获取或生成
     service = DailyRecommendationService()
 
@@ -160,8 +180,21 @@ async def get_my_recommendations(
             cache_daily_recommendation(current_user.id, date_str, result, ttl=3600)
             result["cache_source"] = "database" if result.get("cached") else "none"
 
+        # 释放生成锁
+        try:
+            r = redis.from_url(settings.redis_url)
+            r.delete(f"rec_gen_lock:{current_user.id}:{date_str}")
+        except Exception:
+            pass
+
         return result
     except Exception as e:
+        # 释放锁
+        try:
+            r = redis.from_url(settings.redis_url)
+            r.delete(f"rec_gen_lock:{current_user.id}:{date_str}")
+        except Exception:
+            pass
         logger.error(f"获取建议失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取建议失败: {str(e)}")
 

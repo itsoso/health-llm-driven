@@ -200,14 +200,15 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 
 # 请求超时 + 慢请求日志中间件
-REQUEST_TIMEOUT = 120  # 普通请求超时 120 秒
-SLOW_REQUEST_THRESHOLD = 10  # 超过 10 秒记录慢请求警告
+REQUEST_TIMEOUT = 60  # 普通请求超时 60 秒（从 120 降低，避免 worker 饥饿）
+SLOW_REQUEST_THRESHOLD = 5  # 超过 5 秒记录慢请求警告
 # SSE/流式端点不受超时限制
 STREAMING_PATHS = {
     "/api/v1/openclaw/stream",
     "/api/v1/chat/stream",
     "/api/v1/assistant-openclaw/stream",
     "/api/v1/agent/stream",
+    "/api/v1/orchestrator/chat/stream",
 }
 
 
