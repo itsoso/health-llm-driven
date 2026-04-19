@@ -18,6 +18,8 @@ export interface StreamEvent {
   content?: string;
   conversationId?: number;
   messageId?: number;
+  toolName?: string;
+  toolSuccess?: boolean;
 }
 
 /**
@@ -116,11 +118,11 @@ export async function* streamChat(
         } else if (parsed.event === 'tool_call') {
           const tool = parsed.data?.tool || '';
           const round = parsed.data?.round || '';
-          yield { type: 'tool', content: `🔧 ${tool} (第${round}轮)\n` };
+          yield { type: 'tool', content: `🔧 ${tool} (第${round}轮)\n`, toolName: tool };
         } else if (parsed.event === 'tool_result') {
           const tool = parsed.data?.tool || '';
           const ok = parsed.data?.success;
-          yield { type: 'tool', content: `${ok ? '✅' : '❌'} ${tool} ${ok ? '完成' : '失败'}\n\n` };
+          yield { type: 'tool', content: `${ok ? '✅' : '❌'} ${tool} ${ok ? '完成' : '失败'}\n\n`, toolName: tool, toolSuccess: ok };
         } else if (parsed.event === 'done') {
           yield { type: 'done', conversationId: parsed.data?.conversation_id, messageId: parsed.data?.message_id };
         } else if (parsed.event === 'error') {

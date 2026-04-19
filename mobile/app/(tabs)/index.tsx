@@ -17,6 +17,7 @@ import { streamChat, getConversations, getConversationMessages, type ChatMessage
 import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
+import { ScoreCard, VitalsCard, RecordCard } from '@/components/chat/InlineCards';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
@@ -32,6 +33,8 @@ interface UIMessage extends ChatMessage {
   streaming?: boolean;
   imageUri?: string;
   isBriefing?: boolean;
+  cardType?: 'score' | 'vitals' | 'record';
+  cardData?: any;
 }
 
 let msgCounter = 0;
@@ -147,12 +150,37 @@ export default function HomeScreen() {
     }, 8000);
 
     try {
+      const toolsUsed: string[] = [];
       for await (const evt of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type)) {
         if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
+          if (evt.toolName && evt.toolSuccess) toolsUsed.push(evt.toolName);
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
+          // Auto-insert inline data card based on tools used
+          if (toolsUsed.includes('health_query') || toolsUsed.includes('health_analysis')) {
+            const g = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
+            if (g) {
+              setMessages(prev => [...prev, {
+                id: nextId(), role: 'assistant', content: '',
+                cardType: 'vitals',
+                cardData: {
+                  sleep: g.total_sleep_duration ? `${(g.total_sleep_duration / 60).toFixed(1)}h` : undefined,
+                  hr: g.resting_heart_rate ? `${g.resting_heart_rate}bpm` : undefined,
+                  hrv: g.hrv ? `${g.hrv.toFixed(1)}ms` : undefined,
+                  battery: g.body_battery_most_charged ? `${g.body_battery_most_charged}` : undefined,
+                  steps: g.steps ? g.steps.toLocaleString() : undefined,
+                },
+              }]);
+            }
+          } else if (toolsUsed.includes('health_record')) {
+            setMessages(prev => [...prev, {
+              id: nextId(), role: 'assistant', content: '',
+              cardType: 'record',
+              cardData: { type: 'default', detail: '已记录' },
+            }]);
+          }
         } else if (evt.type === 'error') {
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + `\n❌ ${evt.content}` } : m));
         }
@@ -210,6 +238,25 @@ export default function HomeScreen() {
   // ── Render ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
     const isUser = item.role === 'user';
+
+    // Inline card messages (no bubble, just the card)
+    if (item.cardType === 'vitals' && item.cardData) {
+      return (
+        <View style={[styles.msgRow, styles.msgRowAI]}>
+          <View style={{ width: 36 }} />
+          <VitalsCard {...item.cardData} />
+        </View>
+      );
+    }
+    if (item.cardType === 'record' && item.cardData) {
+      return (
+        <View style={[styles.msgRow, styles.msgRowAI]}>
+          <View style={{ width: 36 }} />
+          <RecordCard {...item.cardData} />
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
         {!isUser && (
