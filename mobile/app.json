@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.executor.healthpilot"
+      "bundleIdentifier": "com.executor.healthpilot",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "使用 Face ID 保护您的健康数据"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,7 +35,21 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0A8F8F"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
