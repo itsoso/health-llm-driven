@@ -3,7 +3,7 @@ import React from 'react';
 import type { CardSpec, CardContext, ServerCardDescriptor } from './types';
 import {
   VitalsCardSpec, SleepCardSpec, WeightCardSpec, SupplementCardSpec,
-  WeatherCardSpec, BPCardSpec, ScoreCardSpec, RecordCardSpec,
+  WeatherCardSpec, BPCardSpec, ScoreCardSpec, RecordCardSpec, DietCardSpec,
 } from './cards';
 
 /** 全量卡片注册表. 数组顺序不决定优先级, 以 match() 返回值为准. */
@@ -13,6 +13,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   WeightCardSpec,
   BPCardSpec,
   SupplementCardSpec,
+  DietCardSpec,
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,

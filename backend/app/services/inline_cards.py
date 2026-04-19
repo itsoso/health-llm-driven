@@ -164,6 +164,44 @@ def _build_weather(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]
     return None
 
 
+def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    if _is_record_intent(q):
+        return None
+    if not re.search(r"饮食|吃了什么|今日吃|今天吃|热量|卡路里|蛋白|碳水|脂肪|营养|calories", q.lower()):
+        return None
+    try:
+        from app.models.daily_health import DietRecord
+        today = date.today()
+        recs = (db.query(DietRecord)
+                  .filter(DietRecord.user_id == user_id, DietRecord.record_date == today)
+                  .all())
+        if not recs:
+            return {
+                "calories": 0, "meals_count": 0, "meals_by_type": {},
+            }
+        total_cal = sum((r.calories or 0) for r in recs)
+        total_p = round(sum((r.protein or 0) for r in recs), 1)
+        total_c = round(sum((r.carbs or 0) for r in recs), 1)
+        total_f = round(sum((r.fat or 0) for r in recs), 1)
+        total_fi = round(sum((r.fiber or 0) for r in recs), 1)
+        by_type: Dict[str, float] = {}
+        for r in recs:
+            k = r.meal_type or "snack"
+            by_type[k] = by_type.get(k, 0) + (r.calories or 0)
+        return {
+            "calories": int(total_cal),
+            "protein": total_p,
+            "carbs": total_c,
+            "fat": total_f,
+            "fiber": total_fi,
+            "meals_count": len(recs),
+            "meals_by_type": {k: int(v) for k, v in by_type.items()},
+        }
+    except Exception as e:
+        logger.debug("diet card failed: %s", e)
+        return None
+
+
 # ── public dispatcher ──────────────────────────────────────────────
 
 _BUILDERS = [
@@ -172,6 +210,7 @@ _BUILDERS = [
     ("weight",       _build_weight),
     ("blood_pressure", _build_bp),
     ("supplement_status", _build_supplement),
+    ("diet",         _build_diet),
     ("vitals",       _build_vitals),   # 兜底
 ]
 

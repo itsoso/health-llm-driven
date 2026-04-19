@@ -14,3 +14,4 @@ export { WeatherCardView } from './WeatherCard';
 export { BPCardView } from './BPCard';
 export { ScoreCardView } from './ScoreCard';
 export { RecordCardView } from './RecordCard';
+export { DietCardView } from './DietCard';

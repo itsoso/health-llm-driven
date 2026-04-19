@@ -459,3 +459,116 @@ export const RecordCardSpec: CardSpec<RecordData> = {
   },
   render: (d) => <RecordCardView {...d} />,
 };
+
+// ────────────────────────────────────────────────────────────────
+// 9. DietCard - 今日饮食
+// ────────────────────────────────────────────────────────────────
+interface DietData {
+  calories?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
+  meals_count?: number;
+  meals_by_type?: Record<string, number>;
+}
+const MEAL_META: Record<string, { label: string; emoji: string; color: string }> = {
+  breakfast: { label: '早餐', emoji: '☀️', color: '#FF9F0A' },
+  lunch:     { label: '午餐', emoji: '🍚', color: '#FF6723' },
+  dinner:    { label: '晚餐', emoji: '🌙', color: '#BF5AF2' },
+  snack:     { label: '加餐', emoji: '🍎', color: '#5AC8FA' },
+};
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export function DietCardView({
+  calories, protein, carbs, fat, fiber, meals_count, meals_by_type,
+}: DietData) {
+  const macros = [
+    { k: 'protein', label: '蛋白', value: protein, color: '#FF375F' },
+    { k: 'carbs',   label: '碳水', value: carbs,   color: '#FF9F0A' },
+    { k: 'fat',     label: '脂肪', value: fat,     color: '#BF5AF2' },
+    { k: 'fiber',   label: '纤维', value: fiber,   color: '#30D158' },
+  ].filter((m) => m.value != null && m.value > 0);
+  const hasMeals = meals_by_type && Object.keys(meals_by_type).length > 0;
+  return (
+    <CardShell emoji="🍽️" title="今日饮食" bg="#FFF7F0" border="#FED7AA">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <span className="text-2xl font-extrabold text-slate-900 tabular-nums">
+            {calories != null ? Math.round(calories) : '--'}
+          </span>
+          <span className="text-xs text-slate-400 ml-1">kcal</span>
+        </div>
+        {meals_count != null && meals_count > 0 && (
+          <span className="text-[11px] text-slate-400">{meals_count} 餐</span>
+        )}
+      </div>
+      {macros.length > 0 && (
+        <div className="flex flex-wrap gap-3 mt-1.5">
+          {macros.map((m) => (
+            <div key={m.k} className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />
+              <span className="text-[10px] text-slate-500">{m.label}</span>
+              <span className="text-[11px] font-bold tabular-nums" style={{ color: m.color }}>
+                {m.value!.toFixed(0)}g
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {hasMeals && (
+        <div className="flex flex-wrap gap-3 mt-2">
+          {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((t) => {
+            const cal = meals_by_type?.[t];
+            if (cal == null || cal === 0) return null;
+            const meta = MEAL_META[t];
+            return (
+              <div key={t} className="flex items-center gap-1">
+                <span className="text-[11px]">{meta.emoji}</span>
+                <span className="text-[10px] text-slate-500">{meta.label}</span>
+                <span className="text-[11px] font-bold tabular-nums" style={{ color: meta.color }}>
+                  {Math.round(cal)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!hasMeals && (!calories || calories === 0) && (
+        <div className="text-[11px] text-slate-400 mt-1">今日暂无饮食记录 · 说「我刚吃了…」即可记上</div>
+      )}
+    </CardShell>
+  );
+}
+export const DietCardSpec: CardSpec<DietData> = {
+  type: 'diet', label: '今日饮食',
+  match({ query_lower, toolsUsed }) {
+    if (/刚吃|刚喝|吃了|喝了|记录.*饮食|记录.*吃/.test(query_lower)) return null;
+    if (toolsUsed.has('record_diet')) return null;
+    return /饮食|吃了什么|今日吃|今天吃|热量|卡路里|蛋白|碳水|脂肪|营养|calories/.test(query_lower) ? 18 : null;
+  },
+  async build({ api }) {
+    try {
+      const res = await api.get(`/diet/records/me/date/${todayISO()}`);
+      const d = res.data;
+      if (!d) return null;
+      const byType: Record<string, number> = {};
+      for (const m of (d.meals || [])) {
+        const k = m.meal_type || 'snack';
+        byType[k] = (byType[k] || 0) + (m.calories || 0);
+      }
+      return {
+        calories: d.total_calories,
+        protein: d.total_protein,
+        carbs: d.total_carbs,
+        fat: d.total_fat,
+        fiber: d.total_fiber,
+        meals_count: d.meals_count,
+        meals_by_type: byType,
+      } as DietData;
+    } catch { return null; }
+  },
+  render: (d) => <DietCardView {...d} />,
+};
