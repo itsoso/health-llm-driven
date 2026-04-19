@@ -63,8 +63,10 @@ export async function listConsultations(limit = 20): Promise<ConsultListItem[]> 
 }
 
 export async function listActiveConsultations(): Promise<ConsultListItem[]> {
-  const { data } = await api.get<ConsultListItem[]>('/health-consultations/me/active');
-  return data || [];
+  // 注: 后端 /me/active 返回单个对象 (当前 active 版本), 不是数组.
+  // 这里用列表 + 状态过滤, 对齐 Web 版本.
+  const list = await listConsultations(10);
+  return list.filter((c) => c.status === 'active');
 }
 
 export async function getConsultation(id: number): Promise<ConsultationDetail> {

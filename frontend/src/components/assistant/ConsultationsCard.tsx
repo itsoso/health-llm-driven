@@ -51,17 +51,23 @@ export default function ConsultationsCard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 注: 后端 /me/active 返回单个对象 (当前版本), 这里用列表 API + 状态过滤, 只取 active 的
     healthConsultationApi
-      .getActive()
-      .then((res) => setItems(res.data || []))
+      .listMine(10)
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setItems(list.filter((c: any) => c && c.status === 'active'));
+      })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, []);
 
-  if (!loading && items.length === 0) return null;
+  // 防御: items 理论上始终是数组, 但 API 返回异常时兜底为 []
+  const list: ConsultListItem[] = Array.isArray(items) ? items : [];
+  if (!loading && list.length === 0) return null;
 
-  const totalRedFlags = items.reduce((s, c) => s + (c.red_flag_count || 0), 0);
-  const totalPending = items.reduce((s, c) => s + (c.pending_count || 0), 0);
+  const totalRedFlags = list.reduce((s, c) => s + (c.red_flag_count || 0), 0);
+  const totalPending = list.reduce((s, c) => s + (c.pending_count || 0), 0);
 
   return (
     <div className="rounded-2xl bg-white px-4 py-3 shadow-sm border border-gray-100">
@@ -88,7 +94,7 @@ export default function ConsultationsCard() {
       {loading && <div className="text-xs text-gray-400">加载中…</div>}
 
       <div className="space-y-2">
-        {items.slice(0, 3).map((c) => (
+        {list.slice(0, 3).map((c) => (
           <Link
             key={c.id}
             href={`/health-consultations/${c.id}`}
@@ -133,12 +139,12 @@ export default function ConsultationsCard() {
             </div>
           </Link>
         ))}
-        {items.length > 3 && (
+        {list.length > 3 && (
           <Link
             href="/health-consultations"
             className="block text-center text-[11px] text-gray-500 py-1 hover:text-indigo-600"
           >
-            还有 {items.length - 3} 条咨询 →
+            还有 {list.length - 3} 条咨询 →
           </Link>
         )}
       </div>
