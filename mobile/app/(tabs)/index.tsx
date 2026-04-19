@@ -102,11 +102,6 @@ export default function HomeScreen() {
   const { data: safetyData } = useQuery({ queryKey: ['safety'], queryFn: getSafetyReport, staleTime: 300_000 });
   const { data: profileData } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const { data: forecastData } = useQuery({ queryKey: ['forecast'], queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
-  const { data: recData, refetch: refetchRec } = useQuery({
-    queryKey: ['dailyRec'],
-    queryFn: () => api.get('/daily-recommendation/me').then(r => r.data).catch(() => null),
-    staleTime: 300_000,
-  });
 
   const score = scoreData?.total_score ?? 0;
   const garmin = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
@@ -122,22 +117,7 @@ export default function HomeScreen() {
     return sev === 'critical' || sev === 'high';
   });
 
-  // ── AI Briefing as first message (only if no conversation history loaded) ──
   const briefingInjected = useRef(false);
-  useEffect(() => {
-    if (recData && messages.length === 0 && !briefingInjected.current && !conversationId) {
-      const text = recData.one_day?.recommendations || recData.one_day?.summary || '';
-      if (text) {
-        briefingInjected.current = true;
-        setMessages([{
-          id: 'briefing',
-          role: 'assistant',
-          content: `**今日健康简报**\n\n${text}`,
-          isBriefing: true,
-        }]);
-      }
-    }
-  }, [recData, conversationId]);
 
   // ── Send ──
   const sendMessage = useCallback(async (text?: string) => {
@@ -278,18 +258,6 @@ export default function HomeScreen() {
         steps={typeof steps === 'number' ? steps.toLocaleString() : `${steps}`}
         hr={`${hrVal}`}
         battery={`${batteryVal}`}
-        syncing={syncing}
-        onSyncGarmin={async () => {
-          setSyncing(true);
-          try {
-            await api.post('/data-collection/garmin/me/sync?days=1');
-            qc.invalidateQueries({ queryKey: ['healthScore'] });
-            qc.invalidateQueries({ queryKey: ['garminToday'] });
-            qc.invalidateQueries({ queryKey: ['dashboard'] });
-            qc.invalidateQueries({ queryKey: ['safety'] });
-          } catch {}
-          setSyncing(false);
-        }}
         onSettings={() => router.push('/settings' as any)}
         onNewChat={() => { setMessages([]); setConversationId(undefined); briefingInjected.current = false; }}
         onHistory={() => {
@@ -320,13 +288,15 @@ export default function HomeScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={async () => {
               setRefreshing(true);
+              // Sync Garmin first, then refresh all data
+              try { await api.post('/data-collection/garmin/me/sync?days=1'); } catch {}
               await Promise.all([
                 qc.invalidateQueries({ queryKey: ['healthScore'] }),
                 qc.invalidateQueries({ queryKey: ['garminToday'] }),
                 qc.invalidateQueries({ queryKey: ['weather'] }),
                 qc.invalidateQueries({ queryKey: ['aqi'] }),
                 qc.invalidateQueries({ queryKey: ['safety'] }),
-                qc.invalidateQueries({ queryKey: ['dailyRec'] }),
+                qc.invalidateQueries({ queryKey: ['forecast'] }),
               ]);
               setRefreshing(false);
             }} tintColor={colors.brand} />

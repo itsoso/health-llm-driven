@@ -128,14 +128,6 @@ export default function HomeHeader({
         <View style={styles.vDivider} />
         <Vital icon="battery-charging-outline" color="#30D158" label="电量" value={battery || '--'} />
       </View>
-
-      {/* Garmin sync */}
-      {onSyncGarmin && (
-        <TouchableOpacity style={styles.syncBtn} onPress={onSyncGarmin} disabled={syncing} activeOpacity={0.6}>
-          <Ionicons name="sync-outline" size={13} color={syncing ? colors.labelTertiary : colors.brand} style={syncing ? { opacity: 0.5 } : undefined} />
-          <Text style={[txt.syncText, syncing && { color: colors.labelTertiary }]}>{syncing ? '同步中...' : '同步 Garmin'}</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
