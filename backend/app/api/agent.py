@@ -81,6 +81,15 @@ async def agent_stream(
                 file_base64=req.file_base64,
                 file_name=req.file_name,
             ):
+                # 在 done 事件里附加动态卡片, 失败静默
+                if event.get("event") == "done":
+                    try:
+                        from app.services.inline_cards import build_cards
+                        cards = build_cards(db, current_user.id, req.message.strip())
+                        if cards:
+                            event.setdefault("data", {})["cards"] = cards
+                    except Exception as e:
+                        logger.debug(f"inline_cards 失败: {e}")
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Agent 流式异常: {e}", exc_info=True)

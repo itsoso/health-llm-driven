@@ -1,0 +1,461 @@
+'use client';
+import React from 'react';
+import { CardShell } from './CardShell';
+import type { CardSpec } from './types';
+
+// ────────────────────────────────────────────────────────────────
+// 1. VitalsCard - 今日综合生理
+// ────────────────────────────────────────────────────────────────
+interface VitalsData {
+  sleep?: string; hr?: string; hrv?: string; battery?: string; steps?: string; stress?: string;
+}
+const VITAL_ITEMS = [
+  { k: 'sleep' as const,   icon: '🌙', color: '#BF5AF2', label: '睡眠' },
+  { k: 'hr' as const,      icon: '❤️', color: '#FF375F', label: '心率' },
+  { k: 'hrv' as const,     icon: '🫀', color: '#5AC8FA', label: 'HRV' },
+  { k: 'battery' as const, icon: '⚡', color: '#30D158', label: '电量' },
+  { k: 'steps' as const,   icon: '🚶', color: '#FF6723', label: '步数' },
+  { k: 'stress' as const,  icon: '☁️', color: '#FF9F0A', label: '压力' },
+];
+export function VitalsCardView(d: VitalsData) {
+  return (
+    <CardShell emoji="📊" title="今日生理数据">
+      <div className="flex flex-wrap gap-3">
+        {VITAL_ITEMS.filter(it => (d as any)[it.k]).map(it => (
+          <div key={it.k} className="flex flex-col items-center min-w-[50px]">
+            <span className="text-xs">{it.icon}</span>
+            <span className="text-sm font-bold tabular-nums" style={{ color: it.color }}>{(d as any)[it.k]}</span>
+            <span className="text-[9px] text-slate-400">{it.label}</span>
+          </div>
+        ))}
+      </div>
+    </CardShell>
+  );
+}
+export const VitalsCardSpec: CardSpec<VitalsData> = {
+  type: 'vitals', label: '今日综合',
+  match({ query_lower }) {
+    if (/记录|打卡|吃了|喝了|服药|补剂|体重/.test(query_lower)) return null;
+    if (/综合|今日如何|整体|所有数据|健康如何/.test(query_lower)) return 10;
+    const hits = ['睡眠','心率','hrv','电量','步数','压力'].filter(k => query_lower.includes(k)).length;
+    return hits >= 2 ? 8 : null;
+  },
+  build({ data }) {
+    const g = data.garmin;
+    const d: VitalsData = {};
+    if (g?.total_sleep_duration) d.sleep = `${(g.total_sleep_duration / 60).toFixed(1)}h`;
+    if (g?.resting_heart_rate) d.hr = `${g.resting_heart_rate}bpm`;
+    if (g?.hrv != null) d.hrv = `${Number(g.hrv).toFixed(1)}ms`;
+    if (g?.body_battery_most_charged) d.battery = `${g.body_battery_most_charged}`;
+    if (g?.steps) d.steps = g.steps.toLocaleString();
+    if (g?.average_stress_level != null) d.stress = `${g.average_stress_level}`;
+    if (Object.keys(d).length === 0 && data.score?.total_score) d.sleep = `评分${data.score.total_score}`;
+    return Object.keys(d).length > 0 ? d : null;
+  },
+  render: (d) => <VitalsCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 2. SleepCard
+// ────────────────────────────────────────────────────────────────
+interface SleepData {
+  score?: number; duration_h?: number;
+  deep_min?: number; rem_min?: number; light_min?: number; awake_min?: number;
+}
+function ScoreRing({ score, size = 52 }: { score: number; size?: number }) {
+  const sw = 5, r = (size - sw) / 2, c = 2 * Math.PI * r;
+  const off = c * (1 - Math.min(score / 100, 1));
+  const color = score >= 80 ? '#30D158' : score >= 60 ? '#FF9F0A' : '#FF453A';
+  return (
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size}>
+        <circle cx={size/2} cy={size/2} r={r} stroke="#F2F2F7" strokeWidth={sw} fill="none" />
+        <circle cx={size/2} cy={size/2} r={r} stroke={color} strokeWidth={sw} fill="none"
+                strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off}
+                transform={`rotate(-90 ${size/2} ${size/2})`} />
+      </svg>
+      <span className="absolute text-base font-extrabold tabular-nums" style={{ color }}>{score}</span>
+    </div>
+  );
+}
+function fmtMin(m?: number) {
+  if (m == null) return null;
+  const h = Math.floor(m / 60), r = m % 60;
+  return h > 0 ? `${h}h${r}m` : `${r}m`;
+}
+export function SleepCardView({ score, duration_h, deep_min, rem_min, light_min, awake_min }: SleepData) {
+  const stages = [
+    { label: '深睡', min: deep_min, color: '#5856D6' },
+    { label: 'REM', min: rem_min, color: '#BF5AF2' },
+    { label: '浅睡', min: light_min, color: '#AF52DE' },
+    { label: '清醒', min: awake_min, color: '#FF9F0A' },
+  ].filter(s => s.min != null);
+  return (
+    <CardShell emoji="🌙" title="睡眠分析" bg="#FAF5FF" border="#E9D5FF">
+      <div className="flex items-center gap-3">
+        {score != null && <ScoreRing score={score} />}
+        <div className="flex-1 min-w-0">
+          {duration_h != null && <div className="text-lg font-extrabold text-slate-900 tabular-nums">{duration_h.toFixed(1)}h</div>}
+          <div className="flex flex-wrap gap-2.5 mt-1">
+            {stages.map(s => (
+              <div key={s.label} className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.color }} />
+                <span className="text-[10px] text-slate-500">{s.label}</span>
+                <span className="text-[10px] font-semibold text-slate-700 tabular-nums">{fmtMin(s.min)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </CardShell>
+  );
+}
+export const SleepCardSpec: CardSpec<SleepData> = {
+  type: 'sleep', label: '睡眠分析',
+  match({ query_lower }) {
+    if (/记录|打卡/.test(query_lower)) return null;
+    return /睡眠|深睡|rem|浅睡|睡得|入睡|清醒/.test(query_lower) ? 20 : null;
+  },
+  build({ data }) {
+    const g = data.garmin; if (!g) return null;
+    const d: SleepData = {};
+    if (g.sleep_score != null) d.score = g.sleep_score;
+    if (g.total_sleep_duration) d.duration_h = g.total_sleep_duration / 60;
+    if (g.deep_sleep_duration != null) d.deep_min = Math.round(g.deep_sleep_duration);
+    if (g.rem_sleep_duration != null) d.rem_min = Math.round(g.rem_sleep_duration);
+    if (g.light_sleep_duration != null) d.light_min = Math.round(g.light_sleep_duration);
+    if (g.awake_duration != null) d.awake_min = Math.round(g.awake_duration);
+    return Object.keys(d).length > 0 ? d : null;
+  },
+  render: (d) => <SleepCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 3. WeightCard
+// ────────────────────────────────────────────────────────────────
+interface WeightData { current_kg?: number; trend_7d?: number[]; change_7d_kg?: number; bmi?: number; }
+function Sparkline({ points }: { points: number[] }) {
+  if (points.length < 2) return null;
+  const w = 100, h = 32, pad = 2;
+  const min = Math.min(...points), max = Math.max(...points);
+  const range = max - min || 1;
+  const pts = points.map((v, i) => {
+    const x = (i / (points.length - 1)) * (w - pad * 2) + pad;
+    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const trend = points[points.length - 1] - points[0];
+  const color = trend < -0.1 ? '#30D158' : trend > 0.1 ? '#FF453A' : '#8E8E93';
+  const [lx, ly] = pts.split(' ').pop()!.split(',').map(Number);
+  return (
+    <svg width={w} height={h}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lx} cy={ly} r={2.5} fill={color} />
+    </svg>
+  );
+}
+export function WeightCardView({ current_kg, trend_7d, change_7d_kg, bmi }: WeightData) {
+  const up = (change_7d_kg ?? 0) > 0;
+  const changeColor = change_7d_kg == null || Math.abs(change_7d_kg) < 0.05
+    ? '#8E8E93' : up ? '#FF453A' : '#30D158';
+  return (
+    <CardShell emoji="⚖️" title="体重" bg="#F0FFFD" border="#B2F5EA">
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <div className="text-2xl font-extrabold text-slate-900 tabular-nums">
+            {current_kg != null ? `${current_kg.toFixed(1)}kg` : '--'}
+          </div>
+          <div className="flex items-center gap-3 mt-0.5">
+            {change_7d_kg != null && (
+              <span className="text-[11px] font-semibold tabular-nums" style={{ color: changeColor }}>
+                {up ? '↑' : '↓'} {Math.abs(change_7d_kg).toFixed(1)}kg · 7天
+              </span>
+            )}
+            {bmi != null && <span className="text-[10px] text-slate-400">BMI {bmi.toFixed(1)}</span>}
+          </div>
+        </div>
+        {trend_7d && trend_7d.length >= 2 && <Sparkline points={trend_7d} />}
+      </div>
+    </CardShell>
+  );
+}
+export const WeightCardSpec: CardSpec<WeightData> = {
+  type: 'weight', label: '体重',
+  match({ query_lower }) {
+    if (/记录|打卡|称/.test(query_lower) && !/趋势|变化|多少|现在/.test(query_lower)) return null;
+    return /体重|bmi|胖|瘦|减肥|减脂/.test(query_lower) ? 15 : null;
+  },
+  async build({ api }) {
+    try {
+      const res = await api.get('/weight/me?limit=7');
+      const recs: any[] = res.data || [];
+      if (recs.length === 0) return null;
+      const sorted = [...recs].sort((a, b) => (a.record_date || '').localeCompare(b.record_date || ''));
+      const vals = sorted.map(r => r.weight_kg).filter(v => v != null);
+      if (vals.length === 0) return null;
+      const cur = vals[vals.length - 1];
+      const d: WeightData = { current_kg: cur, trend_7d: vals };
+      if (vals.length >= 2) d.change_7d_kg = cur - vals[0];
+      if (sorted[sorted.length - 1]?.bmi) d.bmi = sorted[sorted.length - 1].bmi;
+      return d;
+    } catch { return null; }
+  },
+  render: (d) => <WeightCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 4. SupplementCard
+// ────────────────────────────────────────────────────────────────
+interface SupplementData { checked: number; total: number; pending_names: string[]; }
+export function SupplementCardView({ checked, total, pending_names }: SupplementData) {
+  const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
+  const barColor = pct >= 80 ? '#30D158' : pct >= 50 ? '#FF9F0A' : '#FF453A';
+  return (
+    <CardShell emoji="💊" title="补剂打卡" badge={`${checked}/${total}`} badgeColor={barColor}
+               bg="#FAF5FF" border="#E9D5FF">
+      <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColor }} />
+      </div>
+      {pending_names.length > 0 && (
+        <div className="mt-2">
+          <span className="text-[10px] text-slate-500">未打卡：</span>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {pending_names.slice(0, 4).map(n => (
+              <span key={n} className="px-1.5 py-0.5 rounded-lg bg-slate-100 text-[10px] text-slate-700 max-w-[120px] truncate">
+                ⏳ {n}
+              </span>
+            ))}
+            {pending_names.length > 4 && <span className="text-[10px] text-slate-400 self-center">+{pending_names.length - 4}</span>}
+          </div>
+        </div>
+      )}
+      {pending_names.length === 0 && total > 0 && (
+        <div className="mt-2 text-[11px] font-semibold text-emerald-600">✅ 今日补剂已全部打卡</div>
+      )}
+    </CardShell>
+  );
+}
+export const SupplementCardSpec: CardSpec<SupplementData> = {
+  type: 'supplement_status', label: '补剂打卡',
+  match({ query_lower }) {
+    return /补剂吃了吗|补剂进度|今天吃了什么补剂|补剂状态|补剂打卡|未吃的补剂/.test(query_lower) ? 15 : null;
+  },
+  async build({ api }) {
+    try {
+      const res = await api.get('/supplements/me/today-status');
+      const list: any[] = res.data || [];
+      if (list.length === 0) return null;
+      const seen = new Set<string>();
+      const dedup = list.filter(s => {
+        const key = `${s.supplement?.name || s.supplement_name || s.name}_${s.supplement?.timing || s.timing || 'morning'}`;
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+      const checked = dedup.filter(s => s.record?.taken || s.is_taken || s.checked).length;
+      const pending_names = dedup.filter(s => !(s.record?.taken || s.is_taken || s.checked))
+                                 .map(s => s.supplement?.name || s.supplement_name || s.name || '未知');
+      return { checked, total: dedup.length, pending_names };
+    } catch { return null; }
+  },
+  render: (d) => <SupplementCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 5. WeatherCard
+// ────────────────────────────────────────────────────────────────
+interface WeatherData { temperature?: number; weather?: string; city?: string; aqi?: number; pm25?: number; advice?: string; }
+function aqiLabel(aqi?: number) {
+  if (aqi == null) return { label: '—', color: '#8E8E93' };
+  if (aqi <= 50) return { label: '优', color: '#30D158' };
+  if (aqi <= 100) return { label: '良', color: '#FFCC00' };
+  if (aqi <= 150) return { label: '轻度', color: '#FF9F0A' };
+  if (aqi <= 200) return { label: '中度', color: '#FF6723' };
+  if (aqi <= 300) return { label: '重度', color: '#FF453A' };
+  return { label: '严重', color: '#AF52DE' };
+}
+function exerciseAdvice(aqi?: number, temp?: number) {
+  if (aqi != null && aqi > 150) return '不建议户外运动';
+  if (temp != null && temp > 32) return '避开正午，傍晚运动';
+  if (temp != null && temp < 5) return '注意保暖，可室内';
+  if (aqi != null && aqi <= 50) return '适合户外运动';
+  return '适中，注意量力';
+}
+export function WeatherCardView({ temperature, weather, city, aqi, pm25, advice }: WeatherData) {
+  const q = aqiLabel(aqi);
+  return (
+    <CardShell emoji="🌤️" title={city ? `${city}环境` : '环境'} bg="#F0F9FF" border="#BAE6FD">
+      <div className="flex items-center justify-between">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+            {temperature != null ? `${Math.round(temperature)}°` : '--'}
+          </span>
+          {weather && <span className="text-xs text-slate-500">{weather}</span>}
+        </div>
+        <div className="text-right">
+          <div className="flex items-center gap-1 justify-end">
+            <span className="w-2 h-2 rounded-full" style={{ background: q.color }} />
+            <span className="text-base font-extrabold tabular-nums" style={{ color: q.color }}>{aqi ?? '--'}</span>
+            <span className="text-[11px] font-semibold" style={{ color: q.color }}>{q.label}</span>
+          </div>
+          {pm25 != null && <div className="text-[10px] text-slate-400 tabular-nums">PM2.5 {pm25}</div>}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 mt-2 text-[11px] text-slate-500">
+        <span className="text-emerald-500">🏃</span>
+        {advice || exerciseAdvice(aqi, temperature)}
+      </div>
+    </CardShell>
+  );
+}
+export const WeatherCardSpec: CardSpec<WeatherData> = {
+  type: 'weather', label: '环境',
+  match({ query_lower }) {
+    return /天气|气温|温度|aqi|空气|pm2|户外|适合跑|适合运动/.test(query_lower) ? 15 : null;
+  },
+  build({ data }) {
+    const w = data.weather?.weather ?? data.weather;
+    const a = data.aqi;
+    const city = data.profile?.manual_location?.city || data.profile?.detected_location?.city || data.profile?.city;
+    const d: WeatherData = {};
+    if (w?.temperature != null) d.temperature = w.temperature;
+    if (w?.weather) d.weather = w.weather;
+    if (city) d.city = city;
+    if (a?.aqi != null) d.aqi = a.aqi;
+    if (a?.pm25 != null) d.pm25 = a.pm25;
+    return Object.keys(d).length > 0 ? d : null;
+  },
+  render: (d) => <WeatherCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 6. BPCard (ACC/AHA 2017 分级)
+// ────────────────────────────────────────────────────────────────
+interface BPData { systolic: number; diastolic: number; pulse?: number; measured_at?: string; category: string; category_color: string; }
+function classifyBP(s: number, d: number) {
+  if (s >= 180 || d >= 120) return { label: '高血压急症', color: '#AF52DE' };
+  if (s >= 140 || d >= 90) return { label: '高血压 2 期', color: '#FF453A' };
+  if (s >= 130 || d >= 80) return { label: '高血压 1 期', color: '#FF6723' };
+  if (s >= 120 && d < 80) return { label: '血压升高', color: '#FF9F0A' };
+  if (s < 90 || d < 60) return { label: '偏低', color: '#5AC8FA' };
+  return { label: '正常', color: '#30D158' };
+}
+export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color }: BPData) {
+  return (
+    <CardShell emoji="🩺" title="血压" badge={category} badgeColor={category_color} bg="#FFF5F5" border="#FECACA">
+      <div className="flex items-center justify-between">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-2xl font-extrabold tabular-nums" style={{ color: category_color }}>
+            {systolic}<span className="text-lg font-normal text-slate-400"> / </span>{diastolic}
+          </span>
+          <span className="text-[10px] text-slate-400">mmHg</span>
+        </div>
+        {pulse != null && (
+          <div className="text-right">
+            <div className="text-lg font-bold text-slate-900 tabular-nums">{pulse}</div>
+            <div className="text-[9px] text-slate-400">脉搏 bpm</div>
+          </div>
+        )}
+      </div>
+      {measured_at && <div className="text-[10px] text-slate-400 mt-1">{measured_at}</div>}
+    </CardShell>
+  );
+}
+export const BPCardSpec: CardSpec<BPData> = {
+  type: 'blood_pressure', label: '血压',
+  match({ query_lower }) {
+    return /血压|bp|收缩压|舒张压|高压|低压/.test(query_lower) ? 15 : null;
+  },
+  async build({ api }) {
+    try {
+      const res = await api.get('/blood-pressure/me/latest');
+      const r = res.data;
+      if (!r || r.systolic == null || r.diastolic == null) return null;
+      const c = classifyBP(r.systolic, r.diastolic);
+      return {
+        systolic: r.systolic, diastolic: r.diastolic, pulse: r.pulse,
+        measured_at: r.measured_at ? r.measured_at.slice(5, 16).replace('T', ' ') : undefined,
+        category: c.label, category_color: c.color,
+      } as BPData;
+    } catch { return null; }
+  },
+  render: (d) => <BPCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 7. ScoreCard
+// ────────────────────────────────────────────────────────────────
+interface ScoreData { score: number; label?: string; sub?: string; }
+export function ScoreCardView({ score, label, sub }: ScoreData) {
+  return (
+    <CardShell emoji="✨" title={label || '健康评分'}>
+      <div className="flex items-center gap-3">
+        <ScoreRing score={score} size={56} />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-slate-900">{label || '健康评分'}</div>
+          {sub && <div className="text-[10px] text-slate-400 mt-0.5">{sub}</div>}
+        </div>
+      </div>
+    </CardShell>
+  );
+}
+export const ScoreCardSpec: CardSpec<ScoreData> = {
+  type: 'score', label: '健康评分',
+  match({ query_lower }) { return /评分|打分|健康分|分数|健康度/.test(query_lower) ? 15 : null; },
+  build({ data }) {
+    const s = data.score?.total_score; if (s == null) return null;
+    const subs: string[] = [];
+    if (data.score?.sleep_score) subs.push(`睡眠 ${data.score.sleep_score}`);
+    if (data.score?.activity_score) subs.push(`活动 ${data.score.activity_score}`);
+    if (data.score?.recovery_score) subs.push(`恢复 ${data.score.recovery_score}`);
+    return { score: s, sub: subs.join(' · ') || undefined };
+  },
+  render: (d) => <ScoreCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 8. RecordCard
+// ────────────────────────────────────────────────────────────────
+interface RecordData { type: string; detail: string; }
+const RECORD_ICONS: Record<string, { emoji: string; bg: string; border: string }> = {
+  water:          { emoji: '💧', bg: '#F0FAFF', border: '#BAE6FD' },
+  supplement:     { emoji: '💊', bg: '#FAF5FF', border: '#E9D5FF' },
+  diet:           { emoji: '🍽️', bg: '#FFF7F0', border: '#FED7AA' },
+  exercise:       { emoji: '🏃', bg: '#FFF5F7', border: '#FECACA' },
+  weight:         { emoji: '⚖️', bg: '#F0FFFD', border: '#B2F5EA' },
+  blood_pressure: { emoji: '🩺', bg: '#FFF5F5', border: '#FECACA' },
+  rhinitis:       { emoji: '👃', bg: '#F0F9FF', border: '#BAE6FD' },
+  checkin:        { emoji: '✅', bg: '#F0FFF4', border: '#BBF7D0' },
+  medication:     { emoji: '🧪', bg: '#FAF5FF', border: '#E9D5FF' },
+  default:        { emoji: '✅', bg: '#F0FFF4', border: '#BBF7D0' },
+};
+export function RecordCardView({ type, detail }: RecordData) {
+  const cfg = RECORD_ICONS[type] || RECORD_ICONS.default;
+  return (
+    <div className="rounded-2xl px-3 py-2 my-1 flex items-center gap-2 shadow-sm"
+         style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
+      <span className="text-sm">{cfg.emoji}</span>
+      <span className="text-sm text-slate-800 flex-1">{detail}</span>
+      <span className="text-sm text-emerald-500">✓</span>
+    </div>
+  );
+}
+export const RecordCardSpec: CardSpec<RecordData> = {
+  type: 'record', label: '记录确认',
+  match({ query_lower, toolsUsed }) {
+    if (toolsUsed.has('health_record')) return 20;
+    if (/记录|打卡|吃了|喝了|喝水|服药|补剂.*吃|刚吃|刚喝|体重是|血压是|洗鼻了|喷嚏/.test(query_lower)) return 12;
+    return null;
+  },
+  build({ query_lower }) {
+    let type = 'default';
+    if (/喝水|喝了.*水/.test(query_lower)) type = 'water';
+    else if (/补剂|服药/.test(query_lower)) type = 'supplement';
+    else if (/吃了|早餐|午餐|晚餐|加餐/.test(query_lower)) type = 'diet';
+    else if (/体重/.test(query_lower)) type = 'weight';
+    else if (/血压/.test(query_lower)) type = 'blood_pressure';
+    else if (/喷嚏|洗鼻|鼻炎/.test(query_lower)) type = 'rhinitis';
+    else if (/跑|运动|锻炼|训练/.test(query_lower)) type = 'exercise';
+    return { type, detail: '已记录' };
+  },
+  render: (d) => <RecordCardView {...d} />,
+};

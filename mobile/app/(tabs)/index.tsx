@@ -16,7 +16,7 @@ import { streamChat, getConversations, getConversationMessages, type ChatMessage
 import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
-import { ScoreCard, VitalsCard, RecordCard } from '@/components/chat/InlineCards';
+import { dispatchCard, renderCard, renderServerCards } from '@/components/chat/cards';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
@@ -32,7 +32,7 @@ interface UIMessage extends ChatMessage {
   streaming?: boolean;
   imageUri?: string;
   isBriefing?: boolean;
-  cardType?: 'score' | 'vitals' | 'record';
+  cardType?: string;
   cardData?: any;
 }
 
@@ -157,34 +157,39 @@ export default function HomeScreen() {
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
-          // Auto-insert inline data card based on context
-          const g = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
-          const msgLower = finalMsg.toLowerCase();
-          const isHealthQuery = /健康|睡眠|心率|hrv|步数|电量|运动|压力|血氧|分析|数据|趋势|恢复|综合/.test(msgLower);
-          const isRecord = /记录|打卡|吃了|喝了|喝水|服药|补剂|体重|血压/.test(msgLower);
-
-          if (isHealthQuery && !isRecord) {
+          // ── 动态卡片系统: 1) 后端主动下发优先 2) 本地 registry 兜底 ──
+          const serverCards = renderServerCards((evt as any).cards);
+          if (serverCards.length > 0) {
+            // ≥2 张卡合并成 cards_group (iPad 双列, iPhone 单列)
+            const single = serverCards.length === 1 ? serverCards[0] : {
+              type: 'cards_group', data: { cards: serverCards },
+            };
+            setMessages(prev => [
+              ...prev,
+              { id: nextId(), role: 'assistant' as const, content: '',
+                cardType: single.type, cardData: single.data },
+            ]);
+          } else {
             const g = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
-            const cardData: any = {};
-            if (g?.total_sleep_duration) cardData.sleep = `${(g.total_sleep_duration / 60).toFixed(1)}h`;
-            if (g?.resting_heart_rate) cardData.hr = `${g.resting_heart_rate}bpm`;
-            if (g?.hrv) cardData.hrv = `${g.hrv.toFixed(1)}ms`;
-            if (g?.body_battery_most_charged) cardData.battery = `${g.body_battery_most_charged}`;
-            if (g?.steps) cardData.steps = g.steps.toLocaleString();
-            // Always show card if health query, even with partial data
-            if (Object.keys(cardData).length > 0 || scoreData?.total_score) {
-              if (scoreData?.total_score && !cardData.sleep) cardData.sleep = `评分${scoreData.total_score}`;
+            const card = await dispatchCard({
+              query: finalMsg,
+              query_lower: finalMsg.toLowerCase(),
+              toolsUsed,
+              data: {
+                garmin: g,
+                score: scoreData,
+                weather: weatherData,
+                aqi: aqiData,
+                profile: profileData,
+              },
+              api,
+            });
+            if (card) {
               setMessages(prev => [...prev, {
                 id: nextId(), role: 'assistant', content: '',
-                cardType: 'vitals', cardData,
+                cardType: card.type, cardData: card.data,
               }]);
             }
-          } else if (isRecord || toolsUsed.has('health_record')) {
-            setMessages(prev => [...prev, {
-              id: nextId(), role: 'assistant', content: '',
-              cardType: 'record',
-              cardData: { type: 'default', detail: '已记录' },
-            }]);
           }
         } else if (evt.type === 'error') {
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + `\n❌ ${evt.content}` } : m));
@@ -271,22 +276,17 @@ export default function HomeScreen() {
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
     const isUser = item.role === 'user';
 
-    // Inline card messages (no bubble, just the card)
-    if (item.cardType === 'vitals' && item.cardData) {
-      return (
-        <View style={[styles.msgRow, styles.msgRowAI]}>
-          <View style={{ width: 36 }} />
-          <VitalsCard {...item.cardData} />
-        </View>
-      );
-    }
-    if (item.cardType === 'record' && item.cardData) {
-      return (
-        <View style={[styles.msgRow, styles.msgRowAI]}>
-          <View style={{ width: 36 }} />
-          <RecordCard {...item.cardData} />
-        </View>
-      );
+    // Inline card messages (no bubble, just the card) — 走动态卡片系统
+    if (item.cardType && item.cardData) {
+      const rendered = renderCard({ type: item.cardType, data: item.cardData });
+      if (rendered) {
+        return (
+          <View style={[styles.msgRow, styles.msgRowAI]}>
+            <View style={{ width: 36 }} />
+            {rendered}
+          </View>
+        );
+      }
     }
 
     return (

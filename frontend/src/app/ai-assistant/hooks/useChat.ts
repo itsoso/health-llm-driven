@@ -3,6 +3,7 @@
 import { useCallback, useRef } from 'react';
 import { api } from '@/services/api/client';
 import { openclawApi, agentApi, ChatMessage, DietSavedData, ActivitySavedData } from '@/services/api/ai';
+import { dispatchCard, renderServerCards } from '@/components/assistant/inlineCards';
 
 // ── Types ──
 
@@ -25,6 +26,8 @@ export interface UseChatDeps {
   setPlanCreatedNotification: (v: {message: string; planId?: number} | null) => void;
   dashboardRefreshAfterAction: () => void;
   loadConversations: () => Promise<void>;
+  /** 拉取当前对话上下文快照给动态卡片系统用 */
+  getCardContextSnapshot?: () => { garmin?: any; score?: any; weather?: any; aqi?: any; profile?: any };
 }
 
 // ── Helpers ──
@@ -143,6 +146,7 @@ export function useChat(deps: UseChatDeps) {
     let waitTimer: NodeJS.Timeout | undefined;
     let waitTimer2: NodeJS.Timeout | undefined;
     const buf = { content: '', timer: null as NodeJS.Timeout | null };
+    const toolsUsed = new Set<string>();
     try {
       d.setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', created_at: new Date().toISOString() }]);
       let gotDone = false, firstToken = true;
@@ -165,6 +169,7 @@ export function useChat(deps: UseChatDeps) {
           if (firstToken) { firstToken = false; d.setLoading(false); }
           const toolName = event.data?.tool || '';
           const round = event.data?.round || '';
+          if (toolName) toolsUsed.add(toolName);
           buf.content += `🔧 调用工具: \`${toolName}\` (第${round}轮)\n`;
           if (!buf.timer) {
             buf.timer = setTimeout(() => { const b = buf.content; buf.content = ''; buf.timer = null; d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: m.content + b } : m)); }, 50);
@@ -189,6 +194,42 @@ export function useChat(deps: UseChatDeps) {
           if (event.data.message_id) { d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, id: event.data.message_id } : m)); d.setDoneMessageIds(prev => new Set(prev).add(event.data.message_id)); }
           handleDoneEvent(event.data, d);
           d.dashboardRefreshAfterAction();
+
+          // ── 动态卡片: 后端 cards 字段优先, 本地 registry 兜底 ──
+          try {
+            const serverCards = renderServerCards((event.data as any)?.cards);
+            if (serverCards.length > 0) {
+              const now = new Date().toISOString();
+              // ≥2 张卡合并为 cards_group 消息, iPad 上自动双列
+              const msg = serverCards.length >= 2
+                ? { id: Date.now() + 100, role: 'assistant' as const, content: '', created_at: now,
+                    card_type: 'cards_group', card_data: { cards: serverCards } }
+                : { id: Date.now() + 100, role: 'assistant' as const, content: '', created_at: now,
+                    card_type: serverCards[0].type, card_data: serverCards[0].data };
+              d.setMessages(prev => [...prev, msg]);
+            } else {
+              const snap = d.getCardContextSnapshot?.() || {};
+              const card = await dispatchCard({
+                query: finalMsg,
+                query_lower: finalMsg.toLowerCase(),
+                toolsUsed,
+                data: snap,
+                api,
+              });
+              if (card) {
+                d.setMessages(prev => [...prev, {
+                  id: Date.now() + 100,
+                  role: 'assistant',
+                  content: '',
+                  created_at: new Date().toISOString(),
+                  card_type: card.type,
+                  card_data: card.data,
+                }]);
+              }
+            }
+          } catch (e) {
+            if (process.env.NODE_ENV !== 'production') console.warn('[cards] dispatch failed', e);
+          }
         } else if (event.event === 'error') {
           clearTimeout(waitTimer); clearTimeout(waitTimer2);
           const errText = event.data.message || '';

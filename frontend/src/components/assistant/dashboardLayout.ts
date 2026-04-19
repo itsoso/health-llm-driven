@@ -8,6 +8,7 @@ export interface AssistantDashboardDeviceLayout {
 export const DASHBOARD_CARD_IDS = [
   'hero',
   'safety',
+  'consultations',
   'action_cards',
   'specialists',
   'alerts',

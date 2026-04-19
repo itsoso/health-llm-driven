@@ -2,6 +2,7 @@
 
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
+import { renderCard } from '@/components/assistant/inlineCards';
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -19,11 +20,27 @@ const STYLE = {
 };
 
 export default function ChatView({ messages, loading, doneMessageIds, messageFeedback, onFeedback, onPinMessage }: ChatViewProps) {
-  const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content));
+  // 允许空内容但是有卡片的消息显示
+  const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content && !m.card_type));
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      {visibleMessages.map(msg => (
+      {visibleMessages.map(msg => {
+        // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
+        if (msg.card_type && msg.card_data) {
+          const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
+          if (cardEl) {
+            return (
+              <div key={msg.id} className="flex gap-4 justify-start">
+                <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${STYLE.badgeClass}`}>
+                  <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74L12 2z" /></svg>
+                </div>
+                <div className="flex-1 max-w-[min(100%,28rem)] md:max-w-[min(100%,44rem)] lg:max-w-[min(100%,56rem)]">{cardEl}</div>
+              </div>
+            );
+          }
+        }
+        return (
         <div key={msg.id} className={`group flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {msg.role === 'assistant' && (
             <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${STYLE.badgeClass}`}>
@@ -72,7 +89,8 @@ export default function ChatView({ messages, loading, doneMessageIds, messageFee
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
       {loading && (
         <div className="flex gap-4">
           <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] ${STYLE.badgeClass}`}>

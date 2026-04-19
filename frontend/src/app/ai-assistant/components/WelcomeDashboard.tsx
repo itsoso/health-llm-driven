@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import HeroCard from '@/components/assistant/HeroCard';
+import CollapsibleCard from '@/components/assistant/CollapsibleCard';
+import ConsultationsCard from '@/components/assistant/ConsultationsCard';
 import AlertsBanner from '@/components/assistant/AlertsBanner';
 import SafetyPanel from '@/components/assistant/SafetyPanel';
 import SpecialistsPanel from '@/components/assistant/SpecialistsPanel';
@@ -32,6 +34,7 @@ const QUICK_ASKS = [
 export const DASHBOARD_CARD_LABELS: Record<string, string> = {
   hero: '今日总览',
   safety: '安全守护',
+  consultations: '健康咨询',
   action_cards: '行动卡片',
   specialists: '专家协作',
   alerts: '提醒横幅',
@@ -84,6 +87,37 @@ export default function WelcomeDashboard({
   onInlineClose,
 }: WelcomeDashboardProps) {
 
+  // 折叠态持久化到 localStorage（与云端 layout 分离，纯本地 UI 状态）
+  const COLLAPSE_STORAGE_KEY = 'assistant_dashboard_collapsed_v1';
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const [collapseLoaded, setCollapseLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(COLLAPSE_STORAGE_KEY) : null;
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setCollapsedIds(new Set(arr.filter((x: unknown) => typeof x === 'string')));
+      }
+    } catch { /* ignore */ }
+    setCollapseLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!collapseLoaded) return;
+    try {
+      window.localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(collapsedIds)));
+    } catch { /* ignore */ }
+  }, [collapsedIds, collapseLoaded]);
+
+  const handleToggleCollapse = useCallback((cardId: string, next: boolean) => {
+    setCollapsedIds((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(cardId); else copy.delete(cardId);
+      return copy;
+    });
+  }, []);
+
   const renderDashboardCard = useCallback((cardId: string) => {
     switch (cardId) {
       case 'hero':
@@ -102,6 +136,8 @@ export default function WelcomeDashboard({
         );
       case 'safety':
         return <SafetyPanel />;
+      case 'consultations':
+        return <ConsultationsCard />;
       case 'action_cards':
         return <ActionCardPanel />;
       case 'specialists':
@@ -180,7 +216,20 @@ export default function WelcomeDashboard({
           {visibleDashboardCardIds.map((cardId) => {
             const content = renderDashboardCard(cardId);
             if (!content) return null;
-            return <div key={cardId}>{content}</div>;
+            // hero 卡片保持常展开（是整个首页的主视觉锚点）
+            if (cardId === 'hero') return <div key={cardId}>{content}</div>;
+            const label = DASHBOARD_CARD_LABELS[cardId] || cardId;
+            return (
+              <CollapsibleCard
+                key={cardId}
+                cardId={cardId}
+                label={label}
+                collapsed={collapsedIds.has(cardId)}
+                onToggle={handleToggleCollapse}
+              >
+                {content}
+              </CollapsibleCard>
+            );
           })}
         </>
       )}

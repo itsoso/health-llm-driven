@@ -40,6 +40,10 @@ export interface ChatMessage {
   created_at: string;
   image_preview?: string;
   file_name?: string;
+  /** 动态卡片类型 (vitals/sleep/weight/... ); 如存在则此消息渲染为卡片而非气泡 */
+  card_type?: string;
+  /** 卡片数据 payload (跟 card_type 匹配) */
+  card_data?: any;
 }
 
 export interface ChatSendResponse {

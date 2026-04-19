@@ -34,7 +34,7 @@ const APP_MENU = [
   { label: '概览', items: [{ href: '/overview', name: '健康概览', icon: '📊' }, { href: '/daily-insights', name: '今日建议', icon: '✨' }, { href: '/smart-plan', name: '智能计划', icon: '📅' }, { href: '/family', name: '家庭', icon: '👨‍👩‍👦' }] },
   { label: '追踪', items: [{ href: '/workout', name: '运动', icon: '🏋️' }, { href: '/sleep', name: '睡眠', icon: '🌙' }, { href: '/garmin', name: 'Garmin', icon: '⌚' }, { href: '/weight', name: '体重', icon: '⚖️' }, { href: '/heart-rate', name: '心率', icon: '❤️' }, { href: '/blood-pressure', name: '血压', icon: '🩺' }, { href: '/mood', name: '情绪', icon: '😊' }] },
   { label: '记录', items: [{ href: '/supplements', name: '补剂', icon: '💊' }, { href: '/diet', name: '饮食', icon: '🍽️' }, { href: '/water', name: '饮水', icon: '💧' }, { href: '/checkin', name: '打卡', icon: '✅' }, { href: '/rhinitis', name: '鼻炎', icon: '👃' }] },
-  { label: '管理', items: [{ href: '/genetic', name: '基因', icon: '🧬' }, { href: '/medical-exams', name: '体检', icon: '📋' }, { href: '/goals', name: '目标', icon: '🎯' }, { href: '/settings', name: '设置', icon: '⚙️' }] },
+  { label: '管理', items: [{ href: '/health-consultations', name: '咨询', icon: '🩺' }, { href: '/supplement-audits', name: '补剂审计', icon: '📝' }, { href: '/genetic', name: '基因', icon: '🧬' }, { href: '/medical-exams', name: '体检', icon: '📋' }, { href: '/goals', name: '目标', icon: '🎯' }, { href: '/settings', name: '设置', icon: '⚙️' }] },
 ];
 
 function Toast({ color, title, subtitle, onClose, action }: { color: string; title: string; subtitle: string; onClose: () => void; action?: { label: string; onClick: () => void } }) {
@@ -118,6 +118,14 @@ export default function AIAssistantPage() {
     setDietNotification, setActivityNotifications, setPlanCreatedNotification,
     dashboardRefreshAfterAction: dashboard.refreshAfterAction,
     loadConversations,
+    // 给动态卡片系统喂当前 dashboard 快照, 避免重复拉接口
+    getCardContextSnapshot: () => ({
+      garmin: dashboard.todayGarmin,
+      score: dashboard.healthScore,
+      weather: dashboard.weatherData,
+      aqi: dashboard.airData,
+      profile: user,
+    }),
   });
 
   // ── Effects ──
