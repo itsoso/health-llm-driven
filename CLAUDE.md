@@ -4,7 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI-driven health management platform with Next.js frontend, FastAPI backend, and Capacitor iOS app. Integrates Garmin/Withings wearables, LLM-based health analysis, and OpenClaw AI assistant.
+AI-driven health management platform with Next.js frontend (Web only), FastAPI backend, an Expo React Native app for iPhone/iPad, a WeChat mini program, and a standalone MCP server. Integrates Garmin/Withings wearables, LLM-based health analysis, and OpenClaw AI assistant.
+
+## ⚠️ 移动端构建方向（2026-04-19 决定）
+
+**iPhone / iPad 原生 App 只走 React Native (`mobile/`) 路线。**
+
+- ✅ **`mobile/`** (Expo SDK 54 + React Native 0.81) — **唯一**的 iPhone/iPad 原生 App 实现
+- ❌ **Capacitor 壳 (`frontend/ios/`)** — 已停用；不再 `build:ios` / `sync:ios` / `open:ios`，新功能不往 Capacitor 方向适配
+- ✅ **`frontend/`** (Next.js 14) — 继续作为 Web (PC 浏览器) 前端；iOS Safari 访问走 Web 版
+
+**原因**：Capacitor 是 WebView 套壳，手势/滚动/键盘/动画有网页味，启动慢；RN 编译到真原生 UIView，体验和性能都显著更好。
+
+**新功能开发规则**：
+- 涉及 iPhone/iPad 的功能：**先写 `mobile/` 的 RN 版本**；Web 版可以延后或不做
+- 组件复用通过 `packages/shared/` 的纯 TypeScript 类型/工具；UI 组件 RN 和 Web 两套各自写
+- 后端 API 保持同一套（`/api/v1/*`），不为客户端分叉
+- Capacitor 相关文件 (`frontend/ios/`, `frontend/capacitor.config.*`, `package.json` 的 `build:ios`/`sync:ios`/`open:ios`) 等后续统一清理；在此之前不要往里加新代码
+
+## Monorepo Layout
+
+This is a **pnpm workspace** (`pnpm-workspace.yaml` → `packages/*`) plus several non-workspace project roots. Each root has its own dependencies; `npm install`/`pnpm install` must be run in the right directory.
+
+| Path | Stack | Purpose |
+|------|-------|---------|
+| `backend/` | FastAPI + SQLAlchemy + Celery | API server, agents, Twin, orchestrator |
+| `frontend/` | Next.js 14 | Web app (PC browsers). `frontend/ios/` Capacitor 已停用 |
+| `mobile/` | Expo SDK 54 + expo-router + React Native 0.81 | **iPhone/iPad 唯一原生 App** — 所有移动端新功能在这里做 |
+| `packages/mini-program/` | WeChat mini program (uni-app) | `weixin` client; has its own `AGENTS.md` |
+| `packages/shared/` | TypeScript | Shared types/utilities across web/mobile/mini |
+| `mcp-server/` | Python | Standalone MCP server exposing health tools |
+| `openclaw-skills/` | Markdown | Root-level skill definitions consumed by OpenClaw Gateway (distinct from `backend/skills/` which are deployed with the backend) |
+
+When working on shared logic, prefer `packages/shared` over duplicating. Mobile and mini-program are independent builds — changes in `frontend/` do NOT automatically propagate.
 
 ## Common Commands
 
@@ -56,16 +88,42 @@ npm run lint     # ESLint
 npm run test     # Vitest
 ```
 
-### iOS (Capacitor)
+### iOS (Capacitor) — ⛔ DEPRECATED
+
+Capacitor 壳已于 2026-04-19 停用，iPhone/iPad 请使用 React Native (`mobile/`) 路线。
+历史命令（`build:ios` / `sync:ios` / `open:ios`）仍在 `package.json` 中但不再维护，等待统一清理。**不要**用这些命令构建 iOS App，也**不要**往 `frontend/ios/` 提交新代码。
+
+### Mobile (Expo React Native)
 
 ```bash
-cd frontend
-npm run build:ios    # BUILD_TARGET=native next build && cap copy ios
-npm run sync:ios     # cap sync ios
-npm run open:ios     # Open in Xcode
+cd mobile
+npm install
+npm run start        # Expo dev server (Metro)
+npm run ios          # expo run:ios (requires Xcode)
+npm run android      # expo run:android
 ```
 
-When `BUILD_TARGET=native`, Next.js enables static export and the API base URL switches to `https://health.westwetlandtech.com/api`. Platform detection uses `NEXT_PUBLIC_IS_NATIVE_APP`.
+The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tanstack/react-query` for data, and `expo-secure-store` for tokens.
+
+**⚠️ 这是 iPhone / iPad 的唯一原生 App 实现（Capacitor 已退役）**。所有涉及移动端的新 feature 都应先在 `mobile/` 里实现；`frontend/` 只负责 Web。
+
+当前 `mobile/` 和 `frontend/` 的 feature parity 还在追赶中 — 若某个 Web 页面在 mobile/ 里没有对应的 RN 实现，优先补 RN 版本，而不是通过 Capacitor 把 Web 页面包成 App。
+
+### Mini Program (WeChat)
+
+```bash
+cd packages/mini-program
+npm install
+# See packages/mini-program/AGENTS.md and RELEASE.md for the WeChat DevTools build flow
+```
+
+### MCP Server
+
+```bash
+cd mcp-server
+source venv/bin/activate
+python server.py     # See mcp-server/README.md for tool list
+```
 
 ### Deployment
 
@@ -75,6 +133,7 @@ When `BUILD_TARGET=native`, Next.js enables static export and the API base URL s
 ./deploy.sh -a   # Deploy both
 ./deploy.sh -e   # Sync .env-online to server and restart
 ./deploy.sh -r   # Restart services without pulling code
+./deploy.sh -p   # Push code to GitHub without deploying
 ./deploy.sh -s   # Check service status
 ./deploy.sh -l   # View logs
 ```
@@ -176,10 +235,10 @@ OpenClaw Gateway          Agent Executor / Orchestrator
 ### Backend Structure
 
 - **Entry point**: `backend/main.py` — creates FastAPI app, sets up CORS, rate limiting, DB tables
-- **Router registry**: `backend/app/api/main.py` — imports and mounts all 100+ API routers
+- **Router registry**: `backend/app/api/main.py` — imports and mounts all 107 API routers
 - **Config**: `backend/app/config.py` — Pydantic `Settings` class, reads from `.env`
 - **Database**: `backend/app/database.py` — SQLAlchemy engine (PostgreSQL in prod, SQLite for tests)
-- **Models**: `backend/app/models/` — 64 SQLAlchemy ORM models（含 `cgm_reading.py`、`agent_audit_log.py`）
+- **Models**: `backend/app/models/` — ~67 SQLAlchemy ORM models（含 `cgm_reading.py`、`agent_audit_log.py`）
 - **Services**: `backend/app/services/` — business logic layer（含 `cgm/` CGM 服务）
 - **Twin**: `backend/app/twin/` — Digital Health Twin（schema/builder/cache/formatter/collectors）
 - **Agents**: `backend/app/agents/` — 多 Agent 舰队（safety_guardian/recovery_coach/fuel_strategist/movement_coach/mental_health_companion/chronic_specialists/knowledge_librarian/longitudinal_analyst）
@@ -224,8 +283,8 @@ OpenClaw Gateway          Agent Executor / Orchestrator
 
 ### Frontend Structure
 
-- **Pages**: `frontend/src/app/*/page.tsx` — Next.js App Router (~50+ pages)
-- **API client**: `frontend/src/services/api.ts` — Barrel re-export（含 `api/safety.ts`、`api/orchestrator.ts`）
+- **Pages**: `frontend/src/app/*/page.tsx` — Next.js App Router (~100 pages)
+- **API client**: `frontend/src/services/api/` — Barrel re-export 目录（含 `safety.ts`、`orchestrator.ts`）
 - **Auth**: `frontend/src/contexts/AuthContext.tsx` — React Context for auth state
 - **Route guard**: `frontend/src/components/ProtectedRoute.tsx`
 - **AI Assistant components** (`components/assistant/`):
@@ -289,6 +348,10 @@ Backend supports multiple LLM providers via `app/config.py`:
 - **Backend**: systemd service `health-backend` → `health-api.executor.life`
 - **Database**: PostgreSQL (on the same server)
 
+### Docker
+
+Root-level `docker-compose.yml`, `Dockerfile.backend`, `Dockerfile.frontend` for containerized local development. Production uses systemd/PM2 (not Docker).
+
 ### Logs
 
 ```bash
@@ -327,7 +390,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 
 ### 路由组织
 
-- `backend/app/api/main.py` 超过 100 个 router 时，必须按领域分组为子包（如 `api/health/`、`api/social/`）。
+- `backend/app/api/main.py` 已有 107 个 router，应按领域分组为子包（如 `api/health/`、`api/social/`）。
 
 ### 新依赖审批
 
@@ -355,7 +418,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 |------|------|
 | `backend/app/database.py` | 数据库连接、会话管理、get_db |
 | `backend/app/config.py` | Pydantic Settings、环境变量 |
-| `backend/app/models/*.py` | SQLAlchemy ORM 模型（64 个） |
+| `backend/app/models/*.py` | SQLAlchemy ORM 模型（~67 个） |
 | `backend/app/twin/schema.py` | Digital Health Twin Pydantic schema（13 分区） |
 | `backend/main.py` 中间件部分 | 安全头、CORS、限流、请求上下文 |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -381,10 +444,10 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | API 路由（100+ 个） |
+| `backend/app/api/*.py` | API 路由（107 个） |
 | `backend/app/services/*.py` | 业务逻辑（含 `cgm/` CGM 服务） |
 | `backend/app/tasks/*.py` | Celery 异步任务 |
-| `frontend/src/app/*/page.tsx` | 前端页面（50+ 个） |
+| `frontend/src/app/*/page.tsx` | 前端页面（~100 个） |
 | `frontend/src/components/*.tsx` | 前端组件（含 SafetyPanel/SpecialistsPanel） |
 
 ### 指令层 (Instructions) — 定义 AI Agent 行为
@@ -392,6 +455,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | 文件 | 职责 |
 |------|------|
 | `CLAUDE.md` | Claude Code 工作指南（本文件） |
-| `AGENTS.md` | AI Agent 开发规范 |
-| `backend/skills/*/SKILL.md` | OpenClaw Skill 定义 |
+| `AGENTS.md` | AI Agent 开发规范（安全/日志/测试/性能/隐私的权威来源） |
+| `.cursor/rules/00-agents-bootstrap.mdc` | Cursor 规则：强制读取并遵守 AGENTS.md |
+| `backend/skills/*/SKILL.md` | OpenClaw Skill 定义（22 个 skill，部署时同步到 Gateway） |
+| `openclaw-skills/` | 根级 Skill 定义（10 个，由 OpenClaw Gateway 直接消费） |
 | `backend/data/knowledge_chromadb/` | 得到 wiki 知识库索引（302 chunks） |
