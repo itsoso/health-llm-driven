@@ -76,7 +76,7 @@ export default function ArchitecturePage() {
                     <li><Tag>TanStack React Query 5</Tag> — 服务端状态管理</li>
                     <li><Tag>Tailwind CSS 3.3</Tag> — 样式框架</li>
                     <li><Tag>Recharts 2.10</Tag> — 图表可视化</li>
-                    <li><Tag>Capacitor 8</Tag> — iOS 原生封装</li>
+                    <li><Tag>Expo SDK 54 + RN 0.81</Tag> — iPhone/iPad 原生 App（mobile/）</li>
                   </ul>
                 </Card>
                 <Card title="基础设施">
@@ -109,8 +109,8 @@ export default function ArchitecturePage() {
 ┌─────────────────────────────────────────────────────────┐
 │                      客户端层                            │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
-│  │ Next.js  │  │ iOS App  │  │ 微信小程序 │  │  Siri   │ │
-│  │  PWA     │  │(Capacitor)│ │  (Taro)   │  │ 快捷指令│ │
+│  │ Next.js  │  │iPhone App│  │ 微信小程序 │  │  Siri   │ │
+│  │  (Web)   │  │(Expo RN) │  │  (Taro)   │  │ 快捷指令│ │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬────┘ │
 └───────┼──────────────┼────────────┼──────────────┼──────┘
         │              │            │              │
@@ -566,7 +566,7 @@ export default function ArchitecturePage() {
               <Card title="多端支持">
                 <ul className="space-y-2 text-sm text-purple-200">
                   <li><Hl>Web:</Hl> Next.js SSR + CSR，部署在 health.executor.life</li>
-                  <li><Hl>iOS App:</Hl> Capacitor 8 封装，App ID: life.executor.health</li>
+                  <li><Hl>iPhone/iPad App:</Hl> Expo SDK 54 + React Native 0.81 (mobile/)，Bundle ID: com.executor.healthpilot</li>
                   <li><Hl>微信小程序:</Hl> Taro 框架 (packages/mini-program/)</li>
                   <li><Hl>Siri 快捷指令:</Hl> 语音录入健康数据，通过 /siri API 接口</li>
                 </ul>

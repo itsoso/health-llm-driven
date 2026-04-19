@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { registerPushNotifications } from '@/services/pushNotifications';
 import { API_BASE_URL } from '@/services/api/client';
 
 const API_BASE = API_BASE_URL;
@@ -74,8 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (contentType && contentType.includes('application/json')) {
           const userData = await res.json();
           setUser(userData);
-          // Agent Native: 登录成功后注册 iOS 推送
-          registerPushNotifications().catch(() => {});
+          // 注: iOS 推送注册已随 Capacitor 退役; iPhone/iPad 推送由 mobile/ (Expo RN) 负责
         } else {
           console.error('获取用户信息：服务器返回非JSON响应');
           localStorage.removeItem('auth_token');

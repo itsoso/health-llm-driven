@@ -24,6 +24,7 @@ describe('dashboardLayout', () => {
         'trends',
         'hero',
         'safety',
+        'consultations',
         'action_cards',
         'specialists',
         'alerts',

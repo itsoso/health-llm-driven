@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 
-// 是否为原生App构建（iOS/Android）
-const isNativeApp = process.env.BUILD_TARGET === 'native';
+// 注: Capacitor 原生 App 已退役（2026-04-19）。iPhone/iPad 走 mobile/ React Native 路线。
+// 本配置只服务 Web (PC 浏览器) + iOS Safari.
 
 const nextConfig = {
   reactStrictMode: true,
@@ -12,45 +12,24 @@ const nextConfig = {
       allowedOrigins: ['health.executor.life', 'localhost:3000', 'localhost:30001'],
     },
   },
-  
-  // 原生App构建使用静态导出
-  ...(isNativeApp && {
-    output: 'export',
-    trailingSlash: true,
-    images: {
-      unoptimized: true,
-    },
-  }),
-  
+
   // 允许内网IP访问开发服务器
   allowedDevOrigins: [
     'http://172.20.102.3:3000',
     'http://192.168.*:3000',
     'http://10.*:3000',
   ],
-  
-  // 环境变量传递到客户端
-  env: {
-    NEXT_PUBLIC_IS_NATIVE_APP: isNativeApp ? 'true' : 'false',
-    NEXT_PUBLIC_API_BASE_URL: isNativeApp 
-      ? 'https://health.westwetlandtech.com/api' 
-      : '',
+
+  // Web 代理到后端
+  async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/api/v1/:path*`,
+      },
+    ];
   },
-  
-  // Web 版本使用代理
-  ...(!isNativeApp && {
-    async rewrites() {
-      // 后端API地址，可通过环境变量配置
-      const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
-      return [
-        {
-          source: '/api/:path*',
-          destination: `${backendUrl}/api/v1/:path*`,
-        },
-      ];
-    },
-  }),
 };
 
 module.exports = nextConfig;
-

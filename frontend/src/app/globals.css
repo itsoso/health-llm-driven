@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* iOS Capacitor: 防止水平溢出和橡皮筋效果 */
+/* iOS Safari: 防止水平溢出和橡皮筋效果 */
 html, body {
   overflow-x: hidden;
   overscroll-behavior-x: none;

@@ -1,17 +1,8 @@
 import axios from 'axios';
 
-// 判断是否为原生App环境
-// 原生App使用完整的API地址，Web版本使用相对路径（通过Next.js代理）
-const isNativeApp = typeof window !== 'undefined' && (
-  process.env.NEXT_PUBLIC_IS_NATIVE_APP === 'true' ||
-  // Capacitor 环境检测
-  (window as any).Capacitor?.isNativePlatform?.()
-);
-
-// API基础地址
-export const API_BASE_URL = isNativeApp 
-  ? 'https://health.executor.life/api'  // 原生App直接调用线上API（新域名）
-  : (process.env.NEXT_PUBLIC_API_BASE_URL || '/api');  // Web版本使用代理
+// frontend/ 只服务 Web (PC 浏览器 + iOS Safari). 原生 App 走 mobile/ 的 React Native 路线.
+// Web 版本使用相对路径 /api, 由 next.config.js rewrites 代理到后端.
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

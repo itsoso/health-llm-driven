@@ -60,9 +60,8 @@ export function detectAssistantLayoutDevice(): AssistantLayoutDevice {
 
   const userAgent = window.navigator.userAgent || '';
   const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-  const isCapacitor = !!(window as Window & { Capacitor?: unknown }).Capacitor;
 
-  return isMobileUserAgent || isCapacitor ? 'mobile' : 'web';
+  return isMobileUserAgent ? 'mobile' : 'web';
 }
 
 export function getWelcomeContentBottomPaddingClass({
