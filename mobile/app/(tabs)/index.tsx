@@ -10,7 +10,6 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Audio } from 'expo-av';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
 import { streamChat, getConversations, getConversationMessages, type ChatMessage, type StreamEvent } from '@/services/chat';
@@ -60,7 +59,6 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const qc = useQueryClient();
-  const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const plusRotation = useRef(new Animated.Value(0)).current;
 
@@ -228,12 +226,39 @@ export default function HomeScreen() {
     if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
   }, []);
 
-  // ── Voice (placeholder — STT pending backend support) ──
+  // ── Voice — iOS native speech recognition ──
   const startRecording = useCallback(async () => {
-    Alert.alert('语音输入', '语音识别功能即将上线，敬请期待。\n\n你可以直接输入文字，如："记录喝了杯水"');
+    try {
+      const Voice = require('@react-native-voice/voice').default;
+      Voice.onSpeechResults = (e: any) => {
+        const text = e.value?.[0];
+        if (text) {
+          setInput(text);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        setIsRecording(false);
+      };
+      Voice.onSpeechError = () => {
+        setIsRecording(false);
+      };
+      Voice.onSpeechEnd = () => {
+        setIsRecording(false);
+      };
+      await Voice.start('zh-CN');
+      setIsRecording(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {
+      Alert.alert('语音识别', '无法启动语音识别，请检查权限设置');
+    }
   }, []);
 
-  const stopRecordingAndSend = useCallback(async () => {}, []);
+  const stopRecordingAndSend = useCallback(async () => {
+    try {
+      const Voice = require('@react-native-voice/voice').default;
+      await Voice.stop();
+    } catch {}
+    setIsRecording(false);
+  }, []);
 
   // ── Render ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
