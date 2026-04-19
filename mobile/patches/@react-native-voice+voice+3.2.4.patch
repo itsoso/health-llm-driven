@@ -1,0 +1,22 @@
+diff --git a/node_modules/@react-native-voice/voice/ios/Voice/Voice.m b/node_modules/@react-native-voice/voice/ios/Voice/Voice.m
+index fd9dad8..7a77443 100644
+--- a/node_modules/@react-native-voice/voice/ios/Voice/Voice.m
++++ b/node_modules/@react-native-voice/voice/ios/Voice/Voice.m
+@@ -34,7 +34,7 @@
+ /** Returns "YES" if no errors had occurred */
+ -(BOOL) setupAudioSession {
+     if ([self isHeadsetPluggedIn] || [self isHeadSetBluetooth]){
+-        [self.audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:AVAudioSessionCategoryOptionAllowBluetooth error: nil];
++        [self.audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:AVAudioSessionCategoryOptionAllowBluetoothHFP error: nil];
+     }
+     else {
+         [self.audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:AVAudioSessionCategoryOptionDefaultToSpeaker error: nil];
+@@ -114,7 +114,7 @@
+     if ([self.priorAudioCategory isEqualToString:audioCategory]) return;
+     // Reset back to the previous category
+     if ([self isHeadsetPluggedIn] || [self isHeadSetBluetooth]) {
+-        [self.audioSession setCategory:self.priorAudioCategory withOptions:AVAudioSessionCategoryOptionAllowBluetooth error: nil];
++        [self.audioSession setCategory:self.priorAudioCategory withOptions:AVAudioSessionCategoryOptionAllowBluetoothHFP error: nil];
+     } else {
+         [self.audioSession setCategory:self.priorAudioCategory withOptions:AVAudioSessionCategoryOptionDefaultToSpeaker error: nil];
+     }
