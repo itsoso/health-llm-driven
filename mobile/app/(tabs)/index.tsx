@@ -157,23 +157,25 @@ export default function HomeScreen() {
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
-          // Auto-insert inline data card based on tools used
-          if (toolsUsed.has('health_query') || toolsUsed.has('health_analysis')) {
-            const g = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
-            if (g) {
-              setMessages(prev => [...prev, {
-                id: nextId(), role: 'assistant', content: '',
-                cardType: 'vitals',
-                cardData: {
-                  sleep: g.total_sleep_duration ? `${(g.total_sleep_duration / 60).toFixed(1)}h` : undefined,
-                  hr: g.resting_heart_rate ? `${g.resting_heart_rate}bpm` : undefined,
-                  hrv: g.hrv ? `${g.hrv.toFixed(1)}ms` : undefined,
-                  battery: g.body_battery_most_charged ? `${g.body_battery_most_charged}` : undefined,
-                  steps: g.steps ? g.steps.toLocaleString() : undefined,
-                },
-              }]);
-            }
-          } else if (toolsUsed.has('health_record')) {
+          // Auto-insert inline data card based on context
+          const g = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
+          const msgLower = finalMsg.toLowerCase();
+          const isHealthQuery = /健康|睡眠|心率|hrv|步数|电量|运动|压力|血氧|分析|数据|趋势|恢复|综合/.test(msgLower);
+          const isRecord = /记录|打卡|吃了|喝了|喝水|服药|补剂|体重|血压/.test(msgLower);
+
+          if (isHealthQuery && g && !isRecord) {
+            setMessages(prev => [...prev, {
+              id: nextId(), role: 'assistant', content: '',
+              cardType: 'vitals',
+              cardData: {
+                sleep: g.total_sleep_duration ? `${(g.total_sleep_duration / 60).toFixed(1)}h` : undefined,
+                hr: g.resting_heart_rate ? `${g.resting_heart_rate}bpm` : undefined,
+                hrv: g.hrv ? `${g.hrv.toFixed(1)}ms` : undefined,
+                battery: g.body_battery_most_charged ? `${g.body_battery_most_charged}` : undefined,
+                steps: g.steps ? g.steps.toLocaleString() : undefined,
+              },
+            }]);
+          } else if (isRecord || toolsUsed.has('health_record')) {
             setMessages(prev => [...prev, {
               id: nextId(), role: 'assistant', content: '',
               cardType: 'record',
