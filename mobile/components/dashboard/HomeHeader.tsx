@@ -59,8 +59,9 @@ export default function HomeHeader({
   // ── Collapsed: one-line mini bar ──
   if (collapsed) {
     return (
-      <TouchableOpacity style={styles.miniBar} onPress={toggle} activeOpacity={0.7}>
-        <View style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={styles.miniBar}>
+        <TouchableOpacity onPress={toggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }} activeOpacity={0.7}>
+          <View style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center' }}>
           <Svg width={ringSize} height={ringSize}>
             <Defs><LinearGradient id="miniG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#0A8F8F" /><Stop offset="1" stopColor="#30D158" /></LinearGradient></Defs>
             <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="#F2F2F7" strokeWidth={sw} fill="none" />
@@ -72,8 +73,21 @@ export default function HomeHeader({
         <MiniVital color="#BF5AF2" value={sleep || '--'} />
         <MiniVital color="#FF375F" value={hr || '--'} />
         <MiniVital color="#30D158" value={battery || '--'} />
-        <Ionicons name="chevron-down" size={14} color={colors.labelTertiary} />
-      </TouchableOpacity>
+        </TouchableOpacity>
+        {onHistory && (
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); onHistory(); }} style={styles.miniAction} activeOpacity={0.6}>
+            <Ionicons name="chatbubbles-outline" size={15} color={colors.labelTertiary} />
+          </TouchableOpacity>
+        )}
+        {onNewChat && (
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); onNewChat(); }} style={styles.miniAction} activeOpacity={0.6}>
+            <Ionicons name="create-outline" size={15} color={colors.labelTertiary} />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={toggle} style={styles.miniAction} activeOpacity={0.6}>
+          <Ionicons name="chevron-down" size={14} color={colors.labelTertiary} />
+        </TouchableOpacity>
+      </View>
     );
   }
 
@@ -202,7 +216,7 @@ const styles = StyleSheet.create({
   miniBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: colors.bgCard,
     borderRadius: radii.full,
     marginHorizontal: spacing.lg,
@@ -212,6 +226,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     ...shadows.subtle,
   },
+  miniAction: { padding: 4 },
 });
 
 const txt = {

@@ -148,16 +148,17 @@ export default function HomeScreen() {
     }, 8000);
 
     try {
-      const toolsUsed: string[] = [];
+      const toolsUsed: Set<string> = new Set();
       for await (const evt of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type)) {
         if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
-          if (evt.toolName && evt.toolSuccess) toolsUsed.push(evt.toolName);
+          // Track all tools called (from both tool_call and tool_result)
+          if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationId) setConversationId(evt.conversationId);
           // Auto-insert inline data card based on tools used
-          if (toolsUsed.includes('health_query') || toolsUsed.includes('health_analysis')) {
+          if (toolsUsed.has('health_query') || toolsUsed.has('health_analysis')) {
             const g = Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null;
             if (g) {
               setMessages(prev => [...prev, {
@@ -172,7 +173,7 @@ export default function HomeScreen() {
                 },
               }]);
             }
-          } else if (toolsUsed.includes('health_record')) {
+          } else if (toolsUsed.has('health_record')) {
             setMessages(prev => [...prev, {
               id: nextId(), role: 'assistant', content: '',
               cardType: 'record',
