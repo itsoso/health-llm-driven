@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, RefreshControl, Keyboard, ScrollView,
+  Alert, Modal, Pressable, Animated, RefreshControl, Keyboard, ScrollView, Clipboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -293,15 +293,17 @@ export default function HomeScreen() {
           </BrandCircle>
         )}
         {isUser ? (
-          <View style={[styles.bubble, styles.bubbleUser]}>
+          <TouchableOpacity style={[styles.bubble, styles.bubbleUser]} activeOpacity={0.8}
+            onLongPress={() => { Clipboard.setString(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
             {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />}
-            <Text style={txt.bubbleUser}>{item.content}</Text>
-          </View>
+            <Text selectable style={txt.bubbleUser}>{item.content}</Text>
+          </TouchableOpacity>
         ) : (
-          <View style={[styles.bubble, styles.bubbleAI]}>
+          <TouchableOpacity style={[styles.bubble, styles.bubbleAI]} activeOpacity={0.8}
+            onLongPress={() => { Clipboard.setString(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
             <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
             {item.streaming && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 4 }} />}
-          </View>
+          </TouchableOpacity>
         )}
       </View>
     );

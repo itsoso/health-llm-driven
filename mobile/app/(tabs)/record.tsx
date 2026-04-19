@@ -65,7 +65,7 @@ export default function RecordScreen() {
         <Text style={txt.title}>健康记录</Text>
 
         {/* 1. Vitals */}
-        <VitalsGrid sleep={sleepH} deepSleep={deepH} heartRate={garmin?.resting_heart_rate} hrv={garmin?.hrv} bodyBattery={garmin?.body_battery_most_charged ?? garmin?.body_battery_current} batteryMax={garmin?.body_battery_most_charged} />
+        <VitalsGrid sleep={sleepH} deepSleep={deepH} sleepScore={garmin?.sleep_score} heartRate={garmin?.resting_heart_rate} hrv={garmin?.hrv} bodyBattery={garmin?.body_battery_most_charged ?? garmin?.body_battery_current} batteryMax={garmin?.body_battery_most_charged} />
 
         {/* 2. Activity */}
         <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />

@@ -6,6 +6,7 @@ import { colors, spacing, radii, shadows } from '@/constants/theme';
 interface Props {
   sleep?: number | null;
   deepSleep?: number | null;
+  sleepScore?: number | null;
   heartRate?: number | null;
   hrv?: number | null;
   bodyBattery?: number | null;
@@ -22,12 +23,12 @@ interface TileData {
   bg: string;
 }
 
-export default function VitalsGrid({ sleep, deepSleep, heartRate, hrv, bodyBattery, batteryMax }: Props) {
+export default function VitalsGrid({ sleep, deepSleep, sleepScore, heartRate, hrv, bodyBattery, batteryMax }: Props) {
   const tiles: TileData[] = [
     {
       label: '睡眠', icon: 'moon', color: '#BF5AF2', bg: '#F5E6FF',
       value: sleep != null ? sleep.toFixed(1) : '--', unit: 'h',
-      sub: deepSleep != null ? `深睡 ${deepSleep.toFixed(1)}h` : undefined,
+      sub: sleepScore ? `评分 ${sleepScore}` : (deepSleep != null ? `深睡 ${deepSleep.toFixed(1)}h` : undefined),
     },
     {
       label: '心率', icon: 'heart', color: '#FF375F', bg: '#FFE6EE',
