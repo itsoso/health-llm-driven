@@ -31,6 +31,7 @@ export const colors = {
   bgPrimary: '#F2F2F7',
   bgCard: '#FFFFFF',
   bgElevated: '#FFFFFF',
+  fill: '#E5E5EA',
 
   // Tinted Backgrounds
   tintGreen: '#E8FAF0',

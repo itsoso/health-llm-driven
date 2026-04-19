@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchDashboardData } from '@/services/dashboard';
 import api from '@/services/api';
+import { useRouter } from 'expo-router';
 import { useLatestGarmin } from '@/hooks/useDashboardData';
 import { recordWater, deleteWater } from '@/services/records';
 import VitalsGrid from '@/components/dashboard/VitalsGrid';
@@ -21,6 +22,7 @@ import { colors, spacing, radii, shadows } from '@/constants/theme';
 const mealTypeMap: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
 export default function RecordScreen() {
+  const router = useRouter();
   const qc = useQueryClient();
   const { data, refetch, isRefetching } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboardData, staleTime: 60_000 });
   const garmin = useLatestGarmin(data);
@@ -63,6 +65,14 @@ export default function RecordScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />} showsVerticalScrollIndicator={false}>
         <Text style={txt.title}>健康记录</Text>
+
+        {/* Quick navigation */}
+        <View style={styles.quickNav}>
+          <QuickNavBtn icon="moon-outline" label="睡眠" color={colors.purple} onPress={() => router.push('/sleep' as any)} />
+          <QuickNavBtn icon="barbell-outline" label="运动" color={colors.pink} onPress={() => router.push('/workout-list' as any)} />
+          <QuickNavBtn icon="nutrition-outline" label="饮食" color={colors.orange} onPress={() => router.push('/diet' as any)} />
+          <QuickNavBtn icon="flag-outline" label="目标" color={colors.green} onPress={() => router.push('/goals' as any)} />
+        </View>
 
         {/* 1. Vitals */}
         <VitalsGrid sleep={sleepH} deepSleep={deepH} sleepScore={garmin?.sleep_score} heartRate={garmin?.resting_heart_rate} hrv={garmin?.hrv} bodyBattery={garmin?.body_battery_most_charged ?? garmin?.body_battery_current} batteryMax={garmin?.body_battery_most_charged} />
@@ -231,6 +241,17 @@ export default function RecordScreen() {
   );
 }
 
+function QuickNavBtn({ icon, label, color, onPress }: { icon: any; label: string; color: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7}>
+      <View style={[styles.quickNavIcon, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+      <Text style={txt.quickNavLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function NutritionCircle({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
   return (
     <View style={styles.nutriItem}>
@@ -246,6 +267,11 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg },
+
+  // Quick navigation
+  quickNav: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  quickNavBtn: { flex: 1, alignItems: 'center', gap: 6, backgroundColor: colors.bgCard, borderRadius: radii.md, paddingVertical: 12, ...shadows.subtle },
+  quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
 
   // Tabbed card (body + diet)
   tabCard: {
@@ -297,6 +323,7 @@ const styles = StyleSheet.create({
 
 const txt = {
   title: { fontSize: 28, fontWeight: '700', color: colors.labelPrimary, marginBottom: spacing.md } as TextStyle,
+  quickNavLabel: { fontSize: 11, fontWeight: '500', color: colors.labelSecondary } as TextStyle,
   tabText: { fontSize: 14, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
   tabTextActive: { color: colors.brand, fontWeight: '600' } as TextStyle,
   nutriVal: { fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,

@@ -78,6 +78,10 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="medical-outline" label="健康咨询"
             onPress={() => router.push('/consultations' as any)} />
+          <SettingRow icon="barbell-outline" label="运动记录"
+            onPress={() => router.push('/workout-list' as any)} />
+          <SettingRow icon="flag-outline" label="健康目标"
+            onPress={() => router.push('/goals' as any)} />
         </View>
 
         {/* Notifications & Security */}

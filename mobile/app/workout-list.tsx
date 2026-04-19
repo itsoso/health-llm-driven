@@ -1,0 +1,143 @@
+import React from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
+import * as Haptics from 'expo-haptics';
+import { useWorkoutList, useWorkoutStats } from '@/hooks/useWorkouts';
+import { syncGarminWorkouts, type WorkoutSummary } from '@/services/workouts';
+import { colors, spacing, radii, shadows } from '@/constants/theme';
+
+const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  running: 'walk-outline',
+  cycling: 'bicycle-outline',
+  swimming: 'water-outline',
+  strength: 'barbell-outline',
+  yoga: 'body-outline',
+  hiking: 'trail-sign-outline',
+  default: 'fitness-outline',
+};
+
+export default function WorkoutListScreen() {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { data: workouts, isLoading, refetch, isRefetching } = useWorkoutList();
+  const { data: stats } = useWorkoutStats();
+  const [syncing, setSyncing] = React.useState(false);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await syncGarminWorkouts();
+      qc.invalidateQueries({ queryKey: ['workouts'] });
+      qc.invalidateQueries({ queryKey: ['workoutStats'] });
+    } catch {} finally {
+      setSyncing(false);
+    }
+  };
+
+  const renderItem = ({ item }: { item: WorkoutSummary }) => {
+    const icon = TYPE_ICONS[item.activity_type.toLowerCase()] || TYPE_ICONS.default;
+    return (
+      <TouchableOpacity style={styles.row}
+        onPress={() => router.push(`/workout-detail?id=${item.id}` as any)}
+        activeOpacity={0.7}>
+        <View style={styles.iconCircle}>
+          <Ionicons name={icon} size={18} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={txt.type}>{item.activity_type}</Text>
+          <Text style={txt.time}>{new Date(item.start_time).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' })}</Text>
+        </View>
+        <View style={styles.metaCol}>
+          <Text style={txt.duration}>{item.duration_minutes}min</Text>
+          {item.calories != null && <Text style={txt.cal}>{item.calories}kcal</Text>}
+        </View>
+        <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+        </TouchableOpacity>
+        <Text style={txt.title}>运动记录</Text>
+        <TouchableOpacity onPress={handleSync} style={styles.backBtn} disabled={syncing}>
+          <Ionicons name="sync-outline" size={20} color={syncing ? colors.labelTertiary : colors.brand} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Stats summary */}
+      {stats && (
+        <View style={styles.statsRow}>
+          <StatBadge label="本月次数" value={`${stats.total_workouts}`} />
+          <StatBadge label="总时长" value={`${Math.round(stats.total_duration_minutes)}min`} />
+          <StatBadge label="总消耗" value={`${Math.round(stats.total_calories)}kcal`} />
+          <StatBadge label="周均" value={`${stats.weekly_frequency.toFixed(1)}次`} />
+        </View>
+      )}
+
+      {isLoading ? (
+        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={workouts}
+          keyExtractor={i => String(i.id)}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
+          ListEmptyComponent={<Text style={txt.empty}>暂无运动记录</Text>}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+function StatBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.statBadge}>
+      <Text style={txt.statVal}>{value}</Text>
+      <Text style={txt.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  statsRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: spacing.lg, marginBottom: spacing.md,
+  },
+  statBadge: {
+    flex: 1, backgroundColor: colors.bgCard, borderRadius: radii.md,
+    padding: spacing.sm, alignItems: 'center', ...shadows.subtle,
+  },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: 100 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    padding: spacing.lg, marginBottom: spacing.sm, ...shadows.subtle,
+  },
+  iconCircle: {
+    width: 36, height: 36, borderRadius: radii.sm,
+    backgroundColor: colors.brandLight, alignItems: 'center', justifyContent: 'center',
+  },
+  metaCol: { alignItems: 'flex-end', marginRight: 4 },
+});
+
+const txt = {
+  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
+  type: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
+  time: { fontSize: 12, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
+  duration: { fontSize: 14, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+  cal: { fontSize: 11, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
+  empty: { fontSize: 14, color: colors.labelTertiary, textAlign: 'center', marginTop: 40 } as TextStyle,
+  statVal: { fontSize: 16, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+  statLabel: { fontSize: 10, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
+};
