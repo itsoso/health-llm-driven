@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,13 +7,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import { useBiometricLock } from '@/hooks/useBiometricLock';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { logout, user } = useAuth();
+  const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
+  const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 300_000 });
   const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city || '未设置';
@@ -70,6 +72,26 @@ export default function SettingsScreen() {
           <SettingRow icon="watch-outline" label="Garmin 同步"
             value={syncing ? '同步中...' : '点击同步'}
             onPress={syncGarmin} />
+        </View>
+
+        {/* Health tools */}
+        <View style={styles.card}>
+          <SettingRow icon="medical-outline" label="健康咨询"
+            onPress={() => router.push('/consultations' as any)} />
+        </View>
+
+        {/* Notifications & Security */}
+        <View style={styles.card}>
+          <SettingRow icon="notifications-outline" label="推送通知"
+            onPress={() => router.push('/notification-settings' as any)} />
+          {bioSupported && (
+            <View style={styles.settingRow}>
+              <Ionicons name="finger-print-outline" size={18} color={colors.labelSecondary} />
+              <Text style={txt.settingLabel}>Face ID 锁定</Text>
+              <Switch value={bioEnabled} onValueChange={toggleBio}
+                trackColor={{ false: colors.fill, true: colors.brand }} thumbColor="#fff" />
+            </View>
+          )}
         </View>
 
         <View style={styles.card}>

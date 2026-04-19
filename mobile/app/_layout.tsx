@@ -4,14 +4,21 @@ import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ToastProvider } from '@/hooks/useToast';
+import { useNotifications } from '@/hooks/useNotifications';
+import { useBiometricLock } from '@/hooks/useBiometricLock';
+import NotificationBanner from '@/components/notifications/NotificationBanner';
 import LoginScreen from '@/app/login';
 import {
   View,
+  Text,
   ActivityIndicator,
   StyleSheet,
   AppState,
   Platform,
+  TouchableOpacity,
+  TextStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -28,8 +35,30 @@ const queryClient = new QueryClient({
   },
 });
 
+function LockScreen({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <View style={styles.lockContainer}>
+      <Ionicons name="lock-closed" size={48} color="#0A8F8F" />
+      <Text style={styles.lockTitle}>HealthPilot</Text>
+      <TouchableOpacity style={styles.unlockBtn} onPress={onUnlock} activeOpacity={0.7}>
+        <Ionicons name="finger-print" size={22} color="#fff" />
+        <Text style={styles.unlockText}>解锁</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { isLocked, authenticate } = useBiometricLock(isAuthenticated);
+
+  useNotifications(isAuthenticated);
+
+  useEffect(() => {
+    if (isAuthenticated && isLocked) {
+      authenticate();
+    }
+  }, [isLocked, isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -43,11 +72,23 @@ function AppContent() {
     return <LoginScreen />;
   }
 
+  if (isLocked) {
+    return <LockScreen onUnlock={authenticate} />;
+  }
+
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
-    </Stack>
+    <>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="notification-settings" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="reminders" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="notification-history" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="consultations" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="consultations/[id]" options={{ headerShown: false }} />
+      </Stack>
+      <NotificationBanner />
+    </>
   );
 }
 
@@ -81,4 +122,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FDFBF7',
   },
+  lockContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    gap: 16,
+  },
+  lockTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  } as TextStyle,
+  unlockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#0A8F8F',
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 16,
+  },
+  unlockText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  } as TextStyle,
 });
