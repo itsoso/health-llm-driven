@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
   Alert, Modal, Pressable, Animated, RefreshControl, Keyboard, ScrollView, Clipboard,
+  GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +12,10 @@ import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
+import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { streamChat, getConversations, getConversationMessages, type ChatMessage, type StreamEvent } from '@/services/chat';
 import { useMediaPicker } from '@/hooks/useMediaPicker';
+import { useVoiceRecording } from '@/hooks/useVoiceRecording';
 import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
@@ -44,6 +47,15 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function PulsingDot() {
+  const opacity = useSharedValue(1);
+  React.useEffect(() => {
+    opacity.value = withRepeat(withTiming(0.3, { duration: 600 }), -1, true);
+  }, [opacity]);
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return <ReAnimated.View style={[styles.recDot, animStyle]} />;
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -53,8 +65,12 @@ export default function HomeScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const cancelYRef = useRef<number | null>(null);
+
+  const voice = useVoiceRecording({
+    onTranscript: (text) => setInput(text),
+  });
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -260,39 +276,22 @@ export default function HomeScreen() {
     if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
   }, []);
 
-  // ── Voice — iOS native speech recognition ──
-  const startRecording = useCallback(async () => {
-    try {
-      const Voice = require('@react-native-voice/voice').default;
-      Voice.onSpeechResults = (e: any) => {
-        const text = e.value?.[0];
-        if (text) {
-          setInput(text);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        setIsRecording(false);
-      };
-      Voice.onSpeechError = () => {
-        setIsRecording(false);
-      };
-      Voice.onSpeechEnd = () => {
-        setIsRecording(false);
-      };
-      await Voice.start('zh-CN');
-      setIsRecording(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {
-      Alert.alert('语音识别', '无法启动语音识别，请检查权限设置');
-    }
-  }, []);
+  // ── Voice — long-press to record, release to transcribe (DeepSeek style) ──
+  const handleVoicePressIn = useCallback((e: GestureResponderEvent) => {
+    cancelYRef.current = e.nativeEvent.pageY;
+    voice.startRecording();
+  }, [voice]);
 
-  const stopRecordingAndSend = useCallback(async () => {
-    try {
-      const Voice = require('@react-native-voice/voice').default;
-      await Voice.stop();
-    } catch {}
-    setIsRecording(false);
-  }, []);
+  const handleVoicePressOut = useCallback((e: GestureResponderEvent) => {
+    const startY = cancelYRef.current;
+    const endY = e.nativeEvent.pageY;
+    if (startY != null && startY - endY > 60) {
+      voice.cancelRecording();
+    } else {
+      voice.stopAndTranscribe();
+    }
+    cancelYRef.current = null;
+  }, [voice]);
 
   // ── Render ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
@@ -446,11 +445,19 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Recording */}
-        {isRecording && (
+        {/* Recording overlay */}
+        {voice.isRecording && (
           <View style={styles.recordBar}>
-            <View style={styles.recDot} />
-            <Text style={txt.recText}>松手发送...</Text>
+            <PulsingDot />
+            <Text style={txt.recText}>
+              {Math.floor(voice.durationMs / 1000)}s · 松手发送，上滑取消
+            </Text>
+          </View>
+        )}
+        {voice.isTranscribing && (
+          <View style={styles.recordBar}>
+            <ActivityIndicator size="small" color={colors.brand} />
+            <Text style={[txt.recText, { color: colors.brand }]}>识别中...</Text>
           </View>
         )}
 
@@ -478,10 +485,12 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  onPress={isRecording ? stopRecordingAndSend : startRecording}
-                  style={[styles.inlineVoiceBtn, isRecording && styles.inlineVoiceBtnActive]}
+                  onPressIn={handleVoicePressIn}
+                  onPressOut={handleVoicePressOut}
+                  delayLongPress={0}
+                  style={[styles.inlineVoiceBtn, voice.isRecording && styles.inlineVoiceBtnActive]}
                 >
-                  <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={20} color={isRecording ? '#fff' : colors.labelTertiary} />
+                  <Ionicons name={voice.isRecording ? 'mic' : 'mic-outline'} size={20} color={voice.isRecording ? '#fff' : colors.labelTertiary} />
                 </TouchableOpacity>
               )}
             </View>

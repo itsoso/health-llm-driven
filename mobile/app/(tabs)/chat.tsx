@@ -2,16 +2,17 @@ import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated,
+  Alert, Modal, Pressable, Animated, GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import { Audio } from 'expo-av';
 import Markdown from 'react-native-markdown-display';
+import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { streamChat, type ChatMessage } from '@/services/chat';
 import { useMediaPicker } from '@/hooks/useMediaPicker';
+import { useVoiceRecording } from '@/hooks/useVoiceRecording';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
@@ -38,16 +39,24 @@ const SUGGESTIONS = [
   { icon: 'trending-up-outline' as const, text: 'HRV趋势分析' },
 ];
 
+function ChatPulsingDot() {
+  const opacity = useSharedValue(1);
+  React.useEffect(() => {
+    opacity.value = withRepeat(withTiming(0.3, { duration: 600 }), -1, true);
+  }, [opacity]);
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return <ReAnimated.View style={styles.recordingDot as any} />;
+}
+
 export default function ChatScreen() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const { pendingImage, setPendingImage, pickImage, takePhoto } = useMediaPicker();
   const [showMenu, setShowMenu] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const plusRotation = useRef(new Animated.Value(0)).current;
+  const cancelYRef = useRef<number | null>(null);
 
   const toggleMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -108,33 +117,29 @@ export default function ChatScreen() {
     }
   }, []);
 
-  // ── Voice — long press to record, release to send ──
-  const startRecording = useCallback(async () => {
-    try {
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) { Alert.alert('需要麦克风权限'); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      recordingRef.current = recording;
-      setIsRecording(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch { Alert.alert('录音启动失败'); }
-  }, []);
+  // ── Voice — long-press to record, release to transcribe & send ──
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
 
-  const stopRecordingAndSend = useCallback(async () => {
-    if (!isRecording || !recordingRef.current) return;
-    setIsRecording(false);
-    try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (uri) {
-        // TODO: send audio to speech-to-text API, for now send as text indicator
-        sendMessage('[语音消息]');
-      }
-    } catch { /* ignore */ }
-  }, [isRecording, sendMessage]);
+  const voice = useVoiceRecording({
+    onTranscript: (text) => sendMessageRef.current(text),
+  });
+
+  const handleVoicePressIn = useCallback((e: GestureResponderEvent) => {
+    cancelYRef.current = e.nativeEvent.pageY;
+    voice.startRecording();
+  }, [voice]);
+
+  const handleVoicePressOut = useCallback((e: GestureResponderEvent) => {
+    const startY = cancelYRef.current;
+    const endY = e.nativeEvent.pageY;
+    if (startY != null && startY - endY > 60) {
+      voice.cancelRecording();
+    } else {
+      voice.stopAndTranscribe();
+    }
+    cancelYRef.current = null;
+  }, [voice]);
 
   // ── Render Message ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
@@ -210,10 +215,18 @@ export default function ChatScreen() {
         )}
 
         {/* Recording indicator — shows above input bar */}
-        {isRecording && (
+        {voice.isRecording && (
           <View style={styles.recordingBar}>
-            <View style={styles.recordingDot} />
-            <Text style={txt.recordingText}>正在录音，松手发送...</Text>
+            <ChatPulsingDot />
+            <Text style={txt.recordingText}>
+              {Math.floor(voice.durationMs / 1000)}s · 松手发送，上滑取消
+            </Text>
+          </View>
+        )}
+        {voice.isTranscribing && (
+          <View style={styles.recordingBar}>
+            <ActivityIndicator size="small" color={colors.brand} />
+            <Text style={[txt.recordingText, { color: colors.brand }]}>识别中...</Text>
           </View>
         )}
 
@@ -248,13 +261,12 @@ export default function ChatScreen() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              onLongPress={startRecording}
-              onPressOut={stopRecordingAndSend}
-              delayLongPress={150}
-              style={[styles.voiceBtn, isRecording && styles.voiceBtnActive]}
+              onPressIn={handleVoicePressIn}
+              onPressOut={handleVoicePressOut}
+              style={[styles.voiceBtn, voice.isRecording && styles.voiceBtnActive]}
               activeOpacity={0.6}
             >
-              <Ionicons name={isRecording ? 'mic' : 'headset-outline'} size={22} color={isRecording ? '#fff' : colors.labelSecondary} />
+              <Ionicons name={voice.isRecording ? 'mic' : 'mic-outline'} size={22} color={voice.isRecording ? '#fff' : colors.labelSecondary} />
             </TouchableOpacity>
           )}
         </View>

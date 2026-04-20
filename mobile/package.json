@@ -15,7 +15,6 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-community/netinfo": "^12.0.1",
-    "@react-native-voice/voice": "^3.2.4",
     "@react-navigation/native": "^7.1.8",
     "@tanstack/react-query": "^5.99.0",
     "axios": "^1.15.0",
