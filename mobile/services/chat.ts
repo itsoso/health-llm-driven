@@ -169,3 +169,12 @@ export async function getConversationMessages(conversationId: number): Promise<C
   const data = await res.json();
   return data.messages || [];
 }
+
+export async function deleteConversation(conversationId: number): Promise<boolean> {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.ok;
+}

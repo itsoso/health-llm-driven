@@ -13,7 +13,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
-import { streamChat, getConversations, getConversationMessages, type ChatMessage, type StreamEvent } from '@/services/chat';
+import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '@/services/chat';
 import { useMediaPicker } from '@/hooks/useMediaPicker';
 import { useVoiceRecording } from '@/hooks/useVoiceRecording';
 import api from '@/services/api';
@@ -76,6 +76,7 @@ export default function HomeScreen() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const qc = useQueryClient();
   const flatListRef = useRef<FlatList>(null);
+  const isNearBottom = useRef(true);
   const plusRotation = useRef(new Animated.Value(0)).current;
 
   // Load latest conversation on mount
@@ -410,7 +411,9 @@ export default function HomeScreen() {
             }} tintColor={colors.brand} />
           }
           contentContainerStyle={styles.msgList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() => { if (isNearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }}
+          onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
+          scrollEventThrottle={100}
           ListEmptyComponent={
             <View style={styles.welcome}>
               <BrandCircle size={56} style={{ marginBottom: 12 }}>
@@ -512,7 +515,7 @@ export default function HomeScreen() {
                 {conversations.slice(0, 20).map((item: any) => (
                   <TouchableOpacity
                     key={item.id}
-                    style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator }}
+                    style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator, flexDirection: 'row', alignItems: 'center' }}
                     onPress={async () => {
                       setShowHistory(false);
                       setConversationId(item.id);
@@ -539,8 +542,25 @@ export default function HomeScreen() {
                     }}
                     activeOpacity={0.6}
                   >
-                    <Text style={{ fontSize: 15, color: colors.labelPrimary }} numberOfLines={1}>{item.title || `对话 #${item.id}`}</Text>
-                    <Text style={{ fontSize: 12, color: colors.labelTertiary, marginTop: 2 }}>{item.created_at?.slice(0, 10) || ''}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, color: colors.labelPrimary }} numberOfLines={1}>{item.title || `对话 #${item.id}`}</Text>
+                      <Text style={{ fontSize: 12, color: colors.labelTertiary, marginTop: 2 }}>{item.created_at?.slice(0, 10) || ''}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert('删除对话', `确定删除「${item.title || '对话'}」？`, [
+                          { text: '取消', style: 'cancel' },
+                          { text: '删除', style: 'destructive', onPress: async () => {
+                            await deleteConversation(item.id);
+                            setConversations(prev => prev.filter((c: any) => c.id !== item.id));
+                            if (conversationId === item.id) { setMessages([]); setConversationId(undefined); }
+                          }},
+                        ]);
+                      }}
+                      hitSlop={8} style={{ padding: 8 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.red} />
+                    </TouchableOpacity>
                   </TouchableOpacity>
                 ))}
               </ScrollView>

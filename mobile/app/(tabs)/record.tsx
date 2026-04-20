@@ -61,7 +61,7 @@ export default function RecordScreen() {
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
   const doWater = useCallback(async (amt: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try { const rec = await recordWater(amt); qc.invalidateQueries({ queryKey: ['dashboard'] }); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); qc.invalidateQueries({ queryKey: ['dashboard'] }); }); } catch {}
+    try { const rec = await recordWater(amt); qc.invalidateQueries({ queryKey: ['dashboard'] }); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); qc.invalidateQueries({ queryKey: ['dashboard'] }); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
   }, [qc]);
 
   return (
@@ -205,7 +205,7 @@ export default function RecordScreen() {
                     try {
                       await api.post('/medication/log', { medication_id: m.medication_id, action: m.taken_count > 0 ? 'undo' : 'take' });
                       qc.invalidateQueries({ queryKey: ['dashboard'] });
-                    } catch {}
+                    } catch { Alert.alert('操作失败', '用药记录更新失败'); }
                   }}
                   activeOpacity={0.7}
                 >

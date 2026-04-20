@@ -1,8 +1,8 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, GestureResponderEvent,
+  Alert, Modal, Pressable, Animated, GestureResponderEvent, Clipboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import Markdown from 'react-native-markdown-display';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
-import { streamChat, type ChatMessage } from '@/services/chat';
+import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '@/services/chat';
 import { useMediaPicker } from '@/hooks/useMediaPicker';
 import { useVoiceRecording } from '@/hooks/useVoiceRecording';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
@@ -52,11 +52,32 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const { pendingImage, setPendingImage, pickImage, takePhoto } = useMediaPicker();
   const [showMenu, setShowMenu] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const isNearBottom = useRef(true);
   const plusRotation = useRef(new Animated.Value(0)).current;
   const cancelYRef = useRef<number | null>(null);
+
+  // Load latest conversation on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const convs = await getConversations();
+        if (convs.length > 0) {
+          const latestId = convs[0].id;
+          setConversationId(latestId);
+          const msgs = await getConversationMessages(latestId);
+          if (msgs.length > 0) {
+            setMessages(msgs.map((m: any, i: number) => ({
+              id: `hist-${m.id || i}`, role: m.role, content: m.content,
+            })));
+          }
+        }
+      } catch {}
+    })();
+  }, []);
 
   const toggleMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -85,8 +106,14 @@ export default function ChatScreen() {
     setPendingImage(null);
 
     try {
-      for await (const token of streamChat(finalMsg, undefined, imgData?.base64, imgData?.type)) {
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + token } : m));
+      for await (const token of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type)) {
+        if (token.type === 'token' || token.type === 'tool') {
+          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + (token.content || '') } : m));
+        } else if (token.type === 'done') {
+          if (token.conversationId && !conversationId) setConversationId(token.conversationId);
+        } else if (token.type === 'error') {
+          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + `\n❌ ${token.content}` } : m));
+        }
       }
     } catch (err: any) {
       setMessages(prev => prev.map(m =>
@@ -111,9 +138,13 @@ export default function ChatScreen() {
 
   const handlePickFile = useCallback(async () => {
     setShowMenu(false);
-    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-    if (!result.canceled && result.assets[0]) {
-      setInput(`请分析文件：${result.assets[0].name}`);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (!result.canceled && result.assets[0]) {
+        setInput(`请分析文件：${result.assets[0].name}`);
+      }
+    } catch {
+      Alert.alert('暂不可用', '文件选择功能需要重新构建 App');
     }
   }, []);
 
@@ -152,15 +183,17 @@ export default function ChatScreen() {
           </BrandCircle>
         )}
         {isUser ? (
-          <View style={[styles.bubble, styles.bubbleUser, { backgroundColor: colors.brand }]}>
+          <TouchableOpacity style={[styles.bubble, styles.bubbleUser, { backgroundColor: colors.brand }]} activeOpacity={0.8}
+            onLongPress={() => { Clipboard.setString(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
             {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />}
-            <Text style={txt.bubbleUser}>{item.content}</Text>
-          </View>
+            <Text selectable style={txt.bubbleUser}>{item.content}</Text>
+          </TouchableOpacity>
         ) : (
-          <View style={[styles.bubble, styles.bubbleAI]}>
+          <TouchableOpacity style={[styles.bubble, styles.bubbleAI]} activeOpacity={0.8}
+            onLongPress={() => { Clipboard.setString(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
             <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
             {item.streaming && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 6, alignSelf: 'flex-start' }} />}
-          </View>
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -174,6 +207,23 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <Ionicons name="sparkles" size={18} color={colors.brand} />
         <Text style={txt.headerTitle}>AI 健康助理</Text>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity onPress={() => { setMessages([]); setConversationId(undefined); }} hitSlop={8}>
+          <Ionicons name="create-outline" size={20} color={colors.labelSecondary} />
+        </TouchableOpacity>
+        {conversationId && messages.length > 0 && (
+          <TouchableOpacity onPress={() => {
+            Alert.alert('删除对话', '确定删除当前对话？', [
+              { text: '取消', style: 'cancel' },
+              { text: '删除', style: 'destructive', onPress: async () => {
+                await deleteConversation(conversationId);
+                setMessages([]); setConversationId(undefined);
+              }},
+            ]);
+          }} hitSlop={8} style={{ marginLeft: 12 }}>
+            <Ionicons name="trash-outline" size={18} color={colors.red} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
@@ -183,7 +233,9 @@ export default function ChatScreen() {
           keyExtractor={item => item.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() => { if (isNearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }}
+          onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
+          scrollEventThrottle={100}
           ListEmptyComponent={
             <View style={styles.welcome}>
               <BrandCircle size={72} style={{ marginBottom: 16 }}>
