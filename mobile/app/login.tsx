@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
+import { colors } from '@/constants/theme';
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -46,9 +47,9 @@ export default function LoginScreen() {
       >
         <View style={styles.logoSection}>
           <View style={styles.logoCircle}>
-            <Ionicons name="heart-circle" size={64} color="#FF2D55" />
+            <Ionicons name="heart-circle" size={64} color={colors.brand} />
           </View>
-          <Text style={styles.title}>Health Guardian</Text>
+          <Text style={styles.title}>HealthPilot</Text>
           <Text style={styles.subtitle}>AI 驱动的健康管理</Text>
         </View>
 
@@ -68,6 +69,7 @@ export default function LoginScreen() {
               autoCorrect={false}
               value={username}
               onChangeText={setUsername}
+              accessibilityLabel="用户名输入框"
             />
           </View>
 
@@ -86,6 +88,7 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               onSubmitEditing={handleLogin}
+              accessibilityLabel="密码输入框"
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
@@ -104,6 +107,8 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="登录"
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
@@ -135,7 +140,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#FFF0F3',
+    backgroundColor: colors.brandLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -173,13 +178,13 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: colors.brand,
     height: 50,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    shadowColor: '#007AFF',
+    shadowColor: colors.brand,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

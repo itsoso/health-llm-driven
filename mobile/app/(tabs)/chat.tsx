@@ -2,8 +2,9 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, GestureResponderEvent, Clipboard,
+  Alert, Modal, Pressable, Animated, GestureResponderEvent,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -75,7 +76,7 @@ export default function ChatScreen() {
             })));
           }
         }
-      } catch {}
+      } catch { console.warn('Failed to load latest conversation'); }
     })();
   }, []);
 
@@ -184,13 +185,13 @@ export default function ChatScreen() {
         )}
         {isUser ? (
           <TouchableOpacity style={[styles.bubble, styles.bubbleUser, { backgroundColor: colors.brand }]} activeOpacity={0.8}
-            onLongPress={() => { Clipboard.setString(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
+            onLongPress={() => { Clipboard.setStringAsync(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
             {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />}
             <Text selectable style={txt.bubbleUser}>{item.content}</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[styles.bubble, styles.bubbleAI]} activeOpacity={0.8}
-            onLongPress={() => { Clipboard.setString(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
+            onLongPress={() => { Clipboard.setStringAsync(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
             <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
             {item.streaming && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 6, alignSelf: 'flex-start' }} />}
           </TouchableOpacity>

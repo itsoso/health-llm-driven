@@ -1,6 +1,5 @@
 import { getToken } from './auth';
-
-const BASE_URL = 'https://health.executor.life/api';
+import { BASE_URL } from './api';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';

@@ -249,7 +249,7 @@ export default function RecordScreen() {
 
 function QuickNavBtn({ icon, label, color, onPress }: { icon: any; label: string; color: string; onPress: () => void }) {
   return (
-    <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={label}>
       <View style={[styles.quickNavIcon, { backgroundColor: `${color}18` }]}>
         <Ionicons name={icon} size={18} color={color} />
       </View>

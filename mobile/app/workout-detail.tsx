@@ -136,7 +136,7 @@ export default function WorkoutDetailScreen() {
         setPostAnalysis(res);
         setFromCache(!!res.from_cache);
       }
-    } catch {} finally {
+    } catch { console.warn('Failed to load post-workout analysis cache'); } finally {
       setPostAnalyzing(false);
     }
   }, [workoutId]);

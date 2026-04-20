@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -33,7 +33,7 @@ export default function WorkoutListScreen() {
       await syncGarminWorkouts();
       qc.invalidateQueries({ queryKey: ['workouts'] });
       qc.invalidateQueries({ queryKey: ['workoutStats'] });
-    } catch {} finally {
+    } catch { Alert.alert('同步失败', '运动数据同步失败'); } finally {
       setSyncing(false);
     }
   };

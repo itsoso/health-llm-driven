@@ -3,9 +3,10 @@ import * as SecureStore from 'expo-secure-store';
 import { deleteTokenFromSharedKeychain } from '../modules/shared-keychain';
 
 const TOKEN_KEY = 'auth_token';
+export const BASE_URL = 'https://health.executor.life/api';
 
 const api = axios.create({
-  baseURL: 'https://health.executor.life/api',
+  baseURL: BASE_URL,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });

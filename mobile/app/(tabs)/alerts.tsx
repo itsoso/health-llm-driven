@@ -33,8 +33,8 @@ const CARD_TYPE: Record<string, { color: string; bg: string; icon: keyof typeof 
 
 export default function ActionsScreen() {
   const qc = useQueryClient();
-  const { data: safetyData, refetch: refetchSafety, isRefetching: sr } = useQuery({ queryKey: ['safety'], queryFn: getSafetyReport });
-  const { data: cardsData, refetch: refetchCards, isRefetching: cr } = useQuery({ queryKey: ['actionCards'], queryFn: getActiveCards });
+  const { data: safetyData, refetch: refetchSafety, isRefetching: sr, isLoading: sl } = useQuery({ queryKey: ['safety'], queryFn: getSafetyReport });
+  const { data: cardsData, refetch: refetchCards, isRefetching: cr, isLoading: cl } = useQuery({ queryKey: ['actionCards'], queryFn: getActiveCards });
 
   const alerts = (safetyData?.alerts || []).sort((a: any, b: any) => {
     const order = ['critical', 'high', 'medium', 'low', 'info'];
@@ -66,7 +66,12 @@ export default function ActionsScreen() {
         )}
       </View>
 
-      {isEmpty ? (
+      {(sl || cl) ? (
+        <View style={styles.empty}>
+          <ActivityIndicator size="large" color={colors.brand} />
+          <Text style={txt.emptySub}>加载中...</Text>
+        </View>
+      ) : isEmpty ? (
         <View style={styles.empty}>
           <View style={styles.emptyCircle}>
             <Ionicons name="checkmark-done" size={40} color={colors.brand} />
@@ -114,7 +119,8 @@ function AlertRow({ alert }: { alert: SafetyAlert }) {
   const cfg = SEV[sk] || SEV.info;
 
   return (
-    <TouchableOpacity style={styles.alertCard} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded(!expanded); }} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.alertCard} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded(!expanded); }} activeOpacity={0.7}
+      accessibilityRole="button" accessibilityLabel={`${sk}级别告警: ${alert.title}`} accessibilityState={{ expanded }}>
       <View style={styles.alertRow}>
         <View style={[styles.alertIconWrap, { backgroundColor: cfg.bg }]}>
           <Ionicons name={cfg.icon} size={16} color={cfg.color} />

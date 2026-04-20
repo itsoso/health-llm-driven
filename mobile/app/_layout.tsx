@@ -9,6 +9,7 @@ import { useBiometricLock } from '@/hooks/useBiometricLock';
 import NotificationBanner from '@/components/notifications/NotificationBanner';
 import NetworkBanner from '@/components/NetworkBanner';
 import LoginScreen from '@/app/login';
+import { colors } from '@/constants/theme';
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ import {
   Platform,
   TouchableOpacity,
   TextStyle,
+  useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -65,7 +67,7 @@ function AppContent() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
@@ -117,7 +119,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
-          <StatusBar style="dark" />
+          <StatusBar style="auto" />
           <AppContent />
         </ToastProvider>
       </AuthProvider>

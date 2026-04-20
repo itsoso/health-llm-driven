@@ -18,7 +18,7 @@ export default function SettingsScreen() {
   const [syncing, setSyncing] = useState(false);
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
-  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 300_000 });
+  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city || '未设置';
 
   const syncGarmin = async () => {
@@ -29,6 +29,8 @@ export default function SettingsScreen() {
       Alert.alert('同步成功', 'Garmin 数据已更新');
       qc.invalidateQueries({ queryKey: ['garminToday'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['healthScore'] });
+      qc.invalidateQueries({ queryKey: ['safety'] });
     } catch {
       Alert.alert('同步失败', '请稍后再试');
     } finally {

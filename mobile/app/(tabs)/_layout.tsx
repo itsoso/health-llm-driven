@@ -1,18 +1,25 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Platform } from 'react-native';
-import { colors } from '@/constants/theme';
+import { StyleSheet, Platform, useColorScheme } from 'react-native';
+import { colors, darkColors } from '@/constants/theme';
 
 export default function TabLayout() {
+  const scheme = useColorScheme();
+  const c = scheme === 'dark' ? darkColors : colors;
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.brand,
-        tabBarInactiveTintColor: colors.labelTertiary,
+        tabBarActiveTintColor: c.brand,
+        tabBarInactiveTintColor: c.labelTertiary,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: {
+          ...styles.tabBar,
+          backgroundColor: scheme === 'dark' ? 'rgba(28,28,30,0.95)' : 'rgba(255,255,255,0.95)',
+          borderTopColor: c.separator,
+        },
       }}
     >
       <Tabs.Screen
@@ -42,8 +49,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* Hidden routes — keep files but hide from tab bar */}
-      <Tabs.Screen name="cards" options={{ href: null }} />
+      {/* chat.tsx kept as hidden route — accessible programmatically but not in tab bar */}
       <Tabs.Screen name="chat" options={{ href: null }} />
     </Tabs>
   );
@@ -51,11 +57,9 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    position: 'absolute',
+    position: 'absolute' as const,
     borderTopWidth: 0.5,
-    borderTopColor: 'rgba(60, 60, 67, 0.12)',
     elevation: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
     height: Platform.OS === 'ios' ? 83 : 60,
     paddingBottom: Platform.OS === 'ios' ? 34 : 8,
     paddingTop: 6,
