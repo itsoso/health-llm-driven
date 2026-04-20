@@ -14,6 +14,7 @@ import ActivityRingBar from '@/components/dashboard/ActivityRingBar';
 import SupplementCheckin from '@/components/dashboard/SupplementCheckin';
 import RhinitisCard from '@/components/dashboard/RhinitisCard';
 import StrengthCard from '@/components/dashboard/StrengthCard';
+import WorkoutWeekCard from '@/components/dashboard/WorkoutWeekCard';
 import TrendMiniCharts from '@/components/dashboard/TrendMiniCharts';
 import SectionHeader from '@/components/design-system/SectionHeader';
 import HealthCard from '@/components/design-system/HealthCard';
@@ -82,16 +83,19 @@ export default function RecordScreen() {
         {/* 2. Activity */}
         <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
 
-        {/* 3. Rhinitis */}
+        {/* 3. Workout Week */}
+        <WorkoutWeekCard />
+
+        {/* 4. Rhinitis */}
         <RhinitisCard checkin={data?.checkin} onUpdate={refetch} />
 
-        {/* 4. Strength */}
+        {/* 5. Strength */}
         <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />
 
-        {/* 5. Supplements */}
+        {/* 6. Supplements */}
         <SupplementCheckin supplements={data?.supplements || []} onToggle={refetch} />
 
-        {/* 6. Body + Diet (tabbed) */}
+        {/* 7. Body + Diet (tabbed) */}
         <View style={styles.tabCard}>
           <View style={styles.tabHeader}>
             <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'diet' && styles.tabBtnActive]} onPress={() => setBodyDietTab('diet')}>
@@ -189,7 +193,7 @@ export default function RecordScreen() {
           )}
         </View>
 
-        {/* 7. Medication */}
+        {/* 8. Medication */}
         {Array.isArray(medications) && medications.length > 0 && (
           <HealthCard title="用药状态" icon="medical-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
             <View style={styles.medRow}>
@@ -213,10 +217,10 @@ export default function RecordScreen() {
           </HealthCard>
         )}
 
-        {/* 8. Trends */}
+        {/* 9. Trends */}
         <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
 
-        {/* 9. Water (low priority) */}
+        {/* 10. Water (low priority) */}
         <HealthCard title="饮水" icon="water-outline" iconColor="#64D2FF" iconBg="#E6F5FF"
           rightAccessory={<Text style={txt.waterTotal}>{waterTotal}/{waterTarget}ml</Text>}>
           <View style={styles.waterBtnRow}>
