@@ -31,7 +31,7 @@ This is a **pnpm workspace** (`pnpm-workspace.yaml` → `packages/*`) plus sever
 | `backend/` | FastAPI + SQLAlchemy + Celery | API server, agents, Twin, orchestrator |
 | `frontend/` | Next.js 14 | Web app (PC browsers). `frontend/ios/` Capacitor 已停用 |
 | `mobile/` | Expo SDK 54 + expo-router + React Native 0.81 | **iPhone/iPad 唯一原生 App** — 所有移动端新功能在这里做 |
-| `packages/mini-program/` | WeChat mini program (uni-app) | `weixin` client; has its own `AGENTS.md` |
+| `packages/mini-program/` | WeChat mini program (uni-app) | `weixin` client |
 | `packages/shared/` | TypeScript | Shared types/utilities across web/mobile/mini |
 | `mcp-server/` | Python | Standalone MCP server exposing health tools |
 | `openclaw-skills/` | Markdown | Root-level skill definitions consumed by OpenClaw Gateway (distinct from `backend/skills/` which are deployed with the backend) |
@@ -49,7 +49,7 @@ source venv/bin/activate
 # Run backend locally
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-# Run all tests
+# Run all tests (CI requires SECRET_KEY and GARMIN_ENCRYPTION_KEY env vars)
 pytest
 
 # Run a single test file
@@ -103,7 +103,18 @@ npm run ios          # expo run:ios (requires Xcode)
 npm run android      # expo run:android
 ```
 
-The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tanstack/react-query` for data, and `expo-secure-store` for tokens.
+The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tanstack/react-query` for data, and `expo-secure-store` for tokens. React 19.1 with New Architecture enabled.
+
+**App identity**: "HealthPilot", bundle ID `life.executor.health`, scheme `mobile`.
+
+**Mobile architecture layers**:
+- `services/` — API clients (api.ts, auth.ts, chat.ts, dashboard.ts, diet.ts, goals.ts, sleep.ts, workouts.ts, safety.ts, etc.)
+- `hooks/` — React Query hooks wrapping services (useAuth, useDashboardData, useDiet, useGoals, useSleepData, useWorkouts, etc.)
+- `components/` — UI split by domain: `chat/`, `dashboard/`, `diet/`, `goals/`, `notifications/`, `sleep/`, `design-system/`
+
+**Tab navigation** (`mobile/app/(tabs)/`): Home, AI Chat, Quick Record, Safety Alerts, Health Cards.
+
+**Notable native dependencies**: `react-native-maps` (workout GPS), `@react-native-voice/voice`, `expo-haptics`, `expo-notifications`, `expo-local-authentication` (Face ID), `react-native-reanimated`, `expo-image-picker`, `react-native-markdown-display`.
 
 **⚠️ 这是 iPhone / iPad 的唯一原生 App 实现（Capacitor 已退役）**。所有涉及移动端的新 feature 都应先在 `mobile/` 里实现；`frontend/` 只负责 Web。
 
@@ -114,7 +125,7 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 ```bash
 cd packages/mini-program
 npm install
-# See packages/mini-program/AGENTS.md and RELEASE.md for the WeChat DevTools build flow
+# See packages/mini-program/RELEASE.md for the WeChat DevTools build flow
 ```
 
 ### MCP Server
@@ -129,8 +140,8 @@ python server.py     # See mcp-server/README.md for tool list
 
 ```bash
 ./deploy.sh -f   # Deploy frontend only (most common)
-./deploy.sh -b   # Deploy backend only (also syncs Skills to OpenClaw Gateway)
-./deploy.sh -a   # Deploy both
+./deploy.sh -b   # Deploy backend only (also syncs Skills, restarts Celery worker+beat, does DB backup)
+./deploy.sh -a   # Deploy both (same as no flags)
 ./deploy.sh -e   # Sync .env-online to server and restart
 ./deploy.sh -r   # Restart services without pulling code
 ./deploy.sh -p   # Push code to GitHub without deploying
@@ -138,7 +149,7 @@ python server.py     # See mcp-server/README.md for tool list
 ./deploy.sh -l   # View logs
 ```
 
-Backend deploy automatically syncs `skills/*/SKILL.md` to the OpenClaw Gateway.
+Backend deploy automatically syncs `skills/*/SKILL.md` to the OpenClaw Gateway. Health score is checked post-deploy — auto-rollback on failure.
 
 ### Database Migrations
 
@@ -215,7 +226,7 @@ Browser → Next.js (localhost:3000)
   → rewrites /api/* → backend (localhost:8000) /api/v1/*
 ```
 
-The Next.js `rewrites` in `next.config.js` proxies `/api/:path*` to the backend's `/api/v1/:path*`. Frontend code in `services/api.ts` uses relative `/api` paths (web) or absolute URLs (native app via Capacitor).
+The Next.js `rewrites` in `next.config.js` proxies `/api/:path*` to the backend's `/api/v1/:path*`. Frontend code in `services/api.ts` uses relative `/api` paths. Mobile app (`mobile/services/api.ts`) uses absolute URLs pointing to `health-api.executor.life`.
 
 ### AI Chat Routing (智能助理对话路由)
 
@@ -366,7 +377,7 @@ ssh root@39.98.206.178 "pm2 logs health-frontend --lines 50"
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 - **Backend**: `pytest tests/ -q --no-cov --tb=short -x` (Python 3.12, fails fast on first error)
-- **Frontend**: `npm run build` + `npm run lint` (Node.js 20)
+- **Frontend**: `npm run build` + `npm run lint` (Node.js 22)
 
 ## Conventions
 
@@ -449,6 +460,9 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | `backend/app/tasks/*.py` | Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 前端页面（~100 个） |
 | `frontend/src/components/*.tsx` | 前端组件（含 SafetyPanel/SpecialistsPanel） |
+| `mobile/app/` | RN 页面 + Tab 导航 |
+| `mobile/components/` | RN 组件（按领域分目录） |
+| `mobile/services/` + `mobile/hooks/` | RN API 层 + React Query hooks |
 
 ### 指令层 (Instructions) — 定义 AI Agent 行为
 

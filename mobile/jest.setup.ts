@@ -1,0 +1,81 @@
+import '@testing-library/jest-native/extend-expect';
+
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn().mockResolvedValue(null),
+  setItemAsync: jest.fn().mockResolvedValue(undefined),
+  deleteItemAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('expo-haptics', () => ({
+  impactAsync: jest.fn(),
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+}));
+
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
+  useLocalSearchParams: () => ({}),
+  usePathname: () => '/',
+  Link: 'Link',
+  Stack: { Screen: 'Screen' },
+}));
+
+jest.mock('@expo/vector-icons/Ionicons', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return React.forwardRef((props: any, ref: any) =>
+    React.createElement(View, { ...props, ref, testID: `icon-${props.name}` })
+  );
+});
+
+jest.mock('@expo/vector-icons', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const MockIcon = React.forwardRef((props: any, ref: any) =>
+    React.createElement(View, { ...props, ref, testID: `icon-${props.name}` })
+  );
+  MockIcon.displayName = 'MockIcon';
+  return {
+    Ionicons: MockIcon,
+    MaterialIcons: MockIcon,
+    FontAwesome: MockIcon,
+  };
+});
+
+jest.mock('react-native-svg', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const mock = (name: string) => (props: any) => React.createElement(View, { ...props, testID: name });
+  return {
+    __esModule: true,
+    default: mock('Svg'),
+    Svg: mock('Svg'),
+    Rect: mock('Rect'),
+    Circle: mock('Circle'),
+    Line: mock('Line'),
+    Polygon: mock('Polygon'),
+    Path: mock('Path'),
+    G: mock('G'),
+    Text: mock('SvgText'),
+    Polyline: mock('Polyline'),
+  };
+});
+
+jest.mock('./modules/shared-keychain', () => ({
+  saveTokenToSharedKeychain: jest.fn().mockResolvedValue(true),
+  deleteTokenFromSharedKeychain: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('react-native-safe-area-context', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    SafeAreaView: (props: any) => React.createElement(View, props),
+    SafeAreaProvider: (props: any) => React.createElement(View, props),
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+  };
+});
+
+jest.mock('@react-native-community/netinfo', () => ({
+  addEventListener: jest.fn(() => jest.fn()),
+  fetch: jest.fn().mockResolvedValue({ isConnected: true }),
+}));
