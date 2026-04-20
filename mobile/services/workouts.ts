@@ -44,6 +44,7 @@ export interface WorkoutDetail {
   training_effect_anaerobic: number | null;
   vo2max: number | null;
   ai_analysis: string | null;
+  post_workout_analysis: string | null;
   route_data: string | null;
 }
 
@@ -94,5 +95,25 @@ export async function syncGarminWorkouts(): Promise<{ synced: number }> {
 
 export async function analyzeWorkout(id: number): Promise<WorkoutAnalysis> {
   const { data } = await api.post<WorkoutAnalysis>(`/workout/me/${id}/analyze`);
+  return data;
+}
+
+export interface PostWorkoutAnalysisResponse {
+  success: boolean;
+  from_cache?: boolean;
+  has_cache?: boolean;
+  [key: string]: unknown;
+}
+
+export async function getPostWorkoutAnalysis(
+  id: number,
+  forceRegenerate = false,
+  cacheOnly = false,
+): Promise<PostWorkoutAnalysisResponse> {
+  const { data } = await api.post<PostWorkoutAnalysisResponse>(
+    `/workout/post-workout-analysis/${id}`,
+    null,
+    { params: { force_regenerate: forceRegenerate, cache_only: cacheOnly } },
+  );
   return data;
 }
