@@ -8,16 +8,18 @@ from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.user import User
 from app.schemas.medical_exam import MedicalExamCreate, MedicalExamItemCreate
 from app.models.medical_exam import ExamType, BodySystem
+from app.services.exam_packages import create_indicator_from_item
 
 
 class MedicalExamImportService:
     """体检数据导入服务"""
-    
+
     @staticmethod
     def import_from_json(
         db: Session,
         user_id: int,
-        json_data: Dict[str, Any]
+        json_data: Dict[str, Any],
+        source: str = "json_import",
     ) -> MedicalExam:
         """从JSON格式导入体检数据"""
         exam_data = json_data.get("exam", {})
@@ -52,6 +54,12 @@ class MedicalExamImportService:
                 **item_create.model_dump()
             )
             db.add(db_item)
+            indicator = create_indicator_from_item(
+                user_id=user_id, exam_id=db_exam.id,
+                record_date=db_exam.exam_date,
+                item_dict=item_create.model_dump(), source=source,
+            )
+            db.add(indicator)
         
         db.commit()
         db.refresh(db_exam)
@@ -86,7 +94,7 @@ class MedicalExamImportService:
             "items": [item.model_dump() for item in items]
         }
         
-        return MedicalExamImportService.import_from_json(db, user_id, exam_data)
+        return MedicalExamImportService.import_from_json(db, user_id, exam_data, source="csv_import")
     
     @staticmethod
     def import_from_excel(
@@ -125,5 +133,5 @@ class MedicalExamImportService:
             "items": [item.model_dump() for item in items]
         }
         
-        return MedicalExamImportService.import_from_json(db, user_id, exam_data)
+        return MedicalExamImportService.import_from_json(db, user_id, exam_data, source="csv_import")
 

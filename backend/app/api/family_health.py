@@ -931,10 +931,14 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
             for item in extracted_items:
                 if item.get("value") is not None:
                     try:
+                        from app.services.exam_packages import normalize_item_name
+                        code, std_name = normalize_item_name(item["name"])
                         indicator = MedicalIndicator(
                             user_id=user_id,
                             report_id=report_id,
                             name=item["name"],
+                            name_en=code if code else None,
+                            item_code=code if code else None,
                             category=_categorize_indicator(item["name"]),
                             value=float(item["value"]),
                             unit=item.get("unit"),
@@ -942,6 +946,7 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
                             reference_high=item.get("reference_high"),
                             is_abnormal=item.get("is_abnormal", False),
                             severity=item.get("severity", "normal"),
+                            source="image_ai",
                             record_date=report_date,
                         )
                         db.add(indicator)

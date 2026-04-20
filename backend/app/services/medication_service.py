@@ -167,6 +167,7 @@ class MedicationService:
                 "medication_id": med.id,
                 "name": med.name,
                 "dosage": med.dosage,
+                "category": med.category,
                 "total_count": med.times_per_day,
                 "taken_count": taken_count,
                 "skipped_count": skipped_count,

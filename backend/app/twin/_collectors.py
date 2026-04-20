@@ -19,7 +19,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import desc
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -186,60 +186,46 @@ def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str,
 def fetch_medical_exam_abnormal(
     db: Session, user_id: int, limit: int = 10
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """最近化验单中的异常项 + 最新化验元信息（单次 joinedload 查询）。
-
-    返回 (abnormal_items, latest_exam_meta)。
-
-    注意：`medical_exam_items.is_abnormal` 是 varchar(20) 不是 bool，
-    值可能是 'true'/'yes'/'偏高'/'偏低'/'异常' 等字符串。
-    在 Python 侧过滤而不是 SQL，避免类型不匹配。
-    """
+    """最近体检中的异常指标 — 从统一的 medical_indicators 表读取。"""
     try:
-        from app.models.medical_exam import MedicalExam, MedicalExamItem
+        from app.models.family_health import MedicalIndicator
 
-        exams = (
-            db.query(MedicalExam)
-            .options(joinedload(MedicalExam.items))
-            .filter(MedicalExam.user_id == user_id)
-            .order_by(desc(MedicalExam.exam_date))
-            .limit(3)
+        indicators = (
+            db.query(MedicalIndicator)
+            .filter(
+                MedicalIndicator.user_id == user_id,
+                MedicalIndicator.is_abnormal == True,
+            )
+            .order_by(desc(MedicalIndicator.record_date))
+            .limit(limit)
             .all()
         )
-        if not exams:
+        if not indicators:
             return [], {}
 
-        # 最新化验元信息
-        latest_meta = {"exam_date": exams[0].exam_date, "exam_type": exams[0].exam_type}
-
-        abnormal_labels = {
-            "true", "yes", "1", "异常", "偏高", "偏低",
-            "高", "低", "阳性", "abnormal", "high", "low",
+        latest_meta = {
+            "exam_date": indicators[0].record_date,
+            "exam_type": indicators[0].category,
         }
-        result: List[Dict[str, Any]] = []
-        for exam in exams:
-            for it in exam.items:
-                flag = (it.is_abnormal or "").strip().lower()
-                is_ab = flag in abnormal_labels or (
-                    it.result and str(it.result).strip().lower() in abnormal_labels
-                )
-                if not is_ab:
-                    continue
-                result.append(
-                    {
-                        "item_name": it.item_name,
-                        "value": it.value if it.value is not None else it.value_text,
-                        "unit": it.unit,
-                        "reference_range": it.reference_range,
-                        "result": it.result,
-                        "exam_date": exam.exam_date,
-                        "exam_type": exam.exam_type,
-                    }
-                )
-                if len(result) >= limit:
-                    return result, latest_meta
+        result: List[Dict[str, Any]] = [
+            {
+                "item_name": ind.name,
+                "value": ind.value if ind.value is not None else ind.value_text,
+                "unit": ind.unit,
+                "reference_range": ind.reference_range or (
+                    f"{ind.reference_low}-{ind.reference_high}"
+                    if ind.reference_low is not None and ind.reference_high is not None
+                    else None
+                ),
+                "result": ind.result,
+                "exam_date": ind.record_date,
+                "exam_type": ind.category,
+            }
+            for ind in indicators
+        ]
         return result, latest_meta
     except Exception as e:
-        logger.warning(f"[twin.collectors] medical_exam 失败: {e}")
+        logger.warning(f"[twin.collectors] medical_indicators 失败: {e}")
         try:
             db.rollback()
         except Exception:

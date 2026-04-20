@@ -40,22 +40,29 @@ class MedicalReport(Base):
 
 
 class MedicalIndicator(Base):
-    """体检指标时间线（从报告中提取，便于趋势分析）"""
+    """体检指标时间线 — 唯一指标存储（PDF/图片/手动/CSV 统一写入）"""
     __tablename__ = "medical_indicators"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     report_id = Column(Integer, ForeignKey("medical_reports.id", ondelete="CASCADE"), nullable=True)
+    exam_id = Column(Integer, ForeignKey("medical_exams.id", ondelete="SET NULL"), nullable=True)
 
     name = Column(String(100), nullable=False)           # 指标名称（如"空腹血糖"）
     name_en = Column(String(100), nullable=True)         # 英文名（如"FBG"）
+    item_code = Column(String(100), nullable=True)       # 标准编码（normalize_item_name 产出）
     category = Column(String(50), nullable=True)         # 分类：blood/liver/kidney/thyroid/lipid/glucose/other
-    value = Column(Float, nullable=False)                # 数值
+    value = Column(Float, nullable=True)                 # 数值（影像等纯文字结果可为空）
+    value_text = Column(Text, nullable=True)             # 非数值结果（影像结论等）
     unit = Column(String(50), nullable=True)             # 单位
     reference_low = Column(Float, nullable=True)         # 参考范围下限
     reference_high = Column(Float, nullable=True)        # 参考范围上限
+    reference_range = Column(String(200), nullable=True) # 原始参考范围字符串
     is_abnormal = Column(Boolean, default=False)         # 是否异常
     severity = Column(String(20), nullable=True)         # normal/mild/moderate/severe
+    result = Column(String(100), nullable=True)          # 描述性结果（偏高/阳性等）
+    notes = Column(Text, nullable=True)
+    source = Column(String(20), default="manual")        # manual/pdf_import/json_import/csv_import/image_ai
     record_date = Column(Date, nullable=False)           # 检测日期
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -63,6 +70,7 @@ class MedicalIndicator(Base):
     __table_args__ = (
         Index('idx_indicator_user_name_date', 'user_id', 'name', 'record_date'),
         Index('idx_indicator_user_category', 'user_id', 'category'),
+        Index('idx_indicator_user_code_date', 'user_id', 'item_code', 'record_date'),
     )
 
 

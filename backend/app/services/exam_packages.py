@@ -363,6 +363,115 @@ def get_package_items(package_key: str) -> List[Dict[str, str]]:
     return items
 
 
+# ========== 指标统一化工具函数 ==========
+
+import re
+from typing import Optional, Tuple
+
+_ABNORMAL_LABELS = frozenset({
+    "true", "yes", "1", "异常", "偏高", "偏低",
+    "高", "低", "阳性", "abnormal", "high", "low",
+})
+
+_RANGE_RE = re.compile(
+    r"^\s*([<>≤≥]?)\s*([\d.]+)\s*(?:[-~～—–]\s*([\d.]+))?\s*",
+)
+
+
+def parse_reference_range(range_str: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+    if not range_str:
+        return None, None
+    m = _RANGE_RE.match(range_str)
+    if not m:
+        return None, None
+    op, first, second = m.group(1), m.group(2), m.group(3)
+    try:
+        v1 = float(first)
+    except (ValueError, TypeError):
+        return None, None
+    if second is not None:
+        try:
+            return v1, float(second)
+        except (ValueError, TypeError):
+            return v1, None
+    if op in ("<", "≤"):
+        return None, v1
+    if op in (">", "≥"):
+        return v1, None
+    return None, None
+
+
+def abnormal_str_to_bool(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    return value.strip().lower() in _ABNORMAL_LABELS
+
+
+def create_indicator_from_item(
+    user_id: int,
+    exam_id: Optional[int],
+    record_date,
+    item_dict: dict,
+    source: str = "manual",
+):
+    from app.models.family_health import MedicalIndicator
+
+    raw_name = item_dict.get("item_name") or item_dict.get("name") or ""
+    item_code_hint = item_dict.get("item_code") or ""
+    code, standard_name = normalize_item_name(raw_name)
+    if not code and item_code_hint:
+        code = item_code_hint
+
+    raw_value = item_dict.get("value")
+    numeric_value = None
+    if raw_value is not None:
+        try:
+            numeric_value = float(raw_value)
+        except (ValueError, TypeError):
+            pass
+
+    ref_low = item_dict.get("reference_low")
+    ref_high = item_dict.get("reference_high")
+    raw_range = item_dict.get("reference_range")
+    if ref_low is None and ref_high is None and raw_range:
+        ref_low, ref_high = parse_reference_range(raw_range)
+
+    is_ab_raw = item_dict.get("is_abnormal")
+    if isinstance(is_ab_raw, bool):
+        is_ab = is_ab_raw
+    else:
+        is_ab = abnormal_str_to_bool(str(is_ab_raw) if is_ab_raw is not None else "")
+
+    severity = item_dict.get("severity")
+    if not severity and is_ab:
+        flag = str(is_ab_raw or "").strip().lower()
+        if flag in ("偏高", "偏低", "high", "low", "高", "低"):
+            severity = "mild"
+        else:
+            severity = "moderate"
+
+    return MedicalIndicator(
+        user_id=user_id,
+        exam_id=exam_id,
+        name=standard_name or raw_name,
+        name_en=code if code else None,
+        item_code=code if code else None,
+        category=item_dict.get("category"),
+        value=numeric_value,
+        value_text=item_dict.get("value_text"),
+        unit=item_dict.get("unit"),
+        reference_low=ref_low,
+        reference_high=ref_high,
+        reference_range=raw_range,
+        is_abnormal=is_ab,
+        severity=severity or "normal",
+        result=item_dict.get("result"),
+        notes=item_dict.get("notes"),
+        source=source,
+        record_date=record_date,
+    )
+
+
 def identify_package(items: List[str]) -> List[str]:
     """
     根据项目列表识别可能的套餐

@@ -13,6 +13,7 @@ from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services.data_collection.medical_exam_import import MedicalExamImportService
 from app.services.pdf_parser import pdf_parser
+from app.services.exam_packages import create_indicator_from_item
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -47,6 +48,12 @@ def create_medical_exam(
             **item.model_dump()
         )
         db.add(db_item)
+        indicator = create_indicator_from_item(
+            user_id=exam.user_id, exam_id=db_exam.id,
+            record_date=db_exam.exam_date,
+            item_dict=item.model_dump(), source="manual",
+        )
+        db.add(indicator)
     
     db.commit()
     db.refresh(db_exam)
@@ -210,11 +217,12 @@ async def import_medical_exam_from_pdf(
                     value = float(value)
                 except (ValueError, TypeError):
                     value = None
-            
+
             db_item = MedicalExamItem(
                 exam_id=db_exam.id,
                 category=item.get("category"),
                 item_name=item.get("item_name"),
+                item_code=item.get("item_code"),
                 value=value,
                 value_text=item.get("value_text"),
                 unit=item.get("unit"),
@@ -223,6 +231,12 @@ async def import_medical_exam_from_pdf(
                 notes=item.get("notes")
             )
             db.add(db_item)
+            indicator = create_indicator_from_item(
+                user_id=user_id, exam_id=db_exam.id,
+                record_date=db_exam.exam_date,
+                item_dict=item, source="pdf_import",
+            )
+            db.add(indicator)
         
         db.commit()
         db.refresh(db_exam)
