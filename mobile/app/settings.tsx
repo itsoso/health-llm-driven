@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import api from '@/services/api';
+import * as SecureStore from 'expo-secure-store';
+import api, { TOKEN_KEY } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useBiometricLock } from '@/hooks/useBiometricLock';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
@@ -40,6 +41,17 @@ export default function SettingsScreen() {
       { text: '取消', style: 'cancel' },
       { text: '退出', style: 'destructive', onPress: () => logout() },
     ]);
+  };
+
+  const importSiriShortcut = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const token = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (!token) {
+      Alert.alert('请先登录', '需要登录后才能导入 Siri 快捷指令');
+      return;
+    }
+    const url = `https://health.executor.life/api/siri/shortcut?token=${token}`;
+    Linking.openURL(url);
   };
 
   return (
@@ -84,10 +96,13 @@ export default function SettingsScreen() {
             onPress={() => router.push('/goals' as any)} />
         </View>
 
-        {/* Notifications & Security */}
+        {/* Notifications & Siri & Security */}
         <View style={styles.card}>
           <SettingRow icon="notifications-outline" label="推送通知"
             onPress={() => router.push('/notification-settings' as any)} />
+          <SettingRow icon="mic-outline" label="Siri 语音记录"
+            value="导入快捷指令"
+            onPress={importSiriShortcut} />
           {bioSupported && (
             <View style={styles.settingRow}>
               <Ionicons name="finger-print-outline" size={18} color={colors.labelSecondary} />

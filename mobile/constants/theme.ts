@@ -44,6 +44,41 @@ export const colors = {
   tintTeal: '#E6F8FF',
 } as const;
 
+export const darkColors = {
+  brand: '#0EB5B5',
+  brandLight: '#1A3333',
+  brandDark: '#0EB5B5',
+
+  green: '#30D158',
+  amber: '#FF9F0A',
+  red: '#FF453A',
+  purple: '#BF5AF2',
+  pink: '#FF375F',
+  orange: '#FF6723',
+  blue: '#64D2FF',
+  teal: '#5AC8FA',
+
+  labelPrimary: '#F5F5F7',
+  labelSecondary: '#A1A1A6',
+  labelTertiary: '#636366',
+  labelQuaternary: '#48484A',
+  separator: 'rgba(255, 255, 255, 0.12)',
+
+  bgPrimary: '#000000',
+  bgCard: '#1C1C1E',
+  bgElevated: '#2C2C2E',
+  fill: '#3A3A3C',
+
+  tintGreen: '#0D2B1A',
+  tintAmber: '#2B1F0D',
+  tintRed: '#2B0D0D',
+  tintPurple: '#1F0D2B',
+  tintPink: '#2B0D1A',
+  tintOrange: '#2B1A0D',
+  tintBlue: '#0D1A2B',
+  tintTeal: '#0D1F2B',
+} as const;
+
 // ── Typography ──────────────────────────────────────────
 
 export const typography = {

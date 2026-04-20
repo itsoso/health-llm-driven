@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { deleteTokenFromSharedKeychain } from '../modules/shared-keychain';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -34,6 +35,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       try {
         await SecureStore.deleteItemAsync(TOKEN_KEY);
+        deleteTokenFromSharedKeychain().catch(() => {});
       } catch {}
       onUnauthorized?.();
     }

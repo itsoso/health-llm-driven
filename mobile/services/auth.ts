@@ -1,5 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
 import api, { TOKEN_KEY } from './api';
+import {
+  saveTokenToSharedKeychain,
+  deleteTokenFromSharedKeychain,
+} from '../modules/shared-keychain';
 
 export interface User {
   id: number;
@@ -24,11 +28,13 @@ export async function login(
     password,
   });
   await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
+  saveTokenToSharedKeychain(data.access_token).catch(() => {});
   return data;
 }
 
 export async function logout(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+  deleteTokenFromSharedKeychain().catch(() => {});
 }
 
 export async function getToken(): Promise<string | null> {

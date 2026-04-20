@@ -1,18 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { getSleepRecords, getSleepStats, getSleepDebt, type SleepRecord, type SleepStats, type SleepDebt } from '@/services/sleep';
-
-export function useSleepRecords(limit = 14) {
-  return useQuery<SleepRecord[]>({
-    queryKey: ['sleepRecords', limit],
-    queryFn: () => getSleepRecords(limit),
-    staleTime: 120_000,
-  });
-}
+import { getGarminSleepData, computeSleepStats, getSleepDebt, type GarminSleepDay, type SleepStats, type SleepDebt } from '@/services/sleep';
 
 export function useSleepStats(days = 7) {
   return useQuery<SleepStats>({
     queryKey: ['sleepStats', days],
-    queryFn: () => getSleepStats(days),
+    queryFn: async () => {
+      const garminData = await getGarminSleepData(days);
+      return computeSleepStats(garminData);
+    },
     staleTime: 120_000,
   });
 }

@@ -33,9 +33,9 @@ export default function GoalsScreen() {
     }
   };
 
-  const handleProgressSubmit = useCallback((value: number, notes: string) => {
+  const handleProgressSubmit = useCallback((value: number, _notes: string) => {
     if (!selectedGoal) return;
-    progressMutation.mutate({ id: selectedGoal.id, update: { value, notes } });
+    progressMutation.mutate({ id: selectedGoal.id, progressValue: value });
   }, [selectedGoal, progressMutation]);
 
   const renderItem = ({ item }: { item: GoalResponse }) => (

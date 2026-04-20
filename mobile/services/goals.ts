@@ -1,8 +1,8 @@
 import api from './api';
 
-export type GoalType = 'weight' | 'exercise' | 'sleep' | 'nutrition' | 'habit' | 'health_metric' | 'custom';
-export type GoalPeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-export type GoalStatus = 'active' | 'completed' | 'paused' | 'abandoned';
+export type GoalType = 'diet' | 'exercise' | 'sleep' | 'water' | 'supplement' | 'outdoor' | 'weight' | 'other';
+export type GoalPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type GoalStatus = 'active' | 'completed' | 'paused' | 'cancelled';
 
 export interface GoalResponse {
   id: number;
@@ -10,40 +10,35 @@ export interface GoalResponse {
   title: string;
   description: string | null;
   goal_type: GoalType;
-  period: GoalPeriod;
-  target_value: number;
-  current_value: number;
-  unit: string;
+  goal_period: GoalPeriod;
+  target_value: number | null;
+  target_unit: string | null;
+  current_value: number | null;
   status: GoalStatus;
   start_date: string;
   end_date: string | null;
-  created_at: string;
-  updated_at: string;
+  implementation_steps: string | null;
+  priority: number | null;
+  notes: string | null;
 }
 
 export interface GoalCreate {
   title: string;
   description?: string;
   goal_type: GoalType;
-  period: GoalPeriod;
-  target_value: number;
-  current_value?: number;
-  unit: string;
+  goal_period: GoalPeriod;
+  target_value?: number;
+  target_unit?: string;
   start_date: string;
   end_date?: string;
-}
-
-export interface GoalProgressUpdate {
-  value: number;
+  implementation_steps?: string;
+  priority?: number;
   notes?: string;
 }
 
 export interface GoalGuidance {
-  goal_id: number;
-  current_progress: number;
-  target: number;
   suggestions: string[];
-  on_track: boolean;
+  [key: string]: any;
 }
 
 export async function getGoals(status?: GoalStatus): Promise<GoalResponse[]> {
@@ -56,13 +51,12 @@ export async function createGoal(goal: GoalCreate): Promise<GoalResponse> {
   return data;
 }
 
-export async function updateGoalProgress(id: number, update: GoalProgressUpdate): Promise<GoalResponse> {
-  const { data } = await api.post<GoalResponse>(`/goals/${id}/progress`, update);
+export async function updateGoalProgress(id: number, progressValue: number): Promise<any> {
+  const today = new Date().toISOString().split('T')[0];
+  const { data } = await api.post(`/goals/${id}/progress`, null, {
+    params: { progress_date: today, progress_value: progressValue },
+  });
   return data;
-}
-
-export async function deleteGoal(id: number): Promise<void> {
-  await api.delete(`/goals/${id}`);
 }
 
 export async function generateGoalsFromAnalysis(): Promise<GoalResponse[]> {
@@ -70,7 +64,11 @@ export async function generateGoalsFromAnalysis(): Promise<GoalResponse[]> {
   return data;
 }
 
-export async function getGoalGuidance(id: number): Promise<GoalGuidance> {
-  const { data } = await api.get<GoalGuidance>(`/goals/${id}/guidance`);
+export async function getGoalGuidance(goalType: string, description: string, targetValue?: number): Promise<GoalGuidance> {
+  const { data } = await api.post<GoalGuidance>('/goals/guidance', {
+    goal_type: goalType,
+    goal_description: description,
+    target_value: targetValue,
+  });
   return data;
 }

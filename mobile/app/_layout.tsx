@@ -7,6 +7,7 @@ import { ToastProvider } from '@/hooks/useToast';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useBiometricLock } from '@/hooks/useBiometricLock';
 import NotificationBanner from '@/components/notifications/NotificationBanner';
+import NetworkBanner from '@/components/NetworkBanner';
 import LoginScreen from '@/app/login';
 import {
   View,
@@ -19,6 +20,7 @@ import {
   TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -91,8 +93,10 @@ function AppContent() {
         <Stack.Screen name="workout-detail" options={{ headerShown: false }} />
         <Stack.Screen name="diet" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="goals" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="indicator-history" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
       <NotificationBanner />
+      <NetworkBanner />
     </>
   );
 }
@@ -109,6 +113,7 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
@@ -117,6 +122,7 @@ export default function RootLayout() {
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }
 

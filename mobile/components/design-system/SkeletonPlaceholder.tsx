@@ -66,6 +66,30 @@ export function VitalsGridSkeleton() {
   );
 }
 
+export function TrendChartSkeleton() {
+  return (
+    <View style={styles.skCard} testID="trend-chart-skeleton">
+      <View style={[styles.row, { marginBottom: 12 }]}>
+        <Bone width={80} height={16} />
+        <Bone width={120} height={24} style={{ borderRadius: 12 }} />
+      </View>
+      <Bone width="100%" height={180} style={{ borderRadius: 8 }} />
+    </View>
+  );
+}
+
+export function ChatSkeleton() {
+  return (
+    <View style={{ gap: 12, padding: spacing.lg }} testID="chat-skeleton">
+      <View style={{ alignItems: 'flex-end' }}>
+        <Bone width="60%" height={36} style={{ borderRadius: 16 }} />
+      </View>
+      <Bone width="80%" height={48} style={{ borderRadius: 16 }} />
+      <Bone width="70%" height={36} style={{ borderRadius: 16 }} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   bone: { backgroundColor: '#E5E5EA', borderRadius: 6 },
   card: {

@@ -18,6 +18,8 @@ interface Props {
   steps?: string;
   hr?: string;
   battery?: string;
+  batteryCurrent?: number | null;
+  batteryPeak?: number | null;
   onSettings?: () => void;
   onNewChat?: () => void;
   onHistory?: () => void;
@@ -39,6 +41,7 @@ function sc(score: number): string {
 export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, sleepScore, steps, hr, battery,
+  batteryCurrent, batteryPeak,
   onSettings, onNewChat, onHistory,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
@@ -159,7 +162,9 @@ export default function HomeHeader({
         <View style={styles.vDivider} />
         <Vital icon="heart-outline" color="#FF375F" label="心率" value={hr || '--'} />
         <View style={styles.vDivider} />
-        <Vital icon="battery-charging-outline" color="#30D158" label="电量" value={battery || '--'} />
+        <Vital icon="battery-charging-outline" color="#30D158"
+          label={batteryPeak != null ? `峰值 ${batteryPeak}` : '电量'}
+          value={batteryCurrent != null ? `${batteryCurrent}` : (battery || '--')} />
       </View>
 
       {/* Collapse button */}

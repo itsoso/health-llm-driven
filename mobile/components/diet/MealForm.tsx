@@ -36,11 +36,11 @@ export default function MealForm({ date, onSubmit, onCancel, initialDescription,
     onSubmit({
       record_date: date,
       meal_type: mealType,
-      food_description: desc.trim(),
+      food_items: desc.trim(),
       calories: cal ? parseFloat(cal) : undefined,
-      protein_g: protein ? parseFloat(protein) : undefined,
-      carbs_g: carbs ? parseFloat(carbs) : undefined,
-      fat_g: fat ? parseFloat(fat) : undefined,
+      protein: protein ? parseFloat(protein) : undefined,
+      carbs: carbs ? parseFloat(carbs) : undefined,
+      fat: fat ? parseFloat(fat) : undefined,
     });
   };
 

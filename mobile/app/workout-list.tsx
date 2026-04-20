@@ -39,7 +39,8 @@ export default function WorkoutListScreen() {
   };
 
   const renderItem = ({ item }: { item: WorkoutSummary }) => {
-    const icon = TYPE_ICONS[item.activity_type.toLowerCase()] || TYPE_ICONS.default;
+    const icon = TYPE_ICONS[(item.workout_type || '').toLowerCase()] || TYPE_ICONS.default;
+    const durationMin = item.duration_seconds ? Math.round(item.duration_seconds / 60) : 0;
     return (
       <TouchableOpacity style={styles.row}
         onPress={() => router.push(`/workout-detail?id=${item.id}` as any)}
@@ -48,11 +49,11 @@ export default function WorkoutListScreen() {
           <Ionicons name={icon} size={18} color={colors.brand} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={txt.type}>{item.activity_type}</Text>
-          <Text style={txt.time}>{new Date(item.start_time).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' })}</Text>
+          <Text style={txt.type}>{item.workout_name || item.workout_type || '运动'}</Text>
+          <Text style={txt.time}>{item.workout_date ? new Date(item.workout_date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' }) : ''}</Text>
         </View>
         <View style={styles.metaCol}>
-          <Text style={txt.duration}>{item.duration_minutes}min</Text>
+          <Text style={txt.duration}>{durationMin}min</Text>
           {item.calories != null && <Text style={txt.cal}>{item.calories}kcal</Text>}
         </View>
         <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
@@ -75,10 +76,10 @@ export default function WorkoutListScreen() {
       {/* Stats summary */}
       {stats && (
         <View style={styles.statsRow}>
-          <StatBadge label="本月次数" value={`${stats.total_workouts}`} />
-          <StatBadge label="总时长" value={`${Math.round(stats.total_duration_minutes)}min`} />
-          <StatBadge label="总消耗" value={`${Math.round(stats.total_calories)}kcal`} />
-          <StatBadge label="周均" value={`${stats.weekly_frequency.toFixed(1)}次`} />
+          <StatBadge label="本月次数" value={`${stats.total_workouts ?? 0}`} />
+          <StatBadge label="总时长" value={`${Math.round(stats.total_duration_minutes ?? 0)}min`} />
+          <StatBadge label="总消耗" value={`${Math.round(stats.total_calories ?? 0)}kcal`} />
+          <StatBadge label="总距离" value={`${(stats.total_distance_km ?? 0).toFixed(1)}km`} />
         </View>
       )}
 

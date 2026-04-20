@@ -7,11 +7,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import Markdown from 'react-native-markdown-display';
 import { streamChat, type ChatMessage } from '@/services/chat';
+import { useMediaPicker } from '@/hooks/useMediaPicker';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
@@ -42,7 +42,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [pendingImage, setPendingImage] = useState<{ uri: string; base64: string; type: string } | null>(null);
+  const { pendingImage, setPendingImage, pickImage, takePhoto } = useMediaPicker();
   const [showMenu, setShowMenu] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -90,27 +90,17 @@ export default function ChatScreen() {
   }, [input, isStreaming, pendingImage]);
 
   // ── Media Actions ──
-  const pickImage = useCallback(async () => {
+  const handlePickImage = useCallback(async () => {
     setShowMenu(false);
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      const a = result.assets[0];
-      setPendingImage({ uri: a.uri, base64: a.base64 || '', type: a.mimeType?.split('/')[1] || 'jpeg' });
-    }
-  }, []);
+    await pickImage();
+  }, [pickImage]);
 
-  const takePhoto = useCallback(async () => {
+  const handleTakePhoto = useCallback(async () => {
     setShowMenu(false);
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) { Alert.alert('需要相机权限'); return; }
-    const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      const a = result.assets[0];
-      setPendingImage({ uri: a.uri, base64: a.base64 || '', type: a.mimeType?.split('/')[1] || 'jpeg' });
-    }
-  }, []);
+    await takePhoto();
+  }, [takePhoto]);
 
-  const pickFile = useCallback(async () => {
+  const handlePickFile = useCallback(async () => {
     setShowMenu(false);
     const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
     if (!result.canceled && result.assets[0]) {
@@ -278,9 +268,9 @@ export default function ChatScreen() {
         <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
           <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
             <View style={styles.menuHandle} />
-            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={takePhoto} />
-            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={pickImage} />
-            <MenuItem icon="document-outline" label="添加文件" desc="上传文档或报告" onPress={pickFile} />
+            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
+            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={handlePickImage} />
+            <MenuItem icon="document-outline" label="添加文件" desc="上传文档或报告" onPress={handlePickFile} />
           </Pressable>
         </Pressable>
       </Modal>

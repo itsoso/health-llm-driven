@@ -8,11 +8,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
 import { streamChat, getConversations, getConversationMessages, type ChatMessage, type StreamEvent } from '@/services/chat';
+import { useMediaPicker } from '@/hooks/useMediaPicker';
 import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
@@ -49,7 +49,7 @@ export default function HomeScreen() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [pendingImage, setPendingImage] = useState<{ uri: string; base64: string; type: string } | null>(null);
+  const { pendingImage, setPendingImage, pickImage, takePhoto, pickFile: pickFileMedia } = useMediaPicker();
   const [showMenu, setShowMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -72,11 +72,43 @@ export default function HomeScreen() {
           setConversationId(latestId);
           const msgs = await getConversationMessages(latestId);
           if (msgs.length > 0) {
-            setMessages(msgs.map((m: any, i: number) => ({
+            const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
               id: `hist-${m.id || i}`,
               role: m.role,
               content: m.content,
-            })));
+            }));
+            setMessages(restored);
+
+            // Re-dispatch cards for user messages to restore dynamic cards
+            const userMsgs = restored.filter(m => m.role === 'user' && m.content);
+            for (const um of userMsgs) {
+              try {
+                const card = await dispatchCard({
+                  query: um.content,
+                  query_lower: um.content.toLowerCase(),
+                  toolsUsed: new Set(),
+                  data: {},
+                  api,
+                });
+                if (card) {
+                  setMessages(prev => {
+                    const idx = prev.findIndex(m => m.id === um.id);
+                    if (idx < 0) return prev;
+                    const existingCard = prev.find((m, j) => j > idx && m.cardType);
+                    if (existingCard) return prev;
+                    const cardMsg: UIMessage = {
+                      id: `card-${um.id}`,
+                      role: 'assistant',
+                      content: '',
+                      cardType: card.type,
+                      cardData: card.data,
+                    };
+                    const insertAt = Math.min(idx + 2, prev.length);
+                    return [...prev.slice(0, insertAt), cardMsg, ...prev.slice(insertAt)];
+                  });
+                }
+              } catch {}
+            }
           }
         }
       } catch { /* ignore */ }
@@ -212,27 +244,17 @@ export default function HomeScreen() {
     Animated.spring(plusRotation, { toValue: toOpen ? 1 : 0, useNativeDriver: true, friction: 8 }).start();
   };
 
-  const pickImage = useCallback(async () => {
+  const handlePickImage = useCallback(async () => {
     setShowMenu(false);
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      const a = result.assets[0];
-      setPendingImage({ uri: a.uri, base64: a.base64 || '', type: a.mimeType?.split('/')[1] || 'jpeg' });
-    }
-  }, []);
+    await pickImage();
+  }, [pickImage]);
 
-  const takePhoto = useCallback(async () => {
+  const handleTakePhoto = useCallback(async () => {
     setShowMenu(false);
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) { Alert.alert('需要相机权限'); return; }
-    const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      const a = result.assets[0];
-      setPendingImage({ uri: a.uri, base64: a.base64 || '', type: a.mimeType?.split('/')[1] || 'jpeg' });
-    }
-  }, []);
+    await takePhoto();
+  }, [takePhoto]);
 
-  const pickFile = useCallback(async () => {
+  const handlePickFile = useCallback(async () => {
     setShowMenu(false);
     const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
     if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
@@ -320,7 +342,11 @@ export default function HomeScreen() {
   const sleepH = garmin?.total_sleep_duration ? (garmin.total_sleep_duration / 60).toFixed(1) : '--';
   const steps = garmin?.steps ?? '--';
   const hrVal = garmin?.resting_heart_rate ?? '--';
-  const batteryVal = garmin?.body_battery_most_charged ?? garmin?.body_battery_current ?? '--';
+  const batteryCurrent = garmin?.body_battery_current;
+  const batteryPeak = garmin?.body_battery_most_charged;
+  const batteryVal = batteryCurrent != null && batteryPeak != null
+    ? `${batteryCurrent}/${batteryPeak}`
+    : `${batteryCurrent ?? batteryPeak ?? '--'}`;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -339,6 +365,8 @@ export default function HomeScreen() {
         steps={typeof steps === 'number' ? steps.toLocaleString() : `${steps}`}
         hr={`${hrVal}`}
         battery={`${batteryVal}`}
+        batteryCurrent={batteryCurrent}
+        batteryPeak={batteryPeak}
         onSettings={() => router.push('/settings' as any)}
         onNewChat={() => { setMessages([]); setConversationId(undefined); briefingInjected.current = false; }}
         onHistory={() => {
@@ -476,12 +504,29 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     key={item.id}
                     style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator }}
-                    onPress={() => {
+                    onPress={async () => {
                       setShowHistory(false);
                       setConversationId(item.id);
-                      getConversationMessages(item.id).then(msgs => {
-                        setMessages(msgs.map((m: any, i: number) => ({ id: `h-${m.id || i}`, role: m.role, content: m.content })));
-                      }).catch(() => {});
+                      try {
+                        const msgs = await getConversationMessages(item.id);
+                        const restored: UIMessage[] = msgs.map((m: any, i: number) => ({ id: `h-${m.id || i}`, role: m.role, content: m.content }));
+                        setMessages(restored);
+                        const userMsgs = restored.filter(m => m.role === 'user' && m.content);
+                        for (const um of userMsgs) {
+                          try {
+                            const card = await dispatchCard({ query: um.content, query_lower: um.content.toLowerCase(), toolsUsed: new Set(), data: {}, api });
+                            if (card) {
+                              setMessages(prev => {
+                                const idx = prev.findIndex(m => m.id === um.id);
+                                if (idx < 0 || prev.find((m, j) => j > idx && m.cardType)) return prev;
+                                const cardMsg: UIMessage = { id: `card-${um.id}`, role: 'assistant', content: '', cardType: card.type, cardData: card.data };
+                                const insertAt = Math.min(idx + 2, prev.length);
+                                return [...prev.slice(0, insertAt), cardMsg, ...prev.slice(insertAt)];
+                              });
+                            }
+                          } catch {}
+                        }
+                      } catch {}
                     }}
                     activeOpacity={0.6}
                   >
@@ -500,9 +545,9 @@ export default function HomeScreen() {
         <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
           <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
             <View style={styles.menuHandle} />
-            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={takePhoto} />
-            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={pickImage} />
-            <MenuItem icon="document-outline" label="文件" desc="上传文档或报告" onPress={pickFile} />
+            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
+            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={handlePickImage} />
+            <MenuItem icon="document-outline" label="文件" desc="上传文档或报告" onPress={handlePickFile} />
           </Pressable>
         </Pressable>
       </Modal>

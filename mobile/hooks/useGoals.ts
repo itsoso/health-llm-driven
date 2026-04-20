@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { getGoals, updateGoalProgress, type GoalResponse, type GoalProgressUpdate, type GoalStatus } from '@/services/goals';
+import { getGoals, updateGoalProgress, type GoalResponse, type GoalStatus } from '@/services/goals';
 
 export function useGoals(status?: GoalStatus) {
   return useQuery<GoalResponse[]>({
@@ -14,15 +14,15 @@ export function useUpdateGoalProgress() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, update }: { id: number; update: GoalProgressUpdate }) =>
-      updateGoalProgress(id, update),
-    onMutate: async ({ id, update }) => {
+    mutationFn: ({ id, progressValue }: { id: number; progressValue: number }) =>
+      updateGoalProgress(id, progressValue),
+    onMutate: async ({ id, progressValue }) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await qc.cancelQueries({ queryKey: ['goals'] });
       const prev = qc.getQueryData<GoalResponse[]>(['goals']);
       if (prev) {
         qc.setQueryData<GoalResponse[]>(['goals'], old =>
-          (old || []).map(g => g.id === id ? { ...g, current_value: update.value } : g),
+          (old || []).map(g => g.id === id ? { ...g, current_value: progressValue } : g),
         );
       }
       return { prev };

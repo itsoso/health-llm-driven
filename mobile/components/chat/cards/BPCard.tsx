@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
+import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
 import { colors } from '@/constants/theme';
 import type { CardSpec } from './types';
@@ -24,8 +25,9 @@ function classify(s: number, d: number): { label: string; color: string } {
 }
 
 export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color }: BPData) {
+  const router = useRouter();
   return (
-    <CardShell icon="heart" iconColor="#FF453A" title="血压" badge={category} badgeColor={category_color} bg="#FFF5F5">
+    <CardShell icon="heart" iconColor="#FF453A" title="血压" badge={category} badgeColor={category_color} bg="#FFF5F5" onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'blood_pressure' } })}>
       <View style={styles.row}>
         <View style={styles.bpBlock}>
           <Text style={[txt.bpNum, { color: category_color }]}>
@@ -54,15 +56,17 @@ export const BPCardSpec: CardSpec<BPData> = {
   },
   async build({ api }) {
     try {
-      const res = await api.get('/blood-pressure/me/latest');
-      const r = res.data;
+      const res = await api.get('/blood-pressure/records/me', { params: { limit: 1 } });
+      const list = res.data;
+      if (!Array.isArray(list) || list.length === 0) return null;
+      const r = list[0];
       if (!r || r.systolic == null || r.diastolic == null) return null;
       const c = classify(r.systolic, r.diastolic);
       return {
         systolic: r.systolic,
         diastolic: r.diastolic,
         pulse: r.pulse,
-        measured_at: r.measured_at ? (r.measured_at.slice(5, 16).replace('T', ' ')) : undefined,
+        measured_at: r.record_date ? String(r.record_date) : undefined,
         category: c.label,
         category_color: c.color,
       } as BPData;

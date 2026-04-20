@@ -5,65 +5,70 @@ export interface DietRecord {
   user_id: number;
   record_date: string;
   meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  food_description: string;
+  food_items: string;
   calories: number | null;
-  protein_g: number | null;
-  carbs_g: number | null;
-  fat_g: number | null;
-  fiber_g: number | null;
-  photo_url: string | null;
-  source: string;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  fiber: number | null;
+  image_url: string | null;
   notes: string | null;
+  health_tips: string | null;
 }
 
 export interface DietRecordCreate {
   record_date: string;
   meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  food_description: string;
+  food_items: string;
   calories?: number;
-  protein_g?: number;
-  carbs_g?: number;
-  fat_g?: number;
-  fiber_g?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
   notes?: string;
 }
 
 export interface DailyDietSummary {
-  date: string;
+  record_date: string;
   total_calories: number;
-  total_protein_g: number;
-  total_carbs_g: number;
-  total_fat_g: number;
-  total_fiber_g: number;
-  meal_count: number;
-  records: DietRecord[];
+  total_protein: number;
+  total_carbs: number;
+  total_fat: number;
+  total_fiber: number;
+  meals_count: number;
+  meals: DietRecord[];
 }
 
 export interface DietStats {
-  avg_daily_calories: number;
-  avg_protein_g: number;
-  avg_carbs_g: number;
-  avg_fat_g: number;
-  days_tracked: number;
-  calorie_trend: { date: string; calories: number }[];
+  average_daily_calories: number | null;
+  average_daily_protein: number | null;
+  average_daily_carbs: number | null;
+  average_daily_fat: number | null;
+  total_records: number;
+  days_recorded: number;
 }
 
-export interface FoodRecognitionResult {
-  food_name: string;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  confidence: number;
+export interface FoodItem {
+  name: string;
+  quantity: string | null;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  fiber: number | null;
+  confidence: number | null;
 }
 
-export interface NutritionEstimate {
-  food_description: string;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  fiber_g: number;
+export interface FoodRecognitionResponse {
+  success: boolean;
+  foods: FoodItem[];
+  meal_description: string | null;
+  health_tips: string | null;
+  total_calories: number | null;
+  total_protein: number | null;
+  total_carbs: number | null;
+  total_fat: number | null;
+  error: string | null;
 }
 
 export async function getDailyDiet(date: string): Promise<DailyDietSummary> {
@@ -85,16 +90,15 @@ export async function deleteDietRecord(id: number): Promise<void> {
   await api.delete(`/diet/records/${id}`);
 }
 
-export async function recognizeFood(imageUri: string): Promise<FoodRecognitionResult[]> {
-  const formData = new FormData();
-  formData.append('file', { uri: imageUri, name: 'photo.jpg', type: 'image/jpeg' } as any);
-  const { data } = await api.post<FoodRecognitionResult[]>('/diet/recognize', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+export async function recognizeFood(imageBase64: string): Promise<FoodRecognitionResponse> {
+  const { data } = await api.post<FoodRecognitionResponse>('/diet/recognize', {
+    image_base64: imageBase64,
+    image_type: 'jpeg',
   });
   return data;
 }
 
-export async function estimateNutrition(description: string): Promise<NutritionEstimate> {
-  const { data } = await api.post<NutritionEstimate>('/diet/estimate-nutrition', { food_description: description });
+export async function estimateNutrition(description: string): Promise<FoodRecognitionResponse> {
+  const { data } = await api.post<FoodRecognitionResponse>(`/diet/estimate-nutrition?food_description=${encodeURIComponent(description)}`);
   return data;
 }

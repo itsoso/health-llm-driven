@@ -2,40 +2,63 @@ import api from './api';
 
 export interface WorkoutSummary {
   id: number;
-  user_id: number;
-  activity_type: string;
-  start_time: string;
-  duration_minutes: number;
-  calories: number | null;
-  distance_km: number | null;
+  workout_date: string;
+  workout_type: string;
+  workout_name: string | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
   avg_heart_rate: number | null;
-  max_heart_rate: number | null;
-  source: string;
-  notes: string | null;
+  calories: number | null;
+  feeling: string | null;
+  has_ai_analysis: boolean;
 }
 
 export interface WorkoutStats {
   total_workouts: number;
   total_duration_minutes: number;
+  total_distance_km: number;
   total_calories: number;
   avg_duration_minutes: number;
-  avg_heart_rate: number | null;
-  activity_breakdown: Record<string, number>;
-  weekly_frequency: number;
+  avg_distance_km: number;
+  workouts_by_type: Record<string, number>;
+  recent_trend: string;
 }
 
-export interface WorkoutDetail extends WorkoutSummary {
-  avg_speed: number | null;
+export interface WorkoutDetail {
+  id: number;
+  user_id: number;
+  source: string;
+  workout_date: string;
+  workout_type: string;
+  workout_name: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  avg_heart_rate: number | null;
+  max_heart_rate: number | null;
+  calories: number | null;
+  steps: number | null;
+  avg_speed_kmh: number | null;
   training_effect_aerobic: number | null;
   training_effect_anaerobic: number | null;
   vo2max: number | null;
-  steps: number | null;
+  ai_analysis: string | null;
+  route_data: string | null;
 }
 
 export interface WorkoutAnalysis {
-  summary: string;
+  workout_id: number;
+  overall_rating: string;
   intensity_assessment: string;
-  recovery_suggestion: string;
+  heart_rate_analysis: string | null;
+  hr_zone_assessment: string | null;
+  pace_analysis: string | null;
+  training_effect_summary: string | null;
+  recovery_recommendation: string;
+  next_workout_suggestion: string;
+  comparison_with_history: string | null;
+  key_insights: string[];
   improvement_tips: string[];
 }
 

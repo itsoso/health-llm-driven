@@ -33,10 +33,10 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <Text style={txt.title}>更新进度</Text>
-          {goal && <Text style={txt.goalName}>{goal.title} ({goal.current_value} → ? {goal.unit})</Text>}
+          {goal && <Text style={txt.goalName}>{goal.title} ({goal.current_value ?? 0} → ? {goal.target_unit || ''})</Text>}
           <TextInput
             style={styles.input}
-            placeholder={`输入新的数值 (${goal?.unit || ''})`}
+            placeholder={`输入新的数值 (${goal?.target_unit || ''})`}
             placeholderTextColor={colors.labelTertiary}
             keyboardType="decimal-pad"
             value={value}

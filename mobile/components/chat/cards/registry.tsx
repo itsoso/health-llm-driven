@@ -22,6 +22,8 @@ import { BPCardSpec } from './BPCard';
 import { ScoreCardSpec } from './ScoreCard';
 import { RecordCardSpec } from './RecordCard';
 import { DietCardSpec } from './DietCard';
+import { WorkoutCardSpec } from './WorkoutCard';
+import { MedicalReportCardSpec } from './MedicalReportCard';
 
 /** 全量卡片注册表. 数组前面的优先级越高时越靠前 (便于可读), 实际按 match() 返回值排序 */
 export const CARD_REGISTRY: CardSpec[] = [
@@ -31,6 +33,8 @@ export const CARD_REGISTRY: CardSpec[] = [
   BPCardSpec,
   SupplementCardSpec,
   DietCardSpec,
+  WorkoutCardSpec,
+  MedicalReportCardSpec,
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,      // 最通用的兜底

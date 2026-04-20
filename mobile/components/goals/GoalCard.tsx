@@ -14,14 +14,17 @@ const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   weight: 'scale-outline',
   exercise: 'barbell-outline',
   sleep: 'moon-outline',
-  nutrition: 'nutrition-outline',
-  habit: 'checkbox-outline',
-  health_metric: 'pulse-outline',
-  custom: 'flag-outline',
+  diet: 'nutrition-outline',
+  water: 'water-outline',
+  supplement: 'medkit-outline',
+  outdoor: 'trail-sign-outline',
+  other: 'flag-outline',
 };
 
 export default function GoalCard({ goal, onPress, onUpdateProgress }: Props) {
-  const progress = goal.target_value > 0 ? Math.min(goal.current_value / goal.target_value, 1) : 0;
+  const targetVal = goal.target_value ?? 0;
+  const currentVal = goal.current_value ?? 0;
+  const progress = targetVal > 0 ? Math.min(currentVal / targetVal, 1) : 0;
   const pct = Math.round(progress * 100);
   const barColor = pct >= 100 ? colors.green : pct >= 50 ? colors.amber : colors.brand;
   const icon = TYPE_ICONS[goal.goal_type] || 'flag-outline';
@@ -36,7 +39,7 @@ export default function GoalCard({ goal, onPress, onUpdateProgress }: Props) {
         <View style={{ flex: 1 }}>
           <Text style={txt.title} numberOfLines={1}>{goal.title}</Text>
           <Text style={txt.sub}>
-            {goal.current_value} / {goal.target_value} {goal.unit}
+            {currentVal} / {targetVal} {goal.target_unit || ''}
             {daysLeft != null && `  ·  剩余 ${daysLeft} 天`}
           </Text>
         </View>

@@ -1,0 +1,66 @@
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radii, typography } from '@/constants/theme';
+
+interface Props {
+  error: Error;
+  isOffline?: boolean;
+  onRetry?: () => void;
+}
+
+export default function ErrorFallback({ error, isOffline, onRetry }: Props) {
+  const icon = isOffline ? 'cloud-offline' : 'warning';
+  const title = isOffline ? '无法连接网络' : '加载失败';
+  const message = isOffline
+    ? '请检查网络连接后重试'
+    : error.message || '发生了未知错误';
+
+  return (
+    <View style={styles.container} testID="error-fallback">
+      <Ionicons name={icon} size={48} color={colors.labelTertiary} />
+      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.message}>{message}</Text>
+      {onRetry && (
+        <TouchableOpacity style={styles.retryBtn} onPress={onRetry} testID="retry-button">
+          <Ionicons name="refresh" size={16} color="#fff" />
+          <Text style={styles.retryText}>重试</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xxl,
+    gap: spacing.md,
+  },
+  title: {
+    ...typography.titleSmall,
+    color: colors.labelPrimary,
+  } as TextStyle,
+  message: {
+    ...typography.bodySmall,
+    color: colors.labelSecondary,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.brand,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  } as TextStyle,
+});

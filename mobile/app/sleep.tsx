@@ -32,8 +32,8 @@ export default function SleepScreen() {
     }
   };
 
-  const avgDuration = stats?.avg_duration ?? 0;
-  const avgScore = stats?.avg_score ?? 0;
+  const avgDuration = stats?.avg_duration_hours ?? 0;
+  const avgScore = stats?.avg_sleep_score ?? 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -65,28 +65,28 @@ export default function SleepScreen() {
           <>
             {/* Metrics */}
             <View style={styles.metricsRow}>
-              <MetricTile label="平均时长" value={avgDuration.toFixed(1)} unit="h"
+              <MetricTile label="平均时长" value={(avgDuration || 0).toFixed(1)} unit="h"
                 icon="moon" color={metricColors.sleep.main} tintColor={metricColors.sleep.tint} />
-              <MetricTile label="平均分数" value={avgScore > 0 ? Math.round(avgScore).toString() : '--'} unit=""
+              <MetricTile label="睡眠质量" value={avgScore > 0 ? Math.round(avgScore).toString() : '--'} unit=""
                 subtitle={avgScore > 0 ? scoreGrade(avgScore) : undefined}
                 icon="star" color={scoreColor(avgScore)} tintColor={`${scoreColor(avgScore)}20`} />
             </View>
 
             {/* Sleep debt */}
-            {debt && (
+            {debt && debt.status === 'success' && (
               <View style={styles.metricsRow}>
-                <MetricTile label="睡眠债务" value={debt.current_debt_hours.toFixed(1)} unit="h"
-                  icon="trending-down" color={debt.current_debt_hours > 3 ? colors.red : colors.amber}
-                  tintColor={debt.current_debt_hours > 3 ? colors.tintRed : colors.tintAmber} />
-                <MetricTile label="推荐时长" value={debt.recommended_hours.toFixed(1)} unit="h"
+                <MetricTile label="睡眠债务" value={(debt.cumulative_debt_hours ?? 0).toFixed(1)} unit="h"
+                  icon="trending-down" color={(debt.cumulative_debt_hours ?? 0) > 3 ? colors.red : colors.amber}
+                  tintColor={(debt.cumulative_debt_hours ?? 0) > 3 ? colors.tintRed : colors.tintAmber} />
+                <MetricTile label="推荐时长" value={(debt.target_hours ?? 0).toFixed(1)} unit="h"
                   icon="bed" color={colors.brand} tintColor={colors.brandLight} />
               </View>
             )}
 
             {/* Chart */}
-            {stats?.trend && stats.trend.length > 0 && (
+            {stats?.daily_trend && stats.daily_trend.length > 0 && (
               <HealthCard title="周趋势" icon="bar-chart-outline" iconColor={metricColors.sleep.main} iconBg={metricColors.sleep.tint}>
-                <SleepWeeklyChart data={stats.trend} />
+                <SleepWeeklyChart data={stats.daily_trend} />
               </HealthCard>
             )}
 

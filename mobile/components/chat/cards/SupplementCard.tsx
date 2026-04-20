@@ -51,7 +51,8 @@ export const SupplementCardSpec: CardSpec<SupplementData> = {
   },
   async build({ api }) {
     try {
-      const res = await api.get('/supplements/me/today-status');
+      const today = new Date().toISOString().split('T')[0];
+      const res = await api.get(`/supplements/me/date/${today}`);
       const list: any[] = res.data || [];
       if (list.length === 0) return null;
       const seen = new Set<string>();

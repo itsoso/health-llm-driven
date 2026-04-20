@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Polyline, Circle as SvgCircle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
 import { colors } from '@/constants/theme';
 import type { CardSpec } from './types';
@@ -36,11 +37,12 @@ function Sparkline({ points }: { points: number[] }) {
 }
 
 export function WeightCardView({ current_kg, trend_7d, change_7d_kg, bmi }: WeightData) {
+  const router = useRouter();
   const up = (change_7d_kg ?? 0) > 0;
   const changeColor = change_7d_kg == null || Math.abs(change_7d_kg) < 0.05
     ? colors.labelTertiary : up ? '#FF453A' : '#30D158';
   return (
-    <CardShell icon="scale" iconColor="#0A8F8F" title="体重" bg="#F0FFFD">
+    <CardShell icon="scale" iconColor="#0A8F8F" title="体重" bg="#F0FFFD" onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'weight' } })}>
       <View style={styles.row}>
         <View style={{ flex: 1 }}>
           <Text style={txt.big}>{current_kg != null ? `${current_kg.toFixed(1)}kg` : '--'}</Text>
@@ -72,7 +74,7 @@ export const WeightCardSpec: CardSpec<WeightData> = {
   },
   async build({ api }) {
     try {
-      const res = await api.get('/weight/me?limit=7');
+      const res = await api.get('/weight/records/me', { params: { limit: 7 } });
       const records: any[] = res.data || [];
       if (records.length === 0) return null;
       const sorted = [...records].sort((a, b) => (a.record_date || '').localeCompare(b.record_date || ''));

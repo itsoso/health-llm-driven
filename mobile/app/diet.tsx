@@ -51,14 +51,19 @@ export default function DietScreen() {
       setEstimating(true);
       try {
         const est = await estimateNutrition(text);
-        setFormDefaults({
-          food_description: est.food_description || text,
-          calories: est.calories,
-          protein_g: est.protein_g,
-          carbs_g: est.carbs_g,
-          fat_g: est.fat_g,
-        });
-        setShowForm(true);
+        if (est.success && est.foods.length > 0) {
+          setFormDefaults({
+            food_items: est.foods.map(f => f.name).join('、') || text,
+            calories: est.total_calories ?? undefined,
+            protein: est.total_protein ?? undefined,
+            carbs: est.total_carbs ?? undefined,
+            fat: est.total_fat ?? undefined,
+          });
+          setShowForm(true);
+        } else {
+          setFormDefaults({ food_items: text });
+          setShowForm(true);
+        }
       } catch {
         Alert.alert('估算失败');
       } finally {
@@ -102,31 +107,31 @@ export default function DietScreen() {
         {/* Summary */}
         {daily && (
           <View style={styles.summaryCard}>
-            <NutriPill label="热量" value={`${daily.total_calories.toFixed(0)}`} unit="kcal" color="#FF6723" />
-            <NutriPill label="蛋白质" value={`${daily.total_protein_g.toFixed(1)}`} unit="g" color="#FF375F" />
-            <NutriPill label="碳水" value={`${daily.total_carbs_g.toFixed(1)}`} unit="g" color="#FF9F0A" />
-            <NutriPill label="脂肪" value={`${daily.total_fat_g.toFixed(1)}`} unit="g" color="#BF5AF2" />
+            <NutriPill label="热量" value={`${(daily.total_calories ?? 0).toFixed(0)}`} unit="kcal" color="#FF6723" />
+            <NutriPill label="蛋白质" value={`${(daily.total_protein ?? 0).toFixed(1)}`} unit="g" color="#FF375F" />
+            <NutriPill label="碳水" value={`${(daily.total_carbs ?? 0).toFixed(1)}`} unit="g" color="#FF9F0A" />
+            <NutriPill label="脂肪" value={`${(daily.total_fat ?? 0).toFixed(1)}`} unit="g" color="#BF5AF2" />
           </View>
         )}
 
         {/* Meal form */}
         {showForm && (
           <MealForm date={date} onSubmit={handleSave} onCancel={() => { setShowForm(false); setFormDefaults({}); }}
-            initialDescription={formDefaults.food_description}
+            initialDescription={formDefaults.food_items}
             initialCalories={formDefaults.calories}
-            initialProtein={formDefaults.protein_g}
-            initialCarbs={formDefaults.carbs_g}
-            initialFat={formDefaults.fat_g} />
+            initialProtein={formDefaults.protein}
+            initialCarbs={formDefaults.carbs}
+            initialFat={formDefaults.fat} />
         )}
 
         {/* Meal records */}
-        {daily?.records && daily.records.length > 0 ? (
-          daily.records.map((r) => (
+        {daily?.meals && daily.meals.length > 0 ? (
+          daily.meals.map((r) => (
             <View key={r.id} style={styles.mealRow}>
               <View style={styles.mealDot} />
               <View style={{ flex: 1 }}>
                 <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
-                <Text style={txt.mealFood} numberOfLines={2}>{r.food_description}</Text>
+                <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
               </View>
               <Text style={txt.mealCal}>{r.calories ? `${r.calories}kcal` : ''}</Text>
             </View>

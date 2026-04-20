@@ -1,13 +1,70 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import MapView, { Polyline as MapPolyline } from 'react-native-maps';
 import { useWorkoutDetail } from '@/hooks/useWorkouts';
-import { analyzeWorkout, type WorkoutAnalysis } from '@/services/workouts';
+import { analyzeWorkout, getWorkoutChart, type WorkoutAnalysis } from '@/services/workouts';
 import MetricTile from '@/components/design-system/MetricTile';
 import HealthCard from '@/components/design-system/HealthCard';
 import { colors, spacing, radii, shadows, metricColors } from '@/constants/theme';
+
+interface RoutePoint {
+  lat: number;
+  lng: number;
+}
+
+function RouteMap({ routeJson, onTouchStart, onTouchEnd }: { routeJson: string; onTouchStart?: () => void; onTouchEnd?: () => void }) {
+  const points: RoutePoint[] = useMemo(() => {
+    try {
+      const parsed = JSON.parse(routeJson);
+      if (!Array.isArray(parsed) || parsed.length < 2) return [];
+      return parsed.filter((p: any) => p.lat != null && p.lng != null);
+    } catch { return []; }
+  }, [routeJson]);
+
+  if (points.length < 2) return null;
+
+  const coordinates = points.map(p => ({ latitude: p.lat, longitude: p.lng }));
+  const lats = points.map(p => p.lat);
+  const lngs = points.map(p => p.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const padLat = (maxLat - minLat) * 0.15 || 0.002;
+  const padLng = (maxLng - minLng) * 0.15 || 0.002;
+
+  return (
+    <HealthCard title="运动轨迹" icon="map-outline" iconColor={colors.blue} iconBg={colors.tintBlue}>
+      <View
+        style={{ borderRadius: radii.md, overflow: 'hidden', height: 220 }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+      >
+        <MapView
+          style={{ flex: 1 }}
+          initialRegion={{
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLng + maxLng) / 2,
+            latitudeDelta: maxLat - minLat + padLat * 2,
+            longitudeDelta: maxLng - minLng + padLng * 2,
+          }}
+          zoomEnabled={true}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          mapType="standard"
+        >
+          <MapPolyline
+            coordinates={coordinates}
+            strokeColor={colors.brand}
+            strokeWidth={3}
+          />
+        </MapView>
+      </View>
+    </HealthCard>
+  );
+}
 
 export default function WorkoutDetailScreen() {
   const router = useRouter();
@@ -16,6 +73,7 @@ export default function WorkoutDetailScreen() {
   const { data: workout, isLoading } = useWorkoutDetail(workoutId);
   const [analysis, setAnalysis] = useState<WorkoutAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [mapActive, setMapActive] = useState(false);
 
   const handleAnalyze = async () => {
     if (!workoutId) return;
@@ -24,7 +82,20 @@ export default function WorkoutDetailScreen() {
       const res = await analyzeWorkout(workoutId);
       setAnalysis(res);
     } catch {
-      setAnalysis({ summary: '分析暂时不可用', intensity_assessment: '', recovery_suggestion: '', improvement_tips: [] });
+      setAnalysis({
+        workout_id: workoutId,
+        overall_rating: '',
+        intensity_assessment: '分析暂时不可用',
+        heart_rate_analysis: null,
+        hr_zone_assessment: null,
+        pace_analysis: null,
+        training_effect_summary: null,
+        recovery_recommendation: '',
+        next_workout_suggestion: '',
+        comparison_with_history: null,
+        key_insights: [],
+        improvement_tips: [],
+      });
     } finally {
       setAnalyzing(false);
     }
@@ -53,7 +124,11 @@ export default function WorkoutDetailScreen() {
     );
   }
 
-  const dateStr = new Date(workout.start_time).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  const durationMin = workout.duration_seconds ? Math.round(workout.duration_seconds / 60) : 0;
+  const distanceKm = workout.distance_meters ? (workout.distance_meters / 1000) : null;
+  const dateStr = workout.workout_date
+    ? new Date(workout.workout_date).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+    : '';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -61,16 +136,16 @@ export default function WorkoutDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
         </TouchableOpacity>
-        <Text style={txt.title}>{workout.activity_type}</Text>
+        <Text style={txt.title}>{workout.workout_name || workout.workout_type || '运动'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} scrollEnabled={!mapActive}>
         <Text style={txt.date}>{dateStr}</Text>
 
         {/* Key metrics */}
         <View style={styles.metricsRow}>
-          <MetricTile label="时长" value={String(workout.duration_minutes)} unit="min"
+          <MetricTile label="时长" value={String(durationMin)} unit="min"
             icon="time-outline" color={colors.brand} tintColor={colors.brandLight} />
           <MetricTile label="卡路里" value={String(workout.calories ?? '--')} unit="kcal"
             icon="flame-outline" color={metricColors.calories.main} tintColor={metricColors.calories.tint} />
@@ -80,11 +155,14 @@ export default function WorkoutDetailScreen() {
             <MetricTile label="平均心率" value={String(workout.avg_heart_rate)} unit="bpm"
               icon="heart-outline" color={metricColors.heartRate.main} tintColor={metricColors.heartRate.tint} />
           )}
-          {workout.distance_km != null && (
-            <MetricTile label="距离" value={workout.distance_km.toFixed(2)} unit="km"
+          {distanceKm != null && (
+            <MetricTile label="距离" value={distanceKm.toFixed(2)} unit="km"
               icon="navigate-outline" color={colors.blue} tintColor={colors.tintBlue} />
           )}
         </View>
+
+        {/* Route map */}
+        {workout.route_data && <RouteMap routeJson={workout.route_data} onTouchStart={() => setMapActive(true)} onTouchEnd={() => setMapActive(false)} />}
 
         {/* Extra details */}
         <HealthCard title="详细指标" icon="analytics-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
@@ -108,16 +186,29 @@ export default function WorkoutDetailScreen() {
             <ActivityIndicator color={colors.purple} />
           ) : analysis ? (
             <View style={{ gap: 8 }}>
-              <Text style={txt.analysisText}>{analysis.summary}</Text>
-              {analysis.intensity_assessment ? <Text style={txt.analysisText}>{analysis.intensity_assessment}</Text> : null}
-              {analysis.recovery_suggestion ? (
+              <Text style={txt.analysisText}>{analysis.intensity_assessment}</Text>
+              {analysis.heart_rate_analysis ? <Text style={txt.analysisText}>{analysis.heart_rate_analysis}</Text> : null}
+              {analysis.training_effect_summary ? <Text style={txt.analysisText}>{analysis.training_effect_summary}</Text> : null}
+              {analysis.recovery_recommendation ? (
                 <View style={styles.tipBox}>
                   <Ionicons name="leaf-outline" size={14} color={colors.green} />
-                  <Text style={txt.tipText}>{analysis.recovery_suggestion}</Text>
+                  <Text style={txt.tipText}>{analysis.recovery_recommendation}</Text>
                 </View>
               ) : null}
-              {analysis.improvement_tips.map((t, i) => (
-                <View key={i} style={styles.tipBox}>
+              {analysis.next_workout_suggestion ? (
+                <View style={styles.tipBox}>
+                  <Ionicons name="fitness-outline" size={14} color={colors.brand} />
+                  <Text style={txt.tipText}>{analysis.next_workout_suggestion}</Text>
+                </View>
+              ) : null}
+              {(analysis.key_insights || []).map((t, i) => (
+                <View key={`insight-${i}`} style={styles.tipBox}>
+                  <Ionicons name="sparkles-outline" size={14} color={colors.purple} />
+                  <Text style={txt.tipText}>{t}</Text>
+                </View>
+              ))}
+              {(analysis.improvement_tips || []).map((t, i) => (
+                <View key={`tip-${i}`} style={styles.tipBox}>
                   <Ionicons name="bulb-outline" size={14} color={colors.amber} />
                   <Text style={txt.tipText}>{t}</Text>
                 </View>

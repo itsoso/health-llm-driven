@@ -3,10 +3,15 @@ import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import { colors, spacing, radii } from '@/constants/theme';
 import { scoreColor } from '@/constants/theme';
-import type { SleepDailyTrend } from '@/services/sleep';
+
+interface ChartItem {
+  date: string;
+  duration_hours: number | null;
+  score: number | null;
+}
 
 interface Props {
-  data: SleepDailyTrend[];
+  data: ChartItem[];
   height?: number;
 }
 
