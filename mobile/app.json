@@ -30,7 +30,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "life.executor.health"
     },
     "web": {
       "bundler": "metro",
@@ -40,6 +41,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-document-picker",
       [
         "expo-build-properties",
         {
@@ -53,8 +55,7 @@
         {
           "color": "#0A8F8F"
         }
-      ],
-      "./plugins/withIntentsExtension"
+      ]
     ],
     "experiments": {
       "typedRoutes": true

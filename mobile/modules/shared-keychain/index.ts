@@ -1,12 +1,19 @@
-import { requireNativeModule, Platform } from 'expo-modules-core';
+import { Platform } from 'expo-modules-core';
 
 const noop = {
   saveToken: async (_token: string) => false,
   deleteToken: async () => {},
 };
 
-const SharedKeychain =
-  Platform.OS === 'ios' ? requireNativeModule('SharedKeychain') : noop;
+let SharedKeychain = noop;
+if (Platform.OS === 'ios') {
+  try {
+    const { requireNativeModule } = require('expo-modules-core');
+    SharedKeychain = requireNativeModule('SharedKeychain');
+  } catch {
+    // Native module not available (no Siri/Widget extension built)
+  }
+}
 
 export async function saveTokenToSharedKeychain(token: string): Promise<boolean> {
   return SharedKeychain.saveToken(token);
