@@ -2532,7 +2532,13 @@ class GarminConnectService:
                             if not isinstance(item, dict):
                                 continue
                             epoch_ts = item.get('epochTimestamp') or item.get('startTimestampGMT')
-                            spo2_val = item.get('spo2Value') or item.get('deviceSpo2Value') or item.get('value')
+                            spo2_val = (
+                                item.get('spo2Reading')
+                                or item.get('spo2Value')
+                                or item.get('deviceSpo2Value')
+                                or item.get('value')
+                                or item.get('spo2')
+                            )
                             if epoch_ts is None or spo2_val is None:
                                 continue
                             if isinstance(epoch_ts, str):
