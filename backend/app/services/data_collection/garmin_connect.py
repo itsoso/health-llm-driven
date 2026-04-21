@@ -2525,6 +2525,8 @@ class GarminConnectService:
                 epoch_spo2_list = sleep_raw.get('wellnessEpochSPO2DataDTOList', [])
                 if isinstance(epoch_spo2_list, list) and epoch_spo2_list:
                     logger.info(f"{prefix} 从 sleep.wellnessEpochSPO2DataDTOList 解析 SpO2，共 {len(epoch_spo2_list)} 条")
+                    if epoch_spo2_list[0] and isinstance(epoch_spo2_list[0], dict):
+                        logger.info(f"{prefix} SpO2 epoch 条目示例 keys: {list(epoch_spo2_list[0].keys())}, values: {epoch_spo2_list[0]}")
                     for item in epoch_spo2_list:
                         try:
                             if not isinstance(item, dict):
@@ -2602,9 +2604,15 @@ class GarminConnectService:
                 logger.debug(f"{prefix} {target_date} 无 SpO2 采样数据（sleep/spo2 API 均无逐分钟数据）")
                 return 0
 
-            logger.info(f"{prefix} {target_date} 解析到 {len(samples)} 个原始 SpO2 采样点")
+            logger.info(f"{prefix} {target_date} 解析到 {len(samples)} 个原始 SpO2 采样点，去重后…")
 
             seen_minutes: Dict[str, dict] = {}
+            for s in samples:
+                key = f"{s['time'].hour:02d}:{s['time'].minute:02d}"
+                if key not in seen_minutes:
+                    seen_minutes[key] = s
+
+            logger.info(f"{prefix} {target_date} 去重后 {len(seen_minutes)} 个，准备写入 DB…")
             for s in samples:
                 key = f"{s['time'].hour:02d}:{s['time'].minute:02d}"
                 if key not in seen_minutes:
@@ -2635,6 +2643,8 @@ class GarminConnectService:
 
         except Exception as e:
             logger.warning(f"{prefix} 同步血氧采样数据失败: {e}")
+            import traceback
+            logger.warning(f"{prefix} SpO2 同步详细错误: {traceback.format_exc()}")
             return 0
 
     def _sync_sleep_level_intervals(
