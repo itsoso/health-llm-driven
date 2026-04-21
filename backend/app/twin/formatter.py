@@ -57,7 +57,12 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if p.steps_today is not None:
         phys_parts.append(f"步数 {p.steps_today}")
     if p.spo2_avg is not None:
-        phys_parts.append(f"SpO2 {p.spo2_avg:.0f}%")
+        spo2_text = f"SpO2 {p.spo2_avg:.0f}%"
+        if p.spo2_odi is not None:
+            spo2_text += f" ODI={p.spo2_odi:.1f}"
+        if p.spo2_min_overnight is not None:
+            spo2_text += f" 最低{p.spo2_min_overnight}%"
+        phys_parts.append(spo2_text)
     if p.vo2max_running is not None:
         phys_parts.append(f"VO2max {p.vo2max_running:.0f}")
     if phys_parts:

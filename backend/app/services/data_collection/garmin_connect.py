@@ -2393,7 +2393,10 @@ class GarminConnectService:
             
             # 同步心率采样数据
             self._sync_heart_rate_samples(db, user_id, target_date)
-            
+
+            # 同步血氧采样数据
+            self._sync_spo2_samples(db, user_id, target_date, raw_data)
+
             return result
             
         except Exception as e:
@@ -2494,7 +2497,103 @@ class GarminConnectService:
         except Exception as e:
             logger.warning(f"{prefix} 同步心率采样数据失败: {e}")
             return 0
-    
+
+    def _sync_spo2_samples(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: date,
+        raw_data: Dict[str, Any]
+    ) -> int:
+        """同步血氧采样数据（睡眠期间每分钟一个点）"""
+        prefix = self._log_prefix()
+        try:
+            spo2_raw = raw_data.get('spo2') if isinstance(raw_data, dict) else None
+            if not spo2_raw or not isinstance(spo2_raw, dict):
+                return 0
+
+            from app.models.daily_health import SpO2Sample
+            from datetime import time as dt_time, timedelta
+
+            samples = []
+
+            time_offset_data = spo2_raw.get('timeOffsetSleepSpo2')
+            start_ts_str = spo2_raw.get('startTimestampGMT') or spo2_raw.get('startTimestampLocal')
+
+            if time_offset_data and isinstance(time_offset_data, dict) and start_ts_str:
+                try:
+                    start_ts = datetime.fromisoformat(start_ts_str.rstrip('Z').replace('.0', ''))
+                except (ValueError, TypeError):
+                    start_ts = None
+
+                if start_ts:
+                    for offset_ms_str, spo2_val in time_offset_data.items():
+                        try:
+                            offset_ms = int(offset_ms_str)
+                            if spo2_val is None or not (50 <= int(spo2_val) <= 100):
+                                continue
+                            sample_dt = start_ts + timedelta(milliseconds=offset_ms)
+                            samples.append({
+                                "time": dt_time(sample_dt.hour, sample_dt.minute),
+                                "value": int(spo2_val),
+                                "epoch_ms": int(start_ts.timestamp() * 1000) + offset_ms,
+                            })
+                        except (ValueError, TypeError):
+                            continue
+
+            if not samples:
+                sleep_measurements = spo2_raw.get('sleepMeasurement', [])
+                if isinstance(sleep_measurements, list):
+                    for item in sleep_measurements:
+                        try:
+                            epoch_ts = item.get('epochTimestamp')
+                            spo2_val = item.get('spo2Value') or item.get('value')
+                            if epoch_ts and spo2_val and 50 <= int(spo2_val) <= 100:
+                                sample_dt = datetime.fromtimestamp(epoch_ts / 1000)
+                                samples.append({
+                                    "time": dt_time(sample_dt.hour, sample_dt.minute),
+                                    "value": int(spo2_val),
+                                    "epoch_ms": int(epoch_ts),
+                                })
+                        except (ValueError, TypeError):
+                            continue
+
+            if not samples:
+                return 0
+
+            seen_minutes: Dict[str, dict] = {}
+            for s in samples:
+                key = f"{s['time'].hour:02d}:{s['time'].minute:02d}"
+                if key not in seen_minutes:
+                    seen_minutes[key] = s
+
+            db.query(SpO2Sample).filter(
+                SpO2Sample.user_id == user_id,
+                SpO2Sample.record_date == target_date
+            ).delete()
+
+            objects = [
+                SpO2Sample(
+                    user_id=user_id,
+                    record_date=target_date,
+                    sample_time=data["time"],
+                    spo2_value=data["value"],
+                    epoch_ms=data.get("epoch_ms"),
+                    source="garmin"
+                )
+                for data in sorted(seen_minutes.values(), key=lambda x: x.get("epoch_ms", 0))
+            ]
+
+            db.bulk_save_objects(objects)
+            db.commit()
+
+            logger.info(f"{prefix} 保存了 {target_date} 的 {len(objects)} 个血氧采样点")
+            return len(objects)
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步血氧采样数据失败: {e}")
+            return 0
+
     def sync_date_range(
         self,
         db: Session,

@@ -90,6 +90,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("environment",           lambda s: _fill_environment(s, user_id, twin, sources)),
         ("goals",                 lambda s: _fill_goals(s, user_id, twin, sources)),
         ("cgm",                   lambda s: _fill_cgm(s, user_id, twin, sources)),
+        ("spo2_overnight",        lambda s: _fill_spo2_overnight(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -155,6 +156,7 @@ def _fill_integrated_profile(db: Session, user_id: int, twin: HealthTwin, source
             p.steps_today = _as_int(garmin.get("steps"))
             p.stress_level_current = _as_int(garmin.get("stress_level"))
             p.body_battery_current = _as_int(garmin.get("body_battery_current"))
+            p.spo2_avg = _as_float(garmin.get("spo2_avg"))
             p.last_updated = _as_date(garmin.get("date"))
             sources.add("garmin")
 
@@ -479,7 +481,71 @@ def _fill_cgm(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) ->
         logger.warning(f"[twin] cgm 失败: {e}")
 
 
-# ─────────────────────────── 10. 直接收集器 ───────────────────────────
+# ─────────────────────────── 10. SpO2 夜间 ───────────────────────────
+
+
+def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """从 SpO2Sample 计算最近一晚的 ODI 和 below-90 占比。"""
+    try:
+        from sqlalchemy import desc
+
+        from app.models.daily_health import GarminData, SpO2Sample
+
+        latest_row = (
+            db.query(SpO2Sample.record_date)
+            .filter(SpO2Sample.user_id == user_id)
+            .order_by(desc(SpO2Sample.record_date))
+            .first()
+        )
+        if not latest_row:
+            garmin = (
+                db.query(GarminData)
+                .filter(GarminData.user_id == user_id, GarminData.spo2_avg.isnot(None))
+                .order_by(desc(GarminData.record_date))
+                .first()
+            )
+            if garmin:
+                twin.physiological.spo2_avg = twin.physiological.spo2_avg or garmin.spo2_avg
+            return
+
+        rd = latest_row[0]
+        samples = (
+            db.query(SpO2Sample)
+            .filter(SpO2Sample.user_id == user_id, SpO2Sample.record_date == rd)
+            .order_by(SpO2Sample.epoch_ms.asc())
+            .all()
+        )
+        if not samples:
+            return
+
+        values = [s.spo2_value for s in samples]
+        twin.physiological.spo2_min_overnight = min(values)
+        twin.physiological.spo2_below_90_pct = round(
+            sum(1 for v in values if v < 90) / len(values) * 100, 1
+        )
+
+        from app.api.spo2 import _compute_desaturation_events
+
+        desat = _compute_desaturation_events(values)
+        garmin = (
+            db.query(GarminData)
+            .filter(GarminData.user_id == user_id, GarminData.record_date == rd)
+            .first()
+        )
+        sleep_hours = garmin.total_sleep_duration / 60.0 if garmin and garmin.total_sleep_duration else len(values) / 60.0
+        if sleep_hours > 0:
+            twin.physiological.spo2_odi = round(desat / sleep_hours, 1)
+
+        if not twin.physiological.spo2_avg:
+            twin.physiological.spo2_avg = round(sum(values) / len(values), 1)
+
+        sources.add("spo2_samples")
+
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin] spo2_overnight 失败: {e}")
+
+
+# ─────────────────────────── 11. 直接收集器 ───────────────────────────
 
 
 def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:

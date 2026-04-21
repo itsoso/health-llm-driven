@@ -52,6 +52,9 @@ class PhysiologicalState(BaseModel):
     # 有氧 / 活动
     steps_today: Optional[int] = None
     spo2_avg: Optional[float] = None
+    spo2_min_overnight: Optional[int] = None
+    spo2_odi: Optional[float] = None
+    spo2_below_90_pct: Optional[float] = None
     vo2max_running: Optional[float] = None
     vo2max_cycling: Optional[float] = None
 

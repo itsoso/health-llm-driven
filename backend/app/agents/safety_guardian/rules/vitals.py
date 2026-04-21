@@ -205,6 +205,63 @@ def spo2_mild_hypoxia(twin: HealthTwin) -> Optional[Alert]:
     return None
 
 
+@register
+def spo2_osa_screening(twin: HealthTwin) -> Optional[Alert]:
+    """ODI ≥ 5 提示阻塞性睡眠呼吸暂停风险。"""
+    odi = twin.physiological.spo2_odi
+    if odi is None or odi < 5:
+        return None
+
+    severity = Severity.MEDIUM if odi < 15 else Severity.HIGH
+    if odi < 15:
+        risk = "轻度"
+    elif odi < 30:
+        risk = "中度"
+    else:
+        risk = "重度"
+
+    return Alert(
+        rule_id="vitals.spo2_osa_screening",
+        category="vitals",
+        severity=severity,
+        title="夜间血氧波动提示睡眠呼吸暂停风险",
+        message=(
+            f"夜间氧减指数 (ODI) 为 {odi:.1f} 次/小时（正常 <5），"
+            f"风险等级: {risk}。ODI ≥5 是阻塞性睡眠呼吸暂停 (OSAHS) 的重要筛查指标。"
+        ),
+        action=(
+            "建议进行多导睡眠监测 (PSG) 或家庭睡眠呼吸监测 (HSAT) 确诊；"
+            "侧卧睡眠、避免睡前饮酒可改善轻度症状；BMI>28 者减重有显著效果。"
+        ),
+        data_citation={"odi": odi, "risk_level": risk},
+        references=[
+            "https://jcsm.aasm.org/doi/10.5664/jcsm.6746",
+        ],
+    )
+
+
+@register
+def spo2_sustained_low_overnight(twin: HealthTwin) -> Optional[Alert]:
+    """夜间血氧持续低于 90% 超过 10% 的时间。"""
+    pct = twin.physiological.spo2_below_90_pct
+    if pct is None or pct < 10:
+        return None
+
+    return Alert(
+        rule_id="vitals.spo2_sustained_low_overnight",
+        category="vitals",
+        severity=Severity.HIGH,
+        title="夜间血氧持续偏低",
+        message=(
+            f"整夜有 {pct:.0f}% 的时间血氧低于 90%。"
+            "长时间低氧血症会加速心脑血管损伤和认知功能下降。"
+        ),
+        action="建议尽快进行睡眠呼吸检查；考虑是否有慢阻肺、心衰等可能原因。",
+        data_citation={"below_90_pct": pct},
+        requires_medical_attention=True,
+    )
+
+
 # ─────────────────────────── Stress 持续偏高 ──────────────────────────
 
 

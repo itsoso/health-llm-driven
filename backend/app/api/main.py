@@ -109,6 +109,7 @@ from app.api import (
     action_card,  # 对话固化 ActionCard
     exercise_coaching,  # 运动动作指导笔记
     rhinitis_trend,  # 鼻炎趋势数据
+    spo2,  # 血氧时间序列
 )
 
 api_router = APIRouter()
@@ -145,6 +146,7 @@ api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=
 api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
 api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
+api_router.include_router(spo2.router, prefix="/spo2", tags=["spo2"])
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
 api_router.include_router(withings.router)  # Withings（prefix 已在 router 中定义，必须在 devices 之前注册）
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  # 多设备管理

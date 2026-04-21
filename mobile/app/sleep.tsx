@@ -8,7 +8,9 @@ import MetricTile from '@/components/design-system/MetricTile';
 import SectionHeader from '@/components/design-system/SectionHeader';
 import HealthCard from '@/components/design-system/HealthCard';
 import SleepWeeklyChart from '@/components/sleep/SleepWeeklyChart';
+import SpO2NightChart from '@/components/sleep/SpO2NightChart';
 import { useSleepStats, useSleepDebt } from '@/hooks/useSleepData';
+import { useSpO2LatestNight } from '@/hooks/useSpO2Data';
 import { getDeepAnalysis } from '@/services/sleep';
 import { colors, spacing, radii, shadows, scoreColor, scoreGrade, metricColors } from '@/constants/theme';
 
@@ -17,6 +19,7 @@ export default function SleepScreen() {
   const [period, setPeriod] = useState(7);
   const { data: stats, isLoading, refetch, isRefetching } = useSleepStats(period);
   const { data: debt } = useSleepDebt();
+  const { data: spo2Data } = useSpO2LatestNight();
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
 
@@ -90,6 +93,39 @@ export default function SleepScreen() {
               </HealthCard>
             )}
 
+            {/* SpO2 Overnight */}
+            {spo2Data && spo2Data.timeline.length > 0 && (
+              <HealthCard title="夜间血氧" icon="pulse-outline" iconColor="#007AFF" iconBg="#E6F0FF"
+                rightAccessory={
+                  spo2Data.summary.odi != null && spo2Data.summary.odi >= 5 ? (
+                    <View style={styles.osaBadge}>
+                      <Ionicons name="warning" size={10} color="#FF9F0A" />
+                      <Text style={txt.osaBadgeText}>ODI {spo2Data.summary.odi}</Text>
+                    </View>
+                  ) : null
+                }>
+                <SpO2NightChart data={spo2Data.timeline} sleepStart={spo2Data.sleep_start} sleepEnd={spo2Data.sleep_end} />
+                <View style={styles.spo2Metrics}>
+                  <View style={styles.spo2Metric}>
+                    <Text style={txt.spo2Value}>{spo2Data.summary.avg_spo2?.toFixed(0) ?? '--'}</Text>
+                    <Text style={txt.spo2Label}>平均 %</Text>
+                  </View>
+                  <View style={styles.spo2Metric}>
+                    <Text style={[txt.spo2Value, spo2Data.summary.min_spo2 != null && spo2Data.summary.min_spo2 < 90 && { color: '#FF453A' }]}>
+                      {spo2Data.summary.min_spo2 ?? '--'}
+                    </Text>
+                    <Text style={txt.spo2Label}>最低 %</Text>
+                  </View>
+                  <View style={styles.spo2Metric}>
+                    <Text style={[txt.spo2Value, spo2Data.summary.odi != null && spo2Data.summary.odi >= 5 && { color: '#FF9F0A' }]}>
+                      {spo2Data.summary.odi?.toFixed(1) ?? '--'}
+                    </Text>
+                    <Text style={txt.spo2Label}>ODI 次/h</Text>
+                  </View>
+                </View>
+              </HealthCard>
+            )}
+
             {/* Deep analysis */}
             <HealthCard title="AI 深度分析" icon="sparkles-outline" iconColor={colors.purple} iconBg={colors.tintPurple}
               rightAccessory={
@@ -125,6 +161,9 @@ const styles = StyleSheet.create({
   periodBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: radii.full, backgroundColor: colors.bgCard },
   periodBtnActive: { backgroundColor: colors.brand },
   metricsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
+  spo2Metrics: { flexDirection: 'row', justifyContent: 'space-around', marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator },
+  spo2Metric: { alignItems: 'center' },
+  osaBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF5E6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
 });
 
 const txt = {
@@ -134,4 +173,7 @@ const txt = {
   analyzeBtn: { fontSize: 14, fontWeight: '600', color: colors.purple } as TextStyle,
   analysisText: { fontSize: 14, color: colors.labelPrimary, lineHeight: 21 } as TextStyle,
   placeholder: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
+  spo2Value: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  spo2Label: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  osaBadgeText: { fontSize: 11, fontWeight: '600', color: '#FF9F0A' } as TextStyle,
 };

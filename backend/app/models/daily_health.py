@@ -1,5 +1,5 @@
 """日常健康记录模型"""
-from sqlalchemy import Column, Integer, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, text
+from sqlalchemy import Column, Integer, BigInteger, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -260,6 +260,30 @@ class HeartRateSample(Base):
     __table_args__ = (
         Index('idx_hr_user_date', 'user_id', 'record_date'),
         Index('idx_hr_user_date_time', 'user_id', 'record_date', 'sample_time'),
+    )
+
+
+class SpO2Sample(Base):
+    """睡眠期间血氧采样数据（每分钟一个点，每晚约 400-500 个点）"""
+    __tablename__ = "spo2_samples"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    record_date = Column(Date, nullable=False)
+    sample_time = Column(Time, nullable=False)
+    spo2_value = Column(Integer, nullable=False)
+    epoch_ms = Column(BigInteger)
+
+    source = Column(String, default="garmin")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", backref="spo2_samples")
+
+    __table_args__ = (
+        Index('idx_spo2_user_date', 'user_id', 'record_date'),
+        Index('idx_spo2_user_date_time', 'user_id', 'record_date', 'sample_time'),
     )
 
 

@@ -112,6 +112,32 @@ class TestVitalsRules:
         rule_ids = _rule_ids(alerts)
         assert "vitals.spo2_severe_hypoxia" in rule_ids
 
+    def test_spo2_osa_screening_odi_above_5(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_odi=8.5)
+        alerts = evaluate_safety(twin).alerts
+        rule_ids = _rule_ids(alerts)
+        assert "vitals.spo2_osa_screening" in rule_ids
+
+    def test_spo2_osa_no_alert_odi_below_5(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_odi=3.0)
+        alerts = evaluate_safety(twin).alerts
+        assert "vitals.spo2_osa_screening" not in _rule_ids(alerts)
+
+    def test_spo2_sustained_low_overnight(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_below_90_pct=15.0)
+        alerts = evaluate_safety(twin).alerts
+        rule_ids = _rule_ids(alerts)
+        assert "vitals.spo2_sustained_low_overnight" in rule_ids
+
+    def test_spo2_sustained_low_no_alert(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_below_90_pct=5.0)
+        alerts = evaluate_safety(twin).alerts
+        assert "vitals.spo2_sustained_low_overnight" not in _rule_ids(alerts)
+
     def test_tachycardia(self):
         twin = _empty_twin()
         twin.physiological = PhysiologicalState(resting_hr=108)
