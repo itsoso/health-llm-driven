@@ -24,7 +24,9 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
                                  "spo2", "spo2_sleep_correlation", "weight", "blood_pressure",
                                  "supplements", "water",
                                  "diet", "exercise", "body_battery", "stress",
-                                 "medical_exam", "genetic", "medication"],
+                                 "medical_exam", "genetic",
+                                 "genetic_cognitive", "genetic_personality", "genetic_comprehensive",
+                                 "medication"],
                         "description": "要查询的数据维度",
                     },
                     "days": {

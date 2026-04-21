@@ -452,6 +452,9 @@ class AgentExecutor:
             "exercise": "/exercise/me/today",
             "medical_exam": "/medical-exams/me",
             "genetic": "/genetic/variants/me",
+            "genetic_cognitive": "/genetic/profile/me/cognitive",
+            "genetic_personality": "/genetic/profile/me/personality",
+            "genetic_comprehensive": "/genetic/profile/me/comprehensive",
             "medication": "/medication/medications/me",
         }
 

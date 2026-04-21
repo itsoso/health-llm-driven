@@ -142,6 +142,12 @@ class GeneticContext(BaseModel):
     drug_sensitivity: List[Dict[str, Any]] = Field(default_factory=list)
     risk_variants: List[Dict[str, Any]] = Field(default_factory=list)
     protective_variants: List[Dict[str, Any]] = Field(default_factory=list)
+    cognition_variants: List[Dict[str, Any]] = Field(default_factory=list)
+    personality_variants: List[Dict[str, Any]] = Field(default_factory=list)
+    sleep_variants: List[Dict[str, Any]] = Field(default_factory=list)
+    recovery_variants: List[Dict[str, Any]] = Field(default_factory=list)
+    exercise_variants: List[Dict[str, Any]] = Field(default_factory=list)
+    nutrition_variants: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ─────────────────────────── Environmental ─────────────────────────────

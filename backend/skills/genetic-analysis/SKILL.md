@@ -43,11 +43,14 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/su
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/variants/me?category=nutrition"
 ```
 可选 category 值：
-- `nutrition` — 营养代谢（叶酸、咖啡因、乳糖、酒精、维生素D）
-- `exercise` — 运动能力（肌肉类型、耐力、有氧能力）
+- `nutrition` — 营养代谢（叶酸、咖啡因、乳糖、酒精、维生素D、Omega-3、铁代谢）
+- `exercise` — 运动能力（肌肉类型、耐力/力量、韧带损伤风险、血管功能）
 - `drug_sensitivity` — 药物敏感（氯吡格雷、止痛药、他汀、别嘌醇）
-- `disease_risk` — 疾病风险（心血管/AD、糖尿病、肥胖）
-- `sleep` — 睡眠特质（昼夜节律、睡眠周期、深度睡眠）
+- `disease_risk` — 疾病风险（心血管/AD、糖尿病、肥胖、癌症）
+- `sleep` — 睡眠特质（昼夜节律、睡眠周期、深度睡眠、咖啡因影响睡眠）
+- `cognition` — 认知（记忆力、注意力、专注力、突触可塑性、情绪稳定）
+- `personality` — 个性（焦虑倾向、共情能力、社交需求）
+- `recovery` — 恢复/抗氧化（炎症反应、超氧化物歧化酶、谷胱甘肽、解毒酶）
 
 返回字段：
 ```json
@@ -88,6 +91,26 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/pr
 ```
 返回用户的基因检测档案列表（检测机构、日期、位点数量）。
 
+### 6. 认知基因档案
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/profile/me/cognitive"
+```
+返回认知维度评分（记忆力/专注力/学习速度/抗压力/情绪稳定），每个维度 1-5 分 + 置信度 + 相关基因 + 优化建议。
+涉及基因：KIBRA、BDNF、CHRNA4、ADRA2A、SNAP25、COMT、TPH2
+
+### 7. 个性基因档案
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/profile/me/personality"
+```
+返回五大人格基因倾向（神经质/外向性/开放性/尽责性/宜人性）+ 压力应对类型（战士型/思考者型）+ 社交需求水平。
+涉及基因：SLC6A4、TPH2、DRD2、OXTR、COMT、BDNF
+
+### 8. 全景基因档案
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/profile/me/comprehensive"
+```
+合并所有维度的基因分析：认知、个性、运动、营养、睡眠、恢复、药物敏感、疾病风险。每个子维度返回 score(1-5) + confidence + genes + recommendations。
+
 ## 常见基因位点速查表
 
 | 基因 | 位点 | 类别 | 高风险含义 |
@@ -106,6 +129,20 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/pr
 | TCF7L2 | 糖尿病 | 疾病 | TT=2型糖尿病风险↑ |
 | FTO | 肥胖 | 疾病 | AA=肥胖倾向↑↑ |
 | CLOCK | 昼夜节律 | 睡眠 | CC=夜猫子型 |
+| KIBRA | 情景记忆 | 认知 | TT=记忆力偏弱 |
+| SNAP25 | 突触可塑性 | 认知 | AA=突触效率偏低 |
+| CHRNA4 | 专注力 | 认知 | TT=专注力偏弱 |
+| ADRA2A | 注意力 | 认知 | GG=ADHD风险↑ |
+| TPH2 | 血清素合成 | 认知 | TT=情绪波动↑ |
+| SLC6A4 | 焦虑倾向 | 个性 | GG=焦虑易感 |
+| OXTR | 共情/社交 | 个性 | GG=高共情/AA=独立型 |
+| ACE | 耐力vs力量 | 运动 | II=耐力型/DD=力量型 |
+| COL5A1 | 韧带损伤 | 运动 | CC=损伤风险↑ |
+| NOS3 | 血管扩张 | 运动 | TT=耐力受限 |
+| SOD2 | 抗氧化 | 恢复 | Val/Val=抗氧化弱→补CoQ10/NAC |
+| GPX1 | 谷胱甘肽 | 恢复 | Pro/Pro=GPX活性低→补硒/NAC |
+| GSTP1 | 解毒酶 | 恢复 | Val/Val=解毒↓→多吃十字花科 |
+| ADORA2A | 咖啡因睡眠 | 睡眠 | TT=咖啡因严重影响睡眠 |
 
 ## Rules
 
@@ -116,5 +153,10 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/genetic/pr
 - **疾病风险→预防策略**：APOE ε4→控制胆固醇/定期认知筛查，FTO AA→严格控制饮食热量
 - **睡眠基因→作息建议**：CLOCK 夜猫子→不要强求早起，顺应自然节律
 - **交叉分析**：结合体检指标验证基因风险是否已显现（如 FTO 肥胖+BMI>28=确认风险）
+- **认知/个性档案**：用户问"我的基因适合什么工作"、"我的认知特征"时，调用 `/genetic/profile/me/cognitive` 或 `/genetic/profile/me/personality`
+- **全景分析**：用户问"分析我所有基因"时，调用 `/genetic/profile/me/comprehensive`
+- **恢复基因→补剂建议**：SOD2 Val/Val→补CoQ10/NAC，GPX1 Pro/Pro→补硒/NAC，GSTP1→十字花科蔬菜
+- **运动基因扩展**：ACE II→耐力训练，ACE DD→力量训练，COL5A1 CC→注意热身防伤，NOS3 TT→甜菜根汁
+- **睡眠基因**：CLOCK CC→夜猫子不强求早起，ADORA2A TT→中午后禁咖啡因，ADA→深睡偏少属体质
 - **严格使用上面定义的 API 端点路径，不要自行猜测或构造其他路径**
 - 始终使用中文回复，引用具体基因型和风险等级

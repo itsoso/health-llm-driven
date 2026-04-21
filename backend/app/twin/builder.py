@@ -598,6 +598,12 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         twin.genetic.drug_sensitivity = gen.get("drug_sensitivity", [])
         twin.genetic.risk_variants = gen.get("risk", [])
         twin.genetic.protective_variants = gen.get("protective", [])
+        twin.genetic.cognition_variants = gen.get("cognition_variants", [])
+        twin.genetic.personality_variants = gen.get("personality_variants", [])
+        twin.genetic.sleep_variants = gen.get("sleep_variants", [])
+        twin.genetic.recovery_variants = gen.get("recovery_variants", [])
+        twin.genetic.exercise_variants = gen.get("exercise_variants", [])
+        twin.genetic.nutrition_variants = gen.get("nutrition_variants", [])
         sources.add("genetic")
 
 

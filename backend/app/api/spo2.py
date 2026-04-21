@@ -79,8 +79,8 @@ def _get_sleep_times(db: Session, user_id: int, record_date: date):
     )
     if not garmin:
         return None, None, None
-    start = garmin.sleep_start_time.strftime("%H:%M") if garmin.sleep_start_time else None
-    end = garmin.sleep_end_time.strftime("%H:%M") if garmin.sleep_end_time else None
+    start = garmin.sleep_start_time.strftime("%H:%M") if hasattr(garmin.sleep_start_time, 'strftime') else (str(garmin.sleep_start_time)[:5] if garmin.sleep_start_time else None)
+    end = garmin.sleep_end_time.strftime("%H:%M") if hasattr(garmin.sleep_end_time, 'strftime') else (str(garmin.sleep_end_time)[:5] if garmin.sleep_end_time else None)
     duration_h = garmin.total_sleep_duration / 60.0 if garmin.total_sleep_duration else None
     return start, end, duration_h
 
@@ -107,7 +107,7 @@ def get_nightly_spo2(
     timeline = [
         SpO2Point(
             timestamp=s.epoch_ms or 0,
-            time=s.sample_time.strftime("%H:%M"),
+            time=s.sample_time.strftime("%H:%M") if hasattr(s.sample_time, 'strftime') else str(s.sample_time)[:5],
             value=s.spo2_value,
         )
         for s in samples

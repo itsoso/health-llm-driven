@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, GestureResponderEvent,
+  Alert, Modal, Pressable, Animated, GestureResponderEvent, AppState,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -54,7 +54,17 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
+  const abortRef = useRef<AbortController | null>(null);
   const { pendingImage, setPendingImage, pickImage, takePhoto } = useMediaPicker();
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' && abortRef.current) {
+        abortRef.current.abort();
+      }
+    });
+    return () => sub.remove();
+  }, []);
   const [showMenu, setShowMenu] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
@@ -106,8 +116,11 @@ export default function ChatScreen() {
     const imgData = pendingImage;
     setPendingImage(null);
 
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     try {
-      for await (const token of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type)) {
+      for await (const token of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type, ac.signal)) {
         if (token.type === 'token' || token.type === 'tool') {
           setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + (token.content || '') } : m));
         } else if (token.type === 'done') {
@@ -117,10 +130,17 @@ export default function ChatScreen() {
         }
       }
     } catch (err: any) {
+      const isAbort = err?.message === 'aborted';
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: m.content || `[错误] ${err?.message || '请求失败'}` } : m
+        m.id === assistantId ? {
+          ...m,
+          content: m.content
+            ? (isAbort ? m.content + '\n\n[回复中断，已保留已接收内容]' : m.content + `\n❌ ${err?.message || '请求失败'}`)
+            : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${err?.message || '请求失败'}`),
+        } : m
       ));
     } finally {
+      abortRef.current = null;
       setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }

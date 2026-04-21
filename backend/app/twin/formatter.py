@@ -137,7 +137,7 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if s.total_active_count > 0:
         lines.append(f"补剂: 今日 {s.taken_today_count}/{s.total_active_count} 已打卡")
 
-    # ─── 基因（关注药物敏感和风险位点）
+    # ─── 基因（关注药物敏感和风险位点 + 维度基因）
     g = twin.genetic
     if g.has_profile and g.total_variants > 0:
         gene_lines: List[str] = []
@@ -151,6 +151,17 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         ]
         if risk_lines:
             lines.append(f"基因风险: {', '.join(risk_lines)}")
+
+        dim_map = [
+            ("cognition", "认知基因"), ("personality", "个性基因"),
+            ("exercise", "运动基因"), ("recovery", "恢复基因"),
+            ("sleep", "睡眠基因"), ("nutrition", "营养基因"),
+        ]
+        for attr, label in dim_map:
+            pool = getattr(g, f"{attr}_variants", None) or []
+            items = [f"{v.get('gene_name','?')} {v.get('result_label','')}" for v in pool[:4]]
+            if items:
+                lines.append(f"{label}: {', '.join(items)}")
 
     # ─── 环境
     e = twin.environment

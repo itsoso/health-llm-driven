@@ -280,6 +280,10 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
         drug_sens: List[Dict[str, Any]] = []
         risk: List[Dict[str, Any]] = []
         protective: List[Dict[str, Any]] = []
+        by_category: Dict[str, List[Dict[str, Any]]] = {
+            "cognition": [], "personality": [], "sleep": [],
+            "recovery": [], "exercise": [], "nutrition": [],
+        }
 
         for v in unique_variants:
             item = {
@@ -299,11 +303,15 @@ def fetch_genetic_variants_categorized(db: Session, user_id: int) -> Dict[str, L
             elif nature == "risk":
                 risk.append(item)
 
+            if category in by_category:
+                by_category[category].append(item)
+
         return {
             "total": len(unique_variants),
             "drug_sensitivity": drug_sens[:10],
             "risk": risk[:10],
             "protective": protective[:10],
+            **{f"{k}_variants": v[:15] for k, v in by_category.items()},
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] genetic 失败: {e}")

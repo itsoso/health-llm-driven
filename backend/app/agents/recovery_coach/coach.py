@@ -217,6 +217,58 @@ def _build_actions(breakdown: ReadinessBreakdown, twin: HealthTwin) -> List[str]
     return actions[:4]  # 限制 4 条，避免信息过载
 
 
+# ─────────────────────── 基因恢复修饰 ────────────────────────
+
+
+def _gene_recovery_modifiers(twin: HealthTwin) -> List[Dict[str, Any]]:
+    """从 Twin.genetic 派生恢复/炎症相关基因洞察。"""
+    results: List[Dict[str, Any]] = []
+    all_variants = (
+        (twin.genetic.drug_sensitivity or [])
+        + (twin.genetic.risk_variants or [])
+        + (twin.genetic.protective_variants or [])
+        + (twin.genetic.recovery_variants or [])
+    )
+    by_gene: Dict[str, Dict[str, Any]] = {}
+    for v in all_variants:
+        name = (v.get("gene_name") or "").upper()
+        if name:
+            by_gene.setdefault(name, v)
+
+    il6 = by_gene.get("IL-6") or by_gene.get("IL6")
+    if il6:
+        geno = (il6.get("genotype") or "").upper()
+        if "GG" in geno:
+            results.append({"type": "gene_recovery", "gene": "IL-6", "profile": "高炎症反应型(GG)",
+                "tip": "运动后炎症反应偏强→恢复时间建议比标准多20%→拉长恢复日间隔、增加抗炎食物(深海鱼/樱桃/姜黄)。",
+                "recovery_modifier": 1.2})
+
+    tnfa = by_gene.get("TNF-Α") or by_gene.get("TNF") or by_gene.get("TNFA")
+    if tnfa and (tnfa.get("risk_level") or "").lower() in ("medium", "high"):
+        results.append({"type": "gene_recovery", "gene": "TNF-α", "profile": "基础炎症偏高",
+            "tip": "推荐抗炎饮食策略：ω-3(EPA+DHA≥2g/d)、姜黄素(500mg/d)、酸樱桃汁(运动后)。",
+            "recovery_modifier": 1.15})
+
+    sod2 = by_gene.get("SOD2")
+    if sod2:
+        geno = (sod2.get("genotype") or "").upper()
+        if "VAL/VAL" in geno:
+            results.append({"type": "gene_recovery", "gene": "SOD2", "profile": "抗氧化能力弱(Val/Val)",
+                "tip": "线粒体超氧清除效率低→运动后氧化应激高→补充CoQ10(200mg/d)+NAC(600mg/d)+维C(500mg/d)。"})
+
+    gpx1 = by_gene.get("GPX1")
+    if gpx1 and (gpx1.get("risk_level") or "").lower() in ("medium", "high"):
+        results.append({"type": "gene_recovery", "gene": "GPX1", "profile": "谷胱甘肽系统偏弱",
+            "tip": "GPX1活性低→补充硒(200μg/d)+NAC(600mg/d)支持谷胱甘肽再生。"})
+
+    gstp1 = by_gene.get("GSTP1")
+    if gstp1 and (gstp1.get("risk_level") or "").lower() in ("medium", "high"):
+        results.append({"type": "gene_recovery", "gene": "GSTP1", "profile": "解毒能力下降",
+            "tip": "Phase II解毒酶效率低→增加十字花科蔬菜(西兰花/萝卜硫素)→减少环境毒素暴露。"})
+
+    return results[:4]
+
+
 # ─────────────────────── Specialist 适配器 ────────────────────
 
 
@@ -268,6 +320,10 @@ class RecoveryCoachSpecialist:
                     "order": i,
                     "text": action,
                 })
+
+            # 基因恢复修饰
+            gene_mods = _gene_recovery_modifiers(twin)
+            findings.extend(gene_mods)
 
             # 概括
             if breakdown.zone == "unknown":

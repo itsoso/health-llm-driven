@@ -24,12 +24,14 @@ export interface StreamEvent {
 /**
  * Stream chat using XMLHttpRequest (React Native doesn't support ReadableStream).
  * Yields StreamEvent objects instead of raw strings.
+ * Pass an AbortSignal to cancel the stream externally (e.g. when app backgrounds).
  */
 export async function* streamChat(
   message: string,
   conversationId?: number,
   imageBase64?: string,
   imageType?: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const token = await getToken();
   const body: Record<string, any> = { message };
@@ -48,6 +50,17 @@ export async function* streamChat(
   xhr.setRequestHeader('Content-Type', 'application/json');
   if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
   xhr.responseType = 'text';
+
+  // Wire up abort signal
+  if (signal) {
+    if (signal.aborted) { throw new Error('aborted'); }
+    signal.addEventListener('abort', () => {
+      error = new Error('aborted');
+      done = true;
+      try { xhr.abort(); } catch {}
+      resolve?.();
+    });
+  }
 
   xhr.onprogress = () => {
     const newText = xhr.responseText.slice(processed);

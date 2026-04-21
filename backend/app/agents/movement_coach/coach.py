@@ -107,35 +107,60 @@ def _today_intensity(status: str, readiness_zone: Optional[str]) -> tuple[str, s
 # ─────────────────────── 基因提示 ────────────────────────
 
 
-def _gene_bias(twin: HealthTwin) -> Optional[Dict[str, str]]:
-    for pool in (
-        twin.genetic.drug_sensitivity,
-        twin.genetic.risk_variants,
-        twin.genetic.protective_variants,
-    ):
-        for v in pool or []:
-            name = (v.get("gene_name") or "").upper()
-            if name == "ACTN3":
-                geno = (v.get("genotype") or "").upper()
-                if "RR" in geno:
-                    return {
-                        "gene": "ACTN3 RR",
-                        "bias": "力量/爆发优势",
-                        "tip": "训练侧重力量与短距离爆发；马拉松等极限耐力相对吃亏，但不是不能做。",
-                    }
-                if "XX" in geno:
-                    return {
-                        "gene": "ACTN3 XX",
-                        "bias": "耐力优势",
-                        "tip": "训练可以增加长距离 Z2 比例；力量训练仍要做，防止肌少。",
-                    }
-                if "RX" in geno:
-                    return {
-                        "gene": "ACTN3 RX",
-                        "bias": "均衡型",
-                        "tip": "力量与耐力都有潜力，可根据目标灵活调整。",
-                    }
-    return None
+def _gene_bias(twin: HealthTwin) -> Optional[Dict[str, Any]]:
+    all_variants = (
+        (twin.genetic.drug_sensitivity or [])
+        + (twin.genetic.risk_variants or [])
+        + (twin.genetic.protective_variants or [])
+        + (twin.genetic.exercise_variants or [])
+    )
+    by_gene: Dict[str, Dict[str, Any]] = {}
+    for v in all_variants or []:
+        name = (v.get("gene_name") or "").upper()
+        if name:
+            by_gene.setdefault(name, v)
+
+    result: Dict[str, Any] = {}
+    tips: List[str] = []
+
+    actn3 = by_gene.get("ACTN3")
+    if actn3:
+        geno = (actn3.get("genotype") or "").upper()
+        if "RR" in geno:
+            result.update({"gene": "ACTN3 RR", "bias": "力量/爆发优势"})
+            tips.append("侧重力量与短距离爆发训练")
+        elif "XX" in geno:
+            result.update({"gene": "ACTN3 XX", "bias": "耐力优势"})
+            tips.append("增加长距离Z2比例，力量训练仍需做")
+        elif "RX" in geno:
+            result.update({"gene": "ACTN3 RX", "bias": "均衡型"})
+            tips.append("力量与耐力都有潜力，按目标灵活调整")
+
+    ace = by_gene.get("ACE")
+    if ace:
+        geno = (ace.get("genotype") or "").upper()
+        if "II" in geno:
+            tips.append("ACE II耐力型→适合马拉松/铁三/长距离骑行")
+            if "bias" not in result:
+                result.update({"gene": "ACE II", "bias": "耐力型"})
+        elif "DD" in geno:
+            tips.append("ACE DD力量型→适合短跑/举重/HIIT")
+            if "bias" not in result:
+                result.update({"gene": "ACE DD", "bias": "力量/爆发型"})
+
+    col5a1 = by_gene.get("COL5A1")
+    if col5a1 and (col5a1.get("risk_level") or "").lower() in ("medium", "high"):
+        tips.append("COL5A1变异→肌腱韧带损伤风险偏高→充分热身、逐步加量、重视离心训练")
+
+    nos3 = by_gene.get("NOS3")
+    if nos3 and (nos3.get("risk_level") or "").lower() in ("medium", "high"):
+        tips.append("NOS3变异→血管扩张能力偏弱→甜菜根汁(硝酸盐)可改善运动时氧输送")
+
+    if not result:
+        return None
+
+    result["tip"] = "；".join(tips) + "。"
+    return result
 
 
 # ─────────────────────── Specialist ────────────────────────

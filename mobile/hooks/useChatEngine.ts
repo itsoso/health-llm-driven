@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { AppState } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '@/services/chat';
 import { dispatchCard, renderServerCards } from '@/components/chat/cards';
@@ -25,6 +26,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
   const briefingInjected = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Abort streaming when app goes to background
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' && abortRef.current) {
+        abortRef.current.abort();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const loadLatestConversation = useCallback(async () => {
     try {
@@ -100,6 +112,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setMessages(prev => [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
 
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     let gotFirstToken = false;
     const slowTimer = setTimeout(() => {
       if (!gotFirstToken) {
@@ -109,7 +124,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     try {
       const toolsUsed: Set<string> = new Set();
-      for await (const evt of streamChat(finalMsg, conversationId, pendingImage?.base64, pendingImage?.type)) {
+      for await (const evt of streamChat(finalMsg, conversationId, pendingImage?.base64, pendingImage?.type, ac.signal)) {
         if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));
@@ -137,9 +152,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         }
       }
     } catch (err: any) {
-      setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content || `[错误] ${err?.message || '请求失败'}` } : m));
+      const isAbort = err?.message === 'aborted';
+      setMessages(prev => prev.map(m => m.id === aId ? {
+        ...m,
+        content: m.content
+          ? (isAbort ? m.content + '\n\n[回复中断，已保留已接收内容]' : m.content + `\n❌ ${err?.message || '请求失败'}`)
+          : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${err?.message || '请求失败'}`),
+      } : m));
     } finally {
       clearTimeout(slowTimer);
+      abortRef.current = null;
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
       setIsStreaming(false);
     }

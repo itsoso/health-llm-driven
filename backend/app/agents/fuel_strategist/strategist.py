@@ -67,6 +67,8 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
         (twin.genetic.drug_sensitivity or [])
         + (twin.genetic.risk_variants or [])
         + (twin.genetic.protective_variants or [])
+        + (twin.genetic.nutrition_variants or [])
+        + (twin.genetic.recovery_variants or [])
     )
 
     by_gene: Dict[str, Dict[str, Any]] = {}
@@ -92,14 +94,12 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
             or "CC" in geno
         )
 
-    # MTHFR: 甲基叶酸
     if _has_risk("MTHFR"):
         nudges.append({
             "gene": "MTHFR",
             "tip": "叶酸代谢效率下降，优先从深绿叶蔬（菠菜/芦笋/甘蓝）+ 甲基叶酸补剂获取，而非合成叶酸。",
         })
 
-    # APOE4: 饱和脂肪敏感
     v_apoe = by_gene.get("APOE")
     if v_apoe and "4" in (v_apoe.get("genotype") or ""):
         nudges.append({
@@ -107,14 +107,12 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
             "tip": "APOE4 携带者对饱和脂肪敏感，增加橄榄油/鱼油替代红肉脂肪，LDL 目标更严格。",
         })
 
-    # FTO: 食欲调节
     if _has_risk("FTO"):
         nudges.append({
             "gene": "FTO",
             "tip": "FTO 风险型对高蛋白餐更敏感：每餐保证 25-35g 蛋白，避免单纯高碳水餐导致血糖波动。",
         })
 
-    # LCT: 乳糖不耐
     v_lct = by_gene.get("LCT") or by_gene.get("MCM6")
     if v_lct and ("CC" in (v_lct.get("genotype") or "") or _has_risk("LCT")):
         nudges.append({
@@ -122,7 +120,34 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
             "tip": "乳糖吸收能力下降，选酸奶/硬奶酪/无乳糖奶替代普通牛奶。",
         })
 
-    return nudges[:3]
+    if _has_risk("FADS1"):
+        nudges.append({
+            "gene": "FADS1",
+            "tip": "Omega-3转化效率低→需更多直接EPA/DHA来源(深海鱼≥3次/周或鱼油补剂≥1g/d)。",
+        })
+
+    v_aldh2 = by_gene.get("ALDH2")
+    if v_aldh2 and (v_aldh2.get("risk_level") or "").lower() in ("medium", "high"):
+        nudges.append({
+            "gene": "ALDH2",
+            "tip": "乙醛脱氢酶缺陷→饮酒后乙醛蓄积→严格限酒，红脸基因人群食管癌风险增高。",
+        })
+
+    sod2 = by_gene.get("SOD2")
+    if sod2 and "VAL/VAL" in (sod2.get("genotype") or "").upper():
+        nudges.append({
+            "gene": "SOD2",
+            "tip": "抗氧化能力弱→增加富含抗氧化物的食物(蓝莓/深色蔬菜/绿茶)+补充CoQ10。",
+        })
+
+    gstp1 = by_gene.get("GSTP1")
+    if gstp1 and (gstp1.get("risk_level") or "").lower() in ("medium", "high"):
+        nudges.append({
+            "gene": "GSTP1",
+            "tip": "Phase II解毒酶效率低→多吃十字花科蔬菜(西兰花/萝卜硫素)支持肝脏解毒。",
+        })
+
+    return nudges[:5]
 
 
 # ─────────────────────── Specialist ────────────────────

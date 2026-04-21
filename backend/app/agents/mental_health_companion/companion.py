@@ -31,6 +31,70 @@ def _safe(v: Any) -> Optional[float]:
         return None
 
 
+# ─────────────────────── 基因心理档案 ────────────────────────
+
+
+def _gene_mental_profile(twin: HealthTwin) -> List[Dict[str, Any]]:
+    """从 Twin.genetic 派生心理/个性相关基因洞察。"""
+    results: List[Dict[str, Any]] = []
+    all_variants = (
+        (twin.genetic.drug_sensitivity or [])
+        + (twin.genetic.risk_variants or [])
+        + (twin.genetic.protective_variants or [])
+        + (twin.genetic.cognition_variants or [])
+        + (twin.genetic.personality_variants or [])
+    )
+    by_gene: Dict[str, Dict[str, Any]] = {}
+    for v in all_variants:
+        name = (v.get("gene_name") or "").upper()
+        if name:
+            by_gene.setdefault(name, v)
+
+    comt = by_gene.get("COMT")
+    if comt:
+        geno = (comt.get("genotype") or "").upper()
+        if "VAL/VAL" in geno:
+            results.append({"type": "gene_mental", "gene": "COMT", "profile": "战士型(Val/Val)",
+                "tip": "多巴胺清除快→压力下表现稳定，适合高强度运动释放；但基础多巴胺偏低，注意保持新鲜感和奖励循环。"})
+        elif "MET/MET" in geno:
+            results.append({"type": "gene_mental", "gene": "COMT", "profile": "思考者型(Met/Met)",
+                "tip": "多巴胺清除慢→创造力高但易焦虑；减少咖啡因、增加冥想和有氧运动（促进COMT活性），避免多任务并行。"})
+
+    bdnf = by_gene.get("BDNF")
+    if bdnf:
+        geno = (bdnf.get("genotype") or "").upper()
+        if "MET" in geno:
+            results.append({"type": "gene_mental", "gene": "BDNF", "profile": "Val66Met携带",
+                "tip": "海马体BDNF分泌减少→有氧运动是最强的天然BDNF促进剂，每周150min中等有氧可部分弥补。"})
+
+    drd2 = by_gene.get("DRD2")
+    if drd2 and (drd2.get("risk_level") or "").lower() in ("medium", "high"):
+        results.append({"type": "gene_mental", "gene": "DRD2", "profile": "奖赏敏感增高",
+            "tip": "多巴胺受体密度偏低→对奖赏信号更敏感→注意控制糖/酒精/手机等快感源，用运动和社交替代。"})
+
+    tph2 = by_gene.get("TPH2")
+    if tph2 and (tph2.get("risk_level") or "").lower() in ("medium", "high"):
+        results.append({"type": "gene_mental", "gene": "TPH2", "profile": "血清素合成偏低",
+            "tip": "情绪波动风险增高→有氧运动+ω-3(EPA≥1g/d)+早晨光照是三大天然血清素提升手段。"})
+
+    slc6a4 = by_gene.get("SLC6A4")
+    if slc6a4 and (slc6a4.get("risk_level") or "").lower() in ("medium", "high"):
+        results.append({"type": "gene_mental", "gene": "SLC6A4", "profile": "焦虑易感(5-HTTLPR短臂)",
+            "tip": "血清素回收减弱→负面情绪敏感性高→正念冥想+规律运动+充足日照对你效果比一般人更显著。"})
+
+    oxtr = by_gene.get("OXTR")
+    if oxtr:
+        geno = (oxtr.get("genotype") or "").upper()
+        if "GG" in geno:
+            results.append({"type": "gene_mental", "gene": "OXTR", "profile": "高共情/社交驱动型(GG)",
+                "tip": "催产素受体高表达→社交需求强、共情能力强，但孤独时心理风险高于平均→确保每天有真人互动。"})
+        elif "AA" in geno:
+            results.append({"type": "gene_mental", "gene": "OXTR", "profile": "独立型(AA)",
+                "tip": "催产素受体低表达→独立性强、不依赖社交也能稳定→但主动练习共情可拓展社交资源。"})
+
+    return results[:5]
+
+
 class MentalHealthCompanionSpecialist:
     name = "mental_health_companion"
     category = "mental"
@@ -124,6 +188,10 @@ class MentalHealthCompanionSpecialist:
                     "order": idx,
                     "text": act,
                 })
+
+            # 5. 基因心理档案
+            gene_insights = _gene_mental_profile(twin)
+            findings.extend(gene_insights)
 
             summary = " · ".join(summary_parts) if summary_parts else "心理数据暂缺"
             if crisis:
