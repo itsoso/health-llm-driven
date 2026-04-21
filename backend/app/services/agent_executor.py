@@ -441,6 +441,7 @@ class AgentExecutor:
             "hrv": f"/garmin-analysis/me/hrv?days={days}",
             "activity": f"/garmin-analysis/me/activity?days={days}",
             "spo2": "/spo2/me/latest-night",
+            "spo2_sleep_correlation": f"/spo2/me/sleep-correlation?days={days}",
             "body_battery": f"/garmin-analysis/me/body-battery?days={days}",
             "stress": f"/garmin-analysis/me/stress?days={days}",
             "weight": "/weight/records/me/recent?limit=10",

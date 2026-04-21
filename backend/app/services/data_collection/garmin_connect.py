@@ -2397,6 +2397,9 @@ class GarminConnectService:
             # 同步血氧采样数据
             self._sync_spo2_samples(db, user_id, target_date, raw_data)
 
+            # 同步睡眠阶段时间线
+            self._sync_sleep_level_intervals(db, user_id, target_date, raw_data)
+
             return result
             
         except Exception as e:
@@ -2508,8 +2511,7 @@ class GarminConnectService:
         """同步血氧采样数据（睡眠期间每分钟一个点）"""
         prefix = self._log_prefix()
         try:
-            spo2_raw = raw_data.get('spo2') if isinstance(raw_data, dict) else None
-            if not spo2_raw or not isinstance(spo2_raw, dict):
+            if not isinstance(raw_data, dict):
                 return 0
 
             from app.models.daily_health import SpO2Sample
@@ -2517,49 +2519,90 @@ class GarminConnectService:
 
             samples = []
 
-            time_offset_data = spo2_raw.get('timeOffsetSleepSpo2')
-            start_ts_str = spo2_raw.get('startTimestampGMT') or spo2_raw.get('startTimestampLocal')
-
-            if time_offset_data and isinstance(time_offset_data, dict) and start_ts_str:
-                try:
-                    start_ts = datetime.fromisoformat(start_ts_str.rstrip('Z').replace('.0', ''))
-                except (ValueError, TypeError):
-                    start_ts = None
-
-                if start_ts:
-                    for offset_ms_str, spo2_val in time_offset_data.items():
+            # Strategy 1: sleep data 中的 wellnessEpochSPO2DataDTOList（最完整的逐分钟数据）
+            sleep_raw = raw_data.get('sleep')
+            if isinstance(sleep_raw, dict):
+                epoch_spo2_list = sleep_raw.get('wellnessEpochSPO2DataDTOList', [])
+                if isinstance(epoch_spo2_list, list) and epoch_spo2_list:
+                    logger.info(f"{prefix} 从 sleep.wellnessEpochSPO2DataDTOList 解析 SpO2，共 {len(epoch_spo2_list)} 条")
+                    for item in epoch_spo2_list:
                         try:
-                            offset_ms = int(offset_ms_str)
-                            if spo2_val is None or not (50 <= int(spo2_val) <= 100):
+                            if not isinstance(item, dict):
                                 continue
-                            sample_dt = start_ts + timedelta(milliseconds=offset_ms)
+                            epoch_ts = item.get('epochTimestamp') or item.get('startTimestampGMT')
+                            spo2_val = item.get('spo2Value') or item.get('deviceSpo2Value') or item.get('value')
+                            if epoch_ts is None or spo2_val is None:
+                                continue
+                            if isinstance(epoch_ts, str):
+                                try:
+                                    epoch_ts = int(datetime.fromisoformat(epoch_ts.rstrip('Z')).timestamp() * 1000)
+                                except (ValueError, TypeError):
+                                    continue
+                            epoch_ts = int(epoch_ts)
+                            spo2_int = int(spo2_val)
+                            if not (50 <= spo2_int <= 100):
+                                continue
+                            sample_dt = datetime.fromtimestamp(epoch_ts / 1000)
                             samples.append({
                                 "time": dt_time(sample_dt.hour, sample_dt.minute),
-                                "value": int(spo2_val),
-                                "epoch_ms": int(start_ts.timestamp() * 1000) + offset_ms,
+                                "value": spo2_int,
+                                "epoch_ms": epoch_ts,
                             })
-                        except (ValueError, TypeError):
+                        except (ValueError, TypeError, OSError):
                             continue
 
-            if not samples:
-                sleep_measurements = spo2_raw.get('sleepMeasurement', [])
-                if isinstance(sleep_measurements, list):
-                    for item in sleep_measurements:
-                        try:
-                            epoch_ts = item.get('epochTimestamp')
-                            spo2_val = item.get('spo2Value') or item.get('value')
-                            if epoch_ts and spo2_val and 50 <= int(spo2_val) <= 100:
-                                sample_dt = datetime.fromtimestamp(epoch_ts / 1000)
+            # Strategy 2: spo2 API 的 timeOffsetSleepSpo2
+            spo2_raw = raw_data.get('spo2') if not samples else None
+            if spo2_raw and isinstance(spo2_raw, dict):
+                time_offset_data = spo2_raw.get('timeOffsetSleepSpo2')
+                start_ts_str = spo2_raw.get('startTimestampGMT') or spo2_raw.get('startTimestampLocal')
+
+                if time_offset_data and isinstance(time_offset_data, dict) and start_ts_str:
+                    try:
+                        start_ts = datetime.fromisoformat(start_ts_str.rstrip('Z').replace('.0', ''))
+                    except (ValueError, TypeError):
+                        start_ts = None
+
+                    if start_ts:
+                        for offset_ms_str, spo2_val in time_offset_data.items():
+                            try:
+                                offset_ms = int(offset_ms_str)
+                                if spo2_val is None or not (50 <= int(spo2_val) <= 100):
+                                    continue
+                                sample_dt = start_ts + timedelta(milliseconds=offset_ms)
                                 samples.append({
                                     "time": dt_time(sample_dt.hour, sample_dt.minute),
                                     "value": int(spo2_val),
-                                    "epoch_ms": int(epoch_ts),
+                                    "epoch_ms": int(start_ts.timestamp() * 1000) + offset_ms,
                                 })
-                        except (ValueError, TypeError):
-                            continue
+                            except (ValueError, TypeError):
+                                continue
+
+            # Strategy 3: spo2 API 的 sleepMeasurement
+            if not samples:
+                spo2_raw = raw_data.get('spo2')
+                if spo2_raw and isinstance(spo2_raw, dict):
+                    sleep_measurements = spo2_raw.get('sleepMeasurement', [])
+                    if isinstance(sleep_measurements, list):
+                        for item in sleep_measurements:
+                            try:
+                                epoch_ts = item.get('epochTimestamp')
+                                spo2_val = item.get('spo2Value') or item.get('value')
+                                if epoch_ts and spo2_val and 50 <= int(spo2_val) <= 100:
+                                    sample_dt = datetime.fromtimestamp(epoch_ts / 1000)
+                                    samples.append({
+                                        "time": dt_time(sample_dt.hour, sample_dt.minute),
+                                        "value": int(spo2_val),
+                                        "epoch_ms": int(epoch_ts),
+                                    })
+                            except (ValueError, TypeError):
+                                continue
 
             if not samples:
+                logger.debug(f"{prefix} {target_date} 无 SpO2 采样数据（sleep/spo2 API 均无逐分钟数据）")
                 return 0
+
+            logger.info(f"{prefix} {target_date} 解析到 {len(samples)} 个原始 SpO2 采样点")
 
             seen_minutes: Dict[str, dict] = {}
             for s in samples:
@@ -2592,6 +2635,105 @@ class GarminConnectService:
 
         except Exception as e:
             logger.warning(f"{prefix} 同步血氧采样数据失败: {e}")
+            return 0
+
+    def _sync_sleep_level_intervals(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: date,
+        raw_data: Dict[str, Any]
+    ) -> int:
+        """同步睡眠阶段时间段（deep/light/rem/awake）"""
+        prefix = self._log_prefix()
+        try:
+            if not isinstance(raw_data, dict):
+                return 0
+
+            sleep_raw = raw_data.get('sleep')
+            if not isinstance(sleep_raw, dict):
+                return 0
+
+            sleep_levels = sleep_raw.get('sleepLevels')
+            if not isinstance(sleep_levels, list) or not sleep_levels:
+                daily_dto = sleep_raw.get('dailySleepDTO', {})
+                if isinstance(daily_dto, dict):
+                    sleep_levels = daily_dto.get('sleepLevels', [])
+
+            if not isinstance(sleep_levels, list) or not sleep_levels:
+                return 0
+
+            from app.models.daily_health import SleepLevelInterval
+
+            LEVEL_MAP = {
+                'deep': 'deep', 'DEEP': 'deep',
+                'light': 'light', 'LIGHT': 'light',
+                'rem': 'rem', 'REM': 'rem',
+                'awake': 'awake', 'AWAKE': 'awake',
+                'unmeasurable': 'awake', 'UNMEASURABLE': 'awake',
+            }
+
+            intervals = []
+            for item in sleep_levels:
+                if not isinstance(item, dict):
+                    continue
+                start_gmt = item.get('startGMT') or item.get('startTimestampGMT')
+                end_gmt = item.get('endGMT') or item.get('endTimestampGMT')
+                level = item.get('activityLevel') or item.get('level') or item.get('sleepLevel')
+
+                if not start_gmt or not end_gmt or not level:
+                    continue
+
+                mapped_level = LEVEL_MAP.get(str(level).strip())
+                if not mapped_level:
+                    continue
+
+                try:
+                    if isinstance(start_gmt, (int, float)):
+                        start_ms = int(start_gmt)
+                    else:
+                        start_ms = int(datetime.fromisoformat(str(start_gmt).rstrip('Z')).timestamp() * 1000)
+                    if isinstance(end_gmt, (int, float)):
+                        end_ms = int(end_gmt)
+                    else:
+                        end_ms = int(datetime.fromisoformat(str(end_gmt).rstrip('Z')).timestamp() * 1000)
+                except (ValueError, TypeError, OSError):
+                    continue
+
+                intervals.append({
+                    "start_epoch_ms": start_ms,
+                    "end_epoch_ms": end_ms,
+                    "activity_level": mapped_level,
+                })
+
+            if not intervals:
+                return 0
+
+            db.query(SleepLevelInterval).filter(
+                SleepLevelInterval.user_id == user_id,
+                SleepLevelInterval.record_date == target_date
+            ).delete()
+
+            objects = [
+                SleepLevelInterval(
+                    user_id=user_id,
+                    record_date=target_date,
+                    start_epoch_ms=iv["start_epoch_ms"],
+                    end_epoch_ms=iv["end_epoch_ms"],
+                    activity_level=iv["activity_level"],
+                    source="garmin"
+                )
+                for iv in sorted(intervals, key=lambda x: x["start_epoch_ms"])
+            ]
+
+            db.bulk_save_objects(objects)
+            db.commit()
+
+            logger.info(f"{prefix} 保存了 {target_date} 的 {len(objects)} 个睡眠阶段时间段")
+            return len(objects)
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步睡眠阶段数据失败: {e}")
             return 0
 
     def sync_date_range(

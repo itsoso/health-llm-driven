@@ -287,6 +287,26 @@ class SpO2Sample(Base):
     )
 
 
+class SleepLevelInterval(Base):
+    """睡眠阶段时间段（deep/light/rem/awake，每晚约 30-60 段）"""
+    __tablename__ = "sleep_level_intervals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    record_date = Column(Date, nullable=False)
+    start_epoch_ms = Column(BigInteger, nullable=False)
+    end_epoch_ms = Column(BigInteger, nullable=False)
+    activity_level = Column(String(10), nullable=False)  # deep, light, rem, awake
+    source = Column(String, default="garmin")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", backref="sleep_level_intervals")
+
+    __table_args__ = (
+        Index('idx_sleep_level_user_date', 'user_id', 'record_date'),
+    )
+
+
 class WorkoutRecord(Base):
     """运动训练记录（跑步、游泳、骑车、HIIT等）"""
     __tablename__ = "workout_records"

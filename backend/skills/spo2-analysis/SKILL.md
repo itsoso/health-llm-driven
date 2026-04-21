@@ -24,11 +24,14 @@ metadata:
 |---|---|
 | "我昨晚血氧怎么样" | 最近一晚 SpO2 |
 | "看看我的夜间血氧曲线" | 最近一晚 SpO2 |
-| "我有没有睡眠呼吸暂停" | 最近一晚 + 趋势 |
+| "我有没有睡眠呼吸暂停" | 睡眠阶段×SpO2 关联分析 |
 | "我的 ODI 是多少" | 最近一晚 SpO2 |
 | "最近一周血氧趋势" | SpO2 趋势 |
 | "4月18号的血氧数据" | 指定日期 SpO2 |
 | "我晚上缺氧吗" | 最近一晚 + 趋势 |
+| "深睡/REM 期间血氧低吗" | 睡眠阶段×SpO2 关联分析 |
+| "哪个睡眠阶段血氧最差" | 睡眠阶段×SpO2 关联分析 |
+| "睡眠阶段和血氧的关系" | 睡眠阶段×SpO2 关联分析 |
 
 Do NOT use this skill for:
 - 日间血氧问题（本 skill 只有睡眠期间数据）
@@ -128,6 +131,69 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
 - `avg_odi`: 多夜平均 ODI
 - `nights_with_odi_above_5`: ODI ≥ 5 的夜晚数（OSAHS 筛查阈值）
 
+### 4. 睡眠阶段 × SpO2 关联分析
+
+```bash
+curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
+  "${HEALTH_API_URL}/spo2/me/sleep-correlation?days=7"
+```
+
+- **days**: 查询天数（1-30，默认 7）
+
+返回每晚分阶段（deep/rem/light/awake）的 SpO2 统计 + OSAHS 风险评估：
+
+```json
+{
+  "days": 7,
+  "nights": [
+    {
+      "record_date": "2026-04-20",
+      "stages": [
+        {
+          "stage": "deep",
+          "avg_spo2": 94.2,
+          "min_spo2": 88,
+          "desaturation_events": 3,
+          "below_90_count": 5,
+          "duration_minutes": 62.0,
+          "data_points": 62
+        },
+        {
+          "stage": "rem",
+          "avg_spo2": 93.8,
+          "min_spo2": 85,
+          "desaturation_events": 4,
+          "below_90_count": 8,
+          "duration_minutes": 95.0,
+          "data_points": 95
+        }
+      ],
+      "overall_odi": 1.2,
+      "worst_stage": "rem",
+      "apnea_risk": "normal",
+      "apnea_risk_detail": null
+    }
+  ],
+  "summary": {
+    "nights_analyzed": 7,
+    "avg_odi": 1.5,
+    "per_stage_avg_spo2": {"deep": 94.5, "rem": 93.2, "light": 95.1, "awake": 96.0},
+    "worst_stage": "rem",
+    "risk_distribution": {"normal": 6, "mild": 1, "moderate": 0, "severe": 0},
+    "overall_assessment": "轻度风险",
+    "disclaimer": "腕表 SpO2 仅供筛查参考，确诊 OSAHS 需多导睡眠监测 (PSG)"
+  }
+}
+```
+
+**字段说明**：
+- `stages`: 每个睡眠阶段的 SpO2 统计（平均/最低/氧减事件/低于90%次数）
+- `worst_stage`: 血氧最低的睡眠阶段（通常 REM 或 deep 期间更容易出现低氧）
+- `apnea_risk`: normal / mild / moderate / severe
+- `per_stage_avg_spo2`: 多夜汇总各阶段平均 SpO2
+- `risk_distribution`: 各风险等级的夜晚数
+- `overall_assessment`: 综合评估（正常/轻度/中度/重度风险）
+
 ## 临床参考标准
 
 ### ODI (氧减指数) 分级
@@ -163,10 +229,18 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
 3. 如果 ODI ≥ 5 或 min < 90，标注风险
 
 ### "我有没有睡眠呼吸暂停"
-1. 调 `/spo2/me/latest-night` 看最近一晚
-2. 调 `/spo2/me/trend?days=14` 看两周趋势
-3. 综合 ODI 均值 + nights_with_odi_above_5 评估
-4. 如果多夜 ODI ≥ 5，建议进行 PSG 确诊
+1. 调 `/spo2/me/sleep-correlation?days=14` 看两周关联分析
+2. 关注 `summary.overall_assessment` 和 `summary.avg_odi`
+3. 比较各阶段 SpO2：REM 期间低氧是典型 OSAHS 表现
+4. 如果 `worst_stage` 是 REM 且 below_90_count 较多，说明 REM 相关低氧
+5. 如果多夜 ODI ≥ 5，建议进行 PSG 确诊
+
+### "深睡/REM 期间血氧低吗" / "睡眠阶段和血氧的关系"
+1. 调 `/spo2/me/sleep-correlation?days=7`
+2. 报告 `summary.per_stage_avg_spo2`：各阶段平均血氧
+3. 报告 `summary.worst_stage`：哪个阶段血氧最差
+4. 对比各阶段的 desaturation_events 和 below_90_count
+5. OSAHS 特征：REM 期间 SpO2 明显下降、氧减事件集中
 
 ### "最近血氧变化趋势"
 1. 调 `/spo2/me/trend?days=30`

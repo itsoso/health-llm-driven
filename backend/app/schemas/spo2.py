@@ -35,3 +35,28 @@ class SpO2TrendResponse(BaseModel):
     avg_nightly_spo2: Optional[float] = None
     avg_odi: Optional[float] = None
     nights_with_odi_above_5: int = 0
+
+
+class SleepStageSpO2Stats(BaseModel):
+    stage: str = Field(..., description="sleep stage: deep/light/rem/awake")
+    avg_spo2: Optional[float] = None
+    min_spo2: Optional[int] = None
+    desaturation_events: int = 0
+    below_90_count: int = 0
+    duration_minutes: float = 0
+    data_points: int = 0
+
+
+class NightCorrelation(BaseModel):
+    record_date: date
+    stages: List[SleepStageSpO2Stats] = Field(default_factory=list)
+    overall_odi: Optional[float] = None
+    worst_stage: Optional[str] = None
+    apnea_risk: str = "normal"
+    apnea_risk_detail: Optional[str] = None
+
+
+class SpO2SleepCorrelationResponse(BaseModel):
+    days: int
+    nights: List[NightCorrelation] = Field(default_factory=list)
+    summary: Optional[dict] = None
