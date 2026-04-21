@@ -440,7 +440,7 @@ class AgentExecutor:
             "heart_rate": f"/garmin-analysis/me/heart-rate?days={days}",
             "hrv": f"/garmin-analysis/me/hrv?days={days}",
             "activity": f"/garmin-analysis/me/activity?days={days}",
-            "spo2": f"/garmin-analysis/me/spo2?days={days}",
+            "spo2": "/spo2/me/latest-night",
             "body_battery": f"/garmin-analysis/me/body-battery?days={days}",
             "stress": f"/garmin-analysis/me/stress?days={days}",
             "weight": "/weight/records/me/recent?limit=10",

@@ -98,7 +98,34 @@ export function computeSleepStats(data: GarminSleepDay[]): SleepStats {
 
 export async function getDeepAnalysis(days = 7): Promise<{ analysis: string }> {
   const { data } = await api.get<any>('/sleep/deep-analysis', { params: { days } });
-  return { analysis: data.analysis || data.summary || JSON.stringify(data) };
+  if (data.status === 'insufficient_data') return { analysis: data.message || '数据不足，需至少3天' };
+
+  const lines: string[] = [];
+  lines.push(`近${data.days_analyzed}天平均睡眠 ${data.duration_avg_hours}h，评分 ${data.sleep_score_avg}`);
+
+  const arch = data.architecture;
+  if (arch) lines.push(`睡眠结构：深睡 ${arch.deep_pct}% · REM ${arch.rem_pct}% · 浅睡 ${arch.light_pct}% · 清醒 ${arch.awake_pct}%`);
+
+  const assess = data.architecture_assessment;
+  if (assess) {
+    for (const [stage, info] of Object.entries(assess) as [string, any][]) {
+      if (info.status === 'below_normal') lines.push(`⚠ ${stage === 'deep' ? '深睡眠' : 'REM'}偏低 (${info.value}%，正常 ${info.norm_range[0]}-${info.norm_range[1]}%)`);
+    }
+  }
+
+  const hrv = data.hrv_recovery;
+  if (hrv) lines.push(`HRV ${hrv.avg_sleep_hrv}ms · 恢复质量${hrv.recovery_quality === 'good' ? '良好' : hrv.recovery_quality === 'fair' ? '一般' : '较差'}`);
+
+  const con = data.consistency;
+  if (con?.bedtime_std_minutes != null) lines.push(`作息规律性：${con.assessment === 'regular' ? '规律' : con.assessment === 'moderate' ? '中等' : '不规律'}（入睡波动 ±${con.bedtime_std_minutes}分钟）`);
+
+  if (data.recommendations?.length > 0) {
+    lines.push('');
+    lines.push('建议：');
+    data.recommendations.forEach((r: string) => lines.push(`• ${r}`));
+  }
+
+  return { analysis: lines.join('\n') };
 }
 
 export async function getSleepDebt(days = 14): Promise<SleepDebt> {

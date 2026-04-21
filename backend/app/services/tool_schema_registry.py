@@ -14,7 +14,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "health_query",
-            "description": "查询用户的健康数据。支持维度：Garmin 体征（步数/心率/HRV/睡眠/血氧/压力/身体电量）、体重、血压、运动、饮食、饮水、补剂依从、体检指标（如 HCY/LDL）、基因位点（如 MTHFR）、用药记录。",
+            "description": "查询用户的健康数据。支持维度：Garmin 体征（步数/心率/HRV/睡眠/血氧/压力/身体电量）、体重、血压、运动、饮食、饮水、补剂依从、体检指标（如 HCY/LDL）、基因位点（如 MTHFR）、用药记录。spo2 维度返回最近一晚逐分钟血氧时间序列、平均/最低/最高值、氧减事件数、ODI 氧减指数。",
             "parameters": {
                 "type": "object",
                 "properties": {
