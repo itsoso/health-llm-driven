@@ -106,18 +106,25 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
-    # 自动迁移：添加新列（如果不存在）
+    # 自动迁移：添加新列（兼容 PostgreSQL 和 SQLite）
     try:
-        from app.database import SessionLocal
-        from sqlalchemy import text
+        from app.database import SessionLocal, engine
+        from sqlalchemy import text, inspect
         db = SessionLocal()
-        db.execute(text("ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT NULL"))
-        db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_in_progress BOOLEAN DEFAULT false"))
-        db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_started_at TIMESTAMPTZ DEFAULT NULL"))
-        db.execute(text("ALTER TABLE openclaw_messages ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT NULL"))
-        db.execute(text("ALTER TABLE openclaw_messages ADD COLUMN IF NOT EXISTS image_url VARCHAR(500) DEFAULT NULL"))
-        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_managed BOOLEAN DEFAULT false"))
-        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS managed_by INTEGER DEFAULT NULL"))
+        insp = inspect(engine)
+
+        def _add_col(table: str, col: str, col_type: str):
+            existing = [c["name"] for c in insp.get_columns(table)]
+            if col not in existing:
+                db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+
+        _add_col("chat_conversations", "mode", "VARCHAR(20) DEFAULT NULL")
+        _add_col("garmin_credentials", "sync_in_progress", "BOOLEAN DEFAULT false")
+        _add_col("garmin_credentials", "sync_started_at", "TIMESTAMP DEFAULT NULL")
+        _add_col("openclaw_messages", "rating", "INTEGER DEFAULT NULL")
+        _add_col("openclaw_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
+        _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
+        _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")
