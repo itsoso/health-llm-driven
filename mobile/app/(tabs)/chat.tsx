@@ -1,24 +1,19 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
+  View, Text, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, Modal, Pressable, Animated, GestureResponderEvent, AppState,
-  Dimensions,
+  Alert, Keyboard, Modal, Pressable, Dimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as DocumentPicker from 'expo-document-picker';
 import Markdown from 'react-native-markdown-display';
-import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
-import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '@/services/chat';
-import { BASE_URL } from '@/services/api';
-import { useMediaPicker } from '@/hooks/useMediaPicker';
-import { useVoiceRecording } from '@/hooks/useVoiceRecording';
+import { deleteConversation } from '@/services/chat';
+import { useChatEngine, type UIMessage } from '@/hooks/useChatEngine';
+import ChatInputBar from '@/components/chat/ChatInputBar';
+import { renderCard } from '@/components/chat/cards';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
-
-const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 
 function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
   return (
@@ -28,15 +23,6 @@ function BrandCircle({ size, children, style }: { size: number; children: React.
   );
 }
 
-interface UIMessage extends ChatMessage {
-  id: string;
-  streaming?: boolean;
-  imageUri?: string;
-}
-
-let msgCounter = 0;
-function nextId(): string { return `msg-${++msgCounter}-${Date.now()}`; }
-
 const SUGGESTIONS = [
   { icon: 'pulse-outline' as const, text: '今天的健康状况如何？' },
   { icon: 'moon-outline' as const, text: '分析我的睡眠质量' },
@@ -44,179 +30,50 @@ const SUGGESTIONS = [
   { icon: 'trending-up-outline' as const, text: 'HRV趋势分析' },
 ];
 
-function ChatPulsingDot() {
-  const opacity = useSharedValue(1);
-  React.useEffect(() => {
-    opacity.value = withRepeat(withTiming(0.3, { duration: 600 }), -1, true);
-  }, [opacity]);
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return <ReAnimated.View style={styles.recordingDot as any} />;
-}
-
 export default function ChatScreen() {
-  const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [conversationId, setConversationId] = useState<number | undefined>(undefined);
-  const abortRef = useRef<AbortController | null>(null);
-  const { pendingImage, setPendingImage, pickImage, takePhoto } = useMediaPicker();
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'background' && abortRef.current) {
-        abortRef.current.abort();
-      }
-    });
-    return () => sub.remove();
-  }, []);
-  const [showMenu, setShowMenu] = useState(false);
+  const chat = useChatEngine();
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
-  const plusRotation = useRef(new Animated.Value(0)).current;
-  const cancelYRef = useRef<number | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
 
-  // Load latest conversation on mount
+  useEffect(() => { chat.loadLatestConversation(); }, []);
+
   useEffect(() => {
-    (async () => {
-      try {
-        const convs = await getConversations();
-        if (convs.length > 0) {
-          const latestId = convs[0].id;
-          setConversationId(latestId);
-          const msgs = await getConversationMessages(latestId);
-          if (msgs.length > 0) {
-            setMessages(msgs.map((m: any, i: number) => ({
-              id: `hist-${m.id || i}`, role: m.role, content: m.content,
-              imageUri: m.image_url ? `${IMAGE_HOST}${m.image_url}` : undefined,
-            })));
-          }
-        }
-      } catch { console.warn('Failed to load latest conversation'); }
-    })();
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  const toggleMenu = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const toOpen = !showMenu;
-    setShowMenu(toOpen);
-    Animated.spring(plusRotation, { toValue: toOpen ? 1 : 0, useNativeDriver: true, friction: 8 }).start();
-  };
+  const handleSend = useCallback((text: string, images?: any) => {
+    chat.sendMessage(text, images);
+  }, [chat.sendMessage]);
 
-  // ── Send ──
-  const sendMessage = useCallback(async (text?: string) => {
-    const msg = (text || input).trim();
-    const hasImage = !!pendingImage;
-    if (!msg && !hasImage) return;
-    if (isStreaming) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    setInput('');
-    const finalMsg = msg || (hasImage ? '请分析这张图片' : '');
-    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUri: pendingImage?.uri };
-    const assistantId = nextId();
-    const assistantMsg: UIMessage = { id: assistantId, role: 'assistant', content: '', streaming: true };
-
-    setMessages(prev => [...prev, userMsg, assistantMsg]);
-    setIsStreaming(true);
-    const imgData = pendingImage;
-    setPendingImage(null);
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-
-    try {
-      for await (const token of streamChat(finalMsg, conversationId, imgData?.base64, imgData?.type, ac.signal)) {
-        if (token.type === 'token' || token.type === 'tool') {
-          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + (token.content || '') } : m));
-        } else if (token.type === 'done') {
-          if (token.conversationId && !conversationId) setConversationId(token.conversationId);
-        } else if (token.type === 'error') {
-          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + `\n❌ ${token.content}` } : m));
-        }
-      }
-    } catch (err: any) {
-      const isAbort = err?.message === 'aborted';
-      setMessages(prev => prev.map(m =>
-        m.id === assistantId ? {
-          ...m,
-          content: m.content
-            ? (isAbort ? m.content + '\n\n[回复中断，已保留已接收内容]' : m.content + `\n❌ ${err?.message || '请求失败'}`)
-            : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${err?.message || '请求失败'}`),
-        } : m
-      ));
-    } finally {
-      abortRef.current = null;
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
-      setIsStreaming(false);
-    }
-  }, [input, isStreaming, pendingImage]);
-
-  // ── Media Actions ──
-  const handlePickImage = useCallback(async () => {
-    setShowMenu(false);
-    await pickImage();
-  }, [pickImage]);
-
-  const handleTakePhoto = useCallback(async () => {
-    setShowMenu(false);
-    await takePhoto();
-  }, [takePhoto]);
-
-  const handlePickFile = useCallback(async () => {
-    setShowMenu(false);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-      if (!result.canceled && result.assets[0]) {
-        setInput(`请分析文件：${result.assets[0].name}`);
-      }
-    } catch {
-      Alert.alert('暂不可用', '文件选择功能需要重新构建 App');
-    }
-  }, []);
-
-  // ── Voice — long-press to record, release to transcribe & send ──
-  const sendMessageRef = useRef(sendMessage);
-  sendMessageRef.current = sendMessage;
-
-  const voice = useVoiceRecording({
-    onTranscript: (text) => sendMessageRef.current(text),
-  });
-
-  const handleVoicePressIn = useCallback((e: GestureResponderEvent) => {
-    cancelYRef.current = e.nativeEvent.pageY;
-    voice.startRecording();
-  }, [voice]);
-
-  const handleVoicePressOut = useCallback((e: GestureResponderEvent) => {
-    const startY = cancelYRef.current;
-    const endY = e.nativeEvent.pageY;
-    if (startY != null && startY - endY > 60) {
-      voice.cancelRecording();
-    } else {
-      voice.stopAndTranscribe();
-    }
-    cancelYRef.current = null;
-  }, [voice]);
-
-  // ── Render Message ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
     const isUser = item.role === 'user';
-    const displayText = item.content.replace(/\n?\[附图: \w+\]/g, '').trim();
+    if (item.cardType && item.cardData) {
+      const rendered = renderCard({ type: item.cardType, data: item.cardData });
+      if (rendered) return <View style={[styles.msgRow, styles.msgRowAI]}><View style={{ width: 36 }} />{rendered}</View>;
+    }
+    const displayText = item.content.replace(/\n?\[附图: [^\]]+\]/g, '').trim();
+    const images = item.imageUris;
     return (
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
-        {!isUser && (
-          <BrandCircle size={30} style={{ marginRight: 8 }}>
-            <Ionicons name="sparkles" size={14} color="#fff" />
-          </BrandCircle>
-        )}
+        {!isUser && <BrandCircle size={30} style={{ marginRight: 8 }}><Ionicons name="sparkles" size={14} color="#fff" /></BrandCircle>}
         {isUser ? (
-          <TouchableOpacity style={[styles.bubble, styles.bubbleUser, { backgroundColor: colors.brand }]} activeOpacity={0.8}
+          <TouchableOpacity style={[styles.bubble, styles.bubbleUser]} activeOpacity={0.8}
             onLongPress={() => { Clipboard.setStringAsync(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
-            {item.imageUri && (
-              <TouchableOpacity onPress={() => setViewingImage(item.imageUri!)} activeOpacity={0.85}>
-                <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />
-              </TouchableOpacity>
+            {images && images.length > 0 && (
+              <View style={styles.imageGrid}>
+                {images.map((uri, i) => (
+                  <TouchableOpacity key={i} onPress={() => setViewingImage(uri)} activeOpacity={0.85}>
+                    <Image source={{ uri }} style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid} resizeMode="cover" />
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
             {displayText ? <Text selectable style={txt.bubbleUser}>{displayText}</Text> : null}
           </TouchableOpacity>
@@ -231,25 +88,22 @@ export default function ChatScreen() {
     );
   }, []);
 
-  const canSend = (input.trim() || pendingImage) && !isStreaming;
-  const rotate = plusRotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Ionicons name="sparkles" size={18} color={colors.brand} />
         <Text style={txt.headerTitle}>AI 健康助理</Text>
         <View style={{ flex: 1 }} />
-        <TouchableOpacity onPress={() => { setMessages([]); setConversationId(undefined); }} hitSlop={8}>
+        <TouchableOpacity onPress={chat.newChat} hitSlop={8}>
           <Ionicons name="create-outline" size={20} color={colors.labelSecondary} />
         </TouchableOpacity>
-        {conversationId && messages.length > 0 && (
+        {chat.conversationId && chat.messages.length > 0 && (
           <TouchableOpacity onPress={() => {
             Alert.alert('删除对话', '确定删除当前对话？', [
               { text: '取消', style: 'cancel' },
               { text: '删除', style: 'destructive', onPress: async () => {
-                await deleteConversation(conversationId);
-                setMessages([]); setConversationId(undefined);
+                await deleteConversation(chat.conversationId!);
+                chat.newChat();
               }},
             ]);
           }} hitSlop={8} style={{ marginLeft: 12 }}>
@@ -261,10 +115,12 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={chat.messages}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => { if (isNearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }}
           onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
           scrollEventThrottle={100}
@@ -277,7 +133,7 @@ export default function ChatScreen() {
               <Text style={txt.welcomeSub}>我可以帮你分析数据、解答疑问、提供建议</Text>
               <View style={styles.sugGrid}>
                 {SUGGESTIONS.map(s => (
-                  <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => sendMessage(s.text)} activeOpacity={0.7}>
+                  <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => handleSend(s.text, null)} activeOpacity={0.7}>
                     <Ionicons name={s.icon} size={18} color={colors.brand} />
                     <Text style={txt.sugText}>{s.text}</Text>
                   </TouchableOpacity>
@@ -287,79 +143,10 @@ export default function ChatScreen() {
           }
         />
 
-        {/* Pending image preview */}
-        {pendingImage && (
-          <View style={styles.previewBar}>
-            <Image source={{ uri: pendingImage.uri }} style={styles.previewImg} />
-            <Text style={txt.previewText}>图片已选择</Text>
-            <TouchableOpacity onPress={() => setPendingImage(null)}>
-              <Ionicons name="close-circle" size={22} color={colors.red} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Recording indicator — shows above input bar */}
-        {voice.isRecording && (
-          <View style={styles.recordingBar}>
-            <ChatPulsingDot />
-            <Text style={txt.recordingText}>
-              {Math.floor(voice.durationMs / 1000)}s · 松手发送，上滑取消
-            </Text>
-          </View>
-        )}
-        {voice.isTranscribing && (
-          <View style={styles.recordingBar}>
-            <ActivityIndicator size="small" color={colors.brand} />
-            <Text style={[txt.recordingText, { color: colors.brand }]}>识别中...</Text>
-          </View>
-        )}
-
-        {/* Input Bar — ChatGPT style: + button | input | voice/send */}
-        <View style={styles.inputBar}>
-          {/* Plus button */}
-          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} activeOpacity={0.6}>
-            <Animated.View style={{ transform: [{ rotate }] }}>
-              <Ionicons name="add" size={24} color={colors.labelPrimary} />
-            </Animated.View>
-          </TouchableOpacity>
-
-          {/* Text input */}
-          <TextInput
-            style={styles.textInput}
-            placeholder="有问题，尽管问"
-            placeholderTextColor={colors.labelTertiary}
-            value={input}
-            onChangeText={setInput}
-            onSubmitEditing={() => sendMessage()}
-            returnKeyType="send"
-            multiline
-            maxLength={2000}
-          />
-
-          {/* Right: voice or send */}
-          {canSend ? (
-            <TouchableOpacity onPress={() => sendMessage()} style={styles.sendBtn}>
-              <BrandCircle size={32}>
-                <Ionicons name="arrow-up" size={16} color="#fff" />
-              </BrandCircle>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              onPressIn={handleVoicePressIn}
-              onPressOut={handleVoicePressOut}
-              style={[styles.voiceBtn, voice.isRecording && styles.voiceBtnActive]}
-              activeOpacity={0.6}
-            >
-              <Ionicons name={voice.isRecording ? 'mic' : 'mic-outline'} size={22} color={voice.isRecording ? '#fff' : colors.labelSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Bottom spacer for tab bar */}
-        <View style={{ height: 83 }} />
+        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} />
+        {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
 
-      {/* Image Viewer Modal */}
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
           {viewingImage && (
@@ -370,34 +157,7 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </Pressable>
       </Modal>
-
-      {/* Plus Menu Bottom Sheet */}
-      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>
-        <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
-          <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
-            <View style={styles.menuHandle} />
-            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
-            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={handlePickImage} />
-            <MenuItem icon="document-outline" label="添加文件" desc="上传文档或报告" onPress={handlePickFile} />
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
-  );
-}
-
-function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6}>
-      <View style={styles.menuIconWrap}>
-        <Ionicons name={icon} size={22} color={colors.labelPrimary} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={txt.menuLabel}>{label}</Text>
-        <Text style={txt.menuDesc}>{desc}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.labelTertiary} />
-    </TouchableOpacity>
   );
 }
 
@@ -408,10 +168,12 @@ const styles = StyleSheet.create({
   msgRow: { flexDirection: 'row', marginBottom: spacing.md, alignItems: 'flex-end' },
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '78%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleUser: { borderBottomRightRadius: 4 },
+  bubble: { maxWidth: '80%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
+  bubbleUser: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
   bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
-  msgImage: { width: 180, height: 135, borderRadius: 12, marginBottom: 6 },
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
+  msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
+  msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',
@@ -420,72 +182,7 @@ const styles = StyleSheet.create({
     width: Dimensions.get('window').width - 32,
     height: Dimensions.get('window').height * 0.7,
   },
-  imageViewerClose: {
-    position: 'absolute', top: 60, right: 20,
-  },
-
-  // Input bar
-  inputBar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    paddingHorizontal: spacing.md, paddingVertical: 8,
-    backgroundColor: colors.bgPrimary,
-  },
-  plusBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.separator,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  textInput: {
-    flex: 1, backgroundColor: colors.bgCard, borderRadius: 20,
-    paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9,
-    fontSize: 15, maxHeight: 100, color: colors.labelPrimary,
-    borderWidth: 1, borderColor: colors.separator,
-  },
-  sendBtn: { marginBottom: 2 },
-  voiceBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  voiceBtnActive: {
-    backgroundColor: '#FF453A',
-    transform: [{ scale: 1.2 }],
-  },
-
-  // Preview & recording
-  previewBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: spacing.md, paddingVertical: 6,
-    backgroundColor: colors.bgCard,
-  },
-  previewImg: { width: 40, height: 40, borderRadius: 8 },
-  recordingBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: spacing.lg, paddingVertical: 8,
-    backgroundColor: '#FFF0F0',
-  },
-  recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF453A' },
-
-  // Plus menu
-  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  menuSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
-  },
-  menuHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: colors.labelQuaternary,
-    alignSelf: 'center', marginBottom: spacing.lg,
-  },
-  menuItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
-  },
-  menuIconWrap: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: colors.bgPrimary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  // Welcome
+  imageViewerClose: { position: 'absolute', top: 60, right: 20 },
   welcome: { alignItems: 'center', paddingTop: 60 },
   sugGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xxl, paddingHorizontal: spacing.lg },
   sugCard: {
@@ -500,31 +197,17 @@ const txt = {
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
   welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
   sugText: { fontSize: 13, color: colors.labelPrimary, lineHeight: 18 } as TextStyle,
-  previewText: { fontSize: 13, color: colors.labelSecondary, flex: 1 } as TextStyle,
-  recordingText: { fontSize: 14, color: '#FF453A', flex: 1 } as TextStyle,
-  recordingStop: { fontSize: 14, fontWeight: '600', color: '#FF453A' } as TextStyle,
-  menuLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  menuDesc: { fontSize: 12, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
 };
 
 const mdStyles = StyleSheet.create({
   body: { fontSize: 15, lineHeight: 22, color: colors.labelPrimary },
-  heading1: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary, marginTop: 8, marginBottom: 4 },
   heading2: { fontSize: 17, fontWeight: '700', color: colors.labelPrimary, marginTop: 6, marginBottom: 4 },
   heading3: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary, marginTop: 4, marginBottom: 2 },
   strong: { fontWeight: '600' },
   bullet_list: { marginVertical: 4 },
-  ordered_list: { marginVertical: 4 },
   list_item: { flexDirection: 'row', marginVertical: 2 },
   code_inline: { backgroundColor: '#F2F2F7', borderRadius: 4, paddingHorizontal: 4, fontFamily: 'Menlo', fontSize: 13, color: colors.brand },
   fence: { backgroundColor: '#F2F2F7', borderRadius: 8, padding: 10, fontFamily: 'Menlo', fontSize: 13, marginVertical: 6 },
-  code_block: { backgroundColor: '#F2F2F7', borderRadius: 8, padding: 10, fontFamily: 'Menlo', fontSize: 13, marginVertical: 6 },
-  blockquote: { borderLeftWidth: 3, borderLeftColor: colors.brand, paddingLeft: 10, marginVertical: 4, opacity: 0.8 },
-  hr: { backgroundColor: colors.separator, height: 1, marginVertical: 8 },
   paragraph: { marginVertical: 2 },
   link: { color: colors.brand },
-  table: { borderWidth: 0.5, borderColor: colors.separator, borderRadius: 6, marginVertical: 6 },
-  th: { padding: 6, fontWeight: '600', backgroundColor: '#F2F2F7' },
-  td: { padding: 6 },
-  tr: { borderBottomWidth: 0.5, borderColor: colors.separator },
 });

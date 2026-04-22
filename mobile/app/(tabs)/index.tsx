@@ -94,8 +94,8 @@ export default function HomeScreen() {
     ? `${batteryCurrent}/${batteryPeak}` : `${batteryCurrent ?? batteryPeak ?? '--'}`;
 
   // ── Send handler (wraps chat engine) ──
-  const handleSend = useCallback((text: string, image?: any) => {
-    chat.sendMessage(text, image);
+  const handleSend = useCallback((text: string, images?: any) => {
+    chat.sendMessage(text, images);
   }, [chat.sendMessage]);
 
   // ── Render message ──
@@ -106,6 +106,7 @@ export default function HomeScreen() {
       if (rendered) return <View style={[styles.msgRow, styles.msgRowAI]}><View style={{ width: 36 }} />{rendered}</View>;
     }
     const displayText = item.content.replace(/\n?\[附图: \w+\]/g, '').trim();
+    const images = item.imageUris;
     return (
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
         {!isUser && <BrandCircle size={28} style={{ marginRight: 8 }}><Ionicons name="sparkles" size={12} color="#fff" /></BrandCircle>}
@@ -113,10 +114,14 @@ export default function HomeScreen() {
           <TouchableOpacity style={[styles.bubble, styles.bubbleUser]} activeOpacity={0.8}
             onLongPress={() => { Clipboard.setStringAsync(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}
             accessibilityRole="text" accessibilityLabel={`你: ${item.content}`}>
-            {item.imageUri && (
-              <TouchableOpacity onPress={() => setViewingImage(item.imageUri!)} activeOpacity={0.85}>
-                <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />
-              </TouchableOpacity>
+            {images && images.length > 0 && (
+              <View style={styles.imageGrid}>
+                {images.map((uri, i) => (
+                  <TouchableOpacity key={i} onPress={() => setViewingImage(uri)} activeOpacity={0.85}>
+                    <Image source={{ uri }} style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid} resizeMode="cover" />
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
             {displayText ? <Text selectable style={txt.bubbleUser}>{displayText}</Text> : null}
           </TouchableOpacity>
@@ -261,7 +266,9 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
   bubbleUser: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
   bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
-  msgImage: { width: 160, height: 120, borderRadius: 10, marginBottom: 4 },
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
+  msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
+  msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',

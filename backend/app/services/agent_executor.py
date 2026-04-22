@@ -42,8 +42,7 @@ class AgentExecutor:
         message: str,
         conversation_id: Optional[int] = None,
         user_auth_token: Optional[str] = None,
-        image_base64: Optional[str] = None,
-        image_type: Optional[str] = None,
+        images: Optional[List[dict]] = None,
         file_base64: Optional[str] = None,
         file_name: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
@@ -58,13 +57,17 @@ class AgentExecutor:
 
         # 保存用户消息（含图片标记）
         user_content = message
-        saved_image_url = None
-        if image_base64:
-            user_content += f"\n[附图: {image_type or 'jpeg'}]"
-            saved_image_url = self._upload_chat_image(image_base64, image_type or "jpeg")
+        saved_image_urls: List[str] = []
+        if images:
+            user_content += f"\n[附图: {len(images)}张]"
+            for img in images:
+                url = self._upload_chat_image(img["base64"], img.get("type", "jpeg"))
+                if url:
+                    saved_image_urls.append(url)
         if file_base64 and file_name:
             user_content += f"\n[附件: {file_name}]"
-        svc.save_message(conv.id, "user", user_content, image_url=saved_image_url)
+        image_url_value = json.dumps(saved_image_urls) if saved_image_urls else None
+        svc.save_message(conv.id, "user", user_content, image_url=image_url_value)
 
         # 2. 构建 system prompt（复用健康上下文）
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
@@ -74,19 +77,20 @@ class AgentExecutor:
         messages.insert(0, {"role": "system", "content": system_content})
 
         # 如果有图片，替换最后一条 user 消息为多模态格式
-        if image_base64:
-            user_msg_content = [
-                {"type": "text", "text": message},
-                {"type": "image_url", "image_url": {"url": f"data:image/{image_type or 'jpeg'};base64,{image_base64}"}},
-            ]
-            # 替换 messages 中最后一条 user 角色的 content
+        if images:
+            user_msg_content: list = [{"type": "text", "text": message}]
+            for img in images:
+                user_msg_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/{img.get('type', 'jpeg')};base64,{img['base64']}"},
+                })
             for i in range(len(messages) - 1, -1, -1):
                 if messages[i].get("role") == "user":
                     messages[i]["content"] = user_msg_content
                     break
 
         # 有图片时使用 vision model
-        use_vision = bool(image_base64)
+        use_vision = bool(images)
 
         # 4. 工具定义
         tools = get_health_tools()

@@ -29,14 +29,21 @@ export interface StreamEvent {
 export async function* streamChat(
   message: string,
   conversationId?: number,
-  imageBase64?: string,
-  imageType?: string,
+  images?: { base64?: string; type?: string }[],
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const token = await getToken();
   const body: Record<string, any> = { message };
   if (conversationId) body.conversation_id = conversationId;
-  if (imageBase64) { body.image_base64 = imageBase64; body.image_type = imageType || 'jpeg'; }
+  if (images && images.length > 0) {
+    // Backward compatible: single image uses legacy fields, multi uses images array
+    if (images.length === 1) {
+      body.image_base64 = images[0].base64;
+      body.image_type = images[0].type || 'jpeg';
+    } else {
+      body.images = images.map(img => ({ base64: img.base64, type: img.type || 'jpeg' }));
+    }
+  }
 
   // Use a promise-based wrapper around XHR with chunked callback
   const chunks: string[] = [];

@@ -1,14 +1,14 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Image, Text,
-  Animated, Modal, Pressable, ActivityIndicator, GestureResponderEvent, TextStyle,
-  Platform,
+  Modal, Pressable, ActivityIndicator, GestureResponderEvent, TextStyle,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
-import { useMediaPicker } from '@/hooks/useMediaPicker';
+import { useMediaPicker, type PendingImage } from '@/hooks/useMediaPicker';
 import { useVoiceRecording } from '@/hooks/useVoiceRecording';
 import { colors, spacing, radii } from '@/constants/theme';
 
@@ -20,25 +20,23 @@ function PulsingDot() {
 }
 
 interface Props {
-  onSend: (text: string, image?: { uri: string; base64?: string; type?: string } | null) => void;
+  onSend: (text: string, images?: PendingImage[] | null) => void;
   isStreaming: boolean;
 }
 
 export default function ChatInputBar({ onSend, isStreaming }: Props) {
   const [input, setInput] = useState('');
   const [showMenu, setShowMenu] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const cancelYRef = useRef<number | null>(null);
-  const { pendingImage, setPendingImage, pickImage, takePhoto } = useMediaPicker();
+  const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
 
   const sendMessageRef = useRef<typeof handleSend>(null!);
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();
-    if (!msg && !pendingImage) return;
-    onSend(msg || '请分析这张图片', pendingImage);
+    if (!msg && pendingImages.length === 0) return;
+    onSend(msg || '请分析这些图片', pendingImages.length > 0 ? pendingImages : null);
     setInput('');
-    setPendingImage(null);
-  }, [input, pendingImage, onSend]);
+    clearImages();
+  }, [input, pendingImages, onSend, clearImages]);
   sendMessageRef.current = handleSend;
 
   const voice = useVoiceRecording({
@@ -46,16 +44,11 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
   });
 
   const handleVoicePressIn = useCallback((e: GestureResponderEvent) => {
-    cancelYRef.current = e.nativeEvent.pageY;
     voice.startRecording();
   }, [voice]);
 
   const handleVoicePressOut = useCallback((e: GestureResponderEvent) => {
-    const startY = cancelYRef.current;
-    const endY = e.nativeEvent.pageY;
-    if (startY != null && startY - endY > 60) voice.cancelRecording();
-    else voice.stopAndTranscribe();
-    cancelYRef.current = null;
+    voice.stopAndTranscribe();
   }, [voice]);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
@@ -73,18 +66,27 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
     setShowMenu(!showMenu);
   };
 
-  const canSend = (input.trim() || pendingImage) && !isStreaming;
+  const canSend = (input.trim() || pendingImages.length > 0) && !isStreaming;
 
   return (
     <>
-      {pendingImage && (
-        <View style={styles.previewBar}>
-          <Image source={{ uri: pendingImage.uri }} style={styles.previewImg} />
-          <Text style={styles.previewText}>图片已选择</Text>
-          <TouchableOpacity onPress={() => setPendingImage(null)} accessibilityLabel="取消选择图片">
-            <Ionicons name="close-circle" size={20} color={colors.red} />
-          </TouchableOpacity>
-        </View>
+      {pendingImages.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewBar} contentContainerStyle={styles.previewContent}>
+          {pendingImages.map((img, i) => (
+            <View key={img.uri} style={styles.previewItem}>
+              <Image source={{ uri: img.uri }} style={styles.previewImg} />
+              <TouchableOpacity style={styles.previewRemove} onPress={() => removeImage(i)} hitSlop={6}>
+                <Ionicons name="close-circle" size={18} color={colors.red} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {pendingImages.length < 9 && (
+            <TouchableOpacity style={styles.previewAddBtn} onPress={pickImage}>
+              <Ionicons name="add" size={20} color={colors.labelSecondary} />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.previewCount}>{pendingImages.length}/9</Text>
+        </ScrollView>
       )}
 
       {voice.isRecording && (
@@ -142,7 +144,7 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
           <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
             <View style={styles.menuHandle} />
             <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
-            <MenuItem icon="image-outline" label="相册" desc="选择图片发送分析" onPress={handlePickImage} />
+            <MenuItem icon="image-outline" label="相册" desc="选择多张图片（最多9张）" onPress={handlePickImage} />
             <MenuItem icon="document-outline" label="文件" desc="上传文档或报告" onPress={handlePickFile} />
           </Pressable>
         </Pressable>
@@ -190,11 +192,23 @@ const styles = StyleSheet.create({
   inlineVoiceBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   inlineVoiceBtnActive: { backgroundColor: '#FF453A' },
   previewBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: spacing.md, paddingVertical: 4, backgroundColor: colors.bgCard,
+    maxHeight: 72,
+    backgroundColor: colors.bgCard,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
   },
-  previewImg: { width: 36, height: 36, borderRadius: 6 },
-  previewText: { fontSize: 12, color: colors.labelSecondary, flex: 1 } as TextStyle,
+  previewContent: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: spacing.md, paddingVertical: 6,
+  },
+  previewItem: { position: 'relative' },
+  previewImg: { width: 52, height: 52, borderRadius: 8 },
+  previewRemove: { position: 'absolute', top: -6, right: -6 },
+  previewAddBtn: {
+    width: 52, height: 52, borderRadius: 8,
+    borderWidth: 1.5, borderColor: colors.separator, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  previewCount: { fontSize: 12, color: colors.labelTertiary, marginLeft: 4 } as TextStyle,
   recordBar: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: spacing.lg, paddingVertical: 6, backgroundColor: '#FFF0F0',

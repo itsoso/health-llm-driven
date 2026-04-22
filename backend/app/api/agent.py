@@ -5,7 +5,8 @@ OpenClaw 降级为 fallback 渠道。
 """
 import json
 import logging
-from typing import Optional
+from typing import Optional, List
+
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -20,19 +21,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class ImageItem(BaseModel):
+    base64: str
+    type: str = "jpeg"
+
+
 class AgentRequest(BaseModel):
     message: str = Field(max_length=10000)
     conversation_id: Optional[int] = None
     image_base64: Optional[str] = None
     image_type: Optional[str] = None
+    images: Optional[List[ImageItem]] = None
     file_base64: Optional[str] = None
     file_name: Optional[str] = None
 
     @field_validator("image_base64")
     @classmethod
     def check_image_size(cls, v: Optional[str]) -> Optional[str]:
-        if v and len(v) > 10_000_000:  # ~7.5MB image
+        if v and len(v) > 10_000_000:
             raise ValueError("图片太大，最大支持约 7.5MB")
+        return v
+
+    @field_validator("images")
+    @classmethod
+    def check_images(cls, v: Optional[List]) -> Optional[List]:
+        if v and len(v) > 9:
+            raise ValueError("最多支持 9 张图片")
+        if v:
+            for img in v:
+                if len(img.base64) > 10_000_000:
+                    raise ValueError("单张图片太大，最大支持约 7.5MB")
         return v
 
     @field_validator("file_base64")
@@ -60,8 +78,16 @@ async def agent_stream(
     - done: 完成 {conversation_id, message_id, elapsed_ms, mode}
     - error: 错误
     """
-    if not req.message.strip() and not req.image_base64 and not req.file_base64:
+    has_images = bool(req.image_base64 or req.images)
+    if not req.message.strip() and not has_images and not req.file_base64:
         raise HTTPException(status_code=400, detail="消息不能为空")
+
+    # Normalize: merge single image_base64 and images array into one list
+    all_images: List[dict] = []
+    if req.images:
+        all_images = [{"base64": img.base64, "type": img.type} for img in req.images]
+    elif req.image_base64:
+        all_images = [{"base64": req.image_base64, "type": req.image_type or "jpeg"}]
 
     from app.services.agent_executor import AgentExecutor
     executor = AgentExecutor(db)
@@ -76,8 +102,7 @@ async def agent_stream(
                 message=req.message.strip(),
                 conversation_id=req.conversation_id,
                 user_auth_token=user_token,
-                image_base64=req.image_base64,
-                image_type=req.image_type,
+                images=all_images or None,
                 file_base64=req.file_base64,
                 file_name=req.file_name,
             ):

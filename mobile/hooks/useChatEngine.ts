@@ -10,7 +10,7 @@ const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 export interface UIMessage extends ChatMessage {
   id: string;
   streaming?: boolean;
-  imageUri?: string;
+  imageUris?: string[];
   isBriefing?: boolean;
   cardType?: string;
   cardData?: any;
@@ -52,7 +52,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             id: `hist-${m.id || i}`,
             role: m.role,
             content: m.content,
-            imageUri: m.image_url ? `${IMAGE_HOST}${m.image_url}` : undefined,
+            imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
           }));
           setMessages(restored);
           restoreCards(restored);
@@ -67,7 +67,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const msgs = await getConversationMessages(id);
       const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
         id: `h-${m.id || i}`, role: m.role, content: m.content,
-        imageUri: m.image_url ? `${IMAGE_HOST}${m.image_url}` : undefined,
+        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
       }));
       setMessages(restored);
       restoreCards(restored);
@@ -100,16 +100,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   const sendMessage = useCallback(async (
     text: string,
-    pendingImage?: { uri: string; base64?: string; type?: string } | null,
+    pendingImages?: { uri: string; base64?: string; type?: string }[] | null,
   ) => {
     const msg = text.trim();
-    const hasImage = !!pendingImage;
-    if (!msg && !hasImage) return;
+    const hasImages = pendingImages && pendingImages.length > 0;
+    if (!msg && !hasImages) return;
     if (isStreaming) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const finalMsg = msg || (hasImage ? '请分析这张图片' : '');
-    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUri: pendingImage?.uri };
+    const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
+    const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
+    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris };
     const aId = nextId();
     const aiMsg: UIMessage = { id: aId, role: 'assistant', content: '', streaming: true };
 
@@ -128,7 +129,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     try {
       const toolsUsed: Set<string> = new Set();
-      for await (const evt of streamChat(finalMsg, conversationId, pendingImage?.base64, pendingImage?.type, ac.signal)) {
+      for await (const evt of streamChat(finalMsg, conversationId, hasImages ? pendingImages : undefined, ac.signal)) {
         if (evt.type === 'token' || evt.type === 'tool') {
           if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); setMessages(prev => prev.map(m => m.id === aId && m.content === '⏳ AI 正在思考中...' ? { ...m, content: '' } : m)); }
           setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content.replace('⏳ AI 正在思考中...', '') + (evt.content || '') } : m));

@@ -213,7 +213,7 @@ describe('useMediaPicker', () => {
       await act(async () => { await result.current.takePhoto(); });
       expect(result.current.pendingImage).not.toBeNull();
 
-      act(() => { result.current.clearPendingImage(); });
+      act(() => { result.current.clearImages(); });
       expect(result.current.pendingImage).toBeNull();
     });
   });
