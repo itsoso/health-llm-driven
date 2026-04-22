@@ -41,6 +41,7 @@ class OpenClawMessage(Base):
     )
     role = Column(String(20), nullable=False)  # user / assistant
     content = Column(Text, nullable=False)
+    image_url = Column(String(500), nullable=True)
     rating = Column(Integer, nullable=True)  # 1=thumbs up, -1=thumbs down, NULL=unrated
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 

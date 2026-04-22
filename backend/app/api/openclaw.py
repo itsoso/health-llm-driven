@@ -274,6 +274,7 @@ async def get_conversation(
                 "id": m.id,
                 "role": m.role,
                 "content": m.content,
+                "image_url": m.image_url,
                 "rating": m.rating,
                 "created_at": str(m.created_at),
             }

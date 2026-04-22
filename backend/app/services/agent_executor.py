@@ -58,11 +58,13 @@ class AgentExecutor:
 
         # 保存用户消息（含图片标记）
         user_content = message
+        saved_image_url = None
         if image_base64:
             user_content += f"\n[附图: {image_type or 'jpeg'}]"
+            saved_image_url = self._upload_chat_image(image_base64, image_type or "jpeg")
         if file_base64 and file_name:
             user_content += f"\n[附件: {file_name}]"
-        svc.save_message(conv.id, "user", user_content)
+        svc.save_message(conv.id, "user", user_content, image_url=saved_image_url)
 
         # 2. 构建 system prompt（复用健康上下文）
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
@@ -219,6 +221,23 @@ class AgentExecutor:
                 "mode": "agent",
             },
         }
+
+    @staticmethod
+    def _upload_chat_image(image_base64: str, image_type: str) -> Optional[str]:
+        """Save chat image to uploads dir, return relative URL."""
+        try:
+            import base64, os, uuid
+            from datetime import datetime
+            upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "chat")
+            os.makedirs(upload_dir, exist_ok=True)
+            data = base64.b64decode(image_base64.split(",", 1)[-1] if "," in image_base64 else image_base64)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"{ts}_{uuid.uuid4().hex[:8]}.{image_type}"
+            with open(os.path.join(upload_dir, fname), "wb") as f:
+                f.write(data)
+            return f"/api/v1/upload/files/chat/{fname}"
+        except Exception:
+            return None
 
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str]

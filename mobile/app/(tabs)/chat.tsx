@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
   Alert, Modal, Pressable, Animated, GestureResponderEvent, AppState,
+  Dimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,9 +13,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import Markdown from 'react-native-markdown-display';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '@/services/chat';
+import { BASE_URL } from '@/services/api';
 import { useMediaPicker } from '@/hooks/useMediaPicker';
 import { useVoiceRecording } from '@/hooks/useVoiceRecording';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
+
+const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 
 function BrandCircle({ size, children, style }: { size: number; children: React.ReactNode; style?: any }) {
   return (
@@ -70,6 +74,7 @@ export default function ChatScreen() {
   const isNearBottom = useRef(true);
   const plusRotation = useRef(new Animated.Value(0)).current;
   const cancelYRef = useRef<number | null>(null);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   // Load latest conversation on mount
   useEffect(() => {
@@ -83,6 +88,7 @@ export default function ChatScreen() {
           if (msgs.length > 0) {
             setMessages(msgs.map((m: any, i: number) => ({
               id: `hist-${m.id || i}`, role: m.role, content: m.content,
+              imageUri: m.image_url ? `${IMAGE_HOST}${m.image_url}` : undefined,
             })));
           }
         }
@@ -196,6 +202,7 @@ export default function ChatScreen() {
   // ── Render Message ──
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
     const isUser = item.role === 'user';
+    const displayText = item.content.replace(/\n?\[附图: \w+\]/g, '').trim();
     return (
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
         {!isUser && (
@@ -206,8 +213,12 @@ export default function ChatScreen() {
         {isUser ? (
           <TouchableOpacity style={[styles.bubble, styles.bubbleUser, { backgroundColor: colors.brand }]} activeOpacity={0.8}
             onLongPress={() => { Clipboard.setStringAsync(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}>
-            {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />}
-            <Text selectable style={txt.bubbleUser}>{item.content}</Text>
+            {item.imageUri && (
+              <TouchableOpacity onPress={() => setViewingImage(item.imageUri!)} activeOpacity={0.85}>
+                <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />
+              </TouchableOpacity>
+            )}
+            {displayText ? <Text selectable style={txt.bubbleUser}>{displayText}</Text> : null}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[styles.bubble, styles.bubbleAI]} activeOpacity={0.8}
@@ -348,6 +359,18 @@ export default function ChatScreen() {
         <View style={{ height: 83 }} />
       </KeyboardAvoidingView>
 
+      {/* Image Viewer Modal */}
+      <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
+        <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
+          {viewingImage && (
+            <Image source={{ uri: viewingImage }} style={styles.imageViewerImage} resizeMode="contain" />
+          )}
+          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
+            <Ionicons name="close-circle" size={32} color="#fff" />
+          </TouchableOpacity>
+        </Pressable>
+      </Modal>
+
       {/* Plus Menu Bottom Sheet */}
       <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>
         <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
@@ -389,6 +412,17 @@ const styles = StyleSheet.create({
   bubbleUser: { borderBottomRightRadius: 4 },
   bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
   msgImage: { width: 180, height: 135, borderRadius: 12, marginBottom: 6 },
+  imageViewerOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  imageViewerImage: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').height * 0.7,
+  },
+  imageViewerClose: {
+    position: 'absolute', top: 60, right: 20,
+  },
 
   // Input bar
   inputBar: {

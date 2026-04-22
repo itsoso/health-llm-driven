@@ -3,7 +3,9 @@ import { AppState } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '@/services/chat';
 import { dispatchCard, renderServerCards } from '@/components/chat/cards';
-import api from '@/services/api';
+import api, { BASE_URL } from '@/services/api';
+
+const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 
 export interface UIMessage extends ChatMessage {
   id: string;
@@ -50,6 +52,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             id: `hist-${m.id || i}`,
             role: m.role,
             content: m.content,
+            imageUri: m.image_url ? `${IMAGE_HOST}${m.image_url}` : undefined,
           }));
           setMessages(restored);
           restoreCards(restored);
@@ -64,6 +67,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const msgs = await getConversationMessages(id);
       const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
         id: `h-${m.id || i}`, role: m.role, content: m.content,
+        imageUri: m.image_url ? `${IMAGE_HOST}${m.image_url}` : undefined,
       }));
       setMessages(restored);
       restoreCards(restored);

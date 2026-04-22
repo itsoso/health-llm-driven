@@ -91,8 +91,8 @@ class OpenClawService:
 
     # ── 消息管理 ──────────────────────────────────────────
 
-    def save_message(self, conversation_id: int, role: str, content: str) -> OpenClawMessage:
-        msg = OpenClawMessage(conversation_id=conversation_id, role=role, content=content)
+    def save_message(self, conversation_id: int, role: str, content: str, image_url: str | None = None) -> OpenClawMessage:
+        msg = OpenClawMessage(conversation_id=conversation_id, role=role, content=content, image_url=image_url)
         self.db.add(msg)
         self.db.commit()
         self.db.refresh(msg)
@@ -654,7 +654,11 @@ AI: {ai_reply}
         conv = self.get_or_create_conversation(user_id, conversation_id, title=message)
 
         # 2. 保存用户消息
-        self.save_message(conv.id, "user", message)
+        saved_image_url = None
+        if image_base64:
+            from app.services.agent_executor import AgentExecutor
+            saved_image_url = AgentExecutor._upload_chat_image(image_base64, image_type)
+        self.save_message(conv.id, "user", message, image_url=saved_image_url)
 
         # 3. 检查是否为技能管理命令（管理员专属）
         skill_response = self._try_handle_skill_command(message, is_admin)

@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, TextStyle, Image,
-  Alert, RefreshControl, Keyboard,
+  Alert, RefreshControl, Keyboard, Modal, Pressable, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +43,7 @@ export default function HomeScreen() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   // ── Data queries ──
   const { data: scoreData } = useQuery({ queryKey: ['healthScore'], queryFn: () => api.get(`/health-score/daily/me?target_date=${today()}`).then(r => r.data), staleTime: 120_000 });
@@ -104,6 +105,7 @@ export default function HomeScreen() {
       const rendered = renderCard({ type: item.cardType, data: item.cardData });
       if (rendered) return <View style={[styles.msgRow, styles.msgRowAI]}><View style={{ width: 36 }} />{rendered}</View>;
     }
+    const displayText = item.content.replace(/\n?\[附图: \w+\]/g, '').trim();
     return (
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
         {!isUser && <BrandCircle size={28} style={{ marginRight: 8 }}><Ionicons name="sparkles" size={12} color="#fff" /></BrandCircle>}
@@ -111,8 +113,12 @@ export default function HomeScreen() {
           <TouchableOpacity style={[styles.bubble, styles.bubbleUser]} activeOpacity={0.8}
             onLongPress={() => { Clipboard.setStringAsync(item.content); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('已复制'); }}
             accessibilityRole="text" accessibilityLabel={`你: ${item.content}`}>
-            {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />}
-            <Text selectable style={txt.bubbleUser}>{item.content}</Text>
+            {item.imageUri && (
+              <TouchableOpacity onPress={() => setViewingImage(item.imageUri!)} activeOpacity={0.85}>
+                <Image source={{ uri: item.imageUri }} style={styles.msgImage} resizeMode="cover" />
+              </TouchableOpacity>
+            )}
+            {displayText ? <Text selectable style={txt.bubbleUser}>{displayText}</Text> : null}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[styles.bubble, styles.bubbleAI]} activeOpacity={0.8}
@@ -206,6 +212,21 @@ export default function HomeScreen() {
         {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
 
+      <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
+        <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
+          {viewingImage && (
+            <Image
+              source={{ uri: viewingImage }}
+              style={styles.imageViewerImage}
+              resizeMode="contain"
+            />
+          )}
+          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
+            <Ionicons name="close-circle" size={32} color="#fff" />
+          </TouchableOpacity>
+        </Pressable>
+      </Modal>
+
       <ConversationSheet
         visible={showHistory}
         onClose={() => setShowHistory(false)}
@@ -241,6 +262,17 @@ const styles = StyleSheet.create({
   bubbleUser: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
   bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
   msgImage: { width: 160, height: 120, borderRadius: 10, marginBottom: 4 },
+  imageViewerOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  imageViewerImage: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').height * 0.7,
+  },
+  imageViewerClose: {
+    position: 'absolute', top: 60, right: 20,
+  },
   welcome: { alignItems: 'center', paddingTop: 80 },
   briefingBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

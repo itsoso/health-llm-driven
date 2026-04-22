@@ -115,6 +115,7 @@ async def startup_event():
         db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_in_progress BOOLEAN DEFAULT false"))
         db.execute(text("ALTER TABLE garmin_credentials ADD COLUMN IF NOT EXISTS sync_started_at TIMESTAMPTZ DEFAULT NULL"))
         db.execute(text("ALTER TABLE openclaw_messages ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT NULL"))
+        db.execute(text("ALTER TABLE openclaw_messages ADD COLUMN IF NOT EXISTS image_url VARCHAR(500) DEFAULT NULL"))
         db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_managed BOOLEAN DEFAULT false"))
         db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS managed_by INTEGER DEFAULT NULL"))
         db.commit()
