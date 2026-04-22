@@ -106,7 +106,7 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
-    # 自动迁移：添加新列（兼容 PostgreSQL 和 SQLite）
+    # 自动迁移：添加新列（PostgreSQL）
     try:
         from app.database import SessionLocal, engine
         from sqlalchemy import text, inspect
@@ -125,6 +125,7 @@ async def startup_event():
         _add_col("openclaw_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
         _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
         _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
+        _add_col("users", "kids_points", "INTEGER DEFAULT 0")
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")
