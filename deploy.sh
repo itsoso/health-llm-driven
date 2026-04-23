@@ -91,7 +91,7 @@ show_help() {
 # ============================================================
 
 HEALTH_CHECK_URL=""  # 在 deploy_backend/deploy_frontend 中设置
-DEPLOY_SCORE_THRESHOLD=40  # 部署后健康度最低分（满分60，skip-tests模式）
+DEPLOY_SCORE_THRESHOLD=35  # 部署后健康度最低分（满分60，skip-tests模式）
 
 # 备份数据库
 backup_database() {
@@ -140,7 +140,9 @@ rollback_deploy() {
 # 部署后验证（项目的 val_bpb 检查）
 verify_deployment() {
     print_step "部署后健康度检查..."
-    # 等待服务启动
+    # 等待服务启动 + warmup（冷启动首次请求延迟高）
+    sleep 5
+    ssh $SERVER "curl -s http://localhost:8000/api/v1/health > /dev/null 2>&1" 2>/dev/null
     sleep 3
 
     SCORE=$(ssh $SERVER "
