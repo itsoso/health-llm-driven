@@ -77,7 +77,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
                         "type": "object",
                         "description": """记录的具体数据。各类型示例：
 - water: {"amount": 250}（毫升，默认250）
-- diet: {"meal_type": "breakfast|lunch|dinner|snack", "food_items": "牛奶200ml、面包1片", "record_date": "2026-04-16"}
+- diet: {"meal_type": "breakfast|lunch|dinner|snack", "food_items": "牛奶200ml、面包1片", "calories": 450, "record_date": "2026-04-16"}
 - supplement: {"supplement_name": "鱼油"}（按名称匹配已定义补剂）
 - supplement_group: {"timing": "morning|noon|evening|bedtime"}
 - weight: {"weight": 72.2, "record_date": "2026-04-16"}
