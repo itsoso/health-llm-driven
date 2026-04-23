@@ -121,9 +121,6 @@ class AgentExecutor:
         try:
             import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
-                # 多轮间加间隔，防止触发 Nginx 限流
-                if round_idx > 0:
-                    await _asyncio_loop.sleep(2)
                 # 调用 LLM（非流式，需要完整解析 tool_call）
                 response = await self._call_llm(messages, tools, use_vision=use_vision)
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
@@ -202,14 +199,18 @@ class AgentExecutor:
                     continue
 
                 else:
-                    # 纯文本回复 — 最终答案
-                    final_text = response if isinstance(response, str) else (response.get("content") or "")
-
-                    # 流式输出最终回答
-                    # 为了模拟流式体验，分块发送
-                    for i in range(0, len(final_text), 20):
-                        chunk = final_text[i:i + 20]
-                        yield {"event": "token", "data": {"content": chunk}}
+                    # 纯文本回复 — 最终答案，真流式输出
+                    if isinstance(response, str):
+                        # 已经是完整文本（fallback provider）
+                        final_text = response
+                        for i in range(0, len(final_text), 20):
+                            chunk = final_text[i:i + 20]
+                            yield {"event": "token", "data": {"content": chunk}}
+                    else:
+                        final_text = response.get("content") or ""
+                        for i in range(0, len(final_text), 20):
+                            chunk = final_text[i:i + 20]
+                            yield {"event": "token", "data": {"content": chunk}}
                     full_reply += final_text
                     break
 
