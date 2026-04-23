@@ -94,21 +94,28 @@ class AgentExecutor:
         messages = svc.build_messages(conv.id, limit=15)
         messages.insert(0, {"role": "system", "content": system_content})
 
-        # 如果有图片，替换最后一条 user 消息为多模态格式
+        # 如果有图片，先用 vision 模型识别内容，再将识别结果注入文本消息
         if images:
-            user_msg_content: list = [{"type": "text", "text": message}]
-            for img in images:
-                user_msg_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/{img.get('type', 'jpeg')};base64,{img['base64']}"},
-                })
-            for i in range(len(messages) - 1, -1, -1):
-                if messages[i].get("role") == "user":
-                    messages[i]["content"] = user_msg_content
-                    break
-
-        # 有图片时使用 vision model
-        use_vision = bool(images)
+            vision_description = await self._analyze_image_with_vision(message, images)
+            if vision_description:
+                enriched_message = f"{message}\n\n[图片识别结果]: {vision_description}"
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i].get("role") == "user":
+                        messages[i]["content"] = enriched_message
+                        break
+                logger.info(f"[Vision] 图片识别完成: {vision_description[:200]}")
+            else:
+                # Vision 模型不可用时，fallback 用多模态格式直接传图
+                user_msg_content: list = [{"type": "text", "text": message}]
+                for img in images:
+                    user_msg_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/{img.get('type', 'jpeg')};base64,{img['base64']}"},
+                    })
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i].get("role") == "user":
+                        messages[i]["content"] = user_msg_content
+                        break
 
         # 4. 工具定义
         tools = get_health_tools()
@@ -122,10 +129,8 @@ class AgentExecutor:
             import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
                 # 调用 LLM（非流式，需要完整解析 tool_call）
-                response = await self._call_llm(messages, tools, use_vision=use_vision)
+                response = await self._call_llm(messages, tools)
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
-                # 图片只在第一轮传，后续轮次不需要 vision model
-                use_vision = False
 
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
@@ -353,32 +358,15 @@ class AgentExecutor:
         return "\n".join(parts)
 
     async def _call_llm(
-        self, messages: List[Dict], tools: List[Dict], use_vision: bool = False
+        self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
-        """调用 LLM（优先走 OpenClaw Gateway，回退到默认 provider）"""
+        """调用 LLM（优先走配置的 agent 端点，回退到默认 provider）"""
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
-
-        # gpt-4o-mini 原生支持 vision + function calling，优先用它处理图片
-        if use_vision and agent_base and agent_key:
-            model = settings.agent_model or settings.llm_model
-            if "gpt-4o" in model:
-                return await self._call_llm_direct(
-                    messages, tools, model, agent_base, agent_key
-                )
-
-        # 有图片但 agent model 不支持 vision 时，走专用 vision 模型
-        if use_vision and settings.llm_vision_base_url and settings.llm_vision_api_key:
-            model = settings.llm_vision_model or "qwen-vl-max"
-            return await self._call_llm_direct(
-                messages, tools, model,
-                settings.llm_vision_base_url, settings.llm_vision_api_key
-            )
 
         model = settings.agent_model or settings.llm_model
 
         if agent_base and agent_key:
-            # 走 OpenClaw Gateway chatCompletions（去掉第三方代理）
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
         # 回退到默认 provider
@@ -399,6 +387,12 @@ class AgentExecutor:
         import asyncio as _asyncio
 
         url = f"{base_url.rstrip('/')}/chat/completions"
+
+        has_image = any(
+            isinstance(m.get("content"), list) and any(c.get("type") == "image_url" for c in m["content"])
+            for m in messages if isinstance(m, dict)
+        )
+        logger.info(f"[_call_llm_direct] model={model}, base_url={base_url[:50]}, has_image={has_image}, msg_count={len(messages)}")
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -460,6 +454,54 @@ class AgentExecutor:
                 ],
             }
         return msg.get("content") or ""
+
+    async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
+        """用 vision 模型预分析图片内容，返回文字描述"""
+        if not settings.llm_vision_base_url or not settings.llm_vision_api_key:
+            return None
+
+        vision_model = settings.llm_vision_model or "qwen-vl-max"
+        vision_messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": (
+                "你是一个食物识别助手。用户会发送食物照片，请你：\n"
+                "1. 识别图片中所有食物的名称和大致份量\n"
+                "2. 估算每种食物的热量(kcal)\n"
+                "3. 估算这顿饭的总热量\n"
+                "用简洁的中文回复，格式如：三文鱼150g(约250kcal)、黑米饭200g(约230kcal)、蔬菜100g(约30kcal)，总计约510kcal。"
+            )},
+            {"role": "user", "content": [
+                {"type": "text", "text": user_message or "请识别这张图片中的食物"},
+            ]},
+        ]
+        for img in images:
+            vision_messages[1]["content"].append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/{img.get('type', 'jpeg')};base64,{img['base64']}"},
+            })
+
+        try:
+            url = f"{settings.llm_vision_base_url.rstrip('/')}/chat/completions"
+            payload = {
+                "model": vision_model,
+                "messages": vision_messages,
+                "temperature": 0.3,
+                "max_tokens": 500,
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {settings.llm_vision_api_key}",
+            }
+            client = self._http_client or httpx.AsyncClient(timeout=60.0)
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                logger.warning(f"[Vision] 图片分析失败: HTTP {resp.status_code} {resp.text[:200]}")
+                return None
+        except Exception as e:
+            logger.warning(f"[Vision] 图片分析异常: {e}")
+            return None
 
     async def _execute_tool(
         self, tool_name: str, args_raw: Any, user_token: Optional[str]
