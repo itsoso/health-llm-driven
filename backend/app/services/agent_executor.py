@@ -515,9 +515,7 @@ class AgentExecutor:
         except json.JSONDecodeError:
             return f"Error: 参数解析失败: {args_raw}"
 
-        base_url = settings.health_api_base_url
-        if not base_url:
-            return f"Error: HEALTH_API_BASE_URL 未配置"
+        base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
 
         try:
@@ -610,6 +608,10 @@ class AgentExecutor:
         if rtype == "diet":
             data.setdefault("record_date", today)
             data.setdefault("meal_type", "snack")
+            # 中文 meal_type 映射
+            meal_type_map = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack", "夜宵": "snack"}
+            if data.get("meal_type") in meal_type_map:
+                data["meal_type"] = meal_type_map[data["meal_type"]]
             if isinstance(data.get("food_items"), list):
                 data["food_items"] = ", ".join(
                     (f.get("name", str(f)) if isinstance(f, dict) else str(f))
