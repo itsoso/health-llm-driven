@@ -177,14 +177,33 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
           ['替尔泊肽', 'Tirzepatide'],
           {
             name: '替尔泊肽',
-            dosage: '2.4ml',
+            dosage: '5ml',
             frequency: '每周1次',
             category: 'prescription',
             purpose: '体重管理/GLP-1',
             notes: '皮下注射，每周固定时间',
           },
-          '2.4ml',
-          '已记录注射替尔泊肽 2.4ml'
+          '5ml',
+          '已记录注射替尔泊肽 5ml'
+        ),
+    },
+    {
+      icon: '💨',
+      label: '异丙托溴铵',
+      onClick: () =>
+        logMedication(
+          'ipratropium',
+          ['异丙托溴铵', '异丙托溴铵鼻喷雾剂', 'Ipratropium Bromide'],
+          {
+            name: '异丙托溴铵鼻喷雾剂',
+            dosage: '每侧2喷',
+            frequency: '每日3-4次',
+            category: 'prescription',
+            purpose: '过敏性鼻炎/流涕',
+            notes: '抗胆碱能鼻喷，缓解流涕',
+          },
+          '每侧2喷',
+          '已记录异丙托溴铵鼻喷'
         ),
     },
   ];

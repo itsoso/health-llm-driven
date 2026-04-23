@@ -87,7 +87,7 @@ export default function RecordScreen() {
         <WorkoutWeekCard />
 
         {/* 4. Rhinitis */}
-        <RhinitisCard checkin={data?.checkin} onUpdate={refetch} />
+        <RhinitisCard checkin={data?.checkin} medications={medications} onUpdate={refetch} />
 
         {/* 5. Strength */}
         <StrengthCard exerciseToday={exerciseToday} onUpdate={refetch} />

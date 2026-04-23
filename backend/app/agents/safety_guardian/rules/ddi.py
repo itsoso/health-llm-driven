@@ -56,6 +56,7 @@ DRUG_ALIASES = {
     "mao_inhibitor": ["苯乙肼", "异丙烟肼", "mao", "phenelzine", "selegiline"],
     "metformin": ["二甲双胍", "metformin", "格华止"],
     "mometasone_nasal": ["糠酸莫米松", "mometasone", "内舒拿", "nasonex"],
+    "ipratropium_nasal": ["异丙托溴铵", "ipratropium", "爱全乐", "atrovent"],
     "cyp3a4_strong_inhibitor": [
         "利托那韦", "ritonavir", "克拉霉素", "clarithromycin",
         "酮康唑", "ketoconazole", "伊曲康唑", "itraconazole",

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rhinitis-trend", tags=["rhinitis-trend"])
 
-RHINITIS_MED_KEYWORDS = ["莫米松", "西替利嗪", "氯雷他定", "mometasone", "cetirizine"]
+RHINITIS_MED_KEYWORDS = ["莫米松", "西替利嗪", "氯雷他定", "异丙托溴铵", "mometasone", "cetirizine", "ipratropium"]
 
 
 @router.get("/me")
