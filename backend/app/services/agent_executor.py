@@ -359,7 +359,15 @@ class AgentExecutor:
         agent_base = settings.agent_base_url
         agent_key = settings.agent_api_key
 
-        # 有图片时使用 vision model
+        # gpt-4o-mini 原生支持 vision + function calling，优先用它处理图片
+        if use_vision and agent_base and agent_key:
+            model = settings.agent_model or settings.llm_model
+            if "gpt-4o" in model:
+                return await self._call_llm_direct(
+                    messages, tools, model, agent_base, agent_key
+                )
+
+        # 有图片但 agent model 不支持 vision 时，走专用 vision 模型
         if use_vision and settings.llm_vision_base_url and settings.llm_vision_api_key:
             model = settings.llm_vision_model or "qwen-vl-max"
             return await self._call_llm_direct(
