@@ -298,7 +298,8 @@ class AgentExecutor:
             "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
             "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
-            "- 图片：用户发食物照片 → 识别食物后用 health_record(type=diet) 记录",
+            "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
+            "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
             "",
             "## 分析规则",
             "- 简单查询（'今天步数多少'）→ health_query",
@@ -564,7 +565,9 @@ class AgentExecutor:
                     for f in data["food_items"]
                 )
             elif not data.get("food_items"):
-                data["food_items"] = data.get("description", data.get("notes", "未知食物"))
+                data["food_items"] = data.get("description", data.get("notes", ""))
+            if not data.get("food_items"):
+                return "Error: diet 记录必须提供 food_items（食物内容）。请先识别食物内容，然后重新调用 health_record 并在 data.food_items 中填写具体食物。"
 
         # 补全 weight 必填字段
         if rtype == "weight":
