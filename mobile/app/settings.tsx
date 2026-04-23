@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Alert, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import * as SecureStore from 'expo-secure-store';
-import api, { TOKEN_KEY } from '@/services/api';
+import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useBiometricLock } from '@/hooks/useBiometricLock';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
@@ -45,15 +44,13 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const importSiriShortcut = async () => {
+  const showSiriInfo = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
-    if (!token) {
-      Alert.alert('请先登录', '需要登录后才能导入 Siri 快捷指令');
-      return;
-    }
-    const url = `https://health.executor.life/api/siri/shortcut?token=${token}`;
-    Linking.openURL(url);
+    Alert.alert(
+      'Siri 语音记录',
+      '登录后即可使用 Siri 语音记录健康数据：\n\n• "嘿 Siri，用 HealthPilot 记录喝了500ml水"\n• "嘿 Siri，告诉 HealthPilot 吃了一个苹果"\n\n首次使用时 Siri 会请求授权。',
+      [{ text: '知道了' }],
+    );
   };
 
   return (
@@ -103,8 +100,8 @@ export default function SettingsScreen() {
           <SettingRow icon="notifications-outline" label="推送通知"
             onPress={() => router.push('/notification-settings' as any)} />
           <SettingRow icon="mic-outline" label="Siri 语音记录"
-            value="导入快捷指令"
-            onPress={importSiriShortcut} />
+            value="使用说明"
+            onPress={showSiriInfo} />
           {bioSupported && (
             <View style={styles.settingRow}>
               <Ionicons name="finger-print-outline" size={18} color={colors.labelSecondary} />

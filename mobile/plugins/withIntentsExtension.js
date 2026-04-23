@@ -165,19 +165,69 @@ struct SharedKeychain {
 const HEALTH_COMMAND_INTENT_SWIFT = `import AppIntents
 import Foundation
 
+struct QuickRecordResponse: Decodable {
+    let summary: String?
+    let message: String?
+}
+
 struct HealthCommandIntent: AppIntent {
     static let title: LocalizedStringResource = "记录健康数据"
-    static let description = IntentDescription("使用 Siri 语音记录健康数据")
+    static let description = IntentDescription("使用 Siri 语音记录健康数据，如"喝了500ml水"、"吃了一个苹果"")
     static let openAppWhenRun = false
 
     @Parameter(title: "内容")
     var content: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let token = SharedKeychain.loadToken() else {
-            return .result(dialog: "请先在 HealthPilot 中登录")
+        guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
+            return .result(dialog: "请先打开 HealthPilot App 登录")
         }
-        return .result(dialog: "已收到：\\(content)")
+
+        guard let url = URL(string: "https://health-api.executor.life/api/v1/agent/stream") else {
+            return .result(dialog: "服务地址配置错误")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \\(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+
+        let body: [String: Any] = ["message": content, "stream": false]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return .result(dialog: "网络请求失败")
+            }
+            if httpResponse.statusCode == 401 {
+                return .result(dialog: "登录已过期，请打开 HealthPilot 重新登录")
+            }
+            if httpResponse.statusCode >= 400 {
+                return .result(dialog: "服务暂时不可用，请稍后再试")
+            }
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+                let lines = text.components(separatedBy: "\\n")
+                var lastContent = ""
+                for line in lines {
+                    if line.hasPrefix("data: ") {
+                        let jsonStr = String(line.dropFirst(6))
+                        if let jsonData = jsonStr.data(using: .utf8),
+                           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                           let content = json["content"] as? String {
+                            lastContent += content
+                        }
+                    }
+                }
+                let trimmed = lastContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                let display = trimmed.isEmpty ? "已记录" : (trimmed.count > 200 ? String(trimmed.prefix(200)) + "..." : trimmed)
+                return .result(dialog: "\\(display)")
+            }
+            return .result(dialog: "已记录：\\(content)")
+        } catch {
+            return .result(dialog: "网络错误，请检查网络连接")
+        }
     }
 }
 `;
