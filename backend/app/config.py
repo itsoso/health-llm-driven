@@ -102,7 +102,8 @@ class Settings(BaseSettings):
     # iOS APNs 推送配置
     apns_key_id: Optional[str] = None
     apns_team_id: Optional[str] = None
-    apns_private_key_path: Optional[str] = None
+    apns_key_path: Optional[str] = None
+    apns_private_key_path: Optional[str] = None  # alias for apns_key_path
     apns_bundle_id: str = "life.executor.health"
 
     # Telegram 推送配置（Agent Native 告警通道）

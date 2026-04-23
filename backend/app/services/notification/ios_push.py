@@ -34,11 +34,12 @@ class IOSPushService:
     APNS_SANDBOX = "https://api.sandbox.push.apple.com"
     
     def __init__(self):
-        self.key_id = os.getenv("APNS_KEY_ID", "")
-        self.team_id = os.getenv("APNS_TEAM_ID", "")
-        self.key_path = os.getenv("APNS_KEY_PATH", "")
-        self.bundle_id = os.getenv("APNS_BUNDLE_ID", "life.executor.health")
-        self.use_sandbox = os.getenv("APNS_USE_SANDBOX", "true").lower() == "true"
+        from app.config import settings
+        self.key_id = settings.apns_key_id or ""
+        self.team_id = settings.apns_team_id or ""
+        self.key_path = settings.apns_key_path or settings.apns_private_key_path or ""
+        self.bundle_id = settings.apns_bundle_id or "life.executor.health"
+        self.use_sandbox = False
         
         self._private_key: Optional[str] = None
         self._jwt_token: Optional[str] = None
