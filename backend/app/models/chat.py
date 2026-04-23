@@ -1,5 +1,5 @@
 """
-聊天对话模型 - OpenClaw 集成
+聊天对话模型 — DEPRECATED: 新代码请使用 OpenClawConversation / OpenClawMessage
 """
 from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Index

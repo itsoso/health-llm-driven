@@ -139,31 +139,10 @@ class OpenClawService:
     # ── 图片压缩 ──────────────────────────────────────────
 
     @staticmethod
+    @staticmethod
     def _compress_image_base64(base64_data: str, image_type: str = "jpeg", max_size: int = 1024, quality: int = 75) -> str:
-        """压缩 base64 图片，最大边不超过 max_size px，返回 JPEG base64"""
-        import base64
-        from io import BytesIO
-        try:
-            from PIL import Image
-            raw = base64.b64decode(base64_data)
-            img = Image.open(BytesIO(raw))
-            # RGBA → RGB
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-            # 缩放
-            w, h = img.size
-            if max(w, h) > max_size:
-                ratio = max_size / max(w, h)
-                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-            # 压缩为 JPEG
-            buf = BytesIO()
-            img.save(buf, format="JPEG", quality=quality, optimize=True)
-            compressed = base64.b64encode(buf.getvalue()).decode()
-            logger.info(f"图片压缩: {len(base64_data)//1024}KB → {len(compressed)//1024}KB, {img.size}")
-            return compressed
-        except Exception as e:
-            logger.warning(f"图片压缩失败，使用原图: {e}")
-            return base64_data
+        from app.services.chat_utils import compress_image_base64
+        return compress_image_base64(base64_data, image_type, max_size, quality)
 
     # ── Gateway 流式调用 ──────────────────────────────────
 
@@ -195,7 +174,7 @@ class OpenClawService:
         }
 
         # 多模型分析场景下首次响应可能需要较长时间（Gateway 需先调多个 LLM）
-        async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, connect=10.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()
@@ -721,7 +700,7 @@ AI: {ai_reply}
                     system_content += (
                         "\n\n[Skill 环境变量]\n"
                         f"HEALTH_API_TOKEN={user_auth_token}\n"
-                        f"HEALTH_API_URL=https://health.executor.life/api\n"
+                        f"HEALTH_API_URL={settings.health_api_base_url or settings.site_base_url + '/api/v1'}\n"
                         "在执行任何 Skill 的 curl 命令时，必须使用上面的 HEALTH_API_TOKEN 和 HEALTH_API_URL。"
                     )
 

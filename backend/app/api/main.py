@@ -13,13 +13,11 @@ from app.api import (
     data_collection,
     health_analysis,
     garmin_analysis,
-    # garmin_connect,  # 已废弃，功能由 auth.garmin/sync 和 scheduler 提供
     daily_recommendation,
     supplements,
     supplement_products,
     supplement_audits,
     health_consultations,
-    # habits,  # 已废弃，模块已移除
     weight,
     blood_pressure,
     diet,
@@ -27,262 +25,224 @@ from app.api import (
     heart_rate,
     workout,
     wechat,
-    devices,  # 多设备管理
-    user_merge,  # 用户合并
-    upload,  # 文件上传
-    invitation,  # 邀请码系统
-    monitoring,  # 系统监控
-    # executor-v2: 新增模块
-    user_profile,  # 用户画像
-    checkin,  # 打卡系统2.0
-    knowledge,  # 知识库RAG系统
-    environment,  # 环境数据（天气、空气质量）
-    disease_tracking,  # 增强版疾病追踪
-    ai_scheduler,  # AI 日程编排引擎
-    digital_twin,  # 数字孪生
-    notification,  # 推送通知
-    smart_reminder,  # 智能提醒
-    review,  # 每日复盘
-    diet_recommendation,  # 智能饮食推荐
-    performance,  # 性能监控
-    news,  # 资讯系统
-    user_api_key,  # 用户 API Key 管理 & 外部系统接口
-    speech,  # 语音转文字 + 语音指令（原 chat.py 分离）
-    ai_insights,  # AI 健康洞察（每日复盘+实时建议）
-    mood,  # 情绪追踪
-    health_report,  # 健康报告
-    body_composition,  # 身体成分分析
-    health_score,  # 健康评分
-    medication,  # 用药管理
-    womens_health,  # 女性健康
-    vision,  # 视觉分析（颜值测试、图片识别）
-    trip,  # 行程记录
-    siri,  # Siri 快捷指令
-    illness,  # 当前病症追踪
-    kids_pet,  # 儿童狗狗空间
-    excretion,  # 排泄记录
-    sleep_record,  # 睡眠记录
-    activity_status,  # 活动状态
-    friendship,  # 好友关系
-    pk_challenge,  # PK挑战
-    daily_points,  # 每日健康积分
-    vocabulary,  # 单词本
-    kids_plan,  # Kids每日计划
-    direct_message,  # 私信聊天
-    group_chat,  # 群聊
-    security_life,  # 资产防御与布局
-    smart_plan,  # AI 智能计划
-    health_event,  # 健康事件流
-    withings,  # Withings 设备集成
-    onboarding,  # 新手引导
-    achievement,  # 成就徽章
-    data_export,  # 数据导出
-    health_trend,  # 健康趋势预测
-    openclaw,  # OpenClaw Channel 代理
-    assistant_openclaw,  # 智能助理专用 OpenClaw
-    openclaw_skills,  # OpenClaw Skills 远程管理
-    shared_conversation,  # 对话分享
-    skills,  # Skills 公开目录
-    feedback,  # 交互反馈 & Skill 性能追踪
-    nfc,  # NFC 碰触快速记录
-    family,  # 家庭健康管理
-    family_health,  # 体检报告 + 用药管理 + 复查日历
-    anomaly_alert,  # 健康异常预警
-    health_context,  # 健康上下文（交叉分析）
-    garmin_import,  # Garmin 数据批量导入
-    quick_questions,  # 动态快速问题
-    genetic_data,  # 基因数据管理
-    affiliate_products,  # 联盟产品
-    quick_record,  # 快速记录（自然语言）
-    data_health,  # 数据健康仪表盘
-    massage,  # 按摩/理疗追踪
-    sleep_analysis,  # 睡眠深度分析
-    exercise_recovery,  # 运动恢复评估
-    chronic_risk,  # 慢病风险评估
-    multi_source_integration,  # 多源数据整合
-    agent,  # Hermes Agent 模式
-    twin,  # Digital Health Twin（Phase 0：统一状态视图）
-    safety,  # Safety Guardian（Phase 1：药物/基因/急性阈值安全裁决）
-    orchestrator,  # Orchestrator（Phase 2：意图路由 + 专家调度 + LLM 合并）
-    cgm,  # CGM 连续血糖监测
-    personal_outcome,  # 长期健康改善曲线
-    action_card,  # 对话固化 ActionCard
-    exercise_coaching,  # 运动动作指导笔记
-    rhinitis_trend,  # 鼻炎趋势数据
-    spo2,  # 血氧时间序列
+    devices,
+    user_merge,
+    upload,
+    invitation,
+    monitoring,
+    user_profile,
+    checkin,
+    knowledge,
+    environment,
+    disease_tracking,
+    ai_scheduler,
+    digital_twin,
+    notification,
+    smart_reminder,
+    review,
+    diet_recommendation,
+    performance,
+    news,
+    user_api_key,
+    speech,
+    ai_insights,
+    mood,
+    health_report,
+    body_composition,
+    health_score,
+    medication,
+    womens_health,
+    vision,
+    trip,
+    siri,
+    illness,
+    kids_pet,
+    excretion,
+    sleep_record,
+    activity_status,
+    friendship,
+    pk_challenge,
+    daily_points,
+    vocabulary,
+    kids_plan,
+    direct_message,
+    group_chat,
+    security_life,
+    smart_plan,
+    health_event,
+    withings,
+    onboarding,
+    achievement,
+    data_export,
+    health_trend,
+    openclaw,
+    assistant_openclaw,
+    openclaw_skills,
+    shared_conversation,
+    skills,
+    feedback,
+    nfc,
+    family,
+    family_health,
+    anomaly_alert,
+    health_context,
+    garmin_import,
+    quick_questions,
+    genetic_data,
+    affiliate_products,
+    quick_record,
+    data_health,
+    massage,
+    sleep_analysis,
+    exercise_recovery,
+    chronic_risk,
+    multi_source_integration,
+    agent,
+    twin,
+    safety,
+    orchestrator,
+    cgm,
+    personal_outcome,
+    action_card,
+    exercise_coaching,
+    rhinitis_trend,
+    spo2,
 )
 
 api_router = APIRouter()
 
-# 认证路由（放在最前面）
+# ── Auth & Access Control ──────────────────────────────────────────
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(wechat.router, prefix="/wechat", tags=["wechat"])
 api_router.include_router(user_merge.router, prefix="/user-merge", tags=["user-merge"])
-api_router.include_router(invitation.router, tags=["invitation"])  # 邀请码系统
+api_router.include_router(invitation.router, tags=["invitation"])
+api_router.include_router(onboarding.router, tags=["onboarding"])
 
-# 管理员路由
+# ── Admin & System ─────────────────────────────────────────────────
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
-api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])  # 系统监控
+api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
+api_router.include_router(performance.router)
+api_router.include_router(data_health.router, prefix="/data-health", tags=["data-health"])
+api_router.include_router(data_export.router)
 
+# ── User & Profile ─────────────────────────────────────────────────
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(user_profile.router, tags=["user-profile"])
+api_router.include_router(user_api_key.router, tags=["user-api-key"])
+
+# ── Health Data (Vitals & Records) ─────────────────────────────────
 api_router.include_router(basic_health.router, prefix="/basic-health", tags=["basic-health"])
 api_router.include_router(medical_exams.router, prefix="/medical-exams", tags=["medical-exams"])
 api_router.include_router(diseases.router, prefix="/diseases", tags=["diseases"])
+api_router.include_router(disease_tracking.router, tags=["disease-tracking"])
 api_router.include_router(daily_health.router, prefix="/daily-health", tags=["daily-health"])
 api_router.include_router(health_checkin.router, prefix="/checkin", tags=["checkin"])
-api_router.include_router(goals.router, prefix="/goals", tags=["goals"])
-api_router.include_router(data_collection.router, prefix="/data-collection", tags=["data-collection"])
-api_router.include_router(health_analysis.router, prefix="/analysis", tags=["analysis"])
-api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tags=["garmin-analysis"])
-# api_router.include_router(garmin_connect.router, prefix="/garmin-connect", tags=["garmin-connect"])  # 已废弃
-api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
-api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
-api_router.include_router(supplement_products.router, tags=["supplement-products"])  # 产品知识库（prefix在router中定义）
-api_router.include_router(supplement_audits.router)  # 补剂审计（prefix已在router中定义）
-api_router.include_router(health_consultations.router)  # 健康咨询（prefix已在router中定义）
-# api_router.include_router(habits.router, prefix="/habits", tags=["habits"])  # 已废弃，模块已移除
+api_router.include_router(checkin.router, tags=["checkin-v2"])
 api_router.include_router(weight.router, prefix="/weight", tags=["weight"])
 api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=["blood-pressure"])
-api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
-api_router.include_router(water.router, prefix="/water", tags=["water"])
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
 api_router.include_router(spo2.router, prefix="/spo2", tags=["spo2"])
+api_router.include_router(sleep_record.router)
+api_router.include_router(excretion.router)
+api_router.include_router(mood.router)
+
+# ── Diet & Supplements ─────────────────────────────────────────────
+api_router.include_router(diet.router, prefix="/diet", tags=["diet"])
+api_router.include_router(water.router, prefix="/water", tags=["water"])
+api_router.include_router(diet_recommendation.router)
+api_router.include_router(supplements.router, prefix="/supplements", tags=["supplements"])
+api_router.include_router(supplement_products.router, tags=["supplement-products"])
+api_router.include_router(supplement_audits.router)
+api_router.include_router(health_consultations.router)
+api_router.include_router(medication.router)
+
+# ── Exercise & Activity ────────────────────────────────────────────
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
-api_router.include_router(withings.router)  # Withings（prefix 已在 router 中定义，必须在 devices 之前注册）
-api_router.include_router(devices.router, prefix="/devices", tags=["devices"])  # 多设备管理
-api_router.include_router(upload.router, prefix="/upload", tags=["upload"])  # 文件上传
+api_router.include_router(activity_status.router)
+api_router.include_router(exercise_coaching.router, tags=["exercise-coaching"])
+api_router.include_router(exercise_recovery.router)
 
-# executor-v2: 新增路由
-api_router.include_router(user_profile.router, tags=["user-profile"])  # 用户画像
-api_router.include_router(checkin.router, tags=["checkin-v2"])  # 打卡系统2.0
-api_router.include_router(knowledge.router, tags=["knowledge-base"])  # 知识库RAG系统
-api_router.include_router(environment.router, tags=["environment"])  # 环境数据
-api_router.include_router(disease_tracking.router, tags=["disease-tracking"])  # 疾病追踪
-api_router.include_router(ai_scheduler.router, tags=["ai-scheduler"])  # AI 日程编排引擎
-api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])  # 数字孪生（旧：生理计算器）
-api_router.include_router(twin.router, tags=["twin"])  # Digital Health Twin（新：统一状态视图）
-api_router.include_router(safety.router, tags=["safety"])  # Safety Guardian（药物/基因/急性阈值裁决）
-api_router.include_router(orchestrator.router, tags=["orchestrator"])  # Orchestrator 综合分析
-api_router.include_router(cgm.router, tags=["cgm"])  # CGM 连续血糖监测
-api_router.include_router(personal_outcome.router, tags=["personal-outcome"])  # 长期健康改善
-api_router.include_router(action_card.router, tags=["action-cards"])  # 对话固化 ActionCard
-api_router.include_router(exercise_coaching.router, tags=["exercise-coaching"])  # 运动动作指导
-api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])  # 鼻炎趋势
-api_router.include_router(notification.router, tags=["notification"])  # 推送通知
-api_router.include_router(smart_reminder.router, tags=["reminders"])  # 智能提醒
-api_router.include_router(review.router, tags=["review"])  # 每日复盘
-api_router.include_router(diet_recommendation.router)  # 智能饮食推荐（prefix 已在 router 中定义）
-api_router.include_router(performance.router)  # 性能监控（prefix 已在 router 中定义）
-api_router.include_router(news.router)  # 资讯系统（prefix 已在 router 中定义）
-api_router.include_router(user_api_key.router, tags=["user-api-key"])  # 用户 API Key & 外部接口
-api_router.include_router(speech.router)  # 语音转文字 + 语音指令
-api_router.include_router(ai_insights.router, prefix="/ai-insights", tags=["ai-insights"])  # AI 健康洞察
-api_router.include_router(mood.router)  # 情绪追踪
-api_router.include_router(health_report.router)  # 健康报告
-api_router.include_router(body_composition.router)  # 身体成分分析
-api_router.include_router(health_score.router)  # 健康评分
-api_router.include_router(medication.router)  # 用药管理
-api_router.include_router(womens_health.router)  # 女性健康
-api_router.include_router(vision.router)  # 视觉分析（颜值测试、图片识别）
-api_router.include_router(trip.router)  # 行程记录
-api_router.include_router(siri.router)  # Siri 快捷指令
-api_router.include_router(illness.router)  # 当前病症追踪
-api_router.include_router(kids_pet.router)  # 儿童狗狗空间
-api_router.include_router(excretion.router)  # 排泄记录
-api_router.include_router(sleep_record.router)  # 睡眠记录
-api_router.include_router(activity_status.router)  # 活动状态
-api_router.include_router(friendship.router)  # 好友关系
-api_router.include_router(pk_challenge.router)  # PK挑战
-api_router.include_router(daily_points.router)  # 每日健康积分
-api_router.include_router(vocabulary.router)  # 单词本
-api_router.include_router(kids_plan.router)  # Kids每日计划
-api_router.include_router(direct_message.router)  # 私信聊天
-api_router.include_router(group_chat.router)  # 群聊
-
-# 资产防御与布局
-api_router.include_router(security_life.router, prefix="/security-life", tags=["security-life"])
-
-# AI 智能计划
-api_router.include_router(smart_plan.router)  # prefix 已在 router 中定义
-
-# 健康事件流
-api_router.include_router(health_event.router)  # prefix 已在 router 中定义
-
-# 新手引导
-api_router.include_router(onboarding.router)  # 新手引导流程
-
-# 成就徽章
-api_router.include_router(achievement.router)  # 成就徽章系统
-
-# 数据导出
-api_router.include_router(data_export.router)  # 健康数据导出
-
-# 健康趋势预测
-api_router.include_router(health_trend.router)  # 健康趋势预测
-
-# OpenClaw Channel 代理
-api_router.include_router(openclaw.router)  # prefix 已在 router 中定义
-
-# 智能助理专用 OpenClaw
-api_router.include_router(assistant_openclaw.router)  # prefix 已在 router 中定义
-
-# OpenClaw Skills 远程管理
-api_router.include_router(openclaw_skills.router)  # prefix 已在 router 中定义
-
-# Hermes Agent 模式（结构化工具调用 + 多步推理）
-api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
-
-# 对话分享
-api_router.include_router(shared_conversation.router)  # prefix 已在 router 中定义
-
-# Skills 公开目录（无需认证）
-api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
-
-# 交互反馈 & Skill 性能追踪（OpenClaw Native 自优化基础设施）
-api_router.include_router(feedback.router)
-
-# NFC 碰触快速记录
-api_router.include_router(nfc.router)
-
-# 家庭健康管理
-api_router.include_router(family.router)
-
-# 体检报告 + 用药管理 + 复查日历
-api_router.include_router(family_health.router, prefix="/family-health", tags=["family-health"])
-
-# 健康异常预警
-api_router.include_router(anomaly_alert.router)
-
-# 健康上下文（交叉分析供 Skills 调用）
-api_router.include_router(health_context.router)
-
-# Garmin 数据批量导入（本地 Cookie 同步）
+# ── Devices & Data Sync ───────────────────────────────────────────
+api_router.include_router(withings.router)
+api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
+api_router.include_router(data_collection.router, prefix="/data-collection", tags=["data-collection"])
+api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tags=["garmin-analysis"])
 api_router.include_router(garmin_import.router)
+api_router.include_router(nfc.router)
+api_router.include_router(upload.router, prefix="/upload", tags=["upload"])
 
-# 动态快速问题（基于用户状态实时排序）
-api_router.include_router(quick_questions.router)
-
-# 基因数据管理
-api_router.include_router(genetic_data.router, prefix="/genetic", tags=["genetic-data"])
-api_router.include_router(affiliate_products.router, prefix="/affiliate-products", tags=["affiliate-products"])
-
-# 快速记录（自然语言解析）
+# ── AI & Agent System ──────────────────────────────────────────────
+api_router.include_router(twin.router, tags=["twin"])
+api_router.include_router(safety.router, tags=["safety"])
+api_router.include_router(orchestrator.router, tags=["orchestrator"])
+api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
+api_router.include_router(openclaw.router)
+api_router.include_router(assistant_openclaw.router)
+api_router.include_router(openclaw_skills.router)
+api_router.include_router(shared_conversation.router)
+api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
+api_router.include_router(feedback.router)
+api_router.include_router(speech.router)
+api_router.include_router(action_card.router, tags=["action-cards"])
 api_router.include_router(quick_record.router, tags=["quick-record"])
 
-# 数据健康仪表盘
-api_router.include_router(data_health.router, prefix="/data-health", tags=["data-health"])
+# ── Analytics & Insights ───────────────────────────────────────────
+api_router.include_router(health_analysis.router, prefix="/analysis", tags=["analysis"])
+api_router.include_router(daily_recommendation.router, prefix="/daily-recommendation", tags=["daily-recommendation"])
+api_router.include_router(ai_insights.router, prefix="/ai-insights", tags=["ai-insights"])
+api_router.include_router(health_report.router)
+api_router.include_router(health_score.router)
+api_router.include_router(health_trend.router)
+api_router.include_router(health_event.router)
+api_router.include_router(health_context.router)
+api_router.include_router(anomaly_alert.router)
+api_router.include_router(sleep_analysis.router)
+api_router.include_router(chronic_risk.router)
+api_router.include_router(multi_source_integration.router)
+api_router.include_router(personal_outcome.router, tags=["personal-outcome"])
+api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])
+api_router.include_router(cgm.router, tags=["cgm"])
+api_router.include_router(body_composition.router)
+api_router.include_router(knowledge.router, tags=["knowledge-base"])
 
-# 按摩/理疗追踪
+# ── Environment & Context ──────────────────────────────────────────
+api_router.include_router(environment.router, tags=["environment"])
+api_router.include_router(digital_twin.router, prefix="/digital-twin", tags=["digital-twin"])
+
+# ── Scheduling & Reminders ─────────────────────────────────────────
+api_router.include_router(ai_scheduler.router, tags=["ai-scheduler"])
+api_router.include_router(notification.router, tags=["notification"])
+api_router.include_router(smart_reminder.router, tags=["reminders"])
+api_router.include_router(smart_plan.router)
+api_router.include_router(review.router, tags=["review"])
+api_router.include_router(quick_questions.router)
+
+# ── Genetics & Specialized Health ──────────────────────────────────
+api_router.include_router(genetic_data.router, prefix="/genetic", tags=["genetic-data"])
+api_router.include_router(womens_health.router)
+api_router.include_router(illness.router)
+api_router.include_router(vision.router)
 api_router.include_router(massage.router, prefix="/massage", tags=["massage"])
 
-# 睡眠深度分析
-api_router.include_router(sleep_analysis.router)  # prefix 已在 router 中定义
+# ── Social & Family ────────────────────────────────────────────────
+api_router.include_router(friendship.router)
+api_router.include_router(pk_challenge.router)
+api_router.include_router(direct_message.router)
+api_router.include_router(group_chat.router)
+api_router.include_router(family.router)
+api_router.include_router(family_health.router, prefix="/family-health", tags=["family-health"])
 
-# 运动恢复评估
-api_router.include_router(exercise_recovery.router)  # prefix 已在 router 中定义
+# ── Kids & Gamification ────────────────────────────────────────────
+api_router.include_router(kids_pet.router)
+api_router.include_router(kids_plan.router)
+api_router.include_router(daily_points.router)
+api_router.include_router(achievement.router)
+api_router.include_router(vocabulary.router)
 
-# 慢病风险评估
-api_router.include_router(chronic_risk.router)  # prefix 已在 router 中定义
-
-# 多源数据整合
-api_router.include_router(multi_source_integration.router)  # prefix 已在 router 中定义
+# ── Lifestyle & Misc ──────────────────────────────────────────────
+api_router.include_router(trip.router)
+api_router.include_router(siri.router)
+api_router.include_router(news.router)
+api_router.include_router(security_life.router, prefix="/security-life", tags=["security-life"])
+api_router.include_router(affiliate_products.router, prefix="/affiliate-products", tags=["affiliate-products"])
+api_router.include_router(goals.router, prefix="/goals", tags=["goals"])

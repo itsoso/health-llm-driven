@@ -86,6 +86,12 @@ class OpenClawProvider(LLMProvider):
         url = f"{self.base_url}/chat/completions"
         async with httpx.AsyncClient(timeout=DEFAULT_CHAT_TIMEOUT) as client:
             resp = await client.post(url, json=payload, headers=self._get_headers())
+            if resp.status_code == 400 and tools:
+                logger.warning(f"OpenClaw 400 with tools, retrying without tools: {resp.text[:200]}")
+                payload.pop("tools", None)
+                resp = await client.post(url, json=payload, headers=self._get_headers())
+            if resp.status_code != 200:
+                logger.error(f"OpenClaw chat {resp.status_code}: {resp.text[:500]}, model={payload.get('model')}")
             resp.raise_for_status()
             data = resp.json()
 

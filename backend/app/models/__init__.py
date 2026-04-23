@@ -16,7 +16,8 @@ from app.models.goal import Goal, GoalProgress
 from app.models.daily_recommendation import DailyRecommendation
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.models.supplement import SupplementProduct, SupplementDefinition, SupplementRecord
-from app.models.habit import HabitDefinition, HabitRecord
+# HabitDefinition/HabitRecord — DEPRECATED: router disabled, models retained for DB compat only
+# from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.device_credential import DeviceCredential
@@ -120,8 +121,8 @@ __all__ = [
     "SupplementProduct",
     "SupplementDefinition",
     "SupplementRecord",
-    "HabitDefinition",
-    "HabitRecord",
+    # "HabitDefinition",  # DEPRECATED
+    # "HabitRecord",      # DEPRECATED
     "WeightRecord",
     "BloodPressureRecord",
     "DeviceCredential",

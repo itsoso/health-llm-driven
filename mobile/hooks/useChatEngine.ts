@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AppState } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import NetInfo from '@react-native-community/netinfo';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '@/services/chat';
 import { dispatchCard, renderServerCards } from '@/components/chat/cards';
 import api, { BASE_URL } from '@/services/api';
@@ -106,6 +107,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const hasImages = pendingImages && pendingImages.length > 0;
     if (!msg && !hasImages) return;
     if (isStreaming) return;
+
+    const net = await NetInfo.fetch();
+    if (!net.isConnected) {
+      const errMsg: UIMessage = { id: nextId(), role: 'assistant', content: '⚠️ 网络不可用，请检查网络连接后重试' };
+      setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined }, errMsg]);
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');

@@ -27,6 +27,17 @@ MAX_TOOL_ROUNDS = 6
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 
+import re
+_NEEDS_SKILL_RE = re.compile(
+    r"记录|打卡|吃了|喝了|服药|补剂|体重|血压|洗鼻|喷嚏|"
+    r"早餐|午餐|晚餐|加餐|夜宵|早饭|午饭|晚饭|"
+    r"固化到|钉到首页|保存到首页|加到计划|"
+    r"大卡|kcal|热量.*记|记.*热量"
+)
+
+def _needs_skill(msg: str) -> bool:
+    return bool(_NEEDS_SKILL_RE.search(msg))
+
 
 class AgentExecutor:
     """统一健康 Agent 执行器"""
@@ -47,6 +58,13 @@ class AgentExecutor:
         file_name: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
+        # OpenClaw provider 不支持 function calling，记录类意图委托给 OpenClaw Gateway（有 skill）
+        has_tools_support = bool(settings.agent_base_url and settings.agent_api_key) or settings.llm_provider != "openclaw"
+        if not has_tools_support and (_needs_skill(message) or images or file_base64):
+            async for evt in self._delegate_to_openclaw(user_id, message, conversation_id, user_auth_token, images, file_base64, file_name):
+                yield evt
+            return
+
         start_time = time.time()
         self._current_user_id = user_id
 
@@ -108,6 +126,7 @@ class AgentExecutor:
                     await _asyncio_loop.sleep(2)
                 # 调用 LLM（非流式，需要完整解析 tool_call）
                 response = await self._call_llm(messages, tools, use_vision=use_vision)
+                logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
                 # 图片只在第一轮传，后续轮次不需要 vision model
                 use_vision = False
 
@@ -228,20 +247,31 @@ class AgentExecutor:
 
     @staticmethod
     def _upload_chat_image(image_base64: str, image_type: str) -> Optional[str]:
-        """Save chat image to uploads dir, return relative URL."""
-        try:
-            import base64, os, uuid
-            from datetime import datetime
-            upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "chat")
-            os.makedirs(upload_dir, exist_ok=True)
-            data = base64.b64decode(image_base64.split(",", 1)[-1] if "," in image_base64 else image_base64)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fname = f"{ts}_{uuid.uuid4().hex[:8]}.{image_type}"
-            with open(os.path.join(upload_dir, fname), "wb") as f:
-                f.write(data)
-            return f"/api/v1/upload/files/chat/{fname}"
-        except Exception:
-            return None
+        from app.services.chat_utils import upload_chat_image
+        return upload_chat_image(image_base64, image_type)
+
+    async def _delegate_to_openclaw(
+        self, user_id: int, message: str,
+        conversation_id: Optional[int] = None,
+        user_auth_token: Optional[str] = None,
+        images: Optional[List[dict]] = None,
+        file_base64: Optional[str] = None,
+        file_name: Optional[str] = None,
+    ) -> AsyncGenerator[Dict, None]:
+        """委托给 OpenClaw Gateway（支持 Skill 写入数据）"""
+        from app.services.openclaw_service import OpenClawService
+        svc = OpenClawService(self.db)
+        image_b64 = images[0]["base64"] if images else None
+        image_type = images[0].get("type", "jpeg") if images else "jpeg"
+        async for evt in svc.send_message_stream(
+            user_id=user_id,
+            message=message,
+            conversation_id=conversation_id,
+            image_base64=image_b64,
+            image_type=image_type,
+            user_auth_token=user_auth_token,
+        ):
+            yield evt
 
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str]
@@ -343,9 +373,11 @@ class AgentExecutor:
         # 回退到默认 provider
         from app.services.llm.factory import get_llm_provider
         provider = get_llm_provider()
+        provider_model = model if settings.llm_provider != "openclaw" else None
+        pass_tools = tools if settings.llm_provider != "openclaw" else None
         return await provider.chat(
-            messages=messages, model=model,
-            temperature=0.3, max_tokens=4000, stream=False, tools=tools,
+            messages=messages, model=provider_model,
+            temperature=0.3, max_tokens=4000, stream=False, tools=pass_tools,
         )
 
     async def _call_llm_direct(
@@ -370,29 +402,32 @@ class AgentExecutor:
             "Authorization": f"Bearer {api_key}",
         }
 
-        max_retries = 5
+        max_retries = 3
+        deadline = time.time() + 90
+        client = self._http_client or httpx.AsyncClient(timeout=60.0)
         for attempt in range(max_retries):
+            if time.time() > deadline:
+                raise RuntimeError("AI 服务响应超时，请稍后再试")
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    resp = await client.post(url, headers=headers, json=payload)
-                    if resp.status_code == 429:
-                        wait = min(10 * (2 ** attempt), 60)  # 10s, 20s, 40s, 60s, 60s
-                        logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")
-                        await _asyncio.sleep(wait)
-                        continue
-                    if resp.status_code != 200:
-                        raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
-                    data = resp.json()
-                    break
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code == 429:
+                    wait = min(2 * (2 ** attempt), 10)  # 2s, 4s, 8s
+                    logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")
+                    await _asyncio.sleep(wait)
+                    continue
+                if resp.status_code != 200:
+                    raise RuntimeError(f"LLM API 返回 {resp.status_code}: {resp.text[:300]}")
+                data = resp.json()
+                break
             except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
                 if attempt < max_retries - 1:
-                    wait = min(5 * (2 ** attempt), 30)
+                    wait = min(2 * (2 ** attempt), 8)
                     logger.warning(f"LLM API 超时/连接错误({type(e).__name__})，第{attempt+1}/{max_retries}次重试，等待{wait}s")
                     await _asyncio.sleep(wait)
                     continue
                 raise
         else:
-            raise RuntimeError("AI 服务暂时繁忙，请稍后再试（已重试5次）")
+            raise RuntimeError("AI 服务暂时繁忙，请稍后再试")
 
         choice = data.get("choices", [{}])[0]
         msg = choice.get("message", {})
@@ -427,7 +462,9 @@ class AgentExecutor:
         except json.JSONDecodeError:
             return f"Error: 参数解析失败: {args_raw}"
 
-        base_url = getattr(settings, "health_api_base_url", None) or "https://health.executor.life/api"
+        base_url = settings.health_api_base_url
+        if not base_url:
+            return f"Error: HEALTH_API_BASE_URL 未配置"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
 
         try:

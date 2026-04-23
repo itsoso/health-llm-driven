@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     wechat_secret: Optional[str] = None  # 小程序 AppSecret
     
     # OpenClaw 配置 (AI 对话服务)
-    openclaw_base_url: str = "https://bot.executor.life/v1"
+    openclaw_base_url: str = ""
     openclaw_api_key: Optional[str] = None
     openclaw_model: str = "openclaw:main"
 
@@ -63,12 +63,12 @@ class Settings(BaseSettings):
     openclaw_runtime_base_dir: str = "/srv/health-platform/tenants"
     assistant_openclaw_allowed_hosts: str = "127.0.0.1,localhost,bot.executor.life"
     assistant_openclaw_health_check_ttl_seconds: int = 60
-    openclaw_ssh_host: str = "47.237.191.17"
+    openclaw_ssh_host: str = ""
     openclaw_ssh_port: int = 22222
 
     # 站点 URL（用于生成分享链接、Webhook 回调、Siri 快捷指令等）
-    site_base_url: str = "https://health.executor.life"
-    health_api_base_url: str = "https://health.executor.life/api/v1"
+    site_base_url: str = ""
+    health_api_base_url: str = ""
 
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token
@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     qweather_api_host: Optional[str] = None  # 自定义API Host (如: your-host.qweatherapi.com)
 
     # 数据库配置
-    database_url: str = "sqlite:///./health.db"
+    database_url: str = "postgresql://localhost/health_db"
     
     # PostgreSQL配置（可选，优先于sqlite）
     postgres_host: Optional[str] = None

@@ -1,8 +1,23 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextStyle, TouchableOpacity, LayoutAnimation } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TextStyle, TouchableOpacity, LayoutAnimation, Animated } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
+
+function Shimmer({ width, height = 12 }: { width: number; height?: number }) {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.7, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
+  return <Animated.View style={{ width, height, borderRadius: height / 2, backgroundColor: colors.separator, opacity }} />;
+}
 
 interface Props {
   score: number;
@@ -20,6 +35,7 @@ interface Props {
   battery?: string;
   batteryCurrent?: number | null;
   batteryPeak?: number | null;
+  isLoading?: boolean;
   onSettings?: () => void;
   onNewChat?: () => void;
   onHistory?: () => void;
@@ -41,7 +57,7 @@ function sc(score: number): string {
 export default function HomeHeader({
   score, city, temperature, weatherDesc, aqiValue, pm25,
   tomorrowWeather, tomorrowTempRange, sleep, sleepScore, steps, hr, battery,
-  batteryCurrent, batteryPeak,
+  batteryCurrent, batteryPeak, isLoading,
   onSettings, onNewChat, onHistory,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
@@ -156,15 +172,24 @@ export default function HomeHeader({
 
       {/* Vitals strip */}
       <View style={styles.vitalsRow}>
-        <Vital icon="moon-outline" color="#BF5AF2" label={sleepScore ? `睡眠 ${sleepScore}分` : '睡眠'} value={sleep || '--'} />
-        <View style={styles.vDivider} />
-        <Vital icon="footsteps-outline" color="#FF6723" label="步数" value={steps || '--'} />
-        <View style={styles.vDivider} />
-        <Vital icon="heart-outline" color="#FF375F" label="心率" value={hr || '--'} />
-        <View style={styles.vDivider} />
-        <Vital icon="battery-charging-outline" color="#30D158"
-          label={batteryPeak != null ? `峰值 ${batteryPeak}` : '电量'}
-          value={batteryCurrent != null ? `${batteryCurrent}` : (battery || '--')} />
+        {isLoading ? (
+          <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 4 }}>
+            <Shimmer width={40} height={14} />
+            <Shimmer width={40} height={14} />
+            <Shimmer width={40} height={14} />
+            <Shimmer width={40} height={14} />
+          </View>
+        ) : (<>
+          <Vital icon="moon-outline" color="#BF5AF2" label={sleepScore ? `睡眠 ${sleepScore}分` : '睡眠'} value={sleep || '--'} />
+          <View style={styles.vDivider} />
+          <Vital icon="footsteps-outline" color="#FF6723" label="步数" value={steps || '--'} />
+          <View style={styles.vDivider} />
+          <Vital icon="heart-outline" color="#FF375F" label="心率" value={hr || '--'} />
+          <View style={styles.vDivider} />
+          <Vital icon="battery-charging-outline" color="#30D158"
+            label={batteryPeak != null ? `峰值 ${batteryPeak}` : '电量'}
+            value={batteryCurrent != null ? `${batteryCurrent}` : (battery || '--')} />
+        </>)}
       </View>
 
       {/* Collapse button */}
