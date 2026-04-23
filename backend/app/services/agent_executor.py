@@ -117,7 +117,7 @@ class AgentExecutor:
         full_reply = ""
         yield {"event": "agent_start", "data": {"message": "Agent 正在分析..."}}
 
-        self._http_client = httpx.AsyncClient(timeout=30.0)
+        self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             import asyncio as _asyncio_loop
             for round_idx in range(MAX_TOOL_ROUNDS):
@@ -743,7 +743,7 @@ class AgentExecutor:
 
     async def _api_get(self, url: str, headers: dict) -> str:
         """HTTP GET"""
-        client = self._http_client or httpx.AsyncClient(timeout=30.0)
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
         resp = await client.get(url, headers=headers)
         if resp.status_code != 200:
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
@@ -769,7 +769,7 @@ class AgentExecutor:
 
     async def _api_post(self, url: str, headers: dict, data: dict) -> str:
         """HTTP POST"""
-        client = self._http_client or httpx.AsyncClient(timeout=30.0)
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
         resp = await client.post(url, headers={**headers, "Content-Type": "application/json"}, json=data)
         if resp.status_code not in (200, 201):
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
@@ -777,7 +777,7 @@ class AgentExecutor:
 
     async def _api_patch(self, url: str, headers: dict, data: dict) -> str:
         """HTTP PATCH"""
-        client = self._http_client or httpx.AsyncClient(timeout=30.0)
+        client = self._http_client or httpx.AsyncClient(timeout=90.0)
         resp = await client.patch(url, headers={**headers, "Content-Type": "application/json"}, json=data)
         if resp.status_code not in (200, 201):
             return f"Error: API 返回 {resp.status_code}: {resp.text[:200]}"
