@@ -485,6 +485,22 @@ def daily_anomaly_check():
                             )
                         except Exception:
                             pass
+
+                        # Push CRITICAL/HIGH alerts to user
+                        try:
+                            push_service = PushService(db2)
+                            for alert in report.alerts:
+                                if alert.severity.value >= 3:  # HIGH=3, CRITICAL=4
+                                    run_async(push_service.send_notification(
+                                        user_id=user_id,
+                                        notification_type="health_alert",
+                                        title=f"⚠️ {alert.title}",
+                                        content=alert.message[:120],
+                                        data={"screen": "alerts"},
+                                    ))
+                            logger.info(f"[Safety Guardian] 用户 {user_id} 已推送告警")
+                        except Exception as e:
+                            logger.warning(f"[Safety Guardian] 用户 {user_id} 推送失败: {e}")
                 except Exception as e:
                     logger.error(f"[Safety Guardian] 用户 {user_id} 评估失败: {e}")
     except Exception as e:

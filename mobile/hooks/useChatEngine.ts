@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { AppState } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '@/services/chat';
@@ -31,14 +30,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Abort streaming when app goes to background
+  // Clean up abort controller on unmount only — don't abort on background
+  // iOS gives ~30s background execution, enough for most LLM responses
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'background' && abortRef.current) {
-        abortRef.current.abort();
-      }
-    });
-    return () => sub.remove();
+    return () => { abortRef.current?.abort(); };
   }, []);
 
   const loadLatestConversation = useCallback(async () => {

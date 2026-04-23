@@ -40,14 +40,29 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
   sendMessageRef.current = handleSend;
 
   const voice = useVoiceRecording({
-    onTranscript: (text) => { onSend(text, null); },
+    onTranscript: (text) => { setInput(prev => prev ? prev + ' ' + text : text); },
   });
 
+  const voiceCancelledRef = useRef(false);
+  const startYRef = useRef(0);
+
   const handleVoicePressIn = useCallback((e: GestureResponderEvent) => {
+    voiceCancelledRef.current = false;
+    startYRef.current = e.nativeEvent.pageY;
     voice.startRecording();
   }, [voice]);
 
+  const handleVoiceMove = useCallback((e: GestureResponderEvent) => {
+    if (!voice.isRecording || voiceCancelledRef.current) return;
+    const dy = startYRef.current - e.nativeEvent.pageY;
+    if (dy > 40) {
+      voiceCancelledRef.current = true;
+      voice.cancelRecording();
+    }
+  }, [voice]);
+
   const handleVoicePressOut = useCallback((e: GestureResponderEvent) => {
+    if (voiceCancelledRef.current) return;
     voice.stopAndTranscribe();
   }, [voice]);
 
@@ -125,15 +140,17 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
                 <Ionicons name="arrow-up-circle" size={28} color={colors.brand} />
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity
-                onPressIn={handleVoicePressIn}
-                onPressOut={handleVoicePressOut}
-                delayLongPress={0}
+              <View
+                onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => true}
+                onResponderGrant={handleVoicePressIn}
+                onResponderMove={handleVoiceMove}
+                onResponderRelease={handleVoicePressOut}
                 style={[styles.inlineVoiceBtn, voice.isRecording && styles.inlineVoiceBtnActive]}
-                accessibilityLabel="语音输入"
+                accessibilityLabel="语音输入（长按录音，上滑取消）"
               >
                 <Ionicons name={voice.isRecording ? 'mic' : 'mic-outline'} size={20} color={voice.isRecording ? '#fff' : colors.labelTertiary} />
-              </TouchableOpacity>
+              </View>
             )}
           </View>
         </View>

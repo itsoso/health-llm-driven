@@ -6,13 +6,17 @@ import { router } from 'expo-router';
 import { bindIOSToken } from '@/services/notifications';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: false,
-    shouldShowBanner: false,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    const data = notification.request.content.data as Record<string, any> | undefined;
+    const isHealthAlert = data?.screen === 'alerts';
+    return {
+      shouldShowAlert: isHealthAlert,
+      shouldShowBanner: isHealthAlert,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    };
+  },
 });
 
 type NotificationTapCallback = (

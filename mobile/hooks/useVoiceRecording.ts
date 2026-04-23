@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,7 @@ export function useVoiceRecording(opts?: {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
+  const readyRef = useRef(false);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -28,8 +29,20 @@ export function useVoiceRecording(opts?: {
     }
   }, []);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearTimer();
+      if (recordingRef.current) {
+        try { recordingRef.current.stopAndUnloadAsync(); } catch {}
+        recordingRef.current = null;
+      }
+    };
+  }, [clearTimer]);
+
   const startRecording = useCallback(async () => {
     try {
+      readyRef.current = false;
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('需要麦克风权限', '请在设置中允许 HealthPilot 使用麦克风');
@@ -46,6 +59,7 @@ export function useVoiceRecording(opts?: {
       );
       recordingRef.current = recording;
       cancelledRef.current = false;
+      readyRef.current = true;
       setIsRecording(true);
       setDurationMs(0);
 
@@ -61,7 +75,7 @@ export function useVoiceRecording(opts?: {
   }, []);
 
   const stopAndTranscribe = useCallback(async () => {
-    if (!recordingRef.current) return;
+    if (!recordingRef.current || !readyRef.current) return;
     clearTimer();
     setIsRecording(false);
 
@@ -73,8 +87,8 @@ export function useVoiceRecording(opts?: {
 
     setIsTranscribing(true);
     try {
-      await recordingRef.current.stopAndUnloadAsync();
       const uri = recordingRef.current.getURI();
+      await recordingRef.current.stopAndUnloadAsync();
       recordingRef.current = null;
 
       if (!uri) {
@@ -87,6 +101,8 @@ export function useVoiceRecording(opts?: {
 
       if (text && opts?.onTranscript) {
         opts.onTranscript(text);
+      } else if (!text) {
+        Alert.alert('未识别到语音', '请靠近麦克风重试');
       }
     } catch {
       Alert.alert('语音识别失败', '请稍后再试');
