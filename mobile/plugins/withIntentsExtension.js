@@ -1,8 +1,9 @@
 /**
  * Expo Config Plugin — withIntentsExtension
  *
- * Adds the HealthPilotIntents App Extension target to the Xcode project
- * so that `expo prebuild --clean` won't lose the Siri Intents config.
+ * Adds AppIntents (iOS 16+) Swift files to the main app target
+ * for Siri Shortcuts integration. No extension target needed —
+ * AppShortcutsProvider is discovered automatically from the main app.
  *
  * Usage in app.json:
  *   "plugins": ["./plugins/withIntentsExtension"]
@@ -11,10 +12,7 @@ const { withXcodeProject, withEntitlementsPlist, withInfoPlist } = require('@exp
 const path = require('path');
 const fs = require('fs');
 
-const EXTENSION_NAME = 'HealthPilotIntents';
-const BUNDLE_ID_SUFFIX = '.intents';
 const APP_GROUP = 'group.life.executor.health';
-const DEPLOYMENT_TARGET = '16.0';
 
 function withIntentsExtension(config) {
   // 1. Add Siri entitlement + App Groups to main app
@@ -32,69 +30,59 @@ function withIntentsExtension(config) {
     return mod;
   });
 
-  // 3. Add extension target to Xcode project
+  // 3. Add Swift source files to main app target
   config = withXcodeProject(config, (mod) => {
     const proj = mod.modRequest.projectRoot;
-    const bundleId = config.ios?.bundleIdentifier ?? 'life.executor.health';
-    const extBundleId = bundleId + BUNDLE_ID_SUFFIX;
     const xcodeProject = mod.modResults;
 
-    const extPath = path.join(proj, 'ios', EXTENSION_NAME);
-
-    // Write extension source files if they don't exist
-    if (!fs.existsSync(extPath)) {
-      fs.mkdirSync(extPath, { recursive: true });
+    // Write Swift files into ios/HealthPilot/SiriIntents/
+    const siriPath = path.join(proj, 'ios', 'HealthPilot', 'SiriIntents');
+    if (!fs.existsSync(siriPath)) {
+      fs.mkdirSync(siriPath, { recursive: true });
     }
 
-    writeIfMissing(path.join(extPath, 'Info.plist'), EXTENSION_INFO_PLIST);
-    writeIfMissing(
-      path.join(extPath, `${EXTENSION_NAME}.entitlements`),
-      EXTENSION_ENTITLEMENTS,
-    );
+    const files = {
+      'SharedKeychain.swift': SHARED_KEYCHAIN_SWIFT,
+      'HealthCommandIntent.swift': HEALTH_COMMAND_INTENT_SWIFT,
+      'HealthPilotShortcuts.swift': HEALTH_PILOT_SHORTCUTS_SWIFT,
+    };
 
-    // Write shared Swift files
-    const sharedPath = path.join(proj, 'ios', 'Shared');
-    if (!fs.existsSync(sharedPath)) {
-      fs.mkdirSync(sharedPath, { recursive: true });
+    for (const [name, content] of Object.entries(files)) {
+      const filePath = path.join(siriPath, name);
+      // Always overwrite to pick up code changes
+      fs.writeFileSync(filePath, content, 'utf-8');
     }
-    writeIfMissing(path.join(sharedPath, 'SharedKeychain.swift'), SHARED_KEYCHAIN_SWIFT);
-    writeIfMissing(path.join(extPath, 'HealthCommandIntent.swift'), HEALTH_COMMAND_INTENT_SWIFT);
-    writeIfMissing(path.join(extPath, 'HealthPilotShortcuts.swift'), HEALTH_PILOT_SHORTCUTS_SWIFT);
 
-    // Add the extension target to the Xcode project
-    const targetUuid = xcodeProject.generateUuid();
-    const extGroup = xcodeProject.addPbxGroup(
-      ['Info.plist', `${EXTENSION_NAME}.entitlements`, 'HealthCommandIntent.swift', 'HealthPilotShortcuts.swift'],
-      EXTENSION_NAME,
-      EXTENSION_NAME,
+    // Add files to the main app target's Sources build phase
+    const mainTargetName = 'HealthPilot';
+    // Find the main target
+    const targets = xcodeProject.pbxNativeTargetSection();
+    let mainTargetUuid = null;
+    for (const [uuid, target] of Object.entries(targets)) {
+      if (target.name === mainTargetName && !uuid.endsWith('_comment')) {
+        mainTargetUuid = uuid;
+        break;
+      }
+    }
+
+    // Add a PBX group for our Siri files
+    const siriGroup = xcodeProject.addPbxGroup(
+      Object.keys(files),
+      'SiriIntents',
+      'HealthPilot/SiriIntents',
     );
 
-    const target = xcodeProject.addTarget(
-      EXTENSION_NAME,
-      'app_extension',
-      EXTENSION_NAME,
-      extBundleId,
-    );
+    // Add to main group
+    const mainGroup = xcodeProject.getFirstProject().firstProject.mainGroup;
+    xcodeProject.addToPbxGroup(siriGroup.uuid, mainGroup);
 
-    if (target) {
-      // Add build settings to extension target
-      xcodeProject.addBuildProperty('IPHONEOS_DEPLOYMENT_TARGET', DEPLOYMENT_TARGET, EXTENSION_NAME);
-      xcodeProject.addBuildProperty('SWIFT_VERSION', '5.0', EXTENSION_NAME);
-      xcodeProject.addBuildProperty('CODE_SIGN_ENTITLEMENTS', `${EXTENSION_NAME}/${EXTENSION_NAME}.entitlements`, EXTENSION_NAME);
-      xcodeProject.addBuildProperty('INFOPLIST_FILE', `${EXTENSION_NAME}/Info.plist`, EXTENSION_NAME);
-      xcodeProject.addBuildProperty('GENERATE_INFOPLIST_FILE', 'YES', EXTENSION_NAME);
-
-      // Add source files to extension target build phase
-      const sourceFiles = [
-        'HealthCommandIntent.swift',
-        'HealthPilotShortcuts.swift',
-        '../Shared/SharedKeychain.swift',
-      ];
-      for (const file of sourceFiles) {
+    // Add each Swift file to the main target's Sources build phase
+    if (mainTargetUuid) {
+      for (const name of Object.keys(files)) {
         xcodeProject.addSourceFile(
-          path.join(EXTENSION_NAME, file),
-          { target: target.uuid },
-          extGroup.uuid,
+          name,
+          { target: mainTargetUuid },
+          siriGroup.uuid,
         );
       }
     }
@@ -104,39 +92,6 @@ function withIntentsExtension(config) {
 
   return config;
 }
-
-function writeIfMissing(filePath, content) {
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, content, 'utf-8');
-  }
-}
-
-const EXTENSION_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>NSExtension</key>
-  <dict>
-    <key>NSExtensionPointIdentifier</key>
-    <string>com.apple.intents-service</string>
-    <key>NSExtensionPrincipalClass</key>
-    <string>$(PRODUCT_MODULE_NAME).HealthCommandIntent</string>
-  </dict>
-</dict>
-</plist>
-`;
-
-const EXTENSION_ENTITLEMENTS = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>com.apple.security.application-groups</key>
-  <array>
-    <string>${APP_GROUP}</string>
-  </array>
-</dict>
-</plist>
-`;
 
 const SHARED_KEYCHAIN_SWIFT = `import Foundation
 import Security
@@ -165,14 +120,9 @@ struct SharedKeychain {
 const HEALTH_COMMAND_INTENT_SWIFT = `import AppIntents
 import Foundation
 
-struct QuickRecordResponse: Decodable {
-    let summary: String?
-    let message: String?
-}
-
 struct HealthCommandIntent: AppIntent {
     static let title: LocalizedStringResource = "记录健康数据"
-    static let description = IntentDescription("使用 Siri 语音记录健康数据，如"喝了500ml水"、"吃了一个苹果"")
+    static let description = IntentDescription("通过 Siri 语音快速记录饮食、饮水、运动等健康数据")
     static let openAppWhenRun = false
 
     @Parameter(title: "内容")
@@ -215,8 +165,8 @@ struct HealthCommandIntent: AppIntent {
                         let jsonStr = String(line.dropFirst(6))
                         if let jsonData = jsonStr.data(using: .utf8),
                            let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let content = json["content"] as? String {
-                            lastContent += content
+                           let c = json["content"] as? String {
+                            lastContent += c
                         }
                     }
                 }
@@ -239,9 +189,9 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: HealthCommandIntent(),
             phrases: [
-                "用\\(.applicationName)记录\\(\\$content)",
-                "\\(.applicationName)记一下\\(\\$content)",
-                "告诉\\(.applicationName)\\(\\$content)",
+                "用\\(.applicationName)记录健康数据",
+                "\\(.applicationName)记一下",
+                "告诉\\(.applicationName)",
             ],
             shortTitle: "记录健康数据",
             systemImageName: "heart.text.square"
