@@ -185,11 +185,17 @@ def _build_night_context(db: Session, user_id: int, night_date: date) -> NightCo
     ).first()
     sleep_start_ts = None
     if gd and gd.sleep_start_time:
-        # sleep_start_time 是 Time；如果 < 12:00 归属当天，否则归属前一天
-        if gd.sleep_start_time >= time(12, 0):
-            sleep_start_ts = datetime.combine(night_date - timedelta(days=1), gd.sleep_start_time)
+        ss = gd.sleep_start_time
+        # 某些历史数据是字符串形式，先统一转成 time
+        if isinstance(ss, str):
+            ss_parsed = _parse_time_str_local(ss)
         else:
-            sleep_start_ts = datetime.combine(night_date, gd.sleep_start_time)
+            ss_parsed = ss
+        if ss_parsed:
+            if ss_parsed >= time(12, 0):
+                sleep_start_ts = datetime.combine(night_date - timedelta(days=1), ss_parsed)
+            else:
+                sleep_start_ts = datetime.combine(night_date, ss_parsed)
 
     return NightContext(
         night_date=night_date,
@@ -202,6 +208,18 @@ def _build_night_context(db: Session, user_id: int, night_date: date) -> NightCo
         air_quality_pm25=None,  # 待接卧室传感器
         sleep_start_ts=sleep_start_ts,
     )
+
+
+def _parse_time_str_local(s: str) -> Optional[time]:
+    """容错把 'HH:MM' / 'HH:MM:SS' / 完整 ISO 等转成 time。"""
+    import re as _re
+    m = _re.match(r'(\d{1,2}):(\d{2})', str(s))
+    if not m:
+        return None
+    try:
+        return time(int(m.group(1)), int(m.group(2)))
+    except (ValueError, TypeError):
+        return None
 
 
 def _estimate_alcohol_units(food_desc: str) -> float:
