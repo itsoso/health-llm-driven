@@ -2976,13 +2976,30 @@ class GarminConnectService:
 
             from app.models.daily_health import SleepLevelInterval
 
-            LEVEL_MAP = {
+            # Garmin sleepLevels.activityLevel 可能是：
+            #   - 数字编码（浮点）: 0.0=deep, 1.0=light, 2.0=rem, 3.0=awake, -1=unmeasurable
+            #   - 字符串: 'deep'/'light'/'rem'/'awake'/'DEEP'/...（取决于账户版本）
+            STR_LEVEL_MAP = {
                 'deep': 'deep', 'DEEP': 'deep',
                 'light': 'light', 'LIGHT': 'light',
                 'rem': 'rem', 'REM': 'rem',
                 'awake': 'awake', 'AWAKE': 'awake',
                 'unmeasurable': 'awake', 'UNMEASURABLE': 'awake',
             }
+            NUM_LEVEL_MAP = {
+                0: 'deep',
+                1: 'light',
+                2: 'rem',
+                3: 'awake',
+                -1: 'awake',  # unmeasurable 当 awake 处理
+            }
+
+            def _map_level(raw):
+                if raw is None:
+                    return None
+                if isinstance(raw, (int, float)):
+                    return NUM_LEVEL_MAP.get(int(raw))
+                return STR_LEVEL_MAP.get(str(raw).strip())
 
             intervals = []
             for item in sleep_levels:
@@ -2995,7 +3012,7 @@ class GarminConnectService:
                 if not start_gmt or not end_gmt or not level:
                     continue
 
-                mapped_level = LEVEL_MAP.get(str(level).strip())
+                mapped_level = _map_level(level)
                 if not mapped_level:
                     continue
 
