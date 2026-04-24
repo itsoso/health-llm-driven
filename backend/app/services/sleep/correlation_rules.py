@@ -377,6 +377,71 @@ def rule_rem_concentrated(night: NightAnalysis, ctx: NightContext) -> Optional[C
     )
 
 
+def rule_severe_hypoxia(night: NightAnalysis, ctx: NightContext) -> Optional[CorrelationFinding]:
+    """最低 SpO2 < 88% (临床严重低氧) → alert，不管 ODI/REM 比例。
+
+    88% 是临床公认的"需要医疗关注"阈值。85% 以下更严重。
+    """
+    if night.min_spo2 is None:
+        return None
+    min_val = night.min_spo2
+    if min_val >= 88:
+        return None
+
+    if min_val < 80:
+        severity = "alert"
+        msg = f"最低 SpO2 {min_val}% — 严重低氧（<80% 属紧急阈值）"
+    elif min_val < 85:
+        severity = "alert"
+        msg = f"最低 SpO2 {min_val}% — 明显低氧（<85% 属医疗关注阈值）"
+    else:
+        severity = "warning"
+        msg = f"最低 SpO2 {min_val}% — 低氧（<88% 需关注）"
+
+    return CorrelationFinding(
+        category="diagnostic",
+        subject="夜间低氧",
+        rule="severe_hypoxia",
+        hypothesis=f"{msg}。持续夜间低氧与心血管事件、认知下降、代谢紊乱相关。",
+        suggested_action=(
+            "建议 1-2 周内就诊呼吸科/睡眠中心做多导睡眠图（PSG）。"
+            "过渡期可尝试侧卧、抬高床头 30°、睡前使用异丙托溴铵。"
+        ),
+        severity=severity,
+        confidence="high",
+        evidence={
+            "min_spo2": min_val,
+            "events_count": night.events_count,
+            "odi": night.odi,
+        },
+    )
+
+
+def rule_high_odi(night: NightAnalysis, ctx: NightContext) -> Optional[CorrelationFinding]:
+    """ODI ≥ 5 (轻度) / ≥15 (中度) / ≥30 (重度) — 临床 ODI 分级。"""
+    if night.odi < 5:
+        return None
+    if night.odi < 15:
+        severity = "warning"
+        grade = "轻度"
+    elif night.odi < 30:
+        severity = "alert"
+        grade = "中度"
+    else:
+        severity = "alert"
+        grade = "重度"
+    return CorrelationFinding(
+        category="diagnostic",
+        subject="氧减指数",
+        rule="high_odi",
+        hypothesis=f"ODI={night.odi}/h（{grade}），超过临床关注阈值（5/h）。",
+        suggested_action="建议正规睡眠呼吸监测确诊；同时排查鼻炎、体重、饮酒等可改变因素。",
+        severity=severity,
+        confidence="high",
+        evidence={"odi": night.odi, "grade": grade},
+    )
+
+
 # ---------------------------------------------------------------------------
 # 规则注册 + 执行器
 # ---------------------------------------------------------------------------
@@ -392,6 +457,8 @@ _RULES: List[Callable[[NightAnalysis, NightContext], Optional[CorrelationFinding
     rule_rhinitis_severe,
     rule_high_pm25,
     rule_rem_concentrated,
+    rule_severe_hypoxia,
+    rule_high_odi,
 ]
 
 

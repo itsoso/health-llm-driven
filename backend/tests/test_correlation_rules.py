@@ -215,3 +215,51 @@ class TestRunRulesOrdering:
             first_alert = severities.index("alert")
             first_warning = severities.index("warning")
             assert first_alert < first_warning
+
+
+class TestSevereHypoxia:
+    def test_very_severe(self):
+        from app.services.sleep.correlation_rules import rule_severe_hypoxia
+        n = NightAnalysis(night_date=date(2026,4,16), odi=1.4, events_count=12,
+                          min_spo2=74, avg_spo2=91, total_sleep_minutes=500, events=[])
+        f = rule_severe_hypoxia(n, NightContext(night_date=date(2026,4,16)))
+        assert f is not None
+        assert f.severity == "alert"
+        assert "74" in f.hypothesis
+
+    def test_moderate_hypoxia(self):
+        from app.services.sleep.correlation_rules import rule_severe_hypoxia
+        n = NightAnalysis(night_date=date(2026,4,16), odi=1.0, events_count=3,
+                          min_spo2=86, avg_spo2=95, total_sleep_minutes=480, events=[])
+        f = rule_severe_hypoxia(n, NightContext(night_date=date(2026,4,16)))
+        assert f is not None
+        assert f.severity == "warning"
+
+    def test_normal_no_fire(self):
+        from app.services.sleep.correlation_rules import rule_severe_hypoxia
+        n = NightAnalysis(night_date=date(2026,4,16), odi=0.5, events_count=2,
+                          min_spo2=92, avg_spo2=96, total_sleep_minutes=480, events=[])
+        assert rule_severe_hypoxia(n, NightContext(night_date=date(2026,4,16))) is None
+
+
+class TestHighODI:
+    def test_mild_odi(self):
+        from app.services.sleep.correlation_rules import rule_high_odi
+        n = _night(odi=7.0, events_count=55)
+        f = rule_high_odi(n, NightContext(night_date=date(2026,4,16)))
+        assert f is not None
+        assert f.severity == "warning"
+        assert "轻度" in f.hypothesis
+
+    def test_moderate_odi(self):
+        from app.services.sleep.correlation_rules import rule_high_odi
+        n = _night(odi=18.0, events_count=140)
+        f = rule_high_odi(n, NightContext(night_date=date(2026,4,16)))
+        assert f is not None
+        assert f.severity == "alert"
+        assert "中度" in f.hypothesis
+
+    def test_under_threshold_no_fire(self):
+        from app.services.sleep.correlation_rules import rule_high_odi
+        n = _night(odi=3.0, events_count=25)
+        assert rule_high_odi(n, NightContext(night_date=date(2026,4,16))) is None
