@@ -24,7 +24,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.config import settings
 from app.orchestrator.schema import Intent, SpecialistFinding
 from app.twin.schema import HealthTwin
 
@@ -116,7 +115,12 @@ def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
     components: Dict[str, Optional[float]] = {}
 
     # HRV — 优先用真时序（P2），fallback 到 hrv_latest/hrv_7d_avg
-    use_timeseries = getattr(settings, "recovery_hrv_use_timeseries", True)
+    # lazy import 避免循环引用 (config → orchestrator → ... → coach)
+    try:
+        from app.config import settings as _settings
+        use_timeseries = getattr(_settings, "recovery_hrv_use_timeseries", True)
+    except ImportError:
+        use_timeseries = True
     nightly_series = getattr(p, "hrv_nightly_series", None) or []
     ts_score = _hrv_component_from_series(nightly_series) if use_timeseries else None
 
