@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, TouchableOpacity, Image, StyleSheet, TextStyle,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -28,6 +28,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
 
   const displayText = item.content.replace(/\n?\[附图: [^\]]+\]/g, '').trim();
   const images = item.imageUris;
+  const hasTable = !isUser && /\n\s*\|.+\|\s*\n\s*\|[\s|:\-]+\|/.test(displayText);
 
   const handleCopy = () => {
     Clipboard.setStringAsync(item.content);
@@ -67,13 +68,19 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
         </TouchableOpacity>
       ) : (
         <TouchableOpacity
-          style={[styles.bubble, styles.bubbleAI]}
+          style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide]}
           activeOpacity={0.8}
           onLongPress={handleCopy}
           accessibilityRole="text"
           accessibilityLabel={`AI: ${item.content}`}
         >
-          <Markdown style={mdStylesChat}>{item.content || ' '}</Markdown>
+          {hasTable ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: '100%' }}>
+              <Markdown style={mdStylesChat}>{item.content || ' '}</Markdown>
+            </ScrollView>
+          ) : (
+            <Markdown style={mdStylesChat}>{item.content || ' '}</Markdown>
+          )}
           {item.streaming && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 4 }} />}
         </TouchableOpacity>
       )}
@@ -91,6 +98,7 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
   bubbleUser: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
   bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
+  bubbleAIWide: { maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
   msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
   msgImageGrid: { width: 72, height: 72, borderRadius: 8 },

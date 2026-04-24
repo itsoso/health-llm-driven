@@ -43,9 +43,16 @@ export function useVoiceRecording(opts?: {
   const startRecording = useCallback(async () => {
     try {
       readyRef.current = false;
+
+      // 清理残留的录音对象
+      if (recordingRef.current) {
+        try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
+        recordingRef.current = null;
+      }
+
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要麦克风权限', '请在设置中允许 HealthPilot 使用麦克风');
+        Alert.alert('需要麦克风权限', '请在 iPhone 设置 → HealthPilot → 麦克风 中开启权限');
         return;
       }
 
@@ -69,10 +76,15 @@ export function useVoiceRecording(opts?: {
       }, 200);
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {
-      Alert.alert('录音启动失败', '请检查麦克风权限');
+    } catch (err: any) {
+      // 如果仍然冲突，强制重置音频系统
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
+      setIsRecording(false);
+      clearTimer();
+      const msg = err?.message || String(err);
+      Alert.alert('录音启动失败', msg);
     }
-  }, []);
+  }, [clearTimer]);
 
   const stopAndTranscribe = useCallback(async () => {
     if (!recordingRef.current || !readyRef.current) return;

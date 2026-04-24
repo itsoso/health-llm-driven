@@ -12,6 +12,12 @@ export const mdStylesChat = StyleSheet.create({
   fence: { backgroundColor: '#F2F2F7', borderRadius: 6, padding: 8, fontFamily: 'Menlo', fontSize: 12, marginVertical: 4 },
   paragraph: { marginVertical: 2 },
   link: { color: colors.brand },
+  table: { borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 6, marginVertical: 6, minWidth: 320 },
+  thead: { backgroundColor: '#F2F2F7' },
+  tbody: {},
+  th: { paddingVertical: 6, paddingHorizontal: 8, fontWeight: '600', fontSize: 13, color: colors.labelPrimary, flex: 1, minWidth: 80 },
+  tr: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#E5E5EA', flexDirection: 'row' },
+  td: { paddingVertical: 6, paddingHorizontal: 8, fontSize: 13, color: colors.labelPrimary, flex: 1, minWidth: 80 },
 });
 
 export const mdStylesCompact = StyleSheet.create({

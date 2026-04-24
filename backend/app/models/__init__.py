@@ -11,6 +11,13 @@ from app.models.daily_health import (
     SupplementIntake,
     OutdoorActivity
 )
+from app.models.garmin_timeseries import (
+    RespirationSample,
+    HrvReading,
+    StressSample,
+)
+from app.models.workout_hr_zone import WorkoutHrZone
+from app.models.garmin_device import GarminDevice
 from app.models.health_checkin import HealthCheckin
 from app.models.goal import Goal, GoalProgress
 from app.models.daily_recommendation import DailyRecommendation

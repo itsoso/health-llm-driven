@@ -147,9 +147,8 @@ class IOSPushService:
             {"success": bool, "error": str, "apns_id": str}
         """
         if not self.is_configured:
-            # 未配置时返回模拟成功（开发阶段）
-            logger.info(f"APNs 未配置，模拟推送: {title}")
-            return {"success": True, "simulated": True}
+            logger.warning(f"APNs 未配置，推送未发送: {title}")
+            return {"success": False, "error": "APNs not configured", "simulated": True}
         
         if not device_token:
             return {"success": False, "error": "缺少 device_token"}

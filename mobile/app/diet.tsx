@@ -6,7 +6,8 @@ import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useDailyDiet } from '@/hooks/useDiet';
-import { createDietRecord, estimateNutrition, type DietRecordCreate } from '@/services/diet';
+import { createDietRecord, estimateNutrition, recognizeFood, type DietRecordCreate } from '@/services/diet';
+import * as ImagePicker from 'expo-image-picker';
 import HealthCard from '@/components/design-system/HealthCard';
 import MealForm from '@/components/diet/MealForm';
 import DietFAB from '@/components/diet/DietFAB';
@@ -72,8 +73,43 @@ export default function DietScreen() {
     });
   }, []);
 
-  const handlePhoto = useCallback(() => {
-    Alert.alert('拍照识别', '该功能需要相机权限，即将开放');
+  const handlePhoto = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('需要相机权限', '请在设置中开启相机权限');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled || !result.assets[0]?.base64) return;
+
+      setEstimating(true);
+      const recognition = await recognizeFood(result.assets[0].base64);
+      if (recognition && (recognition.foods?.length > 0 || recognition.meal_description)) {
+        const foodDesc = recognition.meal_description
+          || recognition.foods?.map(f => f.name).join('、')
+          || '';
+        setFormDefaults({
+          food_items: foodDesc,
+          calories: recognition.total_calories ?? undefined,
+          protein: recognition.total_protein ?? undefined,
+          carbs: recognition.total_carbs ?? undefined,
+          fat: recognition.total_fat ?? undefined,
+        });
+        setShowForm(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Alert.alert('未识别到食物', '请拍摄更清晰的食物照片');
+      }
+    } catch {
+      Alert.alert('识别失败', '请稍后重试');
+    } finally {
+      setEstimating(false);
+    }
   }, []);
 
   const isToday = date === todayStr();

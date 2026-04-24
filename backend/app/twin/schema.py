@@ -251,6 +251,7 @@ class HealthTwin(BaseModel):
     medication: MedicationState = Field(default_factory=MedicationState)
     supplement: SupplementState = Field(default_factory=SupplementState)
     genetic: GeneticContext = Field(default_factory=GeneticContext)
+    gene_config: Optional[Any] = None  # GeneConfig dataclass, built post-init
     environment: EnvironmentalState = Field(default_factory=EnvironmentalState)
     behavioral: BehavioralState = Field(default_factory=BehavioralState)
     mental: MentalState = Field(default_factory=MentalState)

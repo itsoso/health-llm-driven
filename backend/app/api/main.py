@@ -13,6 +13,7 @@ from app.api import (
     data_collection,
     health_analysis,
     garmin_analysis,
+    garmin_timeseries,
     daily_recommendation,
     supplements,
     supplement_products,
@@ -168,6 +169,7 @@ api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
 api_router.include_router(data_collection.router, prefix="/data-collection", tags=["data-collection"])
 api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tags=["garmin-analysis"])
 api_router.include_router(garmin_import.router)
+api_router.include_router(garmin_timeseries.router, prefix="/garmin", tags=["garmin-timeseries"])
 api_router.include_router(nfc.router)
 api_router.include_router(upload.router, prefix="/upload", tags=["upload"])
 

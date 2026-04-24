@@ -104,7 +104,7 @@ def get_all_sync_enabled_users(db) -> List[Dict[str, Any]]:
                 })
                 logger.debug(f"✅ 用户 {cred.user_id} ({decrypted['email']}) 已加入同步队列")
         except Exception as e:
-            logger.error(f"❌ 解密用户 {cred.user_id} 的Garmin凭证失败: {e}")
+            logger.error("❌ 解密用户 %s 的Garmin凭证失败 (%s): %r", cred.user_id, type(e).__name__, e, exc_info=True)
     
     return users_with_credentials
 

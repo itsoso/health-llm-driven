@@ -1,22 +1,29 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Image, Text,
-  Modal, Pressable, ActivityIndicator, GestureResponderEvent, TextStyle,
-  ScrollView,
+  Modal, Pressable, ActivityIndicator, TextStyle, ScrollView, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
+import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSpring } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '@/hooks/useMediaPicker';
 import { useVoiceRecording } from '@/hooks/useVoiceRecording';
-import { colors, spacing, radii } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
 
-function PulsingDot() {
-  const opacity = useSharedValue(1);
-  React.useEffect(() => { opacity.value = withRepeat(withTiming(0.3, { duration: 600 }), -1, true); }, [opacity]);
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return <ReAnimated.View style={[styles.recDot, animStyle]} />;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CANCEL_THRESHOLD = 80;
+
+function PulsingRing() {
+  const scale = useSharedValue(1);
+  React.useEffect(() => {
+    scale.value = withRepeat(withTiming(1.4, { duration: 800 }), -1, true);
+  }, [scale]);
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: 2 - scale.value,
+  }));
+  return <ReAnimated.View style={[styles.pulsingRing, animStyle]} />;
 }
 
 interface Props {
@@ -27,9 +34,10 @@ interface Props {
 export default function ChatInputBar({ onSend, isStreaming }: Props) {
   const [input, setInput] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [cancelHint, setCancelHint] = useState(false);
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
 
-  const sendMessageRef = useRef<typeof handleSend>(null!);
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
@@ -37,34 +45,46 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
     setInput('');
     clearImages();
   }, [input, pendingImages, onSend, clearImages]);
-  sendMessageRef.current = handleSend;
 
   const voice = useVoiceRecording({
-    onTranscript: (text) => { setInput(prev => prev ? prev + ' ' + text : text); },
+    onTranscript: (text) => {
+      setInput(prev => prev ? prev + ' ' + text : text);
+      setVoiceMode(false);
+    },
   });
 
-  const voiceCancelledRef = useRef(false);
+  const cancelledRef = useRef(false);
   const startYRef = useRef(0);
 
-  const handleVoicePressIn = useCallback((e: GestureResponderEvent) => {
-    voiceCancelledRef.current = false;
-    startYRef.current = e.nativeEvent.pageY;
+  const handleHoldStart = useCallback((pageY: number) => {
+    cancelledRef.current = false;
+    startYRef.current = pageY;
+    setCancelHint(false);
     voice.startRecording();
   }, [voice]);
 
-  const handleVoiceMove = useCallback((e: GestureResponderEvent) => {
-    if (!voice.isRecording || voiceCancelledRef.current) return;
-    const dy = startYRef.current - e.nativeEvent.pageY;
-    if (dy > 40) {
-      voiceCancelledRef.current = true;
+  const handleHoldMove = useCallback((pageY: number) => {
+    if (!voice.isRecording || cancelledRef.current) return;
+    const dy = startYRef.current - pageY;
+    if (dy > CANCEL_THRESHOLD) {
+      cancelledRef.current = true;
+      setCancelHint(false);
       voice.cancelRecording();
+    } else {
+      setCancelHint(dy > 30);
     }
   }, [voice]);
 
-  const handleVoicePressOut = useCallback((e: GestureResponderEvent) => {
-    if (voiceCancelledRef.current) return;
+  const handleHoldEnd = useCallback(() => {
+    setCancelHint(false);
+    if (cancelledRef.current) return;
     voice.stopAndTranscribe();
   }, [voice]);
+
+  const toggleVoiceMode = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setVoiceMode(v => !v);
+  }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
@@ -73,7 +93,7 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
       if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
-    } catch { /* DocumentPicker not available */ }
+    } catch {}
   }, []);
 
   const toggleMenu = () => {
@@ -85,6 +105,7 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
 
   return (
     <>
+      {/* 图片预览 */}
       {pendingImages.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewBar} contentContainerStyle={styles.previewContent}>
           {pendingImages.map((img, i) => (
@@ -104,58 +125,105 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
         </ScrollView>
       )}
 
+      {/* 录音中全屏蒙层 */}
       {voice.isRecording && (
-        <View style={styles.recordBar}>
-          <PulsingDot />
-          <Text style={styles.recText}>{Math.floor(voice.durationMs / 1000)}s · 松手发送，上滑取消</Text>
-        </View>
-      )}
-      {voice.isTranscribing && (
-        <View style={styles.recordBar}>
-          <ActivityIndicator size="small" color={colors.brand} />
-          <Text style={[styles.recText, { color: colors.brand }]}>识别中...</Text>
+        <View style={styles.recordingOverlay}>
+          <View style={styles.recordingCenter}>
+            {cancelHint ? (
+              <View style={styles.cancelCircle}>
+                <Ionicons name="close" size={36} color="#fff" />
+              </View>
+            ) : (
+              <View style={styles.micCircle}>
+                <PulsingRing />
+                <Ionicons name="mic" size={36} color="#fff" />
+              </View>
+            )}
+            <Text style={styles.recordingDuration}>
+              {Math.floor(voice.durationMs / 1000)}″
+            </Text>
+            <Text style={[styles.recordingHint, cancelHint && styles.recordingHintCancel]}>
+              {cancelHint ? '松手取消' : '上滑取消发送'}
+            </Text>
+          </View>
         </View>
       )}
 
+      {/* 识别中提示 */}
+      {voice.isTranscribing && (
+        <View style={styles.transcribingBar}>
+          <ActivityIndicator size="small" color={colors.brand} />
+          <Text style={styles.transcribingText}>语音识别中...</Text>
+        </View>
+      )}
+
+      {/* 输入栏 */}
       <View style={styles.inputBar}>
         <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
           <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={colors.labelPrimary} />
         </TouchableOpacity>
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.textInput}
-            placeholder="有问题，尽管问"
-            placeholderTextColor={colors.labelTertiary}
-            value={input}
-            onChangeText={setInput}
-            onSubmitEditing={() => handleSend()}
-            returnKeyType="send"
-            multiline
-            maxLength={2000}
-            accessibilityLabel="消息输入框"
-          />
-          <View style={styles.inputActions}>
-            {canSend ? (
-              <TouchableOpacity onPress={() => handleSend()} style={styles.inlineSendBtn} accessibilityLabel="发送消息">
-                <Ionicons name="arrow-up-circle" size={28} color={colors.brand} />
-              </TouchableOpacity>
-            ) : (
-              <View
-                onStartShouldSetResponder={() => true}
-                onMoveShouldSetResponder={() => true}
-                onResponderGrant={handleVoicePressIn}
-                onResponderMove={handleVoiceMove}
-                onResponderRelease={handleVoicePressOut}
-                style={[styles.inlineVoiceBtn, voice.isRecording && styles.inlineVoiceBtnActive]}
-                accessibilityLabel="语音输入（长按录音，上滑取消）"
-              >
-                <Ionicons name={voice.isRecording ? 'mic' : 'mic-outline'} size={20} color={voice.isRecording ? '#fff' : colors.labelTertiary} />
-              </View>
-            )}
+
+        {voiceMode && !canSend ? (
+          /* 语音模式：按住说话按钮 */
+          <Pressable
+            onPressIn={(e) => handleHoldStart(e.nativeEvent.pageY)}
+            onPressOut={handleHoldEnd}
+            onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageY)}
+            style={({ pressed }) => [
+              styles.holdToTalkBtn,
+              pressed && styles.holdToTalkBtnActive,
+              voice.isRecording && styles.holdToTalkBtnRecording,
+            ]}
+            accessibilityLabel="按住说话"
+          >
+            <Ionicons
+              name="mic"
+              size={18}
+              color={voice.isRecording ? '#FF453A' : colors.labelSecondary}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[
+              styles.holdToTalkText,
+              voice.isRecording && styles.holdToTalkTextRecording,
+            ]}>
+              {voice.isRecording ? '松开 结束' : '按住 说话'}
+            </Text>
+          </Pressable>
+        ) : (
+          /* 键盘模式：文本输入框 */
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="有问题，尽管问"
+              placeholderTextColor={colors.labelTertiary}
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={() => handleSend()}
+              returnKeyType="send"
+              multiline
+              maxLength={2000}
+              accessibilityLabel="消息输入框"
+            />
           </View>
-        </View>
+        )}
+
+        {/* 右侧按钮：发送 / 语音切换 */}
+        {canSend ? (
+          <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} accessibilityLabel="发送消息">
+            <Ionicons name="arrow-up" size={20} color="#fff" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={toggleVoiceMode} style={styles.modeBtn} accessibilityLabel="切换语音/键盘">
+            <Ionicons
+              name={voiceMode ? 'keypad-outline' : 'mic-outline'}
+              size={22}
+              color={colors.labelSecondary}
+            />
+          </TouchableOpacity>
+        )}
       </View>
 
+      {/* 附件菜单 */}
       <Modal visible={showMenu} transparent animationType="slide" onRequestClose={toggleMenu}>
         <Pressable style={styles.menuOverlay} onPress={toggleMenu}>
           <Pressable style={styles.menuSheet} onPress={e => e.stopPropagation()}>
@@ -185,29 +253,108 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 }
 
 const styles = StyleSheet.create({
+  /* ── 输入栏 ── */
   inputBar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 6,
-    paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: colors.bgPrimary,
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+    paddingHorizontal: spacing.md, paddingVertical: 8,
+    backgroundColor: colors.bgPrimary,
   },
   plusBtn: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.separator,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: colors.bgCard, borderRadius: 22,
+    backgroundColor: colors.bgCard, borderRadius: 20,
     borderWidth: 1, borderColor: colors.separator,
-    paddingLeft: 14, paddingRight: 4, paddingVertical: 4,
+    paddingHorizontal: 14, paddingVertical: 4,
   },
   textInput: {
     flex: 1, fontSize: 15, maxHeight: 90, color: colors.labelPrimary,
     paddingTop: 6, paddingBottom: 6,
   },
-  inputActions: { flexDirection: 'row', alignItems: 'center', paddingBottom: 2 },
-  inlineSendBtn: { padding: 2 },
-  inlineVoiceBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  inlineVoiceBtnActive: { backgroundColor: '#FF453A' },
+  sendBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.brand,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modeBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  /* ── 按住说话按钮（微信风格） ── */
+  holdToTalkBtn: {
+    flex: 1, height: 36, borderRadius: 20,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1, borderColor: colors.separator,
+    flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  holdToTalkBtnActive: {
+    backgroundColor: '#E8E8E8',
+    transform: [{ scale: 0.98 }],
+  },
+  holdToTalkBtnRecording: {
+    backgroundColor: '#FFF0F0',
+    borderColor: '#FFD0D0',
+  },
+  holdToTalkText: {
+    fontSize: 15, fontWeight: '500', color: colors.labelSecondary,
+  } as TextStyle,
+  holdToTalkTextRecording: {
+    color: '#FF453A',
+  } as TextStyle,
+
+  /* ── 录音中蒙层 ── */
+  recordingOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 100,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  recordingCenter: {
+    alignItems: 'center',
+  },
+  micCircle: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: '#FF453A',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16,
+  },
+  cancelCircle: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: '#999',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16,
+  },
+  pulsingRing: {
+    position: 'absolute',
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 3, borderColor: 'rgba(255,69,58,0.4)',
+  },
+  recordingDuration: {
+    fontSize: 28, fontWeight: '700', color: '#fff',
+    marginBottom: 8,
+  } as TextStyle,
+  recordingHint: {
+    fontSize: 14, color: 'rgba(255,255,255,0.7)',
+  } as TextStyle,
+  recordingHintCancel: {
+    color: '#FF453A', fontWeight: '600',
+  } as TextStyle,
+
+  /* ── 识别中 ── */
+  transcribingBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: spacing.lg, paddingVertical: 10,
+    backgroundColor: colors.bgCard,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
+  },
+  transcribingText: { fontSize: 14, color: colors.brand } as TextStyle,
+
+  /* ── 图片预览 ── */
   previewBar: {
     maxHeight: 72,
     backgroundColor: colors.bgCard,
@@ -226,12 +373,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   previewCount: { fontSize: 12, color: colors.labelTertiary, marginLeft: 4 } as TextStyle,
-  recordBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: spacing.lg, paddingVertical: 6, backgroundColor: '#FFF0F0',
-  },
-  recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF453A' },
-  recText: { fontSize: 13, color: '#FF453A', flex: 1 } as TextStyle,
+
+  /* ── 附件菜单 ── */
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   menuSheet: {
     backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,

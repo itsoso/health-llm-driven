@@ -1276,10 +1276,10 @@ class GarminConnectService:
     def get_stress_data(self, target_date: date) -> Optional[Dict[str, Any]]:
         """
         获取压力数据
-        
+
         Args:
             target_date: 目标日期
-            
+
         Returns:
             压力数据字典
         """
@@ -1293,6 +1293,156 @@ class GarminConnectService:
             raise
         except Exception as e:
             logger.error(f"{prefix} 获取压力数据失败: {str(e)}")
+            return None
+
+    # ------------------------------------------------------------------
+    # P1a: 新扩展 collector 方法（HRV 时序 / Training Readiness / 设备 / 其他）
+    # 所有方法失败只 warn 不抛，保证其他数据不受阻塞
+    # ------------------------------------------------------------------
+
+    def get_hrv_data(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """HRV 逐夜时序数据（含 hrvReadings 列表）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            hrv = self.client.get_hrv_data(target_date.isoformat())
+            if hrv and isinstance(hrv, dict):
+                readings = hrv.get('hrvReadings') or []
+                logger.info(f"{prefix} HRV {target_date}: {len(readings)} 读数")
+            return hrv
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 HRV 数据失败: {e}")
+            return None
+
+    def get_training_readiness(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """Garmin Training Readiness（0-100 + 分级 + 因素分解）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_training_readiness(target_date.isoformat())
+            # 有的账户返回 list（每小时更新），取最新一条
+            if isinstance(data, list) and data:
+                data = data[-1]
+            if isinstance(data, dict):
+                score = data.get('score')
+                level = data.get('level') or data.get('feedbackLong') or data.get('feedbackShort')
+                logger.info(f"{prefix} TrainingReadiness {target_date}: score={score} level={level}")
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Training Readiness 失败: {e}")
+            return None
+
+    def get_training_status(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """Garmin Training Status（productive/detraining/overreaching/...）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_training_status(target_date.isoformat())
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Training Status 失败: {e}")
+            return None
+
+    def get_endurance_score(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """耐力评分。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_endurance_score(target_date.isoformat())
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Endurance Score 失败: {e}")
+            return None
+
+    def get_hill_score(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """爬坡评分。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_hill_score(target_date.isoformat())
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Hill Score 失败: {e}")
+            return None
+
+    def get_race_predictions(self) -> Optional[Dict[str, Any]]:
+        """5k / 10k / 半马 / 马拉松 完成时间预测（秒）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_race_predictions()
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Race Predictions 失败: {e}")
+            return None
+
+    def get_hydration_data(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """当日水合量（毫升）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_hydration_data(target_date.isoformat())
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Hydration 失败: {e}")
+            return None
+
+    def get_body_composition(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """体成分（Garmin Index 秤）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_body_composition(target_date.isoformat())
+            return data if isinstance(data, dict) else None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Body Composition 失败: {e}")
+            return None
+
+    def get_devices(self) -> Optional[List[Dict[str, Any]]]:
+        """Garmin 设备列表（电量/最后同步时间）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_devices()
+            if isinstance(data, list):
+                logger.info(f"{prefix} 获取到 {len(data)} 个 Garmin 设备")
+                return data
+            return None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Devices 失败: {e}")
+            return None
+
+    def get_activity_hr_in_timezones(self, activity_id: int) -> Optional[List[Dict[str, Any]]]:
+        """单次训练的心率区间分布（Z1-Z5）。"""
+        prefix = self._log_prefix()
+        try:
+            self._ensure_authenticated()
+            data = self.client.get_activity_hr_in_timezones(activity_id)
+            if isinstance(data, list):
+                return data
+            return None
+        except GarminAuthenticationError:
+            raise
+        except Exception as e:
+            logger.warning(f"{prefix} 获取 Activity HR Zones 失败 (id={activity_id}): {e}")
             return None
     
     def get_all_daily_data(self, target_date: date) -> Dict[str, Any]:
@@ -1388,7 +1538,38 @@ class GarminConnectService:
             result['max_metrics'] = max_metrics
             if isinstance(max_metrics, dict):
                 logger.info(f"从get_max_metrics获取的数据键: {list(max_metrics.keys())}")
-        
+
+        # P1a: Training Readiness / Status + 其他
+        training_readiness = self.get_training_readiness(target_date)
+        if training_readiness:
+            result['training_readiness'] = training_readiness
+
+        training_status = self.get_training_status(target_date)
+        if training_status:
+            result['training_status'] = training_status
+
+        endurance = self.get_endurance_score(target_date)
+        if endurance:
+            result['endurance_score'] = endurance
+
+        hill = self.get_hill_score(target_date)
+        if hill:
+            result['hill_score'] = hill
+
+        hydration = self.get_hydration_data(target_date)
+        if hydration:
+            result['hydration'] = hydration
+
+        # race_predictions 是账户级别，不是按日的（同步时只取一次即可；此处保留每日取）
+        race_pred = self.get_race_predictions()
+        if race_pred:
+            result['race_predictions'] = race_pred
+
+        # HRV 时序（单独在 sync_daily_data 里写表，这里也存 raw 供 parse 用）
+        hrv_data = self.get_hrv_data(target_date)
+        if hrv_data:
+            result['hrv_raw'] = hrv_data
+
         return result
     
     def parse_to_garmin_data_create(
@@ -2295,7 +2476,94 @@ class GarminConnectService:
         
         # 记录解析结果用于调试
         logger.info(f"解析结果 - 睡眠分数: {sleep_score}, 睡眠时长(秒): {sleep_duration_seconds}, 静息心率: {resting_hr}, 平均心率: {avg_hr}, 步数: {steps}")
-        
+
+        # --- P1a: 解析 Training Readiness / Status / 其他指标 ---
+        tr = raw_data.get('training_readiness') if isinstance(raw_data, dict) else None
+        training_readiness_score = None
+        training_readiness_level = None
+        training_readiness_factors = None
+        if isinstance(tr, dict):
+            training_readiness_score = safe_int(tr.get('score'))
+            training_readiness_level = tr.get('level') or tr.get('feedbackShort')
+            factor_keys = ('sleepScore', 'sleepHistory', 'hrvWeeklyAverage', 'recoveryTime',
+                           'acuteLoad', 'stressHistory', 'sleepBreakdown', 'feedbackLong', 'feedbackShort')
+            factors = {k: tr.get(k) for k in factor_keys if tr.get(k) is not None}
+            training_readiness_factors = factors or None
+
+        ts = raw_data.get('training_status') if isinstance(raw_data, dict) else None
+        training_status_val = None
+        training_status_feedback = None
+        acute_load_val = None
+        load_ratio_val = None
+        if isinstance(ts, dict):
+            # 取最新 latest payload
+            latest = ts.get('mostRecentTrainingStatus') or {}
+            if isinstance(latest, dict):
+                latest_dto = latest.get('latestTrainingStatusData') or {}
+                if isinstance(latest_dto, dict):
+                    # latest_dto 是 {device_id: {...}} 的字典，取第一个
+                    first_entry = next(iter(latest_dto.values()), {}) if isinstance(latest_dto, dict) else {}
+                    if isinstance(first_entry, dict):
+                        training_status_val = first_entry.get('trainingStatus') or first_entry.get('trainingStatusKey')
+                        training_status_feedback = first_entry.get('trainingStatusFeedbackPhrase')
+                        acute_load_val = safe_float(first_entry.get('acuteTrainingLoadDTO', {}).get('acwrLowerBound') if isinstance(first_entry.get('acuteTrainingLoadDTO'), dict) else first_entry.get('acuteLoad'))
+                        load_ratio_val = safe_float(first_entry.get('acwrStatus') if isinstance(first_entry.get('acwrStatus'), (int, float)) else None)
+            # fallback
+            if training_status_val is None:
+                training_status_val = ts.get('trainingStatus') or ts.get('trainingStatusKey')
+            if acute_load_val is None:
+                acute_load_val = safe_float(ts.get('acuteLoad'))
+            if load_ratio_val is None:
+                load_ratio_val = safe_float(ts.get('loadRatio') or ts.get('acwr'))
+
+        endurance_raw = raw_data.get('endurance_score') if isinstance(raw_data, dict) else None
+        endurance_score_val = None
+        if isinstance(endurance_raw, dict):
+            endurance_score_val = safe_int(endurance_raw.get('overallScore') or endurance_raw.get('score'))
+
+        hill_raw = raw_data.get('hill_score') if isinstance(raw_data, dict) else None
+        hill_score_val = None
+        if isinstance(hill_raw, dict):
+            hill_score_val = safe_int(hill_raw.get('overallScore') or hill_raw.get('score'))
+
+        hydration_raw = raw_data.get('hydration') if isinstance(raw_data, dict) else None
+        hydration_ml_val = None
+        if isinstance(hydration_raw, dict):
+            hydration_ml_val = safe_int(hydration_raw.get('valueInML') or hydration_raw.get('hydration'))
+
+        race_pred_raw = raw_data.get('race_predictions') if isinstance(raw_data, dict) else None
+        race_predictions_val = None
+        if isinstance(race_pred_raw, dict):
+            race_predictions_val = {
+                '5k': race_pred_raw.get('time5K'),
+                '10k': race_pred_raw.get('time10K'),
+                'half_marathon': race_pred_raw.get('timeHalfMarathon'),
+                'marathon': race_pred_raw.get('timeMarathon'),
+            }
+            # 去空
+            race_predictions_val = {k: v for k, v in race_predictions_val.items() if v is not None}
+            if not race_predictions_val:
+                race_predictions_val = None
+
+        # vo2max_fitness_age 从 max_metrics 抽
+        vo2max_fitness_age_val = None
+        max_metrics_raw = raw_data.get('max_metrics') if isinstance(raw_data, dict) else None
+        if isinstance(max_metrics_raw, dict):
+            generic = max_metrics_raw.get('generic') if isinstance(max_metrics_raw.get('generic'), dict) else max_metrics_raw
+            vo2max_fitness_age_val = safe_int(generic.get('fitnessAge'))
+
+        # HRV 日均（raw_data 里 hrv_raw 覆盖了 hrv_data）
+        hrv_raw_dict = raw_data.get('hrv_raw') if isinstance(raw_data, dict) else None
+        if isinstance(hrv_raw_dict, dict):
+            hrv_summary = hrv_raw_dict.get('hrvSummary') or {}
+            if isinstance(hrv_summary, dict):
+                if hrv is None:
+                    hrv = safe_float(hrv_summary.get('lastNightAvg'))
+                if not hrv_status:
+                    hrv_status = hrv_summary.get('status')
+                if hrv_7day_avg is None:
+                    hrv_7day_avg = safe_float(hrv_summary.get('weeklyAvg'))
+
         result = GarminDataCreate(
             user_id=user_id,
             record_date=record_date,
@@ -2341,6 +2609,20 @@ class GarminConnectService:
             floors_climbed=safe_int(floors),
             floors_goal=safe_int(floors_goal_val),
             distance_meters=safe_float(distance),
+            # P1a: Training Readiness / Status
+            training_readiness_score=training_readiness_score,
+            training_readiness_level=training_readiness_level,
+            training_readiness_factors=training_readiness_factors,
+            training_status=training_status_val,
+            training_status_feedback=training_status_feedback,
+            acute_load=acute_load_val,
+            load_ratio=load_ratio_val,
+            # P1a: 其他指标
+            endurance_score=endurance_score_val,
+            hill_score=hill_score_val,
+            race_predictions=race_predictions_val,
+            hydration_ml=hydration_ml_val,
+            vo2max_fitness_age=vo2max_fitness_age_val,
         )
         
         return result
@@ -2399,6 +2681,13 @@ class GarminConnectService:
 
             # 同步睡眠阶段时间线
             self._sync_sleep_level_intervals(db, user_id, target_date, raw_data)
+
+            # P1a: 新增时序/设备同步
+            self._sync_respiration_samples(db, user_id, target_date, raw_data)
+            self._sync_hrv_readings(db, user_id, target_date, raw_data)
+            self._sync_stress_samples(db, user_id, target_date, raw_data)
+            self._sync_body_composition(db, user_id, target_date)
+            self._sync_devices(db, user_id)
 
             return result
             
@@ -2750,6 +3039,401 @@ class GarminConnectService:
 
         except Exception as e:
             logger.warning(f"{prefix} 同步睡眠阶段数据失败: {e}")
+            return 0
+
+    # ------------------------------------------------------------------
+    # P1a: 新增时序/设备同步助手
+    # ------------------------------------------------------------------
+
+    def _sync_respiration_samples(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: date,
+        raw_data: Dict[str, Any]
+    ) -> int:
+        """呼吸频率逐分钟采样 → respiration_samples。
+
+        garminconnect.get_respiration_data() 的 respirationValuesArray 格式:
+        [[epochMs, brpm], [epochMs, brpm], ...]
+        """
+        prefix = self._log_prefix()
+        try:
+            if not isinstance(raw_data, dict):
+                return 0
+            resp_raw = raw_data.get('respiration')
+            if not isinstance(resp_raw, dict):
+                return 0
+            values = resp_raw.get('respirationValuesArray') or resp_raw.get('respirationValueDescriptorsDTOList') or []
+            if not isinstance(values, list) or not values:
+                return 0
+
+            from app.models.garmin_timeseries import RespirationSample
+            from datetime import time as dt_time
+
+            seen: Dict[str, dict] = {}
+            for item in values:
+                try:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        ts_ms = int(item[0])
+                        rate = item[1]
+                    elif isinstance(item, dict):
+                        ts_ms = int(item.get('epochMillis') or item.get('startTimeGMT') or 0)
+                        rate = item.get('respirationValue') or item.get('value')
+                    else:
+                        continue
+
+                    if rate is None:
+                        continue
+                    rate_f = float(rate)
+                    # Garmin 用 -1/-2 表示无效数据
+                    if rate_f < 4 or rate_f > 60:
+                        continue
+
+                    dt = datetime.fromtimestamp(ts_ms / 1000)
+                    key = f"{dt.hour:02d}:{dt.minute:02d}"
+                    if key not in seen:
+                        seen[key] = {
+                            "time": dt_time(dt.hour, dt.minute),
+                            "value": rate_f,
+                            "epoch_ms": ts_ms,
+                        }
+                except (ValueError, TypeError, OSError):
+                    continue
+
+            if not seen:
+                return 0
+
+            db.query(RespirationSample).filter(
+                RespirationSample.user_id == user_id,
+                RespirationSample.record_date == target_date
+            ).delete()
+
+            objects = [
+                RespirationSample(
+                    user_id=user_id,
+                    record_date=target_date,
+                    sample_time=data["time"],
+                    respiration_rate=data["value"],
+                    epoch_ms=data.get("epoch_ms"),
+                    source="garmin"
+                )
+                for data in sorted(seen.values(), key=lambda x: x.get("epoch_ms", 0))
+            ]
+            db.bulk_save_objects(objects)
+            db.commit()
+            logger.info(f"{prefix} 保存了 {target_date} 的 {len(objects)} 个呼吸采样点")
+            return len(objects)
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步呼吸采样失败: {e}")
+            return 0
+
+    def _sync_hrv_readings(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: date,
+        raw_data: Dict[str, Any]
+    ) -> int:
+        """HRV 时序 → hrv_readings。
+
+        garminconnect.get_hrv_data() 的 hrvReadings 格式:
+        [{"readingTimeGMT": ..., "readingTimeLocal": ..., "hrvValue": int}, ...]
+        """
+        prefix = self._log_prefix()
+        try:
+            if not isinstance(raw_data, dict):
+                return 0
+            hrv_raw = raw_data.get('hrv_raw')
+            if not isinstance(hrv_raw, dict):
+                return 0
+            readings = hrv_raw.get('hrvReadings') or []
+            if not isinstance(readings, list) or not readings:
+                return 0
+
+            from app.models.garmin_timeseries import HrvReading
+            from datetime import time as dt_time
+
+            seen: Dict[str, dict] = {}
+            for item in readings:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    ts_str = item.get('readingTimeLocal') or item.get('readingTimeGMT')
+                    hrv_val = item.get('hrvValue') or item.get('value')
+                    if not ts_str or hrv_val is None:
+                        continue
+                    dt = datetime.fromisoformat(str(ts_str).rstrip('Z').split('.')[0])
+                    key = f"{dt.hour:02d}:{dt.minute:02d}"
+                    if key not in seen:
+                        seen[key] = {
+                            "time": dt_time(dt.hour, dt.minute),
+                            "value": float(hrv_val),
+                            "epoch_ms": int(dt.timestamp() * 1000),
+                            "type": "5min_avg",
+                        }
+                except (ValueError, TypeError, OSError):
+                    continue
+
+            # Also store nightly avg if present (from hrvSummary)
+            summary = hrv_raw.get('hrvSummary') or {}
+            nightly_avg = summary.get('lastNightAvg')
+            nightly_5min_high = summary.get('lastNight5MinHigh')
+            if nightly_avg is not None:
+                # 单独存一条 nightly 类型（用 record_date 午夜作为 reading_time placeholder）
+                pass  # 不重复存，hrvReadings 已够；可选以后加
+
+            if not seen:
+                return 0
+
+            db.query(HrvReading).filter(
+                HrvReading.user_id == user_id,
+                HrvReading.record_date == target_date
+            ).delete()
+
+            objects = [
+                HrvReading(
+                    user_id=user_id,
+                    record_date=target_date,
+                    reading_time=data["time"],
+                    hrv_value=data["value"],
+                    reading_type=data["type"],
+                    epoch_ms=data.get("epoch_ms"),
+                    source="garmin"
+                )
+                for data in sorted(seen.values(), key=lambda x: x.get("epoch_ms", 0))
+            ]
+            db.bulk_save_objects(objects)
+            db.commit()
+            logger.info(f"{prefix} 保存了 {target_date} 的 {len(objects)} 条 HRV 读数")
+            return len(objects)
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步 HRV 读数失败: {e}")
+            return 0
+
+    def _sync_stress_samples(
+        self,
+        db: Session,
+        user_id: int,
+        target_date: date,
+        raw_data: Dict[str, Any]
+    ) -> int:
+        """压力逐分钟采样 → stress_samples。
+
+        garminconnect.get_all_day_stress() 的 stressValuesArray 格式:
+        [[epochMs, stressValue], ...]
+        """
+        prefix = self._log_prefix()
+        try:
+            if not isinstance(raw_data, dict):
+                return 0
+            stress_raw = raw_data.get('stress')
+            if not isinstance(stress_raw, dict):
+                return 0
+            values = stress_raw.get('stressValuesArray') or []
+            if not isinstance(values, list) or not values:
+                return 0
+
+            from app.models.garmin_timeseries import StressSample
+            from datetime import time as dt_time
+
+            seen: Dict[str, dict] = {}
+            for item in values:
+                try:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        ts_ms = int(item[0])
+                        val = int(item[1])
+                    else:
+                        continue
+                    # -1/-2 是 Garmin 的"无数据"标记，仍保留方便后续分析
+                    dt = datetime.fromtimestamp(ts_ms / 1000)
+                    key = f"{dt.hour:02d}:{dt.minute:02d}"
+                    if key not in seen:
+                        seen[key] = {
+                            "time": dt_time(dt.hour, dt.minute),
+                            "value": val,
+                            "epoch_ms": ts_ms,
+                        }
+                except (ValueError, TypeError, OSError):
+                    continue
+
+            if not seen:
+                return 0
+
+            db.query(StressSample).filter(
+                StressSample.user_id == user_id,
+                StressSample.record_date == target_date
+            ).delete()
+
+            objects = [
+                StressSample(
+                    user_id=user_id,
+                    record_date=target_date,
+                    sample_time=data["time"],
+                    stress_value=data["value"],
+                    epoch_ms=data.get("epoch_ms"),
+                    source="garmin"
+                )
+                for data in sorted(seen.values(), key=lambda x: x.get("epoch_ms", 0))
+            ]
+            db.bulk_save_objects(objects)
+            db.commit()
+            logger.info(f"{prefix} 保存了 {target_date} 的 {len(objects)} 条压力读数")
+            return len(objects)
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步压力读数失败: {e}")
+            return 0
+
+    def _sync_devices(self, db: Session, user_id: int) -> int:
+        """同步用户 Garmin 设备（电量/最后同步/佩戴时长）→ garmin_devices。"""
+        prefix = self._log_prefix()
+        try:
+            devices = self.get_devices()
+            if not devices:
+                return 0
+
+            from app.models.garmin_device import GarminDevice
+
+            saved = 0
+            for d in devices:
+                if not isinstance(d, dict):
+                    continue
+                device_id = str(d.get('deviceId') or d.get('unitId') or d.get('productNumber') or '')
+                if not device_id:
+                    continue
+
+                existing = db.query(GarminDevice).filter(
+                    GarminDevice.user_id == user_id,
+                    GarminDevice.device_id == device_id
+                ).first()
+
+                def _parse_ts(s):
+                    if not s:
+                        return None
+                    try:
+                        return datetime.fromisoformat(str(s).rstrip('Z').split('.')[0])
+                    except (ValueError, TypeError):
+                        return None
+
+                fields = dict(
+                    unit_id=str(d.get('unitId')) if d.get('unitId') else None,
+                    product_number=d.get('productNumber'),
+                    model=d.get('displayName') or d.get('model'),
+                    display_name=d.get('displayName'),
+                    image_url=d.get('imageUrl'),
+                    last_sync_time=_parse_ts(d.get('lastSyncTime') or d.get('lastSyncTimestamp')),
+                    last_used_time=_parse_ts(d.get('lastUsedTime') or d.get('lastUsedTimestamp')),
+                    battery_level=d.get('batteryLevel') if isinstance(d.get('batteryLevel'), int) else None,
+                    battery_status=d.get('batteryStatus'),
+                    firmware_version=d.get('firmwareVersion') or d.get('swVersion'),
+                    is_primary=bool(d.get('primaryUsage') or d.get('isPrimary')),
+                    raw_payload=d,
+                )
+
+                if existing:
+                    for k, v in fields.items():
+                        if v is not None:
+                            setattr(existing, k, v)
+                else:
+                    db.add(GarminDevice(user_id=user_id, device_id=device_id, **fields))
+                saved += 1
+
+            db.commit()
+            logger.info(f"{prefix} 同步了 {saved} 个 Garmin 设备")
+            return saved
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步设备失败: {e}")
+            return 0
+
+    def _sync_body_composition(self, db: Session, user_id: int, target_date: date) -> int:
+        """体成分（Garmin Index 秤）→ 写入现有 weight_records。
+
+        Garmin Index 可能一天多次测量，这里用最近一次。
+        """
+        prefix = self._log_prefix()
+        try:
+            bc = self.get_body_composition(target_date)
+            if not isinstance(bc, dict):
+                return 0
+            total_avg = bc.get('totalAverage') or {}
+            if not isinstance(total_avg, dict):
+                return 0
+
+            weight_kg = total_avg.get('weight')
+            if weight_kg is None:
+                return 0
+            weight_kg = float(weight_kg) / 1000.0 if weight_kg > 1000 else float(weight_kg)
+
+            from app.models.weight import WeightRecord
+
+            existing = db.query(WeightRecord).filter(
+                WeightRecord.user_id == user_id,
+                WeightRecord.record_date == target_date,
+            ).first()
+
+            fields = dict(
+                weight=weight_kg,
+                body_fat_percentage=total_avg.get('bodyFat'),
+                muscle_mass_kg=total_avg.get('muscleMass'),
+                bone_mass_kg=total_avg.get('boneMass'),
+                water_percentage=total_avg.get('bodyWater'),
+                visceral_fat=int(total_avg.get('visceralFat')) if total_avg.get('visceralFat') is not None else None,
+                bmi=total_avg.get('bmi'),
+                metabolic_age=int(total_avg.get('metabolicAge')) if total_avg.get('metabolicAge') is not None else None,
+                source='garmin_index',
+            )
+            fields = {k: v for k, v in fields.items() if v is not None}
+
+            if existing:
+                for k, v in fields.items():
+                    setattr(existing, k, v)
+            else:
+                db.add(WeightRecord(user_id=user_id, record_date=target_date, **fields))
+            db.commit()
+            logger.info(f"{prefix} 保存体成分 {target_date}: {weight_kg}kg")
+            return 1
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步体成分失败: {e}")
+            return 0
+
+    def _sync_workout_hr_zones(self, db: Session, workout_id: int, garmin_activity_id: int) -> int:
+        """单次训练的心率区间分布 → workout_hr_zones。"""
+        prefix = self._log_prefix()
+        try:
+            zones = self.get_activity_hr_in_timezones(garmin_activity_id)
+            if not zones:
+                return 0
+
+            from app.models.workout_hr_zone import WorkoutHrZone
+
+            db.query(WorkoutHrZone).filter(WorkoutHrZone.workout_id == workout_id).delete()
+
+            objects = []
+            for idx, z in enumerate(zones):
+                if not isinstance(z, dict):
+                    continue
+                objects.append(WorkoutHrZone(
+                    workout_id=workout_id,
+                    zone_index=z.get('zoneNumber') or (idx + 1),
+                    zone_name=z.get('zoneName') or f"Zone {idx + 1}",
+                    lower_bpm=int(z['zoneLowBoundary']) if z.get('zoneLowBoundary') is not None else None,
+                    upper_bpm=int(z['zoneHighBoundary']) if z.get('zoneHighBoundary') is not None else None,
+                    seconds_in_zone=int(z.get('secsInZone', 0) or 0),
+                ))
+            if not objects:
+                return 0
+            db.bulk_save_objects(objects)
+            db.commit()
+            logger.info(f"{prefix} workout_id={workout_id} 保存 {len(objects)} 个 HR zones")
+            return len(objects)
+
+        except Exception as e:
+            logger.warning(f"{prefix} 同步 workout HR zones 失败 (id={garmin_activity_id}): {e}")
             return 0
 
     def sync_date_range(

@@ -61,8 +61,54 @@ def _meal_slot_now() -> str:
 
 
 def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
-    """从 Twin.genetic 派生营养提示。"""
+    """从 GeneConfig 派生营养提示。有 GeneConfig 时使用结构化参数，否则回退原始解析。"""
     nudges: List[Dict[str, str]] = []
+    gc = twin.gene_config
+
+    if gc and gc.has_data:
+        if gc.methylation != "normal":
+            nudges.append({
+                "gene": "MTHFR",
+                "tip": f"甲基化{gc.methylation}，必须使用{gc.folate_form}（甲基叶酸），而非合成叶酸。深绿叶蔬（菠菜/芦笋/甘蓝）是天然来源。",
+            })
+        if gc.saturated_fat_sensitivity == "high":
+            nudges.append({
+                "gene": "APOE",
+                "tip": f"APOE {gc.apoe_type or '4型'} 携带者，对饱和脂肪高度敏感。用橄榄油/鱼油替代红肉脂肪，LDL目标比常人更严格。",
+            })
+        if gc.obesity_risk == "elevated":
+            nudges.append({
+                "gene": "FTO",
+                "tip": "FTO 风险型：每餐保证25-35g蛋白质，避免单纯高碳水餐，增加膳食纤维延缓血糖波动。",
+            })
+        if not gc.lactose_tolerant:
+            nudges.append({
+                "gene": "LCT",
+                "tip": "乳糖不耐受，选酸奶/硬奶酪/无乳糖奶替代普通牛奶。",
+            })
+        if gc.omega3_conversion == "reduced":
+            nudges.append({
+                "gene": "FADS1",
+                "tip": "Omega-3转化效率低，需直接补充EPA/DHA（深海鱼≥3次/周或鱼油≥1g/d）。",
+            })
+        if gc.alcohol_metabolism == "deficient":
+            nudges.append({
+                "gene": "ALDH2",
+                "tip": "酒精代谢缺陷，饮酒后乙醛蓄积，严格限酒。食管癌风险增高。",
+            })
+        if gc.antioxidant_capacity == "reduced":
+            nudges.append({
+                "gene": "SOD2/GPX1",
+                "tip": "抗氧化能力下降，增加蓝莓/深色蔬菜/绿茶，补充CoQ10/虾青素。",
+            })
+        if gc.caffeine_metabolism == "slow":
+            nudges.append({
+                "gene": "CYP1A2",
+                "tip": "咖啡因慢代谢，下午14:00后避免咖啡/茶，以免影响睡眠质量。",
+            })
+        return nudges
+
+    # 回退：无 GeneConfig 时使用原始变异解析
     all_variants = (
         (twin.genetic.drug_sensitivity or [])
         + (twin.genetic.risk_variants or [])
@@ -95,50 +141,20 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
         )
 
     if _has_risk("MTHFR"):
-        nudges.append({
-            "gene": "MTHFR",
-            "tip": "叶酸代谢效率下降，优先从深绿叶蔬（菠菜/芦笋/甘蓝）+ 甲基叶酸补剂获取，而非合成叶酸。",
-        })
-
+        nudges.append({"gene": "MTHFR", "tip": "叶酸代谢效率下降，优先从深绿叶蔬 + 甲基叶酸补剂获取。"})
     v_apoe = by_gene.get("APOE")
     if v_apoe and "4" in (v_apoe.get("genotype") or ""):
-        nudges.append({
-            "gene": "APOE",
-            "tip": "APOE4 携带者对饱和脂肪敏感，增加橄榄油/鱼油替代红肉脂肪，LDL 目标更严格。",
-        })
-
+        nudges.append({"gene": "APOE", "tip": "APOE4携带者对饱和脂肪敏感，增加橄榄油/鱼油替代红肉脂肪。"})
     if _has_risk("FTO"):
-        nudges.append({
-            "gene": "FTO",
-            "tip": "FTO 风险型对高蛋白餐更敏感：每餐保证 25-35g 蛋白，避免单纯高碳水餐导致血糖波动。",
-        })
-
-    v_lct = by_gene.get("LCT") or by_gene.get("MCM6")
-    if v_lct and ("CC" in (v_lct.get("genotype") or "") or _has_risk("LCT")):
-        nudges.append({
-            "gene": "LCT/MCM6",
-            "tip": "乳糖吸收能力下降，选酸奶/硬奶酪/无乳糖奶替代普通牛奶。",
-        })
-
+        nudges.append({"gene": "FTO", "tip": "FTO风险型，每餐保证25-35g蛋白，避免单纯高碳水餐。"})
     if _has_risk("FADS1"):
-        nudges.append({
-            "gene": "FADS1",
-            "tip": "Omega-3转化效率低→需更多直接EPA/DHA来源(深海鱼≥3次/周或鱼油补剂≥1g/d)。",
-        })
+        nudges.append({"gene": "FADS1", "tip": "Omega-3转化效率低，需更多直接EPA/DHA来源。"})
+    if _has_risk("ALDH2"):
+        nudges.append({"gene": "ALDH2", "tip": "乙醛脱氢酶缺陷，严格限酒。"})
+    if _has_risk("SOD2"):
+        nudges.append({"gene": "SOD2", "tip": "抗氧化能力弱，增加抗氧化食物+CoQ10。"})
 
-    v_aldh2 = by_gene.get("ALDH2")
-    if v_aldh2 and (v_aldh2.get("risk_level") or "").lower() in ("medium", "high"):
-        nudges.append({
-            "gene": "ALDH2",
-            "tip": "乙醛脱氢酶缺陷→饮酒后乙醛蓄积→严格限酒，红脸基因人群食管癌风险增高。",
-        })
-
-    sod2 = by_gene.get("SOD2")
-    if sod2 and "VAL/VAL" in (sod2.get("genotype") or "").upper():
-        nudges.append({
-            "gene": "SOD2",
-            "tip": "抗氧化能力弱→增加富含抗氧化物的食物(蓝莓/深色蔬菜/绿茶)+补充CoQ10。",
-        })
+    return nudges
 
     gstp1 = by_gene.get("GSTP1")
     if gstp1 and (gstp1.get("risk_level") or "").lower() in ("medium", "high"):

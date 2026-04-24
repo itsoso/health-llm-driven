@@ -205,7 +205,7 @@ class GarminCredentialService:
                 "error_count": getattr(credential, 'error_count', 0),
             }
         except Exception as e:
-            logger.error(f"解密Garmin密码失败: {e}")
+            logger.error("解密Garmin密码失败 (%s): %r", type(e).__name__, e, exc_info=True)
             return None
     
     @staticmethod

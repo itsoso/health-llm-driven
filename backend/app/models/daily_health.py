@@ -3,6 +3,7 @@ from sqlalchemy import Column, Integer, BigInteger, Float, String, DateTime, Dat
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
+from app.models.agent_audit_log import JSONColumn
 
 
 class GarminData(Base):
@@ -82,7 +83,23 @@ class GarminData(Base):
     
     # 距离
     distance_meters = Column(Float)  # 总距离（米）
-    
+
+    # Garmin Training Readiness / Status (P1a)
+    training_readiness_score = Column(Integer)  # 0-100
+    training_readiness_level = Column(String)  # poor/low/moderate/high/prime
+    training_readiness_factors = Column(JSONColumn)  # 各因子分解 JSON
+    training_status = Column(String)  # productive/maintaining/detraining/overreaching/peaking/recovery/unproductive
+    training_status_feedback = Column(Text)
+    acute_load = Column(Float)
+    load_ratio = Column(Float)  # ACWR
+
+    # 其他 Garmin 指标 (P1a)
+    endurance_score = Column(Integer)
+    hill_score = Column(Integer)
+    race_predictions = Column(JSONColumn)  # {5k, 10k, half_marathon, marathon} seconds
+    hydration_ml = Column(Integer)
+    vo2max_fitness_age = Column(Integer)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

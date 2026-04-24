@@ -137,9 +137,41 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if s.total_active_count > 0:
         lines.append(f"补剂: 今日 {s.taken_today_count}/{s.total_active_count} 已打卡")
 
-    # ─── 基因（关注药物敏感和风险位点 + 维度基因）
-    g = twin.genetic
-    if g.has_profile and g.total_variants > 0:
+    # ─── 基因配置（结构化摘要）
+    if twin.gene_config and twin.gene_config.has_data:
+        gc = twin.gene_config
+        if gc.summary_lines:
+            lines.append("基因配置: " + "; ".join(gc.summary_lines[:8]))
+        config_parts: List[str] = []
+        if gc.methylation != "normal":
+            config_parts.append(f"甲基化={gc.methylation}")
+        if gc.saturated_fat_sensitivity == "high":
+            config_parts.append("饱和脂肪敏感")
+        if gc.omega3_conversion == "reduced":
+            config_parts.append("Omega3转化低")
+        if gc.obesity_risk == "elevated":
+            config_parts.append("肥胖风险↑")
+        if gc.muscle_type != "mixed":
+            config_parts.append(f"肌纤维={gc.muscle_type}")
+        if gc.inflammation_tendency != "normal":
+            config_parts.append(f"炎症={gc.inflammation_tendency}")
+        if gc.antioxidant_capacity == "reduced":
+            config_parts.append("抗氧化↓")
+        if gc.caffeine_metabolism == "slow":
+            config_parts.append("咖啡因慢代谢")
+        if gc.alcohol_metabolism == "deficient":
+            config_parts.append("酒精代谢缺陷")
+        if gc.stress_type != "mixed":
+            config_parts.append(f"心理={gc.stress_type}")
+        if gc.drug_metabolism:
+            dm_parts = [f"{k}={v}" for k, v in gc.drug_metabolism.items() if v != "normal"]
+            if dm_parts:
+                config_parts.append(f"药物代谢: {','.join(dm_parts)}")
+        if config_parts:
+            lines.append("基因参数: " + ", ".join(config_parts))
+    elif twin.genetic.has_profile and twin.genetic.total_variants > 0:
+        # 回退：无 GeneConfig 时仍输出原始变异
+        g = twin.genetic
         gene_lines: List[str] = []
         for v in g.drug_sensitivity[:max_genes]:
             gene_lines.append(f"{v.get('gene_name','?')} {v.get('genotype','')}".strip())
@@ -151,17 +183,6 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         ]
         if risk_lines:
             lines.append(f"基因风险: {', '.join(risk_lines)}")
-
-        dim_map = [
-            ("cognition", "认知基因"), ("personality", "个性基因"),
-            ("exercise", "运动基因"), ("recovery", "恢复基因"),
-            ("sleep", "睡眠基因"), ("nutrition", "营养基因"),
-        ]
-        for attr, label in dim_map:
-            pool = getattr(g, f"{attr}_variants", None) or []
-            items = [f"{v.get('gene_name','?')} {v.get('result_label','')}" for v in pool[:4]]
-            if items:
-                lines.append(f"{label}: {', '.join(items)}")
 
     # ─── 环境
     e = twin.environment

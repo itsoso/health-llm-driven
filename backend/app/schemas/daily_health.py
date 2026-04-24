@@ -1,7 +1,7 @@
 """日常健康记录Schema"""
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import date, datetime, time
-from typing import Optional
+from typing import Optional, Any, Dict
 import math
 
 
@@ -51,6 +51,22 @@ class GarminDataCreate(BaseModel):
     floors_climbed: Optional[int] = None
     floors_goal: Optional[int] = None
     distance_meters: Optional[float] = None
+
+    # P1a: Training Readiness / Status
+    training_readiness_score: Optional[int] = None
+    training_readiness_level: Optional[str] = None
+    training_readiness_factors: Optional[Dict[str, Any]] = None
+    training_status: Optional[str] = None
+    training_status_feedback: Optional[str] = None
+    acute_load: Optional[float] = None
+    load_ratio: Optional[float] = None
+
+    # P1a: 其他指标
+    endurance_score: Optional[int] = None
+    hill_score: Optional[int] = None
+    race_predictions: Optional[Dict[str, Any]] = None
+    hydration_ml: Optional[int] = None
+    vo2max_fitness_age: Optional[int] = None
 
 
 class _CoerceIntMixin:
@@ -111,6 +127,22 @@ class GarminDataResponse(_CoerceIntMixin, BaseModel):
     floors_climbed: Optional[int] = None
     floors_goal: Optional[int] = None
     distance_meters: Optional[float] = None
+
+    # P1a: Training Readiness / Status
+    training_readiness_score: Optional[int] = None
+    training_readiness_level: Optional[str] = None
+    training_readiness_factors: Optional[Dict[str, Any]] = None
+    training_status: Optional[str] = None
+    training_status_feedback: Optional[str] = None
+    acute_load: Optional[float] = None
+    load_ratio: Optional[float] = None
+
+    # P1a: 其他指标
+    endurance_score: Optional[int] = None
+    hill_score: Optional[int] = None
+    race_predictions: Optional[Dict[str, Any]] = None
+    hydration_ml: Optional[int] = None
+    vo2max_fitness_age: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

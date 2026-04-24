@@ -768,6 +768,65 @@ def regenerate_briefing_for_user(user_id: int):
     except Exception as e:
         logger.error(f"[简报重生成] 用户 {user_id} 失败: {e}")
 
+    # 同步后实时安全评估
+    evaluate_and_push_safety.delay(user_id)
+
+
+@celery_app.task(time_limit=60, name="app.tasks.notifications.evaluate_and_push_safety")
+def evaluate_and_push_safety(user_id: int):
+    """
+    实时 Safety Guardian 评估：构建 Twin → 运行 47 条规则 → 推送 HIGH/CRITICAL 告警。
+    在 Garmin 同步后、数据变更后调用，确保异常第一时间触达用户。
+    """
+    try:
+        from app.agents.safety_guardian import evaluate_safety
+        from app.twin.builder import build_twin
+
+        with SessionLocal() as db:
+            twin = build_twin(db, user_id, use_cache=False)
+            report = evaluate_safety(twin)
+
+            if report.critical_count == 0 and report.high_count == 0:
+                return
+
+            logger.warning(
+                f"[实时安全评估] 用户 {user_id}: "
+                f"{report.critical_count} CRITICAL / {report.high_count} HIGH"
+            )
+
+            # 写入审计日志
+            try:
+                from app.agents.audit import log_safety_evaluation
+                log_safety_evaluation(
+                    db=db,
+                    user_id=user_id,
+                    alerts_count=len(report.alerts),
+                    result_summary=f"realtime: {report.critical_count}C/{report.high_count}H",
+                    twin_build_ms=report.twin_build_ms,
+                    evaluate_ms=report.evaluate_ms,
+                    twin_sources=twin.meta.data_sources,
+                )
+            except Exception:
+                pass
+
+            # 推送告警
+            push_service = PushService(db)
+            for alert in report.alerts:
+                if alert.severity.value >= 3:
+                    try:
+                        run_async(push_service.send_notification(
+                            user_id=user_id,
+                            notification_type="health_alert",
+                            title=f"⚠️ {alert.title}",
+                            content=alert.message[:120],
+                            data={"screen": "alerts", "rule_id": alert.rule_id},
+                        ))
+                    except Exception as e:
+                        logger.warning(f"[实时安全评估] 推送失败 user={user_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"[实时安全评估] 用户 {user_id} 评估失败: {e}")
+
 
 @celery_app.task(time_limit=600)
 def generate_daily_briefing_message():

@@ -227,7 +227,7 @@ async def sync_my_garmin_data(
     try:
         password = garmin_credential_service.decrypt_password(credential.encrypted_password)
     except Exception as e:
-        logger.error(f"解密用户 {user_id} 的 Garmin 凭据失败: {e}")
+        logger.error("解密用户 %s 的 Garmin 凭据失败 (%s): %r", user_id, type(e).__name__, e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="凭据解密失败，请重新绑定账号"

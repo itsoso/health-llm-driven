@@ -129,6 +129,13 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         except Exception:
             pass
 
+    # 构建基因配置文件
+    try:
+        from app.twin.gene_config import build_gene_config
+        twin.gene_config = build_gene_config(twin)
+    except Exception:
+        pass
+
     return twin
 
 
