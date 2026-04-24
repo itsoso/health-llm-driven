@@ -52,6 +52,48 @@ class TestParseTrainingReadiness:
         assert result.training_status is None
 
 
+class TestParseTrainingStatus:
+    """Garmin trainingStatus 是枚举整数（如 8 = productive），trainingStatusKey 才是字符串。
+    Regression: 实际线上样本把整数直接塞进 GarminData.training_status 触发 Pydantic 校验失败。"""
+
+    def test_prefers_training_status_key(self, service):
+        raw = {
+            "training_status": {
+                "mostRecentTrainingStatus": {
+                    "latestTrainingStatusData": {
+                        "3434423431": {
+                            "trainingStatus": 8,
+                            "trainingStatusKey": "productive",
+                            "trainingStatusFeedbackPhrase": "keep_going",
+                        }
+                    }
+                }
+            }
+        }
+        result = service.parse_to_garmin_data_create(raw, user_id=1, record_date=date(2026, 4, 23))
+        assert result.training_status == "productive"
+        assert result.training_status_feedback == "keep_going"
+
+    def test_falls_back_to_str_when_no_key(self, service):
+        raw = {
+            "training_status": {
+                "mostRecentTrainingStatus": {
+                    "latestTrainingStatusData": {
+                        "device-1": {"trainingStatus": 8}
+                    }
+                }
+            }
+        }
+        result = service.parse_to_garmin_data_create(raw, user_id=1, record_date=date(2026, 4, 23))
+        # 没有 trainingStatusKey 时转成字符串兜底
+        assert result.training_status == "8"
+
+    def test_top_level_int_is_coerced(self, service):
+        raw = {"training_status": {"trainingStatus": 5}}
+        result = service.parse_to_garmin_data_create(raw, user_id=1, record_date=date(2026, 4, 23))
+        assert result.training_status == "5"
+
+
 class TestParseEnduranceHillHydration:
     def test_endurance_score(self, service):
         raw = {"endurance_score": {"overallScore": 7900, "classification": "trained"}}

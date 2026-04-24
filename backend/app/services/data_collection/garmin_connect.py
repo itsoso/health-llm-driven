@@ -2504,13 +2504,19 @@ class GarminConnectService:
                     # latest_dto 是 {device_id: {...}} 的字典，取第一个
                     first_entry = next(iter(latest_dto.values()), {}) if isinstance(latest_dto, dict) else {}
                     if isinstance(first_entry, dict):
-                        training_status_val = first_entry.get('trainingStatus') or first_entry.get('trainingStatusKey')
+                        # trainingStatusKey 是字符串 ('productive' 等)，trainingStatus 是整数枚举
+                        training_status_val = (
+                            first_entry.get('trainingStatusKey')
+                            or (str(first_entry['trainingStatus']) if first_entry.get('trainingStatus') is not None else None)
+                        )
                         training_status_feedback = first_entry.get('trainingStatusFeedbackPhrase')
                         acute_load_val = safe_float(first_entry.get('acuteTrainingLoadDTO', {}).get('acwrLowerBound') if isinstance(first_entry.get('acuteTrainingLoadDTO'), dict) else first_entry.get('acuteLoad'))
                         load_ratio_val = safe_float(first_entry.get('acwrStatus') if isinstance(first_entry.get('acwrStatus'), (int, float)) else None)
-            # fallback
+            # fallback（顶层也可能有）
             if training_status_val is None:
-                training_status_val = ts.get('trainingStatus') or ts.get('trainingStatusKey')
+                fallback = ts.get('trainingStatusKey') or ts.get('trainingStatus')
+                if fallback is not None:
+                    training_status_val = str(fallback) if not isinstance(fallback, str) else fallback
             if acute_load_val is None:
                 acute_load_val = safe_float(ts.get('acuteLoad'))
             if load_ratio_val is None:
