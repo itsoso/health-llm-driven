@@ -91,6 +91,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("goals",                 lambda s: _fill_goals(s, user_id, twin, sources)),
         ("cgm",                   lambda s: _fill_cgm(s, user_id, twin, sources)),
         ("spo2_overnight",        lambda s: _fill_spo2_overnight(s, user_id, twin, sources)),
+        ("hrv_nightly",           lambda s: _fill_hrv_nightly(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -550,6 +551,51 @@ def _fill_spo2_overnight(db: Session, user_id: int, twin: HealthTwin, sources: S
 
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[twin] spo2_overnight 失败: {e}")
+
+
+def _fill_hrv_nightly(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """从 hrv_readings 表聚合最近 7-14 夜的 HRV 平均 → twin.physiological.hrv_nightly_series。
+
+    P2: RecoveryCoach 用这个做真 baseline，比单点 hrv_7d_avg 精确。
+    """
+    try:
+        from app.models.garmin_timeseries import HrvReading
+        from sqlalchemy import func as sa_func
+        from datetime import date as _date, timedelta as _td
+
+        # 最近 14 天的夜间平均
+        cutoff = _date.today() - _td(days=14)
+        rows = (
+            db.query(
+                HrvReading.record_date,
+                sa_func.avg(HrvReading.hrv_value).label("avg_hrv"),
+                sa_func.count(HrvReading.id).label("cnt"),
+            )
+            .filter(
+                HrvReading.user_id == user_id,
+                HrvReading.record_date >= cutoff,
+            )
+            .group_by(HrvReading.record_date)
+            .order_by(HrvReading.record_date)
+            .all()
+        )
+        if not rows:
+            return
+
+        series = [
+            {
+                "date": r.record_date.isoformat(),
+                "hrv_avg": round(float(r.avg_hrv), 1),
+                "count": int(r.cnt),
+            }
+            for r in rows
+            if r.avg_hrv is not None
+        ]
+        twin.physiological.hrv_nightly_series = series
+        if sources is not None:
+            sources.add("hrv_readings_timeseries")
+    except Exception as e:
+        logger.warning(f"[twin] hrv_nightly 失败: {e}")
 
 
 # ─────────────────────────── 11. 直接收集器 ───────────────────────────

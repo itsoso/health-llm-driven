@@ -130,6 +130,9 @@ class Settings(BaseSettings):
     # 设备凭证加密密钥（用于统一设备凭证加密）
     device_encryption_key: Optional[str] = None
 
+    # P2 RecoveryCoach: 用 hrv_readings 时序做 baseline (vs 旧的 hrv_latest/hrv_7d_avg)
+    recovery_hrv_use_timeseries: bool = True
+
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
 

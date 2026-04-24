@@ -24,6 +24,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.config import settings
 from app.orchestrator.schema import Intent, SpecialistFinding
 from app.twin.schema import HealthTwin
 
@@ -65,6 +66,48 @@ def _clip(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
 
+def _hrv_component_from_series(nightly: List[Dict[str, Any]]) -> Optional[float]:
+    """基于夜间 HRV 时序计算恢复得分（0..1）。
+
+    规则：用最近一夜 HRV 与前 7 夜中位数的 z-score 做归一化。
+    - z ≥ +1 (高于基线 1σ)      → 1.0
+    - z = 0 (中位)               → 0.85
+    - z = -1 (低于基线 1σ)       → 0.5
+    - z ≤ -2 (远低于基线)        → 0.2
+
+    至少需要 4 夜数据才可靠。
+    """
+    if not nightly or len(nightly) < 4:
+        return None
+    # 按日期升序，取最后一条做"今夜"，前面做 baseline
+    sorted_ns = sorted(nightly, key=lambda x: x.get("date", ""))
+    tonight = sorted_ns[-1].get("hrv_avg")
+    if tonight is None:
+        return None
+    baseline_rows = sorted_ns[-8:-1] if len(sorted_ns) >= 5 else sorted_ns[:-1]
+    baseline_vals = [r.get("hrv_avg") for r in baseline_rows if r.get("hrv_avg") is not None]
+    if len(baseline_vals) < 3:
+        return None
+
+    # 中位数 + MAD (绝对偏差中位数) 代替 stdev（对离群值更鲁棒）
+    baseline_vals_sorted = sorted(baseline_vals)
+    median = baseline_vals_sorted[len(baseline_vals_sorted) // 2]
+    mad = max(
+        1e-3,
+        sorted([abs(v - median) for v in baseline_vals])[len(baseline_vals) // 2],
+    )
+    z = (tonight - median) / (mad * 1.4826)  # 1.4826 = MAD → σ 校正因子
+
+    if z >= 1:
+        return 1.0
+    if z <= -2:
+        return 0.2
+    # 线性插值：z=-2 → 0.2, z=0 → 0.85, z=+1 → 1.0
+    if z >= 0:
+        return 0.85 + (z / 1.0) * 0.15
+    return 0.85 + (z / 2.0) * 0.65
+
+
 def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
     """对 Twin 计算 readiness 分数与分解。"""
     p = twin.physiological
@@ -72,18 +115,24 @@ def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
 
     components: Dict[str, Optional[float]] = {}
 
-    # HRV: 今日 vs 7d 均值（±30% 归一化到 0.3..1.0）
-    hrv_latest = _safe(p.hrv_latest)
-    hrv_baseline = _safe(p.hrv_7d_avg)
-    if hrv_latest is not None and hrv_baseline and hrv_baseline > 0:
-        ratio = hrv_latest / hrv_baseline
-        # ratio 1.0 → 0.85; 1.1 → 1.0; 0.85 → 0.5; 0.7 → 0.3
-        components["hrv"] = _clip(0.85 + (ratio - 1.0) * 1.5)
-    elif hrv_latest is not None:
-        # 没有 baseline，做绝对值判断（>60ms 优秀）
-        components["hrv"] = _clip((hrv_latest - 20) / 60)
+    # HRV — 优先用真时序（P2），fallback 到 hrv_latest/hrv_7d_avg
+    use_timeseries = getattr(settings, "recovery_hrv_use_timeseries", True)
+    nightly_series = getattr(p, "hrv_nightly_series", None) or []
+    ts_score = _hrv_component_from_series(nightly_series) if use_timeseries else None
+
+    if ts_score is not None:
+        components["hrv"] = ts_score
     else:
-        components["hrv"] = None
+        # 回退到旧逻辑：日均比值
+        hrv_latest = _safe(p.hrv_latest)
+        hrv_baseline = _safe(p.hrv_7d_avg)
+        if hrv_latest is not None and hrv_baseline and hrv_baseline > 0:
+            ratio = hrv_latest / hrv_baseline
+            components["hrv"] = _clip(0.85 + (ratio - 1.0) * 1.5)
+        elif hrv_latest is not None:
+            components["hrv"] = _clip((hrv_latest - 20) / 60)
+        else:
+            components["hrv"] = None
 
     # 睡眠质量
     sleep_score = _safe(p.sleep_score_latest)

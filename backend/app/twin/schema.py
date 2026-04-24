@@ -39,6 +39,11 @@ class PhysiologicalState(BaseModel):
     hrv_status: Optional[str] = None  # 偏低 / 中等 / 良好
     resting_hr: Optional[int] = None
 
+    # HRV 逐夜时序（P2: RecoveryCoach 用这个算真 baseline/trend）
+    # 最近 N 夜的夜间平均 HRV（从 hrv_readings 表聚合）
+    # 元素: {"date": "2026-04-23", "hrv_avg": 48.2, "count": 92}
+    hrv_nightly_series: List[Dict[str, Any]] = Field(default_factory=list)
+
     # 睡眠
     sleep_score_latest: Optional[int] = None
     sleep_duration_h_latest: Optional[float] = None
