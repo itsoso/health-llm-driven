@@ -252,8 +252,31 @@ def analyze_night(db: Session, user_id: int, night_date: date) -> NightAnalysis:
     spo2_values = [s for _, s in samples]
     min_spo2 = min(spo2_values)
     avg_spo2 = sum(spo2_values) / len(spo2_values)
-    total_minutes = int((samples[-1][0] - samples[0][0]).total_seconds() / 60)
-    sleep_hours = max(total_minutes / 60.0, 0.01)
+
+    # 真实睡眠时长优先从 GarminData.total_sleep_duration 拿（临床口径）
+    # fallback 用样本跨度
+    from app.models.daily_health import GarminData
+    gd = db.query(GarminData).filter(
+        GarminData.user_id == user_id,
+        GarminData.record_date == night_date,
+    ).first()
+    if gd and gd.total_sleep_duration and gd.total_sleep_duration >= 60:
+        total_minutes = int(gd.total_sleep_duration)
+    else:
+        total_minutes = int((samples[-1][0] - samples[0][0]).total_seconds() / 60)
+
+    # 少于 1 小时的"夜"不算数（数据不完整 → ODI 没意义）
+    if total_minutes < 60:
+        return NightAnalysis(
+            night_date=night_date,
+            odi=0.0,
+            events_count=0,
+            min_spo2=min_spo2,
+            avg_spo2=round(avg_spo2, 1),
+            total_sleep_minutes=total_minutes,
+            events=[],
+        )
+    sleep_hours = total_minutes / 60.0
 
     raw_events = _detect_events(samples)
 
