@@ -18,6 +18,7 @@ from app.models.garmin_timeseries import (
 )
 from app.models.workout_hr_zone import WorkoutHrZone
 from app.models.garmin_device import GarminDevice
+from app.models.nocturnal_spo2_event import NocturnalSpO2Event
 from app.models.health_checkin import HealthCheckin
 from app.models.goal import Goal, GoalProgress
 from app.models.daily_recommendation import DailyRecommendation
