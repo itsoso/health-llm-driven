@@ -97,12 +97,14 @@ export default function SleepScreen() {
             {spo2Data && spo2Data.timeline.length > 0 && (
               <HealthCard title="夜间血氧" icon="pulse-outline" iconColor="#007AFF" iconBg="#E6F0FF"
                 rightAccessory={
-                  spo2Data.summary.odi != null && spo2Data.summary.odi >= 5 ? (
-                    <View style={styles.osaBadge}>
-                      <Ionicons name="warning" size={10} color="#FF9F0A" />
-                      <Text style={txt.osaBadgeText}>ODI {spo2Data.summary.odi}</Text>
-                    </View>
-                  ) : null
+                  <TouchableOpacity
+                    onPress={() => router.push('/sleep-spo2-analysis')}
+                    style={styles.osaBadge}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="analytics-outline" size={12} color={colors.brand} />
+                    <Text style={[txt.osaBadgeText, { color: colors.brand }]}>根因分析</Text>
+                  </TouchableOpacity>
                 }>
                 <SpO2NightChart data={spo2Data.timeline} sleepStart={spo2Data.sleep_start} sleepEnd={spo2Data.sleep_end} />
                 <View style={styles.spo2Metrics}>

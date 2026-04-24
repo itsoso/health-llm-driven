@@ -91,6 +91,7 @@ function AppContent() {
         <Stack.Screen name="consultations" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="consultations/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="sleep" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="sleep-spo2-analysis" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="workout-list" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="workout-detail" options={{ headerShown: false }} />
         <Stack.Screen name="diet" options={{ headerShown: false, presentation: 'modal' }} />
