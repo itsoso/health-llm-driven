@@ -25,6 +25,9 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 
+# OpenAPI 中间产物 (类型生成的 input). api.generated.ts 是 commit 的, openapi.json 不是.
+openapi.json
+
 # iOS - Capacitor
 ios/App/Pods/
 ios/App/App/public/
