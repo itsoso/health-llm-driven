@@ -159,6 +159,47 @@ def rhr_bradycardia(twin: HealthTwin) -> Optional[Alert]:
 
 
 @register
+def spo2_min_nocturnal_severe(twin: HealthTwin) -> Optional[Alert]:
+    """夜间最低 SpO2 < 88% — 比 avg 更能揭示 OSA/严重低氧发作。
+
+    临床上 avg 可能正常但 min 偏低（部分呼吸暂停/REM 期低氧），
+    靠 avg 规则漏过。此规则专看夜间瞬时最低。
+    """
+    min_spo2 = twin.physiological.spo2_min_overnight
+    if min_spo2 is None:
+        return None
+
+    if min_spo2 < 80:
+        severity = Severity.CRITICAL
+        tier = "严重低氧（<80%）"
+    elif min_spo2 < 85:
+        severity = Severity.CRITICAL
+        tier = "明显低氧（<85%）"
+    elif min_spo2 < 88:
+        severity = Severity.HIGH
+        tier = "低氧关注（<88%）"
+    else:
+        return None
+
+    return Alert(
+        rule_id="vitals.spo2_min_nocturnal_severe",
+        category="vitals",
+        severity=severity,
+        title="夜间血氧过低",
+        message=(
+            f"昨夜最低 SpO2 {min_spo2}% — {tier}。"
+            "持续夜间低氧与心血管事件、认知下降、代谢紊乱相关，常见于阻塞性睡眠呼吸暂停。"
+        ),
+        action=(
+            "1-2 周内就诊呼吸/睡眠中心，做多导睡眠图（PSG）或家用监测；"
+            "过渡期：侧卧、抬高床头 30°、睡前使用异丙托溴铵（遵医嘱）、避免饮酒。"
+        ),
+        data_citation={"spo2_min_overnight": min_spo2},
+        requires_medical_attention=severity == Severity.CRITICAL,
+    )
+
+
+@register
 def spo2_severe_hypoxia(twin: HealthTwin) -> Optional[Alert]:
     """血氧 <88% 严重低氧。"""
     spo2 = twin.physiological.spo2_avg

@@ -112,6 +112,39 @@ class TestVitalsRules:
         rule_ids = _rule_ids(alerts)
         assert "vitals.spo2_severe_hypoxia" in rule_ids
 
+    def test_spo2_min_nocturnal_severe_critical(self):
+        """min < 80% → CRITICAL，独立于 avg。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=92.0, spo2_min_overnight=74)
+        alerts = evaluate_safety(twin).alerts
+        found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.CRITICAL
+        assert found.requires_medical_attention is True
+
+    def test_spo2_min_nocturnal_high(self):
+        """85 <= min < 88 → HIGH。"""
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=94.0, spo2_min_overnight=86)
+        alerts = evaluate_safety(twin).alerts
+        found = next((a for a in alerts if a.rule_id == "vitals.spo2_min_nocturnal_severe"), None)
+        assert found is not None
+        assert found.severity == Severity.HIGH
+
+    def test_spo2_min_above_threshold_no_alert(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=95.0, spo2_min_overnight=90)
+        alerts = evaluate_safety(twin).alerts
+        rule_ids = _rule_ids(alerts)
+        assert "vitals.spo2_min_nocturnal_severe" not in rule_ids
+
+    def test_spo2_min_none_no_alert(self):
+        twin = _empty_twin()
+        twin.physiological = PhysiologicalState(spo2_avg=95.0, spo2_min_overnight=None)
+        alerts = evaluate_safety(twin).alerts
+        rule_ids = _rule_ids(alerts)
+        assert "vitals.spo2_min_nocturnal_severe" not in rule_ids
+
     def test_spo2_osa_screening_odi_above_5(self):
         twin = _empty_twin()
         twin.physiological = PhysiologicalState(spo2_odi=8.5)
