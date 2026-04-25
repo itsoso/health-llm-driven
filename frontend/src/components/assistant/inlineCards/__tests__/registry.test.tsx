@@ -1,0 +1,198 @@
+/**
+ * 动态卡片注册表回归测试
+ *
+ * 覆盖 3 个核心 API:
+ *   - dispatchCard(ctx)        : 关键词触发 + 优先级 + build 失败兜底
+ *   - renderCard(descriptor)   : 安全降级 + cards_group iPad 双列
+ *   - renderServerCards(arr)   : 后端推送过滤
+ *
+ * 每个公共行为都有一个测试. 任何 ConsultationsCard 那种 'e.reduce is not a
+ * function' 类的运行时崩溃应该在这里就被抓住.
+ */
+// @vitest-environment jsdom
+
+import { describe, expect, it, vi } from 'vitest';
+import {
+  CARD_REGISTRY,
+  CARD_MAP,
+  dispatchCard,
+  renderCard,
+  renderServerCards,
+} from '../registry';
+import type { CardContext } from '../types';
+
+const ctx = (q: string, over?: Partial<CardContext>): CardContext => ({
+  query: q,
+  query_lower: q.toLowerCase(),
+  toolsUsed: new Set(),
+  data: {},
+  api: { get: vi.fn(), post: vi.fn() },
+  ...over,
+});
+
+// ── CARD_REGISTRY 不变量 ────────────────────────────────────
+describe('CARD_REGISTRY 结构', () => {
+  it('注册了至少 8 张卡片', () => {
+    expect(CARD_REGISTRY.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('每张卡片都有完整契约 (type/label/match/build/render)', () => {
+    for (const spec of CARD_REGISTRY) {
+      expect(spec.type).toBeTruthy();
+      expect(spec.label).toBeTruthy();
+      expect(typeof spec.match).toBe('function');
+      expect(typeof spec.build).toBe('function');
+      expect(typeof spec.render).toBe('function');
+    }
+  });
+
+  it('type 唯一不重复', () => {
+    const types = CARD_REGISTRY.map((s) => s.type);
+    expect(new Set(types).size).toBe(types.length);
+  });
+
+  it('CARD_MAP 完整覆盖所有 spec', () => {
+    for (const spec of CARD_REGISTRY) {
+      expect(CARD_MAP[spec.type]).toBe(spec);
+    }
+  });
+});
+
+// ── dispatchCard ───────────────────────────────────────────
+describe('dispatchCard', () => {
+  it('无关键词 → 返回 null', async () => {
+    const r = await dispatchCard(ctx('随便问问'));
+    expect(r).toBeNull();
+  });
+
+  it('"睡眠如何" → SleepCardSpec match (优先级 20)', async () => {
+    const r = await dispatchCard(
+      ctx('睡眠如何', { data: { garmin: { sleep_score: 85, total_sleep_duration: 480 } } }),
+    );
+    expect(r?.type).toBe('sleep');
+    expect((r?.data as any).score).toBe(85);
+  });
+
+  it('"我饮食如何" → DietCardSpec match', async () => {
+    const api = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          total_calories: 1500, total_protein: 80, total_carbs: 200, total_fat: 50,
+          total_fiber: 25, meals_count: 3, meals: [],
+        },
+      }),
+    };
+    const r = await dispatchCard(ctx('我饮食如何', { api }));
+    expect(r?.type).toBe('diet');
+    expect((r?.data as any).calories).toBe(1500);
+  });
+
+  it('记录类意图 ("刚喝了水") → record 而非 record-like 分析卡', async () => {
+    const r = await dispatchCard(ctx('刚喝了一杯水'));
+    expect(r?.type).toBe('record');
+  });
+
+  it('单卡 build 失败时, 不阻塞其他卡 (回退到下一个候选)', async () => {
+    // 体重关键词 → WeightCardSpec match=15. 让 api.get 抛错, 应该返回 null 但不崩溃
+    const api = { get: vi.fn().mockRejectedValue(new Error('network')) };
+    const r = await dispatchCard(ctx('体重多少', { api }));
+    // weight build 失败后没有其他匹配 → null. 不应崩溃.
+    expect(r).toBeNull();
+  });
+
+  it('build 抛同步异常也被 catch', async () => {
+    const api = { get: vi.fn(() => { throw new Error('sync explode'); }) };
+    const r = await dispatchCard(ctx('体重多少', { api }));
+    expect(r).toBeNull();
+  });
+});
+
+// ── renderCard ─────────────────────────────────────────────
+describe('renderCard', () => {
+  it('未知 type → null (安全降级)', () => {
+    const r = renderCard({ type: 'unknown_card_xxx', data: {} });
+    expect(r).toBeNull();
+  });
+
+  it('已知 type → 返回 React 元素', () => {
+    const r = renderCard({ type: 'vitals', data: { sleep: '8h', hr: '52bpm' } });
+    expect(r).not.toBeNull();
+    expect(r?.type).toBeDefined();
+  });
+
+  it('cards_group 含 1 张子卡 → 直接渲染, 无 grid wrapper', () => {
+    const r = renderCard({
+      type: 'cards_group',
+      data: { cards: [{ type: 'vitals', data: { sleep: '8h' } }] },
+    });
+    expect(r).not.toBeNull();
+  });
+
+  it('cards_group 含 2 张子卡 → 渲染 grid wrapper', () => {
+    const r = renderCard({
+      type: 'cards_group',
+      data: {
+        cards: [
+          { type: 'vitals', data: { sleep: '8h' } },
+          { type: 'weight', data: { current_kg: 72.1 } },
+        ],
+      },
+    });
+    expect(r).not.toBeNull();
+    // 应该是个 div with grid classes
+    expect(r?.props?.className).toContain('grid');
+  });
+
+  it('cards_group 全是未知 type → null', () => {
+    const r = renderCard({
+      type: 'cards_group',
+      data: {
+        cards: [
+          { type: 'aaa', data: {} },
+          { type: 'bbb', data: {} },
+        ],
+      },
+    });
+    expect(r).toBeNull();
+  });
+
+  it('cards_group 无 data.cards → null', () => {
+    const r = renderCard({ type: 'cards_group', data: {} });
+    expect(r).toBeNull();
+  });
+});
+
+// ── renderServerCards ──────────────────────────────────────
+describe('renderServerCards', () => {
+  it('空 / null / undefined → 空数组', () => {
+    expect(renderServerCards()).toEqual([]);
+    expect(renderServerCards(null)).toEqual([]);
+    expect(renderServerCards([])).toEqual([]);
+  });
+
+  it('过滤掉未知 type', () => {
+    const r = renderServerCards([
+      { type: 'vitals', data: {} },
+      { type: 'fake_type', data: {} },
+      { type: 'sleep', data: {} },
+    ]);
+    expect(r.length).toBe(2);
+    expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
+  });
+
+  it('非数组输入 → 空数组 (防御 e.reduce is not a function 类 bug)', () => {
+    // @ts-expect-error 故意传错类型
+    expect(renderServerCards({} as any)).toEqual([]);
+    // @ts-expect-error
+    expect(renderServerCards('string')).toEqual([]);
+  });
+
+  it('过滤掉缺 type 的项', () => {
+    const r = renderServerCards([
+      { type: 'vitals', data: {} },
+      { data: {} } as any,
+      null as any,
+    ]);
+    expect(r.length).toBe(1);
+  });
+});

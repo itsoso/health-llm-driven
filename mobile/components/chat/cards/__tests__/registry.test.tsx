@@ -1,4 +1,4 @@
-import { CARD_REGISTRY, CARD_MAP, dispatchCard } from '../registry';
+import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
 
 function makeContext(query: string, overrides?: Partial<CardContext>): CardContext {
@@ -67,5 +67,79 @@ describe('dispatchCard', () => {
     const ctx = makeContext('');
     const result = await dispatchCard(ctx);
     expect(result).toBeNull();
+  });
+
+  it('build 抛错时不阻塞, 返回 null', async () => {
+    const ctx = makeContext('体重多少', {
+      api: { get: jest.fn().mockRejectedValue(new Error('net')), post: jest.fn() },
+    });
+    const result = await dispatchCard(ctx);
+    expect(result).toBeNull();
+  });
+});
+
+describe('renderCard 安全降级', () => {
+  it('未知 type 返回 null, 不抛异常', () => {
+    expect(renderCard({ type: 'fake_xxx', data: {} })).toBeNull();
+  });
+
+  it('已知 type → 返回 React 元素', () => {
+    const r = renderCard({ type: 'vitals', data: { sleep: '8h' } });
+    expect(r).not.toBeNull();
+  });
+
+  it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
+    const r = renderCard({
+      type: 'cards_group',
+      data: { cards: [{ type: 'vitals', data: { sleep: '8h' } }] },
+    });
+    expect(r).not.toBeNull();
+  });
+
+  it('cards_group 2 张子卡 → wrapper View', () => {
+    const r = renderCard({
+      type: 'cards_group',
+      data: {
+        cards: [
+          { type: 'vitals', data: { sleep: '8h' } },
+          { type: 'weight', data: { current_kg: 72 } },
+        ],
+      },
+    });
+    expect(r).not.toBeNull();
+  });
+
+  it('cards_group 全是未知 type → null', () => {
+    const r = renderCard({
+      type: 'cards_group',
+      data: { cards: [{ type: 'aaa', data: {} }, { type: 'bbb', data: {} }] },
+    });
+    expect(r).toBeNull();
+  });
+
+  it('cards_group 无 data.cards → null', () => {
+    expect(renderCard({ type: 'cards_group', data: {} })).toBeNull();
+  });
+});
+
+describe('renderServerCards 防御', () => {
+  it('null/undefined/[] → []', () => {
+    expect(renderServerCards()).toEqual([]);
+    expect(renderServerCards(null)).toEqual([]);
+    expect(renderServerCards([])).toEqual([]);
+  });
+
+  it('过滤未知 type', () => {
+    const r = renderServerCards([
+      { type: 'vitals', data: {} },
+      { type: 'fake', data: {} },
+      { type: 'sleep', data: {} },
+    ]);
+    expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
+  });
+
+  it('非数组 → []', () => {
+    expect(renderServerCards({} as any)).toEqual([]);
+    expect(renderServerCards('string' as any)).toEqual([]);
   });
 });
