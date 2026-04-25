@@ -141,6 +141,13 @@ export default function WorkoutDetailScreen() {
     }
   }, [workoutId]);
 
+  // Extract post-analysis markdown content (must run on every render — keep before any early return)
+  const postContent = useMemo(() => {
+    if (!postAnalysis) return null;
+    const a = postAnalysis as Record<string, any>;
+    return a.analysis || a.content || a.markdown || a.summary || null;
+  }, [postAnalysis]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -174,13 +181,6 @@ export default function WorkoutDetailScreen() {
   const timeRange = startStr && endStr ? `${startStr} - ${endStr}` : startStr || null;
 
   const hasAnalysis = !!(analysis || postAnalysis);
-
-  // Extract post-analysis markdown content
-  const postContent = useMemo(() => {
-    if (!postAnalysis) return null;
-    const a = postAnalysis as Record<string, any>;
-    return a.analysis || a.content || a.markdown || a.summary || null;
-  }, [postAnalysis]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
