@@ -170,23 +170,32 @@ export async function* streamChat(
   }
 }
 
-export async function getConversations(): Promise<Conversation[]> {
+export async function getConversations(titleLike?: string): Promise<Conversation[]> {
   const token = await getToken();
-  const res = await fetch(`${BASE_URL}/openclaw/conversations?limit=20`, {
+  const params = new URLSearchParams({ limit: '20' });
+  if (titleLike) params.set('title_like', titleLike);
+  const res = await fetch(`${BASE_URL}/openclaw/conversations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return [];
   return res.json();
 }
 
-export async function getConversationMessages(conversationId: number): Promise<ChatMessage[]> {
+export async function getConversationMessages(
+  conversationId: number,
+  opts?: { days?: number },
+): Promise<{ messages: ChatMessage[]; total_messages: number }> {
   const token = await getToken();
-  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}`, {
+  const qs = opts?.days ? `?days=${opts.days}` : '';
+  const res = await fetch(`${BASE_URL}/openclaw/conversations/${conversationId}${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return [];
+  if (!res.ok) return { messages: [], total_messages: 0 };
   const data = await res.json();
-  return data.messages || [];
+  return {
+    messages: data.messages || [],
+    total_messages: data.total_messages ?? (data.messages?.length ?? 0),
+  };
 }
 
 export async function deleteConversation(conversationId: number): Promise<boolean> {

@@ -14,6 +14,7 @@ export interface UIMessage extends ChatMessage {
   isBriefing?: boolean;
   cardType?: string;
   cardData?: any;
+  createdAt?: string;
 }
 
 let msgCounter = 0;
@@ -23,10 +24,15 @@ interface UseChatEngineOptions {
   contextData?: Record<string, any>;
 }
 
+const BRIEFING_CONVERSATION_TITLE = '每日健康简报';
+const DEFAULT_WINDOW_DAYS = 7;
+
 export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<number | undefined>(undefined);
+  const [windowDays, setWindowDays] = useState<number | undefined>(DEFAULT_WINDOW_DAYS);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -38,21 +44,27 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   const loadLatestConversation = useCallback(async () => {
     try {
-      const convs = await getConversations();
-      if (convs.length > 0) {
-        const latestId = convs[0].id;
-        setConversationId(latestId);
-        const msgs = await getConversationMessages(latestId);
-        if (msgs.length > 0) {
-          const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-            id: `hist-${m.id || i}`,
-            role: m.role,
-            content: m.content,
-            imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
-          }));
-          setMessages(restored);
-          restoreCards(restored);
-        }
+      // 1. 优先找"每日健康简报"对话
+      let convs = await getConversations(BRIEFING_CONVERSATION_TITLE);
+      // 2. fallback：任意最近对话
+      if (convs.length === 0) convs = await getConversations();
+      if (convs.length === 0) return;
+
+      const latestId = convs[0].id;
+      setConversationId(latestId);
+      const { messages: msgs, total_messages } = await getConversationMessages(latestId, { days: DEFAULT_WINDOW_DAYS });
+      setWindowDays(DEFAULT_WINDOW_DAYS);
+      setHasMoreHistory(total_messages > msgs.length);
+      if (msgs.length > 0) {
+        const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
+          id: `hist-${m.id || i}`,
+          role: m.role,
+          content: m.content,
+          createdAt: m.created_at,
+          imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+        }));
+        setMessages(restored);
+        restoreCards(restored);
       }
     } catch { console.warn('Failed to load latest conversation'); }
   }, []);
@@ -60,15 +72,33 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const loadConversation = useCallback(async (id: number) => {
     setConversationId(id);
     try {
-      const msgs = await getConversationMessages(id);
+      const { messages: msgs, total_messages } = await getConversationMessages(id, { days: DEFAULT_WINDOW_DAYS });
+      setWindowDays(DEFAULT_WINDOW_DAYS);
+      setHasMoreHistory(total_messages > msgs.length);
       const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
-        id: `h-${m.id || i}`, role: m.role, content: m.content,
+        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
         imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
       }));
       setMessages(restored);
       restoreCards(restored);
     } catch { throw new Error('加载对话失败'); }
   }, []);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (!conversationId || !hasMoreHistory) return;
+    const nextDays = (windowDays || DEFAULT_WINDOW_DAYS) + 14;
+    try {
+      const { messages: msgs, total_messages } = await getConversationMessages(conversationId, { days: nextDays });
+      setWindowDays(nextDays);
+      setHasMoreHistory(total_messages > msgs.length);
+      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
+        id: `h-${m.id || i}`, role: m.role, content: m.content, createdAt: m.created_at,
+        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+      }));
+      setMessages(restored);
+      restoreCards(restored);
+    } catch { console.warn('loadMoreHistory failed'); }
+  }, [conversationId, hasMoreHistory, windowDays]);
 
   const restoreCards = useCallback(async (restored: UIMessage[]) => {
     const userMsgs = restored.filter(m => m.role === 'user' && m.content);
@@ -196,6 +226,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     newChat,
     loadLatestConversation,
     loadConversation,
+    loadMoreHistory,
+    hasMoreHistory,
     deleteCurrentConversation,
     setMessages,
   };

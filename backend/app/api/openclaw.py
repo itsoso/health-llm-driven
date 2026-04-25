@@ -1,7 +1,7 @@
 """OpenClaw Channel API — 独立于健康助理的 OpenClaw 对话通道"""
 import json
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -215,11 +215,12 @@ async def send_message(
 @router.get("/conversations", summary="OpenClaw 对话列表")
 async def list_conversations(
     limit: int = Query(20, ge=1, le=50),
+    title_like: Optional[str] = Query(None, description="按标题模糊过滤，如 '每日健康简报'"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     service = OpenClawService(db)
-    convs = service.get_conversations(current_user.id, limit)
+    convs = service.get_conversations(current_user.id, limit, title_like=title_like)
     from app.models.openclaw import OpenClawMessage
     # 批量获取每个对话的最后一条用户消息作为预览
     conv_ids = [c.id for c in convs]
@@ -259,6 +260,7 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}", summary="OpenClaw 对话详情")
 async def get_conversation(
     conversation_id: int,
+    days: Optional[int] = Query(None, ge=1, le=365, description="只返回最近 N 天的消息（省略返回全部）"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
@@ -266,9 +268,18 @@ async def get_conversation(
     conv = service.get_conversation_detail(current_user.id, conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
+
+    msgs = conv.messages
+    total_messages = len(msgs)
+    if days is not None:
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        msgs = [m for m in msgs if m.created_at and _msg_dt(m.created_at) >= cutoff]
+
     return {
         "id": conv.id,
         "title": conv.title,
+        "total_messages": total_messages,
         "messages": [
             {
                 "id": m.id,
@@ -278,9 +289,17 @@ async def get_conversation(
                 "rating": m.rating,
                 "created_at": str(m.created_at),
             }
-            for m in conv.messages
+            for m in msgs
         ],
     }
+
+
+def _msg_dt(value):
+    """created_at 在 SQLite 测试 / PG 生产有可能是 naive / aware — 统一为 aware UTC。"""
+    from datetime import datetime, timezone
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc) if value else datetime.now(timezone.utc)
 
 
 @router.delete("/conversations/{conversation_id}", summary="删除 OpenClaw 对话")

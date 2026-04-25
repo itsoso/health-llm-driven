@@ -89,9 +89,53 @@ export default function HomeScreen() {
   }, [chat.sendMessage]);
 
   // ── Render message ──
-  const renderMessage = useCallback(({ item }: { item: UIMessage }) => (
-    <ChatBubble item={item} onViewImage={setViewingImage} />
-  ), []);
+  const renderMessage = useCallback(({ item }: { item: UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' } }) => {
+    if ((item as any).type === 'date') {
+      return (
+        <View style={styles.dateDivider}>
+          <View style={styles.dateLine} />
+          <Text style={txt.dateText}>{(item as any).label}</Text>
+          <View style={styles.dateLine} />
+        </View>
+      );
+    }
+    if ((item as any).type === 'load-more') {
+      return (
+        <TouchableOpacity style={styles.loadMoreBtn} onPress={chat.loadMoreHistory} activeOpacity={0.7}>
+          <Ionicons name="chevron-up" size={14} color={colors.brand} />
+          <Text style={txt.loadMoreText}>查看更早</Text>
+        </TouchableOpacity>
+      );
+    }
+    return <ChatBubble item={item as UIMessage} onViewImage={setViewingImage} />;
+  }, [chat.loadMoreHistory]);
+
+  // 在消息之间插入日期分割条
+  const itemsWithDateDividers = useMemo(() => {
+    const out: Array<UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' }> = [];
+    if (chat.hasMoreHistory && chat.messages.length > 0) {
+      out.push({ id: 'load-more', type: 'load-more' });
+    }
+    let lastDay: string | null = null;
+    for (const m of chat.messages) {
+      const createdAt = (m as any).createdAt;
+      if (createdAt) {
+        const d = new Date(createdAt);
+        const dayKey = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+        if (dayKey !== lastDay) {
+          const weekday = ['日','一','二','三','四','五','六'][d.getDay()];
+          out.push({
+            id: `date-${dayKey}`,
+            type: 'date',
+            label: `${d.getMonth()+1}-${d.getDate()} 周${weekday}`,
+          });
+          lastDay = dayKey;
+        }
+      }
+      out.push(m);
+    }
+    return out;
+  }, [chat.messages, chat.hasMoreHistory]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
@@ -126,7 +170,7 @@ export default function HomeScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
         <FlatList
           ref={flatListRef}
-          data={chat.messages}
+          data={itemsWithDateDividers}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
           keyboardDismissMode="on-drag"
@@ -238,6 +282,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 8,
     borderWidth: 1, borderColor: colors.separator,
   },
+  dateDivider: {
+    flexDirection: 'row', alignItems: 'center',
+    marginVertical: 12, paddingHorizontal: spacing.md,
+  },
+  dateLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.separator },
+  loadMoreBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14,
+    marginBottom: 8, backgroundColor: colors.brandLight, borderRadius: radii.full,
+  },
 });
 
 const txt = {
@@ -246,4 +300,6 @@ const txt = {
   welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4 } as TextStyle,
   sugText: { fontSize: 13, color: colors.brand } as TextStyle,
   briefingBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
+  dateText: { fontSize: 11, color: colors.labelTertiary, paddingHorizontal: 10, fontWeight: '500' } as TextStyle,
+  loadMoreText: { fontSize: 12, color: colors.brand, fontWeight: '500' } as TextStyle,
 };
