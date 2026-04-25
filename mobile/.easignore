@@ -1,0 +1,8 @@
+# 本地 patch-package 的 patch 是为本地 Mac 的 ~/.bash_profile 问题打补丁，
+# EAS 云环境不需要；而且该 patch 会让 EAS install-dependencies 阶段报 parse error。
+# 保持本地有 patches/ 方便 `expo run:ios`，但 eas build 跳过。
+patches/
+
+# 本地 iOS/Android 原生目录走 prebuild 重新生成，不需要上传
+ios/
+android/
