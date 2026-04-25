@@ -39,7 +39,7 @@ class IOSPushService:
         self.team_id = settings.apns_team_id or ""
         self.key_path = settings.apns_key_path or settings.apns_private_key_path or ""
         self.bundle_id = settings.apns_bundle_id or "life.executor.health"
-        self.use_sandbox = False
+        self.use_sandbox = bool(getattr(settings, "apns_use_sandbox", False))
         
         self._private_key: Optional[str] = None
         self._jwt_token: Optional[str] = None

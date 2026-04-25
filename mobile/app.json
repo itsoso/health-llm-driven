@@ -16,6 +16,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "life.executor.health",
+      "entitlements": {
+        "aps-environment": "production"
+      },
       "infoPlist": {
         "NSFaceIDUsageDescription": "使用 Face ID 保护您的健康数据",
         "NSSiriUsageDescription": "使用 Siri 语音记录健康数据",

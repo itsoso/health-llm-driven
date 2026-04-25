@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     apns_key_path: Optional[str] = None
     apns_private_key_path: Optional[str] = None  # alias for apns_key_path
     apns_bundle_id: str = "life.executor.health"
+    apns_use_sandbox: bool = False  # 开发机走 sandbox；TestFlight/Release 走 production (False)
 
     # Telegram 推送配置（Agent Native 告警通道）
     telegram_bot_token: Optional[str] = None
