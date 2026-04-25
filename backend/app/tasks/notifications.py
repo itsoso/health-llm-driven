@@ -817,12 +817,26 @@ def evaluate_and_push_safety(user_id: int):
             for alert in report.alerts:
                 if alert.severity.value >= 3:
                     try:
+                        # 根据规则类型决定 deep_link
+                        # SpO2 / 呼吸相关 → 跳夜间血氧分析页
+                        # 其他 → 默认跳 /alerts
+                        rule_id = alert.rule_id or ""
+                        deep_link = "/(tabs)/alerts"
+                        if rule_id.startswith("vitals.spo2") or "respiratory" in rule_id:
+                            from app.utils.timezone import get_china_now
+                            night_date = get_china_now().date().isoformat()
+                            deep_link = f"/sleep-spo2-analysis?night_date={night_date}"
+
                         run_async(push_service.send_notification(
                             user_id=user_id,
                             notification_type="health_alert",
                             title=f"⚠️ {alert.title}",
                             content=alert.message[:120],
-                            data={"screen": "alerts", "rule_id": alert.rule_id},
+                            data={
+                                "screen": "alerts",  # legacy fallback
+                                "deep_link": deep_link,
+                                "rule_id": alert.rule_id,
+                            },
                         ))
                     except Exception as e:
                         logger.warning(f"[实时安全评估] 推送失败 user={user_id}: {e}")
@@ -1410,3 +1424,64 @@ def generate_doctor_weekly_report():
 
     logger.info(f"[医生周报] 完成，生成 {generated} 份")
     return {"generated": generated}
+
+
+# ─────────────────────── 用药定时提醒 ────────────────────────
+
+@celery_app.task
+def scan_medication_reminders():
+    """每分钟扫描 active medications，匹配当前 HH:MM（北京时间）的推 APNs。
+
+    - reminder_times 是 JSONB 数组，例 ["09:00", "14:00", "21:00"]
+    - 不去重：只要时间对上就推，一分钟内跑完。下一分钟不会再匹配
+    - 失败不影响其他用户 / 药
+    """
+    from app.models.medication import Medication
+
+    now_cn = get_china_now()
+    cur_hhmm = now_cn.strftime("%H:%M")
+    today_date = now_cn.date().isoformat()
+
+    sent = 0
+    with SessionLocal() as db:
+        meds = (
+            db.query(Medication)
+            .filter(Medication.is_active.is_(True))
+            .all()
+        )
+        push_service = PushService(db)
+
+        for med in meds:
+            try:
+                times = med.reminder_times or []
+                if not isinstance(times, list):
+                    continue
+                if cur_hhmm not in times:
+                    continue
+
+                title = f"💊 用药提醒：{med.name}"
+                body_parts = [med.dosage] if med.dosage else []
+                body_parts.append(f"现在 {cur_hhmm}，点「已服用」自动打卡。")
+                body = "，".join(body_parts)
+
+                run_async(push_service.send_notification(
+                    user_id=med.user_id,
+                    notification_type="reminder",
+                    title=title,
+                    content=body,
+                    data={
+                        "category": "MEDICATION_REMINDER",
+                        "reminder_type": "medication",
+                        "medication_id": med.id,
+                        "medication_name": med.name,
+                        "scheduled_time": cur_hhmm,
+                        "deep_link": "/(tabs)/record",
+                    },
+                ))
+                sent += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[MedicationReminder] user={med.user_id} med={med.id} 失败: {e}")
+
+    if sent:
+        logger.info(f"[MedicationReminder] {today_date} {cur_hhmm} 发送 {sent} 条")
+    return {"scheduled_time": cur_hhmm, "sent": sent}

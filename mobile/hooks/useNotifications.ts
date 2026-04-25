@@ -108,6 +108,13 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
   }
 
   // Handle tap-to-open routing
+  // Priority: data.deep_link (arbitrary path + query) > data.screen (legacy predefined)
+  const deepLink = data?.deep_link as string | undefined;
+  if (deepLink) {
+    try { router.push(deepLink as any); } catch { router.push('/(tabs)' as any); }
+    return;
+  }
+
   const screen = data?.screen as string | undefined;
   switch (screen) {
     case 'alerts':

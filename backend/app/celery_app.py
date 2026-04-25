@@ -79,6 +79,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0),
     },
 
+    # 每分钟扫描 medications.reminder_times，匹配就推 APNs（用户一键"已服用"）
+    "medication-reminder-scan": {
+        "task": "app.tasks.notifications.scan_medication_reminders",
+        "schedule": crontab(minute="*"),
+    },
+
     # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)
     # v2: 聚合数据 + 跨实体行动对照 + prediction 中期校验 + 基因对齐度评分
     "weekly-report": {

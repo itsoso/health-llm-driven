@@ -269,11 +269,18 @@ class PushService:
         if not settings or not settings.ios_device_token:
             return {"success": False, "error": "未配置 iOS Device Token"}
 
+        # 从 data 里抽出 APNs category（如 MEDICATION_REMINDER），其余字段作为 custom data 下发
+        category = None
+        if data and "category" in data:
+            data = {**data}  # shallow copy 避免改外部引用
+            category = data.pop("category")
+
         return await self.ios.send_push(
             device_token=settings.ios_device_token,
             title=title,
             body=content,
-            data=data
+            data=data,
+            category=category,
         )
 
     async def _send_telegram(
