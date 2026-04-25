@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 
 from app.database import get_db
@@ -111,7 +111,8 @@ async def get_plan_history(
     db: Session = Depends(get_db)
 ):
     """获取历史计划列表"""
-    plans = db.query(WeeklyPlan).filter(
+    # N+1 修复: selectinload(items) 一次取齐, 避免 list 中每个 plan 触发 .items 懒加载
+    plans = db.query(WeeklyPlan).options(selectinload(WeeklyPlan.items)).filter(
         WeeklyPlan.user_id == current_user.id
     ).order_by(WeeklyPlan.week_start.desc()).offset(
         (page - 1) * page_size

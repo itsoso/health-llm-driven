@@ -1,6 +1,6 @@
 """邀请码和用户申请管理 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List
@@ -164,7 +164,12 @@ async def list_invitation_codes(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以查看邀请码")
 
-    query = db.query(InvitationCode).order_by(InvitationCode.created_at.desc())
+    # N+1 修复: joinedload(creator) 把 creator 一并取出, 避免每个邀请码触发懒加载
+    query = (
+        db.query(InvitationCode)
+        .options(joinedload(InvitationCode.creator))
+        .order_by(InvitationCode.created_at.desc())
+    )
 
     if active_only:
         query = query.filter(InvitationCode.is_active == True)

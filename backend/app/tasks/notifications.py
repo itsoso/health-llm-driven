@@ -4,6 +4,7 @@
 import logging
 from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func as sa_func
+from sqlalchemy.orm import selectinload
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.user import User
@@ -121,7 +122,8 @@ def send_plan_morning_reminder():
         week_start = today - timedelta(days=today.weekday())
         day_of_week = today.weekday() + 1
 
-        plans = db.query(WeeklyPlan).filter(
+        # N+1 修复: selectinload 一次拉所有 plans + items, 避免每个 plan 触发懒加载
+        plans = db.query(WeeklyPlan).options(selectinload(WeeklyPlan.items)).filter(
             WeeklyPlan.week_start == week_start,
             WeeklyPlan.status == "active"
         ).all()
@@ -163,7 +165,8 @@ def send_plan_evening_summary():
         week_start = today - timedelta(days=today.weekday())
         day_of_week = today.weekday() + 1
 
-        plans = db.query(WeeklyPlan).filter(
+        # N+1 修复: selectinload 一次拉所有 plans + items
+        plans = db.query(WeeklyPlan).options(selectinload(WeeklyPlan.items)).filter(
             WeeklyPlan.week_start == week_start,
             WeeklyPlan.status == "active"
         ).all()
