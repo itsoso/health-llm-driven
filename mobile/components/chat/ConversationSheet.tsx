@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getConversations, deleteConversation } from '@/services/chat';
@@ -21,6 +21,14 @@ export default function ConversationSheet({
   visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
 }: Props) {
+  const { height: screenH, width: screenW } = useWindowDimensions();
+  const isTablet = screenW >= 768;
+  // iPhone: 列表占屏幕 70%; iPad: 占 75% 但封顶 800
+  const listMaxHeight = isTablet
+    ? Math.min(screenH * 0.75, 800)
+    : screenH * 0.7;
+  // 单列宽度: iPad 居中并限宽, 让列表别撑满 13 寸屏
+  const sheetMaxWidth = isTablet ? 560 : undefined;
   const titleOf = (c: any) => (c?.title || '').trim();
   const isBriefing = (t: string) => t === '每日健康简报' || t.startsWith('每日健康简报 ');
   const isWeekly = (t: string) => t === '每周健康周报' || t.startsWith('每周健康周报 ');
@@ -36,8 +44,15 @@ export default function ConversationSheet({
   ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={e => e.stopPropagation()}>
+      <Pressable style={[styles.overlay, isTablet && styles.overlayTablet]} onPress={onClose}>
+        <Pressable
+          style={[
+            styles.sheet,
+            isTablet && styles.sheetTablet,
+            sheetMaxWidth ? { maxWidth: sheetMaxWidth, width: '100%' } : null,
+          ]}
+          onPress={e => e.stopPropagation()}
+        >
           <View style={styles.handle} />
           <Text style={styles.title}>对话历史</Text>
           {conversations.length === 0 ? (
@@ -46,7 +61,7 @@ export default function ConversationSheet({
               <Text style={styles.loadingText}>加载中...</Text>
             </View>
           ) : (
-            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ maxHeight: listMaxHeight }} showsVerticalScrollIndicator={false}>
               {sortedConversations.slice(0, 20).map((item: any) => (
                 <TouchableOpacity
                   key={item.id}
@@ -89,9 +104,13 @@ export default function ConversationSheet({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
+  overlayTablet: { justifyContent: 'center', alignItems: 'center' },
   sheet: {
     backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
+  },
+  sheetTablet: {
+    borderRadius: 20, paddingBottom: spacing.xl,
   },
   handle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: colors.labelQuaternary,

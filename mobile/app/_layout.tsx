@@ -1,5 +1,24 @@
 import React, { useEffect } from 'react';
+import * as Sentry from '@sentry/react-native';
+import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
+
+// Sentry: 仅在配置了 DSN 时启用 (开发环境无 DSN 自动跳过)
+const SENTRY_DSN =
+  process.env.EXPO_PUBLIC_SENTRY_DSN ||
+  (Constants.expoConfig?.extra as any)?.sentryDsn;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    enableAutoSessionTracking: true,
+    // 生产/preview 都上报, dev 关掉避免噪音
+    enabled: !__DEV__,
+    environment: __DEV__ ? 'development' : 'production',
+    // PII 不上传 (HealthPilot 涉及健康数据)
+    sendDefaultPii: false,
+    tracesSampleRate: 0.1,
+  });
+}
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
@@ -104,7 +123,7 @@ function AppContent() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   // Connect AppState to React Query for auto-refetch on foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', (status) => {
@@ -128,6 +147,9 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Sentry.wrap: 自动捕获未处理异常 + Profiler. 未配置 DSN 时是 noop.
+export default SENTRY_DSN ? Sentry.wrap(RootLayout) : RootLayout;
 
 const styles = StyleSheet.create({
   loadingContainer: {
