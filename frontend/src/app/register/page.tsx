@@ -18,7 +18,7 @@ const EXERCISE_FREQUENCIES = ['几乎不运动', '每周1-2次', '每周3-4次',
 export default function RegisterPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  
+
   const [step, setStep] = useState(1); // 1: 基本信息, 2: 健康问卷
   const [formData, setFormData] = useState({
     name: '',
@@ -39,7 +39,7 @@ export default function RegisterPage() {
     exercise_frequency: '',
     why_join: '',
   });
-  
+
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({ password: '', confirmPassword: '' });
   const [isLoading, setIsLoading] = useState(false);
@@ -224,7 +224,7 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-bold text-white text-center mb-6">
             {step === 1 ? '创建账号' : '完善健康画像'}
           </h1>
-          
+
           {error && (
             <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
               ❌ {error}
@@ -330,7 +330,7 @@ export default function RegisterPage() {
                     value={formData.inviteCode}
                     onChange={(e) => setFormData({ ...formData, inviteCode: e.target.value.toUpperCase() })}
                     className={`w-full p-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent uppercase ${
-                      inviteCodeStatus === 'valid' ? 'border-green-500' : 
+                      inviteCodeStatus === 'valid' ? 'border-green-500' :
                       inviteCodeStatus === 'invalid' ? 'border-red-500' : 'border-white/20'
                     }`}
                     placeholder="请输入邀请码"

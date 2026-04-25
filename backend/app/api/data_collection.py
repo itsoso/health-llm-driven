@@ -25,19 +25,19 @@ async def sync_garmin_data(
 ):
     """
     同步Garmin数据
-    
+
     注意：需要Garmin API的access_token
     如果使用Garmin Connect导出，可以使用手动导入接口
     """
     service = DataCollectionService()
     result = await service.sync_garmin_data(db, user_id, target_date, access_token)
-    
+
     if not result:
         raise HTTPException(
             status_code=400,
             detail="同步失败，请检查Garmin API配置和access_token。如果没有access_token，可以使用手动导入接口：POST /api/v1/daily-health/garmin"
         )
-    
+
     return {
         "message": "同步成功",
         "data_id": result.id,
@@ -57,7 +57,7 @@ async def sync_garmin_data_range(
     service = DataCollectionService()
     results = []
     errors = []
-    
+
     current_date = start_date
     while current_date <= end_date:
         try:
@@ -80,9 +80,9 @@ async def sync_garmin_data_range(
                 "status": "error",
                 "error": str(e)
             })
-        
+
         current_date += timedelta(days=1)
-    
+
     return {
         "message": f"批量同步完成：成功 {len(results)} 条，失败 {len(errors)} 条",
         "success_count": len(results),
@@ -101,16 +101,16 @@ def get_sync_status(
     """获取Garmin数据同步状态（检查哪些日期有数据）"""
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
-    
+
     # 获取已有数据的日期
     existing_dates = db.query(GarminData.record_date).filter(
         GarminData.user_id == user_id,
         GarminData.record_date >= start_date,
         GarminData.record_date <= end_date
     ).distinct().all()
-    
+
     existing_dates_set = {d[0] for d in existing_dates}
-    
+
     # 生成所有日期列表
     all_dates = []
     current_date = start_date
@@ -120,7 +120,7 @@ def get_sync_status(
             "has_data": current_date in existing_dates_set
         })
         current_date += timedelta(days=1)
-    
+
     return {
         "user_id": user_id,
         "date_range": {
@@ -218,16 +218,16 @@ def get_my_sync_status(
     user_id = current_user.id
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
-    
+
     # 获取已有数据的日期
     existing_dates = db.query(GarminData.record_date).filter(
         GarminData.user_id == user_id,
         GarminData.record_date >= start_date,
         GarminData.record_date <= end_date
     ).distinct().all()
-    
+
     existing_dates_set = {d[0] for d in existing_dates}
-    
+
     # 生成所有日期列表
     all_dates = []
     current_date = start_date
@@ -237,7 +237,7 @@ def get_my_sync_status(
             "has_data": current_date in existing_dates_set
         })
         current_date += timedelta(days=1)
-    
+
     return {
         "user_id": user_id,
         "date_range": {
@@ -260,42 +260,42 @@ async def sync_my_garmin_data(
 ):
     """
     使用已保存的凭据同步当前用户的 Garmin 数据
-    
+
     - days: 同步最近几天的数据，默认为 1（今天）
     """
     from app.scheduler import sync_user_garmin_data
-    
+
     user_id = current_user.id
-    
+
     # 获取用户的 Garmin 凭据
     credential = db.query(GarminCredential).filter(
         GarminCredential.user_id == user_id
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=404,
             detail="未绑定 Garmin 账号，请先在设置中绑定"
         )
-    
+
     if not credential.sync_enabled:
         raise HTTPException(
             status_code=400,
             detail="Garmin 同步已禁用，请在设置中启用"
         )
-    
+
     if not credential.credentials_valid:
         raise HTTPException(
             status_code=400,
             detail="Garmin 凭据无效，请重新绑定账号"
         )
-    
+
     if credential.requires_mfa:
         raise HTTPException(
             status_code=400,
             detail="该账号需要 MFA 验证，暂不支持自动同步"
         )
-    
+
     # 解密密码
     try:
         password = garmin_credential_service.decrypt_password(credential.encrypted_password)
@@ -305,7 +305,7 @@ async def sync_my_garmin_data(
             status_code=500,
             detail="凭据解密失败，请重新绑定账号"
         )
-    
+
     # 执行同步
     try:
         result = await sync_user_garmin_data(
@@ -316,7 +316,7 @@ async def sync_my_garmin_data(
             days=days,
             is_cn=credential.is_cn if hasattr(credential, 'is_cn') else True
         )
-        
+
         if result.get("success_count", 0) > 0:
             # Garmin 数据更新后 invalidate Twin cache，确保下次读到最新数据
             try:
@@ -341,7 +341,7 @@ async def sync_my_garmin_data(
                 "status": "no_data",
                 "message": result.get("message", "未找到新数据")
             }
-            
+
     except Exception as e:
         logger.error(f"用户 {user_id} Garmin 同步失败: {e}")
         raise HTTPException(

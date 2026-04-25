@@ -5,7 +5,7 @@
 -- GarminData 表索引
 CREATE INDEX IF NOT EXISTS idx_garmin_user_date ON garmin_data(user_id, record_date);
 
--- DietRecord 表索引  
+-- DietRecord 表索引
 CREATE INDEX IF NOT EXISTS idx_diet_user_date ON diet_records(user_id, record_date);
 CREATE INDEX IF NOT EXISTS idx_diet_user_date_meal ON diet_records(user_id, record_date, meal_type);
 
@@ -39,5 +39,5 @@ CREATE INDEX IF NOT EXISTS idx_daily_rec_user_analysis_date ON daily_recommendat
 
 -- 完成后查看索引使用情况（PostgreSQL）
 -- SELECT schemaname, tablename, indexname, idx_scan
--- FROM pg_stat_user_indexes  
+-- FROM pg_stat_user_indexes
 -- ORDER BY idx_scan DESC;

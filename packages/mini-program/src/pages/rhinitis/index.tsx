@@ -36,7 +36,7 @@ export default function Checkin() {
   const [savingNasalWash, setSavingNasalWash] = useState(false);
   const [record, setRecord] = useState<CheckinRecord | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('exercise');
-  
+
   // 运动表单
   const [runningDistance, setRunningDistance] = useState('');
   const [runningDuration, setRunningDuration] = useState('');
@@ -141,7 +141,7 @@ export default function Checkin() {
       Taro.showToast({ title: '请输入次数', icon: 'none' });
       return;
     }
-    
+
     // 验证时间是否为空
     if (!sneezeTime || sneezeTime.trim() === '') {
       Taro.showToast({ title: '请选择时间', icon: 'none' });
@@ -214,14 +214,14 @@ export default function Checkin() {
     <View className="checkin-page">
       {/* Tab 切换 */}
       <View className="tab-bar">
-        <View 
+        <View
           className={`tab-item ${activeTab === 'exercise' ? 'active' : ''}`}
           onClick={() => setActiveTab('exercise')}
         >
           <Text className="tab-icon">💪</Text>
           <Text className="tab-text">运动锻炼</Text>
         </View>
-        <View 
+        <View
           className={`tab-item ${activeTab === 'rhinitis' ? 'active' : ''}`}
           onClick={() => setActiveTab('rhinitis')}
         >
@@ -297,7 +297,7 @@ export default function Checkin() {
                 </View>
               </View>
             </View>
-            <Button 
+            <Button
               className="save-btn green"
               onClick={handleSaveRunning}
               loading={savingRunning}
@@ -330,7 +330,7 @@ export default function Checkin() {
                 </View>
               </View>
             </View>
-            <Button 
+            <Button
               className="save-btn blue"
               onClick={handleSaveSquats}
               loading={savingSquats}
@@ -350,14 +350,14 @@ export default function Checkin() {
             </View>
             <Text className="card-desc">点击快速记录踢腿次数（累加）</Text>
             <View className="quick-action-row">
-              <Button 
+              <Button
                 className="quick-action-btn orange"
                 onClick={() => handleSaveLegRaises(40)}
                 loading={savingLegRaises}
               >
                 +40 次
               </Button>
-              <Button 
+              <Button
                 className="quick-action-btn purple"
                 onClick={() => handleSaveLegRaises(80)}
                 loading={savingLegRaises}
@@ -404,15 +404,15 @@ export default function Checkin() {
                 placeholder="时间"
                 className="form-input small"
               />
-              <Button 
-                className="add-btn" 
+              <Button
+                className="add-btn"
                 onClick={handleAddSneeze}
                 loading={savingSneeze}
               >
                 添加
               </Button>
             </View>
-            
+
             {/* 记录列表 */}
             {sneezeTimes.length > 0 && (
               <View className="records-list">
@@ -432,15 +432,15 @@ export default function Checkin() {
           <View className="form-card">
             <Text className="card-title">💧 洗鼻/泡鼻</Text>
             <View className="button-row">
-              <Button 
-                className="action-btn blue" 
+              <Button
+                className="action-btn blue"
                 onClick={() => handleAddNasalWash('wash')}
                 loading={savingNasalWash}
               >
                 💧 洗鼻
               </Button>
-              <Button 
-                className="action-btn purple" 
+              <Button
+                className="action-btn purple"
                 onClick={() => handleAddNasalWash('soak')}
                 loading={savingNasalWash}
               >
@@ -454,8 +454,8 @@ export default function Checkin() {
                 <Text className="list-title">今日记录</Text>
                 <View className="tags">
                   {nasalWashTimes.map((item, i) => (
-                    <Text 
-                      key={i} 
+                    <Text
+                      key={i}
                       className={`tag ${item.type === 'wash' ? 'tag-blue' : 'tag-purple'}`}
                     >
                       {item.time} - {item.type === 'wash' ? '💧洗鼻' : '🫧泡鼻'}

@@ -9,16 +9,16 @@ def create_long_image():
     section_gap = 40
     card_height = 450
     footer_height = 200
-    
+
     # 2. 颜色定义
-    bg_color = "#FFF5E6" 
-    header_bg = "#FF5000" 
-    blue_card = "#E6F0FF" 
-    blue_title = "#0056D2" 
-    orange_card = "#FFF0E6" 
-    orange_title = "#FF5000" 
+    bg_color = "#FFF5E6"
+    header_bg = "#FF5000"
+    blue_card = "#E6F0FF"
+    blue_title = "#0056D2"
+    orange_card = "#FFF0E6"
+    orange_title = "#FF5000"
     text_color = "#333333"
-    
+
     policies = [
         {"title": "1 | 加大来客力 (新增)", "type": "blue", "content": "全链路流量升级：首月完成任务直送2万曝光"},
         {"title": "2 | 加码短视频 (升级)", "type": "blue", "content": "首条即起量，挂车缩短交易路径"},
@@ -33,10 +33,10 @@ def create_long_image():
     ]
 
     total_height = header_height + (len(policies) * (card_height + section_gap)) + footer_height
-    
+
     img = Image.new('RGB', (width, total_height), bg_color)
     draw = ImageDraw.Draw(img)
-    
+
     # -----------------------------------------------------------
     # 3. 字体加载核心修复逻辑
     # -----------------------------------------------------------
@@ -51,13 +51,13 @@ def create_long_image():
         "/System/Library/Fonts/PingFang.ttc", # Mac
         "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf" # Linux 旧版通用
     ]
-    
+
     for f in possible_fonts:
         if os.path.exists(f):
             font_path = f
             print(f"✅ 成功找到字体文件: {f}")
             break
-            
+
     if not font_path:
         print("❌ 错误：未找到任何中文字体文件！")
         print("👉 请下载一个中文字体(如 font.otf)放到脚本同级目录下再运行。")
@@ -78,9 +78,9 @@ def create_long_image():
     draw.text((100, 100), "2026 快手电商", font=font_sub, fill="white")
     draw.text((100, 160), "再降本增收", font=font_title, fill="white")
     draw.text((100, 280), "全国升级 · 九大新商扶持政策", font=font_sub, fill="white")
-    
+
     current_y = header_height + 50
-    
+
     for p in policies:
         if p["type"] == "header":
             draw.rectangle([(0, current_y), (width, current_y+100)], fill="#FFCC00")
@@ -89,23 +89,23 @@ def create_long_image():
             draw.text(((width - text_w)/2, current_y+20), p["title"], font=font_sub, fill="white")
             current_y += 120
             continue
-            
+
         fill_color = blue_card if p["type"] == "blue" else orange_card
         outline_color = blue_title if p["type"] == "blue" else orange_title
-        
+
         # 画卡片
         draw.rectangle([(50, current_y), (width-50, current_y+card_height)], fill=fill_color, outline=outline_color, width=3)
-        
+
         # 标题条
         draw.rectangle([(50, current_y), (width-50, current_y+80)], fill=outline_color)
         draw.text((80, current_y+15), p["title"], font=font_sub, fill="white")
-        
+
         # 内容文本
         # 简单换行处理
         content = p["content"]
         # 如果字太多可以截断或者换行，这里简单处理
         draw.text((80, current_y+150), content, font=font_text, fill=text_color)
-        
+
         current_y += (card_height + section_gap)
 
     # 底部

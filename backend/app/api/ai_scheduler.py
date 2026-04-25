@@ -27,7 +27,7 @@ async def get_morning_briefing(
 ):
     """
     获取个性化早间健康简报
-    
+
     包含：
     - 昨日睡眠回顾
     - 身体状态概览
@@ -50,7 +50,7 @@ async def get_daily_schedule(
 ):
     """
     获取今日个性化日程安排
-    
+
     基于用户画像和健康目标生成
     """
     try:
@@ -71,7 +71,7 @@ async def get_current_reminders(
 ):
     """
     获取当前时间段应该显示的提醒
-    
+
     会根据用户状态和条件过滤
     """
     try:
@@ -92,7 +92,7 @@ async def get_time_aware_recommendation(
 ):
     """
     获取时间感知的实时健康建议
-    
+
     根据当前时间和用户今日状态给出最相关的建议
     """
     try:
@@ -118,7 +118,7 @@ async def get_health_summary(
         briefing = ai_scheduler.generate_morning_briefing(db, current_user.id)
         recommendation = ai_scheduler.get_time_aware_recommendation(db, current_user.id)
         reminders = ai_scheduler.get_reminders_for_time(db, current_user.id)
-        
+
         return {
             "briefing": briefing,
             "recommendation": recommendation,

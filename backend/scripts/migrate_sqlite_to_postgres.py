@@ -29,30 +29,30 @@ from app.config import settings
 
 class SQLiteToPostgresMigrator:
     """SQLite 到 PostgreSQL 迁移器"""
-    
+
     def __init__(self, sqlite_path: str = "health.db"):
         self.sqlite_path = sqlite_path
         self.sqlite_conn = None
         self.pg_conn = None
-        
+
     def connect(self):
         """连接到两个数据库"""
         # 连接 SQLite
         self.sqlite_conn = sqlite3.connect(self.sqlite_path)
         self.sqlite_conn.row_factory = sqlite3.Row
-        
+
         # 连接 PostgreSQL
         pg_url = settings.effective_database_url
         if not pg_url.startswith('postgresql'):
             raise ValueError("PostgreSQL 配置未设置")
-        
+
         # 解析 PostgreSQL URL
         # postgresql://user:pass@host:port/db
         parts = pg_url.replace('postgresql://', '').split('@')
         user_pass = parts[0].split(':')
         host_port_db = parts[1].split('/')
         host_port = host_port_db[0].split(':')
-        
+
         self.pg_conn = psycopg2.connect(
             host=host_port[0],
             port=int(host_port[1]) if len(host_port) > 1 else 5432,
@@ -60,9 +60,9 @@ class SQLiteToPostgresMigrator:
             user=user_pass[0],
             password=user_pass[1]
         )
-        
+
         print("✅ 数据库连接成功")
-        
+
     def close(self):
         """关闭数据库连接"""
         if self.sqlite_conn:
@@ -70,7 +70,7 @@ class SQLiteToPostgresMigrator:
         if self.pg_conn:
             self.pg_conn.close()
         print("✅ 数据库连接已关闭")
-        
+
     def get_table_count(self, table_name: str, db: str = 'sqlite') -> int:
         """获取表中的记录数"""
         if db == 'sqlite':
@@ -81,27 +81,27 @@ class SQLiteToPostgresMigrator:
             cursor = self.pg_conn.cursor()
             cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
             return cursor.fetchone()[0]
-            
+
     def migrate_performance_metrics(self):
         """迁移性能指标数据"""
         table_name = "performance_metrics"
-        
+
         # 检查源表数据量
         sqlite_count = self.get_table_count(table_name, 'sqlite')
         print(f"\n📊 {table_name}: SQLite 中有 {sqlite_count} 条记录")
-        
+
         if sqlite_count == 0:
             print(f"⏭️  跳过 {table_name}（无数据）")
             return
-            
+
         # 读取 SQLite 数据
         cursor = self.sqlite_conn.cursor()
         cursor.execute(f"SELECT * FROM {table_name}")
         rows = cursor.fetchall()
-        
+
         # 准备 PostgreSQL 插入语句
         pg_cursor = self.pg_conn.cursor()
-        
+
         insert_sql = """
             INSERT INTO performance_metrics (
                 user_id, session_id, platform, metric_type, metric_name,
@@ -111,7 +111,7 @@ class SQLiteToPostgresMigrator:
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
-        
+
         # 转换并插入数据
         data_to_insert = []
         for row in rows:
@@ -130,36 +130,36 @@ class SQLiteToPostgresMigrator:
                 row['error_message'],
                 row['created_at']
             ))
-        
+
         # 批量插入
         execute_batch(pg_cursor, insert_sql, data_to_insert, page_size=100)
         self.pg_conn.commit()
-        
+
         # 验证
         pg_count = self.get_table_count(table_name, 'postgres')
         print(f"✅ {table_name}: 成功迁移 {len(data_to_insert)} 条记录")
         print(f"   PostgreSQL 中现有 {pg_count} 条记录")
-        
+
     def migrate_performance_alerts(self):
         """迁移性能告警数据"""
         table_name = "performance_alerts"
-        
+
         # 检查源表数据量
         sqlite_count = self.get_table_count(table_name, 'sqlite')
         print(f"\n📊 {table_name}: SQLite 中有 {sqlite_count} 条记录")
-        
+
         if sqlite_count == 0:
             print(f"⏭️  跳过 {table_name}（无数据）")
             return
-            
+
         # 读取 SQLite 数据
         cursor = self.sqlite_conn.cursor()
         cursor.execute(f"SELECT * FROM {table_name}")
         rows = cursor.fetchall()
-        
+
         # 准备 PostgreSQL 插入语句
         pg_cursor = self.pg_conn.cursor()
-        
+
         insert_sql = """
             INSERT INTO performance_alerts (
                 alert_type, severity, platform, metric_name, metric_value,
@@ -169,7 +169,7 @@ class SQLiteToPostgresMigrator:
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
-        
+
         # 转换并插入数据
         data_to_insert = []
         for row in rows:
@@ -188,36 +188,36 @@ class SQLiteToPostgresMigrator:
                 row['created_at'],
                 row['updated_at']
             ))
-        
+
         # 批量插入
         execute_batch(pg_cursor, insert_sql, data_to_insert, page_size=100)
         self.pg_conn.commit()
-        
+
         # 验证
         pg_count = self.get_table_count(table_name, 'postgres')
         print(f"✅ {table_name}: 成功迁移 {len(data_to_insert)} 条记录")
         print(f"   PostgreSQL 中现有 {pg_count} 条记录")
-        
+
     def migrate_performance_summaries(self):
         """迁移性能汇总数据"""
         table_name = "performance_summaries"
-        
+
         # 检查源表数据量
         sqlite_count = self.get_table_count(table_name, 'sqlite')
         print(f"\n📊 {table_name}: SQLite 中有 {sqlite_count} 条记录")
-        
+
         if sqlite_count == 0:
             print(f"⏭️  跳过 {table_name}（无数据）")
             return
-            
+
         # 读取 SQLite 数据
         cursor = self.sqlite_conn.cursor()
         cursor.execute(f"SELECT * FROM {table_name}")
         rows = cursor.fetchall()
-        
+
         # 准备 PostgreSQL 插入语句
         pg_cursor = self.pg_conn.cursor()
-        
+
         insert_sql = """
             INSERT INTO performance_summaries (
                 platform, metric_type, metric_name, date, hour,
@@ -229,7 +229,7 @@ class SQLiteToPostgresMigrator:
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
-        
+
         # 转换并插入数据
         data_to_insert = []
         for row in rows:
@@ -252,32 +252,32 @@ class SQLiteToPostgresMigrator:
                 row['created_at'],
                 row['updated_at']
             ))
-        
+
         # 批量插入
         execute_batch(pg_cursor, insert_sql, data_to_insert, page_size=100)
         self.pg_conn.commit()
-        
+
         # 验证
         pg_count = self.get_table_count(table_name, 'postgres')
         print(f"✅ {table_name}: 成功迁移 {len(data_to_insert)} 条记录")
         print(f"   PostgreSQL 中现有 {pg_count} 条记录")
-        
+
     def migrate_all(self):
         """迁移所有数据"""
         print("🚀 开始数据迁移...")
         print(f"📁 SQLite: {self.sqlite_path}")
         print(f"🐘 PostgreSQL: {settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}")
-        
+
         try:
             self.connect()
-            
+
             # 迁移性能监控表
             self.migrate_performance_metrics()
             self.migrate_performance_alerts()
             self.migrate_performance_summaries()
-            
+
             print("\n🎉 数据迁移完成！")
-            
+
         except Exception as e:
             print(f"\n❌ 迁移失败: {e}")
             if self.pg_conn:
@@ -290,7 +290,7 @@ class SQLiteToPostgresMigrator:
 def main():
     """主函数"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='SQLite 到 PostgreSQL 数据迁移')
     parser.add_argument(
         '--sqlite-db',
@@ -302,21 +302,21 @@ def main():
         action='store_true',
         help='仅检查数据量，不执行迁移'
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.dry_run:
         print("🔍 Dry Run 模式：仅检查数据量")
         migrator = SQLiteToPostgresMigrator(args.sqlite_db)
         migrator.connect()
-        
+
         for table in ['performance_metrics', 'performance_alerts', 'performance_summaries']:
             sqlite_count = migrator.get_table_count(table, 'sqlite')
             pg_count = migrator.get_table_count(table, 'postgres')
             print(f"📊 {table}:")
             print(f"   SQLite: {sqlite_count} 条")
             print(f"   PostgreSQL: {pg_count} 条")
-        
+
         migrator.close()
     else:
         migrator = SQLiteToPostgresMigrator(args.sqlite_db)

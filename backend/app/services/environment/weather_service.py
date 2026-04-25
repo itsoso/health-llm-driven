@@ -68,19 +68,19 @@ class WeatherService:
 
         if not api_key:
             logger.info("天气服务初始化完成 (使用 Open-Meteo 免费 API)")
-    
+
     def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
         """获取缓存数据"""
         if key in self._cache:
             if datetime.now() - self._cache_time.get(key, datetime.min) < self._cache_duration:
                 return self._cache[key]
         return None
-    
+
     def _set_cache(self, key: str, data: Dict[str, Any]):
         """设置缓存"""
         self._cache[key] = data
         self._cache_time[key] = datetime.now()
-    
+
     async def get_current_weather(
         self,
         city: str = None,
@@ -89,12 +89,12 @@ class WeatherService:
     ) -> Dict[str, Any]:
         """
         获取当前天气
-        
+
         Args:
             city: 城市名称（如：北京、上海）
             lat: 纬度（与 lon 一起使用）
             lon: 经度
-            
+
         Returns:
             天气数据字典
         """
@@ -102,7 +102,7 @@ class WeatherService:
         cached = self._get_cache(cache_key)
         if cached:
             return cached
-        
+
         try:
             if self.api_key:
                 # 使用和风天气
@@ -112,14 +112,14 @@ class WeatherService:
                 if lat is None or lon is None:
                     lat, lon = self._city_to_coords(city)
                 result = await self._get_openmeteo_current(lat, lon)
-            
+
             self._set_cache(cache_key, result)
             return result
-            
+
         except Exception as e:
             logger.error(f"获取天气数据失败: {e}")
             return self._get_default_weather()
-    
+
     async def get_weather_forecast(
         self,
         city: str = None,
@@ -159,7 +159,7 @@ class WeatherService:
         except Exception as e:
             logger.error(f"获取天气预报失败: {e}")
             return {"available": False, "error": str(e)}
-    
+
     async def _get_qweather_current(
         self,
         city: str = None,
@@ -179,10 +179,10 @@ class WeatherService:
                 "location": location,
                 "key": self.api_key
             }
-            
+
             response = await client.get(url, params=params, timeout=10)
             data = response.json()
-            
+
             if data.get("code") == "200":
                 now = data.get("now", {})
                 return {
@@ -274,12 +274,12 @@ class WeatherService:
                 "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,surface_pressure",
                 "timezone": "Asia/Shanghai"
             }
-            
+
             response = await client.get(url, params=params, timeout=10)
             data = response.json()
-            
+
             current = data.get("current", {})
-            
+
             return {
                 "available": True,
                 "source": "open-meteo",
@@ -293,7 +293,7 @@ class WeatherService:
                 "pressure": current.get("surface_pressure", 1013),
                 "update_time": current.get("time", "")
             }
-    
+
     async def _get_openmeteo_forecast(self, lat: float, lon: float, days: int) -> Dict[str, Any]:
         """获取天气预报"""
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -305,13 +305,13 @@ class WeatherService:
                 "timezone": "Asia/Shanghai",
                 "forecast_days": days
             }
-            
+
             response = await client.get(url, params=params, timeout=10)
             data = response.json()
-            
+
             daily = data.get("daily", {})
             dates = daily.get("time", [])
-            
+
             forecasts = []
             for i, date in enumerate(dates):
                 forecasts.append({
@@ -325,13 +325,13 @@ class WeatherService:
                     "precipitation_probability": daily.get("precipitation_probability_max", [])[i] if i < len(daily.get("precipitation_probability_max", [])) else 0,
                     "uv_index": daily.get("uv_index_max", [])[i] if i < len(daily.get("uv_index_max", [])) else 0
                 })
-            
+
             return {
                 "available": True,
                 "source": "open-meteo",
                 "forecasts": forecasts
             }
-    
+
     async def _lookup_city_via_geoapi(self, city: str) -> Optional[dict]:
         """
         通过和风天气 GeoAPI 动态查找城市信息
@@ -478,7 +478,7 @@ class WeatherService:
         # 默认杭州而非北京
         logger.warning(f"城市 '{city}' 不在坐标映射中，默认使用杭州坐标")
         return (30.2741, 120.1551)
-    
+
     def _weather_code_to_text(self, code: int) -> str:
         """WMO 天气代码转文本"""
         weather_codes = {
@@ -496,13 +496,13 @@ class WeatherService:
             96: "雷暴伴冰雹", 99: "大雷暴伴冰雹"
         }
         return weather_codes.get(code, "未知")
-    
+
     def _wind_direction_to_text(self, degrees: float) -> str:
         """风向角度转文本"""
         directions = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"]
         index = round(degrees / 45) % 8
         return directions[index] + "风"
-    
+
     def _get_default_weather(self) -> Dict[str, Any]:
         """返回默认天气数据"""
         return {
@@ -517,30 +517,30 @@ class WeatherService:
             "wind_speed": 0,
             "error": "无法获取天气数据"
         }
-    
+
     def get_exercise_advice(self, weather: Dict[str, Any]) -> Dict[str, Any]:
         """
         基于天气生成运动建议
-        
+
         Args:
             weather: 天气数据
-            
+
         Returns:
             运动建议
         """
         if not weather.get("available"):
             return {"suitable": True, "advice": "天气数据不可用，请根据实际情况判断"}
-        
+
         temp = weather.get("temperature", 20)
         humidity = weather.get("humidity", 50)
         weather_text = weather.get("weather", "")
         wind_speed = weather.get("wind_speed", 0)
-        
+
         # 判断是否适合户外运动
         suitable = True
         reasons = []
         advices = []
-        
+
         # 温度检查
         if temp < 5:
             suitable = False
@@ -554,7 +554,7 @@ class WeatherService:
             advices.append("注意防暑降温，及时补充水分")
         elif temp < 10:
             advices.append("做好热身，注意保暖")
-        
+
         # 天气检查
         bad_weather = ["雨", "雪", "雷", "暴", "雾", "霾"]
         for bw in bad_weather:
@@ -566,7 +566,7 @@ class WeatherService:
                 elif "雾" in weather_text or "霾" in weather_text:
                     advices.append("空气质量可能较差，建议室内运动")
                 break
-        
+
         # 风速检查
         if wind_speed > 40:
             suitable = False
@@ -574,13 +574,13 @@ class WeatherService:
             advices.append("大风天气不宜户外运动")
         elif wind_speed > 25:
             advices.append("注意风大，跑步时可选择背风方向")
-        
+
         # 湿度检查
         if humidity > 85:
             advices.append("湿度较高，运动时注意散热")
         elif humidity < 30:
             advices.append("空气干燥，注意补充水分")
-        
+
         # 生成最终建议
         if suitable:
             if not advices:
@@ -588,7 +588,7 @@ class WeatherService:
             status = "excellent" if temp >= 15 and temp <= 25 and 40 <= humidity <= 70 else "good"
         else:
             status = "not_recommended"
-        
+
         return {
             "suitable": suitable,
             "status": status,

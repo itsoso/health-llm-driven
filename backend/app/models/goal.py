@@ -37,39 +37,39 @@ class GoalStatus(str, enum.Enum):
 class Goal(Base):
     """健康目标"""
     __tablename__ = "goals"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     # 目标基本信息
     goal_type = Column(Enum(GoalType, native_enum=False, length=50), nullable=False)  # 目标类型
     goal_period = Column(Enum(GoalPeriod, native_enum=False, length=50), nullable=False)  # 目标周期
     title = Column(String, nullable=False)  # 目标标题
     description = Column(Text)  # 目标描述
-    
+
     # 目标值
     target_value = Column(Float)  # 目标值
     target_unit = Column(String)  # 目标单位
     current_value = Column(Float, default=0)  # 当前值
-    
+
     # 时间范围
     start_date = Column(Date, nullable=False)  # 开始日期
     end_date = Column(Date)  # 结束日期
-    
+
     # 实现步骤（JSON格式）
     implementation_steps = Column(Text)  # 实现步骤（JSON字符串或文本）
-    
+
     # 状态
     status = Column(Enum(GoalStatus, native_enum=False, length=50), default=GoalStatus.ACTIVE)  # 目标状态
-    
+
     # 优先级
     priority = Column(Integer, default=5)  # 优先级 (1-10)
-    
+
     notes = Column(Text)  # 备注
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     user = relationship("User", backref="goals")
     progress_records = relationship("GoalProgress", back_populates="goal", cascade="all, delete-orphan")
 
@@ -77,17 +77,16 @@ class Goal(Base):
 class GoalProgress(Base):
     """目标进展记录"""
     __tablename__ = "goal_progress"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False)
-    
+
     progress_date = Column(Date, nullable=False, index=True)  # 进展日期
     progress_value = Column(Float)  # 进展值
     completion_percentage = Column(Float)  # 完成百分比
-    
-    notes = Column(Text)  # 备注
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    goal = relationship("Goal", back_populates="progress_records")
 
+    notes = Column(Text)  # 备注
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    goal = relationship("Goal", back_populates="progress_records")

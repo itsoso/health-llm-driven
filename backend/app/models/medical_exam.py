@@ -39,31 +39,31 @@ class MedicalExam(Base):
     __table_args__ = (
         Index("idx_medical_exams_user_date", "user_id", "exam_date"),
     )
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     # 患者信息
     patient_name = Column(String)  # 患者姓名
     patient_gender = Column(String)  # 性别
     patient_age = Column(Integer)  # 年龄
     exam_number = Column(String)  # 体检号
-    
+
     exam_date = Column(Date, nullable=False)  # 体检日期
     exam_type = Column(String, default="other")  # 体检类型（改为String以支持更多类型）
     body_system = Column(String)  # 所属身体系统
     hospital_name = Column(String)  # 医院名称
     doctor_name = Column(String)  # 医生姓名
-    
+
     # 总体评价
     overall_assessment = Column(Text)  # 总体评价摘要
     conclusions = Column(JSON)  # 详细结论列表 [{category, title, description, recommendations}]
-    
+
     notes = Column(Text)  # 备注
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     user = relationship("User", backref="medical_exams")
     items = relationship("MedicalExamItem", back_populates="exam", cascade="all, delete-orphan")
 
@@ -74,13 +74,13 @@ class MedicalExamItem(Base):
     __table_args__ = (
         Index("idx_medical_exam_items_exam_id", "exam_id"),
     )
-    
+
     id = Column(Integer, primary_key=True, index=True)
     exam_id = Column(Integer, ForeignKey("medical_exams.id"), nullable=False)
-    
+
     # 检查类别
     category = Column(String)  # blood_routine/liver_function/kidney_function/lipid/immune/thyroid/ultrasound/ct/ecg/eye/ent/body_composition/other
-    
+
     item_name = Column(String, nullable=False)  # 项目名称
     item_code = Column(String)  # 项目代码
     value = Column(Float)  # 检测值（数值型）
@@ -88,13 +88,12 @@ class MedicalExamItem(Base):
     unit = Column(String)  # 单位
     reference_range = Column(String)  # 参考范围
     result = Column(String)  # 结果（正常/异常/偏高/偏低）
-    
+
     # 异常标记
     is_abnormal = Column(String, default="normal")  # normal/abnormal/high/low
-    
-    notes = Column(Text)  # 备注
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    exam = relationship("MedicalExam", back_populates="items")
 
+    notes = Column(Text)  # 备注
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    exam = relationship("MedicalExam", back_populates="items")

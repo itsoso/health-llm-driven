@@ -133,7 +133,7 @@ fi
 # 检查配置是否已存在
 if grep -q "WECHAT_APPID" "$ENV_FILE" 2>/dev/null; then
     echo -e "${YELLOW}检测到已有微信配置，将更新现有配置${NC}"
-    
+
     # 删除旧的微信配置
     sed -i '/^# ========== 微信小程序推送配置 ==========/,/^$/d' "$ENV_FILE" 2>/dev/null || true
     sed -i '/^WECHAT_APPID=/d' "$ENV_FILE" 2>/dev/null || true
@@ -176,9 +176,9 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "正在重启 health-backend 服务..."
     systemctl restart health-backend
-    
+
     sleep 3
-    
+
     if systemctl is-active --quiet health-backend; then
         echo -e "${GREEN}✓ 服务重启成功${NC}"
     else

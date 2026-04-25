@@ -20,10 +20,10 @@ from app.services.llm import get_llm_provider
 class LLMHealthAnalyzer:
     """
     基于大模型的健康分析器
-    
+
     结合规则分析结果，使用大模型生成更智能、更个性化的健康建议
     """
-    
+
     def __init__(self):
         self._provider = None
         try:
@@ -32,7 +32,7 @@ class LLMHealthAnalyzer:
         except Exception as e:
             logger.warning(f"LLM Provider 初始化失败，将使用纯规则分析: {e}")
             self.model = "gpt-4o-mini"
-    
+
     def is_available(self) -> bool:
         """检查LLM服务是否可用"""
         return self._provider is not None
@@ -89,22 +89,22 @@ class LLMHealthAnalyzer:
         basic_health = db.query(BasicHealthData).filter(
             BasicHealthData.user_id == user_id
         ).order_by(BasicHealthData.record_date.desc()).first()
-        
+
         # 获取用户画像
         user_profile = db.query(UserProfile).filter(
             UserProfile.user_id == user_id
         ).first()
-        
+
         context = {
             "name": user.name if user else "用户",
             "gender": user.gender if user else None,
             "age": None
         }
-        
+
         if user and user.birth_date:
             today = date.today()
             context["age"] = today.year - user.birth_date.year
-        
+
         if basic_health:
             context.update({
                 "height": basic_health.height,
@@ -112,7 +112,7 @@ class LLMHealthAnalyzer:
                 "bmi": basic_health.bmi,
                 "blood_pressure": f"{basic_health.systolic_bp}/{basic_health.diastolic_bp}" if basic_health.systolic_bp else None
             })
-        
+
         # 从用户画像中补充信息
         if user_profile:
             # 基本信息（如果没有从User获取到）
@@ -125,7 +125,7 @@ class LLMHealthAnalyzer:
                 context["height"] = user_profile.height_cm
             if not context.get("weight"):
                 context["weight"] = user_profile.current_weight_kg
-            
+
             # 健康目标
             context["health_goals"] = {
                 "target_weight": user_profile.target_weight_kg,
@@ -134,14 +134,14 @@ class LLMHealthAnalyzer:
                 "target_water_ml": user_profile.target_water_ml,
                 "target_exercise_minutes": user_profile.target_exercise_minutes
             }
-            
+
             # 健康状况
             context["health_conditions"] = {
                 "chronic_conditions": user_profile.chronic_conditions or [],
                 "allergies": user_profile.allergies or [],
                 "current_medications": user_profile.current_medications or []
             }
-            
+
             # 生活习惯
             context["lifestyle"] = {
                 "exercise_frequency": user_profile.exercise_frequency,
@@ -151,7 +151,7 @@ class LLMHealthAnalyzer:
                 "usual_sleep_time": user_profile.usual_sleep_time,
                 "usual_wake_time": user_profile.usual_wake_time
             }
-            
+
             # 工作环境
             context["work_environment"] = {
                 "work_type": user_profile.work_type,
@@ -159,7 +159,7 @@ class LLMHealthAnalyzer:
                 "sitting_hours_per_day": user_profile.sitting_hours_per_day,
                 "city": user_profile.city
             }
-        
+
         return context
 
     def _build_gene_drug_constraints(self, db: Session, user_id: int) -> str:
@@ -338,7 +338,7 @@ class LLMHealthAnalyzer:
         """获取当前时间上下文"""
         now = get_china_now()
         hour = now.hour
-        
+
         if hour < 6:
             period = "凌晨"
             period_en = "early_morning"
@@ -367,7 +367,7 @@ class LLMHealthAnalyzer:
             period = "晚上"
             period_en = "night"
             step_expectation = "near_final"  # 晚上步数接近一天最终值
-        
+
         return {
             "current_time": now.strftime("%Y-%m-%d %H:%M"),
             "hour": hour,
@@ -378,7 +378,7 @@ class LLMHealthAnalyzer:
             "remaining_hours": 24 - hour,
             "exercise_window": "上午" if hour < 12 else ("下午" if hour < 18 else "晚间")
         }
-    
+
     def _build_health_data_prompt(
         self,
         yesterday_data: GarminData,
@@ -388,14 +388,14 @@ class LLMHealthAnalyzer:
         environment_data: Optional[Dict[str, Any]] = None
     ) -> str:
         """构建健康数据分析提示词"""
-        
+
         # 获取当前时间上下文
         time_context = self._get_time_context()
-        
+
         # 获取北京时间的今天和昨天日期
         china_today = get_china_now().date()
         china_yesterday = china_today - timedelta(days=1)
-        
+
         # 构建时间上下文说明（明确北京时间）
         time_info = f"""
 【重要：以下所有时间均为北京时间 (UTC+8)】
@@ -406,7 +406,7 @@ class LLMHealthAnalyzer:
 当前时段: {time_context['period']}
 适宜运动时段: {time_context['exercise_window']}
 """
-        
+
         # 构建用户基本信息
         user_info = f"""
 用户信息:
@@ -418,7 +418,7 @@ class LLMHealthAnalyzer:
 - BMI: {user_context.get('bmi', '未知')}
 - 血压: {user_context.get('blood_pressure', '未知')}
 """
-        
+
         # 添加健康目标（如果有）
         health_goals = user_context.get('health_goals', {})
         if health_goals and any(v for v in health_goals.values() if v is not None):
@@ -430,13 +430,13 @@ class LLMHealthAnalyzer:
 - 目标饮水: {health_goals.get('target_water_ml') or '未设置'}ml
 - 目标运动时长: {health_goals.get('target_exercise_minutes') or '未设置'}分钟
 """
-        
+
         # 添加健康状况（如果有）
         health_conditions = user_context.get('health_conditions', {})
         chronic_conditions = health_conditions.get('chronic_conditions', [])
         allergies = health_conditions.get('allergies', [])
         medications = health_conditions.get('current_medications', [])
-        
+
         if chronic_conditions or allergies or medications:
             user_info += "\n健康状况:"
             if chronic_conditions:
@@ -446,14 +446,14 @@ class LLMHealthAnalyzer:
             if medications:
                 med_names = [m.get('name', str(m)) if isinstance(m, dict) else str(m) for m in medications]
                 user_info += f"\n- 正在服用药物: {', '.join(med_names)}"
-        
+
         # 添加生活习惯（如果有）
         lifestyle = user_context.get('lifestyle', {})
         if lifestyle and any(v for v in lifestyle.values() if v is not None):
             lifestyle_map = {
                 'sedentary': '久坐不动',
                 'light': '轻度活动',
-                'moderate': '中度活动', 
+                'moderate': '中度活动',
                 'active': '活跃',
                 'very_active': '非常活跃',
                 'vegetarian': '素食',
@@ -481,7 +481,7 @@ class LLMHealthAnalyzer:
                 user_info += f"\n- 通常入睡时间: {lifestyle['usual_sleep_time']}"
             if lifestyle.get('usual_wake_time'):
                 user_info += f"\n- 通常起床时间: {lifestyle['usual_wake_time']}"
-        
+
         # 添加工作环境（如果有）
         work_env = user_context.get('work_environment', {})
         if work_env and any(v for v in work_env.values() if v is not None):
@@ -499,17 +499,17 @@ class LLMHealthAnalyzer:
                 user_info += f"\n- 每日久坐时长: {work_env['sitting_hours_per_day']}小时"
             if work_env.get('city'):
                 user_info += f"\n- 所在城市: {work_env['city']}"
-        
+
         # 构建分析数据部分
         # 注意：Garmin 的睡眠数据按醒来日期记录
         # 例如：1月18日的睡眠数据 = 1月17日晚上到1月18日早上的睡眠
         data_date = yesterday_data.record_date
         china_today = get_china_today()
         china_yesterday = china_today - timedelta(days=1)
-        
+
         # 判断数据是今天还是昨天的
         is_today_data = (data_date == china_today)
-        
+
         if is_today_data:
             # 如果是今天的数据，睡眠是昨晚的，运动数据不完整
             yesterday_info = f"""
@@ -580,23 +580,23 @@ class LLMHealthAnalyzer:
 - 身体电量充电: {yesterday_data.body_battery_charged or '无数据'}
 - 身体电量消耗: {yesterday_data.body_battery_drained or '无数据'}
 """
-        
+
         # 构建趋势数据
         if recent_data and len(recent_data) > 1:
             sleep_scores = [d.sleep_score for d in recent_data if d.sleep_score]
             steps_list = [d.steps for d in recent_data if d.steps]
             rhr_list = [d.resting_heart_rate for d in recent_data if d.resting_heart_rate]
             active_minutes_list = [d.active_minutes for d in recent_data if d.active_minutes]
-            
+
             # 计算本周实际运动时长（从 workout_records 表）
             # 获取本周的起止日期（北京时间）
             from app.models.daily_health import WorkoutRecord
             from sqlalchemy import func
-            
+
             today = get_china_today()
             days_since_monday = today.weekday()
             monday = today - timedelta(days=days_since_monday)
-            
+
             # 查询本周的实际运动记录
             db = recent_data[0]._sa_instance_state.session if recent_data else None
             workout_minutes = 0
@@ -609,12 +609,12 @@ class LLMHealthAnalyzer:
                         WorkoutRecord.workout_date <= today
                     ).scalar()
                     workout_minutes = round(total_seconds / 60, 1) if total_seconds else 0
-            
+
             # 如果无法获取运动记录，回退到使用 active_minutes
             total_active_minutes = workout_minutes if workout_minutes > 0 else (sum(active_minutes_list) if active_minutes_list else 0)
             weekly_goal = 150  # WHO建议每周150分钟中等强度运动
             weekly_progress = round(total_active_minutes / weekly_goal * 100, 1) if total_active_minutes else 0
-            
+
             trend_info = f"""
 最近{len(recent_data)}天趋势（包括昨天）:
 - 平均睡眠分数: {round(sum(sleep_scores)/len(sleep_scores), 1) if sleep_scores else '无数据'}
@@ -629,7 +629,7 @@ class LLMHealthAnalyzer:
 """
         else:
             trend_info = ""
-        
+
         # 规则分析结果摘要
         rule_summary = f"""
 规则分析结果:
@@ -645,7 +645,7 @@ class LLMHealthAnalyzer:
 {chr(10).join(['- ' + issue for issue in rule_analysis.get('heart_rate_analysis', {}).get('issues', [])])}
 {chr(10).join(['- ' + issue for issue in rule_analysis.get('stress_analysis', {}).get('issues', [])])}
 """
-        
+
         # 添加环境数据
         environment_info = ""
         if environment_data:
@@ -654,7 +654,7 @@ class LLMHealthAnalyzer:
             exercise = environment_data.get("exercise", {})
             env_advices = environment_data.get("advices", [])
             env_warnings = environment_data.get("warnings", [])
-            
+
             environment_info = f"""
 
 【今日环境信息】
@@ -683,9 +683,9 @@ class LLMHealthAnalyzer:
 环境相关警告:
 {chr(10).join(['- ' + warning for warning in env_warnings]) if env_warnings else '- 暂无'}
 """
-        
+
         return time_info + user_info + yesterday_info + trend_info + rule_summary + environment_info
-    
+
     async def analyze_daily_health(
         self,
         db: Session,
@@ -838,13 +838,13 @@ class LLMHealthAnalyzer:
                 if content.startswith("json"):
                     content = content[4:]
                 content = content.strip()
-            
+
             llm_result = json.loads(content)
             llm_result["available"] = True
-            
+
             logger.info(f"LLM分析完成，用户ID: {user_id}")
             return llm_result
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"LLM返回结果解析失败: {e}")
             return {
@@ -858,7 +858,7 @@ class LLMHealthAnalyzer:
                 "available": False,
                 "error": str(e)
             }
-    
+
     async def generate_weekly_report(
         self,
         db: Session,
@@ -927,18 +927,18 @@ class LLMHealthAnalyzer:
         except Exception as e:
             logger.error(f"周报生成失败: {e}")
             return {"available": False, "error": str(e)}
-    
+
     def _build_week_summary(self, week_data: List[GarminData]) -> str:
         """构建周数据摘要"""
         if not week_data:
             return "无数据"
-        
+
         sleep_scores = [d.sleep_score for d in week_data if d.sleep_score]
         sleep_durations = [d.total_sleep_duration for d in week_data if d.total_sleep_duration]
         steps_list = [d.steps for d in week_data if d.steps]
         rhr_list = [d.resting_heart_rate for d in week_data if d.resting_heart_rate]
         stress_list = [d.stress_level for d in week_data if d.stress_level]
-        
+
         summary = f"""
 数据天数: {len(week_data)}天
 日期范围: {week_data[-1].record_date if week_data else ''} 至 {week_data[0].record_date if week_data else ''}
@@ -966,4 +966,3 @@ class LLMHealthAnalyzer:
 
 # 单例实例
 llm_analyzer = LLMHealthAnalyzer()
-

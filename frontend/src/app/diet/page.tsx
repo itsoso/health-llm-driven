@@ -26,7 +26,7 @@ function getDefaultMealType(): string {
   const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
   const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
   const hour = beijingTime.getHours();
-  
+
   if (hour >= 6 && hour < 10) {
     return 'breakfast';  // 6:00-10:00 早餐
   } else if (hour >= 10 && hour < 14) {
@@ -119,7 +119,7 @@ function DietContent() {
       console.log('[饮食保存] 开始请求:', data);
       const res = await fetch(`${API_BASE}/diet/records`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -153,7 +153,7 @@ function DietContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/diet/recognize-and-save`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -179,7 +179,7 @@ function DietContent() {
   // 删除记录
   const deleteMutation = useMutation({
     mutationFn: async (recordId: number) => {
-      const res = await fetch(`${API_BASE}/diet/records/${recordId}`, { 
+      const res = await fetch(`${API_BASE}/diet/records/${recordId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -256,10 +256,10 @@ function DietContent() {
 
       if (result.success && result.foods?.length > 0) {
         // 自动填充表单
-        const foodNames = result.foods.map((f: RecognizedFood) => 
+        const foodNames = result.foods.map((f: RecognizedFood) =>
           `${f.name}${f.quantity ? ` (${f.quantity})` : ''}`
         ).join(', ');
-        
+
         setFormData({
           ...formData,
           food_items: foodNames,
@@ -345,7 +345,7 @@ function DietContent() {
       showToast('请输入食物内容', 'warning');
       return;
     }
-    
+
     const submitData = {
       record_date: selectedDate,
       meal_type: formData.meal_type,
@@ -358,7 +358,7 @@ function DietContent() {
       image_base64: imageBase64 || undefined,
       image_type: imageBase64 ? 'jpeg' : undefined,
     };
-    
+
     console.log('[饮食保存] 提交数据:', submitData);
     createMutation.mutate(submitData);
   };
@@ -443,19 +443,19 @@ function DietContent() {
         {showForm && (
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-orange-200">
             <h3 className="text-xl font-bold text-gray-900 mb-4">🍽️ 添加饮食记录</h3>
-            
+
             {/* 图片上传区域 */}
             <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border-2 border-dashed border-blue-300">
               <h4 className="text-lg font-semibold text-gray-800 mb-3">📸 AI智能识别</h4>
-              
+
               <div className="flex flex-col md:flex-row gap-4">
                 {/* 图片预览 */}
                 <div className="flex-1">
                   {imagePreview ? (
                     <div className="relative">
-                      <img 
-                        src={imagePreview} 
-                        alt="食物图片" 
+                      <img
+                        src={imagePreview}
+                        alt="食物图片"
                         className="w-full h-48 object-cover rounded-lg shadow-md"
                       />
                       <button
@@ -471,7 +471,7 @@ function DietContent() {
                       </button>
                     </div>
                   ) : (
-                    <div 
+                    <div
                       onClick={() => fileInputRef.current?.click()}
                       className="w-full h-48 bg-gray-100 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
                     >
@@ -551,7 +551,7 @@ function DietContent() {
 
             <div className="border-t border-gray-200 pt-4 mt-4">
               <p className="text-sm text-gray-500 mb-4">📝 文字记录（输入食物后点击 ✨ AI分析自动计算营养）：</p>
-              
+
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-800 mb-2">餐食类型</label>
@@ -709,8 +709,8 @@ function DietContent() {
                     {/* 食物图片 */}
                     {meal.image_url && (
                       <div className="flex-shrink-0">
-                        <img 
-                          src={meal.image_url} 
+                        <img
+                          src={meal.image_url}
                           alt={meal.food_items}
                           className="w-32 h-32 object-cover rounded-lg shadow-md cursor-pointer hover:scale-105 transition-transform"
                           onClick={() => window.open(meal.image_url, '_blank')}
@@ -718,7 +718,7 @@ function DietContent() {
                         />
                       </div>
                     )}
-                    
+
                     {/* 食物信息 */}
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
@@ -745,7 +745,7 @@ function DietContent() {
                         <p className="text-sm text-gray-500 mt-1">{meal.notes}</p>
                       )}
                     </div>
-                    
+
                     {/* 删除按钮 */}
                     <button
                       onClick={() => deleteMutation.mutate(meal.id)}

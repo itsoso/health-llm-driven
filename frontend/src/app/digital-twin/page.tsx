@@ -81,17 +81,17 @@ export default function DigitalTwinPage() {
   const fetchReport = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const token = localStorage.getItem('auth_token');
       const res = await fetch(`${API_BASE}/digital-twin/report`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       if (!res.ok) {
         throw new Error('获取报告失败');
       }
-      
+
       const data = await res.json();
       setReport(data);
     } catch (e) {
@@ -181,7 +181,7 @@ export default function DigitalTwinPage() {
                 <span className="text-2xl">🏆</span>
                 综合健康评分
               </h2>
-              
+
               <div className="flex items-center gap-8 mb-6">
                 <div className="text-center">
                   <div className={`text-6xl font-bold ${getGradeColor(report.health_score.grade)}`}>
@@ -191,17 +191,17 @@ export default function DigitalTwinPage() {
                     等级 {report.health_score.grade}
                   </div>
                 </div>
-                
+
                 <div className="flex-1 space-y-3">
                   {Object.entries(report.health_score.dimensions).map(([key, value]) => (
                     <div key={key} className="flex items-center gap-3">
                       <span className="w-20 text-gray-400 text-sm">
-                        {key === 'sleep' ? '😴 睡眠' : 
+                        {key === 'sleep' ? '😴 睡眠' :
                          key === 'exercise' ? '🏃 运动' :
                          key === 'vitals' ? '💓 身体状态' : '⚖️ 身体成分'}
                       </span>
                       <div className="flex-1 bg-gray-700 rounded-full h-3 overflow-hidden">
-                        <div 
+                        <div
                           className={`h-full ${getScoreColor(value)} transition-all duration-500`}
                           style={{ width: `${value}%` }}
                         />
@@ -219,7 +219,7 @@ export default function DigitalTwinPage() {
                 <span className="text-2xl">🫀</span>
                 基础生理指标
               </h2>
-              
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-black/20 rounded-xl p-4 text-center">
                   <div className="text-gray-400 text-sm mb-1">基础代谢率</div>
@@ -228,7 +228,7 @@ export default function DigitalTwinPage() {
                   </div>
                   <div className="text-xs text-gray-500">千卡/天</div>
                 </div>
-                
+
                 <div className="bg-black/20 rounded-xl p-4 text-center">
                   <div className="text-gray-400 text-sm mb-1">每日总消耗</div>
                   <div className="text-2xl font-bold text-green-400">
@@ -236,7 +236,7 @@ export default function DigitalTwinPage() {
                   </div>
                   <div className="text-xs text-gray-500">千卡/天</div>
                 </div>
-                
+
                 <div className="bg-black/20 rounded-xl p-4 text-center">
                   <div className="text-gray-400 text-sm mb-1">最大心率</div>
                   <div className="text-2xl font-bold text-red-400">
@@ -244,7 +244,7 @@ export default function DigitalTwinPage() {
                   </div>
                   <div className="text-xs text-gray-500">次/分</div>
                 </div>
-                
+
                 <div className="bg-black/20 rounded-xl p-4 text-center">
                   <div className="text-gray-400 text-sm mb-1">静息心率</div>
                   <div className="text-2xl font-bold text-purple-400">
@@ -288,11 +288,11 @@ export default function DigitalTwinPage() {
                     </span>
                     <div className="flex-1 bg-gray-700 rounded-full h-3 relative">
                       <div className="absolute inset-0 bg-gradient-to-r from-yellow-500 via-green-500 to-yellow-500 rounded-full" />
-                      <div 
+                      <div
                         className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full border-2 border-green-500 shadow-lg"
-                        style={{ 
-                          left: `${((report.physiological.ideal_weight_range.ideal_weight - report.physiological.ideal_weight_range.min_weight) / 
-                                 (report.physiological.ideal_weight_range.max_weight - report.physiological.ideal_weight_range.min_weight)) * 100}%` 
+                        style={{
+                          left: `${((report.physiological.ideal_weight_range.ideal_weight - report.physiological.ideal_weight_range.min_weight) /
+                                 (report.physiological.ideal_weight_range.max_weight - report.physiological.ideal_weight_range.min_weight)) * 100}%`
                         }}
                         title={`理想: ${report.physiological.ideal_weight_range.ideal_weight} kg`}
                       />
@@ -370,13 +370,13 @@ export default function DigitalTwinPage() {
                   <div className="flex justify-between">
                     <span className="text-gray-400">90天变化</span>
                     <span className={`font-medium ${
-                      (report.trends.body_composition.weight_change || 0) < 0 
-                        ? 'text-green-400' 
-                        : (report.trends.body_composition.weight_change || 0) > 0 
-                          ? 'text-red-400' 
+                      (report.trends.body_composition.weight_change || 0) < 0
+                        ? 'text-green-400'
+                        : (report.trends.body_composition.weight_change || 0) > 0
+                          ? 'text-red-400'
                           : ''
                     }`}>
-                      {report.trends.body_composition.weight_change !== undefined 
+                      {report.trends.body_composition.weight_change !== undefined
                         ? `${report.trends.body_composition.weight_change > 0 ? '+' : ''}${report.trends.body_composition.weight_change} kg`
                         : '--'}
                     </span>
@@ -394,11 +394,11 @@ export default function DigitalTwinPage() {
                 </h2>
                 <div className="space-y-4">
                   {report.recommendations.map((rec, index) => (
-                    <div 
+                    <div
                       key={index}
                       className={`p-4 rounded-xl border ${
-                        rec.priority === 'high' 
-                          ? 'bg-red-900/20 border-red-500/30' 
+                        rec.priority === 'high'
+                          ? 'bg-red-900/20 border-red-500/30'
                           : 'bg-yellow-900/20 border-yellow-500/30'
                       }`}
                     >

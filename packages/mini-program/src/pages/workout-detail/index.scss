@@ -145,15 +145,15 @@
   border: none;
   border-radius: 30px;
   font-weight: 500;
-  
+
   &::after {
     border: none;
   }
-  
+
   &.loading {
     opacity: 0.7;
   }
-  
+
   &:active {
     transform: scale(0.95);
   }
@@ -370,7 +370,7 @@
   border: 1px solid rgba(102, 126, 234, 0.3);
   border-radius: 16px;
   padding: 20px;
-  
+
   &.empty {
     display: flex;
     flex-direction: column;
@@ -400,7 +400,7 @@
 
 .ai-section {
   margin-bottom: 20px;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -480,7 +480,7 @@
 // 统计子区块
 .stats-subsection {
   margin-bottom: 24px;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -507,7 +507,7 @@
   align-items: center;
   padding: 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  
+
   &:last-child {
     border-bottom: none;
   }
@@ -540,7 +540,7 @@
   backdrop-filter: blur(10px);
   border-radius: 20px;
   padding: 12px 24px;
-  
+
   &:active {
     opacity: 0.8;
   }
@@ -562,7 +562,7 @@
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 16px;
-  
+
   .card-title {
     font-size: 28px;
     font-weight: 600;
@@ -614,7 +614,7 @@
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  
+
   &:last-child {
     border-bottom: none;
   }
@@ -635,14 +635,14 @@
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  
+
   .factor-text {
     display: block;
     font-size: 22px;
     color: rgba(255, 255, 255, 0.7);
     line-height: 1.6;
     margin-bottom: 6px;
-    
+
     &:last-child {
       margin-bottom: 0;
     }
@@ -653,7 +653,7 @@
   display: flex;
   align-items: center;
   margin-bottom: 12px;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -695,7 +695,7 @@
   display: flex;
   align-items: flex-start;
   margin-bottom: 12px;
-  
+
   &:last-child {
     margin-bottom: 0;
   }

@@ -73,4 +73,3 @@ class MedicalExamResponse(BaseModel):
     items: List[MedicalExamItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
-

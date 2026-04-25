@@ -13,7 +13,7 @@ from .manager import DeviceManager
 
 __all__ = [
     "DeviceAdapter",
-    "NormalizedHealthData", 
+    "NormalizedHealthData",
     "DeviceType",
     "DeviceManager",
 ]

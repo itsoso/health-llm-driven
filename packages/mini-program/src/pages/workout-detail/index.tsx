@@ -90,7 +90,7 @@ const HR_ZONE_NAMES = ['热身', '燃脂', '有氧', '无氧', '极限'];
 export default function WorkoutDetail() {
   const router = useRouter();
   const workoutId = router.params.id;
-  
+
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<WorkoutDetail | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -118,11 +118,11 @@ export default function WorkoutDetail() {
     try {
       // 添加时间戳防止缓存，并强制刷新
       const timestamp = Date.now();
-      const data = await get<WorkoutDetail>(`/workout/me/${workoutId}`, { 
+      const data = await get<WorkoutDetail>(`/workout/me/${workoutId}`, {
         _t: timestamp,
         _refresh: '1'
       });
-      
+
       // 确保数据已更新
       if (data) {
         console.log(`[WorkoutDetail] 加载数据成功: ID=${workoutId}, 时间戳=${timestamp}`);
@@ -150,10 +150,10 @@ export default function WorkoutDetail() {
   // 触发AI分析
   const handleAnalyze = async () => {
     if (!workoutId || analyzing) return;
-    
+
     setAnalyzing(true);
     Taro.showLoading({ title: '正在分析...' });
-    
+
     try {
       await post(`/workout/me/${workoutId}/analyze`);
       Taro.hideLoading();
@@ -162,8 +162,8 @@ export default function WorkoutDetail() {
       await loadDetail();
     } catch (error: any) {
       Taro.hideLoading();
-      Taro.showToast({ 
-        title: error.message || '分析失败', 
+      Taro.showToast({
+        title: error.message || '分析失败',
         icon: 'none',
         duration: 3000
       });
@@ -175,9 +175,9 @@ export default function WorkoutDetail() {
   // 获取运动后科学分析
   const handlePostAnalysis = async () => {
     if (!workoutId) return;
-    
+
     Taro.showLoading({ title: '生成分析中...' });
-    
+
     try {
       const response = await post(`/workout/post-workout-analysis/${workoutId}`);
       setPostAnalysis(response);
@@ -186,8 +186,8 @@ export default function WorkoutDetail() {
       Taro.showToast({ title: '分析完成', icon: 'success' });
     } catch (error: any) {
       Taro.hideLoading();
-      Taro.showToast({ 
-        title: error.message || '获取分析失败', 
+      Taro.showToast({
+        title: error.message || '获取分析失败',
         icon: 'none',
         duration: 3000
       });
@@ -264,10 +264,10 @@ export default function WorkoutDetail() {
   // 计算心率区间总时长
   const getTotalHrZoneSeconds = () => {
     if (!detail) return 0;
-    return (detail.hr_zone_1_seconds || 0) + 
-           (detail.hr_zone_2_seconds || 0) + 
-           (detail.hr_zone_3_seconds || 0) + 
-           (detail.hr_zone_4_seconds || 0) + 
+    return (detail.hr_zone_1_seconds || 0) +
+           (detail.hr_zone_2_seconds || 0) +
+           (detail.hr_zone_3_seconds || 0) +
+           (detail.hr_zone_4_seconds || 0) +
            (detail.hr_zone_5_seconds || 0);
   };
 
@@ -299,7 +299,7 @@ export default function WorkoutDetail() {
           elevation: p.elevation,
         }));
     }
-    
+
     // 如果没有GPS数据，尝试从elevation_data中提取
     if (detail?.elevation_data) {
       try {
@@ -342,15 +342,15 @@ export default function WorkoutDetail() {
   const getMapData = () => {
     const routeData = parseRouteData();
     if (!routeData || routeData.length === 0) return null;
-    
+
     const latitudes = routeData.map((p: any) => p.latitude);
     const longitudes = routeData.map((p: any) => p.longitude);
     const centerLat = (Math.max(...latitudes) + Math.min(...latitudes)) / 2;
     const centerLng = (Math.max(...longitudes) + Math.min(...longitudes)) / 2;
-    
+
     const startPoint = routeData[0];
     const endPoint = routeData[routeData.length - 1];
-    
+
     return {
       centerLat,
       centerLng,
@@ -394,41 +394,41 @@ export default function WorkoutDetail() {
     if (!detail) return null;
     const maxHR = detail.max_heart_rate || 220;
     const zones = [
-      { 
-        zone: 1, 
-        name: '热身', 
+      {
+        zone: 1,
+        name: '热身',
         desc: '热身',
         range: `${Math.round(maxHR * 0.5)} - ${Math.round(maxHR * 0.6)} bpm`,
         seconds: detail.hr_zone_1_seconds || 0,
         color: HR_ZONE_COLORS[0],
       },
-      { 
-        zone: 2, 
-        name: '脂肪燃烧', 
+      {
+        zone: 2,
+        name: '脂肪燃烧',
         desc: '脂肪燃烧',
         range: `${Math.round(maxHR * 0.6)} - ${Math.round(maxHR * 0.7)} bpm`,
         seconds: detail.hr_zone_2_seconds || 0,
         color: HR_ZONE_COLORS[1],
       },
-      { 
-        zone: 3, 
-        name: '有氧', 
+      {
+        zone: 3,
+        name: '有氧',
         desc: '有氧',
         range: `${Math.round(maxHR * 0.7)} - ${Math.round(maxHR * 0.8)} bpm`,
         seconds: detail.hr_zone_3_seconds || 0,
         color: HR_ZONE_COLORS[2],
       },
-      { 
-        zone: 4, 
-        name: '临界心率', 
+      {
+        zone: 4,
+        name: '临界心率',
         desc: '临界心率',
         range: `${Math.round(maxHR * 0.8)} - ${Math.round(maxHR * 0.9)} bpm`,
         seconds: detail.hr_zone_4_seconds || 0,
         color: HR_ZONE_COLORS[3],
       },
-      { 
-        zone: 5, 
-        name: '无氧耐力', 
+      {
+        zone: 5,
+        name: '无氧耐力',
         desc: '无氧耐力',
         range: `> ${Math.round(maxHR * 0.9)} bpm`,
         seconds: detail.hr_zone_5_seconds || 0,
@@ -456,12 +456,12 @@ export default function WorkoutDetail() {
                 </View>
               </View>
               <View className="zone-bar-container">
-                <View 
-                  className="zone-bar" 
-                  style={{ 
-                    width: `${percentage}%`, 
-                    backgroundColor: zone.color 
-                  }} 
+                <View
+                  className="zone-bar"
+                  style={{
+                    width: `${percentage}%`,
+                    backgroundColor: zone.color
+                  }}
                 />
               </View>
             </View>
@@ -475,11 +475,11 @@ export default function WorkoutDetail() {
   const renderAiAnalysis = (analysisStr: string) => {
     try {
       const analysis = JSON.parse(analysisStr);
-      
+
       // 如果是对象，只显示关键洞察及之后的内容
       if (typeof analysis === 'object' && analysis !== null) {
         const sections: React.ReactNode[] = [];
-        
+
         // 1. AI增强洞察（如果有）
         if (analysis.ai_enhanced_insights && typeof analysis.ai_enhanced_insights === 'string' && analysis.ai_enhanced_insights.trim()) {
           sections.push(
@@ -488,7 +488,7 @@ export default function WorkoutDetail() {
             </View>
           );
         }
-        
+
         // 2. 关键洞察
         if (analysis.key_insights && Array.isArray(analysis.key_insights) && analysis.key_insights.length > 0) {
           sections.push(
@@ -505,7 +505,7 @@ export default function WorkoutDetail() {
             </View>
           );
         }
-        
+
         // 3. 改进建议
         if (analysis.improvement_tips && Array.isArray(analysis.improvement_tips) && analysis.improvement_tips.length > 0) {
           sections.push(
@@ -522,7 +522,7 @@ export default function WorkoutDetail() {
             </View>
           );
         }
-        
+
         // 4. 恢复建议
         if (analysis.recovery_recommendation && typeof analysis.recovery_recommendation === 'string' && analysis.recovery_recommendation.trim()) {
           sections.push(
@@ -532,7 +532,7 @@ export default function WorkoutDetail() {
             </View>
           );
         }
-        
+
         // 5. 下次训练建议
         if (analysis.next_workout_suggestion && typeof analysis.next_workout_suggestion === 'string' && analysis.next_workout_suggestion.trim()) {
           sections.push(
@@ -542,12 +542,12 @@ export default function WorkoutDetail() {
             </View>
           );
         }
-        
+
         if (sections.length > 0) {
           return <>{sections}</>;
         }
       }
-      
+
       // 如果是字符串，直接显示
       if (typeof analysis === 'string') {
         return <Text className="ai-content">{analysis}</Text>;
@@ -555,7 +555,7 @@ export default function WorkoutDetail() {
     } catch (e) {
       // 解析失败，直接显示原文
     }
-    
+
     // 默认直接显示
     return <Text className="ai-content">{analysisStr}</Text>;
   };
@@ -563,7 +563,7 @@ export default function WorkoutDetail() {
   // 渲染心率曲线
   const renderHeartRateChart = () => {
     if (!detail?.heart_rate_data) return null;
-    
+
     try {
       const hrData = JSON.parse(detail.heart_rate_data);
       if (!Array.isArray(hrData) || hrData.length === 0) return null;
@@ -575,7 +575,7 @@ export default function WorkoutDetail() {
 
       // 采样 - 增加到最多 60 个点，提高精细度
       const maxPoints = 60;
-      const sampledData = hrData.length > maxPoints 
+      const sampledData = hrData.length > maxPoints
         ? hrData.filter((_: any, i: number) => i % Math.ceil(hrData.length / maxPoints) === 0)
         : hrData;
 
@@ -596,14 +596,14 @@ export default function WorkoutDetail() {
               const height = ((value - minVal) / range) * 100;
               return (
                 <View key={index} className="bar-wrapper">
-                  <View 
-                    className="bar" 
-                    style={{ 
+                  <View
+                    className="bar"
+                    style={{
                       height: `${Math.max(height, 5)}%`,
-                      backgroundColor: value > 150 ? '#EF4444' : 
-                                      value > 120 ? '#F59E0B' : 
+                      backgroundColor: value > 150 ? '#EF4444' :
+                                      value > 120 ? '#F59E0B' :
                                       value > 100 ? '#10B981' : '#3B82F6'
-                    }} 
+                    }}
                   />
                 </View>
               );
@@ -650,7 +650,7 @@ export default function WorkoutDetail() {
           const endTimeStr = detail.end_time || detail.workout_end_time;
           const startTime = startTimeStr ? formatTime(startTimeStr) : null;
           const endTime = endTimeStr ? formatTime(endTimeStr) : (startTimeStr && detail.duration_seconds ? getEndTime() : null);
-          
+
           if (startTime && endTime) {
             return <Text className="header-time">{startTime} - {endTime}</Text>;
           } else if (startTime) {
@@ -660,7 +660,7 @@ export default function WorkoutDetail() {
           }
           return null;
         })()}
-        
+
         {/* 科学分析按钮 */}
         <View className="header-action">
           <View className="analysis-btn" onClick={handlePostAnalysis}>
@@ -762,12 +762,12 @@ export default function WorkoutDetail() {
       {(() => {
         const elevationData = parseElevationData();
         if (!elevationData || elevationData.length === 0) return null;
-        
+
         const values = elevationData.map((p: any) => p.elevation);
         const maxVal = Math.max(...values);
         const minVal = Math.min(...values);
         const range = maxVal - minVal || 1;
-        const sampledData = elevationData.length > 30 
+        const sampledData = elevationData.length > 30
           ? elevationData.filter((_: any, i: number) => i % Math.ceil(elevationData.length / 30) === 0)
           : elevationData;
 
@@ -790,12 +790,12 @@ export default function WorkoutDetail() {
                   const height = ((value - minVal) / range) * 100;
                   return (
                     <View key={index} className="bar-wrapper">
-                      <View 
-                        className="bar" 
-                        style={{ 
+                      <View
+                        className="bar"
+                        style={{
                           height: `${Math.max(height, 5)}%`,
                           backgroundColor: '#10B981'
-                        }} 
+                        }}
                       />
                     </View>
                   );
@@ -842,12 +842,12 @@ export default function WorkoutDetail() {
       {(() => {
         const speedData = parseSpeedData();
         if (!speedData || speedData.length === 0) return null;
-        
+
         const values = speedData.map((p: any) => p.speed);
         const maxVal = Math.max(...values);
         const minVal = Math.min(...values);
         const range = maxVal - minVal || 1;
-        const sampledData = speedData.length > 30 
+        const sampledData = speedData.length > 30
           ? speedData.filter((_: any, i: number) => i % Math.ceil(speedData.length / 30) === 0)
           : speedData;
 
@@ -870,12 +870,12 @@ export default function WorkoutDetail() {
                   const height = ((value - minVal) / range) * 100;
                   return (
                     <View key={index} className="bar-wrapper">
-                      <View 
-                        className="bar" 
-                        style={{ 
+                      <View
+                        className="bar"
+                        style={{
                           height: `${Math.max(height, 5)}%`,
                           backgroundColor: '#3B82F6'
-                        }} 
+                        }}
                       />
                     </View>
                   );
@@ -914,19 +914,19 @@ export default function WorkoutDetail() {
       {/* 详细统计信息 - 带Tab切换 */}
       <View className="section">
         <View className="stats-tabs">
-          <View 
+          <View
             className={`tab-item ${activeTab === 'stats' ? 'active' : ''}`}
             onClick={() => setActiveTab('stats')}
           >
             <Text className="tab-text">统计信息</Text>
           </View>
-          <View 
+          <View
             className={`tab-item ${activeTab === 'laps' ? 'active' : ''}`}
             onClick={() => setActiveTab('laps')}
           >
             <Text className="tab-text">计圈</Text>
           </View>
-          <View 
+          <View
             className={`tab-item ${activeTab === 'intervals' ? 'active' : ''}`}
             onClick={() => setActiveTab('intervals')}
           >
@@ -937,7 +937,7 @@ export default function WorkoutDetail() {
         {activeTab === 'stats' && (
           <View className="tab-content">
             <Text className="section-title">📋 详细统计</Text>
-        
+
         {/* 距离与消耗 */}
         <View className="stats-subsection">
           <Text className="subsection-title">距离与消耗</Text>
@@ -1128,7 +1128,7 @@ export default function WorkoutDetail() {
       <View className="section">
         <View className="section-header">
           <Text className="section-title">✨ 智能分析</Text>
-          <Button 
+          <Button
             className={`analyze-btn ${analyzing ? 'loading' : ''}`}
             onClick={handleAnalyze}
             disabled={analyzing}
@@ -1178,7 +1178,7 @@ export default function WorkoutDetail() {
             const startTimeStr = detail.start_time || detail.workout_start_time;
             const endTimeStr = detail.end_time || detail.workout_end_time;
             let endTime: string | null = null;
-            
+
             if (endTimeStr) {
               endTime = formatDateTime(endTimeStr);
             } else if (startTimeStr && detail.duration_seconds) {
@@ -1190,7 +1190,7 @@ export default function WorkoutDetail() {
               const minutes = String(endDate.getMinutes()).padStart(2, '0');
               endTime = `${month}-${day} ${hours}:${minutes}`;
             }
-            
+
             if (endTime) {
               return (
                 <View className="stat-row">
@@ -1225,7 +1225,7 @@ export default function WorkoutDetail() {
       {showAnalysis && postAnalysis && postAnalysis.success && (
         <View className="section post-analysis">
           <Text className="section-title">🔬 运动后科学分析</Text>
-          
+
           {/* 整体评分 */}
           <View className="analysis-card score-card">
             <View className="score-header">
@@ -1275,8 +1275,8 @@ export default function WorkoutDetail() {
                 <View key={zone} className="zone-distribution-item">
                   <Text className="zone-name">{zone}</Text>
                   <View className="zone-bar-container">
-                    <View 
-                      className="zone-bar" 
+                    <View
+                      className="zone-bar"
                       style={{ width: `${data.percentage}%` }}
                     />
                   </View>

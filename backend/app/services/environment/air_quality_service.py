@@ -56,19 +56,19 @@ class AirQualityService:
             logger.warning("⚠️ 使用 aqicn.org demo token，数据可能不准确。建议配置 AQICN_API_TOKEN 环境变量")
         else:
             logger.info("✅ 空气质量服务初始化完成 (使用正式 API Token)")
-    
+
     def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
         """获取缓存"""
         if key in self._cache:
             if datetime.now() - self._cache_time.get(key, datetime.min) < self._cache_duration:
                 return self._cache[key]
         return None
-    
+
     def _set_cache(self, key: str, data: Dict[str, Any]):
         """设置缓存"""
         self._cache[key] = data
         self._cache_time[key] = datetime.now()
-    
+
     async def get_air_quality(
         self,
         city: str = None,
@@ -77,24 +77,24 @@ class AirQualityService:
     ) -> Dict[str, Any]:
         """
         获取当前空气质量
-        
+
         优先使用 aqicn.org (官方监测站数据)，失败时回退到 Open-Meteo
-        
+
         Args:
             city: 城市名称
             lat, lon: 经纬度
-            
+
         Returns:
             空气质量数据
         """
         if lat is None or lon is None:
             lat, lon = self._city_to_coords(city)
-        
+
         cache_key = f"aqi_{city or f'{lat},{lon}'}"
         cached = self._get_cache(cache_key)
         if cached:
             return cached
-        
+
         # 优先使用和风天气 Air Quality v1
         if self.qweather_api_key:
             try:
@@ -122,7 +122,7 @@ class AirQualityService:
         except Exception as e:
             logger.error(f"获取空气质量数据失败: {e}")
             return self._get_default_aqi()
-    
+
     async def _get_qweather_aqi(self, lat: float, lon: float) -> Dict[str, Any]:
         """
         使用和风天气 Air Quality API v1 获取实时空气质量
@@ -197,7 +197,7 @@ class AirQualityService:
     async def _get_aqicn_aqi(self, city: str, lat: float, lon: float) -> Dict[str, Any]:
         """
         使用 aqicn.org API 获取空气质量 (官方监测站数据)
-        
+
         数据来源: 各地环保厅官方监测站
         """
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -224,7 +224,7 @@ class AirQualityService:
                 "合肥": "hefei",
                 "福州": "fuzhou",
             }
-            
+
             # 优先使用城市名查询，否则使用经纬度
             if city and city in city_mapping:
                 query = city_mapping[city]
@@ -233,20 +233,20 @@ class AirQualityService:
             else:
                 # 默认使用杭州
                 query = "hangzhou"
-            
+
             logger.info(f"aqicn.org 查询: city={city}, query={query}, token={'正式' if self.aqicn_token != 'demo' else 'demo'}")
             url = f"{self.AQICN_URL}/{query}/?token={self.aqicn_token}"
-            
+
             response = await client.get(url, timeout=10)
             data = response.json()
-            
+
             if data.get("status") != "ok":
                 logger.warning(f"aqicn.org 返回错误: {data}")
                 return {"available": False}
-            
+
             aqi_data = data.get("data", {})
             aqi = aqi_data.get("aqi", 0)
-            
+
             # 解析各项污染物
             iaqi = aqi_data.get("iaqi", {})
             pm25 = iaqi.get("pm25", {}).get("v", 0)
@@ -255,18 +255,18 @@ class AirQualityService:
             no2 = iaqi.get("no2", {}).get("v", 0)
             so2 = iaqi.get("so2", {}).get("v", 0)
             o3 = iaqi.get("o3", {}).get("v", 0)
-            
+
             # 获取监测站信息
             city_info = aqi_data.get("city", {})
             station_name = city_info.get("name", "")
-            
+
             logger.info(f"aqicn.org 数据: {station_name}, AQI={aqi}, PM2.5={pm25}")
-            
+
             # 检查返回的城市是否与请求的城市匹配 (仅 demo token 有此限制)
             if self.aqicn_token == "demo" and city and city != "上海" and "Shanghai" in station_name:
                 logger.warning(f"aqicn.org demo token 限制: 请求 {city} 但返回上海数据，将使用 Open-Meteo")
                 return {"available": False, "reason": "demo_token_limit"}
-            
+
             return {
                 "available": True,
                 "source": "aqicn.org",
@@ -284,7 +284,7 @@ class AirQualityService:
                 "health_implications": self._get_health_implications(int(aqi) if aqi else 0),
                 "exercise_advice": self._get_exercise_advice(int(aqi) if aqi else 0)
             }
-    
+
     async def _get_openmeteo_aqi(self, lat: float, lon: float) -> Dict[str, Any]:
         """使用 Open-Meteo API 获取空气质量"""
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -294,17 +294,17 @@ class AirQualityService:
                 "current": "european_aqi,us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
                 "timezone": "Asia/Shanghai"
             }
-            
+
             response = await client.get(self.OPENMETEO_AQ_URL, params=params, timeout=10)
             data = response.json()
-            
+
             current = data.get("current", {})
-            
+
             # 使用美国 AQI 标准
             us_aqi = current.get("us_aqi", 0)
             pm25 = current.get("pm2_5", 0)
             pm10 = current.get("pm10", 0)
-            
+
             return {
                 "available": True,
                 "source": "open-meteo",
@@ -321,7 +321,7 @@ class AirQualityService:
                 "health_implications": self._get_health_implications(us_aqi),
                 "exercise_advice": self._get_exercise_advice(us_aqi)
             }
-    
+
     def _aqi_to_level(self, aqi: int) -> str:
         """AQI 转等级"""
         if aqi <= 50:
@@ -336,7 +336,7 @@ class AirQualityService:
             return "very_unhealthy"  # 重度污染
         else:
             return "hazardous"  # 严重污染
-    
+
     def _aqi_to_description(self, aqi: int) -> str:
         """AQI 转描述"""
         level_desc = {
@@ -348,7 +348,7 @@ class AirQualityService:
             "hazardous": "严重污染"
         }
         return level_desc.get(self._aqi_to_level(aqi), "未知")
-    
+
     def _get_health_implications(self, aqi: int) -> str:
         """获取健康影响说明"""
         if aqi <= 50:
@@ -363,7 +363,7 @@ class AirQualityService:
             return "健康警告，所有人群可能出现较严重健康影响"
         else:
             return "健康紧急状况，所有人群都可能受到严重健康影响"
-    
+
     def _get_exercise_advice(self, aqi: int) -> Dict[str, Any]:
         """获取运动建议"""
         if aqi <= 50:
@@ -412,7 +412,7 @@ class AirQualityService:
                 "recommended_activities": ["休息", "室内轻度拉伸"],
                 "caution": "尽量待在室内，使用空气净化器"
             }
-    
+
     def _city_to_coords(self, city: str) -> tuple:
         """城市名转经纬度"""
         city_coords = {
@@ -430,7 +430,7 @@ class AirQualityService:
         if city not in city_coords:
             logger.warning(f"城市 '{city}' 不在空气质量坐标映射中，默认使用杭州坐标")
         return city_coords.get(city, (30.2741, 120.1551))  # 默认杭州
-    
+
     def _get_default_aqi(self) -> Dict[str, Any]:
         """返回默认空气质量数据"""
         return {
@@ -443,23 +443,23 @@ class AirQualityService:
             "pm10": 0,
             "error": "无法获取空气质量数据"
         }
-    
+
     def get_rhinitis_advice(self, aqi_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         为鼻炎患者生成空气质量相关建议
-        
+
         Args:
             aqi_data: 空气质量数据
-            
+
         Returns:
             鼻炎相关建议
         """
         if not aqi_data.get("available"):
             return {"advice": "空气质量数据不可用", "risk_level": "unknown"}
-        
+
         aqi = aqi_data.get("aqi", 50)
         pm25 = aqi_data.get("pm25", 0)
-        
+
         if aqi <= 50 and pm25 <= 35:
             return {
                 "risk_level": "low",

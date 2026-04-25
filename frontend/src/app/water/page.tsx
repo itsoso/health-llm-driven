@@ -132,7 +132,7 @@ function WaterContent() {
       if (!dailyData[d]) dailyData[d] = 0;
       dailyData[d] += r.amount || 0;
     });
-    
+
     return Object.entries(dailyData)
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-7)
@@ -404,4 +404,3 @@ export default function WaterPage() {
     </ProtectedRoute>
   );
 }
-

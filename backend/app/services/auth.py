@@ -35,7 +35,7 @@ fernet = Fernet(GARMIN_ENCRYPTION_KEY)
 
 class AuthService:
     """认证服务"""
-    
+
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
         """验证密码"""
@@ -47,14 +47,14 @@ class AuthService:
         except Exception as e:
             logger.error(f"密码验证失败: {e}")
             return False
-    
+
     @staticmethod
     def get_password_hash(password: str) -> str:
         """获取密码哈希"""
         salt = bcrypt.gensalt()
         hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
         return hashed.decode('utf-8')
-    
+
     @staticmethod
     def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
         """创建JWT访问令牌"""
@@ -66,7 +66,7 @@ class AuthService:
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
-    
+
     @staticmethod
     def decode_token(token: str) -> Optional[dict]:
         """解码JWT令牌"""
@@ -82,7 +82,7 @@ class AuthService:
         except Exception as e:
             logger.warning(f"[Auth] Token解码异常: {e}")
             return None
-    
+
     @staticmethod
     def authenticate_user(db: Session, username_or_email: str, password: str) -> Optional[User]:
         """验证用户登录"""
@@ -91,7 +91,7 @@ class AuthService:
         if not user:
             # 尝试通过邮箱查找
             user = db.query(User).filter(User.email == username_or_email).first()
-        
+
         if not user:
             return None
         if not user.hashed_password:
@@ -99,7 +99,7 @@ class AuthService:
         if not AuthService.verify_password(password, user.hashed_password):
             return None
         return user
-    
+
     @staticmethod
     def create_user(db: Session, username: str, email: str, password: str, name: str) -> User:
         """创建新用户"""
@@ -117,17 +117,17 @@ class AuthService:
         db.commit()
         db.refresh(user)
         return user
-    
+
     @staticmethod
     def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
         """通过ID获取用户"""
         return db.query(User).filter(User.id == user_id).first()
-    
+
     @staticmethod
     def get_user_by_email(db: Session, email: str) -> Optional[User]:
         """通过邮箱获取用户"""
         return db.query(User).filter(User.email == email).first()
-    
+
     @staticmethod
     def get_user_by_username(db: Session, username: str) -> Optional[User]:
         """通过用户名获取用户"""
@@ -136,25 +136,25 @@ class AuthService:
 
 class GarminCredentialService:
     """Garmin凭证管理服务"""
-    
+
     @staticmethod
     def encrypt_password(password: str) -> str:
         """加密Garmin密码"""
         return fernet.encrypt(password.encode()).decode()
-    
+
     @staticmethod
     def decrypt_password(encrypted_password: str) -> str:
         """解密Garmin密码"""
         return fernet.decrypt(encrypted_password.encode()).decode()
-    
+
     @staticmethod
     def save_credentials(db: Session, user_id: int, garmin_email: str, garmin_password: str, is_cn: bool = False, requires_mfa: bool = False) -> GarminCredential:
         """保存或更新Garmin凭证"""
         encrypted_password = GarminCredentialService.encrypt_password(garmin_password)
-        
+
         # 查找现有凭证
         credential = db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
-        
+
         if credential:
             # 更新现有凭证
             credential.garmin_email = garmin_email
@@ -175,23 +175,23 @@ class GarminCredentialService:
                 requires_mfa=requires_mfa
             )
             db.add(credential)
-        
+
         db.commit()
         db.refresh(credential)
         return credential
-    
+
     @staticmethod
     def get_credentials(db: Session, user_id: int) -> Optional[GarminCredential]:
         """获取用户的Garmin凭证"""
         return db.query(GarminCredential).filter(GarminCredential.user_id == user_id).first()
-    
+
     @staticmethod
     def get_decrypted_credentials(db: Session, user_id: int) -> Optional[dict]:
         """获取解密后的Garmin凭证"""
         credential = GarminCredentialService.get_credentials(db, user_id)
         if not credential:
             return None
-        
+
         try:
             decrypted_password = GarminCredentialService.decrypt_password(credential.encrypted_password)
             return {
@@ -207,7 +207,7 @@ class GarminCredentialService:
         except Exception as e:
             logger.error("解密Garmin密码失败 (%s): %r", type(e).__name__, e, exc_info=True)
             return None
-    
+
     @staticmethod
     def update_mfa_status(db: Session, user_id: int, requires_mfa: bool) -> bool:
         """更新 MFA 状态"""
@@ -227,7 +227,7 @@ class GarminCredentialService:
             db.commit()
             return True
         return False
-    
+
     @staticmethod
     def update_sync_status(db: Session, user_id: int, last_sync_at: datetime = None) -> bool:
         """更新同步状态（同步成功时调用）"""
@@ -240,7 +240,7 @@ class GarminCredentialService:
             db.commit()
             return True
         return False
-    
+
     @staticmethod
     def update_sync_error(db: Session, user_id: int, error_message: str, is_auth_error: bool = False) -> bool:
         """更新同步错误状态"""
@@ -248,21 +248,21 @@ class GarminCredentialService:
         if credential:
             credential.last_error = error_message
             credential.error_count = (credential.error_count or 0) + 1
-            
+
             # 如果是认证错误（401），标记凭证为无效
             if is_auth_error:
                 credential.credentials_valid = False
                 logger.warning(f"用户 {user_id} 的Garmin凭证已失效: {error_message}")
-            
+
             # 如果连续失败3次以上，也标记为无效
             if credential.error_count >= 3:
                 credential.credentials_valid = False
                 logger.warning(f"用户 {user_id} 连续同步失败 {credential.error_count} 次，已标记凭证无效")
-            
+
             db.commit()
             return True
         return False
-    
+
     @staticmethod
     def reset_credential_status(db: Session, user_id: int) -> bool:
         """重置凭证状态（用户重新保存凭证时调用）"""
@@ -274,7 +274,7 @@ class GarminCredentialService:
             db.commit()
             return True
         return False
-    
+
     @staticmethod
     def toggle_sync_enabled(db: Session, user_id: int, enabled: bool) -> bool:
         """切换同步开关状态"""

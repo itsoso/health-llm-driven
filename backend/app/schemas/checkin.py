@@ -17,19 +17,19 @@ class CheckinTemplateBase(BaseModel):
     icon: str = Field("✅", description="图标emoji")
     color: str = Field("#4f46e5", description="主题色")
     category: str = Field(..., description="分类: exercise/health/habit/medicine/custom")
-    
+
     # 计量配置
     unit: str = Field("次", description="单位")
     default_target: float = Field(1, ge=0, description="默认目标值")
     min_value: float = Field(0, ge=0, description="最小值")
     max_value: Optional[float] = Field(None, description="最大值")
     step_value: float = Field(1, ge=0.1, description="步进值")
-    
+
     # 提醒配置
     reminder_enabled: bool = Field(False, description="是否开启提醒")
     reminder_time: Optional[str] = Field(None, description="提醒时间 HH:MM")
     reminder_days: List[int] = Field(default_factory=list, description="提醒日期 [1-7]")
-    
+
     # 频率配置
     frequency: str = Field("daily", description="频率: daily/weekly/monthly")
     frequency_target: int = Field(1, ge=1, description="每周期目标次数")
@@ -66,28 +66,28 @@ class CheckinTemplateResponse(CheckinTemplateBase):
     """打卡模板响应"""
     id: int
     user_id: int
-    
+
     # 统计数据
     total_checkins: int = 0
     total_value: float = 0
     current_streak: int = 0
     best_streak: int = 0
     last_checkin_date: Optional[date] = None
-    
+
     # 状态
     is_active: bool = True
     is_archived: bool = False
     sort_order: int = 0
-    
+
     # 时间戳
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
     # 计算字段
     today_completed: bool = Field(False, description="今日是否已完成")
     completion_rate_week: Optional[float] = Field(None, description="本周完成率")
     completion_rate_month: Optional[float] = Field(None, description="本月完成率")
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -108,22 +108,22 @@ class CheckinRecordBase(BaseModel):
     checkin_date: date = Field(..., description="打卡日期")
     value: float = Field(..., ge=0, description="完成量")
     target: Optional[float] = Field(None, description="当日目标")
-    
+
     # 附加数据
     duration_seconds: Optional[int] = Field(None, ge=0, description="持续时间(秒)")
     calories_burned: Optional[float] = Field(None, ge=0, description="消耗卡路里")
     heart_rate_avg: Optional[int] = Field(None, ge=30, le=250, description="平均心率")
-    
+
     # 主观感受
     difficulty: Optional[str] = Field(None, description="难度: easy/normal/hard/very_hard")
     mood_before: Optional[str] = Field(None, description="打卡前心情")
     mood_after: Optional[str] = Field(None, description="打卡后心情")
     energy_level: Optional[int] = Field(None, ge=1, le=10, description="精力等级")
-    
+
     # 备注
     notes: Optional[str] = Field(None, description="备注")
     tags: List[str] = Field(default_factory=list, description="标签")
-    
+
     # 位置
     location: Optional[str] = Field(None, description="位置")
     latitude: Optional[float] = Field(None, description="纬度")
@@ -166,12 +166,12 @@ class CheckinRecordResponse(CheckinRecordBase):
     photos: List[str] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
     # 关联数据
     template_name: Optional[str] = Field(None, description="模板名称")
     template_icon: Optional[str] = Field(None, description="模板图标")
     template_category: Optional[str] = Field(None, description="模板分类")
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -205,24 +205,24 @@ class CheckinStats(BaseModel):
     total_checkins: int = 0
     total_templates: int = 0
     active_templates: int = 0
-    
+
     # 连续打卡
     current_streak: int = 0
     best_streak: int = 0
-    
+
     # 时间统计
     checkins_today: int = 0
     checkins_this_week: int = 0
     checkins_this_month: int = 0
-    
+
     # 完成率
     completion_rate_today: float = 0
     completion_rate_week: float = 0
     completion_rate_month: float = 0
-    
+
     # 分类统计
     by_category: Dict[str, Dict[str, Any]] = {}
-    
+
     # 趋势数据（最近7天）
     daily_trend: List[Dict[str, Any]] = []
 

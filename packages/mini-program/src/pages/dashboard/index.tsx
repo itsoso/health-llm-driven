@@ -340,7 +340,7 @@ export default function Dashboard() {
   const handleRefresh = async () => {
     Taro.showLoading({ title: '同步中...' });
     setSyncing(true);
-    
+
     try {
       // 先尝试同步 Garmin 数据
       console.log('[Dashboard] 开始同步 Garmin 数据...');
@@ -348,9 +348,9 @@ export default function Dashboard() {
         console.log('[Dashboard] Garmin同步失败或未绑定:', err?.message || err);
         return null;
       });
-      
+
       console.log('[Dashboard] 同步结果:', syncResult);
-      
+
       if (syncResult?.status === 'success') {
         Taro.showToast({ title: '同步成功', icon: 'success', duration: 1500 });
         // 同步成功后等待更长时间让数据入库
@@ -360,12 +360,12 @@ export default function Dashboard() {
       } else if (syncResult?.status === 'skipped') {
         Taro.showToast({ title: syncResult.message || '同步跳过', icon: 'none', duration: 1500 });
       }
-      
+
       // 重新加载数据
       console.log('[Dashboard] 开始重新加载数据...');
       await loadData();
       console.log('[Dashboard] 数据加载完成');
-      
+
     } catch (error: any) {
       console.error('[Dashboard] 刷新失败:', error);
       // 如果是未绑定，仍然刷新数据
@@ -409,7 +409,7 @@ export default function Dashboard() {
   const maxBattery = garminData?.body_battery_most_charged ?? garminData?.body_battery_charged ?? null;
   const displayBattery = currentBattery ?? maxBattery;
   const batteryProgress = getBatteryProgress(displayBattery);
-  
+
   console.log('身体电量数据 - dashboard:', {
     current: garminData?.body_battery_current,
     most_charged: garminData?.body_battery_most_charged,
@@ -417,7 +417,7 @@ export default function Dashboard() {
     displayBattery,
     batteryProgress,
   });
-  
+
   console.log('血氧数据 - dashboard:', {
     spo2_avg: garminData?.spo2_avg,
     spo2_min: garminData?.spo2_min,
@@ -430,11 +430,11 @@ export default function Dashboard() {
       console.log('recommendation为空');
       return [];
     }
-    
+
     console.log('recommendation完整数据:', recommendation);
     console.log('recommendation.one_day:', recommendation.one_day);
     console.log('recommendation.one_day?.priority_recommendations:', recommendation.one_day?.priority_recommendations);
-    
+
     // 不检查status，直接尝试获取建议
     const oneDay = recommendation.one_day;
     if (oneDay?.priority_recommendations && Array.isArray(oneDay.priority_recommendations)) {
@@ -442,14 +442,14 @@ export default function Dashboard() {
       console.log('从priority_recommendations获取到建议:', recs);
       return recs;
     }
-    
+
     // 如果没有priority_recommendations，尝试从其他字段获取
     if (oneDay?.daily_goals && Array.isArray(oneDay.daily_goals)) {
       const recs = oneDay.daily_goals.slice(0, 5);
       console.log('从daily_goals获取到建议:', recs);
       return recs;
     }
-    
+
     console.log('未找到建议数据，oneDay:', oneDay);
     return [];
   };
@@ -637,8 +637,8 @@ export default function Dashboard() {
                     {displayBattery !== null && displayBattery !== undefined ? displayBattery : '--'}
                   </Text>
                   <Text className="battery-range">
-                    {currentBattery !== null ? '当前' : '峰值'} · 
-                    {maxBattery !== null && currentBattery !== null && currentBattery !== maxBattery 
+                    {currentBattery !== null ? '当前' : '峰值'} ·
+                    {maxBattery !== null && currentBattery !== null && currentBattery !== maxBattery
                       ? ` 峰值${maxBattery}`
                       : ` 最低${garminData.body_battery_lowest ?? garminData.body_battery_drained ?? '--'}`}
                   </Text>
@@ -661,7 +661,7 @@ export default function Dashboard() {
                 </Text>
               </View>
               <Text className="stress-tip">
-                {stressValue && stressValue <= 25 ? '状态放松，继续保持' : 
+                {stressValue && stressValue <= 25 ? '状态放松，继续保持' :
                  stressValue && stressValue <= 50 ? '压力适中，注意休息' :
                  stressValue ? '压力偏高，建议放松' : '暂无数据'}
               </Text>
@@ -681,8 +681,8 @@ export default function Dashboard() {
                 <Text className="metric-unit">ms</Text>
               </View>
               <Text className="hrv-status">
-                {garminData.hrv_status === 'BALANCED' ? '平衡' : 
-                 garminData.hrv_status === 'UNBALANCED' ? '不平衡' : 
+                {garminData.hrv_status === 'BALANCED' ? '平衡' :
+                 garminData.hrv_status === 'UNBALANCED' ? '不平衡' :
                  garminData.hrv_status || '未知'}
               </Text>
             </View>
@@ -695,8 +695,8 @@ export default function Dashboard() {
               </View>
               <View className="metric-value-row">
                 <Text className="metric-value">
-                  {garminData.spo2_avg !== null && garminData.spo2_avg !== undefined 
-                    ? Math.round(garminData.spo2_avg) 
+                  {garminData.spo2_avg !== null && garminData.spo2_avg !== undefined
+                    ? Math.round(garminData.spo2_avg)
                     : '--'}
                 </Text>
                 <Text className="metric-unit">%</Text>

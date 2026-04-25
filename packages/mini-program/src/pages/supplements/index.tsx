@@ -116,7 +116,7 @@ export default function SupplementsPage() {
   const [recommendation, setRecommendation] = useState<ScientificRecommendation | null>(null);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
-  
+
   // 新增/编辑补剂表单
   const [formData, setFormData] = useState({
     name: '',
@@ -134,7 +134,7 @@ export default function SupplementsPage() {
     }
     loadData();
     loadStats();
-    
+
     // 检查是否需要自动显示推荐
     const params = Taro.getCurrentInstance().router?.params;
     if (params?.showRec === '1') {
@@ -178,10 +178,10 @@ export default function SupplementsPage() {
         record_date: selectedDate,
         checkins: [{ supplement_id: supplementId, taken: !currentTaken }],
       });
-      
-      Taro.showToast({ 
-        title: currentTaken ? '已取消' : '已服用 ✓', 
-        icon: 'success' 
+
+      Taro.showToast({
+        title: currentTaken ? '已取消' : '已服用 ✓',
+        icon: 'success'
       });
       loadData();
     } catch (error) {
@@ -194,7 +194,7 @@ export default function SupplementsPage() {
       Taro.showToast({ title: '请输入补剂名称', icon: 'none' });
       return;
     }
-    
+
     setSubmitting(true);
     try {
       if (editingId) {
@@ -206,7 +206,7 @@ export default function SupplementsPage() {
         await post('/supplements/definitions', formData);
         Taro.showToast({ title: '添加成功', icon: 'success' });
       }
-      
+
       setShowAddForm(false);
       setEditingId(null);
       setFormData({
@@ -243,9 +243,9 @@ export default function SupplementsPage() {
       title: '确认删除',
       content: '删除后将无法恢复，确定要删除这个补剂吗？',
     });
-    
+
     if (!res.confirm) return;
-    
+
     try {
       await post(`/supplements/definitions/${supplementId}`, {}, 'DELETE');
       Taro.showToast({ title: '删除成功', icon: 'success' });
@@ -263,9 +263,9 @@ export default function SupplementsPage() {
         ...supplement,
         is_active: !supplement.is_active,
       });
-      Taro.showToast({ 
-        title: supplement.is_active ? '已停用' : '已启用', 
-        icon: 'success' 
+      Taro.showToast({
+        title: supplement.is_active ? '已停用' : '已启用',
+        icon: 'success'
       });
       setShowActionSheet(false);
       loadData();
@@ -290,21 +290,21 @@ export default function SupplementsPage() {
         use_llm: true,
         force_refresh: forceRefresh
       });
-      
+
       console.log('[补剂推荐] API 返回数据:', result);
-      
+
       // 如果是 debug 模式，打印详细信息
       if (debugMode && result.debug) {
         console.log('[补剂推荐] Debug 信息:', result.debug);
         console.log('[补剂推荐] 推理过程:', result.debug.reasoning);
         console.log('[补剂推荐] 知识库检索:', result.debug.knowledge_retrieved);
       }
-      
+
       // 验证返回数据的完整性
       if (!result || !result.success) {
         throw new Error('推荐数据格式错误');
       }
-      
+
       // 确保必要字段存在（匹配 API 返回的字段名）
       const validatedResult = {
         ...result,
@@ -331,7 +331,7 @@ export default function SupplementsPage() {
         },
         precautions: result.precautions || []
       };
-      
+
       setRecommendation(validatedResult);
       setShowRecommendation(true);
       const cacheHint = validatedResult.from_cache ? '(缓存)' : '';
@@ -409,13 +409,13 @@ export default function SupplementsPage() {
                       {group.items.filter(s => s.record?.taken).length}/{group.items.length}
                     </Text>
                   </View>
-                  
+
                   {group.items.map(item => (
-                    <View 
-                      key={item.supplement.id} 
+                    <View
+                      key={item.supplement.id}
                       className={`supplement-card ${item.record?.taken ? 'taken' : ''} ${!item.supplement.is_active ? 'inactive' : ''}`}
                     >
-                      <View 
+                      <View
                         className="supplement-main"
                         onClick={() => handleToggle(item.supplement.id, item.record?.taken || false)}
                       >
@@ -437,7 +437,7 @@ export default function SupplementsPage() {
                           {item.record?.taken && <Text className="check-icon">✓</Text>}
                         </View>
                       </View>
-                      <View 
+                      <View
                         className="supplement-more"
                         onClick={(e) => handleShowActionSheet(item.supplement, e)}
                       >
@@ -462,7 +462,7 @@ export default function SupplementsPage() {
                   </View>
                   <View className="stat-progress">
                     <View className="stat-progress-bar">
-                      <View 
+                      <View
                         className={`stat-progress-fill ${
                           stat.completion_rate >= 80 ? 'green' :
                           stat.completion_rate >= 50 ? 'yellow' : 'red'
@@ -479,8 +479,8 @@ export default function SupplementsPage() {
 
           {/* 添加按钮 */}
           <View className="add-btn-container">
-            <Button 
-              className="recommendation-btn-large" 
+            <Button
+              className="recommendation-btn-large"
               onClick={handleGetRecommendation}
               loading={loadingRecommendation}
             >
@@ -491,7 +491,7 @@ export default function SupplementsPage() {
               <Button className="add-btn" onClick={() => setShowAddForm(true)}>
                 + 手动添加补剂
               </Button>
-              <Button 
+              <Button
                 className={`debug-btn ${debugMode ? 'active' : ''}`}
                 onClick={() => setDebugMode(!debugMode)}
               >
@@ -519,7 +519,7 @@ export default function SupplementsPage() {
             <View className="modal-header">
               <Text className="modal-title">{editingId ? '编辑补剂' : '添加补剂'}</Text>
             </View>
-            
+
             <View className="form-group">
               <Text className="form-label">补剂名称 *</Text>
               <Input
@@ -529,7 +529,7 @@ export default function SupplementsPage() {
                 placeholder="如：维生素D3"
               />
             </View>
-            
+
             <View className="form-group">
               <Text className="form-label">剂量</Text>
               <Input
@@ -539,7 +539,7 @@ export default function SupplementsPage() {
                 placeholder="如：5000IU"
               />
             </View>
-            
+
             <View className="form-group">
               <Text className="form-label">服用时间</Text>
               <View className="timing-options">
@@ -554,7 +554,7 @@ export default function SupplementsPage() {
                 ))}
               </View>
             </View>
-            
+
             <View className="form-group">
               <Text className="form-label">分类</Text>
               <View className="category-options">
@@ -569,7 +569,7 @@ export default function SupplementsPage() {
                 ))}
               </View>
             </View>
-            
+
             <View className="form-group">
               <Text className="form-label">描述（选填）</Text>
               <Input
@@ -579,7 +579,7 @@ export default function SupplementsPage() {
                 placeholder="如：促进钙吸收"
               />
             </View>
-            
+
             <View className="modal-actions">
               <Button className="modal-btn cancel" onClick={() => {
                 setShowAddForm(false);
@@ -594,8 +594,8 @@ export default function SupplementsPage() {
               }}>
                 取消
               </Button>
-              <Button 
-                className="modal-btn confirm" 
+              <Button
+                className="modal-btn confirm"
                 onClick={handleAddSupplement}
                 loading={submitting}
               >
@@ -614,21 +614,21 @@ export default function SupplementsPage() {
               <Text className="action-sheet-title">{selectedSupplement.name}</Text>
             </View>
             <View className="action-sheet-body">
-              <View 
+              <View
                 className="action-item"
                 onClick={() => handleEditSupplement(selectedSupplement)}
               >
                 <Text className="action-icon">✏️</Text>
                 <Text className="action-text">编辑补剂</Text>
               </View>
-              <View 
+              <View
                 className="action-item"
                 onClick={() => handleToggleActive(selectedSupplement)}
               >
                 <Text className="action-icon">{selectedSupplement.is_active ? '⏸️' : '▶️'}</Text>
                 <Text className="action-text">{selectedSupplement.is_active ? '停用补剂' : '启用补剂'}</Text>
               </View>
-              <View 
+              <View
                 className="action-item danger"
                 onClick={() => handleDeleteSupplement(selectedSupplement.id)}
               >
@@ -637,7 +637,7 @@ export default function SupplementsPage() {
               </View>
             </View>
             <View className="action-sheet-footer">
-              <Button 
+              <Button
                 className="action-cancel"
                 onClick={() => setShowActionSheet(false)}
               >
@@ -675,10 +675,10 @@ export default function SupplementsPage() {
               </View>
             </View>
 
-            <ScrollView 
-              scrollY 
-              className="recommendation-content" 
-              enhanced 
+            <ScrollView
+              scrollY
+              className="recommendation-content"
+              enhanced
               showScrollbar={false}
               enableFlex={true}
             >
@@ -808,7 +808,7 @@ export default function SupplementsPage() {
               {debugMode && (recommendation as any).debug && (
                 <View className="debug-section">
                   <Text className="section-title">🔍 Debug 信息</Text>
-                  
+
                   {/* 执行步骤 */}
                   {(recommendation as any).debug.steps && (
                     <View className="debug-card">
@@ -820,7 +820,7 @@ export default function SupplementsPage() {
                       ))}
                     </View>
                   )}
-                  
+
                   {/* 推理过程 */}
                   {(recommendation as any).debug.reasoning && (
                     <View className="debug-card">
@@ -832,7 +832,7 @@ export default function SupplementsPage() {
                       ))}
                     </View>
                   )}
-                  
+
                   {/* 知识库检索 */}
                   {(recommendation as any).debug.knowledge_retrieved && (
                     <View className="debug-card">
@@ -845,7 +845,7 @@ export default function SupplementsPage() {
                       ))}
                     </View>
                   )}
-                  
+
                   {/* 性能指标 */}
                   {(recommendation as any).debug.performance && (
                     <View className="debug-card">
@@ -860,7 +860,7 @@ export default function SupplementsPage() {
             </ScrollView>
 
             <View className="recommendation-footer">
-              <Button 
+              <Button
                 className="close-modal-btn"
                 onClick={() => setShowRecommendation(false)}
               >

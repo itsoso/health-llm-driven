@@ -32,10 +32,10 @@ def get_user_disease_records(
 ):
     """获取用户的疾病记录"""
     query = db.query(DiseaseRecord).filter(DiseaseRecord.user_id == user_id)
-    
+
     if status:
         query = query.filter(DiseaseRecord.status == status)
-    
+
     diseases = query.order_by(DiseaseRecord.diagnosis_date.desc()).offset(skip).limit(limit).all()
     return diseases
 
@@ -50,4 +50,3 @@ def get_disease_record(
     if not disease:
         raise HTTPException(status_code=404, detail="疾病记录不存在")
     return disease
-

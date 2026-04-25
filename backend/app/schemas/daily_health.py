@@ -225,4 +225,3 @@ class OutdoorActivityCreate(BaseModel):
     activity_type: Optional[str] = None
     uv_index: Optional[float] = None
     notes: Optional[str] = None
-

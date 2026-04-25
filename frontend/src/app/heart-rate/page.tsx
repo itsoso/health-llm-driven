@@ -93,10 +93,10 @@ function HeartRateContent() {
   // 处理每日心率时间线数据 - 24小时格式
   const timelineChartData = useMemo(() => {
     if (!dailyData?.heart_rate_timeline?.length) return [];
-    
+
     // 创建24小时的时间点
     const hourlyData: { [key: string]: number[] } = {};
-    
+
     dailyData.heart_rate_timeline.forEach((point: any) => {
       const hour = point.time.split(':')[0];
       if (!hourlyData[hour]) {
@@ -113,7 +113,7 @@ function HeartRateContent() {
       const avg = values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null;
       const max = values.length > 0 ? Math.max(...values) : null;
       const min = values.length > 0 ? Math.min(...values) : null;
-      
+
       // 转换为12小时制显示
       let label = '';
       if (i === 0) label = '12a';
@@ -191,8 +191,8 @@ function HeartRateContent() {
               onClick={goToNextDay}
               disabled={isToday}
               className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                isToday 
-                  ? 'bg-gray-50 text-gray-300 cursor-not-allowed' 
+                isToday
+                  ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
                   : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
               }`}
             >
@@ -262,7 +262,7 @@ function HeartRateContent() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis 
+                  <XAxis
                     dataKey="hour"
                     stroke="#9ca3af"
                     tick={{ fill: '#9ca3af', fontSize: 12 }}
@@ -277,7 +277,7 @@ function HeartRateContent() {
                     axisLine={{ stroke: '#e5e7eb' }}
                     tickLine={false}
                   />
-                  <YAxis 
+                  <YAxis
                     stroke="#9ca3af"
                     tick={{ fill: '#9ca3af', fontSize: 11 }}
                     axisLine={false}
@@ -285,9 +285,9 @@ function HeartRateContent() {
                     domain={[40, 'auto']}
                     width={40}
                   />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
                       border: '1px solid #e5e7eb',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -318,7 +318,7 @@ function HeartRateContent() {
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={trendChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis 
+                  <XAxis
                     dataKey="date"
                     stroke="#9ca3af"
                     tick={{ fill: '#9ca3af', fontSize: 11 }}
@@ -326,7 +326,7 @@ function HeartRateContent() {
                     tickLine={false}
                     interval="preserveStartEnd"
                   />
-                  <YAxis 
+                  <YAxis
                     stroke="#9ca3af"
                     tick={{ fill: '#9ca3af', fontSize: 11 }}
                     axisLine={false}
@@ -334,31 +334,31 @@ function HeartRateContent() {
                     domain={[40, 'auto']}
                     width={40}
                   />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
                       border: '1px solid #e5e7eb',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                     }}
                   />
-                  <Legend 
+                  <Legend
                     iconType="circle"
                     iconSize={8}
                     wrapperStyle={{ paddingTop: '10px' }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="静息心率" 
-                    stroke="#10b981" 
+                  <Line
+                    type="monotone"
+                    dataKey="静息心率"
+                    stroke="#10b981"
                     strokeWidth={2}
                     dot={{ fill: '#10b981', strokeWidth: 0, r: 3 }}
                     connectNulls
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="平均心率" 
-                    stroke="#60a5fa" 
+                  <Line
+                    type="monotone"
+                    dataKey="平均心率"
+                    stroke="#60a5fa"
                     strokeWidth={2}
                     dot={{ fill: '#60a5fa', strokeWidth: 0, r: 3 }}
                     connectNulls

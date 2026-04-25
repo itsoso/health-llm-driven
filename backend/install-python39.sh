@@ -57,4 +57,3 @@ echo "启动服务（可以使用--reload）:"
 echo "  source venv/bin/activate"
 echo "  uvicorn main:app --reload --host 0.0.0.0 --port 8000"
 echo ""
-

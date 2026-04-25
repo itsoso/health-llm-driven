@@ -24,13 +24,13 @@ def test_garmin_api(email: str, password: str, days: int = 7):
     """测试Garmin API"""
     print(f"正在连接Garmin Connect...")
     print("="*60)
-    
+
     try:
         # 登录
         garmin = Garmin(email, password)
         garmin.login()
         print("✅ 登录成功\n")
-        
+
         # 获取用户信息
         print("获取用户信息...")
         try:
@@ -38,16 +38,16 @@ def test_garmin_api(email: str, password: str, days: int = 7):
             print(f"用户: {user_profile}")
         except Exception as e:
             print(f"获取用户信息失败: {e}")
-        
+
         print("\n" + "="*60)
         print(f"测试最近 {days} 天的数据获取")
         print("="*60)
-        
+
         # 测试每一天
         for i in range(days):
             target_date = date.today() - timedelta(days=i)
             print(f"\n📅 {target_date}:")
-            
+
             # 测试 get_user_summary
             try:
                 summary = garmin.get_user_summary(target_date.isoformat())
@@ -76,7 +76,7 @@ def test_garmin_api(email: str, password: str, days: int = 7):
                     print(f"  ❌ get_user_summary: 返回 None 或空")
             except Exception as e:
                 print(f"  ❌ get_user_summary 错误: {e}")
-            
+
             # 测试 get_sleep_data
             try:
                 sleep = garmin.get_sleep_data(target_date.isoformat())
@@ -85,7 +85,7 @@ def test_garmin_api(email: str, password: str, days: int = 7):
                     if isinstance(sleep, dict):
                         print(f"     所有键: {list(sleep.keys())}")
                         # 打印常见的睡眠字段
-                        for key in ['sleepScore', 'overallScore', 'qualityScore', 'sleepTimeSeconds', 
+                        for key in ['sleepScore', 'overallScore', 'qualityScore', 'sleepTimeSeconds',
                                    'sleepTimeInSeconds', 'totalSleepTimeInSeconds', 'awakeSleepSeconds',
                                    'deepSleepSeconds', 'lightSleepSeconds', 'remSleepSeconds',
                                    'dailySleepDTO', 'sleepMovement', 'sleepLevels']:
@@ -101,7 +101,7 @@ def test_garmin_api(email: str, password: str, days: int = 7):
                     print(f"  ❌ get_sleep_data: 返回 None 或空")
             except Exception as e:
                 print(f"  ❌ get_sleep_data 错误: {e}")
-            
+
             # 测试 get_heart_rates
             try:
                 hr = garmin.get_heart_rates(target_date.isoformat())
@@ -113,15 +113,15 @@ def test_garmin_api(email: str, password: str, days: int = 7):
                     print(f"  ❌ get_heart_rates: 返回 None 或空")
             except Exception as e:
                 print(f"  ❌ get_heart_rates 错误: {e}")
-            
+
             # 小延迟避免请求过快
             import time
             time.sleep(0.5)
-        
+
         print("\n" + "="*60)
         print("测试完成")
         print("="*60)
-        
+
     except Exception as e:
         print(f"❌ 错误: {str(e)}")
         import traceback
@@ -136,10 +136,9 @@ if __name__ == "__main__":
         print("  python test_garmin_api.py user@example.com password123")
         print("  python test_garmin_api.py user@example.com password123 14")
         sys.exit(1)
-    
+
     email = sys.argv[1]
     password = sys.argv[2]
     days = int(sys.argv[3]) if len(sys.argv) > 3 else 7
-    
-    test_garmin_api(email, password, days)
 
+    test_garmin_api(email, password, days)

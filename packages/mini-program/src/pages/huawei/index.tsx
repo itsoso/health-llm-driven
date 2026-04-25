@@ -1,6 +1,6 @@
 /**
  * 华为手表绑定页面
- * 
+ *
  * OAuth 2.0 授权流程：
  * 1. 用户点击"绑定华为手表"
  * 2. 获取授权 URL 并跳转到华为登录页
@@ -33,12 +33,12 @@ export default function HuaweiBinding() {
 
   useEffect(() => {
     loadCredential();
-    
+
     // 检查是否是 OAuth 回调
     const pages = Taro.getCurrentPages();
     const currentPage = pages[pages.length - 1];
     const query = currentPage?.options || {};
-    
+
     if (query.code && query.state) {
       handleOAuthCallback(query.code, query.state);
     }
@@ -67,7 +67,7 @@ export default function HuaweiBinding() {
       const result = await get<{ auth_url: string; state: string }>('/devices/huawei/oauth/authorize', {
         redirect_uri: 'https://health.executor.life/api/v1/devices/huawei/oauth/callback'
       });
-      
+
       // 显示提示
       Taro.showModal({
         title: '绑定华为手表',
@@ -91,9 +91,9 @@ export default function HuaweiBinding() {
         }
       });
     } catch (error: any) {
-      Taro.showToast({ 
-        title: error.message || '获取授权链接失败', 
-        icon: 'none' 
+      Taro.showToast({
+        title: error.message || '获取授权链接失败',
+        icon: 'none'
       });
     } finally {
       setBinding(false);
@@ -110,10 +110,10 @@ export default function HuaweiBinding() {
       loadCredential();
     } catch (error: any) {
       Taro.hideLoading();
-      Taro.showToast({ 
-        title: error.message || '绑定失败', 
+      Taro.showToast({
+        title: error.message || '绑定失败',
         icon: 'none',
-        duration: 3000 
+        duration: 3000
       });
     }
   };
@@ -147,9 +147,9 @@ export default function HuaweiBinding() {
       );
       Taro.hideLoading();
       if (result.success) {
-        Taro.showToast({ 
-          title: `同步成功 ${result.synced_days} 天`, 
-          icon: 'success' 
+        Taro.showToast({
+          title: `同步成功 ${result.synced_days} 天`,
+          icon: 'success'
         });
       } else {
         Taro.showToast({ title: result.message, icon: 'none' });
@@ -186,9 +186,9 @@ export default function HuaweiBinding() {
   const handleToggleSync = async (enabled: boolean) => {
     try {
       await post(`/devices/huawei/toggle-sync?enabled=${enabled}`);
-      Taro.showToast({ 
-        title: enabled ? '已开启自动同步' : '已关闭自动同步', 
-        icon: 'success' 
+      Taro.showToast({
+        title: enabled ? '已开启自动同步' : '已关闭自动同步',
+        icon: 'success'
       });
       loadCredential();
     } catch (error) {
@@ -214,14 +214,14 @@ export default function HuaweiBinding() {
         </View>
         <View className="status-info">
           <Text className="status-title">
-            {credential 
-              ? (credential.is_valid ? '华为手表已绑定' : '授权已失效') 
+            {credential
+              ? (credential.is_valid ? '华为手表已绑定' : '授权已失效')
               : '未绑定华为手表'}
           </Text>
           <Text className="status-desc">
-            {credential 
-              ? (credential.last_sync_at 
-                  ? `上次同步: ${new Date(credential.last_sync_at).toLocaleString()}` 
+            {credential
+              ? (credential.last_sync_at
+                  ? `上次同步: ${new Date(credential.last_sync_at).toLocaleString()}`
                   : '尚未同步')
               : '绑定后可自动同步运动健康数据'}
           </Text>
@@ -244,7 +244,7 @@ export default function HuaweiBinding() {
             <Text className="section-title">手动同步</Text>
             <View className="sync-days-row">
               {[1, 3, 7, 14, 30].map(days => (
-                <View 
+                <View
                   key={days}
                   className={`day-btn ${syncDays === days ? 'active' : ''}`}
                   onClick={() => setSyncDays(days)}
@@ -253,7 +253,7 @@ export default function HuaweiBinding() {
                 </View>
               ))}
             </View>
-            <Button 
+            <Button
               className="sync-btn"
               onClick={handleSync}
               loading={syncing}
@@ -265,14 +265,14 @@ export default function HuaweiBinding() {
 
           {/* 操作按钮 */}
           <View className="action-row">
-            <Button 
-              className="action-btn test" 
+            <Button
+              className="action-btn test"
               onClick={handleTestConnection}
             >
               🔍 测试连接
             </Button>
-            <Button 
-              className="action-btn unbind" 
+            <Button
+              className="action-btn unbind"
               onClick={handleUnbind}
             >
               🗑️ 解除绑定
@@ -283,7 +283,7 @@ export default function HuaweiBinding() {
           {!credential.is_valid && (
             <View className="reauth-section">
               <Text className="reauth-tip">授权已失效，请重新授权</Text>
-              <Button 
+              <Button
                 className="reauth-btn"
                 onClick={handleStartBinding}
                 loading={binding}
@@ -333,7 +333,7 @@ export default function HuaweiBinding() {
             </Text>
           </View>
 
-          <Button 
+          <Button
             className="bind-btn"
             onClick={handleStartBinding}
             loading={binding}

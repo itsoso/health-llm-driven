@@ -76,7 +76,7 @@ async def refresh_my_recommendations(
     db.commit()
 
     logger.info(f"用户 {current_user.id} 请求刷新建议（已清除 Redis + DB 缓存）")
-    
+
     # 3. 重新生成建议
     service = DailyRecommendationService()
     date_str = today.strftime('%Y-%m-%d')
@@ -349,21 +349,21 @@ async def get_recommendations(
 ):
     """
     获取今日健康建议（1天和7天，带缓存）
-    
+
     返回基于昨天数据的1天建议和基于最近7天数据的7天建议
     结果会缓存到数据库，避免重复计算
-    
+
     Args:
         user_id: 用户ID
         use_llm: 是否使用大模型增强分析（默认True）
-    
+
     Returns:
         - one_day: 基于昨天数据的建议
         - seven_day: 基于最近7天数据的建议
         - cached: 是否使用了缓存
     """
     service = DailyRecommendationService()
-    
+
     try:
         result = await service.get_or_generate_recommendations(db, user_id, use_llm)
 
@@ -390,13 +390,13 @@ async def get_today_recommendations(
 ):
     """
     获取今日健康建议（规则分析 + 大模型分析）
-    
+
     基于昨天的Garmin数据（睡眠、运动、心率等），生成今天的个性化建议
-    
+
     Args:
         user_id: 用户ID
         use_llm: 是否使用大模型增强分析（默认True）
-    
+
     Returns:
         - 睡眠分析：质量评估、问题、建议
         - 活动分析：步数、活动时间、趋势
@@ -407,7 +407,7 @@ async def get_today_recommendations(
         - AI洞察：大模型生成的个性化建议（如启用）
     """
     service = DailyRecommendationService()
-    
+
     if use_llm:
         result = await service.generate_daily_summary_with_llm(db, user_id)
     else:
@@ -416,7 +416,7 @@ async def get_today_recommendations(
         result.pop("_rule_analysis", None)
         result.pop("_yesterday_data", None)
         result.pop("_recent_data", None)
-    
+
     if result.get("status") == "no_data":
         raise HTTPException(
             status_code=404,
@@ -425,7 +425,7 @@ async def get_today_recommendations(
                 "suggestion": "运行: python scripts/sync_garmin.py <email> <password> <user_id>"
             }
         )
-    
+
     return result
 
 
@@ -436,23 +436,23 @@ def get_today_recommendations_simple(
 ):
     """
     获取今日健康建议（仅规则分析，速度更快）
-    
+
     不使用大模型，仅返回基于规则的分析结果
     """
     service = DailyRecommendationService()
     result = service.generate_daily_summary(db, user_id)
-    
+
     # 清理内部字段
     result.pop("_rule_analysis", None)
     result.pop("_yesterday_data", None)
     result.pop("_recent_data", None)
-    
+
     if result.get("status") == "no_data":
         raise HTTPException(
             status_code=404,
             detail="暂无昨日数据，请先同步Garmin数据"
         )
-    
+
     return result
 
 
@@ -475,22 +475,22 @@ def get_analysis_for_date(
 ):
     """
     获取指定日期的健康分析
-    
+
     分析target_date前一天的数据，生成target_date当天的建议
-    
+
     Args:
         user_id: 用户ID
         target_date: 目标日期（会分析这天前一天的数据）
     """
     service = DailyRecommendationService()
     result = service.generate_daily_summary(db, user_id, reference_date=target_date)
-    
+
     if result.get("status") == "no_data":
         raise HTTPException(
             status_code=404,
             detail=f"没有找到 {target_date} 前一天的数据"
         )
-    
+
     return result
 
 
@@ -501,18 +501,18 @@ def get_quick_summary(
 ):
     """
     获取简要健康摘要
-    
+
     返回最核心的信息，适合快速查看
     """
     service = DailyRecommendationService()
     result = service.generate_daily_summary(db, user_id)
-    
+
     if result.get("status") == "no_data":
         return {
             "status": "no_data",
             "message": "暂无数据"
         }
-    
+
     # 返回简化版本
     return {
         "status": "success",
@@ -539,12 +539,12 @@ def get_sleep_insights(
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
     recent_data = service.get_recent_data(db, user_id, 7)
-    
+
     if not yesterday:
         raise HTTPException(status_code=404, detail="暂无睡眠数据")
-    
+
     analysis = service.analyze_sleep(yesterday, recent_data)
-    
+
     return {
         "date": yesterday.record_date.isoformat(),
         "analysis": analysis,
@@ -568,12 +568,12 @@ def get_activity_insights(
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
     recent_data = service.get_recent_data(db, user_id, 7)
-    
+
     if not yesterday:
         raise HTTPException(status_code=404, detail="暂无活动数据")
-    
+
     analysis = service.analyze_activity(yesterday, recent_data)
-    
+
     return {
         "date": yesterday.record_date.isoformat(),
         "analysis": analysis,
@@ -594,12 +594,12 @@ def get_heart_insights(
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
     recent_data = service.get_recent_data(db, user_id, 7)
-    
+
     if not yesterday:
         raise HTTPException(status_code=404, detail="暂无心率数据")
-    
+
     analysis = service.analyze_heart_rate(yesterday, recent_data)
-    
+
     return {
         "date": yesterday.record_date.isoformat(),
         "analysis": analysis,
@@ -621,12 +621,12 @@ def get_recovery_status(
     """获取恢复状态分析"""
     service = DailyRecommendationService()
     yesterday = service.get_yesterday_data(db, user_id)
-    
+
     if not yesterday:
         raise HTTPException(status_code=404, detail="暂无数据")
-    
+
     analysis = service.analyze_stress_and_energy(yesterday)
-    
+
     return {
         "date": yesterday.record_date.isoformat(),
         "analysis": analysis,
@@ -638,4 +638,3 @@ def get_recovery_status(
             "body_battery_lowest": yesterday.body_battery_lowest
         }
     }
-

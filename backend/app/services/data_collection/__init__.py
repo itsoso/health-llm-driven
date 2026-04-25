@@ -17,4 +17,3 @@ except ImportError:
         "DataCollectionService",
         "MedicalExamImportService",
     ]
-

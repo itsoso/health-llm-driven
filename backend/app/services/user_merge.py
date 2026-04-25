@@ -34,7 +34,7 @@ COMPOSITE_UNIQUE_TABLES = {
 
 class UserMergeService:
     """用户合并服务"""
-    
+
     @staticmethod
     def find_potential_merge_candidates(
         db: Session,
@@ -42,14 +42,14 @@ class UserMergeService:
     ) -> List[User]:
         """
         查找可能合并的PC用户
-        
+
         匹配条件：
         1. 手机号相同
         2. 邮箱相同
         3. UnionID相同（如果微信用户有unionid）
         """
         candidates = []
-        
+
         # 1. 通过手机号匹配
         if wechat_user.phone:
             pc_user = db.query(User).filter(
@@ -59,7 +59,7 @@ class UserMergeService:
             ).first()
             if pc_user:
                 candidates.append(pc_user)
-        
+
         # 2. 通过邮箱匹配
         if wechat_user.email:
             pc_user = db.query(User).filter(
@@ -69,7 +69,7 @@ class UserMergeService:
             ).first()
             if pc_user and pc_user not in candidates:
                 candidates.append(pc_user)
-        
+
         # 3. 通过UnionID匹配（如果微信用户有unionid）
         if wechat_user.wechat_unionid:
             pc_user = db.query(User).filter(
@@ -78,9 +78,9 @@ class UserMergeService:
             ).first()
             if pc_user and pc_user not in candidates:
                 candidates.append(pc_user)
-        
+
         return candidates
-    
+
     @staticmethod
     def _get_all_user_tables(db: Session) -> List[str]:
         """获取所有包含 user_id 列的表名（排除 users 表本身）"""

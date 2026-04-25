@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { dietRecommendationApi } from '@/services/api/content';
-import { 
-  ChartBarIcon, 
-  FireIcon, 
-  HeartIcon, 
+import {
+  ChartBarIcon,
+  FireIcon,
+  HeartIcon,
   ExclamationTriangleIcon,
   LightBulbIcon,
   BeakerIcon,
@@ -101,7 +101,7 @@ export default function DietRecommendationPage() {
       setLoading(true)
       const res = await dietRecommendationApi.getMyRecommendation()
       console.log('饮食推荐数据:', res.data)
-      
+
       // 检查返回的数据是否有效
       if (!res.data || !res.data.success) {
         console.error('饮食推荐失败:', res.data?.error || '未知错误')
@@ -109,7 +109,7 @@ export default function DietRecommendationPage() {
         setRecommendation(null)
         return
       }
-      
+
       setRecommendation(res.data)
     } catch (error) {
       console.error('加载饮食推荐失败:', error)
@@ -220,7 +220,7 @@ export default function DietRecommendationPage() {
                 </span>
               </div>
               <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="absolute h-full bg-gradient-to-r from-red-500 to-orange-500 transition-all duration-500"
                   style={{ width: `${Math.min(recommendation.progress.calories_percent, 100)}%` }}
                 />
@@ -241,7 +241,7 @@ export default function DietRecommendationPage() {
                 </span>
               </div>
               <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="absolute h-full bg-gradient-to-r from-teal-500 to-green-500 transition-all duration-500"
                   style={{ width: `${Math.min(recommendation.progress.protein_percent, 100)}%` }}
                 />
@@ -262,7 +262,7 @@ export default function DietRecommendationPage() {
                 </span>
               </div>
               <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="absolute h-full bg-gradient-to-r from-yellow-500 to-orange-500 transition-all duration-500"
                   style={{ width: `${Math.min(recommendation.progress.carbs_percent, 100)}%` }}
                 />
@@ -283,7 +283,7 @@ export default function DietRecommendationPage() {
                 </span>
               </div>
               <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="absolute h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500"
                   style={{ width: `${Math.min(recommendation.progress.fat_percent, 100)}%` }}
                 />
@@ -353,7 +353,7 @@ export default function DietRecommendationPage() {
                   <p className="text-gray-600 mb-4">{category.reason}</p>
                   <div className="flex flex-wrap gap-2">
                     {category.foods.map((food, foodIndex) => (
-                      <span 
+                      <span
                         key={foodIndex}
                         className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full text-sm font-medium"
                       >
@@ -497,7 +497,7 @@ export default function DietRecommendationPage() {
                 <ChevronDownIcon className="h-6 w-6 text-gray-600" />
               )}
             </button>
-            
+
             {showScientific && (
               <div className="space-y-6 pt-4">
                 {recommendation.scientific_insights.bmr_tdee_explanation && (
@@ -508,7 +508,7 @@ export default function DietRecommendationPage() {
                     </p>
                   </div>
                 )}
-                
+
                 {recommendation.scientific_insights.macronutrient_rationale && (
                   <div>
                     <h3 className="text-lg font-bold text-purple-600 mb-2">营养素分配依据</h3>
@@ -517,7 +517,7 @@ export default function DietRecommendationPage() {
                     </p>
                   </div>
                 )}
-                
+
                 {recommendation.scientific_insights.diet_mode_guidance && (
                   <div>
                     <h3 className="text-lg font-bold text-purple-600 mb-2">饮食模式指导</h3>
@@ -526,8 +526,8 @@ export default function DietRecommendationPage() {
                     </p>
                   </div>
                 )}
-                
-                {recommendation.scientific_insights.chronic_disease_guidance && 
+
+                {recommendation.scientific_insights.chronic_disease_guidance &&
                  recommendation.scientific_insights.chronic_disease_guidance.length > 0 && (
                   <div>
                     <h3 className="text-lg font-bold text-purple-600 mb-2">慢性病饮食管理</h3>
@@ -539,7 +539,7 @@ export default function DietRecommendationPage() {
                     ))}
                   </div>
                 )}
-                
+
                 {recommendation.scientific_insights.sleep_nutrition && (
                   <div>
                     <h3 className="text-lg font-bold text-purple-600 mb-2">睡眠营养建议</h3>
@@ -548,7 +548,7 @@ export default function DietRecommendationPage() {
                     </p>
                   </div>
                 )}
-                
+
                 {recommendation.scientific_insights.stress_nutrition && (
                   <div>
                     <h3 className="text-lg font-bold text-purple-600 mb-2">压力营养建议</h3>

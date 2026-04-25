@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export function DebugPanel({ debug }: { debug: any }) {
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
 

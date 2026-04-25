@@ -200,7 +200,7 @@ restart_services() {
 # 推送代码到 GitHub
 push_code() {
     print_step "推送代码到 GitHub..."
-    
+
     # 检查是否有未提交的更改
     if [[ -n $(git status -s) ]]; then
         print_warning "检测到未提交的更改"
@@ -216,7 +216,7 @@ push_code() {
             exit 1
         fi
     fi
-    
+
     git push
     print_success "代码已推送到 GitHub"
 
@@ -324,7 +324,7 @@ view_logs() {
     echo "  2) 后端日志"
     echo "  3) 两者都看"
     read -p "请选择 (1/2/3): " choice
-    
+
     case $choice in
         1)
             ssh $SERVER "journalctl -u health-frontend -n 50 --no-pager"
@@ -354,10 +354,10 @@ main() {
     echo -e "${GREEN}║     健康应用部署脚本 v1.0              ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
     echo ""
-    
+
     # 默认部署全部
     DEPLOY_MODE="all"
-    
+
     # 解析参数
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -404,7 +404,7 @@ main() {
                 ;;
         esac
     done
-    
+
     # 执行对应操作
     case $DEPLOY_MODE in
         "all")
@@ -439,7 +439,7 @@ main() {
             view_logs
             ;;
     esac
-    
+
     echo ""
     print_success "完成！"
     echo ""

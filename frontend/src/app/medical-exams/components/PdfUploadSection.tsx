@@ -4,7 +4,6 @@ import React from 'react';
 import { UseMutationResult } from '@tanstack/react-query';
 import { abnormalStyles, abnormalLabels, examTypeLabels } from './types';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 interface PdfUploadSectionProps {
   pdfFile: File | null;

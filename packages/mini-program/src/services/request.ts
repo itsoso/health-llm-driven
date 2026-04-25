@@ -83,7 +83,7 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
         finalUrl = `${url}${url.includes('?') ? '&' : '?'}${queryString}`;
       }
     }
-    
+
     // 添加时间戳防止缓存（仅GET请求）
     finalUrl = `${BASE_URL}${finalUrl}`;
     if (method === 'GET' && !finalUrl.includes('_t=')) {
@@ -137,13 +137,13 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
     } catch {
       errorStr = '未知错误';
     }
-    
+
     console.error('[请求失败] URL:', `${BASE_URL}${url}`);
     console.error('[请求失败] 错误:', errorStr);
-    
+
     if (!silent) {
       let errorMsg = '网络请求失败';
-      
+
       // 处理网络错误
       if (error?.errMsg) {
         if (error.errMsg.includes('url not in domain list')) {
@@ -156,7 +156,7 @@ export async function request<T = any>(config: RequestConfig): Promise<T> {
       } else if (error?.message) {
         errorMsg = String(error.message).substring(0, 50);
       }
-      
+
       Taro.showToast({
         title: errorMsg,
         icon: 'none',
@@ -223,4 +223,3 @@ export function put<T = any>(url: string, data?: any): Promise<T> {
 export function del<T = any>(url: string): Promise<T> {
   return request<T>({ url, method: 'DELETE' });
 }
-

@@ -60,7 +60,7 @@ interface Stats {
 export default function AdminApplicationsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  
+
   const [tab, setTab] = useState<'applications' | 'codes'>('applications');
   const [applications, setApplications] = useState<Application[]>([]);
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
@@ -69,7 +69,7 @@ export default function AdminApplicationsPage() {
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pending');
-  
+
   // 创建邀请码表单
   const [showCreateCode, setShowCreateCode] = useState(false);
   const [newCodeNote, setNewCodeNote] = useState('');
@@ -98,12 +98,12 @@ export default function AdminApplicationsPage() {
       router.push('/login');
       return;
     }
-    
+
     if (user && !user.is_admin) {
       router.push('/');
       return;
     }
-    
+
     if (user?.is_admin) {
       fetchData();
     }
@@ -111,7 +111,7 @@ export default function AdminApplicationsPage() {
 
   const handleReview = async (approved: boolean) => {
     if (!selectedApp) return;
-    
+
     try {
       await api.post(`/invitation/applications/${selectedApp.id}/review`, {
         approved,
@@ -146,7 +146,7 @@ export default function AdminApplicationsPage() {
 
   const handleDisableCode = async (codeId: number) => {
     if (!confirm('确定要禁用此邀请码吗？')) return;
-    
+
     try {
       await api.delete(`/invitation/codes/${codeId}`);
       fetchData();
@@ -259,8 +259,8 @@ export default function AdminApplicationsPage() {
                       : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                   }`}
                 >
-                  {status === 'pending' ? '待审批' : 
-                   status === 'approved' ? '已通过' : 
+                  {status === 'pending' ? '待审批' :
+                   status === 'approved' ? '已通过' :
                    status === 'rejected' ? '已拒绝' : '全部'}
                 </button>
               ))}
@@ -385,7 +385,7 @@ export default function AdminApplicationsPage() {
                 ✕
               </button>
             </div>
-            
+
             <div className="p-6 space-y-6">
               {/* 基本信息 */}
               <div>
@@ -566,7 +566,7 @@ export default function AdminApplicationsPage() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-2xl max-w-md w-full p-6">
             <h2 className="text-xl font-bold text-white mb-6">生成邀请码</h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-purple-200 mb-2">备注（选填）</label>
@@ -578,7 +578,7 @@ export default function AdminApplicationsPage() {
                   className="w-full p-3 bg-slate-700 border border-white/10 rounded-lg text-white placeholder-gray-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm text-purple-200 mb-2">最大使用次数</label>
                 <input
@@ -590,7 +590,7 @@ export default function AdminApplicationsPage() {
                   className="w-full p-3 bg-slate-700 border border-white/10 rounded-lg text-white"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm text-purple-200 mb-2">有效期（天，留空永不过期）</label>
                 <input
@@ -603,7 +603,7 @@ export default function AdminApplicationsPage() {
                 />
               </div>
             </div>
-            
+
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowCreateCode(false)}

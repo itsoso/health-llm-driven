@@ -19,7 +19,7 @@ function AnalysisContent() {
 
   // 实际数据在 response.data 中
   const analysis = response?.data;
-  
+
   const handleRefresh = () => {
     setForceRefresh(true);
     refetch().then(() => setForceRefresh(false));
@@ -123,4 +123,3 @@ export default function AnalysisPage() {
     </ProtectedRoute>
   );
 }
-

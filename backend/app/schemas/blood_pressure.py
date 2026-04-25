@@ -37,7 +37,7 @@ class BloodPressureRecordResponse(BloodPressureRecordBase):
     user_id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     # 血压分类
     category: Optional[str] = None
 
@@ -57,4 +57,3 @@ class BloodPressureStats(BaseModel):
     normal_count: int = 0  # 正常次数
     elevated_count: int = 0  # 偏高次数
     high_count: int = 0  # 高血压次数
-

@@ -117,7 +117,7 @@ $gap-lg: 20px;
   color: $text-white;
   margin-bottom: 20px;
   box-sizing: border-box;
-  
+
   &::placeholder {
     color: $text-gray-500;
   }
@@ -133,7 +133,7 @@ $gap-lg: 20px;
   color: $text-white;
   border: none;
   margin-top: 12px;
-  
+
   &::after { border: none; }
   &:active { opacity: 0.9; }
 }
@@ -386,7 +386,7 @@ $gap-lg: 20px;
   gap: $gap-xs;
   margin-bottom: $gap-sm;
   padding-left: 4px;
-  
+
   &.yellow {
     .section-icon, .section-title { color: $accent-yellow; }
   }
@@ -427,7 +427,7 @@ $gap-lg: 20px;
 
   &.clickable {
     cursor: pointer;
-    
+
     &:active {
       transform: scale(0.98);
       background: rgba($card-dark, 0.9);
@@ -436,8 +436,8 @@ $gap-lg: 20px;
   }
 }
 
-.reminder-emoji { 
-  font-size: 40px; 
+.reminder-emoji {
+  font-size: 40px;
   flex-shrink: 0;
 }
 
@@ -472,7 +472,7 @@ $gap-lg: 20px;
   padding: 6px 14px;
   border-radius: $radius-sm;
   flex-shrink: 0;
-  
+
   text {
     font-size: 26px;
     font-weight: 700;
@@ -906,7 +906,7 @@ $gap-lg: 20px;
   padding: $gap-md;
   border-radius: $radius-md;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  
+
   &:active { opacity: 0.9; }
 }
 
@@ -920,10 +920,10 @@ $gap-lg: 20px;
 }
 
 .energy-icon { font-size: 26px; }
-.energy-title { 
-  font-size: 26px; 
-  font-weight: 600; 
-  color: #1F2937; 
+.energy-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: #1F2937;
 }
 
 .energy-content {
@@ -937,7 +937,7 @@ $gap-lg: 20px;
   align-items: center;
   justify-content: center;
   padding: $gap-lg 0;
-  
+
   .empty-icon { font-size: 48px; margin-bottom: $gap-xs; }
   .empty-text { font-size: 24px; color: #6B7280; margin-bottom: 4px; }
   .empty-hint { font-size: 20px; color: #9CA3AF; }
@@ -954,7 +954,7 @@ $gap-lg: 20px;
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  
+
   &:last-child { border-bottom: none; }
 }
 
@@ -967,10 +967,10 @@ $gap-lg: 20px;
   align-items: center;
   padding-top: $gap-xs;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
-  
+
   .total-label { font-size: 22px; color: #6B7280; }
-  .total-value { 
-    font-size: 26px; 
+  .total-value {
+    font-size: 26px;
     font-weight: 700;
     &.orange { color: $accent-orange; }
   }
@@ -979,7 +979,7 @@ $gap-lg: 20px;
 // 运动指导卡片
 .workout-guidance {
   padding-top: $gap-sm;
-  
+
   .guidance-objective {
     display: flex;
     align-items: flex-start;
@@ -988,42 +988,42 @@ $gap-lg: 20px;
     padding: $gap-sm;
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
     border-radius: $radius-sm;
-    
+
     .guidance-icon { font-size: 24px; flex-shrink: 0; }
-    .guidance-text { 
-      font-size: 22px; 
-      color: #374151; 
+    .guidance-text {
+      font-size: 22px;
+      color: #374151;
       line-height: 1.5;
       font-weight: 500;
     }
   }
-  
+
   .guidance-zones {
     margin-bottom: $gap-sm;
-    
+
     .zones-label {
       font-size: 20px;
       color: #6B7280;
       margin-bottom: 6px;
       display: block;
     }
-    
+
     .zone-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 6px 0;
-      
+
       .zone-name { font-size: 22px; color: #374151; }
-      .zone-value { 
-        font-size: 22px; 
-        color: $accent-orange; 
+      .zone-value {
+        font-size: 22px;
+        color: $accent-orange;
         font-weight: 600;
         font-family: 'DIN', -apple-system, monospace;
       }
     }
   }
-  
+
   .guidance-btn {
     display: flex;
     align-items: center;
@@ -1032,9 +1032,9 @@ $gap-lg: 20px;
     background: linear-gradient(135deg, $accent-indigo, $accent-purple);
     border-radius: $radius-sm;
     margin-top: $gap-sm;
-    
+
     &:active { opacity: 0.8; }
-    
+
     .btn-text {
       font-size: 24px;
       color: #FFFFFF;
@@ -1055,7 +1055,7 @@ $gap-lg: 20px;
   font-size: 48px;
   font-weight: 700;
   font-family: 'DIN', -apple-system, monospace;
-  
+
   &.green { color: $accent-green; }
 }
 
@@ -1079,7 +1079,7 @@ $gap-lg: 20px;
   padding: 10px 8px;
   border-radius: $radius-sm;
   text-align: center;
-  
+
   &.blue { background: rgba($accent-blue, 0.1); }
   &.yellow { background: rgba($accent-yellow, 0.15); }
   &.red { background: rgba($accent-red, 0.1); }
@@ -1090,7 +1090,7 @@ $gap-lg: 20px;
   font-weight: 600;
   display: block;
   margin-bottom: 2px;
-  
+
   .blue & { color: $accent-blue; }
   .yellow & { color: darken($accent-yellow, 10%); }
   .red & { color: $accent-red; }
@@ -1111,7 +1111,7 @@ $gap-lg: 20px;
   justify-content: space-between;
   align-items: center;
   padding: 6px 0;
-  
+
   &:last-child { border-bottom: none; }
 }
 
@@ -1130,7 +1130,7 @@ $gap-lg: 20px;
   font-size: 48px;
   font-weight: 700;
   font-family: 'DIN', -apple-system, monospace;
-  
+
   &.green { color: $accent-green; }
   &.red { color: $accent-red; }
 }
@@ -1142,12 +1142,12 @@ $gap-lg: 20px;
   color: #6B7280;
   display: block;
   margin-bottom: $gap-md;
-  
+
   &.green-text {
     color: $accent-green;
     font-weight: 600;
   }
-  
+
   &.red-text {
     color: $accent-red;
     font-weight: 600;
@@ -1156,7 +1156,7 @@ $gap-lg: 20px;
 
 .progress-section {
   margin-bottom: $gap-sm;
-  
+
   &:last-of-type { margin-bottom: $gap-xs; }
 }
 
@@ -1168,10 +1168,10 @@ $gap-lg: 20px;
 }
 
 .progress-label { font-size: 22px; color: #6B7280; }
-.progress-value { 
-  font-size: 22px; 
+.progress-value {
+  font-size: 22px;
   font-weight: 600;
-  
+
   &.red { color: $accent-red; }
   &.green { color: $accent-green; }
 }
@@ -1187,7 +1187,7 @@ $gap-lg: 20px;
   height: 100%;
   border-radius: 5px;
   transition: width 0.3s ease;
-  
+
   &.red { background: $accent-red; }
   &.green { background: $accent-green; }
 }
@@ -1206,22 +1206,22 @@ $gap-lg: 20px;
   padding: 10px $gap-sm;
   margin-top: $gap-sm;
   border-left: 3px solid #E5E7EB;
-  
+
   // 有能量差时的样式（成功状态）
   &.balance-tip-success {
     background: rgba($accent-green, 0.1);
     border-left-color: $accent-green;
-    
+
     .tip-text {
       color: darken($accent-green, 10%);
     }
   }
-  
+
   // 能量盈余时的样式（警告状态）
   &.balance-tip-warning {
     background: rgba($accent-red, 0.1);
     border-left-color: $accent-red;
-    
+
     .tip-text {
       color: darken($accent-red, 10%);
     }
@@ -1266,7 +1266,7 @@ $gap-lg: 20px;
   align-items: center;
   gap: $gap-xs;
   margin-bottom: 6px;
-  
+
   &:last-child { margin-bottom: 0; }
 }
 
@@ -1275,7 +1275,7 @@ $gap-lg: 20px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  
+
   &.indigo { background: $accent-indigo; }
   &.orange { background: $accent-orange; }
   &.red { background: $accent-red; }
@@ -1302,7 +1302,7 @@ $gap-lg: 20px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  
+
   &:active { background: rgba(255, 255, 255, 0.05); }
 }
 
@@ -1360,7 +1360,7 @@ $gap-lg: 20px;
   position: relative;
   margin-bottom: $gap-md;
   z-index: 1;
-  
+
   &:last-child { margin-bottom: 0; }
 }
 
@@ -1374,7 +1374,7 @@ $gap-lg: 20px;
   border: 2px solid;
   background: $bg-dark;
   z-index: 2;
-  
+
   &.border-orange { border-color: $accent-orange; }
   &.border-emerald { border-color: $accent-emerald; }
   &.border-blue { border-color: $accent-blue; }
@@ -1391,7 +1391,7 @@ $gap-lg: 20px;
   padding: $gap-md;
   border-left: 4px solid;
   border-radius: 0 $radius-md $radius-md 0;
-  
+
   &.border-left-orange { border-left-color: $accent-orange; }
   &.border-left-emerald { border-left-color: $accent-emerald; }
   &.border-left-blue { border-left-color: $accent-blue; }
@@ -1417,7 +1417,7 @@ $gap-lg: 20px;
   font-weight: 700;
   font-family: 'DIN', -apple-system, monospace;
   display: block;
-  
+
   &.text-orange { color: $accent-orange; }
   &.text-emerald { color: $accent-emerald; }
   &.text-blue { color: $accent-blue; }

@@ -28,13 +28,13 @@ export default function Garmin() {
   const [syncing, setSyncing] = useState(false);
   const [credential, setCredential] = useState<GarminCredential | null>(null);
   const [showForm, setShowForm] = useState(false);
-  
+
   // 表单
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isCN, setIsCN] = useState(false);
   const [syncDays, setSyncDays] = useState(1);
-  
+
   // MFA 两步验证
   const [showMFA, setShowMFA] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
@@ -71,7 +71,7 @@ export default function Garmin() {
       Taro.showToast({ title: '请输入账号密码', icon: 'none' });
       return;
     }
-    
+
     setSaving(true);
     setMfaContext('test'); // 设置为测试连接场景
     try {
@@ -80,77 +80,77 @@ export default function Garmin() {
         garmin_password: password,
         is_cn: isCN,
       });
-      
+
       if (result.success) {
         Taro.showToast({ title: '连接成功 ✓', icon: 'success' });
       } else if (result.mfa_required && result.mfa_session_id) {
         // 需要两步验证
         setMfaSessionId(result.mfa_session_id);
         setShowMFA(true);
-        Taro.showToast({ 
-          title: '需要两步验证', 
+        Taro.showToast({
+          title: '需要两步验证',
           icon: 'none',
-          duration: 2000 
+          duration: 2000
         });
       } else {
-        Taro.showToast({ 
-          title: result.message || '连接失败', 
+        Taro.showToast({
+          title: result.message || '连接失败',
           icon: 'none',
-          duration: 3000 
+          duration: 3000
         });
       }
     } catch (error: any) {
-      Taro.showToast({ 
-        title: error.message || '连接失败', 
+      Taro.showToast({
+        title: error.message || '连接失败',
         icon: 'none',
-        duration: 3000 
+        duration: 3000
       });
     } finally {
       setSaving(false);
     }
   };
-  
+
   // 验证 MFA 验证码
   const handleVerifyMFA = async () => {
     if (!mfaCode || mfaCode.length !== 6) {
       Taro.showToast({ title: '请输入6位验证码', icon: 'none' });
       return;
     }
-    
+
     if (!mfaSessionId) {
       Taro.showToast({ title: '验证状态已过期，请重新测试连接', icon: 'none' });
       setShowMFA(false);
       return;
     }
-    
+
     setVerifying(true);
     try {
       const result = await post<{ success: boolean; message: string; session_id?: string }>('/auth/garmin/verify-mfa', {
         mfa_code: mfaCode,
         mfa_session_id: mfaSessionId,
       });
-      
+
       if (result.success) {
         // 保存验证成功后的session_id
         const verifiedSessionId = result.session_id || null;
         if (verifiedSessionId) {
           setAuthenticatedSessionId(verifiedSessionId);
         }
-        
+
         const isSyncContext = mfaContext === 'sync';
-        
+
         if (isSyncContext) {
           // 同步场景：验证成功后自动触发同步
           Taro.showToast({ title: '验证成功，开始同步...', icon: 'success' });
           setShowMFA(false);
           setMfaCode('');
           setMfaSessionId(null);
-          
+
           // 自动触发同步
           const syncDays = pendingSyncDays || 1;
           setPendingSyncDays(null);
           setMfaContext(null);
-          
+
           // 延迟一下，让用户看到成功消息
           setTimeout(() => {
             if (!syncing) {
@@ -165,17 +165,17 @@ export default function Garmin() {
           setMfaSessionId(null);
         }
       } else {
-        Taro.showToast({ 
-          title: result.message || '验证失败', 
+        Taro.showToast({
+          title: result.message || '验证失败',
           icon: 'none',
-          duration: 3000 
+          duration: 3000
         });
       }
     } catch (error: any) {
-      Taro.showToast({ 
-        title: error.message || '验证失败', 
+      Taro.showToast({
+        title: error.message || '验证失败',
         icon: 'none',
-        duration: 3000 
+        duration: 3000
       });
     } finally {
       setVerifying(false);
@@ -188,7 +188,7 @@ export default function Garmin() {
       Taro.showToast({ title: '请输入账号密码', icon: 'none' });
       return;
     }
-    
+
     setSaving(true);
     try {
       await post('/auth/garmin/credentials', {
@@ -202,9 +202,9 @@ export default function Garmin() {
       setPassword('');
       loadCredential();
     } catch (error: any) {
-      Taro.showToast({ 
-        title: error.message || '保存失败', 
-        icon: 'none' 
+      Taro.showToast({
+        title: error.message || '保存失败',
+        icon: 'none'
       });
     } finally {
       setSaving(false);
@@ -236,29 +236,29 @@ export default function Garmin() {
       Taro.showToast({ title: '同步已在进行中', icon: 'none' });
       return;
     }
-    
+
     setSyncing(true);
     setMfaContext('sync');
     setPendingSyncDays(days);
-    
+
     // 使用传入的sessionId，如果没有则使用状态中的authenticatedSessionId
     const mfaSessionIdToUse = sessionId || authenticatedSessionId;
-    
+
     try {
       // 构建URL，如果有mfaSessionIdToUse则传递
       let url = `/auth/garmin/sync-stream?days=${days}`;
       if (mfaSessionIdToUse) {
         url += `&mfa_session_id=${encodeURIComponent(mfaSessionIdToUse)}`;
       }
-      
+
       Taro.showLoading({ title: '正在连接Garmin...' });
-      
+
       // 使用Taro.request处理SSE流
       const token = getToken();
       if (!token) {
         throw new Error('未登录');
       }
-      
+
       // 小程序环境不支持SSE，使用普通POST请求
       // 如果有sessionId，通过URL参数传递；否则直接调用同步接口
       try {
@@ -271,20 +271,20 @@ export default function Garmin() {
           await post('/auth/garmin/sync', { days });
         }
         Taro.hideLoading();
-        Taro.showToast({ 
-          title: '同步完成 ✓', 
+        Taro.showToast({
+          title: '同步完成 ✓',
           icon: 'success',
           duration: 2000
         });
         loadCredential();
       } catch (syncError: any) {
         Taro.hideLoading();
-        
+
         // 检查是否是MFA错误
         const errorMsg = syncError.message || '';
         const errorDetail = (syncError as any)?.detail || '';
         const fullErrorMsg = errorMsg + ' ' + errorDetail;
-        
+
         if (fullErrorMsg.includes('两步验证') || fullErrorMsg.includes('MFA') || fullErrorMsg.includes('two-factor') || fullErrorMsg.includes('mfa_required')) {
           // 需要MFA，显示提示信息
           Taro.showModal({
@@ -299,8 +299,8 @@ export default function Garmin() {
             }
           });
         } else {
-          Taro.showToast({ 
-            title: errorMsg || '同步失败', 
+          Taro.showToast({
+            title: errorMsg || '同步失败',
             icon: 'none',
             duration: 3000
           });
@@ -308,8 +308,8 @@ export default function Garmin() {
       }
     } catch (error: any) {
       Taro.hideLoading();
-      Taro.showToast({ 
-        title: error.message || '同步失败', 
+      Taro.showToast({
+        title: error.message || '同步失败',
         icon: 'none',
         duration: 3000
       });
@@ -319,7 +319,7 @@ export default function Garmin() {
       setPendingSyncDays(null);
     }
   };
-  
+
   // 同步数据
   const handleSync = async () => {
     handleSyncWithProgress(syncDays, authenticatedSessionId);
@@ -329,9 +329,9 @@ export default function Garmin() {
   const handleToggleSync = async (enabled: boolean) => {
     try {
       await post('/auth/garmin/toggle-sync', { sync_enabled: enabled });
-      Taro.showToast({ 
-        title: enabled ? '已开启自动同步' : '已关闭自动同步', 
-        icon: 'success' 
+      Taro.showToast({
+        title: enabled ? '已开启自动同步' : '已关闭自动同步',
+        icon: 'success'
       });
       loadCredential();
     } catch (error) {
@@ -357,14 +357,14 @@ export default function Garmin() {
         </View>
         <View className="status-info">
           <Text className="status-title">
-            {credential 
-              ? (credential.credentials_valid ? 'Garmin已绑定' : '凭证已失效') 
+            {credential
+              ? (credential.credentials_valid ? 'Garmin已绑定' : '凭证已失效')
               : '未绑定Garmin'}
           </Text>
           <Text className="status-desc">
-            {credential 
-              ? (credential.last_sync_at 
-                  ? `上次同步: ${new Date(credential.last_sync_at).toLocaleString()}` 
+            {credential
+              ? (credential.last_sync_at
+                  ? `上次同步: ${new Date(credential.last_sync_at).toLocaleString()}`
                   : '尚未同步')
               : '绑定后可自动同步运动数据'}
           </Text>
@@ -380,8 +380,8 @@ export default function Garmin() {
               <Text className="setting-label">自动同步</Text>
               <Text className="setting-desc">每2小时自动同步数据</Text>
             </View>
-            <Switch 
-              checked={credential.sync_enabled} 
+            <Switch
+              checked={credential.sync_enabled}
               onChange={(e) => handleToggleSync(e.detail.value)}
               color="#667eea"
             />
@@ -403,7 +403,7 @@ export default function Garmin() {
             <Text className="section-title">手动同步</Text>
             <View className="sync-days-row">
               {[1, 3, 7, 14, 30].map(days => (
-                <View 
+                <View
                   key={days}
                   className={`day-btn ${syncDays === days ? 'active' : ''}`}
                   onClick={() => setSyncDays(days)}
@@ -412,7 +412,7 @@ export default function Garmin() {
                 </View>
               ))}
             </View>
-            <Button 
+            <Button
               className="sync-btn"
               onClick={handleSync}
               loading={syncing}
@@ -440,7 +440,7 @@ export default function Garmin() {
           <Text className="form-title">
             {credential ? '修改Garmin凭证' : '绑定Garmin账号'}
           </Text>
-          
+
           <View className="form-item">
             <Text className="form-label">Garmin邮箱</Text>
             <Input
@@ -469,8 +469,8 @@ export default function Garmin() {
               <Text className="form-label">中国区账号</Text>
               <Text className="form-hint">在中国购买的Garmin设备请开启</Text>
             </View>
-            <Switch 
-              checked={isCN} 
+            <Switch
+              checked={isCN}
               onChange={(e) => setIsCN(e.detail.value)}
               color="#667eea"
             />
@@ -504,7 +504,7 @@ export default function Garmin() {
                 className="mfa-input"
               />
               <View className="mfa-actions">
-                <Button 
+                <Button
                   className="mfa-btn cancel"
                   onClick={() => {
                     setShowMFA(false);
@@ -514,7 +514,7 @@ export default function Garmin() {
                 >
                   取消
                 </Button>
-                <Button 
+                <Button
                   className="mfa-btn verify"
                   onClick={handleVerifyMFA}
                   loading={verifying}
@@ -527,7 +527,7 @@ export default function Garmin() {
           )}
 
           <View className="form-actions">
-            <Button 
+            <Button
               className="form-btn test"
               onClick={handleTestConnection}
               loading={saving}
@@ -535,7 +535,7 @@ export default function Garmin() {
             >
               🔍 测试连接
             </Button>
-            <Button 
+            <Button
               className="form-btn save"
               onClick={handleSave}
               loading={saving}
@@ -546,7 +546,7 @@ export default function Garmin() {
           </View>
 
           {showForm && (
-            <Button 
+            <Button
               className="cancel-btn"
               onClick={() => {
                 setShowForm(false);

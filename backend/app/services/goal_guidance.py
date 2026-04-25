@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 class GoalGuidanceService:
     """目标智能引导服务"""
-    
+
     def __init__(self):
         pass
-    
+
     def generate_goal_guidance(
         self,
         db: Session,
@@ -35,29 +35,29 @@ class GoalGuidanceService:
     ) -> Dict[str, Any]:
         """
         为目标生成智能引导
-        
+
         Args:
             db: 数据库会话
             user_id: 用户ID
             goal_type: 目标类型
             goal_description: 目标描述
             target_value: 目标值
-            
+
         Returns:
             包含训练建议、心率区间、知识要点的字典
         """
         try:
             logger.info(f"[目标引导] 开始为用户 {user_id} 生成 {goal_type} 目标的引导")
-            
+
             # 1. 获取用户基本信息
             profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
             if not profile:
                 logger.warning(f"[目标引导] 用户 {user_id} 没有个人资料")
                 return self._generate_basic_guidance(goal_type)
-            
+
             # 2. 获取最近的静息心率
             resting_hr = self._get_recent_resting_hr(db, user_id)
-            
+
             # 3. 计算心率区间
             hr_zones = None
             if profile.age and resting_hr:
@@ -65,14 +65,14 @@ class GoalGuidanceService:
                 # calculate_target_heart_rate_zones() 不接受参数，从 self.profile 和内部数据获取
                 hr_zones = digital_twin.calculate_target_heart_rate_zones()
                 logger.info(f"[目标引导] 计算心率区间成功: {hr_zones}")
-            
+
             # 4. 从知识库检索相关课程内容
             knowledge_guidance = self._retrieve_course_knowledge(
                 goal_type=goal_type,
                 goal_description=goal_description,
                 user_profile=profile
             )
-            
+
             # 5. 生成训练建议
             training_plan = self._generate_training_plan(
                 goal_type=goal_type,
@@ -80,7 +80,7 @@ class GoalGuidanceService:
                 hr_zones=hr_zones,
                 knowledge_guidance=knowledge_guidance
             )
-            
+
             # 6. 组装完整的引导信息
             guidance = {
                 "success": True,
@@ -94,10 +94,10 @@ class GoalGuidanceService:
                 ),
                 "generated_at": get_china_now().isoformat()
             }
-            
+
             logger.info(f"[目标引导] 生成完成，包含 {len(guidance['knowledge_points'])} 个知识要点")
             return guidance
-            
+
         except Exception as e:
             logger.error(f"[目标引导] 生成失败: {e}", exc_info=True)
             return {
@@ -105,7 +105,7 @@ class GoalGuidanceService:
                 "error": str(e),
                 "message": "生成引导失败，请稍后重试"
             }
-    
+
     def _get_recent_resting_hr(self, db: Session, user_id: int) -> Optional[int]:
         """获取最近7天的平均静息心率"""
         try:
@@ -113,22 +113,22 @@ class GoalGuidanceService:
                 GarminData.user_id == user_id,
                 GarminData.resting_heart_rate.isnot(None)
             ).order_by(GarminData.record_date.desc()).limit(7).all()
-            
+
             if not recent_data:
                 return None
-            
+
             valid_hrs = [d.resting_heart_rate for d in recent_data if d.resting_heart_rate]
             if not valid_hrs:
                 return None
-            
+
             avg_hr = int(sum(valid_hrs) / len(valid_hrs))
             logger.info(f"[目标引导] 最近7天平均静息心率: {avg_hr} bpm")
             return avg_hr
-            
+
         except Exception as e:
             logger.error(f"[目标引导] 获取静息心率失败: {e}")
             return None
-    
+
     def _retrieve_course_knowledge(
         self,
         goal_type: str,
@@ -140,19 +140,19 @@ class GoalGuidanceService:
             # 构建查询问题
             query = self._build_knowledge_query(goal_type, goal_description, user_profile)
             logger.info(f"[目标引导] 知识库查询: {query}")
-            
+
             # 使用 RAG 检索
             if not rag_pipeline.is_available():
                 logger.warning("[目标引导] RAG 服务不可用")
                 return {"key_points": [], "sources": []}
-            
+
             # 调用 RAG - 使用 retrieve_relevant_knowledge 检索相关知识
             knowledge_results = rag_pipeline.retrieve_relevant_knowledge(
                 query=query,
                 category="exercise_science",  # 限定为运动科学分类
                 n_results=5
             )
-            
+
             if knowledge_results:
                 # 提取关键点
                 key_points = []
@@ -162,7 +162,7 @@ class GoalGuidanceService:
                         key_points.append(item["content"][:200])  # 截取前200字符作为要点
                     if item.get("metadata", {}).get("source_title"):
                         sources.append(item["metadata"]["source_title"])
-                
+
                 return {
                     "key_points": key_points[:5],  # 最多5个要点
                     "sources": list(set(sources))[:3],  # 最多3个来源，去重
@@ -171,11 +171,11 @@ class GoalGuidanceService:
             else:
                 logger.warning(f"[目标引导] 未检索到相关知识")
                 return {"key_points": [], "sources": [], "raw_knowledge": []}
-                
+
         except Exception as e:
             logger.error(f"[目标引导] 检索课程知识失败: {e}")
             return {"key_points": [], "sources": []}
-    
+
     def _build_knowledge_query(
         self,
         goal_type: str,
@@ -193,9 +193,9 @@ class GoalGuidanceService:
             "EXERCISE": f"如何进行科学的运动训练？{goal_description}",
             "WEIGHT": f"如何通过运动和饮食管理体重？{goal_description}",
         }
-        
+
         return queries.get(goal_type.upper(), f"关于 {goal_type} 训练的科学建议？{goal_description}")
-    
+
     def _generate_training_plan(
         self,
         goal_type: str,
@@ -211,9 +211,9 @@ class GoalGuidanceService:
             "weekly_structure": self._get_weekly_structure(goal_type),
             "progression": self._get_progression_strategy(goal_type, target_value)
         }
-        
+
         return plan
-    
+
     def _get_recommended_frequency(self, goal_type: str) -> str:
         """获取推荐训练频率"""
         frequency_map = {
@@ -227,7 +227,7 @@ class GoalGuidanceService:
             "WEIGHT": "每周 4-5 次，有氧+力量",
         }
         return frequency_map.get(goal_type.upper(), "每周 3-4 次")
-    
+
     def _get_recommended_duration(self, goal_type: str) -> str:
         """获取推荐训练时长"""
         duration_map = {
@@ -241,7 +241,7 @@ class GoalGuidanceService:
             "WEIGHT": "每次 45-60 分钟",
         }
         return duration_map.get(goal_type.upper(), "每次 30-45 分钟")
-    
+
     def _get_intensity_distribution(
         self,
         goal_type: str,
@@ -250,7 +250,7 @@ class GoalGuidanceService:
         """获取训练强度分配"""
         if not hr_zones:
             return {"note": "需要心率数据才能提供精确的强度分配"}
-        
+
         distribution_map = {
             "WEIGHT_LOSS": {
                 "zone_2": "60% - 低强度有氧（燃脂区间）",
@@ -273,11 +273,11 @@ class GoalGuidanceService:
                 "zone_4": "10% - 高强度"
             },
         }
-        
+
         return distribution_map.get(goal_type.upper(), {
             "note": f"根据 {goal_type} 目标调整训练强度"
         })
-    
+
     def _get_weekly_structure(self, goal_type: str) -> List[str]:
         """获取周训练结构"""
         structure_map = {
@@ -300,12 +300,12 @@ class GoalGuidanceService:
                 "周日：恢复跑或休息"
             ],
         }
-        
+
         return structure_map.get(goal_type.upper(), [
             "根据目标类型定制训练计划",
             "建议咨询专业教练"
         ])
-    
+
     def _get_progression_strategy(
         self,
         goal_type: str,
@@ -314,9 +314,9 @@ class GoalGuidanceService:
         """获取进阶策略"""
         if target_value:
             return f"循序渐进，每周增加 5-10% 的训练量，目标值：{target_value}"
-        
+
         return "遵循 10% 原则：每周训练量增加不超过 10%，避免过度训练"
-    
+
     def _generate_recommendations(
         self,
         goal_type: str,
@@ -325,7 +325,7 @@ class GoalGuidanceService:
     ) -> List[str]:
         """生成个性化建议"""
         recommendations = []
-        
+
         # 基于心率区间的建议
         if hr_zones:
             max_hr = hr_zones.get('max_heart_rate', 180)
@@ -334,7 +334,7 @@ class GoalGuidanceService:
                 f"你的最大心率约为 {max_hr} bpm，"
                 f"建议大部分训练保持在 {zone2[0]}-{zone2[1]} bpm（有氧燃脂区间）"
             )
-        
+
         # 基于目标类型的建议
         type_recommendations = {
             "WEIGHT_LOSS": [
@@ -353,11 +353,11 @@ class GoalGuidanceService:
                 "保证充足的休息和恢复"
             ],
         }
-        
+
         recommendations.extend(type_recommendations.get(goal_type.upper(), []))
-        
+
         return recommendations
-    
+
     def _generate_basic_guidance(self, goal_type: str) -> Dict[str, Any]:
         """生成基础引导（当用户数据不足时）"""
         return {

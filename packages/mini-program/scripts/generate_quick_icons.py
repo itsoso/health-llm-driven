@@ -22,7 +22,7 @@ def create_icon(icon_type, color):
     scale = 3
     img = Image.new('RGBA', (SIZE * scale, SIZE * scale), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    
+
     center = (SIZE * scale) // 2
     lw = 8 * scale  # 线条粗细
 
@@ -33,24 +33,24 @@ def create_icon(icon_type, color):
         right = center + 28 * scale
         top = center - 24 * scale
         bottom = center + 30 * scale
-        
+
         # 圆角矩形主体
         draw.rounded_rectangle([left, top, right, bottom], radius=6*scale, outline=color, width=lw)
-        
+
         # 顶部两个小夹子
         clip_y = top - 4 * scale
         clip_h = 12 * scale
-        draw.rounded_rectangle([center - 16*scale, clip_y, center - 8*scale, top + 6*scale], 
+        draw.rounded_rectangle([center - 16*scale, clip_y, center - 8*scale, top + 6*scale],
                                radius=3*scale, outline=color, width=lw)
-        draw.rounded_rectangle([center + 8*scale, clip_y, center + 16*scale, top + 6*scale], 
+        draw.rounded_rectangle([center + 8*scale, clip_y, center + 16*scale, top + 6*scale],
                                radius=3*scale, outline=color, width=lw)
-        
+
         # 打勾
         check_cx = center
         check_cy = center + 8 * scale
-        draw.line([(check_cx - 14*scale, check_cy), (check_cx - 4*scale, check_cy + 10*scale)], 
+        draw.line([(check_cx - 14*scale, check_cy), (check_cx - 4*scale, check_cy + 10*scale)],
                   fill=color, width=lw, joint='curve')
-        draw.line([(check_cx - 4*scale, check_cy + 10*scale), (check_cx + 16*scale, check_cy - 10*scale)], 
+        draw.line([(check_cx - 4*scale, check_cy + 10*scale), (check_cx + 16*scale, check_cy - 10*scale)],
                   fill=color, width=lw, joint='curve')
 
     elif icon_type == 'diet':
@@ -59,7 +59,7 @@ def create_icon(icon_type, color):
         knife_x = center + 14 * scale
         top_y = center - 32 * scale
         bottom_y = center + 32 * scale
-        
+
         # 叉子
         # 叉子柄
         draw.line([(fork_x, center), (fork_x, bottom_y)], fill=color, width=lw)
@@ -68,9 +68,9 @@ def create_icon(icon_type, color):
         draw.line([(fork_x, top_y), (fork_x, center - 8*scale)], fill=color, width=lw-2*scale)
         draw.line([(fork_x + 10*scale, top_y), (fork_x + 10*scale, center - 8*scale)], fill=color, width=lw-2*scale)
         # 叉子头部连接
-        draw.arc([fork_x - 12*scale, center - 14*scale, fork_x + 12*scale, center + 4*scale], 
+        draw.arc([fork_x - 12*scale, center - 14*scale, fork_x + 12*scale, center + 4*scale],
                  start=0, end=180, fill=color, width=lw)
-        
+
         # 刀子
         # 刀柄
         draw.line([(knife_x, center + 4*scale), (knife_x, bottom_y)], fill=color, width=lw)
@@ -82,22 +82,22 @@ def create_icon(icon_type, color):
         head_r = 10 * scale
         head_cx = center + 4 * scale
         head_cy = center - 22 * scale
-        
+
         # 头
-        draw.ellipse([head_cx - head_r, head_cy - head_r, head_cx + head_r, head_cy + head_r], 
+        draw.ellipse([head_cx - head_r, head_cy - head_r, head_cx + head_r, head_cy + head_r],
                      outline=color, width=lw)
-        
+
         # 身体 - 倾斜
         body_top = head_cy + head_r + 2*scale
         body_bottom_x = center - 6*scale
         body_bottom_y = center + 8*scale
         draw.line([(head_cx, body_top), (body_bottom_x, body_bottom_y)], fill=color, width=lw)
-        
+
         # 手臂 - 向后摆
         arm_start = (head_cx - 2*scale, body_top + 8*scale)
         draw.line([arm_start, (center - 24*scale, center - 8*scale)], fill=color, width=lw)
         draw.line([arm_start, (center + 20*scale, center + 2*scale)], fill=color, width=lw)
-        
+
         # 腿 - 跑步姿势
         leg_start = (body_bottom_x, body_bottom_y)
         # 前腿
@@ -112,9 +112,9 @@ def create_icon(icon_type, color):
         right = center + 30 * scale
         top = center - 22 * scale
         bottom = center + 22 * scale
-        
+
         draw.rounded_rectangle([left, top, right, bottom], radius=6*scale, outline=color, width=lw)
-        
+
         # 心电图波形
         wave_y = center
         points = [

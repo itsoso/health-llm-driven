@@ -69,9 +69,9 @@ export default function Workout() {
         get<WorkoutRecord[]>('/workout/me', { days }),
         get<WorkoutStats>('/workout/me/stats', { days }).catch(() => null),
       ]);
-      
+
       setWorkouts(workoutList || []);
-      
+
       if (workoutStats) {
         setStats(workoutStats);
       } else if (workoutList && workoutList.length > 0) {
@@ -250,8 +250,8 @@ export default function Workout() {
           {workouts.map((workout) => {
             const typeInfo = getWorkoutTypeInfo(workout.workout_type);
             return (
-              <View 
-                key={workout.id} 
+              <View
+                key={workout.id}
                 className="workout-card"
                 onClick={() => Taro.navigateTo({ url: `/pages/workout-detail/index?id=${workout.id}` })}
               >

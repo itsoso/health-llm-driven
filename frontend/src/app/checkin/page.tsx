@@ -98,12 +98,12 @@ export default function CheckinPage() {
   const { showToast } = useToast();
   const { celebrate } = useCelebration();
   const queryClient = useQueryClient();
-  
+
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showQuickCheckin, setShowQuickCheckin] = useState<CheckinTemplate | null>(null);
   const [quickValue, setQuickValue] = useState<number | ''>('');
   const [activeTab, setActiveTab] = useState<'checkin' | 'calendar' | 'stats'>('checkin');
-  
+
   // 日历月份状态
   const today = new Date();
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
@@ -278,7 +278,7 @@ export default function CheckinPage() {
             <h1 className="text-xl font-bold text-white">每日打卡</h1>
           </div>
         </header>
-        
+
         <main className="max-w-4xl mx-auto px-4 py-12">
           <div className="text-center">
             <div className="text-6xl mb-6">🎯</div>
@@ -460,14 +460,14 @@ export default function CheckinPage() {
                         );
                       })()}
                     </div>
-                    
+
                     {/* 统计信息 */}
                     <div className="flex items-center gap-4 text-sm text-white/50 mb-3">
                       <span>🔥 连续 {template.current_streak} 天</span>
                       <span>⭐ 最佳 {template.best_streak} 天</span>
                       <span>📈 共 {template.total_checkins} 次</span>
                     </div>
-                    
+
                     {/* 打卡按钮 */}
                     <button
                       onClick={() => handleQuickCheckin(template)}
@@ -562,14 +562,14 @@ export default function CheckinPage() {
                   if (day === null) {
                     return <div key={`empty-${index}`} className="aspect-square" />;
                   }
-                  
+
                   const dayData = calendarData?.days[String(day)];
-                  const isToday = 
-                    calendarYear === today.getFullYear() && 
-                    calendarMonth === today.getMonth() + 1 && 
+                  const isToday =
+                    calendarYear === today.getFullYear() &&
+                    calendarMonth === today.getMonth() + 1 &&
                     day === today.getDate();
                   const isFuture = new Date(calendarYear, calendarMonth - 1, day) > today;
-                  
+
                   return (
                     <div
                       key={day}
@@ -707,7 +707,7 @@ export default function CheckinPage() {
                 </span>
               </div>
             </div>
-            
+
             <div className="mb-6">
               <label className="block text-white/70 text-sm mb-2">完成数量</label>
               <div className="flex items-center gap-3">
@@ -734,7 +734,7 @@ export default function CheckinPage() {
                 单位: {showQuickCheckin.unit}
               </span>
             </div>
-            
+
             <div className="flex gap-3">
               <button
                 onClick={() => {

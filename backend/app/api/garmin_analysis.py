@@ -142,4 +142,3 @@ def analyze_my_spo2(
     """分析当前用户血氧SpO2数据（需要登录）"""
     service = GarminAnalysisService()
     return service.analyze_spo2(db, current_user.id, days)
-

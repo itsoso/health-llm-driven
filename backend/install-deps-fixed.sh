@@ -36,7 +36,7 @@ echo "系统: $OS_TYPE $ARCH"
 if [[ "$OS_TYPE" == "Darwin" ]]; then
     echo ""
     echo "步骤2: 检查macOS构建工具..."
-    
+
     # 检查Xcode Command Line Tools
     if ! xcode-select -p &> /dev/null; then
         echo "❌ 未检测到Xcode Command Line Tools"
@@ -45,7 +45,7 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
     else
         echo "✅ Xcode Command Line Tools已安装"
     fi
-    
+
     # 检查是否有编译器
     if ! command -v gcc &> /dev/null && ! command -v clang &> /dev/null; then
         echo "⚠️  警告: 未检测到C编译器"
@@ -125,4 +125,3 @@ echo "  python3 -c 'import fastapi; print(\"FastAPI OK\")'"
 echo "  python3 -c 'import uvicorn; print(\"Uvicorn OK\")'"
 echo "  python3 -c 'import numpy; print(\"NumPy OK\")' 2>/dev/null || echo 'NumPy未安装'"
 echo "  python3 -c 'import pandas; print(\"Pandas OK\")' 2>/dev/null || echo 'Pandas未安装'"
-

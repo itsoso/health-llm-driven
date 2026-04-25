@@ -7,11 +7,11 @@ import Taro from '@tarojs/taro';
 import { clearToken, getToken, get, put, del } from '../../services/request';
 import { getUserApiKeys, createUserApiKey, deleteUserApiKey } from '../../services/api';
 import type { UserApiKey } from '../../types';
-import { 
-  requestAllSubscriptions, 
-  getSubscribeSettings, 
+import {
+  requestAllSubscriptions,
+  getSubscribeSettings,
   isSubscribeAvailable,
-  TEMPLATE_NAMES 
+  TEMPLATE_NAMES
 } from '../../services/subscribe';
 import logoImage from '../../assets/logo.png';
 import './index.scss';
@@ -184,26 +184,26 @@ export default function Settings() {
   // 开启消息提醒（首次或添加更多）
   const handleEnableNotifications = async () => {
     Taro.showLoading({ title: '请求授权中...' });
-    
+
     try {
       const result = await requestAllSubscriptions();
       Taro.hideLoading();
-      
+
       if (result.success) {
         const acceptedCount = result.acceptedTemplates.length;
         const rejectedCount = result.rejectedTemplates.length;
-        
+
         let message = `已开启${acceptedCount}项提醒`;
         if (rejectedCount > 0) {
           message += `，${rejectedCount}项未授权`;
         }
-        
+
         Taro.showToast({
           title: message,
           icon: acceptedCount > 0 ? 'success' : 'none',
           duration: 2000,
         });
-        
+
         // 重新加载设置
         await loadNotificationSettings();
       } else if (result.error) {
@@ -340,9 +340,9 @@ export default function Settings() {
     <View className="settings-page">
       {/* 用户信息 */}
       <View className="user-card">
-        <Image 
-          className="avatar-image" 
-          src={logoImage} 
+        <Image
+          className="avatar-image"
+          src={logoImage}
           mode="aspectFit"
         />
         <View className="user-info">
@@ -368,7 +368,7 @@ export default function Settings() {
       {subscribeAvailable && (
         <View className="menu-section">
           <Text className="section-label">消息提醒</Text>
-          
+
           {/* 未开启订阅时显示开启按钮 */}
           {(!notificationSettings?.wechat_enabled || !notificationSettings?.template_ids) ? (
             <View className="menu-item highlight" onClick={handleEnableNotifications}>
@@ -383,13 +383,13 @@ export default function Settings() {
               <View className="menu-item">
                 <Text className="menu-icon">🔔</Text>
                 <Text className="menu-text">消息通知</Text>
-                <Switch 
+                <Switch
                   checked={notificationSettings?.enabled ?? false}
                   onChange={(e) => handleToggleNotification(e.detail.value)}
                   color="#7C3AED"
                 />
               </View>
-              
+
               {/* 显示已订阅的模板 */}
               {notificationSettings?.template_ids && Object.keys(notificationSettings.template_ids).length > 0 && (
                 <View className="menu-item sub-item">
@@ -400,7 +400,7 @@ export default function Settings() {
                   </Text>
                 </View>
               )}
-              
+
               {/* 重新授权按钮 */}
               <View className="menu-item" onClick={handleEnableNotifications}>
                 <Text className="menu-icon">➕</Text>

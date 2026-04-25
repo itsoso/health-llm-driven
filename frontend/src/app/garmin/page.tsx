@@ -15,7 +15,7 @@ function GarminContent() {
   const userId = user?.id;
   const [days, setDays] = useState(7);
   const [activeTab, setActiveTab] = useState<'data' | 'sleep' | 'heart' | 'spo2' | 'battery' | 'activity' | 'comprehensive'>('data');
-  
+
   // 分页状态
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15; // 每页显示条数
@@ -458,4 +458,3 @@ export default function GarminPage() {
     </ProtectedRoute>
   );
 }
-

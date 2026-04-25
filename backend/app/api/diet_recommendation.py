@@ -23,7 +23,7 @@ async def get_my_diet_recommendation(
 ):
     """
     获取我的智能饮食推荐
-    
+
     返回内容：
     - 每日营养目标（卡路里、蛋白质、碳水、脂肪）
     - 今日已摄入

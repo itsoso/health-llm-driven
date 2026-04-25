@@ -81,13 +81,13 @@ async def get_templates(
 ):
     """获取用户的打卡模板列表"""
     query = db.query(CheckinTemplate).filter(CheckinTemplate.user_id == current_user.id)
-    
+
     if not include_archived:
         query = query.filter(CheckinTemplate.is_archived == False)
-    
+
     if category:
         query = query.filter(CheckinTemplate.category == category)
-    
+
     templates = query.order_by(CheckinTemplate.sort_order, CheckinTemplate.created_at).all()
 
     # 检查今日是否已完成 - 批量加载今日记录避免 N+1 查询
@@ -104,12 +104,12 @@ async def get_templates(
         response = CheckinTemplateResponse.model_validate(template)
         response.today_completed = template.id in completed_template_ids
         result.append(response)
-    
+
     # 统计各分类数量
     categories = {}
     for t in templates:
         categories[t.category] = categories.get(t.category, 0) + 1
-    
+
     return CheckinTemplateListResponse(
         templates=result,
         total=len(result),
@@ -131,7 +131,7 @@ async def create_template(
     db.add(template)
     db.commit()
     db.refresh(template)
-    
+
     return CheckinTemplateResponse.model_validate(template)
 
 
@@ -210,10 +210,10 @@ async def get_template(
         CheckinTemplate.id == template_id,
         CheckinTemplate.user_id == current_user.id
     ).first()
-    
+
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
-    
+
     return CheckinTemplateResponse.model_validate(template)
 
 
@@ -229,17 +229,17 @@ async def update_template(
         CheckinTemplate.id == template_id,
         CheckinTemplate.user_id == current_user.id
     ).first()
-    
+
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
-    
+
     update_data = template_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(template, key, value)
-    
+
     db.commit()
     db.refresh(template)
-    
+
     return CheckinTemplateResponse.model_validate(template)
 
 
@@ -254,13 +254,13 @@ async def delete_template(
         CheckinTemplate.id == template_id,
         CheckinTemplate.user_id == current_user.id
     ).first()
-    
+
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
-    
+
     db.delete(template)
     db.commit()
-    
+
     return {"message": "模板已删除"}
 
 
@@ -280,23 +280,23 @@ async def create_record(
         CheckinTemplate.id == record_data.template_id,
         CheckinTemplate.user_id == current_user.id
     ).first()
-    
+
     if not template:
         raise HTTPException(status_code=404, detail="打卡模板不存在")
-    
+
     # 检查是否已打卡
     existing = db.query(CheckinRecord).filter(
         CheckinRecord.template_id == record_data.template_id,
         CheckinRecord.checkin_date == record_data.checkin_date
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="今日已打卡，请使用更新接口")
-    
+
     # 计算完成率
     target = record_data.target or template.default_target
     completion_rate = (record_data.value / target * 100) if target > 0 else 100
-    
+
     # 创建记录
     record = CheckinRecord(
         user_id=current_user.id,
@@ -305,17 +305,17 @@ async def create_record(
     )
     if record.target is None:
         record.target = template.default_target
-    
+
     db.add(record)
-    
+
     # 更新模板统计
     template.total_checkins += 1
     template.total_value += record_data.value
     template.last_checkin_date = record_data.checkin_date
-    
+
     # 更新连续打卡天数
     _update_streak(template, record_data.checkin_date, db)
-    
+
     db.commit()
     db.refresh(record)
 
@@ -341,25 +341,25 @@ async def quick_checkin(
         CheckinTemplate.id == record_data.template_id,
         CheckinTemplate.user_id == current_user.id
     ).first()
-    
+
     if not template:
         raise HTTPException(status_code=404, detail="打卡模板不存在")
-    
+
     today = date.today()
-    
+
     # 检查是否已打卡
     existing = db.query(CheckinRecord).filter(
         CheckinRecord.template_id == record_data.template_id,
         CheckinRecord.checkin_date == today
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="今日已打卡")
-    
+
     # 使用默认值或指定值
     value = record_data.value if record_data.value is not None else template.default_target
     completion_rate = (value / template.default_target * 100) if template.default_target > 0 else 100
-    
+
     record = CheckinRecord(
         template_id=record_data.template_id,
         user_id=current_user.id,
@@ -370,13 +370,13 @@ async def quick_checkin(
         notes=record_data.notes
     )
     db.add(record)
-    
+
     # 更新模板统计
     template.total_checkins += 1
     template.total_value += value
     template.last_checkin_date = today
     _update_streak(template, today, db)
-    
+
     db.commit()
     db.refresh(record)
 
@@ -416,22 +416,22 @@ async def get_today_records(
 ):
     """获取今日打卡记录"""
     today = date.today()
-    
+
     # 获取所有活动模板
     templates = db.query(CheckinTemplate).filter(
         CheckinTemplate.user_id == current_user.id,
         CheckinTemplate.is_active == True,
         CheckinTemplate.is_archived == False
     ).all()
-    
+
     # 获取今日记录
     records = db.query(CheckinRecord).filter(
         CheckinRecord.user_id == current_user.id,
         CheckinRecord.checkin_date == today
     ).all()
-    
+
     completed_template_ids = {r.template_id for r in records}
-    
+
     # 构建响应
     record_responses = []
     for record in records:
@@ -442,9 +442,9 @@ async def get_today_records(
             response.template_icon = template.icon
             response.template_category = template.category
         record_responses.append(response)
-    
+
     completion_rate = (len(completed_template_ids) / len(templates) * 100) if templates else 0
-    
+
     return CheckinDailySummary(
         date=today,
         total_templates=len(templates),
@@ -465,22 +465,22 @@ async def get_records(
 ):
     """获取打卡记录列表"""
     query = db.query(CheckinRecord).filter(CheckinRecord.user_id == current_user.id)
-    
+
     if template_id:
         query = query.filter(CheckinRecord.template_id == template_id)
     if start_date:
         query = query.filter(CheckinRecord.checkin_date >= start_date)
     if end_date:
         query = query.filter(CheckinRecord.checkin_date <= end_date)
-    
+
     records = query.order_by(CheckinRecord.checkin_date.desc()).limit(limit).all()
-    
+
     # 获取模板信息
     template_ids = list(set(r.template_id for r in records))
     templates = {t.id: t for t in db.query(CheckinTemplate).filter(
         CheckinTemplate.id.in_(template_ids)
     ).all()}
-    
+
     result = []
     for record in records:
         response = CheckinRecordResponse.model_validate(record)
@@ -490,7 +490,7 @@ async def get_records(
             response.template_icon = template.icon
             response.template_category = template.category
         result.append(response)
-    
+
     return result
 
 
@@ -507,32 +507,32 @@ async def get_stats(
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
-    
+
     # 获取模板
     templates = db.query(CheckinTemplate).filter(
         CheckinTemplate.user_id == current_user.id
     ).all()
-    
+
     active_templates = [t for t in templates if t.is_active and not t.is_archived]
-    
+
     # 获取今日记录数
     today_count = db.query(CheckinRecord).filter(
         CheckinRecord.user_id == current_user.id,
         CheckinRecord.checkin_date == today
     ).count()
-    
+
     # 获取本周记录数
     week_count = db.query(CheckinRecord).filter(
         CheckinRecord.user_id == current_user.id,
         CheckinRecord.checkin_date >= week_start
     ).count()
-    
+
     # 获取本月记录数
     month_count = db.query(CheckinRecord).filter(
         CheckinRecord.user_id == current_user.id,
         CheckinRecord.checkin_date >= month_start
     ).count()
-    
+
     # 计算完成率
     completion_rate_today = (today_count / len(active_templates) * 100) if active_templates else 0
 
@@ -589,7 +589,7 @@ async def get_stats(
             "count": day_count,
             "rate": round(day_count / len(active_templates) * 100, 1) if active_templates else 0
         })
-    
+
     # 分类统计
     by_category = {}
     for template in templates:
@@ -598,7 +598,7 @@ async def get_stats(
             by_category[cat] = {"count": 0, "total_checkins": 0}
         by_category[cat]["count"] += 1
         by_category[cat]["total_checkins"] += template.total_checkins
-    
+
     return CheckinStats(
         total_checkins=sum(t.total_checkins for t in templates),
         total_templates=len(templates),
@@ -625,18 +625,18 @@ async def get_calendar(
 ):
     """获取打卡日历"""
     from calendar import monthrange
-    
+
     _, days_in_month = monthrange(year, month)
     start_date = date(year, month, 1)
     end_date = date(year, month, days_in_month)
-    
+
     # 获取活动模板数
     template_count = db.query(CheckinTemplate).filter(
         CheckinTemplate.user_id == current_user.id,
         CheckinTemplate.is_active == True,
         CheckinTemplate.is_archived == False
     ).count()
-    
+
     # 获取当月所有记录
     records = db.query(
         CheckinRecord.checkin_date,
@@ -646,25 +646,25 @@ async def get_calendar(
         CheckinRecord.checkin_date >= start_date,
         CheckinRecord.checkin_date <= end_date
     ).group_by(CheckinRecord.checkin_date).all()
-    
+
     # 构建日历数据
     days = {}
     completed_days = 0
-    
+
     for record in records:
         day = record.checkin_date.day
         rate = (record.count / template_count * 100) if template_count > 0 else 0
         completed = rate >= 80  # 80%以上算完成
-        
+
         days[day] = {
             "completed": completed,
             "rate": round(rate, 1),
             "records": record.count
         }
-        
+
         if completed:
             completed_days += 1
-    
+
     return CheckinCalendar(
         year=year,
         month=month,
@@ -682,20 +682,20 @@ async def get_calendar(
 def _update_streak(template: CheckinTemplate, checkin_date: date, db: Session):
     """更新连续打卡天数"""
     yesterday = checkin_date - timedelta(days=1)
-    
+
     # 检查昨天是否打卡
     yesterday_record = db.query(CheckinRecord).filter(
         CheckinRecord.template_id == template.id,
         CheckinRecord.checkin_date == yesterday
     ).first()
-    
+
     if yesterday_record or template.last_checkin_date == yesterday:
         # 连续打卡
         template.current_streak += 1
     else:
         # 断了，重新开始
         template.current_streak = 1
-    
+
     # 更新最佳连续天数
     if template.current_streak > template.best_streak:
         template.best_streak = template.current_streak

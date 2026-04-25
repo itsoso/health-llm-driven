@@ -144,7 +144,7 @@ function DashboardContent() {
   // 手动刷新所有数据（包含 Garmin 同步）
   const handleManualRefresh = async () => {
     if (isRefreshing) return; // 防止重复点击
-    
+
     setIsRefreshing(true);
     setRefreshError('');
     try {
@@ -205,17 +205,17 @@ function DashboardContent() {
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isPulling || isRefreshing) return;
-      
+
       currentY = e.touches[0].clientY;
       const distance = currentY - startY;
-      
+
       // 只允许向下拉
       if (distance > 0 && window.scrollY === 0) {
         // 限制最大拉动距离为 100px
         const maxDistance = 100;
         const dampedDistance = Math.min(distance * 0.5, maxDistance);
         setPullDistance(dampedDistance);
-        
+
         // 阻止默认滚动行为
         if (distance > 10) {
           e.preventDefault();
@@ -225,14 +225,14 @@ function DashboardContent() {
 
     const handleTouchEnd = async () => {
       if (!isPulling) return;
-      
+
       setIsPulling(false);
-      
+
       // 如果拉动距离超过 60px，触发刷新
       if (pullDistance > 60 && !isRefreshing) {
         await handleManualRefresh();
       }
-      
+
       // 重置拉动距离
       setPullDistance(0);
       setPullStartY(0);
@@ -255,15 +255,15 @@ function DashboardContent() {
   // 准备图表数据 - 按日期排序后取最近14天
   const chartData = (() => {
     if (!garminData?.data || garminData.data.length === 0) return [];
-    
+
     // 按日期排序（升序）
-    const sorted = [...garminData.data].sort((a: any, b: any) => 
+    const sorted = [...garminData.data].sort((a: any, b: any) =>
       new Date(a.record_date).getTime() - new Date(b.record_date).getTime()
     );
-    
+
     // 取最近14天的数据
     const recent14 = sorted.slice(-14);
-    
+
     return recent14.map((item: any) => ({
       date: format(new Date(item.record_date), 'MM-dd'),
       sleep: item.sleep_score,
@@ -273,7 +273,7 @@ function DashboardContent() {
   })();
 
   return (
-    <main 
+    <main
       ref={containerRef}
       className="min-h-screen p-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50 pt-4 relative"
       style={{
@@ -310,7 +310,7 @@ function DashboardContent() {
           </div>
         </div>
       )}
-      
+
       <div className="max-w-7xl mx-auto">
         {/* 健康评分卡 */}
         {scoreData?.status === 'ok' && (
@@ -418,14 +418,14 @@ function DashboardContent() {
                   const drainedBattery = todayRecord.body_battery_drained;
                   const displayBattery = currentBattery ?? peakBattery;
                   const hasCurrent = currentBattery !== null && currentBattery !== undefined;
-                  
+
                   const getBatteryStatus = (value: number | null | undefined) => {
                     if (value === null || value === undefined) return '';
                     if (value >= 80) return '充足';
                     if (value >= 50) return '中等';
                     return '偏低';
                   };
-                  
+
                   return (
                     <>
                       <p className={`text-3xl font-bold ${
@@ -682,21 +682,21 @@ function DashboardContent() {
               const displayBattery = currentBattery ?? peakBattery ?? avgBattery;
               const hasCurrent = currentBattery !== null && currentBattery !== undefined;
               const hasPeak = peakBattery !== null && peakBattery !== undefined;
-              
+
               const getBatteryColor = (value: number | null | undefined) => {
                 if (value === null || value === undefined) return 'text-gray-400';
                 if (value >= 80) return 'text-green-600';
                 if (value >= 50) return 'text-yellow-600';
                 return 'text-red-500';
               };
-              
+
               const getBatteryStatus = (value: number | null | undefined) => {
                 if (value === null || value === undefined) return '';
                 if (value >= 80) return '充足';
                 if (value >= 50) return '中等';
                 return '偏低';
               };
-              
+
               return (
                 <>
                   <p className={`text-4xl font-bold mb-1 ${getBatteryColor(displayBattery)}`}>
@@ -791,35 +791,35 @@ function DashboardContent() {
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis 
-                  dataKey="date" 
+                <XAxis
+                  dataKey="date"
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
-                <YAxis 
-                  domain={[0, 100]} 
+                <YAxis
+                  domain={[0, 100]}
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
                     border: '2px solid #e5e7eb',
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: 500
                   }}
                 />
-                <Legend 
+                <Legend
                   wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="sleep" 
-                  stroke="#6366f1" 
+                <Line
+                  type="monotone"
+                  dataKey="sleep"
+                  stroke="#6366f1"
                   strokeWidth={3}
                   dot={{ fill: '#6366f1', r: 4 }}
-                  name="睡眠分数" 
+                  name="睡眠分数"
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -830,31 +830,31 @@ function DashboardContent() {
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis 
-                  dataKey="date" 
+                <XAxis
+                  dataKey="date"
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
-                <YAxis 
+                <YAxis
                   stroke="#6b7280"
                   style={{ fontSize: '12px', fontWeight: 500 }}
                 />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
                     border: '2px solid #e5e7eb',
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: 500
                   }}
                 />
-                <Legend 
+                <Legend
                   wrapperStyle={{ fontSize: '14px', fontWeight: 600 }}
                 />
-                <Bar 
-                  dataKey="steps" 
-                  fill="#10b981" 
-                  name="步数" 
+                <Bar
+                  dataKey="steps"
+                  fill="#10b981"
+                  name="步数"
                   radius={[8, 8, 0, 0]}
                 />
               </BarChart>
@@ -874,4 +874,3 @@ export default function DashboardPage() {
     </ProtectedRoute>
   );
 }
-

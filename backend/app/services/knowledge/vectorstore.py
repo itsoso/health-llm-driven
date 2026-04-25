@@ -31,11 +31,11 @@ except ImportError:
 class VectorStoreService:
     """
     向量存储服务
-    
+
     使用 Chroma 进行向量存储和相似度检索
     支持 OpenAI embeddings 或本地 embeddings
     """
-    
+
     def __init__(
         self,
         persist_directory: str = "./data/knowledge_base",
@@ -52,32 +52,32 @@ class VectorStoreService:
         self._fallback_model = "text-embedding-v3"
 
         self._initialize()
-    
+
     def _initialize(self):
         """初始化向量存储"""
         if not CHROMA_AVAILABLE:
             logger.error("Chroma 不可用，无法初始化向量存储")
             return
-        
+
         try:
             # 确保目录存在
             os.makedirs(self.persist_directory, exist_ok=True)
-            
+
             # 初始化 Chroma 客户端（持久化模式）
             self.client = chromadb.PersistentClient(
                 path=self.persist_directory,
                 settings=Settings(anonymized_telemetry=False)
             )
-            
+
             # 获取或创建集合
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
                 metadata={"description": "健康知识库"}
             )
-            
+
             logger.info(f"向量存储初始化成功，集合: {self.collection_name}")
             logger.info(f"当前文档数量: {self.collection.count()}")
-            
+
             # 初始化 OpenAI 客户端（用于 embeddings）
             from app.config import settings
             if OPENAI_AVAILABLE and settings.openai_api_key:
@@ -97,14 +97,14 @@ class VectorStoreService:
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                 )
                 logger.info("DashScope embeddings 容灾已启用")
-                
+
         except Exception as e:
             logger.error(f"向量存储初始化失败: {e}")
-    
+
     def is_available(self) -> bool:
         """检查服务是否可用"""
         return self.collection is not None
-    
+
     def _get_embeddings(self, texts: List[str], batch_size: int = 50) -> List[List[float]]:
         """
         获取文本的向量表示（分批处理）
@@ -153,7 +153,7 @@ class VectorStoreService:
                 self._embedding_disabled_until = time.time() + 600
                 logger.warning(f"{model} 配额耗尽/限流，熔断 10 分钟")
             return None
-    
+
     def add_documents(
         self,
         documents: List[Dict[str, Any]],
@@ -161,7 +161,7 @@ class VectorStoreService:
     ) -> Dict[str, Any]:
         """
         添加文档到向量存储
-        
+
         Args:
             documents: 文档列表，每个文档应包含:
                 - content: 文档内容
@@ -169,25 +169,25 @@ class VectorStoreService:
                 - category: 分类（可选）
                 - metadata: 其他元数据（可选）
             source: 来源标识
-            
+
         Returns:
             添加结果统计
         """
         if not self.is_available():
             return {"success": False, "error": "向量存储不可用"}
-        
+
         try:
             ids = []
             contents = []
             metadatas = []
-            
+
             for i, doc in enumerate(documents):
                 doc_id = f"{source}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}"
                 content = doc.get("content", "")
-                
+
                 if not content.strip():
                     continue
-                
+
                 # 基础元数据
                 metadata = {
                     "source": source,
@@ -195,7 +195,7 @@ class VectorStoreService:
                     "category": doc.get("category", "general"),
                     "created_at": datetime.now().isoformat(),
                 }
-                
+
                 # 合并额外的元数据，并处理不支持的类型
                 extra_metadata = doc.get("metadata", {})
                 for key, value in extra_metadata.items():
@@ -212,17 +212,17 @@ class VectorStoreService:
                     else:
                         # 其他类型转换为字符串
                         metadata[key] = str(value)
-                
+
                 ids.append(doc_id)
                 contents.append(content)
                 metadatas.append(metadata)
-            
+
             if not contents:
                 return {"success": False, "error": "没有有效的文档内容"}
-            
+
             # 获取 embeddings（如果使用 OpenAI）
             embeddings = self._get_embeddings(contents)
-            
+
             # 添加到集合
             if embeddings:
                 self.collection.add(
@@ -238,18 +238,18 @@ class VectorStoreService:
                     documents=contents,
                     metadatas=metadatas
                 )
-            
+
             logger.info(f"成功添加 {len(ids)} 个文档到知识库")
             return {
                 "success": True,
                 "added_count": len(ids),
                 "total_count": self.collection.count()
             }
-            
+
         except Exception as e:
             logger.error(f"添加文档失败: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def search(
         self,
         query: str,
@@ -273,7 +273,7 @@ class VectorStoreService:
         """
         if not self.is_available():
             return []
-        
+
         try:
             # 构建过滤条件
             where_filter = None
@@ -304,11 +304,11 @@ class VectorStoreService:
 
             # 普通搜索
             return self._execute_search(query, query_embedding, n_results, where_filter)
-            
+
         except Exception as e:
             logger.error(f"搜索失败: {e}")
             return []
-    
+
     def _execute_search(
         self,
         query: str,
@@ -419,13 +419,13 @@ class VectorStoreService:
         """获取知识库统计信息"""
         if not self.is_available():
             return {"available": False}
-        
+
         try:
             count = self.collection.count()
-            
+
             # 获取分类统计
             # 注意：Chroma 不直接支持聚合查询，这里简化处理
-            
+
             return {
                 "available": True,
                 "total_documents": count,
@@ -436,12 +436,12 @@ class VectorStoreService:
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}")
             return {"available": False, "error": str(e)}
-    
+
     def delete_by_source(self, source: str) -> Dict[str, Any]:
         """删除指定来源的所有文档"""
         if not self.is_available():
             return {"success": False, "error": "向量存储不可用"}
-        
+
         try:
             # Chroma 支持按条件删除
             self.collection.delete(
@@ -452,12 +452,12 @@ class VectorStoreService:
         except Exception as e:
             logger.error(f"删除文档失败: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def clear_all(self) -> Dict[str, Any]:
         """清空所有文档（谨慎使用）"""
         if not self.is_available():
             return {"success": False, "error": "向量存储不可用"}
-        
+
         try:
             # 删除并重新创建集合
             self.client.delete_collection(self.collection_name)

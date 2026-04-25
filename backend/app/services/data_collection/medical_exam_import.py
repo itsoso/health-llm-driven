@@ -24,7 +24,7 @@ class MedicalExamImportService:
         """从JSON格式导入体检数据"""
         exam_data = json_data.get("exam", {})
         items_data = json_data.get("items", [])
-        
+
         # 创建体检记录
         exam_create = MedicalExamCreate(
             user_id=user_id,
@@ -37,16 +37,16 @@ class MedicalExamImportService:
             notes=exam_data.get("notes"),
             items=[]
         )
-        
+
         # 创建体检项目
         for item_data in items_data:
             exam_create.items.append(MedicalExamItemCreate(**item_data))
-        
+
         # 保存到数据库
         db_exam = MedicalExam(**exam_create.model_dump(exclude={"items"}))
         db.add(db_exam)
         db.flush()
-        
+
         # 保存体检项目
         for item_create in exam_create.items:
             db_item = MedicalExamItem(
@@ -60,11 +60,11 @@ class MedicalExamImportService:
                 item_dict=item_create.model_dump(), source=source,
             )
             db.add(indicator)
-        
+
         db.commit()
         db.refresh(db_exam)
         return db_exam
-    
+
     @staticmethod
     def import_from_csv(
         db: Session,
@@ -74,7 +74,7 @@ class MedicalExamImportService:
     ) -> MedicalExam:
         """从CSV格式导入体检数据"""
         items = []
-        
+
         with open(csv_file_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
@@ -88,14 +88,14 @@ class MedicalExamImportService:
                     is_abnormal=row.get("is_abnormal", "normal"),
                     notes=row.get("notes")
                 ))
-        
+
         exam_data = {
             "exam": exam_info,
             "items": [item.model_dump() for item in items]
         }
-        
+
         return MedicalExamImportService.import_from_json(db, user_id, exam_data, source="csv_import")
-    
+
     @staticmethod
     def import_from_excel(
         db: Session,
@@ -105,17 +105,17 @@ class MedicalExamImportService:
     ) -> MedicalExam:
         """
         从Excel格式导入体检数据
-        
+
         注意：需要安装 pandas 和 openpyxl
         """
         try:
             import pandas as pd
         except ImportError:
             raise ImportError("需要安装pandas和openpyxl: pip install pandas openpyxl")
-        
+
         df = pd.read_excel(excel_file_path)
         items = []
-        
+
         for _, row in df.iterrows():
             items.append(MedicalExamItemCreate(
                 item_name=row.get("item_name", ""),
@@ -127,11 +127,10 @@ class MedicalExamImportService:
                 is_abnormal=row.get("is_abnormal", "normal"),
                 notes=row.get("notes")
             ))
-        
+
         exam_data = {
             "exam": exam_info,
             "items": [item.model_dump() for item in items]
         }
-        
-        return MedicalExamImportService.import_from_json(db, user_id, exam_data, source="csv_import")
 
+        return MedicalExamImportService.import_from_json(db, user_id, exam_data, source="csv_import")

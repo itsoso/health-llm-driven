@@ -12,7 +12,7 @@ def add_column_if_not_exists(engine, table_name, column_name, column_type):
     """如果列不存在则添加"""
     inspector = inspect(engine)
     columns = [col['name'] for col in inspector.get_columns(table_name)]
-    
+
     if column_name not in columns:
         with engine.connect() as conn:
             conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
@@ -26,7 +26,7 @@ def create_table_if_not_exists(engine, table_name, create_sql):
     """如果表不存在则创建"""
     inspector = inspect(engine)
     tables = inspector.get_table_names()
-    
+
     if table_name not in tables:
         with engine.connect() as conn:
             conn.execute(text(create_sql))
@@ -39,16 +39,16 @@ def create_table_if_not_exists(engine, table_name, create_sql):
 if __name__ == "__main__":
     print("开始更新用户认证相关数据库结构...")
     print(f"数据库: {DATABASE_URL}")
-    
+
     engine = create_engine(DATABASE_URL)
-    
+
     # 1. 更新 users 表，添加认证相关字段（SQLite不支持直接添加UNIQUE列，先添加普通列）
     print("\n📋 更新 users 表...")
     add_column_if_not_exists(engine, "users", "email", "VARCHAR")
     add_column_if_not_exists(engine, "users", "username", "VARCHAR")
     add_column_if_not_exists(engine, "users", "hashed_password", "VARCHAR")
     add_column_if_not_exists(engine, "users", "is_active", "BOOLEAN DEFAULT 1")
-    
+
     # 2. 创建 garmin_credentials 表
     print("\n📋 创建 garmin_credentials 表...")
     create_table_if_not_exists(engine, "garmin_credentials", """
@@ -64,7 +64,7 @@ if __name__ == "__main__":
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
-    
+
     # 3. 创建索引
     print("\n📋 创建索引...")
     try:
@@ -76,6 +76,5 @@ if __name__ == "__main__":
             print("✅ 索引创建完成")
     except Exception as e:
         print(f"⚠️ 创建索引时出现警告: {e}")
-    
-    print("\n✅ 数据库结构更新完成！")
 
+    print("\n✅ 数据库结构更新完成！")

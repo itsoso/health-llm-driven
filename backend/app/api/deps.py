@@ -107,4 +107,3 @@ async def get_current_user_required(
 def get_current_user_id(current_user: User = Depends(get_current_user_required)) -> int:
     """获取当前用户ID"""
     return current_user.id
-

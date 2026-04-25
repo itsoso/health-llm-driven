@@ -10,7 +10,7 @@ import {
   quickAddWater,
   getWaterRecordsByDate
 } from '../../services/api';
-import { 
+import {
   getTodayGarminDataCached,
   getDailyRecommendationCached,
   getTodayRhinitisCached,
@@ -24,12 +24,12 @@ import {
   clearHomePageCache
 } from '../../services/cachedApi';
 import { getToken } from '../../services/request';
-import { 
-  GarminData, 
-  DailyRecommendation, 
-  RhinitisRecord, 
-  WorkoutSummary, 
-  DailyDietSummary, 
+import {
+  GarminData,
+  DailyRecommendation,
+  RhinitisRecord,
+  WorkoutSummary,
+  DailyDietSummary,
   MorningBriefing,
   AIRecommendation,
   HealthReminder,
@@ -88,10 +88,10 @@ export default function Index() {
     // 仅处理时间更新
     const updateTime = () => {
       const now = new Date();
-      setCurrentTime(now.toLocaleTimeString('zh-CN', { 
-        hour: '2-digit', 
+      setCurrentTime(now.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: false 
+        hour12: false
       }));
     };
     updateTime();
@@ -102,7 +102,7 @@ export default function Index() {
   Taro.useDidShow(() => {
     // 性能监控：页面显示
     pagePerformance.pageStart('首页');
-    
+
     // 统一在这里处理登录检查和数据加载
     checkLoginStatus();
   });
@@ -199,17 +199,17 @@ export default function Index() {
       console.log('[首页] 正在加载中，跳过重复请求');
       return;
     }
-    
+
     // 性能监控：开始加载数据
     performanceMonitor.start('首页-总数据加载');
     setHomeData(prev => ({ ...prev, loading: true }));
-    
+
     try {
       // ========== 第一批：关键数据（立即加载）==========
       // 用户最关心的核心健康数据
       performanceMonitor.start('首页-第一批加载');
       console.log('[首页] 🚀 第一批：加载关键数据（Garmin、提醒、运动）');
-      
+
       const today = new Date().toISOString().split('T')[0];
       const [
         garminData,
@@ -222,7 +222,7 @@ export default function Index() {
         performanceMonitor.trackAPI('getTodayWorkouts', () => getTodayWorkoutsCached()),
         performanceMonitor.trackAPI('getTodayWater', () => getWaterRecordsByDate(today))
       ]);
-      
+
       performanceMonitor.end('首页-第一批加载', {
         成功: [garminData, remindersData, workoutsData, waterData].filter(r => r.status === 'fulfilled').length,
         失败: [garminData, remindersData, workoutsData, waterData].filter(r => r.status === 'rejected').length
@@ -244,11 +244,11 @@ export default function Index() {
         waterSummary,
         loading: false, // 关键数据加载完成，移除 loading 状态
       }));
-      
+
       // 标记首屏数据加载完成
       pagePerformance.dataLoaded('首页');
       performanceMonitor.end('首页-总数据加载');
-      
+
       // 如果今日没有运动记录，获取运动指导
       if (workouts.length === 0) {
         performanceMonitor.trackAPI('getPreWorkoutGuidance', () => getPreWorkoutGuidanceCached('running'))
@@ -263,7 +263,7 @@ export default function Index() {
       setTimeout(async () => {
         performanceMonitor.start('首页-第二批加载');
         console.log('[首页] 📊 第二批：加载重要数据（推荐、饮食、日程）');
-        
+
         const [
           recommendationData,
           dietData,
@@ -273,7 +273,7 @@ export default function Index() {
           performanceMonitor.trackAPI('getTodayDietSummary', () => getTodayDietSummaryCached()),
           performanceMonitor.trackAPI('getDailySchedule', () => getDailyScheduleCached())
         ]);
-        
+
         performanceMonitor.end('首页-第二批加载', {
           成功: [recommendationData, dietData, scheduleData].filter(r => r.status === 'fulfilled').length,
           失败: [recommendationData, dietData, scheduleData].filter(r => r.status === 'rejected').length
@@ -292,7 +292,7 @@ export default function Index() {
       setTimeout(async () => {
         performanceMonitor.start('首页-第三批加载');
         console.log('[首页] 🤖 第三批：加载次要数据（简报、AI推荐、鼻炎）');
-        
+
         const [
           briefingData,
           aiRecData,
@@ -302,7 +302,7 @@ export default function Index() {
           performanceMonitor.trackAPI('getAIRecommendation', () => getAIRecommendationCached()),
           performanceMonitor.trackAPI('getTodayRhinitis', () => getTodayRhinitisCached(true))
         ]);
-        
+
         performanceMonitor.end('首页-第三批加载', {
           成功: [briefingData, aiRecData, rhinitisData].filter(r => r.status === 'fulfilled').length,
           失败: [briefingData, aiRecData, rhinitisData].filter(r => r.status === 'rejected').length
@@ -314,14 +314,14 @@ export default function Index() {
           aiRecommendation: aiRecData.status === 'fulfilled' ? aiRecData.value : null,
           rhinitis: rhinitisData.status === 'fulfilled' ? rhinitisData.value : null,
         }));
-        
+
         // 所有数据加载完成
         setTimeout(() => {
           pagePerformance.pageReady('首页');
           console.log('[首页] ✅ 所有数据加载完成');
         }, 100);
       }, 800);
-      
+
     } catch (error) {
       console.error('[首页] 加载数据异常:', error);
       performanceMonitor.end('首页-总数据加载', { error: String(error) });
@@ -333,10 +333,10 @@ export default function Index() {
     setLoginLoading(true);
     try {
       const result = await wechatLogin(
-        inputNickname || undefined, 
+        inputNickname || undefined,
         inputInviteCode.trim() || undefined
       );
-      
+
       if (!result.is_approved) {
         Taro.showModal({
           title: '注册成功',
@@ -478,7 +478,7 @@ export default function Index() {
           <Text className="login-title">自由是自律的泡沫</Text>
           <Text className="login-subtitle">个人健康管理助手</Text>
         </View>
-        
+
         <View className="login-card">
           <Input
             className="login-input"
@@ -561,7 +561,7 @@ export default function Index() {
             <View className="hero-actions">
               {/* 主建议的打卡按钮 */}
               {homeData.aiRecommendation?.primary?.checkin_action && (
-                <View 
+                <View
                   className="hero-action-btn primary"
                   onClick={() => handleCheckinAction(homeData.aiRecommendation!.primary!.checkin_action!)}
                 >
@@ -574,10 +574,10 @@ export default function Index() {
                 const itemText = typeof item === 'string' ? item : item.text;
                 const itemAction = typeof item === 'object' ? item.checkin_action : undefined;
                 const isPrimary = idx === 0 && !homeData.aiRecommendation?.primary?.checkin_action;
-                
+
                 return (
-                  <View 
-                    key={idx} 
+                  <View
+                    key={idx}
                     className={`hero-action-btn ${isPrimary ? 'primary' : 'secondary'}`}
                     onClick={itemAction ? () => handleCheckinAction(itemAction) : undefined}
                   >
@@ -599,8 +599,8 @@ export default function Index() {
             <Text className="section-title">当前提醒</Text>
             <Text className="section-subtitle">点击立即打卡</Text>
           </View>
-          <View 
-            className="reminder-card clickable" 
+          <View
+            className="reminder-card clickable"
             onClick={() => handleReminderClick(homeData.reminders[0])}
           >
             <Text className="reminder-emoji">{homeData.reminders[0].title.split(' ')[0] || '💊'}</Text>
@@ -1033,19 +1033,19 @@ export default function Index() {
 
       {/* 刷新按钮 */}
       <View className="refresh-area">
-        <View 
-          className="refresh-btn" 
+        <View
+          className="refresh-btn"
           onClick={async () => {
             Taro.showLoading({ title: '同步中...' });
             try {
               // 同步 Garmin 数据
               await syncMyGarminData(1).catch(() => {});
               await new Promise(resolve => setTimeout(resolve, 500));
-              
+
               // 清除所有首页缓存，确保获取最新数据
               console.log('[刷新] 清除缓存，重新加载数据');
               clearHomePageCache();
-              
+
               // 重新加载数据
               await loadHomeData();
               Taro.showToast({ title: '刷新成功', icon: 'success', duration: 1000 });

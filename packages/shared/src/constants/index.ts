@@ -52,4 +52,3 @@ export const MEAL_TYPES = {
   dinner: { label: '晚餐', icon: '🌙', color: '#3b82f6' },
   snack: { label: '加餐', icon: '🍪', color: '#8b5cf6' },
 };
-

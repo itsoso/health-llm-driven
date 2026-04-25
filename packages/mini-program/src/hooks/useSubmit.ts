@@ -15,7 +15,7 @@ interface UseSubmitOptions {
 
 /**
  * 防重复提交 Hook
- * 
+ *
  * @example
  * const { isSubmitting, handleSubmit } = useSubmit({
  *   onSuccess: () => {
@@ -24,7 +24,7 @@ interface UseSubmitOptions {
  *   },
  *   successMessage: '保存成功',
  * });
- * 
+ *
  * const onSave = handleSubmit(async () => {
  *   await api.save(data);
  * });
@@ -44,7 +44,7 @@ export function useSubmit(options: UseSubmitOptions = {}) {
         setIsSubmitting(true);
         try {
           const result = await submitFn();
-          
+
           // 显示成功提示
           if (options.successMessage) {
             Taro.showToast({
@@ -52,16 +52,16 @@ export function useSubmit(options: UseSubmitOptions = {}) {
               icon: 'success',
             });
           }
-          
+
           // 调用成功回调
           if (options.onSuccess) {
             options.onSuccess(result);
           }
-          
+
           return result;
         } catch (error: any) {
           console.error('[提交失败]', error);
-          
+
           // 显示错误提示
           const errorMsg = options.errorMessage || error?.message || '操作失败';
           Taro.showToast({
@@ -69,12 +69,12 @@ export function useSubmit(options: UseSubmitOptions = {}) {
             icon: 'none',
             duration: 2000,
           });
-          
+
           // 调用错误回调
           if (options.onError) {
             options.onError(error);
           }
-          
+
           throw error;
         } finally {
           setIsSubmitting(false);
@@ -92,10 +92,10 @@ export function useSubmit(options: UseSubmitOptions = {}) {
 
 /**
  * 简化版：只返回 loading 状态和包装函数
- * 
+ *
  * @example
  * const [isSaving, withLoading] = useLoading();
- * 
+ *
  * const handleSave = async () => {
  *   await withLoading(async () => {
  *     await api.save(data);

@@ -70,49 +70,49 @@ class UserProfileBase(BaseModel):
     birth_date: Optional[date] = Field(None, description="出生日期")
     height_cm: Optional[float] = Field(None, ge=50, le=300, description="身高(cm)")
     blood_type: Optional[str] = Field(None, description="血型: A/B/AB/O")
-    
+
     # 身体数据
     current_weight_kg: Optional[float] = Field(None, ge=20, le=500, description="当前体重(kg)")
     target_weight_kg: Optional[float] = Field(None, ge=20, le=500, description="目标体重(kg)")
     body_fat_percentage: Optional[float] = Field(None, ge=1, le=70, description="体脂率(%)")
     muscle_mass_kg: Optional[float] = Field(None, ge=10, le=200, description="肌肉量(kg)")
-    
+
     # 健康目标
     target_steps: int = Field(8000, ge=1000, le=100000, description="目标步数")
     target_sleep_hours: float = Field(7.5, ge=4, le=12, description="目标睡眠时长(小时)")
     target_water_ml: int = Field(2000, ge=500, le=5000, description="目标饮水量(ml)")
     target_calories_burn: Optional[int] = Field(None, ge=100, le=5000, description="目标消耗卡路里")
     target_exercise_minutes: int = Field(30, ge=0, le=300, description="目标运动时长(分钟/天)")
-    
+
     # 疾病历史
     chronic_conditions: List[str] = Field(default_factory=list, description="慢性病列表")
     allergies: List[str] = Field(default_factory=list, description="过敏源列表")
     family_history: List[str] = Field(default_factory=list, description="家族病史")
     surgeries: List[Dict[str, Any]] = Field(default_factory=list, description="手术历史")
-    
+
     # 正在服用的药物/补剂
     current_medications: List[Dict[str, Any]] = Field(default_factory=list, description="正在服用的药物")
-    
+
     # 生活习惯
     exercise_frequency: Optional[str] = Field(None, description="运动频率")
     diet_preference: Optional[str] = Field(None, description="饮食偏好")
     smoking_status: Optional[str] = Field(None, description="吸烟状态")
     alcohol_consumption: Optional[str] = Field(None, description="饮酒情况")
-    
+
     # 睡眠习惯
     usual_sleep_time: Optional[str] = Field(None, description="通常入睡时间")
     usual_wake_time: Optional[str] = Field(None, description="通常起床时间")
     sleep_environment: Dict[str, Any] = Field(default_factory=dict, description="睡眠环境")
-    
+
     # 工作环境
     work_type: Optional[str] = Field(None, description="工作类型")
     work_hours_per_day: Optional[float] = Field(None, ge=0, le=24, description="每天工作时长")
     sitting_hours_per_day: Optional[float] = Field(None, ge=0, le=24, description="久坐时长")
-    
+
     # 地理位置
     city: Optional[str] = Field(None, description="所在城市")
     timezone: str = Field("Asia/Shanghai", description="时区")
-    
+
     # 设备信息
     devices: List[str] = Field(default_factory=list, description="设备列表")
 
@@ -235,7 +235,7 @@ class HealthGoalResponse(HealthGoalBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    
+
     # 计算字段
     progress_percentage: Optional[float] = Field(None, description="完成百分比")
     days_remaining: Optional[int] = Field(None, description="剩余天数")

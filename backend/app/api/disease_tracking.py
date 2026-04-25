@@ -184,7 +184,7 @@ def get_disease_profile(
     profile = service.get_disease_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="疾病档案不存在")
-    
+
     return {
         "id": profile.id,
         "disease_name": profile.disease_name,
@@ -221,12 +221,12 @@ def log_symptoms(
 ):
     """记录症状"""
     service = DiseaseTrackingService(db, current_user.id)
-    
+
     # 验证档案存在
     profile = service.get_disease_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="疾病档案不存在")
-    
+
     log = service.log_symptoms(
         profile_id=profile_id,
         log_date=request.log_date,
@@ -237,7 +237,7 @@ def log_symptoms(
         treatments=request.treatments,
         notes=request.notes
     )
-    
+
     return {
         "id": log.id,
         "log_date": log.log_date.isoformat(),
@@ -284,12 +284,12 @@ def get_symptom_stats(
 ):
     """获取症状统计分析"""
     service = DiseaseTrackingService(db, current_user.id)
-    
+
     # 验证档案存在
     profile = service.get_disease_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="疾病档案不存在")
-    
+
     stats = service.get_symptom_stats(profile_id, days)
     return stats
 
@@ -303,12 +303,12 @@ async def get_environment_alert(
 ):
     """获取疾病相关的环境预警"""
     service = DiseaseTrackingService(db, current_user.id)
-    
+
     # 验证档案存在
     profile = service.get_disease_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="疾病档案不存在")
-    
+
     alert = await service.get_environment_alert(profile_id, city)
     return alert
 

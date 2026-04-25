@@ -38,22 +38,22 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    
+
     # 时区
     timezone="Asia/Shanghai",
     enable_utc=True,
-    
+
     # 任务超时
     task_time_limit=300,  # 5分钟
     task_soft_time_limit=240,  # 4分钟软超时
-    
+
     # 结果过期
     result_expires=3600,  # 1小时
-    
+
     # 并发配置
     worker_concurrency=4,
     worker_prefetch_multiplier=1,
-    
+
     # 任务重试
     task_acks_late=True,
     task_reject_on_worker_lost=True,
@@ -66,26 +66,26 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.health_analysis.generate_daily_plan_for_all",
         "schedule": crontab(hour=6, minute=0),
     },
-    
+
     # 每2小时同步 Garmin 数据（Agent Native: 趋势检测 + session 复用不限流）
     "sync-garmin-2hourly": {
         "task": "app.tasks.garmin_sync.sync_all_users_garmin",
         "schedule": crontab(hour="1,3,5,7,9,11,13,15", minute=1),  # UTC → 北京 09/11/13/15/17/19/21/23 点
     },
-    
+
     # 每日 22:00 发送睡眠提醒
     "sleep-reminder": {
         "task": "app.tasks.notifications.send_sleep_reminders",
         "schedule": crontab(hour=22, minute=0),
     },
-    
+
     # 每周日 20:30 生成升级版周报 (穿越式反馈引擎)
     # v2: 聚合数据 + 跨实体行动对照 + prediction 中期校验 + 基因对齐度评分
     "weekly-report": {
         "task": "app.tasks.health_analysis.generate_weekly_reports",
         "schedule": crontab(hour=20, minute=30, day_of_week=0),  # 周日 20:30 北京时间
     },
-    
+
     # 每日清理过期数据
     "cleanup-expired-data": {
         "task": "app.tasks.maintenance.cleanup_expired_data",

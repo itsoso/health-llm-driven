@@ -94,18 +94,17 @@ class SupplementRecord(Base):
     __table_args__ = (
         Index("idx_supplement_records_user_date", "user_id", "record_date", "taken"),
     )
-    
+
     id = Column(Integer, primary_key=True, index=True)
     supplement_id = Column(Integer, ForeignKey("supplement_definitions.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     record_date = Column(Date, nullable=False, index=True)
     taken = Column(Boolean, default=False)  # 是否已服用
     taken_time = Column(Time)  # 实际服用时间
     notes = Column(Text)  # 备注
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     supplement = relationship("SupplementDefinition", back_populates="records")
     user = relationship("User", backref="supplement_records")
-

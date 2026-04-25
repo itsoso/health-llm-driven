@@ -11,12 +11,12 @@ function App({ children }: PropsWithChildren) {
 
   useLaunch(() => {
     console.log('App launched.');
-    
+
     // 全局错误监听
     Taro.onError((error) => {
       console.error('全局错误:', error);
     });
-    
+
     // 未处理的Promise拒绝
     Taro.onUnhandledRejection((res) => {
       console.error('未处理的Promise拒绝:', res);
@@ -95,4 +95,3 @@ function App({ children }: PropsWithChildren) {
 }
 
 export default App;
-

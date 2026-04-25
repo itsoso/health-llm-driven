@@ -15,7 +15,7 @@ function getBeijingDateString(date: Date = new Date()): string {
   const beijingOffset = 8 * 60; // 8小时，转换为分钟
   const localOffset = date.getTimezoneOffset(); // 本地时区偏移（分钟，UTC为0，北京为-480）
   const beijingTime = new Date(date.getTime() + (beijingOffset + localOffset) * 60 * 1000);
-  
+
   const year = beijingTime.getFullYear();
   const month = String(beijingTime.getMonth() + 1).padStart(2, '0');
   const day = String(beijingTime.getDate()).padStart(2, '0');
@@ -96,7 +96,7 @@ export default function HeartRate() {
     current.setDate(current.getDate() + offset);
     const todayStr = getBeijingDateString();
     const newDateStr = getBeijingDateString(current);
-    
+
     // 不能超过今天
     if (newDateStr <= todayStr) {
       setSelectedDate(newDateStr);
@@ -110,7 +110,7 @@ export default function HeartRate() {
     const yesterdayDate = new Date();
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterdayStr = getBeijingDateString(yesterdayDate);
-    
+
     if (dateStr === todayStr) return '今天';
     if (dateStr === yesterdayStr) return '昨天';
     return `${date.getMonth() + 1}月${date.getDate()}日`;
@@ -152,7 +152,7 @@ export default function HeartRate() {
     const range = maxVal - minVal || 1;
 
     // 采样：最多显示48个点（每30分钟一个）
-    const sampledData = timeline.length > 48 
+    const sampledData = timeline.length > 48
       ? timeline.filter((_, i) => i % Math.ceil(timeline.length / 48) === 0)
       : timeline;
 
@@ -169,13 +169,13 @@ export default function HeartRate() {
               const height = ((point.value - minVal) / range) * 100;
               return (
                 <View key={index} className="bar-wrapper">
-                  <View 
-                    className="bar" 
-                    style={{ 
+                  <View
+                    className="bar"
+                    style={{
                       height: `${Math.max(height, 5)}%`,
-                      backgroundColor: point.value > 100 ? '#EF4444' : 
+                      backgroundColor: point.value > 100 ? '#EF4444' :
                                       point.value > 80 ? '#F59E0B' : '#10B981'
-                    }} 
+                    }}
                   />
                 </View>
               );
@@ -210,7 +210,7 @@ export default function HeartRate() {
           const status = getHeartRateStatus(day.resting_heart_rate);
           const date = new Date(day.record_date);
           const dayName = ['日', '一', '二', '三', '四', '五', '六'][date.getDay()];
-          
+
           return (
             <View key={index} className="trend-item">
               <View className="trend-date">
@@ -218,9 +218,9 @@ export default function HeartRate() {
                 <Text className="trend-date-num">{date.getDate()}</Text>
               </View>
               <View className="trend-bar-container">
-                <View 
+                <View
                   className="trend-bar"
-                  style={{ 
+                  style={{
                     width: `${day.resting_heart_rate ? Math.min((day.resting_heart_rate / 100) * 100, 100) : 0}%`,
                     backgroundColor: status.color
                   }}
@@ -258,7 +258,7 @@ export default function HeartRate() {
             <Text>‹</Text>
           </View>
           <Text className="current-date">{formatDateDisplay(selectedDate)}</Text>
-          <View 
+          <View
             className={`nav-btn ${selectedDate === getBeijingDateString() ? 'disabled' : ''}`}
             onClick={() => changeDate(1)}
           >
@@ -354,7 +354,7 @@ export default function HeartRate() {
       <View className="tip-card">
         <Text className="tip-title">💡 健康提示</Text>
         <Text className="tip-content">
-          {summary?.resting_heart_rate && summary.resting_heart_rate > 80 
+          {summary?.resting_heart_rate && summary.resting_heart_rate > 80
             ? '您的静息心率偏高，建议增加有氧运动，保持良好作息。'
             : summary?.resting_heart_rate && summary.resting_heart_rate < 50
             ? '您的静息心率较低，如有不适请咨询医生。'

@@ -267,7 +267,7 @@ export default function SleepSpo2AnalysisScreen() {
 
             {analysis.correlations.length === 0 ? (
               <View style={styles.noFindings}>
-                <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+                <Ionicons name="checkmark-circle" size={40} color={colors.green} />
                 <Text style={[txt.body, { marginTop: 8 }]}>本夜无规则触发</Text>
                 <Text style={[txt.caption, { marginTop: 4, textAlign: 'center' }]}>
                   继续记录用药时间、运动、饮食，规则会给出更针对的建议
@@ -312,7 +312,7 @@ function OverlayBtn({ active, label, onPress }: { active: boolean; label: string
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: colors.bgPrimary },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

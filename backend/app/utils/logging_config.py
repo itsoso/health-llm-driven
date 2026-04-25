@@ -21,22 +21,22 @@ class BeijingTimeFormatter(logging.Formatter):
 # 全局日志管理器
 class LogManager:
     """日志管理器 - 支持动态日志级别控制"""
-    
+
     _instance: Optional['LogManager'] = None
     _initialized: bool = False
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         if not LogManager._initialized:
             self._loggers: Dict[str, logging.Logger] = {}
             self._default_level = logging.INFO
             self._debug_mode = os.getenv('DEBUG', 'false').lower() == 'true'
             LogManager._initialized = True
-    
+
     def get_logger(self, name: str) -> logging.Logger:
         """获取或创建日志记录器"""
         if name not in self._loggers:
@@ -44,7 +44,7 @@ class LogManager:
             logger.setLevel(self._default_level if not self._debug_mode else logging.DEBUG)
             self._loggers[name] = logger
         return self._loggers[name]
-    
+
     def set_level(self, level: int, logger_name: Optional[str] = None):
         """设置日志级别"""
         if logger_name:
@@ -55,17 +55,17 @@ class LogManager:
             for logger in self._loggers.values():
                 logger.setLevel(level)
             logging.getLogger().setLevel(level)
-    
+
     def enable_debug(self):
         """启用调试模式"""
         self._debug_mode = True
         self.set_level(logging.DEBUG)
-    
+
     def disable_debug(self):
         """禁用调试模式"""
         self._debug_mode = False
         self.set_level(logging.INFO)
-    
+
     def get_status(self) -> Dict:
         """获取日志管理器状态"""
         return {
@@ -94,19 +94,19 @@ def setup_beijing_logging(level=logging.INFO, format_string=None):
             'CRITICAL': logging.CRITICAL,
         }
         level = level_map.get(env_level, level)
-    
+
     if format_string is None:
         format_string = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    
+
     handler = logging.StreamHandler()
     handler.setFormatter(BeijingTimeFormatter(format_string))
-    
+
     logging.basicConfig(
         level=level,
         handlers=[handler],
         force=True
     )
-    
+
     log_manager.set_level(level)
 
 

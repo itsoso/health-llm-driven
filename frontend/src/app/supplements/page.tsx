@@ -373,7 +373,7 @@ function SupplementsContent() {
                             : 'bg-gray-50 border-2 border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <div 
+                        <div
                           className="flex items-center gap-3 flex-1 cursor-pointer"
                           onClick={() => item.supplement.is_active && handleToggle(item.supplement.id, item.record?.taken || false)}
                         >
@@ -453,11 +453,11 @@ function SupplementsContent() {
 
       {/* 操作菜单 */}
       {showMenu && selectedSupplement && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50"
           onClick={() => setShowMenu(false)}
         >
-          <div 
+          <div
             className="bg-white rounded-t-2xl w-full max-w-md p-6 space-y-3 animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
@@ -508,4 +508,3 @@ export default function SupplementsPage() {
     </ProtectedRoute>
   );
 }
-

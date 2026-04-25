@@ -26,7 +26,7 @@ export function formatWorkoutDuration(seconds?: number | null): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  
+
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
@@ -106,4 +106,3 @@ export function getStressLevel(stress?: number | null): {
   if (stress <= 75) return { label: '中', color: '#f59e0b' };
   return { label: '高', color: '#ef4444' };
 }
-

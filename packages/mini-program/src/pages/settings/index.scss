@@ -59,7 +59,7 @@
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  
+
   &.admin-section {
     border: 2px solid #f59e0b;
   }
@@ -105,29 +105,29 @@
 
   &.profile-section {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    
+
     .menu-item.highlight {
       flex-direction: column;
       align-items: flex-start;
       padding: 28px;
-      
+
       .menu-icon {
         font-size: 48px;
         margin-bottom: 12px;
       }
-      
+
       .menu-text {
         color: #ffffff;
         font-size: 34px;
         font-weight: 600;
         margin-bottom: 8px;
       }
-      
+
       .menu-desc {
         color: rgba(255, 255, 255, 0.85);
         font-size: 26px;
       }
-      
+
       .menu-arrow {
         position: absolute;
         right: 24px;
@@ -180,17 +180,17 @@
   padding: 6px 16px;
   border-radius: 16px;
   margin-right: 12px;
-  
+
   &.status-success {
     background: rgba(34, 197, 94, 0.15);
     color: #16a34a;
   }
-  
+
   &.status-warning {
     background: rgba(245, 158, 11, 0.15);
     color: #d97706;
   }
-  
+
   &.status-none {
     background: rgba(156, 163, 175, 0.15);
     color: #6b7280;
@@ -228,7 +228,7 @@
   &::after {
     border: none;
   }
-  
+
   &:active {
     background-color: #fef2f2;
   }

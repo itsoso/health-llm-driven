@@ -31,17 +31,17 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
     """调试Garmin数据获取"""
     if target_date is None:
         target_date = date.today() - timedelta(days=1)  # 默认昨天
-    
+
     print(f"正在连接Garmin Connect...")
     print(f"目标日期: {target_date}")
     print("="*60)
-    
+
     try:
         # 登录
         garmin = Garmin(email, password)
         garmin.login()
         print("✅ 登录成功\n")
-        
+
         # 1. 获取用户摘要
         print("1️⃣ 获取用户摘要 (get_user_summary):")
         print("-" * 60)
@@ -62,7 +62,7 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
         else:
             print("❌ 未返回数据")
         print("\n")
-        
+
         # 2. 获取睡眠数据
         print("2️⃣ 获取睡眠数据 (get_sleep_data):")
         print("-" * 60)
@@ -81,7 +81,7 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
         else:
             print("❌ 未返回数据")
         print("\n")
-        
+
         # 3. 获取心率数据
         print("3️⃣ 获取心率数据 (get_heart_rates):")
         print("-" * 60)
@@ -103,7 +103,7 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
         else:
             print("❌ 未返回数据")
         print("\n")
-        
+
         # 4. 获取身体电量
         print("4️⃣ 获取身体电量 (get_body_battery):")
         print("-" * 60)
@@ -120,7 +120,7 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
         else:
             print("❌ 未返回数据")
         print("\n")
-        
+
         # 5. 获取压力数据
         print("5️⃣ 获取压力数据 (get_all_day_stress):")
         print("-" * 60)
@@ -137,12 +137,12 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
         else:
             print("❌ 未返回数据")
         print("\n")
-        
+
         # 总结
         print("="*60)
         print("📊 数据提取建议:")
         print("-" * 60)
-        
+
         if summary:
             print("\n✅ 从get_user_summary可以获取:")
             if summary.get('sleepScore') or summary.get('sleepScores'):
@@ -155,14 +155,14 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
                 print("  ✓ 静息心率")
             if summary.get('steps'):
                 print("  ✓ 步数")
-        
+
         if sleep_data:
             print("\n✅ 从get_sleep_data可以获取:")
             if sleep_data.get('sleepScore') or sleep_data.get('overallSleepScore'):
                 print("  ✓ 睡眠分数")
             if sleep_data.get('sleepTimeSeconds') or sleep_data.get('duration'):
                 print("  ✓ 睡眠时长")
-        
+
         if hr_data:
             print("\n✅ 从get_heart_rates可以获取:")
             if isinstance(hr_data, dict):
@@ -172,7 +172,7 @@ def debug_garmin_data(email: str, password: str, target_date: date = None):
                     print("  ✓ 静息心率")
             elif isinstance(hr_data, list) and hr_data:
                 print("  ✓ 心率数据（需要从列表中提取）")
-        
+
     except Exception as e:
         print(f"❌ 错误: {str(e)}")
         import traceback
@@ -191,10 +191,9 @@ if __name__ == "__main__":
         print("  python debug_garmin_data.py user@example.com password123")
         print("  python debug_garmin_data.py user@example.com password123 2024-01-15")
         sys.exit(1)
-    
+
     email = sys.argv[1]
     password = sys.argv[2]
     target_date = date.fromisoformat(sys.argv[3]) if len(sys.argv) > 3 else None
-    
-    debug_garmin_data(email, password, target_date)
 
+    debug_garmin_data(email, password, target_date)

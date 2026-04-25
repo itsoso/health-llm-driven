@@ -57,4 +57,3 @@ class HabitRecord(Base):
         Index('idx_habit_rec_habit_date', 'habit_id', 'record_date'),
         Index('idx_habit_rec_user_date', 'user_id', 'record_date'),
     )
-

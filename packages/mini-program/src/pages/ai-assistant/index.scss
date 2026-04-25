@@ -45,8 +45,8 @@
   position: relative;
   margin-bottom: 28px;
   padding: 28px 24px;
-  background: linear-gradient(145deg, 
-    rgba(139, 92, 246, 0.25) 0%, 
+  background: linear-gradient(145deg,
+    rgba(139, 92, 246, 0.25) 0%,
     rgba(236, 72, 153, 0.2) 50%,
     rgba(59, 130, 246, 0.15) 100%);
   border-radius: 28px;
@@ -120,7 +120,7 @@
   backdrop-filter: blur(10px);
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  
+
   text {
     font-size: 24px;
     color: rgba(255, 255, 255, 0.9);
@@ -298,7 +298,7 @@
 .timeline {
   position: relative;
   padding-left: 24px;
-  
+
   &::before {
     content: '';
     position: absolute;
@@ -306,8 +306,8 @@
     top: 20px;
     bottom: 20px;
     width: 2px;
-    background: linear-gradient(180deg, 
-      rgba(139, 92, 246, 0.5) 0%, 
+    background: linear-gradient(180deg,
+      rgba(139, 92, 246, 0.5) 0%,
       rgba(139, 92, 246, 0.2) 50%,
       rgba(139, 92, 246, 0.05) 100%);
     border-radius: 1px;
@@ -319,7 +319,7 @@
     display: flex;
     align-items: flex-start;
   padding: 16px 0 16px 32px;
-  
+
   &:last-child {
     padding-bottom: 0;
   }
@@ -406,7 +406,7 @@
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(236, 72, 153, 0.15));
   border: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 50px;
-  
+
   &:active {
     transform: scale(0.96);
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.25));

@@ -30,11 +30,11 @@ export default function PrivacyPage() {
           {/* 第一部分：信息收集 */}
           <View className="privacy-section">
             <Text className="section-title">一、我们如何收集和使用你的个人信息</Text>
-            
+
             {/* 1.1 照片信息 */}
             <View className="subsection">
               <Text className="subsection-title">1. 照片或视频信息</Text>
-              
+
               <View className="info-item">
                 <Text className="info-label">📸 使用场景</Text>
                 <Text className="info-value">饮食记录功能</Text>
@@ -73,7 +73,7 @@ export default function PrivacyPage() {
             {/* 1.2 健康数据 */}
             <View className="subsection">
               <Text className="subsection-title">2. 健康数据</Text>
-              
+
               <View className="info-item">
                 <Text className="info-label">📋 收集内容</Text>
                 <Text className="info-value">
@@ -109,7 +109,7 @@ export default function PrivacyPage() {
             {/* 1.3 设备信息 */}
             <View className="subsection">
               <Text className="subsection-title">3. 设备信息</Text>
-              
+
               <View className="info-item">
                 <Text className="info-label">📱 收集内容</Text>
                 <Text className="info-value">
@@ -132,7 +132,7 @@ export default function PrivacyPage() {
             {/* 1.4 第三方服务 */}
             <View className="subsection">
               <Text className="subsection-title">4. 第三方服务集成</Text>
-              
+
               <View className="info-item">
                 <Text className="info-label">🔗 Garmin 数据同步</Text>
                 <Text className="info-value">
@@ -156,7 +156,7 @@ export default function PrivacyPage() {
           {/* 第二部分：信息存储 */}
           <View className="privacy-section">
             <Text className="section-title">二、我们如何存储你的个人信息</Text>
-            
+
             <View className="info-item">
               <Text className="info-label">📍 存储地点</Text>
               <Text className="info-value">
@@ -188,7 +188,7 @@ export default function PrivacyPage() {
           {/* 第三部分：信息共享 */}
           <View className="privacy-section">
             <Text className="section-title">三、我们如何共享、转让、公开披露你的个人信息</Text>
-            
+
             <View className="info-item">
               <Text className="info-label">🚫 共享原则</Text>
               <Text className="info-value">
@@ -221,7 +221,7 @@ export default function PrivacyPage() {
           {/* 第四部分：用户权利 */}
           <View className="privacy-section">
             <Text className="section-title">四、你的权利</Text>
-            
+
             <View className="info-item">
               <Text className="info-label">👁️ 访问权</Text>
               <Text className="info-value">
@@ -267,7 +267,7 @@ export default function PrivacyPage() {
           {/* 第五部分：未成年人保护 */}
           <View className="privacy-section">
             <Text className="section-title">五、未成年人保护</Text>
-            
+
             <Text className="section-content">
               我们非常重视未成年人的个人信息保护。如果你是未成年人，请在监护人的陪同下阅读本指引，并在监护人同意的前提下使用我们的服务。
             </Text>
@@ -279,7 +279,7 @@ export default function PrivacyPage() {
           {/* 第六部分：指引更新 */}
           <View className="privacy-section">
             <Text className="section-title">六、本指引如何更新</Text>
-            
+
             <Text className="section-content">
               我们可能适时修订本指引的条款。当指引发生变更时，我们会在小程序内通过弹窗、公告等形式向你展示变更后的内容。
             </Text>
@@ -291,7 +291,7 @@ export default function PrivacyPage() {
           {/* 第七部分：联系我们 */}
           <View className="privacy-section">
             <Text className="section-title">七、如何联系我们</Text>
-            
+
             <Text className="section-content">
               如果你对本隐私保护指引有任何疑问、意见或建议，或者需要行使你的权利，请通过以下方式联系我们：
             </Text>

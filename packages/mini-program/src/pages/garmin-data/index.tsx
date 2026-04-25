@@ -71,14 +71,14 @@ export default function GarminDataPage() {
       const today = new Date();
       const endDate = getBeijingDateString(today);
       const startDate = getBeijingDateString(new Date(today.getTime() - 13 * 24 * 60 * 60 * 1000));
-      
+
       const data = await get<GarminData[]>('/daily-health/garmin/me', {
         start_date: startDate,
         end_date: endDate,
       });
-      
+
       // 按日期降序排序
-      const sorted = data.sort((a, b) => 
+      const sorted = data.sort((a, b) =>
         new Date(b.record_date).getTime() - new Date(a.record_date).getTime()
       );
       setDataList(sorted);
@@ -95,10 +95,10 @@ export default function GarminDataPage() {
     const date = new Date(dateStr);
     const today = getBeijingDateString();
     const yesterday = getBeijingDateString(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    
+
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const day = `${date.getMonth() + 1}/${date.getDate()}`;
-    
+
     if (dateStr === today) {
       return { day, weekday: '今天', isToday: true };
     } else if (dateStr === yesterday) {
@@ -128,8 +128,8 @@ export default function GarminDataPage() {
     const isExpanded = selectedDate === data.record_date;
 
     return (
-      <View 
-        key={data.id} 
+      <View
+        key={data.id}
         className={`day-card ${isExpanded ? 'expanded' : ''} ${dateInfo.isToday ? 'today' : ''}`}
         onClick={() => setSelectedDate(isExpanded ? null : data.record_date)}
       >
@@ -256,8 +256,8 @@ export default function GarminDataPage() {
                 </View>
                 <View className="detail-item">
                   <Text className="item-value">
-                    {data.spo2_avg !== null && data.spo2_avg !== undefined 
-                      ? `${Math.round(data.spo2_avg)}%` 
+                    {data.spo2_avg !== null && data.spo2_avg !== undefined
+                      ? `${Math.round(data.spo2_avg)}%`
                       : '--%'}
                   </Text>
                   <Text className="item-label">血氧</Text>

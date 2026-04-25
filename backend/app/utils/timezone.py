@@ -18,4 +18,3 @@ def get_china_now() -> datetime:
 def get_china_yesterday() -> date:
     """获取中国时区的昨天日期"""
     return get_china_today() - timedelta(days=1)
-

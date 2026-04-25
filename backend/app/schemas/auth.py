@@ -142,4 +142,3 @@ class GarminMFAVerifyResponse(BaseModel):
 
 # 更新Token模型以避免循环引用
 Token.model_rebuild()
-

@@ -127,4 +127,3 @@ class CreateDietFromImageRequest(BaseModel):
     record_date: date = Field(..., description="记录日期")
     meal_type: MealType = Field(..., description="餐食类型")
     notes: Optional[str] = None
-

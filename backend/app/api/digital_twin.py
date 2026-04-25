@@ -24,7 +24,7 @@ async def get_digital_twin_report(
 ):
     """
     获取用户的完整数字孪生报告
-    
+
     包含：
     - 基础生理指标（BMR、TDEE、心率区间等）
     - 健康评分（睡眠、运动、身体状态、身体成分）
@@ -50,7 +50,7 @@ async def get_physiological_metrics(
 ):
     """
     获取基础生理指标
-    
+
     包含：
     - BMR（基础代谢率）
     - TDEE（每日总能量消耗）
@@ -58,7 +58,7 @@ async def get_physiological_metrics(
     - 理想体重范围
     """
     twin = get_digital_twin(db, current_user.id)
-    
+
     return {
         'bmr': twin.calculate_bmr(),
         'tdee': twin.calculate_tdee(),
@@ -74,7 +74,7 @@ async def get_health_score(
 ):
     """
     获取综合健康评分
-    
+
     评分维度：
     - 睡眠 (25%)
     - 运动 (25%)
@@ -126,7 +126,7 @@ async def calculate_tdee(
 ):
     """
     计算不同活动水平下的 TDEE
-    
+
     活动水平:
     - sedentary: 久坐，几乎不运动
     - light: 轻度活动，每周1-3天
@@ -136,13 +136,13 @@ async def calculate_tdee(
     """
     twin = get_digital_twin(db, current_user.id)
     bmr = twin.calculate_bmr()
-    
+
     if bmr is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="请先完善个人资料（身高、体重、出生日期、性别）"
         )
-    
+
     activity_multipliers = {
         'sedentary': 1.2,
         'light': 1.375,
@@ -150,12 +150,12 @@ async def calculate_tdee(
         'active': 1.725,
         'very_active': 1.9
     }
-    
+
     tdee_by_level = {
         level: round(bmr * mult, 0)
         for level, mult in activity_multipliers.items()
     }
-    
+
     return {
         'bmr': bmr,
         'selected_activity_level': activity_level,

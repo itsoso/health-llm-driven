@@ -66,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           'Authorization': `Bearer ${authToken}`,
         },
       });
-      
+
       if (res.ok) {
         // 检查响应内容类型
         const contentType = res.headers.get('content-type');
@@ -233,4 +233,3 @@ export function useAuth() {
   }
   return context;
 }
-

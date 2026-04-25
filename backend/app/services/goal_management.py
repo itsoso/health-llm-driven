@@ -10,10 +10,10 @@ from app.services.health_analysis import HealthAnalysisService
 
 class GoalManagementService:
     """目标管理服务"""
-    
+
     def __init__(self):
         self.health_analysis = HealthAnalysisService()
-    
+
     def create_goal(
         self,
         db: Session,
@@ -25,7 +25,7 @@ class GoalManagementService:
         db.commit()
         db.refresh(db_goal)
         return db_goal
-    
+
     def get_user_goals(
         self,
         db: Session,
@@ -36,9 +36,9 @@ class GoalManagementService:
     ) -> List[Goal]:
         """获取用户目标"""
         from sqlalchemy import cast, String
-        
+
         query = db.query(Goal).filter(Goal.user_id == user_id)
-        
+
         # 使用字符串比较避免枚举类型问题
         if status:
             if isinstance(status, GoalStatus):
@@ -55,10 +55,10 @@ class GoalManagementService:
                 query = query.filter(cast(Goal.goal_period, String) == goal_period.value)
             else:
                 query = query.filter(cast(Goal.goal_period, String) == str(goal_period))
-        
+
         try:
             goals = query.order_by(Goal.priority.desc(), Goal.created_at.desc()).all()
-            
+
             # 手动修复枚举值
             for goal in goals:
                 try:
@@ -71,14 +71,14 @@ class GoalManagementService:
                 except (ValueError, LookupError):
                     # 如果转换失败，保持原值
                     pass
-            
+
             return goals
         except LookupError as e:
             # 如果查询时出现枚举错误，尝试不使用枚举过滤
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"枚举查询失败，尝试使用字符串查询: {e}")
-            
+
             query = db.query(Goal).filter(Goal.user_id == user_id)
             if status:
                 status_val = status.value if isinstance(status, GoalStatus) else str(status)
@@ -89,9 +89,9 @@ class GoalManagementService:
             if goal_period:
                 period_val = goal_period.value if isinstance(goal_period, GoalPeriod) else str(goal_period)
                 query = query.filter(cast(Goal.goal_period, String) == period_val.lower())
-            
+
             goals = query.order_by(Goal.priority.desc(), Goal.created_at.desc()).all()
-            
+
             # 手动修复枚举值
             for goal in goals:
                 try:
@@ -103,9 +103,9 @@ class GoalManagementService:
                         goal.status = GoalStatus(goal.status.lower())
                 except (ValueError, LookupError):
                     pass
-            
+
             return goals
-    
+
     def update_goal_progress(
         self,
         db: Session,
@@ -117,18 +117,18 @@ class GoalManagementService:
         goal = db.query(Goal).filter(Goal.id == goal_id).first()
         if not goal:
             raise ValueError("目标不存在")
-        
+
         # 计算完成百分比
         completion_percentage = None
         if goal.target_value and progress_value is not None:
             completion_percentage = (progress_value / goal.target_value) * 100
-        
+
         # 检查是否已存在该日期的进展记录
         existing = db.query(GoalProgress).filter(
             GoalProgress.goal_id == goal_id,
             GoalProgress.progress_date == progress_date
         ).first()
-        
+
         if existing:
             existing.progress_value = progress_value
             existing.completion_percentage = completion_percentage
@@ -145,7 +145,7 @@ class GoalManagementService:
             db.add(progress)
             db.commit()
             db.refresh(progress)
-            
+
             # 更新目标的当前值
             if goal.goal_period == GoalPeriod.DAILY:
                 goal.current_value = progress_value
@@ -167,12 +167,12 @@ class GoalManagementService:
                     GoalProgress.progress_date <= progress_date
                 ).all()
                 goal.current_value = sum(p.progress_value or 0 for p in month_progress)
-            
+
             db.commit()
             db.refresh(goal)
-            
+
             return progress
-    
+
     def get_goal_progress(
         self,
         db: Session,
@@ -182,14 +182,14 @@ class GoalManagementService:
     ) -> List[GoalProgress]:
         """获取目标进展记录"""
         query = db.query(GoalProgress).filter(GoalProgress.goal_id == goal_id)
-        
+
         if start_date:
             query = query.filter(GoalProgress.progress_date >= start_date)
         if end_date:
             query = query.filter(GoalProgress.progress_date <= end_date)
-        
+
         return query.order_by(GoalProgress.progress_date.desc()).all()
-    
+
     def generate_goals_from_analysis(
         self,
         db: Session,
@@ -197,21 +197,21 @@ class GoalManagementService:
     ) -> List[Goal]:
         """
         基于健康分析结果自动生成目标
-        
+
         这个方法会：
         1. 分析用户的健康问题
         2. 根据问题生成相应的目标
         3. 返回生成的目标列表
         """
         analysis = self.health_analysis.analyze_health_issues(db, user_id)
-        
+
         goals = []
         today = date.today()
-        
+
         # 基于分析结果生成目标（这里简化实现，实际可以更智能）
         issues = analysis.get("issues", [])
         recommendations = analysis.get("recommendations", [])
-        
+
         # 示例：如果睡眠质量有问题，生成睡眠目标
         if any("睡眠" in issue for issue in issues):
             sleep_goal = Goal(
@@ -228,7 +228,7 @@ class GoalManagementService:
                 priority=8
             )
             goals.append(sleep_goal)
-        
+
         # 示例：如果运动不足，生成运动目标
         if any("运动" in rec or "锻炼" in rec for rec in recommendations):
             exercise_goal = Goal(
@@ -245,14 +245,14 @@ class GoalManagementService:
                 priority=7
             )
             goals.append(exercise_goal)
-        
+
         # 保存生成的目标
         for goal in goals:
             db.add(goal)
         db.commit()
-        
+
         return goals
-    
+
     def check_goal_completion(
         self,
         db: Session,
@@ -262,11 +262,11 @@ class GoalManagementService:
         """检查目标完成情况"""
         if check_date is None:
             check_date = date.today()
-        
+
         goal = db.query(Goal).filter(Goal.id == goal_id).first()
         if not goal:
             return {"error": "目标不存在"}
-        
+
         # 根据目标周期获取相应的进展
         if goal.goal_period == GoalPeriod.DAILY:
             progress = db.query(GoalProgress).filter(
@@ -293,13 +293,13 @@ class GoalManagementService:
             progress = type('obj', (object,), {'progress_value': total_progress})()
         else:
             progress = None
-        
+
         current_value = progress.progress_value if progress and hasattr(progress, 'progress_value') else 0
         target_value = goal.target_value or 0
-        
+
         is_completed = current_value >= target_value if target_value > 0 else False
         completion_percentage = (current_value / target_value * 100) if target_value > 0 else 0
-        
+
         return {
             "goal_id": goal_id,
             "goal_title": goal.title,
@@ -309,4 +309,3 @@ class GoalManagementService:
             "is_completed": is_completed,
             "check_date": check_date.isoformat()
         }
-

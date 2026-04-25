@@ -43,4 +43,3 @@ class WeightRecord(Base):
     @muscle_mass.setter
     def muscle_mass(self, value):
         self.muscle_mass_kg = value
-

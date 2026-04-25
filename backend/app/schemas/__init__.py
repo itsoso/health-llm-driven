@@ -38,4 +38,3 @@ __all__ = [
     "GoalResponse",
     "GoalProgressCreate",
 ]
-

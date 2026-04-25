@@ -31,7 +31,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "track_running": "running",
     "ultra_run": "running",
     "virtual_run": "running",
-    
+
     # 骑行类
     "cycling": "cycling",
     "road_biking": "cycling",
@@ -43,18 +43,18 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "bmx": "cycling",
     "e_bike": "cycling",
     "recumbent_cycling": "cycling",
-    
+
     # 游泳类
     "swimming": "swimming",
     "lap_swimming": "swimming",
     "open_water_swimming": "swimming",
     "pool_swimming": "swimming",
-    
+
     # 步行类
     "walking": "walking",
     "casual_walking": "walking",
     "speed_walking": "walking",
-    
+
     # 登山/徒步类
     "hiking": "hiking",
     "mountaineering": "hiking",
@@ -66,7 +66,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "tracking": "hiking",  # 追踪活动
     "gps_tracking": "hiking",
     "uncategorized": "hiking",  # 未分类的户外活动
-    
+
     # 有氧类
     "cardio": "cardio",
     "fitness_equipment": "cardio",
@@ -86,7 +86,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "skiing": "cardio",
     "snowboarding": "cardio",
     "cross_country_skiing": "cardio",
-    
+
     # HIIT/高强度
     "hiit": "hiit",
     "functional_training": "hiit",
@@ -94,14 +94,14 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "circuit_training": "hiit",
     "bootcamp": "hiit",
     "crossfit": "hiit",
-    
+
     # 力量训练类
     "strength_training": "strength",
     "weight_training": "strength",
     "gym": "strength",
     "traditional_strength_training": "strength",
     "floor_climbing": "strength",
-    
+
     # 瑜伽/冥想类
     "yoga": "yoga",
     "pilates": "yoga",
@@ -109,7 +109,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "breathwork": "yoga",
     "stretching": "yoga",
     "flexibility": "yoga",
-    
+
     # 球类运动
     "tennis": "cardio",
     "table_tennis": "cardio",  # 乒乓球
@@ -122,7 +122,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "volleyball": "cardio",
     "golf": "walking",  # 高尔夫归入步行
     "disc_golf": "walking",
-    
+
     # 水上运动
     "surfing": "cardio",
     "paddling": "cardio",
@@ -134,7 +134,7 @@ GARMIN_ACTIVITY_TYPE_MAP = {
     "kiteboarding": "cardio",
     "diving": "swimming",
     "snorkeling": "swimming",
-    
+
     # 其他
     "other": "other",
     "all_day_activity_tracking": "other",  # 全天活动追踪
@@ -149,29 +149,29 @@ ACTIVITY_NAME_KEYWORDS = {
     "慢跑": "running",
     "健跑": "running",
     "马拉松": "running",
-    
+
     "骑行": "cycling",
     "骑车": "cycling",
     "单车": "cycling",
     "自行车": "cycling",
     "bike": "cycling",
     "cycling": "cycling",
-    
+
     "游泳": "swimming",
     "swim": "swimming",
-    
+
     "走路": "walking",
     "步行": "walking",
     "散步": "walking",
     "walk": "walking",
-    
+
     "登山": "hiking",
     "徒步": "hiking",
     "爬山": "hiking",
     "hike": "hiking",
     "hiking": "hiking",
     "追踪": "hiking",  # 追踪活动通常是户外
-    
+
     "有氧": "cardio",
     "椭圆机": "cardio",
     "跳绳": "cardio",
@@ -183,13 +183,13 @@ ACTIVITY_NAME_KEYWORDS = {
     "网球": "cardio",
     "篮球": "cardio",
     "足球": "cardio",
-    
+
     "力量": "strength",
     "举重": "strength",
     "健身房": "strength",
     "gym": "strength",
     "weight": "strength",
-    
+
     "瑜伽": "yoga",
     "yoga": "yoga",
     "冥想": "yoga",
@@ -197,7 +197,7 @@ ACTIVITY_NAME_KEYWORDS = {
     "拉伸": "yoga",
     "放松": "yoga",
     "专注": "yoga",
-    
+
     "hiit": "hiit",
     "间歇": "hiit",
     "高强度": "hiit",
@@ -206,17 +206,17 @@ ACTIVITY_NAME_KEYWORDS = {
 
 class WorkoutSyncService:
     """Garmin运动活动同步服务"""
-    
+
     def __init__(self, email: str, password: str, is_cn: bool = False, user_id: int = None, mfa_session_id: str = None, client: Optional[Garmin] = None):
         if not GARMINCONNECT_AVAILABLE:
             raise ImportError("garminconnect库未安装")
-        
+
         self.email = email
         self.password = password
         self.is_cn = is_cn
         self.user_id = user_id
         self._mfa_session_id = mfa_session_id  # 存储MFA会话ID
-        
+
         # 如果直接传入了已认证的client，直接使用
         if client and hasattr(client, 'garth') and client.garth.oauth2_token:
             self.client = client
@@ -225,7 +225,7 @@ class WorkoutSyncService:
         else:
             self.client: Optional[Garmin] = None
             self._authenticated = False
-    
+
     def _log_prefix(self) -> str:
         return f"[用户 {self.user_id}] " if self.user_id else ""
 
@@ -247,7 +247,7 @@ class WorkoutSyncService:
     def _ensure_authenticated(self):
         """确保已认证"""
         prefix = self._log_prefix()
-        
+
         # 如果有MFA会话ID，尝试复用已认证的client
         if self._mfa_session_id and not self._authenticated:
             from app.services.data_collection.garmin_connect import _cleanup_expired_mfa_sessions, _mfa_sessions
@@ -269,7 +269,7 @@ class WorkoutSyncService:
                     logger.warning(f"{prefix}WorkoutSyncService: MFA会话未认证或email不匹配")
             else:
                 logger.warning(f"{prefix}WorkoutSyncService: MFA会话不存在或已过期: {self._mfa_session_id}")
-        
+
         if not self._authenticated or self.client is None:
             # 优先从 DB 加载缓存的 garth session（避免 SSO 登录被 Cloudflare 429）
             if self.user_id:
@@ -306,12 +306,12 @@ class WorkoutSyncService:
                 logger.info(f"{prefix}WorkoutSyncService: DB session 不可用，尝试 cffi SSO 登录")
                 self.client = self._create_patched_client(return_on_mfa=True)
                 result = self.client.login()
-                
+
                 # 检查是否需要 MFA
                 if result and isinstance(result, tuple) and len(result) >= 2:
                     first_element = result[0]
                     second_element = result[1]
-                    
+
                     # 检查是否是 MFA 需要的返回格式
                     if first_element == "needs_mfa" and isinstance(second_element, dict):
                         logger.warning(f"{self._log_prefix()}Garmin需要两步验证")
@@ -320,13 +320,13 @@ class WorkoutSyncService:
                             "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
                             {"client_state": second_element}
                         )
-                    
+
                     # 正常登录成功返回 (oauth1_token, oauth2_token)
                     if self.client.garth.oauth2_token:
                         self._authenticated = True
                         logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
                         return
-                
+
                 # 如果没有返回tuple，可能是旧版本的库，使用原来的方式
                 if not self._authenticated:
                     # 如果没有oauth2_token，尝试重新登录
@@ -337,7 +337,7 @@ class WorkoutSyncService:
                     logger.info(f"{self._log_prefix()}Garmin Connect登录成功")
             except Exception as e:
                 error_msg = str(e).lower()
-                
+
                 # 检查是否需要MFA（某些版本的库可能通过异常表示需要MFA）
                 if 'mfa' in error_msg or 'two-factor' in error_msg or 'verification' in error_msg:
                     logger.warning(f"{self._log_prefix()}Garmin账号需要两步验证")
@@ -346,34 +346,34 @@ class WorkoutSyncService:
                         "🔐 Garmin账号需要两步验证！请先在设置页面完成MFA验证，然后再尝试同步。",
                         {}
                     ) from e
-                
+
                 # 其他错误直接抛出
                 raise
-    
+
     def _map_activity_type(self, garmin_type: str, activity_name: str = None) -> str:
         """
         将Garmin活动类型映射到系统类型
-        
+
         Args:
             garmin_type: Garmin的typeKey
             activity_name: 活动名称（用于备选匹配）
         """
         if not garmin_type:
             garmin_type = "other"
-        
+
         garmin_type_lower = garmin_type.lower().replace(" ", "_").replace("-", "_")
-        
+
         # 1. 直接匹配 typeKey
         mapped = GARMIN_ACTIVITY_TYPE_MAP.get(garmin_type_lower)
         if mapped:
             return mapped
-        
+
         # 2. 尝试部分匹配 typeKey
         for key, value in GARMIN_ACTIVITY_TYPE_MAP.items():
             if key in garmin_type_lower or garmin_type_lower in key:
                 logger.debug(f"typeKey部分匹配: {garmin_type} -> {key} -> {value}")
                 return value
-        
+
         # 3. 通过活动名称关键字匹配
         if activity_name:
             activity_name_lower = activity_name.lower()
@@ -381,29 +381,29 @@ class WorkoutSyncService:
                 if keyword in activity_name_lower:
                     logger.info(f"通过活动名称匹配: '{activity_name}' 包含 '{keyword}' -> {value}")
                     return value
-        
+
         # 4. 未知类型，记录日志
         logger.warning(f"未识别的运动类型: typeKey='{garmin_type}', 活动名称='{activity_name}'，归类为other")
         return "other"
-    
+
     def _calculate_hr_zones_from_samples(
-        self, 
-        hr_samples: List[Dict[str, int]], 
+        self,
+        hr_samples: List[Dict[str, int]],
         max_hr: int = 180
     ) -> List[int]:
         """
         从心率采样数据计算心率区间时长
-        
+
         Args:
             hr_samples: 心率采样数据 [{"time": seconds, "hr": bpm}, ...]
             max_hr: 最大心率（用于计算区间）
-        
+
         Returns:
             [zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds, zone5_seconds]
         """
         if not hr_samples:
             return [0, 0, 0, 0, 0]
-        
+
         # 心率区间定义（基于最大心率百分比）
         # Zone 1: 50-60% (恢复区)
         # Zone 2: 60-70% (燃脂区)
@@ -417,13 +417,13 @@ class WorkoutSyncService:
             (max_hr * 0.80, max_hr * 0.90),  # Zone 4
             (max_hr * 0.90, max_hr * 1.2),   # Zone 5 (允许超过100%)
         ]
-        
+
         zone_seconds = [0, 0, 0, 0, 0]
-        
+
         # 计算每个采样点所在的区间
         for i in range(len(hr_samples)):
             hr = hr_samples[i]["hr"]
-            
+
             # 计算该采样点代表的时长（到下一个采样点的时间）
             if i < len(hr_samples) - 1:
                 duration = hr_samples[i + 1]["time"] - hr_samples[i]["time"]
@@ -433,15 +433,15 @@ class WorkoutSyncService:
                     duration = hr_samples[i]["time"] - hr_samples[i - 1]["time"]
                 else:
                     duration = 1  # 只有一个点，假设1秒
-            
+
             # 确定心率所在区间
             for zone_idx, (min_hr, max_hr_threshold) in enumerate(zone_thresholds):
                 if min_hr <= hr < max_hr_threshold:
                     zone_seconds[zone_idx] += duration
                     break
-        
+
         return zone_seconds
-    
+
     def _parse_activity(self, activity: Dict[str, Any], user_id: int) -> Dict[str, Any]:
         """解析Garmin活动数据"""
         # 基本信息
@@ -449,7 +449,7 @@ class WorkoutSyncService:
         activity_name = activity.get("activityName", "")
         activity_type = activity.get("activityType", {})
         type_key = activity_type.get("typeKey", "other") if isinstance(activity_type, dict) else "other"
-        
+
         # 时间
         start_time_local = activity.get("startTimeLocal")
         start_time = None
@@ -458,45 +458,45 @@ class WorkoutSyncService:
                 start_time = datetime.fromisoformat(start_time_local.replace("Z", "+00:00"))
             except:
                 pass
-        
+
         duration_seconds = int(activity.get("duration", 0))
         moving_duration = int(activity.get("movingDuration", 0))
-        
+
         # 距离
         distance = activity.get("distance", 0)  # 米
-        
+
         # 配速/速度
         avg_speed = activity.get("averageSpeed")  # m/s
         max_speed = activity.get("maxSpeed")  # m/s
-        
+
         avg_pace = None
         if avg_speed and avg_speed > 0:
             avg_pace = int(1000 / avg_speed)  # 秒/公里
-        
+
         # 心率
         avg_hr = activity.get("averageHR")
         max_hr = activity.get("maxHR")
-        
+
         # 卡路里
         calories = activity.get("calories", 0)
-        
+
         # 步数和步频（跑步/步行）
         steps = activity.get("steps")
         avg_cadence = activity.get("averageRunningCadenceInStepsPerMinute")
         max_cadence = activity.get("maxRunningCadenceInStepsPerMinute")
-        
+
         # 海拔
         elevation_gain = activity.get("elevationGain")
         elevation_loss = activity.get("elevationLoss")
         min_elevation = activity.get("minElevation")
         max_elevation = activity.get("maxElevation")
-        
+
         # 训练效果
         aerobic_te = activity.get("aerobicTrainingEffect")
         anaerobic_te = activity.get("anaerobicTrainingEffect")
         vo2max = activity.get("vO2MaxValue")
         training_load = activity.get("trainingLoad") or activity.get("activityTrainingLoad")
-        
+
         # 心率区间
         hr_zones = activity.get("hrTimeInZones", [])
         zone_seconds = [0, 0, 0, 0, 0]
@@ -508,20 +508,20 @@ class WorkoutSyncService:
                 elif isinstance(zone, (int, float)):
                     zone_seconds[i] = int(zone)
         logger.info(f"{self._log_prefix()}活动 {activity_id} 解析后心率区间: {zone_seconds}")
-        
+
         # 游泳特有
         pool_length = activity.get("poolLength")
         laps = activity.get("numberOfLaps") or activity.get("lapCount")
         strokes = activity.get("totalStrokes") or activity.get("strokes")
         avg_strokes = activity.get("avgStrokesPerLength")
-        
+
         # 骑车功率
         avg_power = activity.get("avgPower")
         max_power = activity.get("maxPower")
         normalized_power = activity.get("normPower")
-        
+
         workout_date = start_time.date() if start_time else date.today()
-        
+
         return {
             "user_id": user_id,
             "workout_date": workout_date,
@@ -564,18 +564,18 @@ class WorkoutSyncService:
             "source": "garmin",
             "external_id": str(activity_id)
         }
-    
+
     async def get_activity_details(self, activity_id: int) -> Optional[Dict[str, Any]]:
         """获取活动详细数据（包括心率时间序列和GPS路线）"""
         try:
             self._ensure_authenticated()
-            
+
             # 获取活动详情
             details = self.client.get_activity(activity_id)
-            
+
             # 尝试多种方式获取心率数据
             hr_data = None
-            
+
             # 方法1: 尝试获取活动分割数据（包含心率）
             try:
                 splits = self.client.get_activity_splits(activity_id)
@@ -584,7 +584,7 @@ class WorkoutSyncService:
                     logger.debug(f"从splits获取心率数据")
             except Exception as e:
                 logger.debug(f"get_activity_splits 失败: {e}")
-            
+
             # 方法2: 尝试获取活动详细信息（用于获取心率数据和GPS数据）
             activity_details = None
             try:
@@ -599,7 +599,7 @@ class WorkoutSyncService:
                         logger.debug(f"activity_details已获取，键: {list(activity_details.keys()) if isinstance(activity_details, dict) else 'N/A'}")
             except Exception as e:
                 logger.debug(f"get_activity_details 失败: {e}")
-            
+
             # 方法3: 尝试获取活动心率数据
             if not hr_data:
                 try:
@@ -609,7 +609,7 @@ class WorkoutSyncService:
                         logger.debug(f"从hr_in_timezones获取心率数据")
                 except Exception as e:
                     logger.debug(f"get_activity_hr_in_timezones 失败: {e}")
-            
+
             # 尝试获取GPS路线数据
             gps_data = None
             try:
@@ -620,7 +620,7 @@ class WorkoutSyncService:
                         logger.debug(f"从activity_details获取geoPolylineDTO，类型: {type(gps_data)}")
                         if isinstance(gps_data, dict):
                             logger.debug(f"geoPolylineDTO键: {list(gps_data.keys())}")
-                
+
                 # 方法2: 尝试从活动详情中获取GPS数据（只查找特定的GPS字段，避免误判）
                 if not gps_data and details and isinstance(details, dict):
                     # 只检查明确的GPS相关字段，不包括locationName等
@@ -629,10 +629,10 @@ class WorkoutSyncService:
                         logger.debug(f"从activity获取GPS数据，类型: {type(gps_data)}")
                         if isinstance(gps_data, dict):
                             logger.debug(f"GPS数据键: {list(gps_data.keys())}")
-                
+
             except Exception as e:
                 logger.debug(f"获取GPS数据失败: {e}")
-            
+
             # 尝试获取计圈/分段数据
             lap_data = None
             try:
@@ -640,14 +640,14 @@ class WorkoutSyncService:
                 if splits and isinstance(splits, dict):
                     lap_data = splits
                     logger.debug(f"从splits获取计圈数据")
-                
+
                 # 也尝试从activity_details获取laps
                 if not lap_data and activity_details and isinstance(activity_details, dict):
                     laps = activity_details.get('laps') or activity_details.get('lapDTOs')
                     if laps:
                         lap_data = {"laps": laps}
                         logger.debug(f"从activity_details获取laps数据: {len(laps)} 圈")
-                
+
                 # 尝试直接获取laps
                 if not lap_data:
                     try:
@@ -657,10 +657,10 @@ class WorkoutSyncService:
                             logger.debug(f"直接获取activity_splits成功")
                     except Exception as e:
                         logger.debug(f"直接获取activity_splits失败: {e}")
-                        
+
             except Exception as e:
                 logger.debug(f"获取计圈数据失败: {e}")
-            
+
             return {
                 "details": details,
                 "heart_rate_data": hr_data,
@@ -670,16 +670,16 @@ class WorkoutSyncService:
         except Exception as e:
             logger.error(f"{self._log_prefix()}获取活动详情失败: {e}")
             return None
-    
+
     def _parse_heart_rate_samples(self, hr_data: Dict[str, Any], duration_seconds: int) -> List[Dict[str, int]]:
         """解析心率采样数据"""
         hr_points = []
-        
+
         if not hr_data or not isinstance(hr_data, dict):
             return hr_points
-        
+
         # 尝试从不同的数据结构中提取心率时间序列
-        
+
         # 格式1: activityDetailMetrics 中的 metricsMap
         metrics_map = hr_data.get('activityDetailMetrics', [])
         if metrics_map:
@@ -690,7 +690,7 @@ class WorkoutSyncService:
                     if hr_value:
                         time_offset = metric.get('startTimeGMT', 0)
                         hr_points.append({"time": int(time_offset), "hr": int(hr_value)})
-        
+
         # 格式2: heartRateSamples 数组
         hr_samples = hr_data.get('heartRateSamples', [])
         if hr_samples and isinstance(hr_samples, list):
@@ -703,7 +703,7 @@ class WorkoutSyncService:
                 elif isinstance(sample, (list, tuple)) and len(sample) >= 2:
                     # [timestamp, heartRate] 格式
                     hr_points.append({"time": int(sample[0] / 1000), "hr": int(sample[1])})
-        
+
         # 格式3: gpsData 或 chartData 中包含心率
         chart_data = hr_data.get('chartData', {}) or hr_data.get('gpsData', {})
         if chart_data and isinstance(chart_data, dict):
@@ -713,11 +713,11 @@ class WorkoutSyncService:
                 for i, hr in enumerate(hr_chart):
                     if isinstance(hr, (int, float)) and hr > 0:
                         hr_points.append({"time": i * interval, "hr": int(hr)})
-        
+
         # 格式4: metricDescriptors + activityDetailMetrics
         metric_descriptors = hr_data.get('metricDescriptors', [])
         detail_metrics = hr_data.get('activityDetailMetrics', [])
-        
+
         if metric_descriptors and detail_metrics:
             # 找到心率在 metrics 中的索引
             hr_index = None
@@ -727,7 +727,7 @@ class WorkoutSyncService:
                     if 'heart' in key.lower() or 'hr' in key.lower():
                         hr_index = i
                         break
-            
+
             if hr_index is not None:
                 for detail in detail_metrics:
                     if isinstance(detail, dict):
@@ -737,7 +737,7 @@ class WorkoutSyncService:
                             if hr_value and hr_value > 0:
                                 start_time = detail.get('startTimeInSeconds', 0)
                                 hr_points.append({"time": int(start_time), "hr": int(hr_value)})
-        
+
         # 排序并去重
         if hr_points:
             hr_points.sort(key=lambda x: x['time'])
@@ -749,13 +749,13 @@ class WorkoutSyncService:
                     sampled.append(p)
                     last_time = p['time']
             hr_points = sampled
-        
+
         return hr_points
-    
+
     def _generate_simulated_hr_curve(
-        self, 
-        avg_hr: int, 
-        max_hr: Optional[int], 
+        self,
+        avg_hr: int,
+        max_hr: Optional[int],
         duration_seconds: int
     ) -> List[Dict[str, int]]:
         """
@@ -763,29 +763,29 @@ class WorkoutSyncService:
         模拟热身 -> 运动 -> 冷却的曲线
         """
         import random
-        
+
         if not avg_hr or duration_seconds <= 0:
             return []
-        
+
         max_hr = max_hr or int(avg_hr * 1.15)
         min_hr = max(int(avg_hr * 0.7), 60)  # 热身心率
-        
+
         hr_points = []
         interval = 10  # 每10秒一个点（更精细的粒度）
         num_points = duration_seconds // interval
-        
+
         if num_points < 3:
             return []
-        
+
         # 热身阶段（前 10%）
         warmup_points = max(1, int(num_points * 0.1))
         # 运动阶段（中间 80%）
         main_points = int(num_points * 0.8)
         # 冷却阶段（后 10%）
         cooldown_points = num_points - warmup_points - main_points
-        
+
         current_time = 0
-        
+
         # 热身：从 min_hr 逐渐上升到 avg_hr
         for i in range(warmup_points):
             progress = (i + 1) / warmup_points
@@ -793,7 +793,7 @@ class WorkoutSyncService:
             hr += random.randint(-3, 3)  # 添加一点随机波动
             hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
             current_time += interval
-        
+
         # 主运动阶段：在 avg_hr 和 max_hr 之间波动
         for i in range(main_points):
             # 使用正弦波模拟心率波动
@@ -803,7 +803,7 @@ class WorkoutSyncService:
             hr += random.randint(-5, 5)  # 添加随机波动
             hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
             current_time += interval
-        
+
         # 冷却阶段：从当前心率逐渐下降到 min_hr
         last_hr = hr_points[-1]["hr"] if hr_points else avg_hr
         for i in range(cooldown_points):
@@ -812,16 +812,16 @@ class WorkoutSyncService:
             hr += random.randint(-3, 3)
             hr_points.append({"time": current_time, "hr": max(min_hr, min(max_hr, hr))})
             current_time += interval
-        
+
         return hr_points
-    
+
     def _parse_gps_route(self, gps_data: Any, start_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """解析GPS路线数据"""
         route_points = []
-        
+
         if not gps_data:
             return route_points
-        
+
         try:
             # 格式1: geoPolylineDTO 或 geoPolyline (编码的polyline字符串)
             if isinstance(gps_data, str):
@@ -841,7 +841,7 @@ class WorkoutSyncService:
                     logger.warning("polyline库未安装，无法解码GPS路线")
                 except Exception as e:
                     logger.debug(f"解码polyline失败: {e}")
-            
+
             # 格式2: gpsData 数组，包含坐标点
             if isinstance(gps_data, list):
                 for i, point in enumerate(gps_data):
@@ -850,7 +850,7 @@ class WorkoutSyncService:
                         lng = point.get('longitude') or point.get('lng') or point.get('lon')
                         elevation = point.get('elevation') or point.get('altitude')
                         time_offset = point.get('time') or point.get('timestamp') or point.get('startTimeInSeconds') or (i * 10)
-                        
+
                         if lat and lng:
                             route_point = {
                                 "lat": float(lat),
@@ -869,12 +869,12 @@ class WorkoutSyncService:
                             "elevation": float(point[2]) if len(point) > 2 else None,
                             "time": i * 10
                         })
-            
+
             # 格式3: gpsData 字典，包含多个字段（包括 geoPolylineDTO）
             elif isinstance(gps_data, dict):
                 # 处理 geoPolylineDTO 格式（Garmin Connect API 返回的格式）
                 # geoPolylineDTO 包含: startPoint, endPoint, polyline数组, encodedPolyline, points 等
-                
+
                 # 方法1: 优先处理 polyline 数组（Garmin Connect 的标准格式）
                 polyline_array = gps_data.get('polyline')
                 if polyline_array and isinstance(polyline_array, list):
@@ -907,7 +907,7 @@ class WorkoutSyncService:
                                 if point.get('time'):
                                     point['time'] = point['time'] - start_time
                         return route_points
-                
+
                 # 方法2: 检查是否有编码的polyline字符串
                 polyline_str = gps_data.get('encodedPolyline') or gps_data.get('encoded_polyline')
                 if polyline_str and isinstance(polyline_str, str):
@@ -927,7 +927,7 @@ class WorkoutSyncService:
                         logger.warning("polyline库未安装，无法解码GPS路线")
                     except Exception as e:
                         logger.debug(f"解码polyline失败: {e}")
-                
+
                 # 方法3: 检查是否有其他格式的坐标点数组
                 coordinates = gps_data.get('coordinates') or gps_data.get('points') or gps_data.get('trackPoints')
                 if coordinates and isinstance(coordinates, list):
@@ -954,12 +954,12 @@ class WorkoutSyncService:
                                 if time_offset:
                                     route_point["time"] = int(time_offset / 1000) if time_offset > 1000000000000 else int(time_offset)
                                 route_points.append(route_point)
-                
+
                 # 方法4: 如果只有 startPoint 和 endPoint，至少添加这两个点
                 if not route_points:
                     start_point = gps_data.get('startPoint')
                     end_point = gps_data.get('endPoint')
-                    
+
                     if start_point and isinstance(start_point, dict):
                         lat = start_point.get('lat') or start_point.get('latitude')
                         lng = start_point.get('lon') or start_point.get('lng') or start_point.get('longitude')
@@ -971,7 +971,7 @@ class WorkoutSyncService:
                                 "elevation": start_point.get('altitude') or start_point.get('elevation'),
                                 "time": int(time_ms / 1000) if time_ms > 1000000000000 else int(time_ms)
                             })
-                    
+
                     if end_point and isinstance(end_point, dict):
                         lat = end_point.get('lat') or end_point.get('latitude')
                         lng = end_point.get('lon') or end_point.get('lng') or end_point.get('longitude')
@@ -983,10 +983,10 @@ class WorkoutSyncService:
                                 "elevation": end_point.get('altitude') or end_point.get('elevation'),
                                 "time": int(time_ms / 1000) if time_ms > 1000000000000 else int(time_ms)
                             })
-                    
+
                     if route_points:
                         logger.debug(f"从startPoint/endPoint得到 {len(route_points)} 个GPS点")
-            
+
             # 去重和采样（每10秒一个点，或每100米一个点）
             if route_points:
                 # 按时间排序
@@ -1000,45 +1000,45 @@ class WorkoutSyncService:
                         sampled.append(p)
                         last_time = current_time
                 route_points = sampled
-            
+
             logger.debug(f"解析GPS数据得到 {len(route_points)} 个路线点")
-            
+
         except Exception as e:
             logger.error(f"解析GPS数据失败: {e}")
-        
+
         return route_points
-    
+
     def _parse_lap_data(self, lap_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """解析计圈/分段数据"""
         lap_list = []
-        
+
         if not lap_data or not isinstance(lap_data, dict):
             return lap_list
-        
+
         try:
             # 尝试从不同的数据结构中提取计圈数据
             laps = lap_data.get('laps') or lap_data.get('lapDTOs') or lap_data.get('splits')
-            
+
             if not laps or not isinstance(laps, list):
                 # 如果lap_data本身就是列表
                 if isinstance(lap_data, list):
                     laps = lap_data
                 else:
                     return lap_list
-            
+
             for idx, lap in enumerate(laps):
                 if not isinstance(lap, dict):
                     continue
-                
+
                 lap_info = {
                     "lap": idx + 1
                 }
-                
+
                 # 距离（米）
                 distance = lap.get('distance') or lap.get('totalDistance')
                 if distance:
                     lap_info["distance"] = float(distance)
-                
+
                 # 时长（秒）
                 duration = lap.get('duration') or lap.get('elapsedDuration') or lap.get('movingDuration')
                 if duration:
@@ -1046,60 +1046,60 @@ class WorkoutSyncService:
                     if duration > 10000:  # 大于10000认为是毫秒
                         duration = duration / 1000
                     lap_info["duration"] = int(duration)
-                
+
                 # 心率
                 avg_hr = lap.get('averageHR') or lap.get('avgHR') or lap.get('averageHeartRate')
                 if avg_hr:
                     lap_info["avg_hr"] = int(avg_hr)
-                
+
                 max_hr = lap.get('maxHR') or lap.get('maxHeartRate')
                 if max_hr:
                     lap_info["max_hr"] = int(max_hr)
-                
+
                 # 配速（秒/公里）
                 avg_pace = lap.get('averagePace') or lap.get('avgPace')
                 if avg_pace:
                     lap_info["avg_pace"] = int(avg_pace)
-                
+
                 # 速度（km/h）
                 avg_speed = lap.get('averageSpeed') or lap.get('avgSpeed')
                 if avg_speed:
                     # Garmin返回的是m/s，转换为km/h
                     lap_info["avg_speed"] = round(float(avg_speed) * 3.6, 2)
-                
+
                 # 海拔
                 elevation_gain = lap.get('elevationGain') or lap.get('totalAscent')
                 if elevation_gain:
                     lap_info["elevation_gain"] = float(elevation_gain)
-                
+
                 elevation_loss = lap.get('elevationLoss') or lap.get('totalDescent')
                 if elevation_loss:
                     lap_info["elevation_loss"] = float(elevation_loss)
-                
+
                 # 卡路里
                 calories = lap.get('calories')
                 if calories:
                     lap_info["calories"] = int(calories)
-                
+
                 # 步频
                 avg_cadence = lap.get('averageRunningCadenceInStepsPerMinute') or lap.get('avgCadence')
                 if avg_cadence:
                     lap_info["avg_cadence"] = int(avg_cadence)
-                
+
                 # 功率（骑行）
                 avg_power = lap.get('averagePower') or lap.get('avgPower')
                 if avg_power:
                     lap_info["avg_power"] = int(avg_power)
-                
+
                 lap_list.append(lap_info)
-            
+
             logger.debug(f"解析计圈数据得到 {len(lap_list)} 圈")
-            
+
         except Exception as e:
             logger.error(f"解析计圈数据失败: {e}")
-        
+
         return lap_list
-    
+
     async def sync_activities(
         self,
         db: Session,
@@ -1108,53 +1108,53 @@ class WorkoutSyncService:
     ) -> Dict[str, Any]:
         """同步Garmin活动到数据库"""
         self._ensure_authenticated()
-        
+
         start_date = (date.today() - timedelta(days=days)).isoformat()
         end_date = date.today().isoformat()
-        
+
         logger.info(f"{self._log_prefix()}开始同步活动 {start_date} 到 {end_date}")
-        
+
         try:
             # 获取活动列表
             activities = self.client.get_activities_by_date(start_date, end_date)
-            
+
             if not activities:
                 logger.info(f"{self._log_prefix()}没有找到活动")
                 return {"synced_count": 0}
-            
+
             synced_count = 0
-            
+
             for activity in activities:
                 try:
                     activity_id = str(activity.get("activityId"))
-                    
+
                     # 检查是否已存在
                     existing = db.query(WorkoutRecord).filter(
                         WorkoutRecord.user_id == user_id,
                         WorkoutRecord.external_id == activity_id
                     ).first()
-                    
+
                     # 解析活动数据
                     parsed = self._parse_activity(activity, user_id)
-                    
+
                     if existing:
                         # 更新已有记录（只更新缺失的数据，如GPS、心率等）
                         logger.debug(f"{self._log_prefix()}活动 {activity_id} 已存在，更新数据")
                         update_fields = {}
-                    
+
                     # 尝试获取详细数据（心率曲线、GPS路线等）
                     try:
                         details_data = await self.get_activity_details(int(activity_id))
                         if details_data:
                             duration = parsed.get("duration_seconds", 3600) or (existing.duration_seconds if existing else 3600)
-                            
+
                             # 解析心率数据
                             if details_data.get("heart_rate_data"):
                                 hr_points = self._parse_heart_rate_samples(details_data["heart_rate_data"], duration)
                                 if hr_points:
                                     parsed["heart_rate_data"] = json.dumps(hr_points)
                                     logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(hr_points)} 个心率采样点")
-                                    
+
                                     # 如果心率区间数据为空，从心率采样计算
                                     total_zone_seconds = sum([
                                         parsed.get("hr_zone_1_seconds", 0),
@@ -1163,7 +1163,7 @@ class WorkoutSyncService:
                                         parsed.get("hr_zone_4_seconds", 0),
                                         parsed.get("hr_zone_5_seconds", 0)
                                     ])
-                                    
+
                                     if total_zone_seconds == 0:
                                         logger.info(f"{self._log_prefix()}活动 {activity_id} 心率区间数据为空，从心率采样计算")
                                         max_hr = parsed.get("max_heart_rate") or 180
@@ -1184,7 +1184,7 @@ class WorkoutSyncService:
                                         if hr_points:
                                             parsed["heart_rate_data"] = json.dumps(hr_points)
                                             logger.info(f"{self._log_prefix()}活动 {activity_id} 使用模拟心率曲线 ({len(hr_points)} 点)")
-                                            
+
                                             # 从模拟心率曲线计算心率区间
                                             total_zone_seconds = sum([
                                                 parsed.get("hr_zone_1_seconds", 0),
@@ -1193,7 +1193,7 @@ class WorkoutSyncService:
                                                 parsed.get("hr_zone_4_seconds", 0),
                                                 parsed.get("hr_zone_5_seconds", 0)
                                             ])
-                                            
+
                                             if total_zone_seconds == 0:
                                                 zone_seconds = self._calculate_hr_zones_from_samples(hr_points, max_hr or 180)
                                                 parsed["hr_zone_1_seconds"] = zone_seconds[0]
@@ -1202,7 +1202,7 @@ class WorkoutSyncService:
                                                 parsed["hr_zone_4_seconds"] = zone_seconds[3]
                                                 parsed["hr_zone_5_seconds"] = zone_seconds[4]
                                                 logger.info(f"{self._log_prefix()}活动 {activity_id} 从模拟曲线计算心率区间: {zone_seconds}")
-                            
+
                             # 解析GPS路线数据
                             if details_data.get("gps_data"):
                                 start_time = parsed.get("start_time") or (existing.start_time if existing else None)
@@ -1216,7 +1216,7 @@ class WorkoutSyncService:
                                     logger.warning(f"{self._log_prefix()}活动 {activity_id} GPS数据解析失败，gps_data类型: {type(gps_data)}")
                             else:
                                 logger.debug(f"{self._log_prefix()}活动 {activity_id} 未获取到GPS数据")
-                            
+
                             # 解析计圈数据
                             if details_data.get("lap_data"):
                                 lap_points = self._parse_lap_data(details_data["lap_data"])
@@ -1225,35 +1225,35 @@ class WorkoutSyncService:
                                     logger.info(f"{self._log_prefix()}活动 {activity_id} 获取到 {len(lap_points)} 圈数据")
                     except Exception as e:
                         logger.debug(f"获取活动详情失败: {e}")
-                    
+
                     if existing:
                         # 更新已有记录（只更新缺失的数据）
                         updated = False
-                        
+
                         # 更新心率数据（如果缺失）
                         if not existing.heart_rate_data and parsed.get("heart_rate_data"):
                             existing.heart_rate_data = parsed["heart_rate_data"]
                             updated = True
-                        
+
                         # 更新GPS数据（如果缺失）
                         if not existing.route_data and parsed.get("route_data"):
                             existing.route_data = parsed["route_data"]
                             updated = True
-                        
+
                         # 更新计圈数据（如果缺失）
                         if not existing.lap_data and parsed.get("lap_data"):
                             existing.lap_data = parsed["lap_data"]
                             updated = True
-                        
+
                         # 更新其他可能缺失的字段
                         if not existing.pace_data and parsed.get("pace_data"):
                             existing.pace_data = parsed.get("pace_data")
                             updated = True
-                        
+
                         if not existing.elevation_data and parsed.get("elevation_data"):
                             existing.elevation_data = parsed.get("elevation_data")
                             updated = True
-                        
+
                         if updated:
                             db.commit()
                             synced_count += 1
@@ -1279,10 +1279,9 @@ class WorkoutSyncService:
 
             db.commit()
             logger.info(f"{self._log_prefix()}同步完成，共 {synced_count} 条活动")
-            
+
             return {"synced_count": synced_count}
-            
+
         except Exception as e:
             logger.error(f"{self._log_prefix()}同步活动失败: {e}")
             raise
-

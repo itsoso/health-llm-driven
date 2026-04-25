@@ -39,7 +39,7 @@ export default function WorkoutMap({ routeData, startPoint, endPoint, className 
         const maxLat = Math.max(...lats);
         const minLng = Math.min(...lngs);
         const maxLng = Math.max(...lngs);
-        
+
         center = [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
         bounds = L.latLngBounds(
           [minLat, minLng],
@@ -79,7 +79,7 @@ export default function WorkoutMap({ routeData, startPoint, endPoint, className 
     // 绘制路线
     if (routeData && routeData.length > 0) {
       const routePoints = routeData.map(p => [p.lat, p.lng] as [number, number]);
-      
+
       // 创建路线折线
       const polyline = L.polyline(routePoints, {
         color: '#3b82f6',
@@ -137,8 +137,8 @@ export default function WorkoutMap({ routeData, startPoint, endPoint, className 
   }, [routeData, startPoint, endPoint]);
 
   return (
-    <div 
-      ref={mapContainerRef} 
+    <div
+      ref={mapContainerRef}
       className={`w-full h-full min-h-[400px] rounded-lg overflow-hidden ${className}`}
       style={{ zIndex: 0 }}
     />

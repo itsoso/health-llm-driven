@@ -12,16 +12,16 @@ from app.database import Base
 class CheckinTemplate(Base):
     """打卡模板 - 定义打卡项目"""
     __tablename__ = "checkin_templates"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    
+
     # 基本信息
     name = Column(String(100), nullable=False)  # "俯卧撑", "深蹲", "洗鼻"
     description = Column(Text, nullable=True)  # 详细描述
     icon = Column(String(50), default="✅")  # 图标emoji
     color = Column(String(20), default="#4f46e5")  # 主题色
-    
+
     # 分类
     category = Column(String(50), nullable=False)  # exercise/health/habit/medicine/custom
     # exercise: 运动锻炼
@@ -29,39 +29,39 @@ class CheckinTemplate(Base):
     # habit: 生活习惯
     # medicine: 用药提醒
     # custom: 自定义
-    
+
     # 计量配置
     unit = Column(String(20), default="次")  # 次/组/分钟/ml/mg
     default_target = Column(Float, default=1)  # 默认目标值
     min_value = Column(Float, default=0)  # 最小值
     max_value = Column(Float, nullable=True)  # 最大值
     step_value = Column(Float, default=1)  # 步进值
-    
+
     # 提醒配置
     reminder_enabled = Column(Boolean, default=False)
     reminder_time = Column(Time, nullable=True)  # 提醒时间 "08:00"
     reminder_days = Column(JSON, default=list)  # 提醒日期 [1,2,3,4,5] 周一到周五
-    
+
     # 频率配置
     frequency = Column(String(20), default="daily")  # daily/weekly/monthly/custom
     frequency_target = Column(Integer, default=1)  # 每周期目标次数
-    
+
     # 统计数据（冗余存储，方便查询）
     total_checkins = Column(Integer, default=0)  # 总打卡次数
     total_value = Column(Float, default=0)  # 总完成量
     current_streak = Column(Integer, default=0)  # 当前连续天数
     best_streak = Column(Integer, default=0)  # 最长连续天数
     last_checkin_date = Column(Date, nullable=True)  # 最后打卡日期
-    
+
     # 状态
     is_active = Column(Boolean, default=True)  # 是否启用
     is_archived = Column(Boolean, default=False)  # 是否归档
     sort_order = Column(Integer, default=0)  # 排序顺序
-    
+
     # 时间戳
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+
     # 关系
     records = relationship("CheckinRecord", back_populates="template", cascade="all, delete-orphan")
 
@@ -75,47 +75,47 @@ class CheckinTemplate(Base):
 class CheckinRecord(Base):
     """打卡记录 - 每次打卡的详细记录"""
     __tablename__ = "checkin_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     template_id = Column(Integer, ForeignKey("checkin_templates.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    
+
     # 打卡日期和时间
     checkin_date = Column(Date, nullable=False, index=True)
     checkin_time = Column(DateTime, default=lambda: datetime.now(UTC))
-    
+
     # 完成情况
     value = Column(Float, nullable=False)  # 实际完成量
     target = Column(Float, nullable=True)  # 当日目标
     completion_rate = Column(Float, nullable=True)  # 完成率 (value/target * 100)
-    
+
     # 附加数据
     duration_seconds = Column(Integer, nullable=True)  # 持续时间（秒）
     calories_burned = Column(Float, nullable=True)  # 消耗卡路里
     heart_rate_avg = Column(Integer, nullable=True)  # 平均心率
-    
+
     # 主观感受
     difficulty = Column(String(20), nullable=True)  # easy/normal/hard/very_hard
     mood_before = Column(String(20), nullable=True)  # 打卡前心情: great/good/neutral/bad
     mood_after = Column(String(20), nullable=True)  # 打卡后心情
     energy_level = Column(Integer, nullable=True)  # 精力等级 1-10
-    
+
     # 备注和标签
     notes = Column(Text, nullable=True)  # 备注
     tags = Column(JSON, default=list)  # 标签 ["室内", "晨练"]
-    
+
     # 位置信息（可选）
     location = Column(String(200), nullable=True)  # 打卡位置
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    
+
     # 媒体附件
     photos = Column(JSON, default=list)  # 图片URL列表
-    
+
     # 时间戳
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+
     # 关系
     template = relationship("CheckinTemplate", back_populates="records")
 
@@ -229,7 +229,7 @@ DEFAULT_CHECKIN_TEMPLATES = [
         "default_target": 1,
         "description": "每日体重记录",
     },
-    
+
     # 生活习惯类
     {
         "name": "喝水",
@@ -271,7 +271,7 @@ DEFAULT_CHECKIN_TEMPLATES = [
         "default_target": 30,
         "description": "每日户外活动时间",
     },
-    
+
     # 用药类
     {
         "name": "维生素D",

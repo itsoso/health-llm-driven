@@ -129,4 +129,3 @@ def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     return user
-

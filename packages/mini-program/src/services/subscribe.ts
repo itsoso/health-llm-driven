@@ -1,6 +1,6 @@
 /**
  * 微信小程序订阅消息服务
- * 
+ *
  * 使用说明：
  * 1. 在微信公众平台配置订阅消息模板
  * 2. 将模板ID配置到 TEMPLATE_IDS
@@ -18,16 +18,16 @@ import { request, get, put } from './request';
 export const TEMPLATE_IDS = {
   // 健康提醒模板（用于喝水、洗鼻、运动等提醒）
   HEALTH_REMINDER: 'rit2hRtAH4d1mjtyiUMMLVN3VYzWXEbUzqeT3iSv-SI',
-  
+
   // 早间简报模板
   MORNING_BRIEFING: 'A-R8QFFj1OSPPH3WHil6FupmtihH94aBikFFSnUnAPg',
-  
+
   // 健康预警模板
   HEALTH_ALERT: 'JCSm2jb6-78Bl3UmTA1JdfFNtv5WQnetA6JfS3SoTSg',
-  
+
   // 目标进度模板
   GOAL_PROGRESS: 'buawjDAdCSdbILS5JbrSTPSvSlYB0_rPTMpxK4t3xaE',
-  
+
   // 周报模板
   WEEKLY_REPORT: 'sjiGrcujQj4FMN-iQlKEqzuAYknzOBNFMpnz15pwWPo',
 };
@@ -52,10 +52,10 @@ interface SubscribeResult {
 
 /**
  * 请求订阅消息授权
- * 
+ *
  * @param templateKeys 要订阅的模板key数组，如 ['HEALTH_REMINDER', 'MORNING_BRIEFING']
  * @returns 订阅结果
- * 
+ *
  * 注意：
  * - 微信限制每次最多请求3个模板
  * - 用户拒绝后，同一模板7天内不会再弹窗
@@ -66,7 +66,7 @@ export async function requestSubscribe(templateKeys: string[]): Promise<Subscrib
   const templateIds = templateKeys
     .map(key => TEMPLATE_IDS[key as keyof typeof TEMPLATE_IDS])
     .filter(id => id && id.length > 0);
-  
+
   if (templateIds.length === 0) {
     console.warn('[订阅] 没有配置有效的模板ID');
     return {
@@ -76,18 +76,18 @@ export async function requestSubscribe(templateKeys: string[]): Promise<Subscrib
       error: '订阅模板未配置，请联系管理员',
     };
   }
-  
+
   // 微信限制每次最多3个模板
   const limitedIds = templateIds.slice(0, 3);
-  
+
   try {
     const res = await Taro.requestSubscribeMessage({
       tmplIds: limitedIds,
     });
-    
+
     const acceptedTemplates: string[] = [];
     const rejectedTemplates: string[] = [];
-    
+
     // 解析结果
     templateKeys.forEach(key => {
       const templateId = TEMPLATE_IDS[key as keyof typeof TEMPLATE_IDS];
@@ -97,23 +97,23 @@ export async function requestSubscribe(templateKeys: string[]): Promise<Subscrib
         rejectedTemplates.push(key);
       }
     });
-    
+
     console.log('[订阅] 授权结果:', { acceptedTemplates, rejectedTemplates });
-    
+
     // 如果有成功订阅的，保存到后端
     if (acceptedTemplates.length > 0) {
       await saveSubscribeSettings(acceptedTemplates);
     }
-    
+
     return {
       success: acceptedTemplates.length > 0,
       acceptedTemplates,
       rejectedTemplates,
     };
-    
+
   } catch (error: any) {
     console.error('[订阅] 授权失败:', error);
-    
+
     // 处理特定错误
     let errorMsg = '订阅失败，请重试';
     if (error.errMsg?.includes('cancel')) {
@@ -121,7 +121,7 @@ export async function requestSubscribe(templateKeys: string[]): Promise<Subscrib
     } else if (error.errMsg?.includes('reject')) {
       errorMsg = '您拒绝了订阅，可在设置中重新开启';
     }
-    
+
     return {
       success: false,
       acceptedTemplates: [],
@@ -134,7 +134,7 @@ export async function requestSubscribe(templateKeys: string[]): Promise<Subscrib
 /**
  * 请求所有推荐的订阅模板
  * 用于首次使用或设置页面的"一键开启"
- * 
+ *
  * 注意：由于微信限制，每次只能请求3个模板，且必须由用户点击触发
  * 因此这里只请求最重要的前3个模板
  */
@@ -142,7 +142,7 @@ export async function requestAllSubscriptions(): Promise<SubscribeResult> {
   const allKeys = Object.keys(TEMPLATE_IDS).filter(
     key => TEMPLATE_IDS[key as keyof typeof TEMPLATE_IDS]
   );
-  
+
   if (allKeys.length === 0) {
     Taro.showToast({
       title: '订阅模板未配置',
@@ -155,15 +155,15 @@ export async function requestAllSubscriptions(): Promise<SubscribeResult> {
       error: '订阅模板未配置',
     };
   }
-  
+
   // 只请求前3个最重要的模板（微信限制每次最多3个，且必须由用户点击触发）
   // 优先级：健康提醒 > 早间简报 > 健康预警
   const priorityKeys = ['HEALTH_REMINDER', 'MORNING_BRIEFING', 'HEALTH_ALERT'].filter(
     key => TEMPLATE_IDS[key as keyof typeof TEMPLATE_IDS]
   );
-  
+
   const keysToRequest = priorityKeys.length > 0 ? priorityKeys : allKeys.slice(0, 3);
-  
+
   return await requestSubscribe(keysToRequest);
 }
 
@@ -189,7 +189,7 @@ export async function saveSubscribeSettings(acceptedTemplateKeys: string[]): Pro
         templateIds[backendType] = templateId;
       }
     });
-    
+
     await request({
       url: '/wechat/subscribe/settings',
       method: 'POST',
@@ -198,10 +198,10 @@ export async function saveSubscribeSettings(acceptedTemplateKeys: string[]): Pro
         enabled: true,
       },
     });
-    
+
     console.log('[订阅] 设置已保存到后端');
     return true;
-    
+
   } catch (error) {
     console.error('[订阅] 保存设置失败:', error);
     return false;
@@ -248,10 +248,10 @@ export async function showSubscribeGuide(): Promise<void> {
     confirmText: '立即开启',
     cancelText: '稍后再说',
   });
-  
+
   if (result.confirm) {
     const subscribeResult = await requestAllSubscriptions();
-    
+
     if (subscribeResult.success) {
       Taro.showToast({
         title: `已开启${subscribeResult.acceptedTemplates.length}项提醒`,
@@ -275,7 +275,7 @@ export async function requestSingleSubscribe(
   silent: boolean = false
 ): Promise<boolean> {
   const result = await requestSubscribe([templateKey]);
-  
+
   if (!silent) {
     if (result.success) {
       Taro.showToast({
@@ -289,6 +289,6 @@ export async function requestSingleSubscribe(
       });
     }
   }
-  
+
   return result.success;
 }

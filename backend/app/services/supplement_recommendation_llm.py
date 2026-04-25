@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 class SupplementRecommendationServiceLLM:
     """
     补剂科学推荐服务 - LLM 版本
-    
+
     基于益家知研 AI 和皮皮妈妈知识库的智能推荐系统
     """
-    
+
     def __init__(self):
         self.llm_analyzer = LLMHealthAnalyzer()
         self.rag_pipeline = RAGPipeline()
@@ -35,7 +35,7 @@ class SupplementRecommendationServiceLLM:
             'knowledge',
             'supplement_knowledge.md'
         )
-    
+
     async def generate_supplement_recommendation(
         self,
         db: Session,
@@ -45,23 +45,23 @@ class SupplementRecommendationServiceLLM:
     ) -> Dict[str, Any]:
         """
         生成补剂科学推荐
-        
+
         Args:
             db: 数据库会话
             user_id: 用户ID
             target_date: 目标日期（默认今天）
             debug: 是否返回调试信息
-        
+
         Returns:
             推荐结果（包含健康分析、推荐补剂、服用建议等）
         """
         start_time = time.time()
-        
+
         if target_date is None:
             target_date = get_china_now().date()
-        
+
         logger.info(f"[补剂推荐LLM] 开始为用户 {user_id} 生成推荐 (debug={debug})")
-        
+
         # Debug 信息
         debug_info = {
             "steps": [],
@@ -71,7 +71,7 @@ class SupplementRecommendationServiceLLM:
             "performance": {},
             "timeline": []
         } if debug else None
-        
+
         try:
             # 1. 获取用户资料
             step_start = time.time()
@@ -86,7 +86,7 @@ class SupplementRecommendationServiceLLM:
                     "过敏": profile.allergies if profile and profile.allergies else [],
                     "慢性病": profile.chronic_conditions if profile and profile.chronic_conditions else []
                 })
-            
+
             # 2. 获取最近健康数据
             step_start = time.time()
             health_data = self._get_recent_health_data(db, user_id, target_date)
@@ -98,7 +98,7 @@ class SupplementRecommendationServiceLLM:
                     "压力水平": health_data.get('avg_stress_level') if health_data else None,
                     "静息心率": health_data.get('avg_resting_hr') if health_data else None
                 })
-            
+
             # 3. 获取运动数据
             step_start = time.time()
             workout_data = self._get_recent_workout_data(db, user_id, target_date)
@@ -109,7 +109,7 @@ class SupplementRecommendationServiceLLM:
                     "总时长": f"{workout_data.get('total_duration_minutes', 0)}分钟" if workout_data else None,
                     "高强度": workout_data.get('has_high_intensity', False) if workout_data else False
                 })
-            
+
             # 4. 获取饮食数据
             step_start = time.time()
             diet_data = self._get_recent_diet_data(db, user_id, target_date)
@@ -119,7 +119,7 @@ class SupplementRecommendationServiceLLM:
                     "蛋白质": f"{diet_data.get('avg_daily_protein', 0):.1f}g" if diet_data else None,
                     "记录天数": diet_data.get('record_count', 0) if diet_data else 0
                 })
-            
+
             # 4.5 获取基因数据
             step_start = time.time()
             genetic_data = self._get_genetic_data(db, user_id)
@@ -141,7 +141,7 @@ class SupplementRecommendationServiceLLM:
                     "今日完成": supplement_status.get('taken_count', 0),
                     "完成率": f"{supplement_status.get('completion_rate_today', 0):.1f}%"
                 })
-            
+
             # 6. 从知识库检索相关信息
             step_start = time.time()
             knowledge_results = await self._retrieve_supplement_knowledge(
@@ -149,9 +149,9 @@ class SupplementRecommendationServiceLLM:
             )
             if debug:
                 self._add_debug_step(debug_info, "检索知识库", time.time() - step_start)
-                self._add_debug_reasoning(debug_info, "info", 
+                self._add_debug_reasoning(debug_info, "info",
                     f"📚 从知识库检索到 {len(knowledge_results)} 条相关知识")
-            
+
             # 7. 使用 LLM 生成推荐
             step_start = time.time()
             llm_result = await self._generate_llm_recommendation(
@@ -161,26 +161,26 @@ class SupplementRecommendationServiceLLM:
             )
             if debug:
                 self._add_debug_step(debug_info, "LLM 生成推荐", time.time() - step_start)
-            
+
             # 8. 计算总耗时
             total_time = time.time() - start_time
             if debug:
                 debug_info["performance"]["total_time"] = f"{total_time:.2f}s"
-            
+
             logger.info(f"[补剂推荐LLM] 推荐生成完成 - 耗时 {total_time:.2f}s")
-            
+
             result = {
                 "success": True,
                 "generated_at": get_china_now().isoformat(),
                 "target_date": target_date.isoformat(),
                 **llm_result
             }
-            
+
             if debug:
                 result["debug"] = debug_info
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"[补剂推荐LLM] 生成失败: {e}", exc_info=True)
             return {
@@ -189,7 +189,7 @@ class SupplementRecommendationServiceLLM:
                 "message": "生成补剂推荐失败，请稍后重试",
                 "debug": debug_info if debug else None
             }
-    
+
     async def _retrieve_supplement_knowledge(
         self,
         profile: Optional[UserProfile],
@@ -199,17 +199,17 @@ class SupplementRecommendationServiceLLM:
         debug_info: Optional[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """从知识库检索相关补剂知识"""
-        
+
         # 构建查询策略
         queries = []
-        
+
         # 基础查询
         queries.append({
             "query": "基础补剂推荐 维生素D 复合维生素",
             "category": None,
             "n_results": 3
         })
-        
+
         # 基于健康数据的查询
         if health_data:
             sleep_hours = health_data.get('avg_sleep_hours', 0)
@@ -220,9 +220,9 @@ class SupplementRecommendationServiceLLM:
                     "n_results": 3
                 })
                 if debug_info:
-                    self._add_debug_reasoning(debug_info, "warning", 
+                    self._add_debug_reasoning(debug_info, "warning",
                         f"⚠️ 睡眠不足（{sleep_hours:.1f}小时），查询睡眠改善补剂")
-            
+
             stress = health_data.get('avg_stress_level', 0)
             if stress > 50:
                 queries.append({
@@ -233,7 +233,7 @@ class SupplementRecommendationServiceLLM:
                 if debug_info:
                     self._add_debug_reasoning(debug_info, "warning",
                         f"⚠️ 压力水平较高（{stress}），查询压力管理补剂")
-        
+
         # 基于运动数据的查询
         if workout_data and workout_data.get('workout_count', 0) > 3:
             queries.append({
@@ -244,7 +244,7 @@ class SupplementRecommendationServiceLLM:
             if debug_info:
                 self._add_debug_reasoning(debug_info, "success",
                     f"✅ 运动频繁（{workout_data.get('workout_count')}次/周），查询运动恢复补剂")
-        
+
         # 基于过敏和疾病的查询
         if profile:
             if profile.chronic_conditions and '鼻炎' in str(profile.chronic_conditions):
@@ -256,7 +256,7 @@ class SupplementRecommendationServiceLLM:
                 if debug_info:
                     self._add_debug_reasoning(debug_info, "info",
                         "📋 检测到鼻炎，查询呼吸道健康补剂")
-        
+
         # 执行检索
         all_results = []
         for query_config in queries:
@@ -267,7 +267,7 @@ class SupplementRecommendationServiceLLM:
                     n_results=query_config["n_results"]
                 )
                 all_results.extend(results)
-                
+
                 if debug_info:
                     debug_info["knowledge_retrieved"].append({
                         "query": query_config["query"],
@@ -276,7 +276,7 @@ class SupplementRecommendationServiceLLM:
                     })
             except Exception as e:
                 logger.warning(f"[补剂推荐LLM] 知识库检索失败: {e}")
-        
+
         # 去重和排序
         unique_results = []
         seen_content = set()
@@ -285,10 +285,10 @@ class SupplementRecommendationServiceLLM:
             if content and content not in seen_content:
                 seen_content.add(content)
                 unique_results.append(result)
-        
+
         # 返回前 10 条最相关的
         return unique_results[:10]
-    
+
     async def _generate_llm_recommendation(
         self,
         profile: Optional[UserProfile],
@@ -313,7 +313,7 @@ class SupplementRecommendationServiceLLM:
             profile, health_data, workout_data, diet_data, supplement_status,
             genetic_data=genetic_data
         )
-        
+
         # 构建 Prompt
         system_prompt = """你是益家知研 AI 的补剂推荐专家，结合皮皮妈妈营养知识库，为用户提供个性化的补剂建议。
 
@@ -394,7 +394,7 @@ class SupplementRecommendationServiceLLM:
         if debug_info:
             self._add_debug_reasoning(debug_info, "info", "🤖 开始调用 LLM 生成推荐")
             self._add_debug_reasoning(debug_info, "info", f"📝 Prompt 长度: {len(system_prompt + user_prompt)} 字符")
-        
+
         # 调用 LLM
         try:
             step_start = time.time()
@@ -403,38 +403,38 @@ class SupplementRecommendationServiceLLM:
                 user_prompt=user_prompt
             )
             llm_time = time.time() - step_start
-            
+
             if debug_info:
                 self._add_debug_step(debug_info, "LLM 推理", llm_time)
-                self._add_debug_reasoning(debug_info, "success", 
+                self._add_debug_reasoning(debug_info, "success",
                     f"✅ LLM 响应完成，耗时 {llm_time:.2f}s")
-            
+
             # 解析 LLM 响应
             import json
             result = json.loads(response)
-            
+
             # 确保字段完整性
             result = self._validate_and_fill_result(result)
-            
+
             if debug_info:
                 self._add_debug_reasoning(debug_info, "success",
                     f"✅ 生成 {len(result.get('recommendations', []))} 个推荐")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"[补剂推荐LLM] LLM 调用失败: {e}", exc_info=True)
-            
+
             if debug_info:
                 self._add_debug_reasoning(debug_info, "error",
                     f"❌ LLM 调用失败: {str(e)}")
-            
+
             # 降级到规则推荐
             return self._fallback_rule_based_recommendation(
                 profile, health_data, workout_data, diet_data,
                 supplement_status, debug_info
             )
-    
+
     def _build_user_context(
         self,
         profile: Optional[UserProfile],
@@ -515,7 +515,7 @@ class SupplementRecommendationServiceLLM:
                 context_parts.append(f"- 蛋白质/体重：{protein_per_kg:.2f}g/kg")
 
         return "\n".join(context_parts)
-    
+
     def _get_genetic_data(self, db: Session, user_id: int) -> List[Dict[str, Any]]:
         """获取用户基因数据"""
         try:
@@ -571,7 +571,7 @@ class SupplementRecommendationServiceLLM:
                 "message": "补剂方案合理"
             })
         }
-    
+
     def _fallback_rule_based_recommendation(
         self,
         profile: Optional[UserProfile],
@@ -582,13 +582,13 @@ class SupplementRecommendationServiceLLM:
         debug_info: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """降级到规则推荐（当 LLM 失败时）"""
-        
+
         if debug_info:
             self._add_debug_reasoning(debug_info, "warning",
                 "⚠️ LLM 不可用，使用规则推荐")
-        
+
         recommendations = []
-        
+
         # 基础推荐
         recommendations.append({
             "category": "basic",
@@ -600,7 +600,7 @@ class SupplementRecommendationServiceLLM:
             "icon": "☀️",
             "knowledge_source": "基础补剂知识库"
         })
-        
+
         recommendations.append({
             "category": "basic",
             "name": "复合维生素",
@@ -611,7 +611,7 @@ class SupplementRecommendationServiceLLM:
             "icon": "💊",
             "knowledge_source": "基础补剂知识库"
         })
-        
+
         recommendations.append({
             "category": "basic",
             "name": "Omega-3 鱼油",
@@ -622,7 +622,7 @@ class SupplementRecommendationServiceLLM:
             "icon": "🐟",
             "knowledge_source": "基础补剂知识库"
         })
-        
+
         return {
             "health_analysis": {
                 "sleep_quality": "未知",
@@ -652,9 +652,9 @@ class SupplementRecommendationServiceLLM:
                 "message": "基础补剂方案，建议根据个人情况调整"
             }
         }
-    
+
     # ===== 数据获取方法（与原服务相同）=====
-    
+
     def _get_recent_health_data(
         self,
         db: Session,
@@ -668,15 +668,15 @@ class SupplementRecommendationServiceLLM:
                 GarminData.record_date >= target_date - timedelta(days=7),
                 GarminData.record_date <= target_date
             ).order_by(GarminData.record_date.desc()).all()
-            
+
             if not records:
                 return None
-            
+
             # 计算平均值
             sleep_hours = [r.total_sleep_duration / 60 for r in records if r.total_sleep_duration]
             stress_levels = [r.stress_level for r in records if r.stress_level]
             resting_hrs = [r.resting_heart_rate for r in records if r.resting_heart_rate]
-            
+
             return {
                 "avg_sleep_hours": sum(sleep_hours) / len(sleep_hours) if sleep_hours else 0,
                 "avg_stress_level": sum(stress_levels) / len(stress_levels) if stress_levels else 0,
@@ -688,7 +688,7 @@ class SupplementRecommendationServiceLLM:
         except Exception as e:
             logger.error(f"[补剂推荐LLM] 获取健康数据失败: {e}")
             return None
-    
+
     def _get_recent_workout_data(
         self,
         db: Session,
@@ -698,22 +698,22 @@ class SupplementRecommendationServiceLLM:
         """获取最近运动数据"""
         try:
             from app.models.daily_health import WorkoutRecord
-            
+
             records = db.query(WorkoutRecord).filter(
                 WorkoutRecord.user_id == user_id,
                 WorkoutRecord.start_time >= target_date - timedelta(days=7),
                 WorkoutRecord.start_time <= target_date
             ).all()
-            
+
             if not records:
                 return None
-            
+
             total_duration = sum([r.duration_seconds / 60 for r in records if r.duration_seconds])
             has_high_intensity = any([
-                r.avg_heart_rate and r.avg_heart_rate > 150 
+                r.avg_heart_rate and r.avg_heart_rate > 150
                 for r in records
             ])
-            
+
             return {
                 "workout_count": len(records),
                 "total_duration_minutes": total_duration,
@@ -723,7 +723,7 @@ class SupplementRecommendationServiceLLM:
         except Exception as e:
             logger.error(f"[补剂推荐LLM] 获取运动数据失败: {e}")
             return None
-    
+
     def _get_recent_diet_data(
         self,
         db: Session,
@@ -737,12 +737,12 @@ class SupplementRecommendationServiceLLM:
                 DietRecord.record_date >= target_date - timedelta(days=7),
                 DietRecord.record_date <= target_date
             ).all()
-            
+
             if not records:
                 return None
-            
+
             total_protein = sum([r.protein for r in records if r.protein])
-            
+
             return {
                 "record_count": len(records),
                 "avg_daily_protein": total_protein / 7 if total_protein else 0
@@ -750,7 +750,7 @@ class SupplementRecommendationServiceLLM:
         except Exception as e:
             logger.error(f"[补剂推荐LLM] 获取饮食数据失败: {e}")
             return None
-    
+
     def _get_supplement_status(
         self,
         db: Session,
@@ -764,23 +764,23 @@ class SupplementRecommendationServiceLLM:
                 user_id=user_id,
                 is_active=True
             ).all()
-            
+
             # 获取今日记录
             today_records = db.query(SupplementRecord).filter_by(
                 user_id=user_id,
                 record_date=target_date
             ).all()
-            
+
             # 获取最近7天记录
             week_records = db.query(SupplementRecord).filter(
                 SupplementRecord.user_id == user_id,
                 SupplementRecord.record_date >= target_date - timedelta(days=6),
                 SupplementRecord.record_date <= target_date
             ).all()
-            
+
             taken_today = len([r for r in today_records if r.taken])
             taken_week = len([r for r in week_records if r.taken])
-            
+
             return {
                 "total_count": len(definitions),
                 "taken_count": taken_today,
@@ -799,9 +799,9 @@ class SupplementRecommendationServiceLLM:
                 "categories": {},
                 "has_supplements": False
             }
-    
+
     # ===== Debug 辅助方法 =====
-    
+
     def _add_debug_step(
         self,
         debug_info: Dict[str, Any],
@@ -815,7 +815,7 @@ class SupplementRecommendationServiceLLM:
             "timestamp": datetime.now().isoformat()
         })
         debug_info["timeline"].append(f"{step_name}: {duration:.3f}s")
-    
+
     def _add_debug_data(
         self,
         debug_info: Dict[str, Any],
@@ -824,7 +824,7 @@ class SupplementRecommendationServiceLLM:
     ):
         """添加数据来源"""
         debug_info["data_sources"][source_name] = data
-    
+
     def _add_debug_reasoning(
         self,
         debug_info: Dict[str, Any],

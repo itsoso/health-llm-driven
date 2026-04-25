@@ -31,14 +31,14 @@ def send_sleep_reminders():
     发送睡眠提醒（每晚22:00执行）
     """
     logger.info("开始发送睡眠提醒")
-    
+
     with SessionLocal() as db:
         # 获取启用了睡眠提醒的用户
         settings_list = db.query(UserNotificationSetting).filter(
             UserNotificationSetting.reminder_enabled == True,
             UserNotificationSetting.enabled == True
         ).all()
-        
+
         push_service = PushService(db)
         sent_count = 0
 
@@ -53,7 +53,7 @@ def send_sleep_reminders():
                 sent_count += 1
             except Exception as e:
                 logger.error(f"发送睡眠提醒失败 (user_id={setting.user_id}): {e}")
-    
+
     logger.info(f"睡眠提醒发送完成，共发送 {sent_count} 条")
     return {"sent_count": sent_count}
 

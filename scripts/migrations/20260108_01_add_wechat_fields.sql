@@ -20,4 +20,3 @@ ALTER TABLE users ADD COLUMN phone VARCHAR;
 -- 创建索引
 CREATE INDEX IF NOT EXISTS ix_users_wechat_openid ON users(wechat_openid);
 CREATE INDEX IF NOT EXISTS ix_users_wechat_unionid ON users(wechat_unionid);
-

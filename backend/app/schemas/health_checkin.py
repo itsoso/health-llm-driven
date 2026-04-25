@@ -47,6 +47,5 @@ class HealthCheckinResponse(BaseModel):
     goals_completed: Optional[Dict[str, Any]]
     notes: Optional[str]
     personalized_advice: Optional[str]
-    
-    model_config = ConfigDict(from_attributes=True)
 
+    model_config = ConfigDict(from_attributes=True)

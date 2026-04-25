@@ -40,7 +40,7 @@ def create_medical_exam(
     db_exam = MedicalExam(**exam.model_dump(exclude={"items"}))
     db.add(db_exam)
     db.flush()
-    
+
     # 创建体检项目
     for item in exam.items:
         db_item = MedicalExamItem(
@@ -54,7 +54,7 @@ def create_medical_exam(
             item_dict=item.model_dump(), source="manual",
         )
         db.add(indicator)
-    
+
     db.commit()
     db.refresh(db_exam)
     return db_exam
@@ -152,7 +152,7 @@ async def import_medical_exam_from_csv(
         content = await file.read()
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
-    
+
     try:
         service = MedicalExamImportService()
         exam = service.import_from_csv(db, user_id, tmp_file_path, exam_info or {})
@@ -169,26 +169,26 @@ async def import_medical_exam_from_pdf(
 ):
     """
     从PDF格式导入体检数据
-    
+
     上传体检报告PDF，系统会自动解析并结构化保存。
     使用AI分析PDF内容，提取检查项目、数值、参考范围等信息。
     """
     # 验证文件类型
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="请上传PDF格式文件")
-    
+
     # 保存上传的文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         content = await file.read()
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
-    
+
     try:
         # 解析PDF
         logger.info(f"开始解析PDF: {file.filename}")
         parsed_data = pdf_parser.parse_pdf(tmp_file_path)
         logger.info(f"PDF解析完成，提取到 {len(parsed_data.get('items', []))} 个检查项目")
-        
+
         # 创建体检记录
         db_exam = MedicalExam(
             user_id=user_id,
@@ -207,7 +207,7 @@ async def import_medical_exam_from_pdf(
         )
         db.add(db_exam)
         db.flush()
-        
+
         # 创建检查项目
         for item in parsed_data.get("items", []):
             # 处理value：可能是数字或None
@@ -237,16 +237,16 @@ async def import_medical_exam_from_pdf(
                 item_dict=item, source="pdf_import",
             )
             db.add(indicator)
-        
+
         db.commit()
         db.refresh(db_exam)
-        
+
         # 统计各类别项目数量
         category_counts = {}
         for item in parsed_data.get("items", []):
             cat = item.get("category", "other")
             category_counts[cat] = category_counts.get(cat, 0) + 1
-        
+
         return {
             "message": "PDF解析并导入成功",
             "exam_id": db_exam.id,
@@ -259,7 +259,7 @@ async def import_medical_exam_from_pdf(
             "category_summary": category_counts,
             "parsed_data": parsed_data
         }
-        
+
     except ValueError as e:
         logger.error(f"PDF解析失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -277,24 +277,24 @@ async def parse_pdf_preview(
 ):
     """
     预览PDF解析结果（不保存到数据库）
-    
+
     用于在正式导入前预览解析结果，确认内容正确。
     """
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="请上传PDF格式文件")
-    
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         content = await file.read()
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
-    
+
     try:
         # 提取文本
         text_content = pdf_parser.extract_text_from_pdf(tmp_file_path)
-        
+
         # 解析
         parsed_data = pdf_parser.parse_pdf(tmp_file_path)
-        
+
         return {
             "message": "PDF解析成功",
             "filename": file.filename,
@@ -308,4 +308,3 @@ async def parse_pdf_preview(
         raise HTTPException(status_code=500, detail=f"解析失败: {str(e)}")
     finally:
         os.unlink(tmp_file_path)
-

@@ -43,7 +43,7 @@ TABLES_TO_MIGRATE = [
     # 基础表
     "users",
     "user_profiles",
-    
+
     # 健康数据表
     "garmin_data",
     "workout_records",
@@ -53,20 +53,20 @@ TABLES_TO_MIGRATE = [
     "water_intakes",
     "exercise_records",
     "basic_health_data",
-    
+
     # 医疗相关
     "medical_exams",
     "medical_exam_items",
     "disease_records",
     "symptom_logs",
-    
+
     # 补剂和习惯
     "supplement_definitions",
     "supplement_records",
     "supplement_intakes",
     "habit_definitions",
     "habit_records",
-    
+
     # 目标和打卡
     "health_goals",
     "goals",
@@ -74,7 +74,7 @@ TABLES_TO_MIGRATE = [
     "checkin_templates",
     "checkin_records",
     "health_checkins",
-    
+
     # 其他
     "invitation_codes",
     "user_applications",
@@ -98,7 +98,7 @@ def migrate_table(table_name):
     """迁移单个表"""
     try:
         print(f"\n📦 迁移表: {table_name}")
-        
+
         # 检查 SQLite 表是否存在
         sqlite_cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -107,24 +107,24 @@ def migrate_table(table_name):
         if not sqlite_cursor.fetchone():
             print(f"   ⚠️  表不存在，跳过")
             return
-        
+
         # 获取 SQLite 数据
         sqlite_cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
         count = sqlite_cursor.fetchone()[0]
-        
+
         if count == 0:
             print(f"   ℹ️  表为空，跳过")
             return
-        
+
         print(f"   📊 SQLite 中有 {count} 条记录")
-        
+
         # 获取表结构
         columns = get_table_columns(sqlite_cursor, table_name)
-        
+
         # 读取所有数据
         sqlite_cursor.execute(f"SELECT * FROM {table_name}")
         rows = sqlite_cursor.fetchall()
-        
+
         # 检查 PostgreSQL 表是否存在
         result = pg_session.execute(
             text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :table)"),
@@ -133,39 +133,39 @@ def migrate_table(table_name):
         if not result.scalar():
             print(f"   ⚠️  PostgreSQL 表不存在，跳过")
             return
-        
+
         # 获取 PostgreSQL 表的列
         result = pg_session.execute(
             text("SELECT column_name FROM information_schema.columns WHERE table_name = :table ORDER BY ordinal_position"),
             {"table": table_name}
         )
         pg_columns = [row[0] for row in result]
-        
+
         # 找到共同的列
         common_columns = [col for col in columns if col in pg_columns]
-        
+
         if not common_columns:
             print(f"   ⚠️  没有共同的列，跳过")
             return
-        
+
         print(f"   📋 共同列: {len(common_columns)} 个")
-        
+
         # 清空 PostgreSQL 表（如果需要）
         pg_session.execute(text(f"TRUNCATE TABLE {table_name} RESTART IDENTITY CASCADE"))
         pg_session.commit()
-        
+
         # 插入数据
         success_count = 0
         error_count = 0
-        
+
         for row in rows:
             try:
                 # 构建插入语句
                 row_dict = dict(zip(columns, row))
-                
+
                 # 只使用共同的列
                 insert_data = {col: row_dict[col] for col in common_columns}
-                
+
                 # 处理特殊类型
                 for key, value in insert_data.items():
                     # 处理 JSON 字段
@@ -177,26 +177,26 @@ def migrate_table(table_name):
                     # 处理布尔值
                     if isinstance(value, int) and isinstance(key, str) and key.lower().startswith(('is_', 'has_', 'enabled', 'valid', 'active')):
                         insert_data[key] = bool(value)
-                
+
                 # 构建 SQL
                 cols = ', '.join(common_columns)
                 placeholders = ', '.join([f':{col}' for col in common_columns])
                 sql = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
-                
+
                 pg_session.execute(text(sql), insert_data)
                 success_count += 1
-                
+
             except Exception as e:
                 error_count += 1
                 if error_count <= 3:  # 只显示前3个错误
                     print(f"   ⚠️  插入失败: {str(e)[:100]}")
-        
+
         pg_session.commit()
-        
+
         print(f"   ✅ 成功迁移 {success_count} 条记录")
         if error_count > 0:
             print(f"   ⚠️  失败 {error_count} 条记录")
-        
+
     except Exception as e:
         print(f"   ❌ 迁移失败: {str(e)}")
         pg_session.rollback()

@@ -23,30 +23,30 @@ def create_icon(icon_type, color, filled=False):
     scale = 3
     img = Image.new('RGBA', (SIZE * scale, SIZE * scale), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    
+
     center = (SIZE * scale) // 2
     lw = LINE_WIDTH * scale
-    
+
     # 基础尺寸 - 进一步加大，占满画布
     # 81px * 3 = 243px, 留边距约 15px * 3 = 45px
     # 图标大小约 66px (在81px画布上)
-    base_size = 66 * scale // 2 
-    
+    base_size = 66 * scale // 2
+
     if icon_type == 'home':
         # 首页：饱满的房子
         house_w = base_size * 1.5
         house_h = base_size * 1.1
         roof_h = base_size * 0.8
-        
+
         # 屋顶顶点
         roof_top = center - base_size + 4*scale
         # 屋檐宽度
         eave_w = house_w + 12*scale
-        
+
         # 房子主体
         body_top = roof_top + roof_h
         body_bottom = center + base_size - 4*scale
-        
+
         if filled:
             # 填充屋顶
             draw.polygon([
@@ -86,12 +86,12 @@ def create_icon(icon_type, color, filled=False):
                 outline=color,
                 width=lw
             )
-            
+
     elif icon_type == 'ai-assistant':
         # 建议：闪电/魔法棒（更醒目）
         # 绘制一个饱满的四角星
         star_r = base_size * 0.95
-        
+
         points = []
         for i in range(4):
             angle = i * 90
@@ -102,7 +102,7 @@ def create_icon(icon_type, color, filled=False):
             rad_in = math.radians(angle + 45)
             inner_r = star_r * 0.35
             points.append((center + math.cos(rad_in) * inner_r, center + math.sin(rad_in) * inner_r))
-        
+
         if filled:
             draw.polygon(points, fill=color)
             # 旁边加个小点缀
@@ -123,10 +123,10 @@ def create_icon(icon_type, color, filled=False):
     elif icon_type == 'checkin':
         # 打卡：极简大对勾（去掉外框，更直接）
         # 或者保留圆框但加大对勾
-        
+
         # 这次尝试：实心圆/空心圆 + 超大对勾
         radius = base_size * 0.9
-        
+
         if filled:
             # 实心圆
             draw.ellipse(
@@ -158,11 +158,11 @@ def create_icon(icon_type, color, filled=False):
         # 我的：大头像
         head_r = base_size * 0.45
         head_y = center - base_size * 0.4
-        
+
         body_w = base_size * 1.6
         body_h = base_size * 0.7
         body_y = center + base_size * 0.9
-        
+
         if filled:
             # 头部
             draw.ellipse(
@@ -171,7 +171,7 @@ def create_icon(icon_type, color, filled=False):
             )
             # 身体 (半椭圆)
             draw.chord(
-                [center - body_w//2, body_y - body_h*2, 
+                [center - body_w//2, body_y - body_h*2,
                  center + body_w//2, body_y],
                 start=0, end=180,
                 fill=color
@@ -185,7 +185,7 @@ def create_icon(icon_type, color, filled=False):
             )
             # 身体
             draw.arc(
-                [center - body_w//2, body_y - body_h*2, 
+                [center - body_w//2, body_y - body_h*2,
                  center + body_w//2, body_y],
                 start=0, end=180,
                 fill=color, width=lw
@@ -195,10 +195,10 @@ def create_icon(icon_type, color, filled=False):
                 [(center - body_w//2, body_y), (center + body_w//2, body_y)],
                 fill=color, width=lw
             )
-    
+
     # 缩小到目标尺寸（抗锯齿）
     img = img.resize((SIZE, SIZE), Image.LANCZOS)
-    
+
     return img
 
 
@@ -207,7 +207,7 @@ def main():
     # 输出目录
     output_dir = 'src/assets/icons'
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # 定义所有需要生成的图标
     icons = [
         ('home', '首页'),
@@ -215,23 +215,23 @@ def main():
         ('checkin', '打卡'),
         ('user', '我的'),
     ]
-    
+
     print('生成TabBar图标（终极醒目版）...\n')
-    
+
     for icon_type, icon_name in icons:
         print(f'生成{icon_name}图标...')
-        
+
         # 未选中状态（灰色，线条风格）
         icon_gray = create_icon(icon_type, COLOR_GRAY, filled=False)
         icon_gray.save(os.path.join(output_dir, f'{icon_type}.png'), 'PNG')
         print(f'  ✓ {icon_type}.png (线条)')
-        
+
         # 选中状态（主题色，填充风格）
         icon_active = create_icon(icon_type, COLOR_PRIMARY, filled=True)
         icon_active.save(os.path.join(output_dir, f'{icon_type}-active.png'), 'PNG')
         print(f'  ✓ {icon_type}-active.png (填充)')
         print()
-    
+
     print('完成！所有图标已生成。')
     print(f'图标尺寸: {SIZE}x{SIZE}px')
     print(f'未选中颜色: RGB{COLOR_GRAY}')

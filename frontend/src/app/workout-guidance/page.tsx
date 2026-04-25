@@ -219,14 +219,14 @@ export default function WorkoutGuidancePage() {
                         const isError = reason.includes('❌');
                         const isWarning = reason.includes('⚠️');
                         const isSuccess = reason.includes('✅');
-                        const bgColor = isError 
-                          ? 'bg-red-900/20 border-red-700/50' 
-                          : isWarning 
+                        const bgColor = isError
+                          ? 'bg-red-900/20 border-red-700/50'
+                          : isWarning
                           ? 'bg-yellow-900/20 border-yellow-700/50'
                           : isSuccess
                           ? 'bg-green-900/20 border-green-700/50'
                           : 'bg-slate-800/50 border-slate-700/50';
-                        
+
                         return (
                           <div key={index} className={`${bgColor} rounded-lg p-3 border`}>
                             <span className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
@@ -318,7 +318,7 @@ export default function WorkoutGuidancePage() {
                         </details>
                       )}
                     </div>
-                    
+
                     {/* 完整 JSON 数据 */}
                     <details className="bg-slate-800/50 rounded-lg">
                       <summary className="cursor-pointer p-3 text-purple-300 hover:text-purple-200 font-medium text-sm">

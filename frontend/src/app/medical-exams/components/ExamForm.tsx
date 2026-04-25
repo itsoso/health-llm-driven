@@ -4,8 +4,6 @@ import React, { useState } from 'react';
 import { UseMutationResult } from '@tanstack/react-query';
 import { examTypeLabels, bodySystemLabels, examPackages, abnormalStyles, abnormalLabels } from './types';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 interface ExamFormProps {
   userId: number | undefined;
   createMutation: UseMutationResult<any, any, any, unknown>;

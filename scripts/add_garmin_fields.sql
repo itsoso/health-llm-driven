@@ -36,4 +36,3 @@ ALTER TABLE garmin_data ADD COLUMN distance_meters FLOAT;
 
 -- 注意: SQLite 不支持一次添加多列，每个 ALTER TABLE 只能添加一列
 -- 如果某列已存在会报错，可以忽略该错误继续执行后面的语句
-

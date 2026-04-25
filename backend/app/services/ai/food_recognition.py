@@ -69,24 +69,24 @@ class FoodRecognitionService:
     def is_available(self) -> bool:
         """检查服务是否可用"""
         return self._get_provider() is not None
-    
+
     async def recognize_food_from_base64(
-        self, 
+        self,
         image_base64: str,
         image_type: str = "jpeg"
     ) -> Dict[str, Any]:
         """
         从Base64编码的图片识别食物
-        
+
         Args:
             image_base64: Base64编码的图片数据
             image_type: 图片类型 (jpeg, png, gif, webp)
-            
+
         Returns:
             包含识别结果的字典
         """
         logger.info(f"开始食物图片识别, 图片类型: {image_type}, base64长度: {len(image_base64) if image_base64 else 0}")
-        
+
         if not self.is_available():
             logger.error("AI服务不可用")
             return {
@@ -94,7 +94,7 @@ class FoodRecognitionService:
                 "error": "智能识别服务不可用",
                 "foods": []
             }
-        
+
         try:
             # 构建图片URL
             data_url = f"data:image/{image_type};base64,{image_base64}"
@@ -234,14 +234,14 @@ class FoodRecognitionService:
                 "error": f"识别失败: {error_msg[:100]}",
                 "foods": []
             }
-    
+
     async def recognize_food_from_url(self, image_url: str) -> Dict[str, Any]:
         """
         从图片URL识别食物
-        
+
         Args:
             image_url: 图片的URL地址
-            
+
         Returns:
             包含识别结果的字典
         """
@@ -322,7 +322,7 @@ class FoodRecognitionService:
                 "error": str(e)[:100],
                 "foods": []
             }
-    
+
     def estimate_nutrition_from_text(self, food_description: str) -> Dict[str, Any]:
         """
         根据文字描述估算营养信息（不使用图片）

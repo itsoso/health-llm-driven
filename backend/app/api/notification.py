@@ -9,8 +9,8 @@ from app.database import get_db
 from app.api.deps import get_current_user_required
 from app.models.user import User
 from app.models.notification import (
-    UserNotificationSetting, 
-    ReminderConfig, 
+    UserNotificationSetting,
+    ReminderConfig,
     NotificationLog,
     NotificationType
 )
@@ -82,7 +82,7 @@ def get_notification_settings(
     """获取当前用户的推送设置"""
     push_service = PushService(db)
     settings = push_service.get_user_settings(current_user.id)
-    
+
     if not settings:
         # 返回默认设置
         return {
@@ -99,7 +99,7 @@ def get_notification_settings(
             "ios_push_enabled": True,
             "ios_bound": False
         }
-    
+
     return {
         "enabled": settings.enabled,
         "morning_briefing_enabled": settings.morning_briefing_enabled,
@@ -124,12 +124,12 @@ def update_notification_settings(
 ):
     """更新推送设置"""
     push_service = PushService(db)
-    
+
     # 过滤掉 None 值
     updates = {k: v for k, v in data.dict().items() if v is not None}
-    
+
     settings = push_service.create_or_update_settings(current_user.id, updates)
-    
+
     return {"message": "设置已更新", "settings": settings}
 
 
@@ -141,13 +141,13 @@ def bind_wechat(
 ):
     """绑定微信 OpenID（用于接收订阅消息）"""
     push_service = PushService(db)
-    
+
     updates = {"wechat_openid": data.openid}
     if data.template_ids:
         updates["wechat_template_ids"] = data.template_ids
-    
+
     push_service.create_or_update_settings(current_user.id, updates)
-    
+
     return {"message": "微信绑定成功"}
 
 
@@ -159,12 +159,12 @@ def bind_ios_device(
 ):
     """绑定 iOS Device Token（用于接收推送通知）"""
     push_service = PushService(db)
-    
+
     push_service.create_or_update_settings(
         current_user.id,
         {"ios_device_token": data.device_token}
     )
-    
+
     return {"message": "iOS 设备绑定成功"}
 
 
@@ -207,7 +207,7 @@ def get_reminders(
     reminders = db.query(ReminderConfig).filter(
         ReminderConfig.user_id == current_user.id
     ).all()
-    
+
     return {
         "reminders": [
             {
@@ -248,7 +248,7 @@ def create_reminder(
 ):
     """创建新的提醒"""
     push_service = PushService(db)
-    
+
     reminder = push_service.create_reminder(
         user_id=current_user.id,
         reminder_type=data.reminder_type,
@@ -257,7 +257,7 @@ def create_reminder(
         days_of_week=data.days_of_week,
         message=data.message
     )
-    
+
     return {
         "message": "提醒创建成功",
         "reminder": {
@@ -278,13 +278,13 @@ def update_reminder(
 ):
     """更新提醒配置"""
     push_service = PushService(db)
-    
+
     updates = {k: v for k, v in data.dict().items() if v is not None}
     reminder = push_service.update_reminder(reminder_id, current_user.id, updates)
-    
+
     if not reminder:
         raise HTTPException(status_code=404, detail="提醒不存在")
-    
+
     return {"message": "提醒已更新"}
 
 
@@ -296,7 +296,7 @@ def delete_reminder(
 ):
     """删除提醒"""
     push_service = PushService(db)
-    
+
     if push_service.delete_reminder(reminder_id, current_user.id):
         return {"message": "提醒已删除"}
     else:
@@ -319,7 +319,7 @@ def get_notification_logs(
         limit=limit,
         notification_type=notification_type
     )
-    
+
     return {
         "logs": [
             {
@@ -348,9 +348,9 @@ async def send_test_push(
 ):
     """发送测试推送（用于验证配置）"""
     push_service = PushService(db)
-    
+
     channels = [data.channel] if data.channel else None
-    
+
     result = await push_service.send_notification(
         user_id=current_user.id,
         notification_type="test",
@@ -359,7 +359,7 @@ async def send_test_push(
         channels=channels,
         respect_quiet_hours=False
     )
-    
+
     return result
 
 
@@ -374,19 +374,19 @@ async def trigger_morning_briefing(
     """手动触发发送早间简报（管理员功能）"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    
+
     target_user_id = user_id or current_user.id
-    
+
     push_service = PushService(db)
-    
+
     # 生成早间简报
     from app.services.ai_scheduler import AISchedulerService
     ai_scheduler = AISchedulerService(db, target_user_id)
     briefing = ai_scheduler.get_morning_briefing()
-    
+
     if not briefing:
         return {"success": False, "message": "无法生成早间简报"}
-    
+
     # 发送推送
     result = await push_service.send_notification(
         user_id=target_user_id,
@@ -396,5 +396,5 @@ async def trigger_morning_briefing(
         data={"briefing": briefing},
         respect_quiet_hours=False
     )
-    
+
     return result

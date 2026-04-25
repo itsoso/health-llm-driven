@@ -129,10 +129,10 @@ def update_habit(
     habit = db.query(HabitDefinition).filter(HabitDefinition.id == habit_id).first()
     if not habit:
         raise HTTPException(status_code=404, detail="习惯不存在")
-    
+
     for key, value in update_data.model_dump(exclude_unset=True).items():
         setattr(habit, key, value)
-    
+
     db.commit()
     db.refresh(habit)
     return habit
@@ -147,7 +147,7 @@ def delete_habit(
     habit = db.query(HabitDefinition).filter(HabitDefinition.id == habit_id).first()
     if not habit:
         raise HTTPException(status_code=404, detail="习惯不存在")
-    
+
     db.delete(habit)
     db.commit()
     return {"message": "删除成功"}
@@ -165,14 +165,14 @@ def create_habit_record(
         HabitRecord.habit_id == record.habit_id,
         HabitRecord.record_date == record.record_date
     ).first()
-    
+
     if existing:
         existing.completed = record.completed
         existing.notes = record.notes
         db.commit()
         db.refresh(existing)
         return existing
-    
+
     db_record = HabitRecord(**record.model_dump())
     db.add(db_record)
     db.commit()
@@ -190,12 +190,12 @@ def batch_checkin(
     for checkin in batch.checkins:
         habit_id = checkin.get("habit_id")
         completed = checkin.get("completed", False)
-        
+
         existing = db.query(HabitRecord).filter(
             HabitRecord.habit_id == habit_id,
             HabitRecord.record_date == batch.record_date
         ).first()
-        
+
         if existing:
             existing.completed = completed
             db.commit()
@@ -209,7 +209,7 @@ def batch_checkin(
             )
             db.add(record)
             results.append({"habit_id": habit_id, "action": "created"})
-    
+
     db.commit()
     return {"message": "批量打卡成功", "results": results}
 
@@ -265,12 +265,12 @@ def get_habit_stats(
     """获取习惯统计"""
     end_date = date.today()
     start_date = end_date - timedelta(days=days-1)
-    
+
     habits = db.query(HabitDefinition).filter(
         HabitDefinition.user_id == user_id,
         HabitDefinition.is_active == True
     ).all()
-    
+
     stats = []
     for habit in habits:
         records = db.query(HabitRecord).filter(
@@ -278,10 +278,10 @@ def get_habit_stats(
             HabitRecord.record_date >= start_date,
             HabitRecord.record_date <= end_date
         ).all()
-        
+
         completed_count = sum(1 for r in records if r.completed)
         current_streak = calculate_streak(db, habit.id, end_date)
-        
+
         # 计算最长连续打卡
         longest_streak = 0
         current_run = 0
@@ -293,7 +293,7 @@ def get_habit_stats(
                 longest_streak = max(longest_streak, current_run)
             else:
                 current_run = 0
-        
+
         stats.append(HabitStats(
             habit_id=habit.id,
             habit_name=habit.name,
@@ -303,7 +303,7 @@ def get_habit_stats(
             current_streak=current_streak,
             longest_streak=longest_streak
         ))
-    
+
     return stats
 
 
@@ -400,12 +400,12 @@ def get_my_habit_stats(
     """获取当前用户习惯统计（需要登录）"""
     end_date = date.today()
     start_date = end_date - timedelta(days=days-1)
-    
+
     habits = db.query(HabitDefinition).filter(
         HabitDefinition.user_id == current_user.id,
         HabitDefinition.is_active == True
     ).all()
-    
+
     stats = []
     for habit in habits:
         records = db.query(HabitRecord).filter(
@@ -413,10 +413,10 @@ def get_my_habit_stats(
             HabitRecord.record_date >= start_date,
             HabitRecord.record_date <= end_date
         ).all()
-        
+
         completed_count = sum(1 for r in records if r.completed)
         current_streak = calculate_streak(db, habit.id, end_date)
-        
+
         # 计算最长连续打卡
         longest_streak = 0
         current_run = 0
@@ -438,7 +438,7 @@ def get_my_habit_stats(
             current_streak=current_streak,
             longest_streak=longest_streak
         ))
-    
+
     return stats
 
 
@@ -480,4 +480,3 @@ def get_my_today_summary(
         "pending": total - completed,
         "completion_rate": round(completed / total * 100, 1)
     }
-

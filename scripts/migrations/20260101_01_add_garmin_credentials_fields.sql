@@ -16,4 +16,3 @@ ALTER TABLE garmin_credentials ADD COLUMN error_count INTEGER DEFAULT 0;
 
 -- 添加同步开关
 ALTER TABLE garmin_credentials ADD COLUMN sync_enabled BOOLEAN DEFAULT TRUE;
-

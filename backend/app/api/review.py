@@ -32,12 +32,12 @@ async def get_today_review(
     """获取今日复盘，如果不存在则自动创建"""
     service = ReviewService(db)
     today = date.today()
-    
+
     review = service.get_daily_review(current_user.id, today)
     if not review:
         # 自动创建并填充健康数据
         review = service.create_or_update_daily_review(current_user.id, today)
-    
+
     return review
 
 
@@ -49,12 +49,12 @@ async def get_daily_review(
 ):
     """获取指定日期的复盘"""
     service = ReviewService(db)
-    
+
     review = service.get_daily_review(current_user.id, review_date)
     if not review:
         # 自动创建并填充健康数据
         review = service.create_or_update_daily_review(current_user.id, review_date)
-    
+
     return review
 
 
@@ -67,10 +67,10 @@ async def update_daily_review(
 ):
     """更新每日复盘（用户手动输入部分）"""
     service = ReviewService(db)
-    
+
     user_input = update_data.model_dump(exclude_unset=True)
     review = service.create_or_update_daily_review(current_user.id, review_date, user_input)
-    
+
     return review
 
 
@@ -97,7 +97,7 @@ async def list_daily_reviews(
     """获取复盘列表"""
     service = ReviewService(db)
     reviews = service.list_daily_reviews(current_user.id, start_date, end_date, limit)
-    
+
     result = []
     for r in reviews:
         result.append(ReviewListItem(
@@ -107,7 +107,7 @@ async def list_daily_reviews(
             mood_score=r.mood_score,
             summary_preview=r.summary[:50] if r.summary else None
         ))
-    
+
     return result
 
 
@@ -132,11 +132,11 @@ async def get_current_week_review(
     """获取本周复盘"""
     service = ReviewService(db)
     start_date, end_date = service.get_current_week_range()
-    
+
     review = service.create_period_review(
-        current_user.id, 
-        ReviewPeriod.WEEKLY, 
-        start_date, 
+        current_user.id,
+        ReviewPeriod.WEEKLY,
+        start_date,
         end_date
     )
     return review
@@ -150,7 +150,7 @@ async def get_current_month_review(
     """获取本月复盘"""
     service = ReviewService(db)
     start_date, end_date = service.get_current_month_range()
-    
+
     review = service.create_period_review(
         current_user.id,
         ReviewPeriod.MONTHLY,
@@ -172,7 +172,7 @@ async def list_period_reviews(
         PeriodReview.user_id == current_user.id,
         PeriodReview.period_type == period_type.value
     ).order_by(PeriodReview.start_date.desc()).limit(limit).all()
-    
+
     return reviews
 
 
@@ -188,17 +188,17 @@ async def update_period_review(
         PeriodReview.id == period_id,
         PeriodReview.user_id == current_user.id
     ).first()
-    
+
     if not review:
         raise HTTPException(status_code=404, detail="复盘记录不存在")
-    
+
     update_dict = update_data.model_dump(exclude_unset=True)
     for key, value in update_dict.items():
         setattr(review, key, value)
-    
+
     db.commit()
     db.refresh(review)
-    
+
     return review
 
 
@@ -217,23 +217,23 @@ async def get_review_streak(
         DailyReview.review_date >= today - timedelta(days=30),
         DailyReview.is_completed == True
     ).order_by(DailyReview.review_date.desc()).all()
-    
+
     # 计算连续天数
     current_streak = 0
     check_date = today
-    
+
     review_dates = {r.review_date for r in reviews}
-    
+
     while check_date in review_dates:
         current_streak += 1
         check_date -= timedelta(days=1)
-    
+
     # 总复盘天数
     total_reviews = db.query(DailyReview).filter(
         DailyReview.user_id == current_user.id,
         DailyReview.is_completed == True
     ).count()
-    
+
     return {
         "current_streak": current_streak,
         "total_reviews": total_reviews,
@@ -258,13 +258,13 @@ async def generate_ai_summary(
 ):
     """使用 AI 生成复盘总结"""
     from datetime import datetime as dt
-    
+
     try:
         target_date = dt.strptime(request.date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
-    
+
     service = ReviewService(db)
     ai_summary = service.generate_ai_summary(current_user.id, target_date, request.period)
-    
+
     return {"ai_summary": ai_summary}

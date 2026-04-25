@@ -27,4 +27,3 @@ if [ "$1" == "--coverage" ]; then
     pytest --cov=app --cov-report=html --cov-report=term-missing
     echo "覆盖率报告已生成在 htmlcov/index.html"
 fi
-

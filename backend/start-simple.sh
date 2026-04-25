@@ -36,4 +36,3 @@ fi
 echo "启动服务（不使用自动重载）..."
 echo "提示: 修改代码后需要手动重启服务"
 uvicorn main:app --host 0.0.0.0 --port 8000
-

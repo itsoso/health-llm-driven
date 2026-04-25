@@ -135,7 +135,7 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
 async function handleQuickAction(action: string, data?: Record<string, any>) {
   if (!data) return;
   try {
-    const { api } = await import('@/services/api');
+    const { default: api } = await import('@/services/api');
     const type = data.reminder_type; // 'supplement' | 'medication'
     if (type === 'supplement' && data.supplement_id) {
       await api.post('/supplements/me/checkin', {

@@ -145,32 +145,32 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     限流：每分钟最多5次登录尝试，防止暴力破解
     """
     user = auth_service.authenticate_user(db, form_data.username, form_data.password)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被禁用"
         )
-    
+
     # 检查是否已通过审核
     if not user.is_approved:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户尚未通过管理员审核，请等待审核通过后再登录"
         )
-    
+
     # 生成令牌
     access_token = auth_service.create_access_token(
         data={"sub": str(user.id), "username": user.username}
     )
-    
+
     return Token(
         access_token=access_token,
         token_type="bearer",
@@ -188,24 +188,24 @@ async def login_json(request: Request, login_data: UserLogin, db: Session = Depe
     - **password**: 密码
     """
     user = auth_service.authenticate_user(db, login_data.username, login_data.password)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误"
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="账户已被禁用"
         )
-    
+
     # 生成令牌
     access_token = auth_service.create_access_token(
         data={"sub": str(user.id), "username": user.username}
     )
-    
+
     return Token(
         access_token=access_token,
         token_type="bearer",
@@ -247,7 +247,7 @@ async def update_me(
         current_user.birth_date = user_update.birth_date
     if user_update.gender is not None:
         current_user.gender = user_update.gender
-    
+
     db.commit()
     db.refresh(current_user)
     return user_to_response(current_user, db)
@@ -279,11 +279,11 @@ async def change_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="旧密码错误"
         )
-    
+
     # 更新密码
     current_user.hashed_password = auth_service.get_password_hash(password_data.new_password)
     db.commit()
-    
+
     return {"message": "密码修改成功"}
 
 
@@ -331,9 +331,9 @@ async def save_garmin_credentials(
 ):
     """
     保存Garmin登录凭证
-    
+
     凭证会被加密存储，用于后续自动同步Garmin数据
-    
+
     - **is_cn**: 如果是中国用户(garmin.cn账号)，设置为 true
     """
     # 注意：这个接口是简单保存凭证，不做MFA检测
@@ -386,7 +386,7 @@ async def toggle_garmin_sync(
 ):
     """
     启用或禁用Garmin自动同步
-    
+
     - **enabled**: True 启用同步，False 停止同步
     """
     credential = garmin_credential_service.get_credentials(db, current_user.id)
@@ -395,7 +395,7 @@ async def toggle_garmin_sync(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="未配置Garmin凭证"
         )
-    
+
     if garmin_credential_service.toggle_sync_enabled(db, current_user.id, enabled):
         return {
             "message": f"Garmin同步已{'启用' if enabled else '停止'}",
@@ -417,7 +417,7 @@ async def sync_garmin_data(
 ):
     """
     手动触发Garmin数据同步（同时同步健康数据和运动活动）
-    
+
     - **days**: 同步最近N天的数据（默认7天，最多730天）
     """
     # 获取解密后的凭证
@@ -427,7 +427,7 @@ async def sync_garmin_data(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="未配置Garmin凭证，请先在设置中配置"
         )
-    
+
     # 获取同步锁（防止并发同步）
     from app.services.sync_lock import acquire_sync_lock, release_sync_lock
     if not acquire_sync_lock(db, current_user.id):
@@ -448,12 +448,12 @@ async def sync_garmin_data(
             user_id=current_user.id,
             mfa_session_id=sync_request.mfa_session_id  # 传递MFA session ID
         )
-        
+
         # 同步每日健康数据
         synced_days = 0
         failed_days = 0
         today = date.today()
-        
+
         for i in range(sync_request.days):
             target_date = today - timedelta(days=i)
             try:
@@ -470,7 +470,7 @@ async def sync_garmin_data(
                     ) from e
                 logger.warning(f"同步 {target_date} 失败: {e}")
                 failed_days += 1
-        
+
         # 同步运动活动数据
         synced_activities = 0
         activities_error = None
@@ -518,7 +518,7 @@ async def sync_garmin_data(
             activities_count=synced_activities,
             activities_error=activities_error
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -542,7 +542,7 @@ async def sync_garmin_data_stream(
 ):
     """
     使用 Server-Sent Events 流式同步Garmin数据，实时返回进度
-    
+
     参数：
     - days: 同步最近N天的数据
     - mfa_session_id: MFA会话ID（可选，如果已完成MFA验证可传入以复用认证状态）
@@ -554,7 +554,7 @@ async def sync_garmin_data_stream(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="未配置Garmin凭证，请先在设置中配置"
         )
-    
+
     def _sync_single_date_helper(garmin_service, user_id: int, target_date: date, date_str: str) -> dict:
         """在独立线程中同步单个日期的数据（辅助函数）"""
         from app.database import SessionLocal
@@ -570,21 +570,21 @@ async def sync_garmin_data_stream(
             return {"success": False}
         finally:
             db.close()
-    
+
     async def generate_progress() -> AsyncGenerator[str, None]:
         from app.services.data_collection.garmin_connect import GarminConnectService
-        
+
         synced_days = 0
         failed_days = 0
         today = date.today()
-        
+
         # 发送开始消息
         yield f"data: {json.dumps({'type': 'start', 'total': days, 'message': '开始同步...'})}\n\n"
-        
+
         try:
             # 先测试连接，检测是否需要MFA
             from app.services.data_collection.garmin_connect import GarminConnectService
-            
+
             # 如果提供了mfa_session_id，尝试复用已认证的会话
             test_service = GarminConnectService(
                 email=credentials["email"],
@@ -593,7 +593,7 @@ async def sync_garmin_data_stream(
                 user_id=current_user.id,
                 mfa_session_id=mfa_session_id  # 传递MFA会话ID
             )
-            
+
             # 尝试测试连接来检测MFA
             try:
                 test_result = test_service.test_connection_with_mfa()
@@ -646,21 +646,21 @@ async def sync_garmin_data_stream(
 
             # 复用 test_service（已通过测试连接完成认证），避免重复登录触发 Garmin 限流
             garmin_service = test_service
-            
+
             yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': days, 'message': 'Garmin连接成功'})}\n\n"
-            
+
             # 使用线程池执行同步操作，避免阻塞事件循环
             import concurrent.futures
             from app.database import SessionLocal
-            
+
             # 创建线程池（最多3个并发）
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 futures = []
-                
+
                 for i in range(days):
                     target_date = today - timedelta(days=i)
                     date_str = target_date.strftime("%Y-%m-%d")
-                    
+
                     # 提交同步任务到线程池
                     future = executor.submit(
                         _sync_single_date_helper,
@@ -670,7 +670,7 @@ async def sync_garmin_data_stream(
                         date_str
                     )
                     futures.append((i, target_date, date_str, future))
-                
+
                 # 处理完成的任务
                 for i, target_date, date_str, future in futures:
                     try:
@@ -682,7 +682,7 @@ async def sync_garmin_data_stream(
                         else:
                             failed_days += 1
                             status_msg = "failed"
-                            
+
                             # 检查是否是MFA错误
                             if result.get("mfa_required"):
                                 error_data = {
@@ -700,7 +700,7 @@ async def sync_garmin_data_stream(
                         logger.warning(f"同步 {target_date} 失败: {e}")
                         failed_days += 1
                         status_msg = "failed"
-                    
+
                     # 发送进度更新
                     progress_data = {
                         'type': 'progress',
@@ -713,15 +713,15 @@ async def sync_garmin_data_stream(
                         'message': f'正在同步 {date_str}...'
                     }
                     yield f"data: {json.dumps(progress_data)}\n\n"
-                    
+
                     # 小延迟，让前端有时间处理
                     await asyncio.sleep(0.05)  # 减少延迟时间
-            
+
             # 同步运动活动数据
             synced_activities = 0
             try:
                 yield f"data: {json.dumps({'type': 'progress', 'current': days, 'total': days, 'message': '开始同步运动活动数据...'})}\n\n"
-                
+
                 from app.services.workout_sync import WorkoutSyncService
                 # 优先复用已认证的garmin_service的client，如果没有则使用MFA会话
                 workout_sync_service = WorkoutSyncService(
@@ -749,10 +749,10 @@ async def sync_garmin_data_stream(
                     return
                 logger.warning(f"[用户 {current_user.id}] 运动活动同步失败: {e}")
                 # 运动活动同步失败不影响整体同步结果，继续执行
-            
+
             # 更新同步状态
             garmin_credential_service.update_sync_status(db, current_user.id)
-            
+
             # 发送完成消息
             complete_data = {
                 'type': 'complete',
@@ -762,7 +762,7 @@ async def sync_garmin_data_stream(
                 'message': f'同步完成：成功 {synced_days} 天，失败 {failed_days} 天' + (f'，运动活动 {synced_activities} 条' if synced_activities > 0 else '')
             }
             yield f"data: {json.dumps(complete_data)}\n\n"
-            
+
         except Exception as e:
             logger.error(f"Garmin同步失败: {e}", exc_info=True)
             error_data = {
@@ -770,7 +770,7 @@ async def sync_garmin_data_stream(
                 'message': f'同步失败: {str(e)}'
             }
             yield f"data: {json.dumps(error_data)}\n\n"
-    
+
     return StreamingResponse(
         generate_progress(),
         media_type="text/event-stream",
@@ -790,22 +790,22 @@ async def test_garmin_connection(
 ):
     """
     测试Garmin凭证是否有效（不保存）
-    
+
     返回明确的提示信息：
     - 成功：✅ 密码正确，连接成功
     - 需要MFA：🔐 需要两步验证，请输入验证码
     - 失败：❌ 密码错误或账号无效
-    
+
     注意：
     - 中国用户(garmin.cn)需要设置 is_cn=true
     - 如果账号开启了两步验证(MFA)，会返回 mfa_required=true 和 client_state
     """
     try:
         from app.services.data_collection.garmin_connect import GarminConnectService
-        
+
         server_type = "中国版(garmin.cn)" if credentials.is_cn else "国际版(garmin.com)"
         logger.info(f"测试Garmin连接 - 服务器: {server_type}, 邮箱: {credentials.garmin_email}")
-        
+
         # 创建服务实例
         garmin_service = GarminConnectService(
             email=credentials.garmin_email,
@@ -813,10 +813,10 @@ async def test_garmin_connection(
             is_cn=credentials.is_cn,
             user_id=current_user.id
         )
-        
+
         # 使用支持 MFA 的测试连接方法
         result = garmin_service.test_connection_with_mfa()
-        
+
         # 如果检测到需要MFA，更新数据库中的requires_mfa字段
         if result.get("mfa_required"):
             try:
@@ -824,14 +824,14 @@ async def test_garmin_connection(
                 logger.info(f"已更新用户 {current_user.id} 的MFA状态为需要MFA")
             except Exception as e:
                 logger.warning(f"更新MFA状态失败: {e}")
-        
+
         return GarminTestConnectionResponse(
             success=result.get("success", False),
             mfa_required=result.get("mfa_required", False),
             message=result.get("message", ""),
             mfa_session_id=result.get("mfa_session_id")
         )
-        
+
     except Exception as e:
         logger.error(f"测试Garmin连接失败: {e}")
         error_msg = str(e).lower()
@@ -876,24 +876,24 @@ async def verify_garmin_mfa(
 ):
     """
     使用两步验证码完成Garmin登录验证
-    
+
     在调用 test-connection 返回 mfa_required=true 后，使用此接口提交验证码完成验证。
-    
+
     参数：
     - mfa_code: 6位数字验证码（来自您的验证器应用）
     - mfa_session_id: test-connection 返回的会话ID
     """
     try:
         from app.services.data_collection.garmin_connect import verify_mfa_with_session
-        
+
         logger.info(f"验证Garmin MFA - session_id: {mfa_request.mfa_session_id}")
-        
+
         # 使用验证码恢复登录
         result = verify_mfa_with_session(
             session_id=mfa_request.mfa_session_id,
             mfa_code=mfa_request.mfa_code
         )
-        
+
         # 如果验证成功，更新数据库中的requires_mfa字段为True
         if result.get("success") and result.get("session_id"):
             try:
@@ -901,17 +901,16 @@ async def verify_garmin_mfa(
                 logger.info(f"MFA验证成功，已更新用户 {current_user.id} 的MFA状态为需要MFA")
             except Exception as e:
                 logger.warning(f"更新MFA状态失败: {e}")
-        
+
         return GarminMFAVerifyResponse(
             success=result.get("success", False),
             message=result.get("message", ""),
             session_id=result.get("session_id")  # 返回session_id
         )
-        
+
     except Exception as e:
         logger.error(f"验证Garmin MFA失败: {e}")
         return GarminMFAVerifyResponse(
             success=False,
             message=f"❌ 验证失败: {str(e)}"
         )
-

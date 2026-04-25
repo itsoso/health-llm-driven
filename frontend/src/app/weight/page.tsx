@@ -69,7 +69,7 @@ function WeightContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/weight/records`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -265,9 +265,9 @@ function WeightContent() {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="date" stroke="#6b7280" style={{ fontSize: '12px' }} />
-                <YAxis 
-                  domain={['dataMin - 2', 'dataMax + 2']} 
-                  stroke="#6b7280" 
+                <YAxis
+                  domain={['dataMin - 2', 'dataMax + 2']}
+                  stroke="#6b7280"
                   style={{ fontSize: '12px' }}
                 />
                 <Tooltip
@@ -358,4 +358,3 @@ export default function WeightPage() {
     </ProtectedRoute>
   );
 }
-

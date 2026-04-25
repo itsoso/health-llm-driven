@@ -8,18 +8,17 @@ from app.database import Base
 class HealthAnalysisCache(Base):
     """健康分析缓存"""
     __tablename__ = "health_analysis_cache"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     analysis_date = Column(Date, nullable=False, index=True)  # 分析日期（今天）
-    
+
     # 分析结果（完整的JSON）
     analysis_result = Column(JSON, nullable=True)
-    
+
     # 元数据
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+
     # 关系
     user = relationship("User", back_populates="health_analysis_cache")
-

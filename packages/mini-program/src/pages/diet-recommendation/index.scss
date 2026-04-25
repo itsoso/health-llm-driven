@@ -16,7 +16,7 @@
     display: flex;
     justify-content: flex-end;
     margin-bottom: 24px;
-    
+
     .toggle-text {
       font-size: 24px;
       color: #667eea;
@@ -95,7 +95,7 @@
         .progress-values {
           font-size: 24px;
           color: #999;
-          
+
           text {
             color: #333;
             font-weight: 600;
@@ -149,7 +149,7 @@
       &:last-child {
         margin-bottom: 0;
       }
-      
+
       &::before {
         content: "!";
         display: inline-flex;
@@ -196,7 +196,7 @@
       &:last-child {
         margin-bottom: 0;
       }
-      
+
       &::before {
         content: "✓";
         display: inline-flex;

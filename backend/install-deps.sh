@@ -48,4 +48,3 @@ echo "如果仍有问题，请尝试："
 echo "1. 升级pip: pip install --upgrade pip"
 echo "2. 使用虚拟环境: python3 -m venv venv && source venv/bin/activate"
 echo "3. 逐个安装包以定位问题包"
-

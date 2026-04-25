@@ -58,7 +58,7 @@ def calculate_hr_zone_distribution(record: WorkoutRecord) -> Optional[HeartRateZ
     total = sum(zones)
     if total == 0:
         return None
-    
+
     return HeartRateZoneDistribution(
         zone_1_percent=round(zones[0] / total * 100, 1),
         zone_2_percent=round(zones[1] / total * 100, 1),
@@ -81,7 +81,7 @@ def get_my_workouts(
 ):
     """获取当前用户的运动记录列表"""
     today = get_china_today()
-    
+
     # 如果指定了日期范围，使用日期范围查询
     if start_date:
         query_start = start_date
@@ -90,18 +90,18 @@ def get_my_workouts(
         # days=1 表示只查询今天，days=7 表示查询最近7天(包括今天)
         query_start = today - timedelta(days=days - 1) if days > 1 else today
         query_end = today
-    
+
     query = db.query(WorkoutRecord).filter(
         WorkoutRecord.user_id == current_user.id,
         WorkoutRecord.workout_date >= query_start,
         WorkoutRecord.workout_date <= query_end
     )
-    
+
     if workout_type:
         query = query.filter(WorkoutRecord.workout_type == workout_type)
-    
+
     records = query.order_by(WorkoutRecord.workout_date.desc(), WorkoutRecord.start_time.desc()).all()
-    
+
     return [
         WorkoutSummary(
             id=r.id,
@@ -128,12 +128,12 @@ def get_my_workout_stats(
     """获取当前用户的运动统计"""
     today = get_china_today()
     start_date = today - timedelta(days=days)
-    
+
     records = db.query(WorkoutRecord).filter(
         WorkoutRecord.user_id == current_user.id,
         WorkoutRecord.workout_date >= start_date
     ).all()
-    
+
     if not records:
         return WorkoutStats(
             total_workouts=0,
@@ -145,11 +145,11 @@ def get_my_workout_stats(
             workouts_by_type={},
             recent_trend="stable"
         )
-    
+
     total_duration = sum(r.duration_seconds or 0 for r in records)
     total_distance = sum(r.distance_meters or 0 for r in records)
     total_calories = sum(r.calories or 0 for r in records)
-    
+
     # 按类型统计
     workouts_by_type = {}
     for r in records:
@@ -158,22 +158,22 @@ def get_my_workout_stats(
             workouts_by_type[wtype] = {"count": 0, "duration_minutes": 0}
         workouts_by_type[wtype]["count"] += 1
         workouts_by_type[wtype]["duration_minutes"] += (r.duration_seconds or 0) // 60
-    
+
     # 分析趋势（对比前后两周）
     mid_date = start_date + timedelta(days=days // 2)
     first_half = [r for r in records if r.workout_date < mid_date]
     second_half = [r for r in records if r.workout_date >= mid_date]
-    
+
     first_count = len(first_half)
     second_count = len(second_half)
-    
+
     if second_count > first_count * 1.2:
         trend = "improving"
     elif second_count < first_count * 0.8:
         trend = "declining"
     else:
         trend = "stable"
-    
+
     return WorkoutStats(
         total_workouts=len(records),
         total_duration_minutes=total_duration // 60,
@@ -194,23 +194,23 @@ def get_my_workout(
 ):
     """获取单条运动记录详情"""
     from fastapi.responses import JSONResponse
-    
+
     # 刷新数据库会话以确保获取最新数据
     db.expire_all()
-    
+
     record = db.query(WorkoutRecord).filter(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     logger.info(f"用户 {current_user.id} 获取运动记录 {workout_id}, route_data存在: {bool(record.route_data)}, updated_at: {record.updated_at}")
-    
+
     # 转换为响应模型，使用mode='json'确保日期和datetime字段被正确序列化
     response_data = WorkoutRecordResponse.model_validate(record).model_dump(mode='json')
-    
+
     # 使用JSONResponse并设置禁用缓存的头部
     response = JSONResponse(content=response_data)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
@@ -219,7 +219,7 @@ def get_my_workout(
     # 添加ETag防止缓存
     updated_timestamp = record.updated_at.timestamp() if record.updated_at else (record.created_at.timestamp() if record.created_at else 0)
     response.headers["ETag"] = f'"{workout_id}-{updated_timestamp}"'
-    
+
     return response
 
 
@@ -234,10 +234,10 @@ def get_workout_chart_data(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     # 解析时间序列数据
     heart_rate_timeline = None
     if record.heart_rate_data:
@@ -246,7 +246,7 @@ def get_workout_chart_data(
             heart_rate_timeline = [HeartRatePoint(**p) for p in hr_data]
         except:
             pass
-    
+
     pace_timeline = None
     if record.pace_data:
         try:
@@ -254,7 +254,7 @@ def get_workout_chart_data(
             pace_timeline = [PacePoint(**p) for p in pace]
         except:
             pass
-    
+
     elevation_timeline = None
     if record.elevation_data:
         try:
@@ -262,7 +262,7 @@ def get_workout_chart_data(
             elevation_timeline = [ElevationPoint(**p) for p in elev]
         except:
             pass
-    
+
     return WorkoutChartData(
         workout_id=record.id,
         workout_type=record.workout_type,
@@ -290,23 +290,23 @@ def create_workout(
     hr_data_json = None
     if workout.heart_rate_data:
         hr_data_json = json.dumps([p.model_dump() for p in workout.heart_rate_data])
-    
+
     pace_data_json = None
     if workout.pace_data:
         pace_data_json = json.dumps([p.model_dump() for p in workout.pace_data])
-    
+
     elevation_data_json = None
     if workout.elevation_data:
         elevation_data_json = json.dumps([p.model_dump() for p in workout.elevation_data])
-    
+
     route_data_json = None
     if workout.route_data:
         route_data_json = json.dumps([p.model_dump() for p in workout.route_data])
-    
+
     lap_data_json = None
     if workout.lap_data:
         lap_data_json = json.dumps([p.model_dump() for p in workout.lap_data])
-    
+
     db_record = WorkoutRecord(
         user_id=current_user.id,
         workout_date=workout.workout_date,
@@ -361,13 +361,13 @@ def create_workout(
         route_data=route_data_json,
         lap_data=lap_data_json
     )
-    
+
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
-    
+
     logger.info(f"用户 {current_user.id} 创建运动记录: {db_record.workout_type} on {db_record.workout_date}")
-    
+
     return db_record
 
 
@@ -383,10 +383,10 @@ def update_workout(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     if update_data.workout_name is not None:
         record.workout_name = update_data.workout_name
     if update_data.perceived_exertion is not None:
@@ -395,10 +395,10 @@ def update_workout(
         record.feeling = update_data.feeling.value
     if update_data.notes is not None:
         record.notes = update_data.notes
-    
+
     db.commit()
     db.refresh(record)
-    
+
     return record
 
 
@@ -413,13 +413,13 @@ def delete_workout(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     db.delete(record)
     db.commit()
-    
+
     logger.info(f"用户 {current_user.id} 删除运动记录 ID: {workout_id}")
 
 
@@ -434,29 +434,29 @@ async def analyze_workout(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     # 导入分析服务
     from app.services.workout_analysis import WorkoutAnalysisService
-    
+
     analysis_service = WorkoutAnalysisService()
-    
+
     # 获取历史记录用于对比
     history = db.query(WorkoutRecord).filter(
         WorkoutRecord.user_id == current_user.id,
         WorkoutRecord.workout_type == record.workout_type,
         WorkoutRecord.id != record.id
     ).order_by(WorkoutRecord.workout_date.desc()).limit(10).all()
-    
+
     try:
         analysis_result = await analysis_service.analyze_workout(record, history)
-        
+
         # 保存分析结果到数据库
         record.ai_analysis = json.dumps(analysis_result, ensure_ascii=False)
         db.commit()
-        
+
         return WorkoutAnalysisResponse(
             workout_id=workout_id,
             analysis_date=datetime.now(),
@@ -478,13 +478,13 @@ def get_workout_analysis(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     if not record.ai_analysis:
         raise HTTPException(status_code=404, detail="该运动记录尚未进行智能分析")
-    
+
     try:
         analysis_data = json.loads(record.ai_analysis)
         return WorkoutAnalysisResponse(
@@ -546,23 +546,23 @@ async def refresh_workout_heart_rate(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     if not record.external_id or record.source != "garmin":
         raise HTTPException(status_code=400, detail="仅支持 Garmin 同步的运动记录")
-    
+
     from app.services.auth import GarminCredentialService
     from app.services.workout_sync import WorkoutSyncService
-    
+
     # 获取Garmin凭证
     cred_service = GarminCredentialService()
     credentials = cred_service.get_decrypted_credentials(db, current_user.id)
-    
+
     if not credentials:
         raise HTTPException(status_code=400, detail="请先配置Garmin账号")
-    
+
     try:
         sync_service = WorkoutSyncService(
             email=credentials["email"],
@@ -570,17 +570,17 @@ async def refresh_workout_heart_rate(
             is_cn=credentials.get("is_cn", False),
             user_id=current_user.id
         )
-        
+
         # 获取活动详情
         details_data = await sync_service.get_activity_details(int(record.external_id))
-        
+
         if details_data and details_data.get("heart_rate_data"):
             duration = record.duration_seconds or 3600
             hr_points = sync_service._parse_heart_rate_samples(details_data["heart_rate_data"], duration)
-            
+
             if hr_points:
                 record.heart_rate_data = json.dumps(hr_points)
-                
+
                 # 如果心率区间数据为空，从心率采样计算
                 total_zone_seconds = sum([
                     record.hr_zone_1_seconds or 0,
@@ -589,7 +589,7 @@ async def refresh_workout_heart_rate(
                     record.hr_zone_4_seconds or 0,
                     record.hr_zone_5_seconds or 0
                 ])
-                
+
                 if total_zone_seconds == 0:
                     logger.info(f"运动 {workout_id} 心率区间数据为空，从心率采样计算")
                     max_hr = record.max_heart_rate or 180
@@ -600,7 +600,7 @@ async def refresh_workout_heart_rate(
                     record.hr_zone_4_seconds = zone_seconds[3]
                     record.hr_zone_5_seconds = zone_seconds[4]
                     logger.info(f"计算得到心率区间: {zone_seconds}")
-                
+
                 db.commit()
                 logger.info(f"用户 {current_user.id} 刷新运动 {workout_id} 心率数据: {len(hr_points)} 点")
                 return {
@@ -609,7 +609,7 @@ async def refresh_workout_heart_rate(
                     "points_count": len(hr_points),
                     "zones_calculated": total_zone_seconds == 0
                 }
-        
+
         # 如果无法获取详细心率，使用模拟曲线
         if record.avg_heart_rate and record.duration_seconds:
             hr_points = sync_service._generate_simulated_hr_curve(
@@ -625,13 +625,13 @@ async def refresh_workout_heart_rate(
                     "message": f"使用模拟心率曲线 ({len(hr_points)} 点)",
                     "points_count": len(hr_points)
                 }
-        
+
         return {
             "status": "no_data",
             "message": "无法获取心率数据",
             "points_count": 0
         }
-        
+
     except Exception as e:
         logger.error(f"刷新心率数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
@@ -648,23 +648,23 @@ async def refresh_workout_gps(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     if not record.external_id or record.source != "garmin":
         raise HTTPException(status_code=400, detail="仅支持 Garmin 同步的运动记录")
-    
+
     from app.services.auth import GarminCredentialService
     from app.services.workout_sync import WorkoutSyncService
-    
+
     # 获取Garmin凭证
     cred_service = GarminCredentialService()
     credentials = cred_service.get_decrypted_credentials(db, current_user.id)
-    
+
     if not credentials:
         raise HTTPException(status_code=400, detail="请先配置Garmin账号")
-    
+
     try:
         sync_service = WorkoutSyncService(
             email=credentials["email"],
@@ -672,13 +672,13 @@ async def refresh_workout_gps(
             is_cn=credentials.get("is_cn", False),
             user_id=current_user.id
         )
-        
+
         # 获取活动详情
         details_data = await sync_service.get_activity_details(int(record.external_id))
-        
+
         if details_data and details_data.get("gps_data"):
             route_points = sync_service._parse_gps_route(details_data["gps_data"], record.start_time)
-            
+
             if route_points:
                 record.route_data = json.dumps(route_points)
                 db.commit()
@@ -688,13 +688,13 @@ async def refresh_workout_gps(
                     "message": f"获取到 {len(route_points)} 个GPS路线点",
                     "points_count": len(route_points)
                 }
-        
+
         return {
             "status": "no_data",
             "message": "无法获取GPS数据（可能是室内运动或Garmin未提供GPS数据）",
             "points_count": 0
         }
-        
+
     except Exception as e:
         logger.error(f"刷新GPS数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
@@ -711,23 +711,23 @@ async def refresh_workout_laps(
         WorkoutRecord.id == workout_id,
         WorkoutRecord.user_id == current_user.id
     ).first()
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="运动记录不存在")
-    
+
     if not record.external_id or record.source != "garmin":
         raise HTTPException(status_code=400, detail="仅支持 Garmin 同步的运动记录")
-    
+
     from app.services.auth import GarminCredentialService
     from app.services.workout_sync import WorkoutSyncService
-    
+
     # 获取Garmin凭证
     cred_service = GarminCredentialService()
     credentials = cred_service.get_decrypted_credentials(db, current_user.id)
-    
+
     if not credentials:
         raise HTTPException(status_code=400, detail="请先配置Garmin账号")
-    
+
     try:
         sync_service = WorkoutSyncService(
             email=credentials["email"],
@@ -735,13 +735,13 @@ async def refresh_workout_laps(
             is_cn=credentials.get("is_cn", False),
             user_id=current_user.id
         )
-        
+
         # 获取活动详情
         details_data = await sync_service.get_activity_details(int(record.external_id))
-        
+
         if details_data and details_data.get("lap_data"):
             lap_points = sync_service._parse_lap_data(details_data["lap_data"])
-            
+
             if lap_points:
                 record.lap_data = json.dumps(lap_points)
                 db.commit()
@@ -751,13 +751,13 @@ async def refresh_workout_laps(
                     "message": f"获取到 {len(lap_points)} 圈数据",
                     "laps_count": len(lap_points)
                 }
-        
+
         return {
             "status": "no_data",
             "message": "无法获取计圈数据（可能Garmin未提供分段数据）",
             "laps_count": 0
         }
-        
+
     except Exception as e:
         logger.error(f"刷新计圈数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
@@ -773,25 +773,25 @@ async def refresh_workout_gps_batch(
     from app.services.auth import GarminCredentialService
     from app.services.workout_sync import WorkoutSyncService
     from app.utils.timezone import get_china_today
-    
+
     # 获取Garmin凭证
     cred_service = GarminCredentialService()
     credentials = cred_service.get_decrypted_credentials(db, current_user.id)
-    
+
     if not credentials:
         raise HTTPException(status_code=400, detail="请先配置Garmin账号")
-    
+
     # 查找需要刷新的记录（Garmin来源、有external_id、没有route_data）
     today = get_china_today()
     start_date = today - timedelta(days=days)
-    
+
     records = db.query(WorkoutRecord).filter(
         WorkoutRecord.user_id == current_user.id,
         WorkoutRecord.source == "garmin",
         WorkoutRecord.external_id.isnot(None),
         WorkoutRecord.workout_date >= start_date
     ).all()
-    
+
     if not records:
         return {
             "status": "no_records",
@@ -799,7 +799,7 @@ async def refresh_workout_gps_batch(
             "refreshed_count": 0,
             "total_count": 0
         }
-    
+
     try:
         sync_service = WorkoutSyncService(
             email=credentials["email"],
@@ -807,34 +807,34 @@ async def refresh_workout_gps_batch(
             is_cn=credentials.get("is_cn", False),
             user_id=current_user.id
         )
-        
+
         refreshed_count = 0
         failed_count = 0
-        
+
         for record in records:
             try:
                 # 获取活动详情
                 details_data = await sync_service.get_activity_details(int(record.external_id))
-                
+
                 if details_data and details_data.get("gps_data"):
                     route_points = sync_service._parse_gps_route(details_data["gps_data"], record.start_time)
-                    
+
                     if route_points:
                         record.route_data = json.dumps(route_points)
                         refreshed_count += 1
                         logger.debug(f"刷新运动 {record.id} GPS数据: {len(route_points)} 点")
-                
+
                 # 添加小延迟，避免请求过快
                 import asyncio
                 await asyncio.sleep(0.5)
-                
+
             except Exception as e:
                 failed_count += 1
                 logger.error(f"刷新运动 {record.id} GPS数据失败: {e}")
                 continue
-        
+
         db.commit()
-        
+
         return {
             "status": "success",
             "message": f"成功刷新 {refreshed_count} 条记录的GPS数据",
@@ -842,7 +842,7 @@ async def refresh_workout_gps_batch(
             "failed_count": failed_count,
             "total_count": len(records)
         }
-        
+
     except Exception as e:
         logger.error(f"批量刷新GPS数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
@@ -861,17 +861,17 @@ async def sync_garmin_activities(
     """从Garmin同步运动活动"""
     from app.services.auth import GarminCredentialService
     from app.services.workout_sync import WorkoutSyncService
-    
+
     # 获取Garmin凭证
     cred_service = GarminCredentialService()
     credentials = cred_service.get_decrypted_credentials(db, current_user.id)
-    
+
     if not credentials:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="请先在设置中配置Garmin账号"
         )
-    
+
     # 获取同步锁（防止并发同步）
     from app.services.sync_lock import acquire_sync_lock, release_sync_lock
     if not acquire_sync_lock(db, current_user.id):
@@ -898,7 +898,7 @@ async def sync_garmin_activities(
         )
 
         result = await sync_service.sync_activities(db, current_user.id, days)
-        
+
         return {
             "status": "success",
             "synced_count": result["synced_count"],
@@ -924,23 +924,23 @@ async def get_pre_workout_guidance(
 ):
     """
     获取运动前指导
-    
+
     Args:
         goal_id: 目标ID（可选）
         workout_type: 运动类型（可选，如 RUNNING, CARDIO 等）
         debug: 是否返回调试信息，展示AI决策过程（默认False）
-    
+
     Returns:
         运动前指导信息（debug模式下包含决策过程）
     """
     logger.info(f"[运动前指导API] 收到请求 - user_id={current_user.id}, goal_id={goal_id}, workout_type={workout_type}, debug={debug}")
-    
+
     try:
         # 检查用户基本信息
         from app.models.user_profile import UserProfile
         profile = db.query(UserProfile).filter_by(user_id=current_user.id).first()
         logger.info(f"[运动前指导API] 用户资料: profile_exists={profile is not None}, age={profile.age if profile else None}, gender={profile.gender if profile else None}")
-        
+
         # 检查健康数据
         from app.models.daily_health import GarminData
         from datetime import datetime, timedelta
@@ -950,7 +950,7 @@ async def get_pre_workout_guidance(
             GarminData.record_date >= today - timedelta(days=7)
         ).order_by(GarminData.record_date.desc()).first()
         logger.info(f"[运动前指导API] 健康数据: data_exists={recent_data is not None}, latest_date={recent_data.record_date if recent_data else None}")
-        
+
         service = PreWorkoutGuidanceService()
         guidance = await service.generate_pre_workout_guidance(
             db=db,
@@ -959,7 +959,7 @@ async def get_pre_workout_guidance(
             workout_type=workout_type,
             debug=debug
         )
-        
+
         logger.info(f"[运动前指导API] 生成成功 - success={guidance.get('success')}, has_user_status={('user_status' in guidance)}")
         return guidance
     except Exception as e:
@@ -1095,4 +1095,3 @@ async def post_run_analyze_siri(
     except Exception as e:
         logger.error(f"Siri跑后分析失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
-

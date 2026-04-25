@@ -5,6 +5,6 @@ from .ios_push import IOSPushService
 
 __all__ = [
     "PushService",
-    "WeChatPushService", 
+    "WeChatPushService",
     "IOSPushService",
 ]

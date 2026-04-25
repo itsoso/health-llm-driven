@@ -107,7 +107,7 @@
   background: rgba(255, 255, 255, 0.05);
   border-radius: 16px;
   transition: all 0.2s ease;
-  
+
   &:active {
     transform: scale(0.95);
     background: rgba(255, 255, 255, 0.1);
@@ -122,20 +122,20 @@
   align-items: center;
   justify-content: center;
   margin-bottom: 12px;
-  
+
   &.rhinitis {
     background: rgba(251, 191, 36, 0.2);
   }
-  
+
   &.supplement {
     background: rgba(168, 85, 247, 0.2);
   }
-  
+
   &.supplement-recommendation {
     background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(236, 72, 153, 0.3));
     border: 1px solid rgba(168, 85, 247, 0.4);
   }
-  
+
   &.diet {
     background: rgba(34, 197, 94, 0.2);
   }

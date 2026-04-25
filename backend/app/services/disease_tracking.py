@@ -146,13 +146,13 @@ DEFAULT_DISEASE_TEMPLATES = [
 
 class DiseaseTrackingService:
     """疾病追踪服务"""
-    
+
     def __init__(self, db: Session, user_id: int):
         self.db = db
         self.user_id = user_id
-    
+
     # ========== 疾病模板管理 ==========
-    
+
     def init_default_templates(self) -> int:
         """初始化默认疾病模板"""
         created = 0
@@ -166,16 +166,16 @@ class DiseaseTrackingService:
                 created += 1
         self.db.commit()
         return created
-    
+
     def get_templates(self, category: str = None) -> List[DiseaseTemplate]:
         """获取疾病模板列表"""
         query = self.db.query(DiseaseTemplate)
         if category:
             query = query.filter(DiseaseTemplate.category == category)
         return query.all()
-    
+
     # ========== 用户疾病档案 ==========
-    
+
     def create_disease_profile(
         self,
         disease_name: str,
@@ -191,7 +191,7 @@ class DiseaseTrackingService:
             template = self.db.query(DiseaseTemplate).filter(
                 DiseaseTemplate.name == template_name
             ).first()
-        
+
         profile = UserDiseaseProfile(
             user_id=self.user_id,
             template_id=template.id if template else None,
@@ -206,22 +206,22 @@ class DiseaseTrackingService:
         self.db.commit()
         self.db.refresh(profile)
         return profile
-    
+
     def get_user_disease_profiles(self) -> List[UserDiseaseProfile]:
         """获取用户所有疾病档案"""
         return self.db.query(UserDiseaseProfile).filter(
             UserDiseaseProfile.user_id == self.user_id
         ).all()
-    
+
     def get_disease_profile(self, profile_id: int) -> Optional[UserDiseaseProfile]:
         """获取指定疾病档案"""
         return self.db.query(UserDiseaseProfile).filter(
             UserDiseaseProfile.id == profile_id,
             UserDiseaseProfile.user_id == self.user_id
         ).first()
-    
+
     # ========== 症状记录 ==========
-    
+
     def log_symptoms(
         self,
         profile_id: int,
@@ -235,7 +235,7 @@ class DiseaseTrackingService:
     ) -> SymptomLog:
         """
         记录症状
-        
+
         Args:
             profile_id: 疾病档案ID
             log_date: 记录日期
@@ -252,7 +252,7 @@ class DiseaseTrackingService:
             SymptomLog.disease_profile_id == profile_id,
             SymptomLog.log_date == log_date
         ).first()
-        
+
         if existing:
             # 更新现有记录
             existing.overall_severity = overall_severity
@@ -263,11 +263,11 @@ class DiseaseTrackingService:
             existing.notes = notes
             self.db.commit()
             self.db.refresh(existing)
-            
+
             # 更新连续无症状天数
             self._update_streak(profile_id)
             return existing
-        
+
         # 创建新记录
         log = SymptomLog(
             user_id=self.user_id,
@@ -282,41 +282,41 @@ class DiseaseTrackingService:
         self.db.add(log)
         self.db.commit()
         self.db.refresh(log)
-        
+
         # 更新连续无症状天数
         self._update_streak(profile_id)
-        
+
         return log
-    
+
     def _update_streak(self, profile_id: int):
         """更新连续无症状天数"""
         profile = self.get_disease_profile(profile_id)
         if not profile:
             return
-        
+
         # 计算连续无症状天数
         streak = 0
         check_date = date.today()
-        
+
         while True:
             log = self.db.query(SymptomLog).filter(
                 SymptomLog.user_id == self.user_id,
                 SymptomLog.disease_profile_id == profile_id,
                 SymptomLog.log_date == check_date
             ).first()
-            
+
             if log and log.overall_severity == 0:
                 streak += 1
                 check_date -= timedelta(days=1)
             else:
                 break
-        
+
         profile.current_streak = streak
         if streak > profile.best_streak:
             profile.best_streak = streak
-        
+
         self.db.commit()
-    
+
     def get_symptom_logs(
         self,
         profile_id: int,
@@ -329,16 +329,16 @@ class DiseaseTrackingService:
             SymptomLog.user_id == self.user_id,
             SymptomLog.disease_profile_id == profile_id
         )
-        
+
         if start_date:
             query = query.filter(SymptomLog.log_date >= start_date)
         if end_date:
             query = query.filter(SymptomLog.log_date <= end_date)
-        
+
         return query.order_by(SymptomLog.log_date.desc()).limit(limit).all()
-    
+
     # ========== 统计分析 ==========
-    
+
     def get_symptom_stats(
         self,
         profile_id: int,
@@ -346,23 +346,23 @@ class DiseaseTrackingService:
     ) -> Dict[str, Any]:
         """
         获取症状统计
-        
+
         Returns:
             统计数据包括：平均严重程度、症状频率、触发因素分析等
         """
         start_date = date.today() - timedelta(days=days)
         logs = self.get_symptom_logs(profile_id, start_date=start_date)
-        
+
         if not logs:
             return {
                 "period_days": days,
                 "total_logs": 0,
                 "message": "暂无记录"
             }
-        
+
         # 计算平均严重程度
         avg_severity = sum(log.overall_severity for log in logs) / len(logs)
-        
+
         # 统计症状频率
         symptom_counts = {}
         for log in logs:
@@ -370,13 +370,13 @@ class DiseaseTrackingService:
                 name = symptom.get("name", "")
                 if name:
                     symptom_counts[name] = symptom_counts.get(name, 0) + 1
-        
+
         # 统计触发因素
         trigger_counts = {}
         for log in logs:
             for trigger in log.triggers:
                 trigger_counts[trigger] = trigger_counts.get(trigger, 0) + 1
-        
+
         # 按严重程度分组
         severity_distribution = {"无症状": 0, "轻度": 0, "中度": 0, "重度": 0}
         for log in logs:
@@ -388,7 +388,7 @@ class DiseaseTrackingService:
                 severity_distribution["中度"] += 1
             else:
                 severity_distribution["重度"] += 1
-        
+
         # 每日趋势
         daily_trend = []
         for log in sorted(logs, key=lambda x: x.log_date):
@@ -396,7 +396,7 @@ class DiseaseTrackingService:
                 "date": log.log_date.isoformat(),
                 "severity": log.overall_severity
             })
-        
+
         return {
             "period_days": days,
             "total_logs": len(logs),
@@ -408,9 +408,9 @@ class DiseaseTrackingService:
             "severity_distribution": severity_distribution,
             "daily_trend": daily_trend
         }
-    
+
     # ========== 环境预警 ==========
-    
+
     async def get_environment_alert(
         self,
         profile_id: int,
@@ -418,32 +418,32 @@ class DiseaseTrackingService:
     ) -> Dict[str, Any]:
         """
         获取环境相关的疾病预警
-        
+
         基于用户疾病档案和当前环境数据，生成预警建议
         """
         profile = self.get_disease_profile(profile_id)
         if not profile:
             return {"error": "疾病档案不存在"}
-        
+
         template = profile.template
         if not template or not template.environment_sensitive:
             return {
                 "alert_level": "none",
                 "message": "此疾病不受环境因素影响"
             }
-        
+
         # 获取环境数据
         conditions = [profile.disease_name]
         advice = await environment_advisor.get_comprehensive_advice(
             city=city,
             user_conditions=conditions
         )
-        
+
         # 分析预警
         alert_level = "low"
         warnings = []
         recommendations = []
-        
+
         # 检查空气质量
         aqi = advice["air_quality"].get("aqi", 50)
         if "air_quality" in template.sensitive_factors:
@@ -455,7 +455,7 @@ class DiseaseTrackingService:
                 alert_level = max(alert_level, "moderate")
                 warnings.append(f"空气质量一般（AQI {aqi}）")
                 recommendations.append("外出时佩戴口罩")
-        
+
         # 检查湿度
         humidity = advice["weather"].get("humidity", 50)
         if "humidity" in template.sensitive_factors:
@@ -467,7 +467,7 @@ class DiseaseTrackingService:
                 alert_level = max(alert_level, "moderate")
                 warnings.append(f"空气潮湿（湿度{humidity}%）")
                 recommendations.append("注意防霉，保持通风")
-        
+
         # 检查温度
         temp = advice["weather"].get("temperature", 20)
         if "temperature" in template.sensitive_factors:
@@ -475,11 +475,11 @@ class DiseaseTrackingService:
                 alert_level = max(alert_level, "moderate")
                 warnings.append(f"天气寒冷（{temp}°C）")
                 recommendations.append("注意保暖，避免受凉")
-        
+
         # 添加模板的日常建议
         if template.daily_tips:
             recommendations.extend(template.daily_tips[:3])
-        
+
         return {
             "disease_name": profile.disease_name,
             "alert_level": alert_level,
@@ -493,9 +493,9 @@ class DiseaseTrackingService:
                 "aqi_description": advice["air_quality"].get("description", "")
             }
         }
-    
+
     # ========== 视力追踪 ==========
-    
+
     def add_vision_record(
         self,
         record_date: date,
@@ -533,31 +533,31 @@ class DiseaseTrackingService:
         self.db.commit()
         self.db.refresh(record)
         return record
-    
+
     def get_vision_records(self, limit: int = 10) -> List[VisionRecord]:
         """获取视力记录"""
         return self.db.query(VisionRecord).filter(
             VisionRecord.user_id == self.user_id
         ).order_by(VisionRecord.record_date.desc()).limit(limit).all()
-    
+
     def get_vision_trend(self) -> Dict[str, Any]:
         """获取视力变化趋势"""
         records = self.get_vision_records(limit=12)
         if not records:
             return {"message": "暂无视力记录"}
-        
+
         # 计算度数变化
         latest = records[0]
         oldest = records[-1]
-        
+
         left_change = None
         right_change = None
-        
+
         if latest.left_eye_sphere and oldest.left_eye_sphere:
             left_change = round(latest.left_eye_sphere - oldest.left_eye_sphere, 2)
         if latest.right_eye_sphere and oldest.right_eye_sphere:
             right_change = round(latest.right_eye_sphere - oldest.right_eye_sphere, 2)
-        
+
         # 生成趋势数据
         trend_data = []
         for record in sorted(records, key=lambda x: x.record_date):
@@ -568,7 +568,7 @@ class DiseaseTrackingService:
                 "left_axial": record.left_eye_axial,
                 "right_axial": record.right_eye_axial
             })
-        
+
         return {
             "latest_record": {
                 "date": latest.record_date.isoformat(),
@@ -581,7 +581,7 @@ class DiseaseTrackingService:
             "trend": "控制良好" if (left_change and left_change >= -0.25) else "需要关注",
             "trend_data": trend_data
         }
-    
+
     def log_daily_eye_habit(
         self,
         record_date: date,
@@ -599,7 +599,7 @@ class DiseaseTrackingService:
             DailyEyeHabit.user_id == self.user_id,
             DailyEyeHabit.record_date == record_date
         ).first()
-        
+
         if existing:
             existing.outdoor_minutes = outdoor_minutes
             existing.screen_minutes = screen_minutes
@@ -611,7 +611,7 @@ class DiseaseTrackingService:
             self.db.commit()
             self.db.refresh(existing)
             return existing
-        
+
         habit = DailyEyeHabit(
             user_id=self.user_id,
             record_date=record_date,
@@ -627,7 +627,7 @@ class DiseaseTrackingService:
         self.db.commit()
         self.db.refresh(habit)
         return habit
-    
+
     def get_eye_habit_stats(self, days: int = 7) -> Dict[str, Any]:
         """获取用眼习惯统计"""
         start_date = date.today() - timedelta(days=days)
@@ -635,14 +635,14 @@ class DiseaseTrackingService:
             DailyEyeHabit.user_id == self.user_id,
             DailyEyeHabit.record_date >= start_date
         ).all()
-        
+
         if not habits:
             return {"message": "暂无用眼习惯记录"}
-        
+
         avg_outdoor = sum(h.outdoor_minutes for h in habits) / len(habits)
         avg_screen = sum(h.screen_minutes for h in habits) / len(habits)
         target_outdoor_days = sum(1 for h in habits if h.outdoor_minutes >= 120)
-        
+
         return {
             "period_days": days,
             "total_records": len(habits),

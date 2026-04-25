@@ -35,7 +35,7 @@ class HealthAnalysisService:
             except Exception as e:
                 logger.error(f"获取 LLM Provider 失败: {e}")
         return self._provider
-    
+
     def collect_user_health_data(
         self,
         db: Session,
@@ -45,25 +45,25 @@ class HealthAnalysisService:
         """收集用户健康数据用于分析"""
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
-        
+
         # 获取基础健康数据
         basic_health = db.query(BasicHealthData).filter(
             BasicHealthData.user_id == user_id
         ).order_by(BasicHealthData.record_date.desc()).first()
-        
+
         # 获取最近的体检数据（eager load items 避免 N+1）
         recent_exams = db.query(MedicalExam).options(
             joinedload(MedicalExam.items)
         ).filter(
             MedicalExam.user_id == user_id
         ).order_by(MedicalExam.exam_date.desc()).limit(3).all()
-        
+
         # 获取疾病记录
         active_diseases = db.query(DiseaseRecord).filter(
             DiseaseRecord.user_id == user_id,
             DiseaseRecord.status.in_(["active", "chronic"])
         ).all()
-        
+
         # 获取Garmin数据（最近N天，只加载需要的列）
         garmin_cols = [
             GarminData.record_date,
@@ -83,10 +83,10 @@ class HealthAnalysisService:
             GarminData.record_date >= start_date,
             GarminData.record_date <= end_date
         ).order_by(GarminData.record_date.desc()).all()
-        
+
         # 获取用户信息
         user = db.query(User).filter(User.id == user_id).first()
-        
+
         return {
             "user": {
                 "name": user.name if user else None,
@@ -153,7 +153,7 @@ class HealthAnalysisService:
                 for row in garmin_rows
             ],
         }
-    
+
     def analyze_health_issues(
         self,
         db: Session,
@@ -162,11 +162,11 @@ class HealthAnalysisService:
     ) -> Dict[str, Any]:
         """
         分析健康问题（带缓存）
-        
+
         Args:
             user_id: 用户ID
             force_refresh: 是否强制刷新缓存
-        
+
         返回：
         {
             "issues": [...],  # 识别的健康问题列表
@@ -177,21 +177,21 @@ class HealthAnalysisService:
         }
         """
         today = date.today()
-        
+
         # 检查缓存（除非强制刷新）
         if not force_refresh:
             cached = db.query(HealthAnalysisCache).filter(
                 HealthAnalysisCache.user_id == user_id,
                 HealthAnalysisCache.analysis_date == today
             ).first()
-            
+
             if cached and cached.analysis_result:
                 logger.info(f"使用缓存的健康分析（用户 {user_id}，日期 {today}）")
                 result = cached.analysis_result.copy()
                 result["cached"] = True
                 result["analysis_date"] = today.isoformat()
                 return result
-        
+
         # 生成新分析
         logger.info(f"生成新的健康分析（用户 {user_id}，日期 {today}）")
 
@@ -258,7 +258,7 @@ class HealthAnalysisService:
                     max_tokens=2000,
                 )
             )
-            
+
             # 解析LLM返回的结果
             result = {
                 "issues": self._extract_issues(analysis_text),
@@ -268,13 +268,13 @@ class HealthAnalysisService:
                 "cached": False,
                 "analysis_date": today.isoformat()
             }
-            
+
             # 保存到缓存
             cached = db.query(HealthAnalysisCache).filter(
                 HealthAnalysisCache.user_id == user_id,
                 HealthAnalysisCache.analysis_date == today
             ).first()
-            
+
             if cached:
                 cached.analysis_result = result
                 cached.updated_at = datetime.now(UTC)
@@ -285,9 +285,9 @@ class HealthAnalysisService:
                     analysis_result=result
                 )
                 db.add(cached)
-            
+
             db.commit()
-            
+
             return result
         except Exception as e:
             logger.error(f"健康分析失败: {e}", exc_info=True)
@@ -299,7 +299,7 @@ class HealthAnalysisService:
                 "cached": False,
                 "analysis_date": today.isoformat()
             }
-    
+
     def _build_analysis_prompt(self, health_data: Dict[str, Any]) -> str:
         """
         构建分析提示词。
@@ -338,7 +338,7 @@ class HealthAnalysisService:
         """格式化体检数据"""
         if not exams:
             return "暂无体检数据"
-        
+
         lines = []
         for exam in exams:
             lines.append(f"\n### 体检日期: {exam.get('exam_date')}")
@@ -347,21 +347,21 @@ class HealthAnalysisService:
                 lines.append(f"- 身体系统: {exam.get('body_system')}")
             if exam.get('overall_assessment'):
                 lines.append(f"- 总体评价: {exam.get('overall_assessment')}")
-            
+
             # 异常项目
             abnormal_items = [item for item in exam.get('items', []) if item.get('is_abnormal') != 'normal']
             if abnormal_items:
                 lines.append("- 异常项目:")
                 for item in abnormal_items:
                     lines.append(f"  * {item.get('item_name')}: {item.get('value')} {item.get('unit', '')} ({item.get('result', '')})")
-        
+
         return "\n".join(lines)
-    
+
     def _format_diseases(self, diseases: List[Dict[str, Any]]) -> str:
         """格式化疾病记录"""
         if not diseases:
             return "暂无疾病记录"
-        
+
         lines = []
         for disease in diseases:
             lines.append(f"- {disease.get('disease_name')} (诊断日期: {disease.get('diagnosis_date')})")
@@ -369,9 +369,9 @@ class HealthAnalysisService:
                 lines.append(f"  严重程度: {disease.get('severity')}")
             if disease.get('treatment_plan'):
                 lines.append(f"  治疗方案: {disease.get('treatment_plan')}")
-        
+
         return "\n".join(lines)
-    
+
     # [Phase 3 deep cleanup] _format_garmin_data 和 _format_basic_health 已删除。
     # Twin.physiological / Twin.labs / Twin.body_composition 提供同样的字段且结构化。
     # 需要汇总文本时使用 twin_to_prompt_blob(twin)。
@@ -386,7 +386,7 @@ class HealthAnalysisService:
             if any(keyword in line for keyword in ['问题', '异常', '偏高', '偏低', '不足', '缺乏']):
                 issues.append(line.strip())
         return issues[:10]  # 最多返回10个问题
-    
+
     def _extract_recommendations(self, analysis_text: str) -> List[str]:
         """从分析文本中提取建议（简化实现）"""
         recommendations = []
@@ -395,7 +395,7 @@ class HealthAnalysisService:
             if any(keyword in line for keyword in ['建议', '应该', '推荐', '可以', '需要']):
                 recommendations.append(line.strip())
         return recommendations[:20]  # 最多返回20条建议
-    
+
     def generate_personalized_advice(
         self,
         db: Session,
@@ -431,7 +431,7 @@ class HealthAnalysisService:
 
 请用中文回答，简洁明了，每条建议不超过50字。
 """
-        
+
         try:
             result = asyncio.run(
                 provider.chat(
@@ -1083,4 +1083,3 @@ class HealthAnalysisService:
             return "需结合饮食记录（由 nutrition-advisor skill 处理详细分析）"
 
         return "无数据"
-

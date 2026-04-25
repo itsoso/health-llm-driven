@@ -90,7 +90,7 @@ async def get_weather(
 ):
     """
     获取当前天气数据
-    
+
     支持通过城市名或经纬度查询
     """
     # 如果没有提供位置，智能解析用户当前城市
@@ -99,7 +99,7 @@ async def get_weather(
 
     weather = await weather_service.get_current_weather(city, lat, lon)
     exercise_advice = weather_service.get_exercise_advice(weather)
-    
+
     return {
         "weather": weather,
         "exercise_advice": exercise_advice
@@ -135,7 +135,7 @@ async def get_air_quality(
 ):
     """
     获取当前空气质量数据
-    
+
     包含 AQI、PM2.5、PM10 等指标及健康建议
     """
     if not city and (lat is None or lon is None):
@@ -159,7 +159,7 @@ async def get_environment_advice(
 ):
     """
     获取综合环境健康建议
-    
+
     结合天气、空气质量和用户健康状况，生成个性化建议
     """
     # 获取用户画像中的城市和健康状况
@@ -172,14 +172,14 @@ async def get_environment_advice(
     user_conditions = []
     if profile:
         user_conditions = profile.chronic_conditions or []
-    
+
     advice = await environment_advisor.get_comprehensive_advice(
         city=city,
         lat=lat,
         lon=lon,
         user_conditions=user_conditions
     )
-    
+
     return advice
 
 
@@ -191,7 +191,7 @@ async def get_morning_briefing(
 ):
     """
     获取早间健康简报
-    
+
     适合每天早上查看的简洁环境健康信息
     """
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -207,7 +207,7 @@ async def get_morning_briefing(
         city=city,
         user_conditions=user_conditions
     )
-    
+
     return briefing
 
 
@@ -221,7 +221,7 @@ async def get_exercise_suitability(
 ):
     """
     获取户外运动适宜度评估
-    
+
     返回综合评分和推荐活动
     """
     profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
@@ -230,14 +230,14 @@ async def get_exercise_suitability(
         city = _resolve_city(db, current_user.id)
 
     user_conditions = profile.chronic_conditions if profile else []
-    
+
     advice = await environment_advisor.get_comprehensive_advice(
         city=city,
         lat=lat,
         lon=lon,
         user_conditions=user_conditions
     )
-    
+
     return {
         "score": advice["exercise"]["score"],
         "status": advice["exercise"]["status"],

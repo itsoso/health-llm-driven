@@ -43,7 +43,7 @@ def sample_water_data(test_user):
 
 class TestWaterAPI:
     """饮水记录API测试类"""
-    
+
     def test_create_water_record(self, client, auth_headers, sample_water_data):
         """测试创建饮水记录"""
         response = client.post(
@@ -56,7 +56,7 @@ class TestWaterAPI:
         assert data["amount"] == 250
         assert data["drink_type"] == "water"
         assert "id" in data
-    
+
     def test_create_water_record_minimal(self, client, auth_headers, test_user):
         """测试创建最小饮水记录"""
         minimal_data = {
@@ -72,7 +72,7 @@ class TestWaterAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["amount"] == 200
-    
+
     def test_quick_add_water(self, client, auth_headers):
         """测试快速添加饮水"""
         response = client.post(
@@ -82,7 +82,7 @@ class TestWaterAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["amount"] == 300
-    
+
     def test_get_my_water_records(self, client, auth_headers, sample_water_data):
         """测试获取我的饮水记录"""
         # 先创建记录
@@ -91,7 +91,7 @@ class TestWaterAPI:
             json=sample_water_data,
             headers=auth_headers
         )
-        
+
         # 获取记录
         response = client.get(
             "/api/v1/water/records/me",
@@ -101,13 +101,13 @@ class TestWaterAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-    
+
     def test_get_my_daily_summary(self, client, auth_headers, sample_water_data):
         """测试获取我的每日饮水汇总"""
         # 创建多条记录
         client.post("/api/v1/water/records", json=sample_water_data, headers=auth_headers)
         client.post("/api/v1/water/records/quick?amount=300", headers=auth_headers)
-        
+
         # 获取汇总
         today = str(date.today())
         response = client.get(
@@ -119,7 +119,7 @@ class TestWaterAPI:
         assert data["record_date"] == today
         assert data["total_amount"] >= 550  # 250 + 300
         assert data["records_count"] >= 2
-    
+
     def test_get_my_water_stats(self, client, auth_headers, sample_water_data):
         """测试获取我的饮水统计"""
         # 先创建记录
@@ -128,7 +128,7 @@ class TestWaterAPI:
             json=sample_water_data,
             headers=auth_headers
         )
-        
+
         # 获取统计
         response = client.get(
             "/api/v1/water/records/me/stats?days=7",
@@ -138,7 +138,7 @@ class TestWaterAPI:
         data = response.json()
         assert data["total_records"] >= 1
         assert data["days_recorded"] >= 1
-    
+
     def test_delete_water_record(self, client, auth_headers, sample_water_data):
         """测试删除饮水记录"""
         # 先创建记录
@@ -148,14 +148,14 @@ class TestWaterAPI:
             headers=auth_headers
         )
         record_id = create_response.json()["id"]
-        
+
         # 删除记录
         delete_response = client.delete(
             f"/api/v1/water/records/{record_id}",
             headers=auth_headers
         )
         assert delete_response.status_code == 200
-    
+
     def test_unauthorized_access(self, client, sample_water_data):
         """测试未授权访问"""
         response = client.post(
@@ -167,7 +167,7 @@ class TestWaterAPI:
 
 class TestWaterValidation:
     """饮水记录验证测试"""
-    
+
     def test_zero_amount(self, client, auth_headers, test_user):
         """测试零量饮水"""
         data = {
@@ -182,7 +182,7 @@ class TestWaterValidation:
         )
         # 根据业务需求可能允许或不允许
         assert response.status_code in [200, 422]
-    
+
     def test_drink_types(self, client, auth_headers, test_user):
         """测试不同饮品类型"""
         drink_types = ["water", "tea", "coffee", "juice", "milk", "other"]
@@ -200,4 +200,3 @@ class TestWaterValidation:
                 headers=auth_headers
             )
             assert response.status_code == 200, f"饮品类型 {drink_type} 创建失败"
-

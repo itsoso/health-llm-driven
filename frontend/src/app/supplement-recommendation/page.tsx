@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supplementApi } from '@/services/api/records';
-import { 
+import {
   SparklesIcon,
   ClockIcon,
   ExclamationTriangleIcon,
@@ -80,9 +80,9 @@ function SupplementRecommendationContent() {
       setLoading(true)
       setError(null)
       const response = await supplementApi.getScientificRecommendation(undefined, showDebugInfo)
-      
+
       console.log('[补剂推荐] API 返回数据:', response.data)
-      
+
       // 验证并添加默认值
       const validatedData = {
         ...response.data,
@@ -108,7 +108,7 @@ function SupplementRecommendationContent() {
         },
         precautions: response.data.precautions || []
       }
-      
+
       setRecommendation(validatedData)
     } catch (err: any) {
       console.error('加载补剂推荐失败:', err)

@@ -72,7 +72,7 @@ echo ""
 if [ -f "health.db" ]; then
     echo "开始迁移数据..."
     python scripts/migrate_sqlite_to_postgres.py
-    
+
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ 数据迁移成功${NC}"
     else
@@ -93,14 +93,14 @@ echo ""
 # 检查 .env 文件
 if [ -f ".env" ]; then
     echo "检查 .env 配置..."
-    
+
     if grep -q "POSTGRES_HOST" .env; then
         echo -e "${GREEN}✓ PostgreSQL 配置存在${NC}"
     else
         echo -e "${RED}✗ PostgreSQL 配置缺失${NC}"
         exit 1
     fi
-    
+
     if grep -q "REDIS_URL" .env; then
         echo -e "${GREEN}✓ Redis 配置存在${NC}"
     else

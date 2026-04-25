@@ -67,7 +67,7 @@ function getDefaultMealType(): string {
   const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
   const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
   const hour = beijingTime.getHours();
-  
+
   if (hour >= 6 && hour < 10) {
     return 'breakfast';  // 6:00-10:00 早餐
   } else if (hour >= 10 && hour < 14) {
@@ -135,7 +135,7 @@ export default function DietPage() {
       success: (res) => {
         const tempFilePath = res.tempFilePaths[0];
         console.log('[饮食上传] 选择图片成功:', tempFilePath);
-        
+
         // 检查文件大小
         Taro.getFileInfo({
           filePath: tempFilePath,
@@ -143,16 +143,16 @@ export default function DietPage() {
             const sizeKB = fileInfo.size / 1024;
             const sizeMB = sizeKB / 1024;
             console.log('[饮食上传] 图片大小:', sizeMB.toFixed(2), 'MB');
-            
+
             if (fileInfo.size > 5 * 1024 * 1024) {  // 5MB
-              Taro.showToast({ 
-                title: '图片太大，请选择较小的图片', 
+              Taro.showToast({
+                title: '图片太大，请选择较小的图片',
                 icon: 'none',
                 duration: 3000
               });
               return;
             }
-            
+
             setImagePreview(tempFilePath);
             setRecognitionResult(null);
           },
@@ -166,8 +166,8 @@ export default function DietPage() {
       },
       fail: (err) => {
         console.error('[饮食上传] 选择图片失败:', err);
-        Taro.showToast({ 
-          title: `选择图片失败: ${err.errMsg || '未知错误'}`, 
+        Taro.showToast({
+          title: `选择图片失败: ${err.errMsg || '未知错误'}`,
           icon: 'none',
           duration: 3000
         });
@@ -202,7 +202,7 @@ export default function DietPage() {
 
       if (result.success && result.foods?.length > 0) {
         // 自动填充表单
-        const foodNames = result.foods.map(f => 
+        const foodNames = result.foods.map(f =>
           `${f.name}${f.quantity ? ` (${f.quantity})` : ''}`
         ).join(', ');
 
@@ -233,7 +233,7 @@ export default function DietPage() {
     console.log('[饮食上传] 图片路径:', imagePreview);
     console.log('[饮食上传] 日期:', selectedDate);
     console.log('[饮食上传] 餐食类型:', mealType);
-    
+
     if (!imagePreview) {
       Taro.showToast({ title: '请先选择图片', icon: 'none' });
       return;
@@ -246,17 +246,17 @@ export default function DietPage() {
 
     setIsSaving(true);
     setIsRecognizing(true);
-    
+
     try {
       const fs = Taro.getFileSystemManager();
-      
+
       // 读取 Base64
       let base64: string;
       try {
         console.log('[饮食上传] 开始读取图片...');
         base64 = fs.readFileSync(imagePreview, 'base64') as string;
         console.log('[饮食上传] 读取成功，Base64 长度:', base64.length);
-        
+
         // 检查 Base64 是否有效
         if (!base64 || base64.length < 100) {
           throw new Error('图片数据无效');
@@ -267,7 +267,7 @@ export default function DietPage() {
       }
 
       console.log('[饮食上传] 发送请求到服务器...');
-      
+
       await request({
         url: '/diet/recognize-and-save',
         method: 'POST',
@@ -289,16 +289,16 @@ export default function DietPage() {
       console.error('[饮食上传] 错误类型:', typeof error);
       console.error('[饮食上传] 错误消息:', error.message);
       console.error('[饮食上传] 错误堆栈:', error.stack);
-      
+
       let errorMsg = '保存失败，请重试';
       if (error.message) {
         errorMsg = error.message;
       } else if (typeof error === 'string') {
         errorMsg = error;
       }
-      
-      Taro.showToast({ 
-        title: errorMsg, 
+
+      Taro.showToast({
+        title: errorMsg,
         icon: 'none',
         duration: 3000
       });
@@ -593,7 +593,7 @@ export default function DietPage() {
                   value={formData.food_items}
                   onInput={(e) => setFormData({ ...formData, food_items: e.detail.value })}
                 />
-                <View 
+                <View
                   className={`analyze-btn ${isAnalyzing || !formData.food_items.trim() ? 'disabled' : ''}`}
                   onClick={isAnalyzing || !formData.food_items.trim() ? undefined : handleTextAnalyze}
                 >
@@ -643,8 +643,8 @@ export default function DietPage() {
                   />
                 </View>
               </View>
-              <View 
-                className={`save-manual-btn ${isSaving ? 'disabled' : ''}`} 
+              <View
+                className={`save-manual-btn ${isSaving ? 'disabled' : ''}`}
                 onClick={isSaving ? undefined : handleManualSave}
               >
                 <Text>{isSaving ? '⏳ 保存中...' : '保存记录'}</Text>
@@ -669,9 +669,9 @@ export default function DietPage() {
             dailySummary.meals.map(meal => {
               const mealInfo = getMealInfo(meal.meal_type);
               // 构建完整的图片URL
-              const fullImageUrl = meal.image_url 
-                ? (meal.image_url.startsWith('http') 
-                    ? meal.image_url 
+              const fullImageUrl = meal.image_url
+                ? (meal.image_url.startsWith('http')
+                    ? meal.image_url
                     : `https://health.executor.life${meal.image_url}`)
                 : null;
               return (
@@ -690,9 +690,9 @@ export default function DietPage() {
                   {/* 显示食物图片 */}
                   {fullImageUrl && (
                     <View className="record-image-wrap">
-                      <Image 
-                        src={fullImageUrl} 
-                        mode="aspectFill" 
+                      <Image
+                        src={fullImageUrl}
+                        mode="aspectFill"
                         className="record-image"
                         onClick={() => {
                           Taro.previewImage({

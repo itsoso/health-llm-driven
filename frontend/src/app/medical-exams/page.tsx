@@ -15,7 +15,6 @@ import { StatsCards } from './components/StatsCards';
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 function MedicalExamsContent() {
   const { user, isAuthenticated } = useAuth();

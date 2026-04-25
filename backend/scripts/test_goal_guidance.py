@@ -20,13 +20,13 @@ from app.services.goal_guidance import goal_guidance_service
 
 def test_goal_guidance(user_id: int = 1):
     """测试目标引导服务"""
-    
+
     print("=" * 80)
     print("测试目标智能引导功能")
     print("=" * 80)
-    
+
     db: Session = SessionLocal()
-    
+
     try:
         # 测试不同类型的目标
         test_cases = [
@@ -46,13 +46,13 @@ def test_goal_guidance(user_id: int = 1):
                 "target_value": None
             }
         ]
-        
+
         for i, test_case in enumerate(test_cases, 1):
             print(f"\n{'='*80}")
             print(f"测试案例 {i}: {test_case['goal_type'].value}")
             print(f"描述: {test_case['goal_description']}")
             print(f"{'='*80}\n")
-            
+
             # 调用服务
             guidance = goal_guidance_service.generate_goal_guidance(
                 db=db,
@@ -61,11 +61,11 @@ def test_goal_guidance(user_id: int = 1):
                 goal_description=test_case['goal_description'],
                 target_value=test_case['target_value']
             )
-            
+
             # 打印结果
             if guidance.get("success"):
                 print("✅ 生成成功！\n")
-                
+
                 # 心率区间
                 if guidance.get("heart_rate_zones"):
                     print("📊 心率区间:")
@@ -75,19 +75,19 @@ def test_goal_guidance(user_id: int = 1):
                         if isinstance(zone_data, dict) and 'min' in zone_data:
                             print(f"  {zone_name}: {zone_data['min']}-{zone_data['max']} bpm ({zone_data['description']})")
                     print()
-                
+
                 # 训练计划
                 if guidance.get("training_plan"):
                     print("📅 训练计划:")
                     plan = guidance["training_plan"]
                     print(f"  频率: {plan.get('frequency', 'N/A')}")
                     print(f"  时长: {plan.get('duration', 'N/A')}")
-                    
+
                     if plan.get("intensity_distribution"):
                         print("  强度分配:")
                         for key, value in plan["intensity_distribution"].items():
                             print(f"    {key}: {value}")
-                    
+
                     if plan.get("weekly_structure"):
                         print("  周训练结构:")
                         for day in plan["weekly_structure"][:3]:  # 只显示前3天
@@ -95,7 +95,7 @@ def test_goal_guidance(user_id: int = 1):
                         if len(plan["weekly_structure"]) > 3:
                             print(f"    ... (共 {len(plan['weekly_structure'])} 天)")
                     print()
-                
+
                 # 知识要点
                 if guidance.get("knowledge_points"):
                     print("💡 课程知识要点:")
@@ -104,7 +104,7 @@ def test_goal_guidance(user_id: int = 1):
                     if len(guidance["knowledge_points"]) > 3:
                         print(f"  ... (共 {len(guidance['knowledge_points'])} 个要点)")
                     print()
-                
+
                 # 个性化建议
                 if guidance.get("recommendations"):
                     print("🎯 个性化建议:")
@@ -113,7 +113,7 @@ def test_goal_guidance(user_id: int = 1):
                     if len(guidance["recommendations"]) > 3:
                         print(f"  ... (共 {len(guidance['recommendations'])} 条建议)")
                     print()
-                
+
                 # 课程引用
                 if guidance.get("course_references"):
                     print("📚 课程引用:")
@@ -122,17 +122,17 @@ def test_goal_guidance(user_id: int = 1):
                     if len(guidance["course_references"]) > 2:
                         print(f"  ... (共 {len(guidance['course_references'])} 个引用)")
                     print()
-                
+
             else:
                 print(f"❌ 生成失败: {guidance.get('error', '未知错误')}")
                 print(f"   消息: {guidance.get('message', 'N/A')}")
-            
+
             print()
-        
+
         print("=" * 80)
         print("✅ 测试完成！")
         print("=" * 80)
-        
+
     except Exception as e:
         print(f"\n❌ 测试失败: {e}")
         import traceback
@@ -143,10 +143,10 @@ def test_goal_guidance(user_id: int = 1):
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="测试目标智能引导功能")
     parser.add_argument("--user-id", type=int, default=1, help="用户ID (默认: 1)")
-    
+
     args = parser.parse_args()
-    
+
     test_goal_guidance(user_id=args.user_id)

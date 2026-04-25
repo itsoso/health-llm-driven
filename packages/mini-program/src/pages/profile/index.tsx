@@ -251,7 +251,7 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">身高 (cm)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -289,7 +289,7 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">当前体重 (kg)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -446,7 +446,7 @@ export default function ProfilePage() {
           <View className="tab-content">
             <View className="form-item">
               <Text className="form-label">目标步数 (步/天)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -477,7 +477,7 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">目标睡眠 (小时/天)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -508,7 +508,7 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">目标饮水 (ml/天)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -539,7 +539,7 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">目标运动 (分钟/天)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -570,7 +570,7 @@ export default function ProfilePage() {
 
             <View className="form-item">
               <Text className="form-label">目标体重 (kg)</Text>
-              <View 
+              <View
                 className="form-input-display"
                 onClick={() => {
                   Taro.showModal({
@@ -604,8 +604,8 @@ export default function ProfilePage() {
       </ScrollView>
 
       {/* 保存按钮 */}
-      <View 
-        className={`save-btn ${saving ? 'disabled' : ''}`} 
+      <View
+        className={`save-btn ${saving ? 'disabled' : ''}`}
         onClick={saving ? undefined : saveProfile}
       >
         {saving ? '⏳ 保存中...' : '💾 保存设置'}

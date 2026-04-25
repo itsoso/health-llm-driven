@@ -54,13 +54,13 @@ def test_health_analysis_workflow(client, auth_user_and_headers, sample_basic_he
     user, headers = auth_user_and_headers
 
     sample_basic_health_data["user_id"] = user.id
-    client.post("/api/v1/basic-health", json=sample_basic_health_data)
+    client.post("/api/v1/basic-health", json=sample_basic_health_data, headers=headers)
 
     sample_medical_exam_data["user_id"] = user.id
-    client.post("/api/v1/medical-exams", json=sample_medical_exam_data)
+    client.post("/api/v1/medical-exams", json=sample_medical_exam_data, headers=headers)
 
     # 2. 进行健康分析
-    analysis_response = client.get(f"/api/v1/analysis/user/{user.id}/issues")
+    analysis_response = client.get(f"/api/v1/analysis/user/{user.id}/issues", headers=headers)
     assert analysis_response.status_code == 200
 
 

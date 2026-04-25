@@ -8,7 +8,6 @@ import {
 import { smartPlanApi } from '@/services/api/content';
 import { AnalyzeData, categoryConfig } from './types';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 function getWeatherIcon(weather: string) {
   if (weather.includes('雨')) return <CloudRain className="w-4 h-4 text-blue-500" />;

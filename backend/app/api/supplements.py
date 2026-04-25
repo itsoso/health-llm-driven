@@ -44,7 +44,7 @@ def create_supplement(
     # 使用当前登录用户的 ID
     supplement_data = supplement.model_dump()
     supplement_data['user_id'] = current_user.id
-    
+
     db_supplement = SupplementDefinition(**supplement_data)
     db.add(db_supplement)
     db.commit()
@@ -75,10 +75,10 @@ def update_supplement(
     supplement = db.query(SupplementDefinition).filter(SupplementDefinition.id == supplement_id).first()
     if not supplement:
         raise HTTPException(status_code=404, detail="补剂不存在")
-    
+
     for key, value in update_data.model_dump(exclude_unset=True).items():
         setattr(supplement, key, value)
-    
+
     db.commit()
     db.refresh(supplement)
     return supplement
@@ -93,7 +93,7 @@ def delete_supplement(
     supplement = db.query(SupplementDefinition).filter(SupplementDefinition.id == supplement_id).first()
     if not supplement:
         raise HTTPException(status_code=404, detail="补剂不存在")
-    
+
     db.delete(supplement)
     db.commit()
     return {"message": "删除成功"}
@@ -112,7 +112,7 @@ def create_supplement_record(
         SupplementRecord.supplement_id == record.supplement_id,
         SupplementRecord.record_date == record.record_date
     ).first()
-    
+
     if existing:
         existing.taken = record.taken
         existing.taken_time = record.taken_time
@@ -120,7 +120,7 @@ def create_supplement_record(
         db.commit()
         db.refresh(existing)
         return existing
-    
+
     db_record = SupplementRecord(**record.model_dump())
     db.add(db_record)
     db.commit()
@@ -137,17 +137,17 @@ def batch_checkin(
     """批量补剂打卡（需要登录，自动使用当前用户）"""
     # 使用当前登录用户的 ID，忽略请求中的 user_id
     user_id = current_user.id
-    
+
     results = []
     for checkin in batch.checkins:
         supplement_id = checkin.get("supplement_id")
         taken = checkin.get("taken", False)
-        
+
         existing = db.query(SupplementRecord).filter(
             SupplementRecord.supplement_id == supplement_id,
             SupplementRecord.record_date == batch.record_date
         ).first()
-        
+
         if existing:
             existing.taken = taken
             db.commit()
@@ -161,7 +161,7 @@ def batch_checkin(
             )
             db.add(record)
             results.append({"supplement_id": supplement_id, "action": "created"})
-    
+
     db.commit()
     return {"message": "批量打卡成功", "results": results}
 
@@ -177,19 +177,19 @@ def get_user_supplements_with_records(
         SupplementDefinition.user_id == user_id,
         SupplementDefinition.is_active == True
     ).order_by(SupplementDefinition.timing, SupplementDefinition.sort_order).all()
-    
+
     result = []
     for supp in supplements:
         record = db.query(SupplementRecord).filter(
             SupplementRecord.supplement_id == supp.id,
             SupplementRecord.record_date == record_date
         ).first()
-        
+
         result.append(SupplementWithRecord(
             supplement=SupplementDefinitionResponse.model_validate(supp),
             record=SupplementRecordResponse.model_validate(record) if record else None
         ))
-    
+
     return result
 
 
@@ -202,12 +202,12 @@ def get_supplement_stats(
     """获取补剂统计"""
     end_date = date.today()
     start_date = end_date - timedelta(days=days-1)
-    
+
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == user_id,
         SupplementDefinition.is_active == True
     ).all()
-    
+
     stats = []
     for supp in supplements:
         records = db.query(SupplementRecord).filter(
@@ -215,9 +215,9 @@ def get_supplement_stats(
             SupplementRecord.record_date >= start_date,
             SupplementRecord.record_date <= end_date
         ).all()
-        
+
         taken_count = sum(1 for r in records if r.taken)
-        
+
         stats.append({
             "supplement_id": supp.id,
             "supplement_name": supp.name,
@@ -226,7 +226,7 @@ def get_supplement_stats(
             "taken_days": taken_count,
             "completion_rate": round(taken_count / days * 100, 1)
         })
-    
+
     return stats
 
 
@@ -331,19 +331,19 @@ def get_my_supplements_with_records(
         SupplementDefinition.user_id == current_user.id,
         SupplementDefinition.is_active == True
     ).order_by(SupplementDefinition.timing, SupplementDefinition.sort_order).all()
-    
+
     result = []
     for supp in supplements:
         record = db.query(SupplementRecord).filter(
             SupplementRecord.supplement_id == supp.id,
             SupplementRecord.record_date == record_date
         ).first()
-        
+
         result.append(SupplementWithRecord(
             supplement=SupplementDefinitionResponse.model_validate(supp),
             record=SupplementRecordResponse.model_validate(record) if record else None
         ))
-    
+
     return result
 
 
@@ -356,12 +356,12 @@ def get_my_supplement_stats(
     """获取当前用户补剂统计（需要登录）"""
     end_date = date.today()
     start_date = end_date - timedelta(days=days-1)
-    
+
     supplements = db.query(SupplementDefinition).filter(
         SupplementDefinition.user_id == current_user.id,
         SupplementDefinition.is_active == True
     ).all()
-    
+
     stats = []
     for supp in supplements:
         records = db.query(SupplementRecord).filter(
@@ -369,9 +369,9 @@ def get_my_supplement_stats(
             SupplementRecord.record_date >= start_date,
             SupplementRecord.record_date <= end_date
         ).all()
-        
+
         taken_count = sum(1 for r in records if r.taken)
-        
+
         stats.append({
             "supplement_id": supp.id,
             "supplement_name": supp.name,
@@ -380,7 +380,7 @@ def get_my_supplement_stats(
             "taken_days": taken_count,
             "completion_rate": round(taken_count / days * 100, 1)
         })
-    
+
     return stats
 
 
@@ -525,4 +525,3 @@ async def get_supplement_recommendation(
             status_code=500,
             detail=f"生成补剂科学推荐失败: {str(e)}"
         )
-

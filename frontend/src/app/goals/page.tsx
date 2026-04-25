@@ -94,7 +94,7 @@ function GoalsContent() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // 构建提交数据，移除空字段
     const submitData: any = {
       goal_type: formData.goal_type,
@@ -103,14 +103,14 @@ function GoalsContent() {
       start_date: formData.start_date,
       priority: parseInt(formData.priority as any) || 5,
     };
-    
+
     // 添加可选字段（非空时）
     if (formData.description) submitData.description = formData.description;
     if (formData.target_value) submitData.target_value = parseFloat(formData.target_value);
     if (formData.target_unit) submitData.target_unit = formData.target_unit;
     if (formData.end_date) submitData.end_date = formData.end_date;
     if (formData.implementation_steps) submitData.implementation_steps = formData.implementation_steps;
-    
+
     createMutation.mutate(submitData);
   };
 
@@ -424,7 +424,7 @@ function GoalsContent() {
                           if (key === 'max_heart_rate' || key === 'resting_heart_rate' || key === 'max_hr' || key === 'resting_hr') {
                             return null;
                           }
-                          
+
                           // 处理 tuple 格式 [min, max]
                           if (Array.isArray(value) && value.length === 2) {
                             const zoneNames: Record<string, string> = {
@@ -434,7 +434,7 @@ function GoalsContent() {
                               'zone4_threshold': '乳酸阈值区 (80-90%)',
                               'zone5_max': '最大心率区 (90-100%)'
                             };
-                            
+
                             return (
                               <div key={key} className="flex justify-between text-gray-700 py-1 border-b border-gray-100">
                                 <span className="font-medium">{zoneNames[key] || key}:</span>
@@ -442,7 +442,7 @@ function GoalsContent() {
                               </div>
                             );
                           }
-                          
+
                           // 处理对象格式 {min, max, description}
                           if (typeof value === 'object' && value.min) {
                             return (
@@ -452,7 +452,7 @@ function GoalsContent() {
                               </div>
                             );
                           }
-                          
+
                           return null;
                         })}
                       </div>
@@ -558,7 +558,7 @@ function GoalsContent() {
                 key={goal.id}
                 className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all p-6 border border-gray-200"
               >
-                <div 
+                <div
                   className="cursor-pointer"
                   onClick={() => setSelectedGoal(goal)}
                 >

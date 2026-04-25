@@ -69,7 +69,7 @@ function BloodPressureContent() {
     mutationFn: async (data: any) => {
       const res = await fetch(`${API_BASE}/blood-pressure/records`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
@@ -431,4 +431,3 @@ export default function BloodPressurePage() {
     </ProtectedRoute>
   );
 }
-

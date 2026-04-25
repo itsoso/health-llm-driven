@@ -84,7 +84,7 @@ async def log_status(
     """获取日志配置状态"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    
+
     return {
         "status": log_manager.get_status(),
         "env_log_level": os.getenv('LOG_LEVEL', 'INFO'),
@@ -101,7 +101,7 @@ async def set_log_level(
     """动态设置日志级别 (需要管理员权限)"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    
+
     import logging
     level_map = {
         'DEBUG': logging.DEBUG,
@@ -110,13 +110,13 @@ async def set_log_level(
         'ERROR': logging.ERROR,
         'CRITICAL': logging.CRITICAL,
     }
-    
+
     level_upper = level.upper()
     if level_upper not in level_map:
         raise HTTPException(status_code=400, detail=f"无效的日志级别: {level}")
-    
+
     log_manager.set_level(level_map[level_upper], logger_name)
-    
+
     return {
         "success": True,
         "message": f"日志级别已设置为 {level_upper}",
@@ -132,12 +132,12 @@ async def toggle_debug_mode(
     """切换调试模式"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    
+
     if enable:
         log_manager.enable_debug()
     else:
         log_manager.disable_debug()
-    
+
     return {
         "success": True,
         "debug_mode": enable,
@@ -155,7 +155,7 @@ async def database_status(
         start = time.time()
         result = db.execute(text("SELECT 1"))
         query_time = (time.time() - start) * 1000
-        
+
         return {
             "status": "connected",
             "query_time_ms": round(query_time, 2),

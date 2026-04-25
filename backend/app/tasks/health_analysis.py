@@ -20,28 +20,28 @@ def generate_daily_plan_for_all():
     为所有用户生成今日健康计划（每日6:00执行）
     """
     logger.info("开始生成每日健康计划")
-    
+
     with SessionLocal() as db:
         # 获取所有活跃用户
         users = db.query(User).filter(User.is_active == True).all()
-        
+
         scheduler = AIScheduler(db)
         success_count = 0
-        
+
         for user in users:
             try:
                 # 生成早间简报
                 briefing = scheduler.generate_morning_briefing(user.id)
-                
+
                 if briefing.get("success"):
                     success_count += 1
                     logger.info(f"用户 {user.id} 每日计划生成成功")
                 else:
                     logger.warning(f"用户 {user.id} 每日计划生成失败: {briefing.get('error')}")
-                    
+
             except Exception as e:
                 logger.error(f"用户 {user.id} 每日计划生成异常: {e}")
-    
+
     logger.info(f"每日健康计划生成完成，成功 {success_count}/{len(users)} 用户")
     return {"success_count": success_count, "total": len(users)}
 

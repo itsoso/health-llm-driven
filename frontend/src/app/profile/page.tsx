@@ -50,7 +50,7 @@ export default function ProfilePage() {
   const { user, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [formData, setFormData] = useState<Partial<UserProfile>>({});
   const [newCondition, setNewCondition] = useState('');
   const [newAllergy, setNewAllergy] = useState('');

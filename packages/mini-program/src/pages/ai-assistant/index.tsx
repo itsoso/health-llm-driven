@@ -4,17 +4,17 @@
 import { View, Text, ScrollView } from '@tarojs/components';
 import { useState, useEffect } from 'react';
 import Taro from '@tarojs/taro';
-import { 
-  getMorningBriefing, 
-  getAIRecommendation, 
+import {
+  getMorningBriefing,
+  getAIRecommendation,
   getCurrentReminders,
   getDailySchedule
 } from '../../services/api';
-import { 
-  MorningBriefing, 
-  AIRecommendation, 
+import {
+  MorningBriefing,
+  AIRecommendation,
   HealthReminder,
-  ScheduleItem 
+  ScheduleItem
 } from '../../types';
 import './index.scss';
 
@@ -31,10 +31,10 @@ export default function AIAssistant() {
     // 更新当前时间
     const updateTime = () => {
       const now = new Date();
-      setCurrentTime(now.toLocaleTimeString('zh-CN', { 
-        hour: '2-digit', 
+      setCurrentTime(now.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: false 
+        hour12: false
       }));
     };
     updateTime();
@@ -51,7 +51,7 @@ export default function AIAssistant() {
         getCurrentReminders(),
         getDailySchedule()
       ]);
-      
+
       setBriefing(briefingData);
       setRecommendation(recommendationData);
       setReminders(remindersData.reminders || []);

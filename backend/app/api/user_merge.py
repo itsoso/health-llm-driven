@@ -43,14 +43,14 @@ async def find_merge_candidates(
 ):
     """
     查找当前用户可以合并的其他用户
-    
+
     匹配条件：
     - 手机号相同
     - 邮箱相同
     - UnionID相同
     """
     candidates = UserMergeService.find_potential_merge_candidates(db, current_user)
-    
+
     candidate_list = []
     for candidate in candidates:
         candidate_list.append({
@@ -62,7 +62,7 @@ async def find_merge_candidates(
             "has_wechat": candidate.wechat_openid is not None,
             "has_password": candidate.hashed_password is not None,
         })
-    
+
     return MergeCandidatesResponse(
         candidates=candidate_list,
         message=f"找到 {len(candidate_list)} 个可合并的用户" if candidate_list else "未找到可合并的用户"
@@ -77,7 +77,7 @@ async def merge_users(
 ):
     """
     合并两个用户
-    
+
     注意：
     - 只能合并当前用户相关的账户
     - source_user_id 或 target_user_id 必须是当前用户
@@ -89,23 +89,23 @@ async def merge_users(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只能合并自己的账户"
         )
-    
+
     # 验证用户存在
     source_user = db.query(User).filter(User.id == request.source_user_id).first()
     target_user = db.query(User).filter(User.id == request.target_user_id).first()
-    
+
     if not source_user or not target_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     if source_user.id == target_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="不能合并同一个用户"
         )
-    
+
     # 执行合并
     try:
         result = UserMergeService.merge_users(
@@ -113,7 +113,7 @@ async def merge_users(
             source_user_id=request.source_user_id,
             target_user_id=request.target_user_id
         )
-        
+
         return MergeUsersResponse(
             success=True,
             message="✅ 用户合并成功",

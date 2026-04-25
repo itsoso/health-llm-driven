@@ -15,4 +15,3 @@ CREATE TABLE IF NOT EXISTS heart_rate_samples (
 
 CREATE INDEX IF NOT EXISTS ix_heart_rate_samples_user_id ON heart_rate_samples(user_id);
 CREATE INDEX IF NOT EXISTS ix_heart_rate_samples_date ON heart_rate_samples(sample_date);
-

@@ -104,7 +104,7 @@ function RhinitisContent() {
         // 检查响应内容类型
         const contentType = res.headers.get('content-type');
         let errorMessage = '保存失败';
-        
+
         if (contentType && contentType.includes('application/json')) {
           try {
             const errorData = await res.json();
@@ -117,16 +117,16 @@ function RhinitisContent() {
           const text = await res.text();
           errorMessage = `服务器错误 (${res.status}): ${text.substring(0, 100)}`;
         }
-        
+
         throw new Error(errorMessage);
       }
-      
+
       // 确保响应是JSON格式
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         throw new Error('服务器返回了非JSON格式的响应');
       }
-      
+
       return res.json();
     },
     onSuccess: () => {
@@ -144,7 +144,7 @@ function RhinitisContent() {
     const currentTimes = todayRecord?.sneeze_times || [];
     const newTimes = [...currentTimes, { time: sneezeTime, count: sneezeCount }];
     const totalCount = newTimes.reduce((sum, t) => sum + t.count, 0);
-    
+
     saveMutation.mutate({
       sneeze_count: totalCount,
       sneeze_times: newTimes,
@@ -155,7 +155,7 @@ function RhinitisContent() {
   const addNasalWashRecord = () => {
     const currentTimes = todayRecord?.nasal_wash_times || [];
     const newTimes = [...currentTimes, { time: nasalWashTime, type: nasalWashType }];
-    
+
     saveMutation.mutate({
       nasal_wash_count: newTimes.length,
       nasal_wash_times: newTimes,
@@ -186,8 +186,8 @@ function RhinitisContent() {
         {/* 消息提示 */}
         {message && (
           <div className={`mb-4 p-4 rounded-xl ${
-            message.type === 'success' 
-              ? 'bg-green-100 text-green-800 border border-green-200' 
+            message.type === 'success'
+              ? 'bg-green-100 text-green-800 border border-green-200'
               : 'bg-red-100 text-red-800 border border-red-200'
           }`}>
             {message.text}
@@ -227,7 +227,7 @@ function RhinitisContent() {
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <span>🤧</span> 打喷嚏记录
               </h2>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">次数</label>
@@ -280,7 +280,7 @@ function RhinitisContent() {
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <span>💧</span> 洗鼻/泡鼻记录
               </h2>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">类型</label>
@@ -332,8 +332,8 @@ function RhinitisContent() {
                   <div className="flex flex-wrap gap-2">
                     {nasalWashTimes.map((record: { time: string; type: string }, index: number) => (
                       <span key={index} className={`px-3 py-1 rounded-full text-sm ${
-                        record.type === 'wash' 
-                          ? 'bg-blue-100 text-blue-800' 
+                        record.type === 'wash'
+                          ? 'bg-blue-100 text-blue-800'
                           : 'bg-purple-100 text-purple-800'
                       }`}>
                         {record.time} - {record.type === 'wash' ? '💧洗鼻' : '🫧泡鼻'}
@@ -391,7 +391,7 @@ function RhinitisContent() {
                       <div className="text-2xl font-bold">{stats.sneeze_stats.max_per_day} <span className="text-sm">次</span></div>
                     </div>
                   </div>
-                  
+
                   {/* 时间范围选择 */}
                   <div className="mt-4 flex gap-2">
                     {[7, 14, 30, 90].map((d) => (
@@ -416,30 +416,30 @@ function RhinitisContent() {
                   <ResponsiveContainer width="100%" height={250}>
                     <LineChart data={stats.daily_trend}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="date" 
+                      <XAxis
+                        dataKey="date"
                         stroke="#6b7280"
                         style={{ fontSize: '12px' }}
                         tickFormatter={(value) => format(new Date(value), 'MM-dd')}
                       />
-                      <YAxis 
+                      <YAxis
                         stroke="#6b7280"
                         style={{ fontSize: '12px' }}
                         label={{ value: '次数', angle: -90, position: 'insideLeft' }}
                       />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'white', 
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'white',
                           border: '1px solid #e5e7eb',
                           borderRadius: '8px'
                         }}
                         labelFormatter={(value) => format(new Date(value), 'yyyy-MM-dd')}
                       />
                       <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="sneeze_count" 
-                        stroke="#f59e0b" 
+                      <Line
+                        type="monotone"
+                        dataKey="sneeze_count"
+                        stroke="#f59e0b"
                         strokeWidth={2}
                         name="打喷嚏次数"
                         dot={{ fill: '#f59e0b', r: 4 }}
@@ -454,29 +454,29 @@ function RhinitisContent() {
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={stats.daily_trend}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="date" 
+                      <XAxis
+                        dataKey="date"
                         stroke="#6b7280"
                         style={{ fontSize: '12px' }}
                         tickFormatter={(value) => format(new Date(value), 'MM-dd')}
                       />
-                      <YAxis 
+                      <YAxis
                         stroke="#6b7280"
                         style={{ fontSize: '12px' }}
                         label={{ value: '次数', angle: -90, position: 'insideLeft' }}
                       />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'white', 
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'white',
                           border: '1px solid #e5e7eb',
                           borderRadius: '8px'
                         }}
                         labelFormatter={(value) => format(new Date(value), 'yyyy-MM-dd')}
                       />
                       <Legend />
-                      <Bar 
-                        dataKey="nasal_wash_count" 
-                        fill="#3b82f6" 
+                      <Bar
+                        dataKey="nasal_wash_count"
+                        fill="#3b82f6"
                         name="洗鼻次数"
                         radius={[8, 8, 0, 0]}
                       />
@@ -521,4 +521,3 @@ export default function RhinitisPage() {
     </ProtectedRoute>
   );
 }
-

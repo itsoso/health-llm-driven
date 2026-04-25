@@ -21,7 +21,7 @@ def create_basic_health_data(
     # 如果未提供BMI，自动计算
     if data.weight and data.height and not data.bmi:
         data.bmi = data.weight / ((data.height / 100) ** 2)
-    
+
     db_data = BasicHealthData(**data.model_dump())
     db.add(db_data)
     db.commit()
@@ -40,7 +40,7 @@ def get_my_latest_basic_health_data(
     data = db.query(BasicHealthData).filter(
         BasicHealthData.user_id == current_user.id
     ).order_by(BasicHealthData.record_date.desc()).first()
-    
+
     # 如果没有数据，返回 None 而不是 404
     return data
 
@@ -84,7 +84,7 @@ def get_latest_basic_health_data(
     data = db.query(BasicHealthData).filter(
         BasicHealthData.user_id == user_id
     ).order_by(BasicHealthData.record_date.desc()).first()
-    
+
     if not data:
         raise HTTPException(status_code=404, detail="未找到基础健康数据")
     return data

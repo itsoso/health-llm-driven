@@ -33,7 +33,7 @@ export default function PrivacyModal({ visible, onAgree, onDisagree }: PrivacyMo
           <Text className="content-text">
             欢迎使用"自由是自律的泡沫"健康管理小程序！
           </Text>
-          
+
           <Text className="content-text">
             在使用我们的服务前，请你认真阅读
             <Text className="link-text" onClick={handleViewDetail}>《隐私保护指引》</Text>

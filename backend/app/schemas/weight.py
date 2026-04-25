@@ -51,4 +51,3 @@ class WeightStats(BaseModel):
     weight_change_7d: Optional[float] = None   # 7天变化
     weight_change_30d: Optional[float] = None  # 30天变化
     total_records: int = 0
-

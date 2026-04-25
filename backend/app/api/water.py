@@ -31,7 +31,7 @@ def _convert_to_response(record) -> WaterRecordResponse:
             drink_time = record.intake_time.time()
         elif isinstance(record.intake_time, time):
             drink_time = record.intake_time
-    
+
     return WaterRecordResponse(
         id=record.id,
         user_id=record.user_id,
@@ -55,7 +55,7 @@ def create_water_record(
     intake_time = None
     if record.drink_time:
         intake_time = datetime.combine(record.record_date, record.drink_time)
-    
+
     db_record = WaterIntakeModel(
         user_id=current_user.id,
         record_date=record.record_date,
@@ -67,7 +67,7 @@ def create_water_record(
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
-    
+
     return _convert_to_response(db_record)
 
 
@@ -83,14 +83,14 @@ def get_user_water_records(
     """获取用户饮水记录（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     query = db.query(WaterIntakeModel).filter(WaterIntakeModel.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(WaterIntakeModel.record_date >= start_date)
     if end_date:
         query = query.filter(WaterIntakeModel.record_date <= end_date)
-    
+
     records = query.order_by(desc(WaterIntakeModel.record_date), desc(WaterIntakeModel.created_at)).limit(limit).all()
     return [_convert_to_response(r) for r in records]
 
@@ -105,15 +105,15 @@ def get_daily_water_summary(
     """获取某日饮水汇总（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     records = db.query(WaterIntakeModel).filter(
         WaterIntakeModel.user_id == current_user.id,
         WaterIntakeModel.record_date == record_date
     ).order_by(WaterIntakeModel.created_at).all()
-    
+
     total_amount = sum(r.amount or 0 for r in records)
     progress = round((total_amount / DAILY_WATER_TARGET) * 100, 1) if DAILY_WATER_TARGET > 0 else 0
-    
+
     return DailyWaterSummary(
         record_date=record_date,
         total_amount=total_amount,
@@ -142,7 +142,7 @@ def quick_add_water(
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
-    
+
     return _convert_to_response(db_record)
 
 
@@ -156,17 +156,17 @@ def get_water_stats(
     """获取饮水统计（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(WaterIntakeModel).filter(
         WaterIntakeModel.user_id == current_user.id,
         WaterIntakeModel.record_date >= start_date
     ).all()
-    
+
     if not records:
         return WaterStats(total_records=0, days_recorded=0)
-    
+
     # 按日期分组统计
     daily_amounts = {}
     for r in records:
@@ -174,11 +174,11 @@ def get_water_stats(
         if d not in daily_amounts:
             daily_amounts[d] = 0
         daily_amounts[d] += r.amount or 0
-    
+
     days_count = len(daily_amounts)
     amounts = list(daily_amounts.values())
     days_reached = sum(1 for a in amounts if a >= DAILY_WATER_TARGET)
-    
+
     return WaterStats(
         average_daily_amount=round(sum(amounts) / days_count, 0) if days_count else None,
         highest_daily_amount=max(amounts) if amounts else None,
@@ -202,12 +202,12 @@ def get_my_water_records(
 ):
     """获取当前用户饮水记录（需要登录）"""
     query = db.query(WaterIntakeModel).filter(WaterIntakeModel.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(WaterIntakeModel.record_date >= start_date)
     if end_date:
         query = query.filter(WaterIntakeModel.record_date <= end_date)
-    
+
     records = query.order_by(desc(WaterIntakeModel.record_date), desc(WaterIntakeModel.created_at)).limit(limit).all()
     return [_convert_to_response(r) for r in records]
 
@@ -223,10 +223,10 @@ def get_my_daily_water_summary(
         WaterIntakeModel.user_id == current_user.id,
         WaterIntakeModel.record_date == record_date
     ).order_by(WaterIntakeModel.created_at).all()
-    
+
     total_amount = sum(r.amount or 0 for r in records)
     progress = round((total_amount / DAILY_WATER_TARGET) * 100, 1) if DAILY_WATER_TARGET > 0 else 0
-    
+
     return DailyWaterSummary(
         record_date=record_date,
         total_amount=total_amount,
@@ -245,15 +245,15 @@ def get_my_water_stats(
 ):
     """获取当前用户饮水统计（需要登录）"""
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(WaterIntakeModel).filter(
         WaterIntakeModel.user_id == current_user.id,
         WaterIntakeModel.record_date >= start_date
     ).all()
-    
+
     if not records:
         return WaterStats(total_records=0, days_recorded=0)
-    
+
     # 按日期分组统计
     daily_amounts = {}
     for r in records:
@@ -261,11 +261,11 @@ def get_my_water_stats(
         if d not in daily_amounts:
             daily_amounts[d] = 0
         daily_amounts[d] += r.amount or 0
-    
+
     days_count = len(daily_amounts)
     amounts = list(daily_amounts.values())
     days_reached = sum(1 for a in amounts if a >= DAILY_WATER_TARGET)
-    
+
     return WaterStats(
         average_daily_amount=round(sum(amounts) / days_count, 0) if days_count else None,
         highest_daily_amount=max(amounts) if amounts else None,
@@ -288,18 +288,18 @@ def update_water_record(
     record = db.query(WaterIntakeModel).filter(WaterIntakeModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权修改其他用户的数据")
-    
+
     update_dict = update_data.model_dump(exclude_unset=True)
     if 'drink_time' in update_dict and update_dict['drink_time']:
         update_dict['intake_time'] = datetime.combine(record.record_date, update_dict.pop('drink_time'))
-    
+
     for key, value in update_dict.items():
         if hasattr(record, key):
             setattr(record, key, value)
-    
+
     db.commit()
     db.refresh(record)
     return _convert_to_response(record)
@@ -315,11 +315,10 @@ def delete_water_record(
     record = db.query(WaterIntakeModel).filter(WaterIntakeModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权删除其他用户的数据")
-    
+
     db.delete(record)
     db.commit()
     return {"message": "Record deleted successfully"}
-

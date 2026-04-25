@@ -18,7 +18,6 @@ import { GoalsTab } from './components/GoalsTab';
 import { HistoryCard } from './components/HistoryCard';
 import { PlanSummary } from './components/PlanSummary';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function SmartPlanContent() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'current' | 'history' | 'goals'>('current');

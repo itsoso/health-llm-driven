@@ -6,7 +6,7 @@ from typing import Optional, List
 
 class Settings(BaseSettings):
     """应用设置"""
-    
+
     # === LLM Provider 统一配置 ===
     llm_provider: str = "openclaw"  # openclaw | openai | ollama（默认 openclaw 避免 openai proxy 429）
     llm_api_key: Optional[str] = None
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None  # 代理地址，如: https://api.openai-proxy.com/v1
     openai_model: str = "gpt-4o-mini"  # 默认模型
-    
+
     # Garmin 凭据 (用于后台自动同步)
     garmin_email: Optional[str] = None
     garmin_password: Optional[str] = None
@@ -48,11 +48,11 @@ class Settings(BaseSettings):
     # Withings API 配置
     withings_client_id: Optional[str] = None
     withings_client_secret: Optional[str] = None
-    
+
     # 微信小程序配置
     wechat_appid: Optional[str] = None  # 小程序 AppID
     wechat_secret: Optional[str] = None  # 小程序 AppSecret
-    
+
     # OpenClaw 配置 (AI 对话服务)
     openclaw_base_url: str = ""
     openclaw_api_key: Optional[str] = None
@@ -84,21 +84,21 @@ class Settings(BaseSettings):
 
     # 数据库配置
     database_url: str = "postgresql://localhost/health_db"
-    
+
     # PostgreSQL配置（可选，优先于sqlite）
     postgres_host: Optional[str] = None
     postgres_port: int = 5432
     postgres_db: str = "health_db"
     postgres_user: str = "health_user"
     postgres_password: Optional[str] = None
-    
+
     # Redis配置
     redis_url: str = "redis://localhost:6379/0"
-    
+
     # 微信小程序推送配置
     wechat_mini_app_id: Optional[str] = None
     wechat_mini_app_secret: Optional[str] = None
-    
+
     # iOS APNs 推送配置
     apns_key_id: Optional[str] = None
     apns_team_id: Optional[str] = None
@@ -110,21 +110,21 @@ class Settings(BaseSettings):
     # Telegram 推送配置（Agent Native 告警通道）
     telegram_bot_token: Optional[str] = None
     telegram_alert_chat_id: Optional[str] = None  # 默认告警推送的 chat_id
-    
+
     @property
     def effective_database_url(self) -> str:
         """获取实际使用的数据库URL"""
         if self.postgres_host and self.postgres_password:
             return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         return self.database_url
-    
+
     # 应用配置
     app_env: str = "development"
     debug: bool = True
-    
+
     # JWT密钥（用于用户认证token签名）
     secret_key: str = ""
-    
+
     # Garmin凭证加密密钥（用于加密存储的Garmin密码）
     garmin_encryption_key: Optional[str] = None
 
@@ -164,7 +164,7 @@ class Settings(BaseSettings):
                     "DEVICE_ENCRYPTION_KEY must be set in production. "
                     "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
                 )
-    
+
     model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 

@@ -30,7 +30,7 @@ def login_garmin_connect(
 ):
     """
     测试Garmin Connect登录
-    
+
     注意：这只是测试登录，不会保存凭据
     实际使用时，建议在前端处理登录，然后传递session token
     """
@@ -62,13 +62,13 @@ def sync_garmin_connect_data(
 ):
     """
     使用Garmin Connect账号同步数据
-    
+
     需要提供Garmin Connect的邮箱和密码
     注意：建议使用环境变量或安全的凭据管理，不要在前端直接传递密码
     """
     try:
         service = GarminConnectService(credentials.email, credentials.password, user_id=request.user_id)
-        
+
         if request.target_date:
             # 同步单日数据
             result = service.sync_daily_data(db, request.user_id, request.target_date)
@@ -99,7 +99,7 @@ def sync_garmin_connect_data(
                 status_code=400,
                 detail="请提供target_date或start_date+end_date"
             )
-            
+
     except ImportError as e:
         raise HTTPException(
             status_code=503,
@@ -145,4 +145,3 @@ def sync_today_garmin_data(
             status_code=500,
             detail=f"同步失败: {str(e)}"
         )
-

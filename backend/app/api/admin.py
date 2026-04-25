@@ -122,17 +122,17 @@ async def get_admin_stats(
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = today_start - timedelta(days=7)
-    
+
     # 统计用户数据
     total_users = db.query(func.count(User.id)).scalar() or 0
     active_users = db.query(func.count(User.id)).filter(User.is_active == True).scalar() or 0
     admin_users = db.query(func.count(User.id)).filter(User.is_admin == True).scalar() or 0
     users_with_garmin = db.query(func.count(GarminCredential.id)).scalar() or 0
-    
+
     # 统计记录数据
     total_health_records = db.query(func.count(GarminData.id)).scalar() or 0
     total_medical_exams = db.query(func.count(MedicalExam.id)).scalar() or 0
-    
+
     # 新增用户
     new_users_today = db.query(func.count(User.id)).filter(
         User.created_at >= today_start
@@ -140,7 +140,7 @@ async def get_admin_stats(
     new_users_week = db.query(func.count(User.id)).filter(
         User.created_at >= week_ago
     ).scalar() or 0
-    
+
     return AdminStatsResponse(
         total_users=total_users,
         active_users=active_users,
@@ -163,7 +163,7 @@ async def get_users(
 ):
     """获取所有用户列表"""
     query = db.query(User)
-    
+
     # 搜索过滤
     if search:
         search_pattern = f"%{search}%"
@@ -172,14 +172,14 @@ async def get_users(
             (User.email.ilike(search_pattern)) |
             (User.name.ilike(search_pattern))
         )
-    
+
     # 总数
     total = query.count()
-    
+
     # 分页
     offset = (page - 1) * page_size
     users = query.order_by(desc(User.created_at)).offset(offset).limit(page_size).all()
-    
+
     # 构建响应
     user_responses = []
     for user in users:
@@ -187,21 +187,21 @@ async def get_users(
         has_garmin = db.query(GarminCredential).filter(
             GarminCredential.user_id == user.id
         ).first() is not None
-        
+
         health_records_count = db.query(func.count(GarminData.id)).filter(
             GarminData.user_id == user.id
         ).scalar() or 0
-        
+
         medical_exams_count = db.query(func.count(MedicalExam.id)).filter(
             MedicalExam.user_id == user.id
         ).scalar() or 0
-        
+
         # 最后活动时间（取最近的健康记录日期）
         last_health = db.query(GarminData.record_date).filter(
             GarminData.user_id == user.id
         ).order_by(desc(GarminData.record_date)).first()
         last_activity = datetime.combine(last_health[0], datetime.min.time()) if last_health else None
-        
+
         user_responses.append(AdminUserResponse(
             id=user.id,
             username=user.username,
@@ -218,7 +218,7 @@ async def get_users(
             health_records_count=health_records_count,
             medical_exams_count=medical_exams_count
         ))
-    
+
     return UserListResponse(
         users=user_responses,
         total=total,
@@ -240,25 +240,25 @@ async def get_user_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     # 获取统计信息
     has_garmin = db.query(GarminCredential).filter(
         GarminCredential.user_id == user.id
     ).first() is not None
-    
+
     health_records_count = db.query(func.count(GarminData.id)).filter(
         GarminData.user_id == user.id
     ).scalar() or 0
-    
+
     medical_exams_count = db.query(func.count(MedicalExam.id)).filter(
         MedicalExam.user_id == user.id
     ).scalar() or 0
-    
+
     last_health = db.query(GarminData.record_date).filter(
         GarminData.user_id == user.id
     ).order_by(desc(GarminData.record_date)).first()
     last_activity = datetime.combine(last_health[0], datetime.min.time()) if last_health else None
-    
+
     return AdminUserResponse(
         id=user.id,
         username=user.username,
@@ -291,17 +291,17 @@ async def set_user_admin(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     # 不能取消自己的管理员权限
     if user.id == admin_user.id and not request.is_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="不能取消自己的管理员权限"
         )
-    
+
     user.is_admin = request.is_admin
     db.commit()
-    
+
     return {"message": f"已{'设置' if request.is_admin else '取消'}{user.name}的管理员权限"}
 
 
@@ -319,17 +319,17 @@ async def set_user_active(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     # 不能禁用自己
     if user.id == admin_user.id and not request.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="不能禁用自己的账户"
         )
-    
+
     user.is_active = request.is_active
     db.commit()
-    
+
     return {"message": f"已{'启用' if request.is_active else '禁用'}用户{user.name}"}
 
 
@@ -474,23 +474,23 @@ async def delete_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     # 不能删除自己
     if user.id == admin_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="不能删除自己的账户"
         )
-    
+
     # 删除关联数据
     db.query(GarminCredential).filter(GarminCredential.user_id == user_id).delete()
     db.query(GarminData).filter(GarminData.user_id == user_id).delete()
     db.query(MedicalExam).filter(MedicalExam.user_id == user_id).delete()
-    
+
     # 删除用户
     db.delete(user)
     db.commit()
-    
+
     return {"message": f"已删除用户{user.name}及其所有数据"}
 
 
@@ -521,17 +521,17 @@ async def sync_all_users_garmin(
 ):
     """
     触发所有启用同步的用户的Garmin数据同步
-    
+
     - **days**: 同步最近N天的数据（默认3天，最多30天）
     - 仅管理员可访问
     """
     from app.scheduler import sync_all_users_garmin_task
-    
+
     logger.info(f"管理员 {admin_user.name} 触发全部用户Garmin同步，天数: {days}")
-    
+
     # 执行同步任务
     result = await sync_all_users_garmin_task(days=days)
-    
+
     return SyncAllUsersResponse(**result)
 
 
@@ -544,14 +544,14 @@ async def sync_user_garmin(
 ):
     """
     触发指定用户的Garmin数据同步
-    
+
     - **user_id**: 用户ID
     - **days**: 同步最近N天的数据（默认7天）
     - 仅管理员可访问
     """
     from app.scheduler import sync_user_garmin_data
     from app.services.auth import garmin_credential_service
-    
+
     # 检查用户是否存在
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -559,7 +559,7 @@ async def sync_user_garmin(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     # 获取用户的Garmin凭证
     credentials = garmin_credential_service.get_decrypted_credentials(db, user_id)
     if not credentials:
@@ -567,9 +567,9 @@ async def sync_user_garmin(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="该用户未配置Garmin凭证"
         )
-    
+
     logger.info(f"管理员 {admin_user.name} 触发用户 {user_id} 的Garmin同步，天数: {days}")
-    
+
     # 执行同步
     result = await sync_user_garmin_data(
         db,
@@ -579,7 +579,7 @@ async def sync_user_garmin(
         days,
         is_cn=credentials.get("is_cn", False)
     )
-    
+
     return SyncUserResponse(**result)
 
 
@@ -590,36 +590,36 @@ async def get_all_users_sync_status(
 ):
     """
     获取所有配置了Garmin的用户的同步状态
-    
+
     - 仅管理员可访问
     """
     credentials = db.query(GarminCredential).all()
-    
+
     result = []
     valid_count = 0
     invalid_count = 0
-    
+
     for cred in credentials:
         user = db.query(User).filter(User.id == cred.user_id).first()
-        
+
         # 获取最新的Garmin数据日期
         latest_data = db.query(GarminData).filter(
             GarminData.user_id == cred.user_id
         ).order_by(desc(GarminData.record_date)).first()
-        
+
         # 统计该用户的数据量
         data_count = db.query(func.count(GarminData.id)).filter(
             GarminData.user_id == cred.user_id
         ).scalar()
-        
+
         # 检查凭证是否有效（兼容旧数据，None视为有效）
         credentials_valid = cred.credentials_valid if hasattr(cred, 'credentials_valid') and cred.credentials_valid is not None else True
-        
+
         if credentials_valid:
             valid_count += 1
         else:
             invalid_count += 1
-        
+
         # 限流/锁定状态
         login_locked = False
         lock_remaining_minutes = 0
@@ -658,7 +658,7 @@ async def get_all_users_sync_status(
             "latest_data_date": latest_data.record_date.isoformat() if latest_data else None,
             "total_records": data_count
         })
-    
+
     return {
         "total_configured_users": len(credentials),
         "valid_credentials": valid_count,
@@ -675,11 +675,11 @@ async def reset_user_credentials(
 ):
     """
     重置用户的Garmin凭证状态（标记为有效，清除错误）
-    
+
     - 仅管理员可访问
     """
     from app.services.auth import garmin_credential_service
-    
+
     success = garmin_credential_service.reset_credential_status(db, user_id)
     if success:
         return {"message": f"已重置用户 {user_id} 的凭证状态"}
@@ -709,7 +709,7 @@ async def clear_user_cache(
 ):
     """
     清理指定用户的缓存数据（每日建议缓存）
-    
+
     - **user_id**: 用户ID
     - 仅管理员可访问
     """
@@ -719,16 +719,16 @@ async def clear_user_cache(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    
+
     # 删除用户的每日建议缓存
     deleted_count = db.query(DailyRecommendation).filter(
         DailyRecommendation.user_id == user_id
     ).delete()
-    
+
     db.commit()
-    
+
     logger.info(f"管理员 {admin_user.name} 清理了用户 {user_id} 的缓存，删除 {deleted_count} 条记录")
-    
+
     return ClearCacheResponse(
         message=f"已清理用户 {user.name} 的缓存",
         deleted_count=deleted_count
@@ -742,15 +742,15 @@ async def clear_all_cache(
 ):
     """
     清理所有用户的缓存数据（每日建议缓存）
-    
+
     - 仅管理员可访问
     """
     # 删除所有每日建议缓存
     deleted_count = db.query(DailyRecommendation).delete()
     db.commit()
-    
+
     logger.info(f"管理员 {admin_user.name} 清理了所有用户缓存，删除 {deleted_count} 条记录")
-    
+
     return ClearCacheResponse(
         message="已清理所有用户的缓存",
         deleted_count=deleted_count
@@ -764,20 +764,20 @@ async def clear_no_data_cache(
 ):
     """
     清理所有状态为 no_data 的缓存记录
-    
+
     - 仅管理员可访问
     """
     from sqlalchemy import text
-    
+
     # 删除状态为 no_data 的记录
     result = db.execute(text(
         "DELETE FROM daily_recommendations WHERE one_day_recommendation LIKE '%\"status\": \"no_data\"%'"
     ))
     deleted_count = result.rowcount
     db.commit()
-    
+
     logger.info(f"管理员 {admin_user.name} 清理了 no_data 缓存，删除 {deleted_count} 条记录")
-    
+
     return ClearCacheResponse(
         message="已清理所有无数据缓存",
         deleted_count=deleted_count
@@ -793,7 +793,7 @@ async def set_user_sync_enabled(
 ):
     """
     启用或禁用用户的Garmin后台自动同步
-    
+
     - **user_id**: 用户ID
     - **sync_enabled**: 是否启用同步
     - 禁用后，后台定时任务将不再同步该用户的Garmin数据
@@ -802,16 +802,16 @@ async def set_user_sync_enabled(
     credential = db.query(GarminCredential).filter(
         GarminCredential.user_id == user_id
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="该用户未配置Garmin凭证"
         )
-    
+
     credential.sync_enabled = request.sync_enabled
     db.commit()
-    
+
     action = "启用" if request.sync_enabled else "禁用"
     logger.info(f"管理员 {admin_user.name} {action}了用户 {user_id} 的Garmin同步")
 
@@ -872,4 +872,3 @@ async def admin_merge_users(
     except Exception as e:
         logger.error(f"管理员合并用户失败: {e}")
         raise HTTPException(status_code=500, detail=f"合并失败: {str(e)}")
-

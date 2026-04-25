@@ -3,4 +3,3 @@ export default definePageConfig({
   navigationBarBackgroundColor: '#1a1a2e',
   navigationBarTextStyle: 'white',
 });
-

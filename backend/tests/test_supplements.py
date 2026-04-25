@@ -44,7 +44,7 @@ def sample_supplement_definition(test_user):
 
 class TestSupplementDefinitionAPI:
     """补剂定义API测试类"""
-    
+
     def test_create_supplement(self, client, auth_headers, sample_supplement_definition):
         """测试创建补剂"""
         response = client.post(
@@ -57,7 +57,7 @@ class TestSupplementDefinitionAPI:
         assert data["name"] == "维生素D"
         assert data["dosage"] == "1000IU"
         assert "id" in data
-    
+
     def test_create_supplement_minimal(self, client, auth_headers, test_user):
         """测试创建最小补剂（只有必填字段）"""
         minimal_data = {
@@ -72,7 +72,7 @@ class TestSupplementDefinitionAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "鱼油"
-    
+
     def test_get_user_supplements(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试获取用户补剂列表"""
         # 先创建补剂
@@ -81,7 +81,7 @@ class TestSupplementDefinitionAPI:
             json=sample_supplement_definition,
             headers=auth_headers
         )
-        
+
         # 获取列表
         response = client.get(
             f"/api/v1/supplements/definitions/user/{test_user.id}",
@@ -91,7 +91,7 @@ class TestSupplementDefinitionAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-    
+
     def test_get_my_supplements(self, client, auth_headers, sample_supplement_definition):
         """测试获取我的补剂列表"""
         # 先创建补剂
@@ -100,7 +100,7 @@ class TestSupplementDefinitionAPI:
             json=sample_supplement_definition,
             headers=auth_headers
         )
-        
+
         # 获取列表
         response = client.get(
             "/api/v1/supplements/me/definitions",
@@ -110,7 +110,7 @@ class TestSupplementDefinitionAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-    
+
     def test_update_supplement(self, client, auth_headers, sample_supplement_definition):
         """测试更新补剂"""
         # 先创建补剂
@@ -120,7 +120,7 @@ class TestSupplementDefinitionAPI:
             headers=auth_headers
         )
         supplement_id = create_response.json()["id"]
-        
+
         # 更新补剂
         update_data = {
             "dosage": "2000IU",
@@ -133,7 +133,7 @@ class TestSupplementDefinitionAPI:
         )
         assert update_response.status_code == 200
         assert update_response.json()["dosage"] == "2000IU"
-    
+
     def test_delete_supplement(self, client, auth_headers, sample_supplement_definition):
         """测试删除补剂"""
         # 先创建补剂
@@ -143,7 +143,7 @@ class TestSupplementDefinitionAPI:
             headers=auth_headers
         )
         supplement_id = create_response.json()["id"]
-        
+
         # 删除补剂
         delete_response = client.delete(
             f"/api/v1/supplements/definitions/{supplement_id}",
@@ -154,7 +154,7 @@ class TestSupplementDefinitionAPI:
 
 class TestSupplementRecordAPI:
     """补剂记录API测试类"""
-    
+
     def test_create_supplement_record(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试创建补剂打卡记录"""
         # 先创建补剂
@@ -181,7 +181,7 @@ class TestSupplementRecordAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["taken"] == True
-    
+
     def test_batch_checkin(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试批量打卡"""
         # 创建多个补剂
@@ -195,7 +195,7 @@ class TestSupplementRecordAPI:
                 headers=auth_headers
             )
             supplements.append(response.json()["id"])
-        
+
         # 批量打卡
         batch_data = {
             "user_id": test_user.id,
@@ -210,7 +210,7 @@ class TestSupplementRecordAPI:
         assert response.status_code == 200
         data = response.json()
         assert len(data["results"]) == 3
-    
+
     def test_get_supplements_with_status(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试获取补剂及打卡状态"""
         # 创建补剂
@@ -233,7 +233,7 @@ class TestSupplementRecordAPI:
             json=record_data,
             headers=auth_headers
         )
-        
+
         # 获取补剂及状态
         today = str(date.today())
         response = client.get(
@@ -243,7 +243,7 @@ class TestSupplementRecordAPI:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-    
+
     def test_get_my_stats(self, client, auth_headers, sample_supplement_definition):
         """测试获取我的补剂统计"""
         # 创建补剂
@@ -252,7 +252,7 @@ class TestSupplementRecordAPI:
             json=sample_supplement_definition,
             headers=auth_headers
         )
-        
+
         # 获取统计
         response = client.get(
             "/api/v1/supplements/me/stats?days=7",
@@ -263,7 +263,7 @@ class TestSupplementRecordAPI:
 
 class TestSupplementValidation:
     """补剂验证测试"""
-    
+
     def test_duplicate_record_same_day(self, client, auth_headers, sample_supplement_definition, test_user):
         """测试同一天重复打卡（应更新或忽略）"""
         # 创建补剂
@@ -287,7 +287,7 @@ class TestSupplementValidation:
             headers=auth_headers
         )
         assert response1.status_code == 200
-        
+
         # 同一天再次打卡（应该更新或返回已存在）
         record_data["notes"] = "补充打卡"
         response2 = client.post(
@@ -297,11 +297,11 @@ class TestSupplementValidation:
         )
         # 根据具体实现，可能返回200或409
         assert response2.status_code in [200, 409]
-    
+
     def test_multiple_supplements(self, client, auth_headers, test_user):
         """测试创建多个补剂"""
         supplements = ["维生素A", "维生素B", "维生素C", "维生素D", "维生素E"]
-        
+
         for name in supplements:
             data = {
                 "user_id": test_user.id,
@@ -314,11 +314,10 @@ class TestSupplementValidation:
                 headers=auth_headers
             )
             assert response.status_code == 200
-        
+
         # 验证全部创建成功
         response = client.get(
             "/api/v1/supplements/me/definitions",
             headers=auth_headers
         )
         assert len(response.json()) >= 5
-

@@ -39,7 +39,7 @@ class GoalResponse(BaseModel):
     status: GoalStatus
     priority: Optional[int]
     notes: Optional[str]
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -50,4 +50,3 @@ class GoalProgressCreate(BaseModel):
     progress_value: Optional[float] = None
     completion_percentage: Optional[float] = None
     notes: Optional[str] = None
-

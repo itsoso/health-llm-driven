@@ -67,21 +67,21 @@ export default function CheckinPage() {
   const [currentTemplate, setCurrentTemplate] = useState<CheckinTemplate | null>(null);
   const [checkinValue, setCheckinValue] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Tab 和日历状态
   const [activeTab, setActiveTab] = useState<'checkin' | 'calendar'>('checkin');
   const today = new Date();
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth() + 1);
   const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
-  
+
   // 生成日历网格
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(calendarYear, calendarMonth - 1, 1);
     const lastDay = new Date(calendarYear, calendarMonth, 0);
     const daysInMonth = lastDay.getDate();
     const startDayOfWeek = firstDay.getDay();
-    
+
     const grid: (number | null)[] = [];
     for (let i = 0; i < startDayOfWeek; i++) {
       grid.push(null);
@@ -548,14 +548,14 @@ export default function CheckinPage() {
               if (day === null) {
                 return <View key={`empty-${index}`} className="calendar-day empty" />;
               }
-              
+
               const dayData = calendarData?.days[String(day)];
-              const isToday = 
-                calendarYear === today.getFullYear() && 
-                calendarMonth === today.getMonth() + 1 && 
+              const isToday =
+                calendarYear === today.getFullYear() &&
+                calendarMonth === today.getMonth() + 1 &&
                 day === today.getDate();
               const isFuture = new Date(calendarYear, calendarMonth - 1, day) > today;
-              
+
               return (
                 <View
                   key={day}

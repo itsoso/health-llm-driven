@@ -55,4 +55,3 @@ class WaterStats(BaseModel):
     days_recorded: int = 0
     days_reached_target: int = 0  # 达标天数
     target_percentage: float = 0  # 达标率
-

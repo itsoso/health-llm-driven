@@ -249,7 +249,7 @@ export default function WorkoutGuidance() {
 
       {/* 开始训练按钮 */}
       <View className="action-section">
-        <Button 
+        <Button
           className="start-btn"
           onClick={() => {
             Taro.showToast({ title: '开始训练！', icon: 'success' });

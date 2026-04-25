@@ -3,10 +3,10 @@
  */
 import Taro from '@tarojs/taro';
 import { get, post, put, del, postNoAuth, setToken } from './request';
-import { 
+import {
   API_ENDPOINTS,
-  WechatLoginResponse, 
-  GarminData, 
+  WechatLoginResponse,
+  GarminData,
   RhinitisRecord,
   DailyRecommendation,
   WorkoutSummary,
@@ -22,7 +22,7 @@ import {
 export async function wechatLogin(nickname?: string, inviteCode?: string): Promise<WechatLoginResponse> {
   // 1. 调用 wx.login 获取 code
   const loginResult = await Taro.login();
-  
+
   if (!loginResult.code) {
     throw new Error('微信登录失败');
   }
@@ -66,7 +66,7 @@ export async function getGarminData(
   // 确保日期格式正确（YYYY-MM-DD）
   const normalizedStartDate = startDate.split('T')[0];
   const normalizedEndDate = endDate.split('T')[0];
-  
+
   return get<GarminData[]>(API_ENDPOINTS.GARMIN.MY_DATA, {
     start_date: normalizedStartDate,
     end_date: normalizedEndDate,
@@ -81,11 +81,11 @@ function getBeijingToday(): string {
   // 使用 UTC 时间加上 8 小时得到北京时间
   const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
   const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
-  
+
   const year = beijingTime.getFullYear();
   const month = String(beijingTime.getMonth() + 1).padStart(2, '0');
   const day = String(beijingTime.getDate()).padStart(2, '0');
-  
+
   return `${year}-${month}-${day}`;
 }
 
@@ -95,7 +95,7 @@ function getBeijingToday(): string {
 export async function getTodayGarminData(): Promise<GarminData | null> {
   const today = getBeijingToday();
   console.log('[API] 获取今日 Garmin 数据, 日期:', today);
-  
+
   const data = await getGarminData(today, today);
   console.log('[API] 获取到的数据:', data.length > 0 ? `steps=${data[0].steps}, battery=${data[0].body_battery_most_charged}` : '无数据');
   return data.length > 0 ? data[0] : null;
@@ -201,11 +201,11 @@ export async function getTodayDietSummary(): Promise<DailyDietSummary | null> {
 
 // ========== AI 调度器 API ==========
 
-import { 
-  MorningBriefing, 
-  AIRecommendation, 
-  HealthReminder, 
-  ScheduleItem 
+import {
+  MorningBriefing,
+  AIRecommendation,
+  HealthReminder,
+  ScheduleItem
 } from '../types';
 
 /**

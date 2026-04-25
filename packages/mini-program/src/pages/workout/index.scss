@@ -63,7 +63,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  
+
   &:active {
     background: rgba(255, 255, 255, 0.2);
   }
@@ -88,12 +88,12 @@
   text-align: center;
   border-radius: 10px;
   transition: all 0.2s ease;
-  
+
   &.active {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
   }
-  
+
   &:active:not(.active) {
     background: rgba(255, 255, 255, 0.1);
   }
@@ -102,7 +102,7 @@
 .range-text {
   font-size: 26px;
   color: rgba(255, 255, 255, 0.6);
-  
+
   .active & {
     color: #ffffff;
     font-weight: 600;
@@ -200,7 +200,7 @@
   padding: 16px;
   margin-bottom: 12px;
   transition: all 0.2s ease;
-  
+
   &:active {
     background: rgba(255, 255, 255, 0.12);
   }
@@ -278,7 +278,7 @@
 
 .detail-item {
   flex: 1;
-  
+
   &.full {
     flex: none;
     width: 100%;
@@ -296,7 +296,7 @@
   font-size: 26px;
   color: #ffffff;
   font-weight: 500;
-  
+
   &.effect {
     color: #10b981;
     font-size: 32px;

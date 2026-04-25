@@ -81,20 +81,20 @@ def list_sources():
     """列出所有可用的知识源"""
     print("\n📚 可用的知识源:")
     print("-" * 60)
-    
+
     for source_id, config in KNOWLEDGE_SOURCES.items():
         exists = config["directory"].exists()
         status = "✅" if exists else "❌ (目录不存在)"
-        
+
         print(f"\n  {source_id} {status}")
         print(f"    名称: {config['name']}")
         print(f"    描述: {config['description']}")
         print(f"    目录: {config['directory']}")
-        
+
         if exists:
             files = list(config["directory"].glob("*.md"))
             print(f"    文件: {len(files)} 个 Markdown 文件")
-    
+
     print("\n" + "-" * 60)
     print("使用示例: python scripts/import_knowledge.py --source feng_xue")
     print()
@@ -103,77 +103,77 @@ def list_sources():
 def import_source(source_id: str, force: bool = False) -> dict:
     """
     导入指定的知识源
-    
+
     Args:
         source_id: 知识源 ID
         force: 是否强制重新导入（先删除旧数据）
-        
+
     Returns:
         导入结果
     """
     if source_id not in KNOWLEDGE_SOURCES:
         logger.error(f"未知的知识源: {source_id}")
         return {"success": False, "error": f"未知的知识源: {source_id}"}
-    
+
     config = KNOWLEDGE_SOURCES[source_id]
     source_dir = config["directory"]
-    
+
     if not source_dir.exists():
         logger.error(f"知识源目录不存在: {source_dir}")
         return {"success": False, "error": f"目录不存在: {source_dir}"}
-    
+
     logger.info(f"开始导入知识源: {config['name']} ({source_id})")
-    
+
     # 检查向量存储是否可用
     if not vector_store.is_available():
         logger.error("向量存储服务不可用")
         return {"success": False, "error": "向量存储服务不可用"}
-    
+
     # 如果强制导入，先删除旧数据
     if force:
         logger.info(f"删除旧的 {source_id} 知识数据...")
         delete_result = vector_store.delete_by_source(source_id)
         if delete_result.get("success"):
             logger.info(f"已删除 {delete_result.get('deleted_count', 0)} 条旧记录")
-    
+
     # 加载文档
     all_documents = []
-    
+
     for md_file in sorted(source_dir.glob("*.md")):
         # 跳过 README 文件
         if md_file.name.lower() == "readme.md":
             continue
-        
+
         logger.info(f"  加载文件: {md_file.name}")
-        
+
         # 使用 Markdown 加载器
         docs = document_loader.load_markdown_file(
             str(md_file),
             source=source_id
         )
-        
+
         # 添加额外元数据
         for doc in docs:
             doc["metadata"]["source_name"] = config["name"]
             doc["metadata"]["file_name"] = md_file.name
-        
+
         all_documents.extend(docs)
         logger.info(f"    -> 解析出 {len(docs)} 个文档块")
-    
+
     if not all_documents:
         logger.warning(f"没有找到可导入的文档")
         return {"success": True, "documents_added": 0, "message": "没有找到可导入的文档"}
-    
+
     # 添加到向量存储
     logger.info(f"正在添加 {len(all_documents)} 个文档块到向量存储...")
-    
+
     result = vector_store.add_documents(all_documents, source=source_id)
-    
+
     if result.get("success"):
         logger.info(f"✅ 成功导入 {result.get('documents_added', 0)} 个文档块")
     else:
         logger.error(f"导入失败: {result.get('error', '未知错误')}")
-    
+
     return result
 
 
@@ -181,7 +181,7 @@ def import_all(force: bool = False) -> dict:
     """导入所有知识源"""
     results = {}
     total_docs = 0
-    
+
     for source_id in KNOWLEDGE_SOURCES:
         source_dir = KNOWLEDGE_SOURCES[source_id]["directory"]
         if source_dir.exists():
@@ -189,7 +189,7 @@ def import_all(force: bool = False) -> dict:
             results[source_id] = result
             if result.get("success"):
                 total_docs += result.get("documents_added", 0)
-    
+
     return {
         "success": True,
         "total_documents": total_docs,
@@ -202,26 +202,26 @@ def show_stats():
     if not vector_store.is_available():
         print("❌ 向量存储服务不可用")
         return
-    
+
     stats = vector_store.get_stats()
-    
+
     print("\n📊 知识库统计信息:")
     print("-" * 40)
     print(f"  总文档数: {stats.get('total_documents', 0)}")
-    
+
     by_source = stats.get("by_source", {})
     if by_source:
         print("\n  按来源分布:")
         for source, count in by_source.items():
             source_name = KNOWLEDGE_SOURCES.get(source, {}).get("name", source)
             print(f"    - {source_name}: {count}")
-    
+
     by_category = stats.get("by_category", {})
     if by_category:
         print("\n  按分类分布:")
         for category, count in sorted(by_category.items()):
             print(f"    - {category}: {count}")
-    
+
     print()
 
 
@@ -239,47 +239,47 @@ def main():
   python scripts/import_knowledge.py --stats          # 显示统计信息
         """
     )
-    
+
     parser.add_argument(
         "--list", "-l",
         action="store_true",
         help="列出所有可用的知识源"
     )
-    
+
     parser.add_argument(
         "--source", "-s",
         type=str,
         help="要导入的知识源 (feng_xue, pipi_mama, exercise_science, general, all)"
     )
-    
+
     parser.add_argument(
         "--force", "-f",
         action="store_true",
         help="强制重新导入（先删除旧数据）"
     )
-    
+
     parser.add_argument(
         "--stats",
         action="store_true",
         help="显示知识库统计信息"
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.list:
         list_sources()
         return
-    
+
     if args.stats:
         show_stats()
         return
-    
+
     if args.source:
         if args.source == "all":
             result = import_all(force=args.force)
         else:
             result = import_source(args.source, force=args.force)
-        
+
         if result.get("success"):
             print(f"\n✅ 导入完成!")
             show_stats()

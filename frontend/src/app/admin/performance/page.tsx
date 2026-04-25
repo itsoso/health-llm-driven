@@ -61,11 +61,11 @@ export default function PerformanceMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState(24); // 小时
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'mini_program' | 'web'>('all');
-  
+
   const [overview, setOverview] = useState<PerformanceOverview[]>([]);
   const [pagePerformance, setPagePerformance] = useState<PagePerformance[]>([]);
   const [apiPerformance, setAPIPerformance] = useState<APIPerformance[]>([]);
-  
+
   const [activeTab, setActiveTab] = useState<'overview' | 'pages' | 'apis'>('overview');
 
   // 页面加载时滚动到顶部
@@ -98,20 +98,20 @@ export default function PerformanceMonitorPage() {
       console.warn('Token 未加载，跳过请求');
       return;
     }
-    
+
     try {
       const params = new URLSearchParams({ hours: timeRange.toString() });
       if (selectedPlatform !== 'all') {
         params.append('platform', selectedPlatform);
       }
-      
+
       const response = await fetch(
         `/api/v1/performance/overview?${params}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         setOverview(data);
@@ -129,20 +129,20 @@ export default function PerformanceMonitorPage() {
       console.warn('Token 未加载，跳过请求');
       return;
     }
-    
+
     try {
       const params = new URLSearchParams({
         platform: selectedPlatform,
         hours: timeRange.toString()
       });
-      
+
       const response = await fetch(
         `/api/v1/performance/pages?${params}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         setPagePerformance(data);
@@ -159,17 +159,17 @@ export default function PerformanceMonitorPage() {
       console.warn('Token 未加载，跳过请求');
       return;
     }
-    
+
     try {
       const params = new URLSearchParams({ hours: timeRange.toString() });
-      
+
       const response = await fetch(
         `/api/v1/performance/apis?${params}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         setAPIPerformance(data);
@@ -207,7 +207,7 @@ export default function PerformanceMonitorPage() {
                 </h1>
                 <p className="text-gray-600 mt-1">实时监控小程序和 Web 端的性能指标</p>
               </div>
-              
+
               <button
                 onClick={loadData}
                 disabled={loading}

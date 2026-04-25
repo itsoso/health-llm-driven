@@ -38,52 +38,52 @@ def create_diet_record(
     """创建饮食记录（需要登录）"""
     try:
         logger.info(f"用户 {current_user.id} 创建饮食记录: {record.meal_type}, {record.food_items[:50] if record.food_items else ''}")
-        
+
         # 转换meal_time为字符串
         record_dict = record.model_dump()
         if record_dict.get('meal_time'):
             record_dict['meal_time'] = record_dict['meal_time'].strftime('%H:%M')
-        
+
         # 处理图片上传
         image_url = record_dict.get('image_url')
         if record_dict.get('image_base64'):
             try:
                 from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
                 import base64 as b64
-                
+
                 ensure_upload_dir()
                 image_type = (record_dict.get('image_type') or 'jpeg').lower()
                 if image_type == "jpg":
                     image_type = "jpeg"
-                
+
                 # 解码并保存图片
                 base64_data = record_dict['image_base64']
                 if "," in base64_data:
                     base64_data = base64_data.split(",", 1)[1]
-                
+
                 image_data = b64.b64decode(base64_data)
                 filename = generate_filename(image_type, "diet")
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
-                
+
                 with open(filepath, "wb") as f:
                     f.write(image_data)
-                
+
                 image_url = f"/api/v1/upload/files/{filename}"
                 logger.info(f"保存饮食图片: {filename}")
             except Exception as e:
                 logger.warning(f"保存图片失败: {e}")
-        
+
         # 确保 meal_type 是字符串
         meal_type_value = record_dict['meal_type']
         if isinstance(meal_type_value, MealType):
             meal_type_value = meal_type_value.value
-        
+
         # food_name 使用 food_items 的值（数据库要求 NOT NULL）
         food_name = record_dict['food_items']
         if food_name and len(food_name) > 100:
             food_name = food_name[:100]  # 截断过长的名称
-        
+
         db_record = DietRecordModel(
             user_id=current_user.id,
             record_date=record_dict['record_date'],
@@ -102,10 +102,10 @@ def create_diet_record(
         db.add(db_record)
         db.commit()
         db.refresh(db_record)
-        
+
         logger.info(f"饮食记录创建成功: id={db_record.id}")
         return _convert_to_response(db_record)
-        
+
     except Exception as e:
         logger.error(f"创建饮食记录失败: {e}", exc_info=True)
         db.rollback()
@@ -123,7 +123,7 @@ def _convert_to_response(record) -> DietRecordResponse:
                 meal_time = None
         elif isinstance(record.meal_time, time):
             meal_time = record.meal_time
-    
+
     return DietRecordResponse(
         id=record.id,
         user_id=record.user_id,
@@ -159,14 +159,14 @@ def get_user_diet_records(
 ):
     """获取用户饮食记录"""
     query = db.query(DietRecordModel).filter(DietRecordModel.user_id == user_id)
-    
+
     if start_date:
         query = query.filter(DietRecordModel.record_date >= start_date)
     if end_date:
         query = query.filter(DietRecordModel.record_date <= end_date)
     if meal_type:
         query = query.filter(DietRecordModel.meal_type == meal_type)
-    
+
     records = query.order_by(desc(DietRecordModel.record_date)).limit(limit).all()
     return [_convert_to_response(r) for r in records]
 
@@ -183,13 +183,13 @@ def get_daily_diet_summary(
         DietRecordModel.user_id == user_id,
         DietRecordModel.record_date == record_date
     ).order_by(DietRecordModel.created_at).all()
-    
+
     total_calories = sum(r.calories or 0 for r in records)
     total_protein = sum(r.protein or 0 for r in records)
     total_carbs = sum(r.carbs or 0 for r in records)
     total_fat = sum(r.fat or 0 for r in records)
     total_fiber = sum(r.fiber or 0 for r in records)
-    
+
     return DailyDietSummary(
         record_date=record_date,
         total_calories=total_calories,
@@ -211,15 +211,15 @@ def get_diet_stats(
 ):
     """获取饮食统计"""
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(DietRecordModel).filter(
         DietRecordModel.user_id == user_id,
         DietRecordModel.record_date >= start_date
     ).all()
-    
+
     if not records:
         return DietStats(total_records=0, days_recorded=0)
-    
+
     # 按日期分组统计
     daily_data = {}
     for r in records:
@@ -230,9 +230,9 @@ def get_diet_stats(
         daily_data[d]['protein'] += r.protein or 0
         daily_data[d]['carbs'] += r.carbs or 0
         daily_data[d]['fat'] += r.fat or 0
-    
+
     days_count = len(daily_data)
-    
+
     return DietStats(
         average_daily_calories=round(sum(d['calories'] for d in daily_data.values()) / days_count, 0) if days_count else None,
         average_daily_protein=round(sum(d['protein'] for d in daily_data.values()) / days_count, 1) if days_count else None,
@@ -256,14 +256,14 @@ def get_my_diet_records(
 ):
     """获取当前用户饮食记录（需要登录）"""
     query = db.query(DietRecordModel).filter(DietRecordModel.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(DietRecordModel.record_date >= start_date)
     if end_date:
         query = query.filter(DietRecordModel.record_date <= end_date)
     if meal_type:
         query = query.filter(DietRecordModel.meal_type == meal_type)
-    
+
     records = query.order_by(desc(DietRecordModel.record_date)).limit(limit).all()
     return [_convert_to_response(r) for r in records]
 
@@ -279,13 +279,13 @@ def get_my_daily_diet_summary(
         DietRecordModel.user_id == current_user.id,
         DietRecordModel.record_date == record_date
     ).order_by(DietRecordModel.created_at).all()
-    
+
     total_calories = sum(r.calories or 0 for r in records)
     total_protein = sum(r.protein or 0 for r in records)
     total_carbs = sum(r.carbs or 0 for r in records)
     total_fat = sum(r.fat or 0 for r in records)
     total_fiber = sum(r.fiber or 0 for r in records)
-    
+
     return DailyDietSummary(
         record_date=record_date,
         total_calories=total_calories,
@@ -306,15 +306,15 @@ def get_my_diet_stats(
 ):
     """获取当前用户饮食统计（需要登录）"""
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(DietRecordModel).filter(
         DietRecordModel.user_id == current_user.id,
         DietRecordModel.record_date >= start_date
     ).all()
-    
+
     if not records:
         return DietStats(total_records=0, days_recorded=0)
-    
+
     # 按日期分组统计
     daily_data = {}
     for r in records:
@@ -325,9 +325,9 @@ def get_my_diet_stats(
         daily_data[d]['protein'] += r.protein or 0
         daily_data[d]['carbs'] += r.carbs or 0
         daily_data[d]['fat'] += r.fat or 0
-    
+
     days_count = len(daily_data)
-    
+
     return DietStats(
         average_daily_calories=round(sum(d['calories'] for d in daily_data.values()) / days_count, 0) if days_count else None,
         average_daily_protein=round(sum(d['protein'] for d in daily_data.values()) / days_count, 1) if days_count else None,
@@ -348,16 +348,16 @@ def update_diet_record(
     record = db.query(DietRecordModel).filter(DietRecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
+
     update_dict = update_data.model_dump(exclude_unset=True)
     if 'meal_type' in update_dict and update_dict['meal_type']:
         update_dict['meal_type'] = update_dict['meal_type'].value
     if 'meal_time' in update_dict and update_dict['meal_time']:
         update_dict['meal_time'] = update_dict['meal_time'].strftime('%H:%M')
-    
+
     for key, value in update_dict.items():
         setattr(record, key, value)
-    
+
     db.commit()
     db.refresh(record)
     return _convert_to_response(record)
@@ -390,7 +390,7 @@ async def recognize_food(
 ):
     """
     AI识别食物图片
-    
+
     上传Base64编码的图片，AI会识别出食物并估算营养信息
     """
     if not food_recognition_service.is_available():
@@ -398,20 +398,20 @@ async def recognize_food(
             status_code=503,
             detail="智能食物识别服务不可用"
         )
-    
+
     try:
         result = await food_recognition_service.recognize_food_from_base64(
             request.image_base64,
             request.image_type
         )
-        
+
         if not result.get("success"):
             return FoodRecognitionResponse(
                 success=False,
                 error=result.get("error", "识别失败"),
                 foods=[]
             )
-        
+
         return FoodRecognitionResponse(
             success=True,
             foods=result.get("foods", []),
@@ -422,7 +422,7 @@ async def recognize_food(
             total_carbs=result.get("total_carbs"),
             total_fat=result.get("total_fat")
         )
-        
+
     except Exception as e:
         logger.error(f"食物识别失败: {e}")
         raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
@@ -436,7 +436,7 @@ async def recognize_and_save_diet(
 ):
     """
     AI识别食物图片并直接保存为饮食记录
-    
+
     一键拍照 -> AI识别 -> 保存记录
     """
     if not food_recognition_service.is_available():
@@ -444,68 +444,68 @@ async def recognize_and_save_diet(
             status_code=503,
             detail="智能食物识别服务不可用"
         )
-    
+
     try:
         # AI识别
         result = await food_recognition_service.recognize_food_from_base64(
             request.image_base64,
             request.image_type
         )
-        
+
         if not result.get("success"):
             raise HTTPException(
                 status_code=400,
                 detail=result.get("error", "智能识别失败")
             )
-        
+
         foods = result.get("foods", [])
         if not foods:
             raise HTTPException(
                 status_code=400,
                 detail="未识别到任何食物，请重新拍照"
             )
-        
+
         # 组合食物名称
         food_names = [f.get("name", "") for f in foods if f.get("name")]
         food_items = ", ".join([f.get("name", "") + (f" ({f.get('quantity', '')})" if f.get('quantity') else "") for f in foods])
-        
+
         # 取第一个食物名称作为主名称（兼容旧字段）
         primary_food_name = food_names[0] if food_names else "智能识别食物"
-        
+
         # 计算平均置信度
         confidences = [f.get("confidence", 0) for f in foods if f.get("confidence")]
         avg_confidence = sum(confidences) / len(confidences) if confidences else None
-        
+
         # 保存图片（如果有）
         image_url = None
         if request.image_base64:
             try:
                 from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
                 import base64 as b64
-                
+
                 ensure_upload_dir()
                 image_type = request.image_type.lower()
                 if image_type == "jpg":
                     image_type = "jpeg"
-                
+
                 # 解码并保存图片
                 base64_data = request.image_base64
                 if "," in base64_data:
                     base64_data = base64_data.split(",", 1)[1]
-                
+
                 image_data = b64.b64decode(base64_data)
                 filename = generate_filename(image_type, "diet")
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
-                
+
                 with open(filepath, "wb") as f:
                     f.write(image_data)
-                
+
                 image_url = f"/api/v1/upload/files/{filename}"
                 logger.info(f"保存饮食图片: {filename}")
             except Exception as e:
                 logger.warning(f"保存图片失败: {e}")
-        
+
         # 创建饮食记录
         db_record = DietRecordModel(
             user_id=current_user.id,
@@ -524,15 +524,15 @@ async def recognize_and_save_diet(
             ai_raw_result=json.dumps(result, ensure_ascii=False),
             health_tips=result.get("health_tips")
         )
-        
+
         db.add(db_record)
         db.commit()
         db.refresh(db_record)
-        
+
         logger.info(f"用户 {current_user.id} 通过AI识别创建饮食记录: {food_items}")
-        
+
         return _convert_to_response(db_record)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -547,7 +547,7 @@ async def estimate_nutrition_from_text(
 ):
     """
     根据文字描述估算营养信息（不需要图片）
-    
+
     例如: "两个鸡蛋，一碗米饭，炒青菜"
     """
     if not food_recognition_service.is_available():
@@ -555,17 +555,17 @@ async def estimate_nutrition_from_text(
             status_code=503,
             detail="智能服务不可用"
         )
-    
+
     try:
         result = food_recognition_service.estimate_nutrition_from_text(food_description)
-        
+
         if not result.get("success"):
             return FoodRecognitionResponse(
                 success=False,
                 error=result.get("error", "估算失败"),
                 foods=[]
             )
-        
+
         return FoodRecognitionResponse(
             success=True,
             foods=result.get("foods", []),
@@ -575,8 +575,7 @@ async def estimate_nutrition_from_text(
             total_carbs=result.get("total_carbs"),
             total_fat=result.get("total_fat")
         )
-        
+
     except Exception as e:
         logger.error(f"营养估算失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

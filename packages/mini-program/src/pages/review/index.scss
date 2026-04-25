@@ -25,7 +25,7 @@ $gap-lg: 20px;
   background: $bg-dark;
   padding: $gap-md;
   padding-bottom: 120px;
-  
+
   &.loading,
   &.error-state {
     display: flex;
@@ -41,7 +41,7 @@ $gap-lg: 20px;
     font-size: 100px;
     margin-bottom: 24px;
   }
-  
+
   .error-text {
     font-size: 28px;
     color: $text-gray-400;
@@ -49,12 +49,12 @@ $gap-lg: 20px;
     text-align: center;
     padding: 0 32px;
   }
-  
+
   .retry-btn {
     padding: 20px 48px;
     background: linear-gradient(135deg, #6366F1, $primary);
     border-radius: 40px;
-    
+
     .retry-text {
       font-size: 28px;
       color: $text-white;
@@ -110,14 +110,14 @@ $gap-lg: 20px;
 }
 
 .streak-icon { font-size: 24px; }
-.streak-num { 
-  font-size: 28px; 
-  font-weight: 700; 
-  color: $accent-orange; 
+.streak-num {
+  font-size: 28px;
+  font-weight: 700;
+  color: $accent-orange;
 }
-.streak-label { 
-  font-size: 22px; 
-  color: $accent-orange; 
+.streak-label {
+  font-size: 22px;
+  color: $accent-orange;
 }
 
 // 视图切换
@@ -135,15 +135,15 @@ $gap-lg: 20px;
   padding: 10px 0;
   border-radius: 100px;
   transition: all 0.2s;
-  
+
   text {
     font-size: 24px;
     color: $text-gray-400;
   }
-  
+
   &.active {
     background: $primary;
-    
+
     text {
       color: $text-white;
       font-weight: 600;
@@ -180,7 +180,7 @@ $gap-lg: 20px;
   background: rgba($accent-green, 0.2);
   padding: 4px 12px;
   border-radius: 100px;
-  
+
   text {
     font-size: 22px;
     color: $accent-green;
@@ -233,7 +233,7 @@ $gap-lg: 20px;
   background: rgba($primary, 0.2);
   padding: 6px 14px;
   border-radius: 100px;
-  
+
   text {
     font-size: 22px;
     color: $primary;
@@ -302,7 +302,7 @@ $gap-lg: 20px;
 // 评分选择器
 .score-selector {
   margin-bottom: $gap-md;
-  
+
   &:last-child { margin-bottom: 0; }
 }
 
@@ -329,7 +329,7 @@ $gap-lg: 20px;
   border-radius: $radius-sm;
   border: 2px solid transparent;
   transition: all 0.2s;
-  
+
   &.active {
     background: rgba($primary, 0.2);
     border-color: $primary;
@@ -344,7 +344,7 @@ $gap-lg: 20px;
 .score-num {
   font-size: 20px;
   color: $text-gray-400;
-  
+
   .active & {
     color: $primary;
     font-weight: 600;
@@ -354,7 +354,7 @@ $gap-lg: 20px;
 // 输入组
 .input-group {
   margin-bottom: $gap-md;
-  
+
   &:last-child { margin-bottom: 0; }
 }
 
@@ -370,7 +370,7 @@ $gap-lg: 20px;
   justify-content: space-between;
   align-items: center;
   margin-bottom: $gap-sm;
-  
+
   .input-label {
     margin-bottom: 0;
   }
@@ -380,12 +380,12 @@ $gap-lg: 20px;
   background: linear-gradient(135deg, #6366F1, #8B5CF6);
   padding: 6px 14px;
   border-radius: 100px;
-  
+
   text {
     font-size: 22px;
     color: $text-white;
   }
-  
+
   &:active {
     opacity: 0.8;
   }
@@ -426,7 +426,7 @@ $gap-lg: 20px;
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  
+
   &:last-child {
     border-bottom: none;
   }
@@ -454,11 +454,11 @@ $gap-lg: 20px;
   font-size: 26px;
   line-height: 1.5;
   box-sizing: border-box;
-  
+
   &.large {
     min-height: 180px;
   }
-  
+
   &::placeholder {
     color: $text-gray-500;
   }
@@ -478,18 +478,18 @@ $gap-lg: 20px;
   text-align: center;
   font-size: 28px;
   font-weight: 600;
-  
+
   &.btn-primary {
     background: linear-gradient(135deg, #6366F1, #8B5CF6);
     color: $text-white;
   }
-  
+
   &.btn-secondary {
     background: rgba(255, 255, 255, 0.1);
     color: $text-gray-300;
     border: 1px solid $card-border;
   }
-  
+
   &:active {
     opacity: 0.8;
   }

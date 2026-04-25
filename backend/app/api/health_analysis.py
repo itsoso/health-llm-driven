@@ -20,7 +20,7 @@ def analyze_my_health_issues(
 ):
     """
     分析当前用户的健康问题（带缓存，需要登录）
-    
+
     - 默认使用当天缓存的分析结果
     - 第二天自动重新分析
     - 可通过 force_refresh=true 强制刷新

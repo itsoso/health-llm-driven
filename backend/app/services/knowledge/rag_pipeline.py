@@ -24,24 +24,24 @@ except ImportError:
 class RAGPipeline:
     """
     RAG 管道
-    
+
     实现检索增强生成流程：
     1. 接收用户查询/健康数据
     2. 从知识库检索相关内容
     3. 将检索结果与用户数据结合
     4. 调用大模型生成个性化建议
     """
-    
+
     def __init__(self):
         self.openai_client = None
         self.model = "gpt-4o-mini"
-        
+
         self._initialize()
-    
+
     def _initialize(self):
         """初始化 RAG 管道"""
         from app.config import settings
-        
+
         if OPENAI_AVAILABLE and settings.openai_api_key:
             client_kwargs = {"api_key": settings.openai_api_key}
             if settings.openai_base_url:
@@ -51,11 +51,11 @@ class RAGPipeline:
             logger.info("RAG Pipeline 初始化成功")
         else:
             logger.warning("OpenAI 未配置，RAG 生成功能将不可用")
-    
+
     def is_available(self) -> bool:
         """检查 RAG 管道是否可用"""
         return self.openai_client is not None and vector_store.is_available()
-    
+
     def retrieve_relevant_knowledge(
         self,
         query: str,
@@ -64,34 +64,34 @@ class RAGPipeline:
     ) -> List[Dict[str, Any]]:
         """
         检索相关知识
-        
+
         Args:
             query: 查询内容
             category: 知识分类过滤
             n_results: 返回结果数量
-            
+
         Returns:
             相关知识列表
         """
         if not vector_store.is_available():
             logger.warning("向量存储不可用，无法检索知识")
             return []
-        
+
         results = vector_store.search(
             query=query,
             n_results=n_results,
             category=category
         )
-        
+
         # 过滤低相关度结果（降低阈值以提高召回率）
         filtered_results = [
-            r for r in results 
+            r for r in results
             if r.get("relevance_score", 0) > 0.15  # 相关度阈值从 0.3 降低到 0.15
         ]
-        
+
         logger.info(f"检索到 {len(filtered_results)} 条相关知识（原始 {len(results)} 条，阈值 0.15）")
         return filtered_results
-    
+
     def generate_with_knowledge(
         self,
         user_query: str,
@@ -101,13 +101,13 @@ class RAGPipeline:
     ) -> Dict[str, Any]:
         """
         基于知识库生成回答
-        
+
         Args:
             user_query: 用户问题
             user_context: 用户上下文（画像信息）
             health_data: 健康数据（可选）
             category: 知识分类过滤
-            
+
         Returns:
             生成的回答和来源
         """
@@ -117,19 +117,19 @@ class RAGPipeline:
                 "error": "LLM 服务不可用",
                 "answer": None
             }
-        
+
         # 1. 检索相关知识
         relevant_knowledge = self.retrieve_relevant_knowledge(
             query=user_query,
             category=category,
             n_results=5
         )
-        
+
         # 2. 构建上下文
         knowledge_context = self._build_knowledge_context(relevant_knowledge)
         user_info = self._build_user_info(user_context)
         health_info = self._build_health_info(health_data) if health_data else ""
-        
+
         # 3. 构建提示词
         system_prompt = """你是一位专业的智能助理，具有丰富的医学和营养学知识。
 
@@ -179,9 +179,9 @@ class RAGPipeline:
                 max_tokens=1500,
                 timeout=60
             )
-            
+
             content = response.choices[0].message.content.strip()
-            
+
             # 解析 JSON 响应
             import json
             if content.startswith("```"):
@@ -189,7 +189,7 @@ class RAGPipeline:
                 if content.startswith("json"):
                     content = content[4:]
                 content = content.strip()
-            
+
             result = json.loads(content)
             result["success"] = True
             result["sources"] = [
@@ -200,9 +200,9 @@ class RAGPipeline:
                 }
                 for k in relevant_knowledge[:3]  # 返回前3个来源
             ]
-            
+
             return result
-            
+
         except json.JSONDecodeError:
             # 如果 JSON 解析失败，返回原始文本
             return {
@@ -221,7 +221,7 @@ class RAGPipeline:
                 "error": str(e),
                 "answer": None
             }
-    
+
     def enhance_daily_advice(
         self,
         rule_analysis: Dict[str, Any],
@@ -230,55 +230,55 @@ class RAGPipeline:
     ) -> Dict[str, Any]:
         """
         增强每日健康建议
-        
+
         将知识库内容融入到每日 AI 建议生成中
-        
+
         Args:
             rule_analysis: 规则分析结果
             user_context: 用户上下文
             health_data: 健康数据
-            
+
         Returns:
             增强后的建议
         """
         if not self.is_available():
             return {"enhanced": False, "reason": "RAG 服务不可用"}
-        
+
         # 根据分析结果确定需要检索的知识类别
         queries = []
-        
+
         # 睡眠相关
         sleep_status = rule_analysis.get("sleep_analysis", {}).get("status")
         if sleep_status in ["poor", "fair"]:
             queries.append(("如何改善睡眠质量", "sleep"))
-        
+
         # 活动相关
         activity_status = rule_analysis.get("activity_analysis", {}).get("status")
         if activity_status in ["poor", "fair"]:
             queries.append(("如何增加日常活动量", "exercise"))
-        
+
         # 压力/恢复相关
         recovery_status = rule_analysis.get("stress_analysis", {}).get("recovery_status")
         if recovery_status == "needs_rest":
             queries.append(("如何有效恢复身体疲劳", "mental_health"))
-        
+
         # 慢性病相关（从用户画像获取）
         chronic_conditions = user_context.get("health_conditions", {}).get("chronic_conditions", [])
         for condition in chronic_conditions[:2]:  # 最多处理2个
             queries.append((f"如何管理{condition}", "chronic_disease"))
-        
+
         # 检索相关知识
         all_knowledge = []
         for query, category in queries:
             knowledge = self.retrieve_relevant_knowledge(query, category, n_results=2)
             all_knowledge.extend(knowledge)
-        
+
         if not all_knowledge:
             return {"enhanced": False, "reason": "未找到相关知识"}
-        
+
         # 构建增强提示
         knowledge_context = self._build_knowledge_context(all_knowledge)
-        
+
         system_prompt = """你是一位专业的智能助理。请基于知识库中的专业内容，为用户的每日健康建议提供补充。
 
 要求：
@@ -317,55 +317,55 @@ class RAGPipeline:
                 max_tokens=800,
                 timeout=45
             )
-            
+
             content = response.choices[0].message.content.strip()
-            
+
             import json
             if content.startswith("```"):
                 content = content.split("```")[1]
                 if content.startswith("json"):
                     content = content[4:]
                 content = content.strip()
-            
+
             result = json.loads(content)
             result["enhanced"] = True
             result["knowledge_sources"] = len(all_knowledge)
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"增强建议生成失败: {e}")
             return {"enhanced": False, "error": str(e)}
-    
+
     def _build_knowledge_context(self, knowledge_list: List[Dict[str, Any]]) -> str:
         """构建知识上下文"""
         if not knowledge_list:
             return ""
-        
+
         context_parts = []
         for i, k in enumerate(knowledge_list, 1):
             title = k.get("metadata", {}).get("title", f"知识点{i}")
             content = k.get("content", "")[:500]  # 限制长度
             category = k.get("metadata", {}).get("category", "")
-            
+
             context_parts.append(f"""
 【{title}】({category})
 {content}
 """)
-        
+
         return "\n---\n".join(context_parts)
-    
+
     def _build_user_info(self, user_context: Dict[str, Any]) -> str:
         """构建用户信息描述"""
         parts = ["用户画像："]
-        
+
         if user_context.get("name"):
             parts.append(f"- 姓名: {user_context['name']}")
         if user_context.get("age"):
             parts.append(f"- 年龄: {user_context['age']}岁")
         if user_context.get("gender"):
             parts.append(f"- 性别: {user_context['gender']}")
-        
+
         # 健康目标
         goals = user_context.get("health_goals", {})
         if goals:
@@ -376,26 +376,26 @@ class RAGPipeline:
                 parts.append(f"  - 目标步数: {goals['target_steps']}步")
             if goals.get("target_sleep_hours"):
                 parts.append(f"  - 目标睡眠: {goals['target_sleep_hours']}小时")
-        
+
         # 健康状况
         conditions = user_context.get("health_conditions", {})
         chronic = conditions.get("chronic_conditions", [])
         if chronic:
             parts.append(f"- 慢性病: {', '.join(chronic)}")
-        
+
         allergies = conditions.get("allergies", [])
         if allergies:
             parts.append(f"- 过敏: {', '.join(allergies)}")
-        
+
         return "\n".join(parts)
-    
+
     def _build_health_info(self, health_data: Dict[str, Any]) -> str:
         """构建健康数据描述"""
         if not health_data:
             return ""
-        
+
         parts = ["近期健康数据："]
-        
+
         if health_data.get("sleep_score"):
             parts.append(f"- 睡眠分数: {health_data['sleep_score']}")
         if health_data.get("steps"):
@@ -406,28 +406,28 @@ class RAGPipeline:
             parts.append(f"- 压力水平: {health_data['stress_level']}")
         if health_data.get("body_battery"):
             parts.append(f"- 身体电量: {health_data['body_battery']}")
-        
+
         return "\n".join(parts)
-    
+
     def _build_analysis_summary(self, rule_analysis: Dict[str, Any]) -> str:
         """构建分析结果摘要"""
         parts = []
-        
+
         overall = rule_analysis.get("overall_status", "unknown")
         parts.append(f"整体状态: {overall}")
-        
+
         sleep = rule_analysis.get("sleep_analysis", {})
         parts.append(f"睡眠: {sleep.get('status', 'unknown')} - {sleep.get('quality_assessment', '')}")
-        
+
         activity = rule_analysis.get("activity_analysis", {})
         parts.append(f"活动: {activity.get('status', 'unknown')}")
-        
+
         heart = rule_analysis.get("heart_rate_analysis", {})
         parts.append(f"心率: {heart.get('status', 'unknown')}")
-        
+
         stress = rule_analysis.get("stress_analysis", {})
         parts.append(f"恢复: {stress.get('recovery_status', 'unknown')}")
-        
+
         return "\n".join(parts)
 
 

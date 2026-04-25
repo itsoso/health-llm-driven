@@ -187,10 +187,10 @@ echo ""
 if [ -f "health.db" ]; then
     # 更新迁移脚本中的密码
     sed -i.bak "s/health_password_2026/$DB_PASSWORD/" scripts/migrate_sqlite_to_postgres.py
-    
+
     echo "开始数据迁移..."
     echo "yes" | python scripts/migrate_sqlite_to_postgres.py
-    
+
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ 数据迁移成功${NC}"
     else

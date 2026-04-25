@@ -84,12 +84,12 @@ async def upload_image(
 ):
     """
     上传图片文件
-    
+
     - **file**: 图片文件
     - **category**: 分类 (diet/medical/avatar/other)
     """
     ensure_upload_dir()
-    
+
     # 检查文件类型
     extension = get_file_extension(file.filename or "")
     if extension not in ALLOWED_EXTENSIONS:
@@ -97,24 +97,24 @@ async def upload_image(
             status_code=400,
             detail=f"不支持的文件类型: {extension}，允许: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-    
+
     # 读取文件内容
     content = await file.read()
-    
+
     # 检查文件大小
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
             detail=f"文件太大，最大允许 {MAX_FILE_SIZE // 1024 // 1024}MB"
         )
-    
+
     # 验证图片内容
     validate_image_content(content)
-    
+
     # 获取原始图片信息
     original_size = len(content)
     logger.info(f"原始图片大小: {original_size / 1024:.1f}KB")
-    
+
     # 压缩图片 (如果需要)
     if should_compress(content, COMPRESSION_THRESHOLD_KB):
         logger.info(f"图片超过 {COMPRESSION_THRESHOLD_KB}KB，开始压缩...")
@@ -127,13 +127,13 @@ async def upload_image(
                 output_format=None,  # 保持原格式
                 preserve_exif=True
             )
-            
+
             # 使用压缩后的内容
             content = compressed_content
             # 更新扩展名 (如果格式改变)
             if detected_format in ALLOWED_EXTENSIONS:
                 extension = detected_format
-            
+
             compressed_size = len(content)
             compression_ratio = (1 - compressed_size / original_size) * 100
             logger.info(
@@ -148,18 +148,18 @@ async def upload_image(
     # 生成文件名并保存
     filename = generate_filename(extension, category)
     filepath = os.path.join(UPLOAD_DIR, filename)
-    
+
     # 确保目录存在
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    
+
     with open(filepath, "wb") as f:
         f.write(content)
-    
+
     # 返回相对URL
     url = f"/api/v1/upload/files/{filename}"
-    
+
     logger.info(f"用户 {current_user.id} 上传图片: {filename} (最终大小: {len(content) / 1024:.1f}KB)")
-    
+
     return UploadResponse(
         success=True,
         url=url,
@@ -174,33 +174,33 @@ async def upload_image_base64(
 ):
     """
     上传Base64编码的图片
-    
+
     - **image_base64**: Base64编码的图片数据
     - **image_type**: 图片类型 (jpeg/png/gif/webp)
     - **category**: 分类 (diet/medical/avatar/other)
     """
     ensure_upload_dir()
-    
+
     # 验证图片类型
     image_type = request.image_type.lower()
     if image_type == "jpg":
         image_type = "jpeg"
-    
+
     if image_type not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=f"不支持的图片类型: {image_type}"
         )
-    
+
     try:
         # 解码Base64
         # 处理可能的 data URL 前缀
         base64_data = request.image_base64
         if "," in base64_data:
             base64_data = base64_data.split(",", 1)[1]
-        
+
         image_data = base64.b64decode(base64_data)
-        
+
         # 检查大小
         if len(image_data) > MAX_FILE_SIZE:
             raise HTTPException(
@@ -210,11 +210,11 @@ async def upload_image_base64(
 
         # 验证图片内容
         validate_image_content(image_data)
-        
+
         # 获取原始图片信息
         original_size = len(image_data)
         logger.info(f"Base64图片原始大小: {original_size / 1024:.1f}KB")
-        
+
         # 压缩图片 (如果需要)
         if should_compress(image_data, COMPRESSION_THRESHOLD_KB):
             logger.info(f"图片超过 {COMPRESSION_THRESHOLD_KB}KB，开始压缩...")
@@ -227,13 +227,13 @@ async def upload_image_base64(
                     output_format=None,
                     preserve_exif=True
                 )
-                
+
                 # 使用压缩后的内容
                 image_data = compressed_data
                 # 更新格式
                 if detected_format in ALLOWED_EXTENSIONS:
                     image_type = detected_format
-                
+
                 compressed_size = len(image_data)
                 compression_ratio = (1 - compressed_size / original_size) * 100
                 logger.info(
@@ -244,28 +244,28 @@ async def upload_image_base64(
                 logger.error(f"图片压缩失败，使用原图: {e}")
         else:
             logger.info(f"图片大小 {original_size / 1024:.1f}KB，无需压缩")
-        
+
         # 生成文件名并保存
         filename = generate_filename(image_type, request.category)
         filepath = os.path.join(UPLOAD_DIR, filename)
-        
+
         # 确保目录存在
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        
+
         with open(filepath, "wb") as f:
             f.write(image_data)
-        
+
         # 返回相对URL
         url = f"/api/v1/upload/files/{filename}"
-        
+
         logger.info(f"用户 {current_user.id} 上传Base64图片: {filename} (最终大小: {len(image_data) / 1024:.1f}KB)")
-        
+
         return UploadResponse(
             success=True,
             url=url,
             filename=filename
         )
-        
+
     except Exception as e:
         logger.error(f"Base64图片上传失败: {e}")
         raise HTTPException(status_code=400, detail=f"图片处理失败: {str(e)}")
@@ -278,17 +278,17 @@ async def get_uploaded_file(
 ):
     """
     获取上传的文件（公开访问，无需认证）
-    
+
     图片文件应该可以公开访问，以便在小程序和网页中显示
     """
     filepath = os.path.join(UPLOAD_DIR, category, filename)
-    
+
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="文件不存在")
-    
+
     # 安全检查：确保路径在上传目录内
     real_path = os.path.realpath(filepath)
     if not real_path.startswith(os.path.realpath(UPLOAD_DIR)):
         raise HTTPException(status_code=403, detail="访问被拒绝")
-    
+
     return FileResponse(filepath)

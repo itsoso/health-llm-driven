@@ -43,13 +43,13 @@ def create_garmin_data(
     """创建Garmin数据（需要登录）"""
     # 强制使用当前用户ID
     user_id = current_user.id
-    
+
     # 检查是否已存在
     existing = db.query(GarminData).filter(
         GarminData.user_id == user_id,
         GarminData.record_date == data.record_date
     ).first()
-    
+
     if existing:
         for key, value in data.model_dump(exclude={"user_id", "record_date"}).items():
             if value is not None:
@@ -57,7 +57,7 @@ def create_garmin_data(
         db.commit()
         db.refresh(existing)
         return existing
-    
+
     # 创建新记录，使用当前用户ID
     data_dict = data.model_dump()
     data_dict["user_id"] = user_id
@@ -82,14 +82,14 @@ def get_user_garmin_data(
     # 只能查看自己的数据
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     query = db.query(GarminData).filter(GarminData.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(GarminData.record_date >= start_date)
     if end_date:
         query = query.filter(GarminData.record_date <= end_date)
-    
+
     data_list = query.order_by(GarminData.record_date.desc()).offset(skip).limit(limit).all()
     return data_list
 
@@ -105,21 +105,21 @@ def get_my_garmin_data(
 ):
     """获取当前用户的Garmin数据（需要登录）"""
     logger.info(f"[Overview API] 用户 {current_user.id} 请求 Garmin 数据, start_date={start_date}, end_date={end_date}")
-    
+
     query = db.query(GarminData).filter(GarminData.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(GarminData.record_date >= start_date)
     if end_date:
         query = query.filter(GarminData.record_date <= end_date)
-    
+
     data_list = query.order_by(GarminData.record_date.desc()).offset(skip).limit(limit).all()
-    
+
     logger.info(f"[Overview API] 用户 {current_user.id} 查询到 {len(data_list)} 条记录")
     if data_list:
         first = data_list[0]
         logger.info(f"[Overview API] 最新记录: date={first.record_date}, sleep_score={first.sleep_score}, steps={first.steps}, resting_hr={first.resting_heart_rate}")
-    
+
     return data_list
 
 
@@ -241,4 +241,3 @@ def create_outdoor_activity(
     db.commit()
     db.refresh(db_activity)
     return {"message": "创建成功", "id": db_activity.id}
-

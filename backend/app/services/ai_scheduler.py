@@ -59,7 +59,7 @@ class Reminder:
         self.priority = priority
         self.is_recurring = is_recurring
         self.conditions = conditions or {}
-    
+
     def to_dict(self) -> Dict:
         return {
             "type": self.reminder_type.value,
@@ -74,11 +74,11 @@ class Reminder:
 
 class AIScheduler:
     """AI 日程编排引擎"""
-    
+
     def __init__(self):
         """初始化调度器"""
         self.default_reminders = self._create_default_reminders()
-    
+
     def _create_default_reminders(self) -> List[Reminder]:
         """创建默认提醒列表"""
         return [
@@ -111,7 +111,7 @@ class AIScheduler:
                 scheduled_time=time(8, 0),
                 priority=2
             ),
-            
+
             # 上午
             Reminder(
                 reminder_type=ReminderType.DRINK_WATER,
@@ -127,7 +127,7 @@ class AIScheduler:
                 scheduled_time=time(10, 30),
                 priority=2
             ),
-            
+
             # 中午
             Reminder(
                 reminder_type=ReminderType.DRINK_WATER,
@@ -143,7 +143,7 @@ class AIScheduler:
                 scheduled_time=time(12, 0),
                 priority=2
             ),
-            
+
             # 下午
             Reminder(
                 reminder_type=ReminderType.DRINK_WATER,
@@ -166,7 +166,7 @@ class AIScheduler:
                 scheduled_time=time(17, 30),
                 priority=3
             ),
-            
+
             # 晚间
             Reminder(
                 reminder_type=ReminderType.EXERCISE,
@@ -198,7 +198,7 @@ class AIScheduler:
                 priority=1
             ),
         ]
-    
+
     def generate_morning_briefing(
         self,
         db: Session,
@@ -206,7 +206,7 @@ class AIScheduler:
     ) -> Dict[str, Any]:
         """
         生成早间健康简报
-        
+
         包含：
         - 昨日睡眠总结
         - 今日天气和运动建议
@@ -215,41 +215,41 @@ class AIScheduler:
         """
         china_today = get_china_today()
         yesterday = china_today - timedelta(days=1)
-        
+
         # 获取用户画像
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        
+
         # 获取今日睡眠数据（记录在今天的日期下）
         # Garmin 的睡眠数据记录在醒来当天，所以今天的睡眠数据就是昨晚的睡眠
         today_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == china_today
         ).first()
-        
+
         # 如果今天没有数据，尝试获取昨天的数据
         yesterday_data = today_data if today_data else db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == yesterday
         ).first()
-        
+
         # 获取今日打卡记录
         today_checkin = db.query(CheckinRecord).filter(
             CheckinRecord.user_id == user_id,
             CheckinRecord.checkin_date == china_today
         ).first()
-        
+
         briefing = {
             "date": china_today.isoformat(),
             "greeting": self._get_time_greeting(),
             "sections": []
         }
-        
+
         # 1. 睡眠回顾
         if yesterday_data and yesterday_data.sleep_score:
             # 睡眠时长（分钟转小时）
             sleep_hours = yesterday_data.total_sleep_duration / 60 if yesterday_data.total_sleep_duration else None
             deep_sleep_hours = yesterday_data.deep_sleep_duration / 60 if yesterday_data.deep_sleep_duration else None
-            
+
             # 显示数据日期
             data_date = yesterday_data.record_date
             sleep_section = {
@@ -263,7 +263,7 @@ class AIScheduler:
             if deep_sleep_hours:
                 sleep_section["items"].append(f"深睡: {deep_sleep_hours:.1f}小时")
             briefing["sections"].append(sleep_section)
-        
+
         # 2. 身体状态
         if yesterday_data:
             body_section = {
@@ -279,7 +279,7 @@ class AIScheduler:
                 body_section["items"].append(f"压力水平: {yesterday_data.stress_level}")
             if body_section["items"]:
                 briefing["sections"].append(body_section)
-        
+
         # 3. 今日目标
         goals_section = {
             "title": "🎯 今日目标",
@@ -293,7 +293,7 @@ class AIScheduler:
         else:
             goals_section["items"] = ["步数: 8000步", "饮水: 2000ml", "运动: 30分钟"]
         briefing["sections"].append(goals_section)
-        
+
         # 4. 今日提醒
         reminders_section = {
             "title": "📋 今日提醒",
@@ -301,9 +301,9 @@ class AIScheduler:
             "items": self._get_priority_reminders(profile)
         }
         briefing["sections"].append(reminders_section)
-        
+
         return briefing
-    
+
     def _get_time_greeting(self) -> str:
         """根据时间返回问候语"""
         hour = get_china_now().hour
@@ -319,23 +319,23 @@ class AIScheduler:
             return "晚上好！放松一下 🌙"
         else:
             return "夜深了，注意休息 💤"
-    
+
     def _get_priority_reminders(self, profile: Optional[UserProfile]) -> List[str]:
         """获取优先级提醒"""
         reminders = []
-        
+
         # 检查用户是否有慢性鼻炎
         if profile and profile.chronic_conditions:
             if any("鼻炎" in c for c in profile.chronic_conditions):
                 reminders.append("🫧 记得早晚洗鼻")
-        
+
         reminders.extend([
             "💧 保持充足饮水",
             "🧍 久坐记得起身活动",
         ])
-        
+
         return reminders[:5]  # 最多5条
-    
+
     def get_reminders_for_time(
         self,
         db: Session,
@@ -344,38 +344,38 @@ class AIScheduler:
     ) -> List[Dict]:
         """
         获取当前时间段的提醒
-        
+
         Args:
             db: 数据库会话
             user_id: 用户ID
             current_time: 当前时间（默认使用北京时间）
-            
+
         Returns:
             当前应该显示的提醒列表
         """
         if current_time is None:
             current_time = get_china_now()
-        
+
         current_hour = current_time.hour
         current_minute = current_time.minute
-        
+
         # 获取用户画像
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        
+
         # 筛选当前时间段的提醒（前后15分钟内）
         relevant_reminders = []
         for reminder in self.default_reminders:
             reminder_minutes = reminder.scheduled_time.hour * 60 + reminder.scheduled_time.minute
             current_minutes = current_hour * 60 + current_minute
-            
+
             # 检查是否在提醒时间的前后15分钟内
             if abs(reminder_minutes - current_minutes) <= 15:
                 # 检查条件
                 if self._check_reminder_conditions(db, user_id, reminder, profile):
                     relevant_reminders.append(reminder.to_dict())
-        
+
         return relevant_reminders
-    
+
     def _check_reminder_conditions(
         self,
         db: Session,
@@ -385,10 +385,10 @@ class AIScheduler:
     ) -> bool:
         """检查提醒条件是否满足"""
         conditions = reminder.conditions
-        
+
         if not conditions:
             return True
-        
+
         # 检查今日是否已运动
         if conditions.get("check_workout"):
             china_today = get_china_today()
@@ -400,9 +400,9 @@ class AIScheduler:
             # 如果今天已经运动了，就不提醒
             if today_workout:
                 return False
-        
+
         return True
-    
+
     def generate_daily_schedule(
         self,
         db: Session,
@@ -410,7 +410,7 @@ class AIScheduler:
     ) -> List[Dict[str, Any]]:
         """
         生成今日日程安排
-        
+
         基于：
         - 用户画像（工作习惯、健康目标）
         - 昨日数据（睡眠、运动）
@@ -418,13 +418,13 @@ class AIScheduler:
         """
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
         china_today = get_china_today()
-        
+
         schedule = []
-        
+
         # 获取用户的起床和睡觉时间
         wake_time = time(7, 0)
         sleep_time = time(23, 0)
-        
+
         if profile:
             if profile.usual_wake_time:
                 try:
@@ -438,7 +438,7 @@ class AIScheduler:
                     sleep_time = time(int(parts[0]), int(parts[1]))
                 except:
                     pass
-        
+
         # 生成日程
         schedule = [
             {
@@ -519,43 +519,43 @@ class AIScheduler:
                 "tasks": [f"目标: {profile.target_sleep_hours if profile else 7.5}小时睡眠"]
             },
         ]
-        
+
         return schedule
-    
+
     def _detect_checkin_action(self, text: str) -> Optional[str]:
         """
         识别文本中的可打卡事项
-        
+
         返回打卡类型：water, nasal_wash, supplement, exercise, weight, diet
         """
         text_lower = text.lower()
-        
+
         # 喝水相关
         if any(keyword in text_lower for keyword in ['喝水', '饮水', '补充水分', '保持饮水', '喝杯']):
             return "water"
-        
+
         # 洗鼻相关
         if any(keyword in text_lower for keyword in ['洗鼻', '鼻腔']):
             return "nasal_wash"
-        
+
         # 补剂相关
         if any(keyword in text_lower for keyword in ['补剂', '服用', '镁补剂', '维生素', '补充剂']):
             return "supplement"
-        
+
         # 运动相关
         if any(keyword in text_lower for keyword in ['运动', '深蹲', '跑步', '锻炼', '训练', '拉伸']):
             return "exercise"
-        
+
         # 称重相关
         if any(keyword in text_lower for keyword in ['称重', '体重']):
             return "weight"
-        
+
         # 饮食相关
         if any(keyword in text_lower for keyword in ['饮食', '记录饮食', '早餐', '午餐', '晚餐', '加餐']):
             return "diet"
-        
+
         return None
-    
+
     def get_time_aware_recommendation(
         self,
         db: Session,
@@ -564,31 +564,31 @@ class AIScheduler:
     ) -> Dict[str, Any]:
         """
         获取时间感知的实时建议
-        
+
         根据当前时间和用户状态，给出最相关的建议
         """
         if current_time is None:
             current_time = get_china_now()
-        
+
         hour = current_time.hour
         china_today = get_china_today()
-        
+
         # 获取今日数据
         today_data = db.query(GarminData).filter(
             GarminData.user_id == user_id,
             GarminData.record_date == china_today
         ).first()
-        
+
         # 获取用户画像
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        
+
         recommendation = {
             "timestamp": current_time.isoformat(),
             "primary": None,
             "secondary": [],
             "status": {}
         }
-        
+
         # 辅助函数：创建带打卡动作的次要建议项
         def create_secondary_item(text: str) -> Dict[str, Any]:
             checkin_action = self._detect_checkin_action(text)
@@ -596,7 +596,7 @@ class AIScheduler:
             if checkin_action:
                 item["checkin_action"] = checkin_action
             return item
-        
+
         # 早晨 (5-9点)
         if 5 <= hour < 9:
             primary_msg = "建议：起床后喝杯温水，做简单拉伸"
@@ -612,7 +612,7 @@ class AIScheduler:
                 create_secondary_item("完成早间洗鼻"),
                 create_secondary_item("称重记录")
             ]
-        
+
         # 上午 (9-12点)
         elif 9 <= hour < 12:
             if today_data and today_data.steps:
@@ -631,7 +631,7 @@ class AIScheduler:
                 create_secondary_item("喝水补充水分"),
                 create_secondary_item("适时休息眼睛")
             ]
-        
+
         # 中午 (12-14点)
         elif 12 <= hour < 14:
             primary_msg = "均衡饮食，记录摄入的食物"
@@ -647,7 +647,7 @@ class AIScheduler:
                 create_secondary_item("饭后短暂休息"),
                 create_secondary_item("避免立即剧烈运动")
             ]
-        
+
         # 下午 (14-18点)
         elif 14 <= hour < 18:
             primary_msg = "保持饮水，避免久坐"
@@ -663,7 +663,7 @@ class AIScheduler:
                 create_secondary_item("适时喝水"),
                 create_secondary_item("站立办公或走动")
             ]
-        
+
         # 傍晚 (18-21点)
         elif 18 <= hour < 21:
             # 检查今日是否已运动
@@ -672,7 +672,7 @@ class AIScheduler:
                 WorkoutRecord.user_id == user_id,
                 WorkoutRecord.workout_date == china_today
             ).first()
-            
+
             if today_workout:
                 recommendation["primary"] = {
                     "icon": "✅",
@@ -693,7 +693,7 @@ class AIScheduler:
                 create_secondary_item("清淡晚餐"),
                 create_secondary_item("饭后散步")
             ]
-        
+
         # 晚间 (21-23点)
         elif 21 <= hour < 23:
             recommendation["primary"] = {
@@ -705,7 +705,7 @@ class AIScheduler:
                 create_secondary_item("完成睡前洗鼻"),
                 create_secondary_item("服用镁补剂")
             ]
-        
+
         # 深夜 (23点-5点)
         else:
             recommendation["primary"] = {
@@ -717,7 +717,7 @@ class AIScheduler:
                 create_secondary_item("保持卧室黑暗凉爽"),
                 create_secondary_item("避免使用手机")
             ]
-        
+
         return recommendation
 
 

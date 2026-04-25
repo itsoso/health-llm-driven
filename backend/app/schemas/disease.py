@@ -43,6 +43,5 @@ class DiseaseRecordResponse(BaseModel):
     follow_up_date: Optional[date]
     follow_up_notes: Optional[str]
     notes: Optional[str]
-    
-    model_config = ConfigDict(from_attributes=True)
 
+    model_config = ConfigDict(from_attributes=True)

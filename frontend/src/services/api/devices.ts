@@ -22,7 +22,7 @@ export const deviceApi = {
   // Apple Health 同步
   syncAppleData: (days: number = 7) => api.post('/devices/apple/sync', { days }),
   // 通用设备同步
-  syncDevice: (deviceType: string, days: number = 7) => 
+  syncDevice: (deviceType: string, days: number = 7) =>
     api.post(`/devices/${deviceType}/sync`, { days }),
   // 同步所有设备
   syncAllDevices: (days: number = 7) => api.post('/devices/sync-all', { days }),

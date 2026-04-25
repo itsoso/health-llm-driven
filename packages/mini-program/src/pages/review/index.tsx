@@ -4,11 +4,11 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Textarea, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { 
-  getTodayReview, 
-  getDailyReview, 
-  updateDailyReview, 
-  refreshDailyReview, 
+import {
+  getTodayReview,
+  getDailyReview,
+  updateDailyReview,
+  refreshDailyReview,
   getReviewStreak,
   getCurrentWeekReview,
   getCurrentMonthReview,
@@ -96,17 +96,17 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
-  
+
   // 每日复盘数据
   const [dailyData, setDailyData] = useState<DailyReviewData | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  
+
   // 周期复盘数据
   const [periodData, setPeriodData] = useState<PeriodReviewData | null>(null);
-  
+
   // 统计数据
   const [streak, setStreak] = useState({ current_streak: 0, total_reviews: 0 });
-  
+
   // 用户输入状态（每日）
   const [moodScore, setMoodScore] = useState<number>(3);
   const [energyScore, setEnergyScore] = useState<number>(3);
@@ -117,7 +117,7 @@ export default function ReviewPage() {
   const [gratitude, setGratitude] = useState('');
   const [tomorrowPlan, setTomorrowPlan] = useState('');
   const [summary, setSummary] = useState('');
-  
+
   // 周期复盘输入
   const [periodAchievements, setPeriodAchievements] = useState('');
   const [periodChallenges, setPeriodChallenges] = useState('');
@@ -139,7 +139,7 @@ export default function ReviewPage() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // 先尝试获取连续天数统计
       try {
@@ -149,7 +149,7 @@ export default function ReviewPage() {
         console.warn('获取连续天数失败:', e);
         // 不阻塞主流程
       }
-      
+
       if (viewMode === 'daily') {
         try {
           const review = await getDailyReview(selectedDate);
@@ -228,10 +228,10 @@ export default function ReviewPage() {
         summary: summary || null,
         is_completed: markComplete || dailyData?.is_completed,
       });
-      
-      Taro.showToast({ 
-        title: markComplete ? '复盘已完成' : '保存成功', 
-        icon: 'success' 
+
+      Taro.showToast({
+        title: markComplete ? '复盘已完成' : '保存成功',
+        icon: 'success'
       });
       loadData();
     } catch (e) {
@@ -249,7 +249,7 @@ export default function ReviewPage() {
         viewMode === 'daily' ? selectedDate : periodData?.start_date || '',
         viewMode
       );
-      
+
       if (result?.ai_summary) {
         if (viewMode === 'daily') {
           setSummary(result.ai_summary);
@@ -286,8 +286,8 @@ export default function ReviewPage() {
   };
 
   const renderScoreSelector = (
-    label: string, 
-    value: number, 
+    label: string,
+    value: number,
     onChange: (v: number) => void,
     emojis: string[]
   ) => (
@@ -295,7 +295,7 @@ export default function ReviewPage() {
       <Text className="score-label">{label}</Text>
       <View className="score-options">
         {[1, 2, 3, 4, 5].map(score => (
-          <View 
+          <View
             key={score}
             className={`score-item ${value === score ? 'active' : ''}`}
             onClick={() => onChange(score)}
@@ -316,7 +316,7 @@ export default function ReviewPage() {
       </View>
     );
   }
-  
+
   // 错误状态
   if (error) {
     return (
@@ -342,29 +342,29 @@ export default function ReviewPage() {
             <Text className="streak-label">天</Text>
           </View>
         </View>
-        
+
         {/* 视图切换 */}
         <View className="view-tabs">
-          <View 
+          <View
             className={`tab ${viewMode === 'daily' ? 'active' : ''}`}
             onClick={() => setViewMode('daily')}
           >
             <Text>每日</Text>
           </View>
-          <View 
+          <View
             className={`tab ${viewMode === 'weekly' ? 'active' : ''}`}
             onClick={() => setViewMode('weekly')}
           >
             <Text>本周</Text>
           </View>
-          <View 
+          <View
             className={`tab ${viewMode === 'monthly' ? 'active' : ''}`}
             onClick={() => setViewMode('monthly')}
           >
             <Text>本月</Text>
           </View>
         </View>
-        
+
         {/* 日期选择（仅每日模式） */}
         {viewMode === 'daily' && (
           <View className="date-row">
@@ -381,7 +381,7 @@ export default function ReviewPage() {
             )}
           </View>
         )}
-        
+
         {/* 周期标签 */}
         {viewMode !== 'daily' && periodData && (
           <View className="period-info">
@@ -404,7 +404,7 @@ export default function ReviewPage() {
                 <Text>↻ 刷新</Text>
               </View>
             </View>
-            
+
             <View className="data-grid">
               <View className="data-card">
                 <Text className="card-icon">😴</Text>
@@ -413,7 +413,7 @@ export default function ReviewPage() {
                   {dailyData?.sleep_score ?? '--'}分 / {dailyData?.sleep_duration_hours?.toFixed(1) ?? '--'}h
                 </Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">🏃</Text>
                 <Text className="card-title">运动</Text>
@@ -421,13 +421,13 @@ export default function ReviewPage() {
                   {dailyData?.workout_count || 0}次 / {dailyData?.workout_calories || 0}卡
                 </Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">👟</Text>
                 <Text className="card-title">步数</Text>
                 <Text className="card-value">{dailyData?.steps?.toLocaleString() || 0}</Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">🍽️</Text>
                 <Text className="card-title">饮食</Text>
@@ -435,7 +435,7 @@ export default function ReviewPage() {
                   {dailyData?.meals_count || 0}餐 / {dailyData?.total_calories_in || 0}卡
                 </Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">💧</Text>
                 <Text className="card-title">饮水</Text>
@@ -444,7 +444,7 @@ export default function ReviewPage() {
                   {dailyData?.water_goal_met && ' ✓'}
                 </Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">🫧</Text>
                 <Text className="card-title">洗鼻</Text>
@@ -453,7 +453,7 @@ export default function ReviewPage() {
                   {dailyData?.nasal_wash_done && ' ✓'}
                 </Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">✅</Text>
                 <Text className="card-title">打卡</Text>
@@ -461,14 +461,14 @@ export default function ReviewPage() {
                   {dailyData?.checkin_completed || 0}/{dailyData?.checkin_total || 0}
                 </Text>
               </View>
-              
+
               <View className="data-card">
                 <Text className="card-icon">💊</Text>
                 <Text className="card-title">补剂</Text>
                 <Text className="card-value">{dailyData?.supplements_taken || 0}种</Text>
               </View>
             </View>
-            
+
             <View className="body-status">
               <View className="status-item">
                 <Text className="status-label">身体电量</Text>
@@ -498,7 +498,7 @@ export default function ReviewPage() {
           {/* 文字复盘 */}
           <View className="section">
             <Text className="section-title">✍️ 今日复盘</Text>
-            
+
             <View className="input-group">
               <Text className="input-label">🌟 今日亮点/成就</Text>
               <Textarea
@@ -509,7 +509,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">⚠️ 遇到的挑战</Text>
               <Textarea
@@ -520,7 +520,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">💡 收获与学习</Text>
               <Textarea
@@ -531,7 +531,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">🙏 感恩的事</Text>
               <Textarea
@@ -542,7 +542,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">📋 明日计划</Text>
               <Textarea
@@ -553,12 +553,12 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <View className="input-label-row">
                 <Text className="input-label">📝 总结</Text>
-                <View 
-                  className="ai-btn" 
+                <View
+                  className="ai-btn"
                   onClick={handleGenerateAISummary}
                 >
                   <Text>{generatingAI ? '生成中...' : '✨ 智能生成'}</Text>
@@ -572,7 +572,7 @@ export default function ReviewPage() {
                 maxlength={1000}
               />
             </View>
-            
+
             {dailyData?.ai_summary && (
               <View className="ai-summary-card">
                 <Text className="ai-summary-title">✨ 智能总结</Text>
@@ -604,7 +604,7 @@ export default function ReviewPage() {
                 <Text>↻ 刷新</Text>
               </View>
             </View>
-            
+
             <View className="stats-summary">
               <View className="stat-row">
                 <Text className="stat-label">复盘完成</Text>
@@ -656,7 +656,7 @@ export default function ReviewPage() {
           {/* 周期复盘输入 */}
           <View className="section">
             <Text className="section-title">✍️ {viewMode === 'weekly' ? '本周' : '本月'}复盘</Text>
-            
+
             <View className="input-group">
               <Text className="input-label">🏆 本周期成就</Text>
               <Textarea
@@ -667,7 +667,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">⚠️ 遇到的挑战</Text>
               <Textarea
@@ -678,7 +678,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">💡 收获与学习</Text>
               <Textarea
@@ -689,7 +689,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">🎯 目标回顾</Text>
               <Textarea
@@ -700,7 +700,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <Text className="input-label">📋 下周期目标</Text>
               <Textarea
@@ -711,7 +711,7 @@ export default function ReviewPage() {
                 maxlength={500}
               />
             </View>
-            
+
             <View className="input-group">
               <View className="input-label-row">
                 <Text className="input-label">📝 总结</Text>
@@ -727,7 +727,7 @@ export default function ReviewPage() {
                 maxlength={1000}
               />
             </View>
-            
+
             {periodData.ai_summary && (
               <View className="ai-summary-card">
                 <Text className="ai-summary-title">✨ 智能总结</Text>
@@ -747,7 +747,7 @@ export default function ReviewPage() {
           </View>
         </>
       )}
-      
+
       <View style={{ height: '100px' }} />
     </ScrollView>
   );

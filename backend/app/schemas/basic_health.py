@@ -41,6 +41,5 @@ class BasicHealthDataResponse(BaseModel):
     muscle_mass: Optional[float]
     record_date: date
     notes: Optional[str]
-    
-    model_config = ConfigDict(from_attributes=True)
 
+    model_config = ConfigDict(from_attributes=True)

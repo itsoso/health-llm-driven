@@ -3,7 +3,7 @@ index 7b37f57..7fb21e0 100644
 --- a/node_modules/expo-modules-autolinking/scripts/ios/project_integrator.rb
 +++ b/node_modules/expo-modules-autolinking/scripts/ios/project_integrator.rb
 @@ -235,7 +235,9 @@ module Expo
- 
+
        <<~XCODE_BUILD_SCRIPT
        # This script configures Expo modules and generates the modules provider file.
 -      bash -l -c "./#{escaped_path}"
@@ -12,4 +12,3 @@ index 7b37f57..7fb21e0 100644
 +      bash -c "./#{escaped_path}"
        XCODE_BUILD_SCRIPT
      end
- 

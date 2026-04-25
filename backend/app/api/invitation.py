@@ -114,17 +114,17 @@ async def create_invitation_code(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以创建邀请码")
-    
+
     # 生成唯一邀请码
     code = InvitationCode.generate_code()
     while db.query(InvitationCode).filter(InvitationCode.code == code).first():
         code = InvitationCode.generate_code()
-    
+
     # 计算过期时间
     expires_at = None
     if data.expires_days:
         expires_at = datetime.now(timezone.utc) + timedelta(days=data.expires_days)
-    
+
     invitation = InvitationCode(
         code=code,
         created_by=current_user.id,
@@ -132,11 +132,11 @@ async def create_invitation_code(
         max_uses=data.max_uses,
         expires_at=expires_at,
     )
-    
+
     db.add(invitation)
     db.commit()
     db.refresh(invitation)
-    
+
     return InvitationCodeResponse(
         id=invitation.id,
         code=invitation.code,
@@ -163,20 +163,20 @@ async def list_invitation_codes(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以查看邀请码")
-    
+
     query = db.query(InvitationCode).order_by(InvitationCode.created_at.desc())
-    
+
     if active_only:
         query = query.filter(InvitationCode.is_active == True)
-    
+
     invitations = query.all()
-    
+
     result = []
     for inv in invitations:
         creator_name = None
         if inv.creator:
             creator_name = inv.creator.name
-        
+
         result.append(InvitationCodeResponse(
             id=inv.id,
             code=inv.code,
@@ -190,7 +190,7 @@ async def list_invitation_codes(
             created_at=inv.created_at,
             creator_name=creator_name
         ))
-    
+
     return result
 
 
@@ -205,31 +205,31 @@ async def verify_invitation_code(
     invitation = db.query(InvitationCode).filter(
         InvitationCode.code == data.code.upper()
     ).first()
-    
+
     if not invitation:
         return InvitationCodeVerifyResponse(
             valid=False,
             message="邀请码不存在"
         )
-    
+
     if not invitation.is_active:
         return InvitationCodeVerifyResponse(
             valid=False,
             message="邀请码已被禁用"
         )
-    
+
     if invitation.used_count >= invitation.max_uses:
         return InvitationCodeVerifyResponse(
             valid=False,
             message="邀请码已达到使用上限"
         )
-    
+
     if invitation.expires_at and datetime.now(timezone.utc) > invitation.expires_at:
         return InvitationCodeVerifyResponse(
             valid=False,
             message="邀请码已过期"
         )
-    
+
     return InvitationCodeVerifyResponse(
         valid=True,
         message="邀请码有效",
@@ -248,14 +248,14 @@ async def disable_invitation_code(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以禁用邀请码")
-    
+
     invitation = db.query(InvitationCode).filter(InvitationCode.id == code_id).first()
     if not invitation:
         raise HTTPException(status_code=404, detail="邀请码不存在")
-    
+
     invitation.is_active = False
     db.commit()
-    
+
     return {"message": "邀请码已禁用"}
 
 
@@ -268,7 +268,7 @@ async def submit_application(
 ):
     """
     提交用户注册申请（公开接口）
-    
+
     流程：
     1. 验证邀请码
     2. 检查邮箱是否已注册或已申请
@@ -279,15 +279,15 @@ async def submit_application(
     invitation = db.query(InvitationCode).filter(
         InvitationCode.code == data.invitation_code.upper()
     ).first()
-    
+
     if not invitation or not invitation.is_valid:
         raise HTTPException(status_code=400, detail="邀请码无效或已过期")
-    
+
     # 2. 检查邮箱是否已注册
     existing_user = db.query(User).filter(User.email == data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="该邮箱已注册")
-    
+
     # 检查是否有待审批的申请
     existing_app = db.query(UserApplication).filter(
         UserApplication.email == data.email,
@@ -295,15 +295,15 @@ async def submit_application(
     ).first()
     if existing_app:
         raise HTTPException(status_code=400, detail="该邮箱已有待审批的申请")
-    
+
     # 3. 创建申请记录
     questionnaire_json = None
     if data.health_questionnaire:
         questionnaire_json = json.dumps(data.health_questionnaire.model_dump(), ensure_ascii=False)
-    
+
     # 加密用户密码
     hashed_password = AuthService.get_password_hash(data.password)
-    
+
     application = UserApplication(
         email=data.email,
         name=data.name,
@@ -312,7 +312,7 @@ async def submit_application(
         invitation_code_id=invitation.id,
         health_questionnaire=questionnaire_json,
     )
-    
+
     db.add(application)
 
     # 原子递增邀请码使用次数（防止并发超额）
@@ -402,20 +402,20 @@ async def list_applications(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以查看申请列表")
-    
+
     query = db.query(UserApplication).order_by(UserApplication.created_at.desc())
-    
+
     if status:
         query = query.filter(UserApplication.status == status)
-    
+
     applications = query.all()
-    
+
     result = []
     for app in applications:
         reviewer_name = None
         if app.reviewer:
             reviewer_name = app.reviewer.name
-        
+
         result.append(UserApplicationResponse(
             id=app.id,
             email=app.email,
@@ -428,14 +428,14 @@ async def list_applications(
             reviewed_at=app.reviewed_at,
             reviewer_name=reviewer_name
         ))
-    
+
     # 如果查询 pending 状态，也包含 User 表中未审核的微信用户
     if status == "pending" or status is None:
         pending_users = db.query(User).filter(
             User.is_approved == False,
             User.wechat_openid != None  # 微信用户
         ).order_by(User.created_at.desc()).all()
-        
+
         for user in pending_users:
             # 检查是否已经在 UserApplication 中
             existing = db.query(UserApplication).filter(
@@ -455,7 +455,7 @@ async def list_applications(
                     reviewed_at=None,
                     reviewer_name=None
                 ))
-    
+
     return result
 
 
@@ -470,15 +470,15 @@ async def get_application(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以查看申请详情")
-    
+
     application = db.query(UserApplication).filter(UserApplication.id == app_id).first()
     if not application:
         raise HTTPException(status_code=404, detail="申请不存在")
-    
+
     reviewer_name = None
     if application.reviewer:
         reviewer_name = application.reviewer.name
-    
+
     return UserApplicationResponse(
         id=application.id,
         email=application.email,
@@ -502,7 +502,7 @@ async def review_application(
 ):
     """
     审批用户申请（仅管理员可操作）
-    
+
     如果通过：
     1. 创建用户账号（或审核微信用户）
     2. 更新申请状态
@@ -510,17 +510,17 @@ async def review_application(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以审批申请")
-    
+
     # 处理微信用户审核（负数ID）
     if app_id < 0:
         user_id = abs(app_id)
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
-        
+
         if user.is_approved:
             raise HTTPException(status_code=400, detail="该用户已被审核")
-        
+
         if review.approved:
             user.is_approved = True
             db.commit()
@@ -537,20 +537,20 @@ async def review_application(
                 "message": "微信用户申请已拒绝",
                 "reason": review.note
             }
-    
+
     # 处理普通申请
     application = db.query(UserApplication).filter(UserApplication.id == app_id).first()
     if not application:
         raise HTTPException(status_code=404, detail="申请不存在")
-    
+
     if application.status != ApplicationStatus.PENDING.value:
         raise HTTPException(status_code=400, detail="该申请已被处理")
-    
+
     # 更新审批信息
     application.reviewed_by = current_user.id
     application.reviewed_at = datetime.now(timezone.utc)
     application.review_note = review.note
-    
+
     if review.approved:
         # 创建用户账号，使用申请时保存的密码
         new_user = User(
@@ -562,13 +562,13 @@ async def review_application(
             is_approved=True,
             invite_code=application.invitation.code,
         )
-        
+
         db.add(new_user)
         db.flush()  # 获取 user id
-        
+
         application.status = ApplicationStatus.APPROVED.value
         application.user_id = new_user.id
-        
+
         db.commit()
 
         # 记录站内通知：申请已通过
@@ -636,19 +636,19 @@ async def check_application_status(
     application = db.query(UserApplication).filter(
         UserApplication.email == email
     ).order_by(UserApplication.created_at.desc()).first()
-    
+
     if not application:
         return {
             "found": False,
             "message": "未找到相关申请记录"
         }
-    
+
     status_messages = {
         ApplicationStatus.PENDING.value: "您的申请正在审核中，请耐心等待",
         ApplicationStatus.APPROVED.value: "您的申请已通过，请使用邮箱登录",
         ApplicationStatus.REJECTED.value: f"您的申请未通过，原因：{application.review_note or '未说明'}"
     }
-    
+
     return {
         "found": True,
         "status": application.status,
@@ -670,14 +670,14 @@ async def get_invitation_stats(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以查看统计")
-    
+
     # 邀请码统计
     total_codes = db.query(func.count(InvitationCode.id)).scalar()
     active_codes = db.query(func.count(InvitationCode.id)).filter(
         InvitationCode.is_active == True
     ).scalar()
     total_uses = db.query(func.sum(InvitationCode.used_count)).scalar() or 0
-    
+
     # 申请统计
     total_applications = db.query(func.count(UserApplication.id)).scalar()
     pending_applications = db.query(func.count(UserApplication.id)).filter(
@@ -689,13 +689,13 @@ async def get_invitation_stats(
     rejected_applications = db.query(func.count(UserApplication.id)).filter(
         UserApplication.status == ApplicationStatus.REJECTED.value
     ).scalar()
-    
+
     # 统计未审核的微信用户
     pending_wechat_users = db.query(func.count(User.id)).filter(
         User.is_approved == False,
         User.wechat_openid != None
     ).scalar()
-    
+
     return {
         "invitation_codes": {
             "total": total_codes,

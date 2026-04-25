@@ -48,7 +48,7 @@ def sample_diet_data():
 
 class TestDietAPI:
     """饮食记录API测试类"""
-    
+
     def test_create_diet_record(self, client, auth_headers, sample_diet_data):
         """测试创建饮食记录"""
         response = client.post(
@@ -63,7 +63,7 @@ class TestDietAPI:
         assert data["calories"] == 450
         assert data["protein"] == 20.5
         assert "id" in data
-    
+
     def test_create_diet_record_minimal(self, client, auth_headers):
         """测试创建最小饮食记录（只有必填字段）"""
         minimal_data = {
@@ -81,7 +81,7 @@ class TestDietAPI:
         assert data["meal_type"] == "lunch"
         assert data["food_items"] == "米饭,青菜"
         assert data["calories"] is None
-    
+
     def test_create_diet_record_invalid_meal_type(self, client, auth_headers):
         """测试创建饮食记录（无效的餐类型）"""
         invalid_data = {
@@ -95,7 +95,7 @@ class TestDietAPI:
             headers=auth_headers
         )
         assert response.status_code == 422  # 验证错误
-    
+
     def test_create_diet_record_missing_food_items(self, client, auth_headers):
         """测试创建饮食记录（缺少食物）"""
         invalid_data = {
@@ -109,7 +109,7 @@ class TestDietAPI:
             headers=auth_headers
         )
         assert response.status_code == 422
-    
+
     def test_create_diet_record_unauthorized(self, client, sample_diet_data):
         """测试未授权创建饮食记录"""
         response = client.post(
@@ -117,7 +117,7 @@ class TestDietAPI:
             json=sample_diet_data
         )
         assert response.status_code == 401
-    
+
     def test_get_my_diet_records(self, client, auth_headers, sample_diet_data):
         """测试获取我的饮食记录"""
         # 先创建记录
@@ -126,7 +126,7 @@ class TestDietAPI:
             json=sample_diet_data,
             headers=auth_headers
         )
-        
+
         # 获取记录
         response = client.get(
             "/api/v1/diet/records/me",
@@ -136,7 +136,7 @@ class TestDietAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-    
+
     def test_get_my_daily_summary(self, client, auth_headers, sample_diet_data):
         """测试获取我的每日饮食汇总"""
         # 先创建记录
@@ -145,7 +145,7 @@ class TestDietAPI:
             json=sample_diet_data,
             headers=auth_headers
         )
-        
+
         # 获取汇总
         today = str(date.today())
         response = client.get(
@@ -157,7 +157,7 @@ class TestDietAPI:
         assert data["record_date"] == today
         assert data["total_calories"] == 450
         assert data["meals_count"] == 1
-    
+
     def test_get_my_diet_stats(self, client, auth_headers, sample_diet_data):
         """测试获取我的饮食统计"""
         # 先创建记录
@@ -166,7 +166,7 @@ class TestDietAPI:
             json=sample_diet_data,
             headers=auth_headers
         )
-        
+
         # 获取统计
         response = client.get(
             "/api/v1/diet/records/me/stats?days=7",
@@ -176,7 +176,7 @@ class TestDietAPI:
         data = response.json()
         assert data["total_records"] >= 1
         assert data["days_recorded"] >= 1
-    
+
     def test_delete_diet_record(self, client, auth_headers, sample_diet_data):
         """测试删除饮食记录"""
         # 先创建记录
@@ -186,14 +186,14 @@ class TestDietAPI:
             headers=auth_headers
         )
         record_id = create_response.json()["id"]
-        
+
         # 删除记录
         delete_response = client.delete(
             f"/api/v1/diet/records/{record_id}",
             headers=auth_headers
         )
         assert delete_response.status_code == 200
-        
+
         # 验证删除成功
         today = str(date.today())
         get_response = client.get(
@@ -201,7 +201,7 @@ class TestDietAPI:
             headers=auth_headers
         )
         assert get_response.json()["meals_count"] == 0
-    
+
     def test_update_diet_record(self, client, auth_headers, sample_diet_data):
         """测试更新饮食记录"""
         # 先创建记录
@@ -211,7 +211,7 @@ class TestDietAPI:
             headers=auth_headers
         )
         record_id = create_response.json()["id"]
-        
+
         # 更新记录
         update_data = {
             "calories": 500,
@@ -229,11 +229,11 @@ class TestDietAPI:
 
 class TestDietValidation:
     """饮食记录验证测试"""
-    
+
     def test_meal_types(self, client, auth_headers):
         """测试所有餐类型"""
         meal_types = ["breakfast", "lunch", "dinner", "snack", "extra"]
-        
+
         for meal_type in meal_types:
             data = {
                 "record_date": str(date.today()),
@@ -246,7 +246,7 @@ class TestDietValidation:
                 headers=auth_headers
             )
             assert response.status_code == 200, f"餐类型 {meal_type} 创建失败"
-    
+
     def test_negative_calories(self, client, auth_headers):
         """测试负数热量（应该允许，可能有特殊情况）"""
         data = {
@@ -263,7 +263,7 @@ class TestDietValidation:
         # 根据业务需求，可能允许或不允许
         # 这里假设不做验证，允许保存
         assert response.status_code in [200, 422]
-    
+
     def test_empty_food_items(self, client, auth_headers):
         """测试空食物列表"""
         data = {
@@ -278,4 +278,3 @@ class TestDietValidation:
         )
         # 空字符串应该被允许（由前端验证）
         assert response.status_code == 200
-

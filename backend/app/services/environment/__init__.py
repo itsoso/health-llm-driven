@@ -13,6 +13,6 @@ from .environment_advisor import EnvironmentAdvisor, environment_advisor
 
 __all__ = [
     'WeatherService', 'weather_service',
-    'AirQualityService', 'air_quality_service', 
+    'AirQualityService', 'air_quality_service',
     'EnvironmentAdvisor', 'environment_advisor'
 ]

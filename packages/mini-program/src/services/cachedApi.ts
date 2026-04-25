@@ -23,7 +23,7 @@ import type {
  */
 export async function getTodayGarminDataCached(forceRefresh = false): Promise<GarminData | null> {
   const cacheKey = getCacheKey('garmin_today');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getTodayGarminData(),
@@ -37,7 +37,7 @@ export async function getTodayGarminDataCached(forceRefresh = false): Promise<Ga
  */
 export async function getDailyRecommendationCached(forceRefresh = false): Promise<DailyRecommendation> {
   const cacheKey = getCacheKey('daily_recommendation');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getDailyRecommendation(),
@@ -51,7 +51,7 @@ export async function getDailyRecommendationCached(forceRefresh = false): Promis
  */
 export async function getTodayRhinitisCached(forceRefresh = false): Promise<RhinitisRecord | null> {
   const cacheKey = getCacheKey('rhinitis_today');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getTodayRhinitis(),
@@ -65,7 +65,7 @@ export async function getTodayRhinitisCached(forceRefresh = false): Promise<Rhin
  */
 export async function getTodayWorkoutsCached(forceRefresh = false): Promise<WorkoutSummary[]> {
   const cacheKey = getCacheKey('workouts_today');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getTodayWorkouts(),
@@ -79,7 +79,7 @@ export async function getTodayWorkoutsCached(forceRefresh = false): Promise<Work
  */
 export async function getTodayDietSummaryCached(forceRefresh = false): Promise<DailyDietSummary | null> {
   const cacheKey = getCacheKey('diet_summary_today');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getTodayDietSummary(),
@@ -93,7 +93,7 @@ export async function getTodayDietSummaryCached(forceRefresh = false): Promise<D
  */
 export async function getMorningBriefingCached(forceRefresh = false): Promise<MorningBriefing> {
   const cacheKey = getCacheKey('morning_briefing');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getMorningBriefing(),
@@ -107,7 +107,7 @@ export async function getMorningBriefingCached(forceRefresh = false): Promise<Mo
  */
 export async function getAIRecommendationCached(forceRefresh = false): Promise<AIRecommendation> {
   const cacheKey = getCacheKey('ai_recommendation');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getAIRecommendation(),
@@ -121,7 +121,7 @@ export async function getAIRecommendationCached(forceRefresh = false): Promise<A
  */
 export async function getCurrentRemindersCached(forceRefresh = false): Promise<{ reminders: HealthReminder[] }> {
   const cacheKey = 'current_reminders'; // 提醒不需要日期，因为是实时的
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getCurrentReminders(),
@@ -135,7 +135,7 @@ export async function getCurrentRemindersCached(forceRefresh = false): Promise<{
  */
 export async function getDailyScheduleCached(forceRefresh = false): Promise<{ schedule: ScheduleItem[] }> {
   const cacheKey = getCacheKey('daily_schedule');
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getDailySchedule(),
@@ -152,7 +152,7 @@ export async function getPreWorkoutGuidanceCached(
   forceRefresh = false
 ): Promise<PreWorkoutGuidance> {
   const cacheKey = `workout_guidance_${workoutType}`;
-  
+
   return localCache.withCache(
     cacheKey,
     () => api.getPreWorkoutGuidance(workoutType),

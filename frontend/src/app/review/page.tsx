@@ -85,12 +85,12 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
-  
+
   const [dailyData, setDailyData] = useState<DailyReviewData | null>(null);
   const [periodData, setPeriodData] = useState<PeriodReviewData | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [streak, setStreak] = useState({ current_streak: 0, total_reviews: 0 });
-  
+
   // 用户输入
   const [moodScore, setMoodScore] = useState(3);
   const [energyScore, setEnergyScore] = useState(3);
@@ -228,7 +228,7 @@ export default function ReviewPage() {
   const handleSave = async (markComplete = false) => {
     setSaving(true);
     const token = getToken();
-    
+
     try {
       const res = await fetch(`${API_BASE}/review/daily/${selectedDate}`, {
         method: 'PUT',
@@ -265,7 +265,7 @@ export default function ReviewPage() {
   const handleGenerateAI = async () => {
     setGeneratingAI(true);
     const token = getToken();
-    
+
     try {
       const res = await fetch(`${API_BASE}/review/ai-summary`, {
         method: 'POST',
@@ -292,16 +292,16 @@ export default function ReviewPage() {
     }
   };
 
-  const ScoreSelector = ({ 
-    label, 
-    value, 
-    onChange, 
-    emojis 
-  }: { 
-    label: string; 
-    value: number; 
-    onChange: (v: number) => void; 
-    emojis: string[] 
+  const ScoreSelector = ({
+    label,
+    value,
+    onChange,
+    emojis
+  }: {
+    label: string;
+    value: number;
+    onChange: (v: number) => void;
+    emojis: string[]
   }) => (
     <div className="mb-4">
       <label className="block text-sm text-gray-400 mb-2">{label}</label>
@@ -311,8 +311,8 @@ export default function ReviewPage() {
             key={score}
             onClick={() => onChange(score)}
             className={`flex-1 py-3 rounded-lg flex flex-col items-center transition-all ${
-              value === score 
-                ? 'bg-purple-600 text-white' 
+              value === score
+                ? 'bg-purple-600 text-white'
                 : 'bg-white/5 text-gray-400 hover:bg-white/10'
             }`}
           >
@@ -336,7 +336,7 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-background-dark text-gray-100">
-      
+
       <main className="max-w-4xl mx-auto px-4 py-6">
         {/* 头部 */}
         <div className="flex justify-between items-center mb-6">
@@ -358,8 +358,8 @@ export default function ReviewPage() {
               key={mode}
               onClick={() => setViewMode(mode)}
               className={`flex-1 py-2 rounded-full text-sm font-medium transition-all ${
-                viewMode === mode 
-                  ? 'bg-purple-600 text-white' 
+                viewMode === mode
+                  ? 'bg-purple-600 text-white'
                   : 'text-gray-400 hover:text-white'
               }`}
             >
@@ -409,7 +409,7 @@ export default function ReviewPage() {
                 <DataCard icon="✅" title="打卡" value={`${dailyData.checkin_completed}/${dailyData.checkin_total}`} />
                 <DataCard icon="💊" title="补剂" value={`${dailyData.supplements_taken}种`} />
               </div>
-              
+
               <div className="flex justify-around mt-4 pt-4 border-t border-white/10">
                 <div className="text-center">
                   <div className="text-gray-400 text-xs">身体电量</div>
@@ -437,13 +437,13 @@ export default function ReviewPage() {
             {/* 文字复盘 */}
             <div className="bg-card-dark rounded-2xl p-6 mb-6 border border-card-border">
               <h3 className="text-lg font-bold mb-4">✍️ 今日复盘</h3>
-              
+
               <TextInput label="🌟 今日亮点/成就" value={highlights} onChange={setHighlights} placeholder="今天做得好的事情..." />
               <TextInput label="⚠️ 遇到的挑战" value={challenges} onChange={setChallenges} placeholder="今天遇到的困难..." />
               <TextInput label="💡 收获与学习" value={learnings} onChange={setLearnings} placeholder="今天学到了什么..." />
               <TextInput label="🙏 感恩的事" value={gratitude} onChange={setGratitude} placeholder="今天感恩的事情..." />
               <TextInput label="📋 明日计划" value={tomorrowPlan} onChange={setTomorrowPlan} placeholder="明天要做的事情..." />
-              
+
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
                   <label className="text-sm text-gray-400">📝 总结</label>
@@ -551,16 +551,16 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TextInput({ 
-  label, 
-  value, 
-  onChange, 
-  placeholder 
-}: { 
-  label: string; 
-  value: string; 
-  onChange: (v: string) => void; 
-  placeholder: string 
+function TextInput({
+  label,
+  value,
+  onChange,
+  placeholder
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string
 }) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // 确保回车键在 textarea 中正常工作，不会触发表单提交或其他行为

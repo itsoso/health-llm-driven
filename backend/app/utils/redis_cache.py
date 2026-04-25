@@ -15,7 +15,7 @@ _redis_client: Optional[redis.Redis] = None
 def get_redis_client() -> Optional[redis.Redis]:
     """获取 Redis 客户端（单例模式）"""
     global _redis_client
-    
+
     if _redis_client is None:
         try:
             _redis_client = redis.from_url(
@@ -31,27 +31,27 @@ def get_redis_client() -> Optional[redis.Redis]:
         except Exception as e:
             logger.warning(f"⚠️  Redis 连接失败: {e}，将不使用缓存")
             _redis_client = None
-    
+
     return _redis_client
 
 
 class RedisCache:
     """Redis 缓存封装类"""
-    
+
     @staticmethod
     def get(key: str) -> Optional[Any]:
         """从 Redis 获取缓存
-        
+
         Args:
             key: 缓存键
-            
+
         Returns:
             缓存的值（自动 JSON 解析），如果不存在或出错则返回 None
         """
         client = get_redis_client()
         if not client:
             return None
-        
+
         try:
             value = client.get(key)
             if value:
@@ -60,23 +60,23 @@ class RedisCache:
         except Exception as e:
             logger.error(f"Redis GET 失败 (key={key}): {e}")
             return None
-    
+
     @staticmethod
     def set(key: str, value: Any, ttl: int = 3600) -> bool:
         """设置 Redis 缓存
-        
+
         Args:
             key: 缓存键
             value: 缓存值（会自动 JSON 序列化）
             ttl: 过期时间（秒），默认 1 小时
-            
+
         Returns:
             是否设置成功
         """
         client = get_redis_client()
         if not client:
             return False
-        
+
         try:
             serialized = json.dumps(value, ensure_ascii=False)
             client.setex(key, ttl, serialized)
@@ -85,21 +85,21 @@ class RedisCache:
         except Exception as e:
             logger.error(f"Redis SET 失败 (key={key}): {e}")
             return False
-    
+
     @staticmethod
     def delete(key: str) -> bool:
         """删除 Redis 缓存
-        
+
         Args:
             key: 缓存键
-            
+
         Returns:
             是否删除成功
         """
         client = get_redis_client()
         if not client:
             return False
-        
+
         try:
             client.delete(key)
             logger.debug(f"Redis DELETE 成功 (key={key})")
@@ -107,27 +107,27 @@ class RedisCache:
         except Exception as e:
             logger.error(f"Redis DELETE 失败 (key={key}): {e}")
             return False
-    
+
     @staticmethod
     def exists(key: str) -> bool:
         """检查缓存是否存在
-        
+
         Args:
             key: 缓存键
-            
+
         Returns:
             是否存在
         """
         client = get_redis_client()
         if not client:
             return False
-        
+
         try:
             return bool(client.exists(key))
         except Exception as e:
             logger.error(f"Redis EXISTS 失败 (key={key}): {e}")
             return False
-    
+
     @staticmethod
     def clear_pattern(pattern: str) -> int:
         """清除匹配模式的所有键（使用 SCAN 避免阻塞 Redis）
@@ -161,7 +161,7 @@ class RedisCache:
 # 便捷函数
 def cache_daily_recommendation(user_id: int, date: str, recommendation: dict, ttl: int = 3600):
     """缓存每日推荐
-    
+
     Args:
         user_id: 用户 ID
         date: 日期（YYYY-MM-DD）
@@ -174,11 +174,11 @@ def cache_daily_recommendation(user_id: int, date: str, recommendation: dict, tt
 
 def get_cached_daily_recommendation(user_id: int, date: str) -> Optional[dict]:
     """获取缓存的每日推荐
-    
+
     Args:
         user_id: 用户 ID
         date: 日期（YYYY-MM-DD）
-        
+
     Returns:
         缓存的推荐内容，如果不存在则返回 None
     """

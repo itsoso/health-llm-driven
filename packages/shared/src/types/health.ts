@@ -6,7 +6,7 @@ export interface GarminData {
   id: number;
   user_id: number;
   record_date: string;
-  
+
   // 睡眠数据
   sleep_score?: number;
   total_sleep_duration?: number;
@@ -14,7 +14,7 @@ export interface GarminData {
   light_sleep_duration?: number;
   rem_sleep_duration?: number;
   awake_duration?: number;
-  
+
   // 心率数据
   resting_heart_rate?: number;
   avg_heart_rate?: number;
@@ -22,7 +22,7 @@ export interface GarminData {
   min_heart_rate?: number;
   hrv?: number;
   hrv_status?: string;
-  
+
   // 活动数据
   steps?: number;
   calories_burned?: number;
@@ -30,17 +30,17 @@ export interface GarminData {
   active_minutes?: number;
   distance_meters?: number;
   floors_climbed?: number;
-  
+
   // 压力和身体电量
   stress_level?: number;
   body_battery_most_charged?: number;
   body_battery_lowest?: number;
-  
+
   // 血氧
   spo2_avg?: number;
   spo2_min?: number;
   spo2_max?: number;
-  
+
   // VO2 Max
   vo2max_running?: number;
   vo2max_cycling?: number;
@@ -110,4 +110,3 @@ export interface HeartRateData {
     resting: number;
   };
 }
-

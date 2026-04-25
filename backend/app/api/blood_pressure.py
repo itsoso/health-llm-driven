@@ -50,10 +50,10 @@ def create_blood_pressure_record(
 ):
     """创建血压记录（需要登录）"""
     from datetime import datetime, time as dt_time
-    
+
     record_data = record.model_dump()
     record_data["user_id"] = current_user.id
-    
+
     # 处理字段名映射：record_time -> measured_at
     # 将 record_date + record_time 合并为 measured_at
     if "record_time" in record_data and record_data["record_time"]:
@@ -72,12 +72,12 @@ def create_blood_pressure_record(
     # 移除数据库中不存在的字段
     record_data.pop("measurement_position", None)
     record_data.pop("arm", None)
-    
+
     db_record = BloodPressureRecord(**record_data)
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
-    
+
     # 添加血压分类
     response = BloodPressureRecordResponse.model_validate(db_record)
     response.category = classify_blood_pressure(db_record.systolic, db_record.diastolic)
@@ -98,21 +98,21 @@ def get_user_blood_pressure_records(
     verify_user_access(user_id, current_user)
 
     query = db.query(BloodPressureRecord).filter(BloodPressureRecord.user_id == user_id)
-    
+
     if start_date:
         query = query.filter(BloodPressureRecord.record_date >= start_date)
     if end_date:
         query = query.filter(BloodPressureRecord.record_date <= end_date)
-    
+
     records = query.order_by(desc(BloodPressureRecord.record_date)).limit(limit).all()
-    
+
     # 添加血压分类
     results = []
     for record in records:
         response = BloodPressureRecordResponse.model_validate(record)
         response.category = classify_blood_pressure(record.systolic, record.diastolic)
         results.append(response)
-    
+
     return results
 
 
@@ -126,21 +126,21 @@ def get_my_blood_pressure_records(
 ):
     """获取当前用户血压记录（需要登录）"""
     query = db.query(BloodPressureRecord).filter(BloodPressureRecord.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(BloodPressureRecord.record_date >= start_date)
     if end_date:
         query = query.filter(BloodPressureRecord.record_date <= end_date)
-    
+
     records = query.order_by(desc(BloodPressureRecord.record_date)).limit(limit).all()
-    
+
     # 添加血压分类
     results = []
     for record in records:
         response = BloodPressureRecordResponse.model_validate(record)
         response.category = classify_blood_pressure(record.systolic, record.diastolic)
         results.append(response)
-    
+
     return results
 
 
@@ -152,24 +152,24 @@ def get_my_blood_pressure_stats(
 ):
     """获取当前用户血压统计（需要登录）"""
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(BloodPressureRecord).filter(
         BloodPressureRecord.user_id == current_user.id,
         BloodPressureRecord.record_date >= start_date
     ).all()
-    
+
     if not records:
         return BloodPressureStats(total_records=0)
-    
+
     systolics = [r.systolic for r in records]
     diastolics = [r.diastolic for r in records]
     pulses = [r.pulse for r in records if r.pulse]
-    
+
     # 统计分类
     normal_count = 0
     elevated_count = 0
     high_count = 0
-    
+
     for r in records:
         category = classify_blood_pressure(r.systolic, r.diastolic)
         if category == "正常":
@@ -178,7 +178,7 @@ def get_my_blood_pressure_stats(
             elevated_count += 1
         else:
             high_count += 1
-    
+
     return BloodPressureStats(
         average_systolic=round(sum(systolics) / len(systolics), 1) if systolics else None,
         average_diastolic=round(sum(diastolics) / len(diastolics), 1) if diastolics else None,
@@ -207,7 +207,7 @@ def get_latest_blood_pressure(
     record = db.query(BloodPressureRecord).filter(
         BloodPressureRecord.user_id == user_id
     ).order_by(desc(BloodPressureRecord.record_date)).first()
-    
+
     if record:
         response = BloodPressureRecordResponse.model_validate(record)
         response.category = classify_blood_pressure(record.systolic, record.diastolic)
@@ -227,24 +227,24 @@ def get_blood_pressure_stats(
     verify_user_access(user_id, current_user)
 
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(BloodPressureRecord).filter(
         BloodPressureRecord.user_id == user_id,
         BloodPressureRecord.record_date >= start_date
     ).all()
-    
+
     if not records:
         return BloodPressureStats(total_records=0)
-    
+
     systolics = [r.systolic for r in records]
     diastolics = [r.diastolic for r in records]
     pulses = [r.pulse for r in records if r.pulse]
-    
+
     # 统计分类
     normal_count = 0
     elevated_count = 0
     high_count = 0
-    
+
     for r in records:
         category = classify_blood_pressure(r.systolic, r.diastolic)
         if category == "正常":
@@ -253,7 +253,7 @@ def get_blood_pressure_stats(
             elevated_count += 1
         else:
             high_count += 1
-    
+
     return BloodPressureStats(
         average_systolic=round(sum(systolics) / len(systolics), 1) if systolics else None,
         average_diastolic=round(sum(diastolics) / len(diastolics), 1) if diastolics else None,
@@ -280,13 +280,13 @@ def update_blood_pressure_record(
     # 使用通用工具获取记录并验证权限
     record = get_record_or_404(db, BloodPressureRecord, record_id)
     verify_record_ownership(record, current_user, "修改")
-    
+
     for key, value in update_data.model_dump(exclude_unset=True).items():
         setattr(record, key, value)
-    
+
     db.commit()
     db.refresh(record)
-    
+
     response = BloodPressureRecordResponse.model_validate(record)
     response.category = classify_blood_pressure(record.systolic, record.diastolic)
     return response
@@ -302,8 +302,7 @@ def delete_blood_pressure_record(
     # 使用通用工具获取记录并验证权限
     record = get_record_or_404(db, BloodPressureRecord, record_id)
     verify_record_ownership(record, current_user, "删除")
-    
+
     db.delete(record)
     db.commit()
     return {"message": "Record deleted successfully"}
-

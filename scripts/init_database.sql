@@ -1,7 +1,7 @@
 -- ============================================
 -- 健康管理系统 - 数据库初始化脚本
 -- 执行方式: sqlite3 /opt/health-app/backend/health.db < scripts/init_database.sql
--- 
+--
 -- 注意: 此脚本用于首次部署，创建所有必要的表
 -- 如果是升级现有数据库，请使用 migrations/ 目录下的迁移脚本
 -- ============================================
@@ -18,19 +18,19 @@ CREATE TABLE IF NOT EXISTS users (
     hashed_password VARCHAR,
     is_active BOOLEAN DEFAULT TRUE,
     is_admin BOOLEAN DEFAULT FALSE,
-    
+
     -- 微信小程序认证
     wechat_openid VARCHAR UNIQUE,
     wechat_unionid VARCHAR,
     wechat_session_key VARCHAR,
-    
+
     -- 基础信息
     name VARCHAR NOT NULL,
     avatar_url VARCHAR,
     birth_date DATE,
     gender VARCHAR,
     phone VARCHAR,
-    
+
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME
 );
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS garmin_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     record_date DATE NOT NULL,
-    
+
     -- 睡眠数据
     sleep_score INTEGER,
     total_sleep_duration INTEGER,
@@ -75,18 +75,18 @@ CREATE TABLE IF NOT EXISTS garmin_data (
     rem_sleep_duration INTEGER,
     awake_duration INTEGER,
     nap_duration INTEGER,
-    
+
     -- 心率数据
     resting_heart_rate INTEGER,
     avg_heart_rate INTEGER,
     max_heart_rate INTEGER,
     min_heart_rate INTEGER,
-    
+
     -- HRV 数据
     hrv INTEGER,
     hrv_status VARCHAR,
     hrv_7day_avg FLOAT,
-    
+
     -- 活动数据
     steps INTEGER,
     calories_burned INTEGER,
@@ -96,37 +96,37 @@ CREATE TABLE IF NOT EXISTS garmin_data (
     intensity_minutes_goal INTEGER,
     moderate_intensity_minutes INTEGER,
     vigorous_intensity_minutes INTEGER,
-    
+
     -- 压力和身体电量
     stress_level INTEGER,
     avg_stress INTEGER,
     max_stress INTEGER,
     body_battery_most_charged INTEGER,
     body_battery_lowest INTEGER,
-    
+
     -- 呼吸数据
     avg_respiration_awake FLOAT,
     avg_respiration_sleep FLOAT,
     lowest_respiration FLOAT,
     highest_respiration FLOAT,
-    
+
     -- 血氧数据
     spo2_avg FLOAT,
     spo2_min FLOAT,
     spo2_max FLOAT,
-    
+
     -- VO2 Max
     vo2max_running FLOAT,
     vo2max_cycling FLOAT,
-    
+
     -- 楼层和距离
     floors_climbed INTEGER,
     floors_goal INTEGER,
     distance_meters FLOAT,
-    
+
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME,
-    
+
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -156,27 +156,27 @@ CREATE INDEX IF NOT EXISTS ix_heart_rate_samples_date ON heart_rate_samples(samp
 CREATE TABLE IF NOT EXISTS workout_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    
+
     -- 基本信息
     workout_date DATE NOT NULL,
     start_time DATETIME,
     end_time DATETIME,
-    
+
     -- 运动类型
     workout_type VARCHAR NOT NULL,
     workout_name VARCHAR,
-    
+
     -- 时长
     duration_seconds INTEGER,
     moving_duration_seconds INTEGER,
-    
+
     -- 距离与配速
     distance_meters FLOAT,
     avg_pace_seconds_per_km INTEGER,
     best_pace_seconds_per_km INTEGER,
     avg_speed_kmh FLOAT,
     max_speed_kmh FLOAT,
-    
+
     -- 心率数据
     avg_heart_rate INTEGER,
     max_heart_rate INTEGER,
@@ -186,61 +186,61 @@ CREATE TABLE IF NOT EXISTS workout_records (
     hr_zone_3_seconds INTEGER,
     hr_zone_4_seconds INTEGER,
     hr_zone_5_seconds INTEGER,
-    
+
     -- 卡路里
     calories INTEGER,
     active_calories INTEGER,
-    
+
     -- 跑步/步行特有
     steps INTEGER,
     avg_stride_length_cm FLOAT,
     avg_cadence INTEGER,
     max_cadence INTEGER,
-    
+
     -- 骑车特有
     avg_power_watts INTEGER,
     max_power_watts INTEGER,
     normalized_power_watts INTEGER,
-    
+
     -- 游泳特有
     pool_length_meters INTEGER,
     laps INTEGER,
     strokes INTEGER,
     avg_strokes_per_length FLOAT,
     swim_style VARCHAR,
-    
+
     -- 高度数据
     elevation_gain_meters FLOAT,
     elevation_loss_meters FLOAT,
     min_elevation_meters FLOAT,
     max_elevation_meters FLOAT,
-    
+
     -- 训练效果
     training_effect_aerobic FLOAT,
     training_effect_anaerobic FLOAT,
     vo2max FLOAT,
     training_load INTEGER,
-    
+
     -- 感受与评估
     perceived_exertion INTEGER,
     feeling VARCHAR,
     notes TEXT,
-    
+
     -- AI分析结果
     ai_analysis TEXT,
-    
+
     -- 数据来源
     source VARCHAR DEFAULT 'manual',
     external_id VARCHAR,
-    
+
     -- 时间序列数据（JSON格式）
     heart_rate_data TEXT,
     pace_data TEXT,
     elevation_data TEXT,
-    
+
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME,
-    
+
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -631,4 +631,3 @@ CREATE INDEX IF NOT EXISTS ix_health_analysis_cache_type ON health_analysis_cach
 -- 提示: 运行此脚本后，请继续运行以下命令创建第一个管理员用户:
 -- cd backend && source venv/bin/activate
 -- python scripts/create_user.py --email admin@example.com --password yourpassword --admin
-

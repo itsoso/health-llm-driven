@@ -86,13 +86,13 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  
+
   // 系统统计
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
-  
+
   // 邀请码相关
   const [invitationStats, setInvitationStats] = useState<InvitationStats | null>(null);
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
@@ -258,7 +258,7 @@ export default function Admin() {
   // 创建邀请码
   const handleCreateCode = async () => {
     if (creatingCode) return;
-    
+
     setCreatingCode(true);
     try {
       const result = await post<InvitationCode>('/invitation/codes', {
@@ -266,7 +266,7 @@ export default function Admin() {
         max_uses: parseInt(newCodeMaxUses) || 10,
         expires_days: null
       });
-      
+
       Taro.showModal({
         title: '邀请码创建成功',
         content: `邀请码: ${result.code}\n可使用次数: ${result.max_uses}`,
@@ -279,7 +279,7 @@ export default function Admin() {
           }
         }
       });
-      
+
       setShowCreateCode(false);
       setNewCodeNote('');
       setNewCodeMaxUses('10');
@@ -412,10 +412,10 @@ export default function Admin() {
   // 清理缓存
   const handleClearCache = async (type: 'no-data' | 'all') => {
     const title = type === 'all' ? '清理全部缓存' : '清理无效缓存';
-    const content = type === 'all' 
-      ? '⚠️ 确定清理所有用户的缓存？' 
+    const content = type === 'all'
+      ? '⚠️ 确定清理所有用户的缓存？'
       : '确定清理所有"无数据"状态的缓存？';
-    
+
     Taro.showModal({
       title,
       content,
@@ -465,13 +465,13 @@ export default function Admin() {
     <ScrollView className="admin-page" scrollY>
       {/* Tab 切换 */}
       <View className="tab-bar">
-        <View 
+        <View
           className={`tab-item ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
           <Text>📈 概览</Text>
         </View>
-        <View 
+        <View
           className={`tab-item ${activeTab === 'invitation' ? 'active' : ''}`}
           onClick={() => setActiveTab('invitation')}
         >
@@ -581,7 +581,7 @@ export default function Admin() {
           <View className="section">
             <View className="section-header-row">
               <Text className="section-title">🎫 邀请码管理</Text>
-              <Button 
+              <Button
                 className="create-btn"
                 onClick={() => setShowCreateCode(!showCreateCode)}
               >
@@ -593,7 +593,7 @@ export default function Admin() {
               <View className="create-form">
                 <View className="form-row">
                   <Text className="form-label">备注</Text>
-                  <Input 
+                  <Input
                     className="form-input"
                     placeholder="如：给XXX使用"
                     value={newCodeNote}
@@ -602,7 +602,7 @@ export default function Admin() {
                 </View>
                 <View className="form-row">
                   <Text className="form-label">可用次数</Text>
-                  <Input 
+                  <Input
                     className="form-input short"
                     type="number"
                     placeholder="10"
@@ -610,7 +610,7 @@ export default function Admin() {
                     onInput={(e) => setNewCodeMaxUses(e.detail.value)}
                   />
                 </View>
-                <Button 
+                <Button
                   className="submit-btn"
                   onClick={handleCreateCode}
                   loading={creatingCode}
@@ -637,7 +637,7 @@ export default function Admin() {
                     </View>
                   </View>
                   {code.is_active && code.is_valid && (
-                    <Button 
+                    <Button
                       className="disable-btn"
                       onClick={() => handleDisableCode(code.id, code.code)}
                     >
@@ -669,13 +669,13 @@ export default function Admin() {
                       </Text>
                     </View>
                     <View className="app-actions">
-                      <Button 
+                      <Button
                         className="approve-btn"
                         onClick={() => handleReviewApplication(app.id, true, app.name)}
                       >
                         通过
                       </Button>
-                      <Button 
+                      <Button
                         className="reject-btn"
                         onClick={() => handleReviewApplication(app.id, false, app.name)}
                       >

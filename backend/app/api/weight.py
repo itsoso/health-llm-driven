@@ -130,14 +130,14 @@ def get_user_weight_records(
     """获取用户体重记录（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     query = db.query(WeightRecord).filter(WeightRecord.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(WeightRecord.record_date >= start_date)
     if end_date:
         query = query.filter(WeightRecord.record_date <= end_date)
-    
+
     records = query.order_by(desc(WeightRecord.record_date)).limit(limit).all()
     return records
 
@@ -152,12 +152,12 @@ def get_my_weight_records(
 ):
     """获取当前用户体重记录（需要登录）"""
     query = db.query(WeightRecord).filter(WeightRecord.user_id == current_user.id)
-    
+
     if start_date:
         query = query.filter(WeightRecord.record_date >= start_date)
     if end_date:
         query = query.filter(WeightRecord.record_date <= end_date)
-    
+
     records = query.order_by(desc(WeightRecord.record_date)).limit(limit).all()
     return records
 
@@ -171,7 +171,7 @@ def get_latest_weight(
     """获取最新体重记录（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     record = db.query(WeightRecord).filter(
         WeightRecord.user_id == current_user.id
     ).order_by(desc(WeightRecord.record_date)).first()
@@ -188,26 +188,26 @@ def get_weight_stats(
     """获取体重统计（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     start_date = date.today() - timedelta(days=days)
-    
+
     records = db.query(WeightRecord).filter(
         WeightRecord.user_id == current_user.id,
         WeightRecord.record_date >= start_date
     ).order_by(desc(WeightRecord.record_date)).all()
-    
+
     if not records:
         return WeightStats(total_records=0)
-    
+
     weights = [r.weight for r in records if r.weight]
-    
+
     # 计算30天变化
     weight_change = None
     if len(records) >= 2:
         latest = records[0].weight
         oldest = records[-1].weight
         weight_change = round(latest - oldest, 2)
-    
+
     return WeightStats(
         current_weight=records[0].weight if records else None,
         highest_weight=max(weights) if weights else None,
@@ -326,4 +326,3 @@ def delete_weight_record(
             db.commit()
 
     return {"message": "Record deleted successfully"}
-

@@ -22,11 +22,11 @@ export function formatBeijingTime(
   }
 ): string {
   if (!dateString) return '--';
-  
+
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return '--';
-    
+
     return new Intl.DateTimeFormat('zh-CN', options).format(date);
   } catch (error) {
     console.error('时间格式化错误:', error);
@@ -41,11 +41,11 @@ export function formatBeijingTime(
  */
 export function formatDateTime(dateString: string | null | undefined): string {
   if (!dateString) return '--';
-  
+
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return '--';
-    
+
     // 使用Intl.DateTimeFormat转换为北京时间，然后手动格式化为 YYYY/MM/DD HH:mm:ss
     const formatter = new Intl.DateTimeFormat('zh-CN', {
       year: 'numeric',
@@ -57,7 +57,7 @@ export function formatDateTime(dateString: string | null | undefined): string {
       hour12: false,
       timeZone: 'Asia/Shanghai'
     });
-    
+
     const parts = formatter.formatToParts(date);
     const year = parts.find(p => p.type === 'year')?.value || '';
     const month = parts.find(p => p.type === 'month')?.value.padStart(2, '0') || '';
@@ -65,7 +65,7 @@ export function formatDateTime(dateString: string | null | undefined): string {
     const hour = parts.find(p => p.type === 'hour')?.value.padStart(2, '0') || '';
     const minute = parts.find(p => p.type === 'minute')?.value.padStart(2, '0') || '';
     const second = parts.find(p => p.type === 'second')?.value.padStart(2, '0') || '';
-    
+
     return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
   } catch (error) {
     console.error('时间格式化错误:', error);
@@ -130,12 +130,12 @@ export function getBeijingNow(): Date {
     second: '2-digit',
     hour12: false
   }).format(now);
-  
+
   // 解析为本地时间（但实际是北京时间）
   const [datePart, timePart] = beijingTimeString.split(', ');
   const [month, day, year] = datePart.split('/');
   const [hour, minute, second] = timePart.split(':');
-  
+
   return new Date(
     parseInt(year),
     parseInt(month) - 1,

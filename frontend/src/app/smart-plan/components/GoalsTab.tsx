@@ -7,7 +7,6 @@ import { smartPlanApi } from '@/services/api/content';
 import { GoalListItem, PeriodGoal, GoalMetric } from './types';
 import { DebugPanel } from './DebugPanel';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export function GoalsTab({ debugMode }: { debugMode: boolean }) {
   const queryClient = useQueryClient();

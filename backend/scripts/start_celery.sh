@@ -64,29 +64,29 @@ case $mode in
         echo "=================================="
         celery -A app.celery_app worker --loglevel=info &
         WORKER_PID=$!
-        
+
         sleep 3
-        
+
         echo ""
         echo "Beat 日志:"
         echo "=================================="
         celery -A app.celery_app beat --loglevel=info &
         BEAT_PID=$!
-        
+
         echo ""
         echo -e "${GREEN}✓ Celery 已启动${NC}"
         echo "Worker PID: $WORKER_PID"
         echo "Beat PID: $BEAT_PID"
         echo ""
         echo "按 Ctrl+C 停止"
-        
+
         # 等待进程
         wait $WORKER_PID $BEAT_PID
         ;;
-        
+
     2)
         echo -e "${YELLOW}后台模式启动...${NC}"
-        
+
         # 启动 Worker
         nohup celery -A app.celery_app worker \
             --loglevel=info \
@@ -95,9 +95,9 @@ case $mode in
             > /dev/null 2>&1 &
         WORKER_PID=$!
         echo "Worker PID: $WORKER_PID"
-        
+
         sleep 2
-        
+
         # 启动 Beat
         nohup celery -A app.celery_app beat \
             --loglevel=info \
@@ -106,7 +106,7 @@ case $mode in
             > /dev/null 2>&1 &
         BEAT_PID=$!
         echo "Beat PID: $BEAT_PID"
-        
+
         echo ""
         echo -e "${GREEN}✓ Celery 已在后台启动${NC}"
         echo ""
@@ -118,17 +118,17 @@ case $mode in
         echo "  pkill -f 'celery.*worker'"
         echo "  pkill -f 'celery.*beat'"
         ;;
-        
+
     3)
         echo -e "${YELLOW}仅启动 Worker...${NC}"
         celery -A app.celery_app worker --loglevel=info
         ;;
-        
+
     4)
         echo -e "${YELLOW}仅启动 Beat...${NC}"
         celery -A app.celery_app beat --loglevel=info
         ;;
-        
+
     *)
         echo -e "${RED}无效选择${NC}"
         exit 1

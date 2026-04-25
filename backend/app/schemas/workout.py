@@ -85,21 +85,21 @@ class WorkoutRecordBase(BaseModel):
     workout_date: date
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    
+
     workout_type: WorkoutType
     workout_name: Optional[str] = None
-    
+
     # 时长
     duration_seconds: Optional[int] = None
     moving_duration_seconds: Optional[int] = None
-    
+
     # 距离与配速
     distance_meters: Optional[float] = None
     avg_pace_seconds_per_km: Optional[int] = None
     best_pace_seconds_per_km: Optional[int] = None
     avg_speed_kmh: Optional[float] = None
     max_speed_kmh: Optional[float] = None
-    
+
     # 心率
     avg_heart_rate: Optional[int] = None
     max_heart_rate: Optional[int] = None
@@ -109,41 +109,41 @@ class WorkoutRecordBase(BaseModel):
     hr_zone_3_seconds: Optional[int] = None
     hr_zone_4_seconds: Optional[int] = None
     hr_zone_5_seconds: Optional[int] = None
-    
+
     # 卡路里
     calories: Optional[int] = None
     active_calories: Optional[int] = None
-    
+
     # 跑步特有
     steps: Optional[int] = None
     avg_stride_length_cm: Optional[float] = None
     avg_cadence: Optional[int] = None
     max_cadence: Optional[int] = None
-    
+
     # 骑车特有
     avg_power_watts: Optional[int] = None
     max_power_watts: Optional[int] = None
     normalized_power_watts: Optional[int] = None
-    
+
     # 游泳特有
     pool_length_meters: Optional[int] = None
     laps: Optional[int] = None
     strokes: Optional[int] = None
     avg_strokes_per_length: Optional[float] = None
     swim_style: Optional[SwimStyle] = None
-    
+
     # 高度
     elevation_gain_meters: Optional[float] = None
     elevation_loss_meters: Optional[float] = None
     min_elevation_meters: Optional[float] = None
     max_elevation_meters: Optional[float] = None
-    
+
     # 训练效果
     training_effect_aerobic: Optional[float] = None
     training_effect_anaerobic: Optional[float] = None
     vo2max: Optional[float] = None
     training_load: Optional[int] = None
-    
+
     # 感受
     perceived_exertion: Optional[int] = Field(None, ge=1, le=10)
     feeling: Optional[Feeling] = None
@@ -193,7 +193,7 @@ class WorkoutRecordResponse(WorkoutRecordBase):
     lap_data: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -243,28 +243,28 @@ class WorkoutAnalysisResponse(BaseModel):
     """运动AI分析响应"""
     workout_id: int
     analysis_date: datetime
-    
+
     # 训练评估
     overall_rating: str  # excellent, good, moderate, needs_improvement
     intensity_assessment: str
-    
+
     # 心率分析
     heart_rate_analysis: Optional[str]
     hr_zone_assessment: Optional[str]
-    
+
     # 配速/速度分析
     pace_analysis: Optional[str]
-    
+
     # 训练效果
     training_effect_summary: Optional[str]
-    
+
     # 恢复建议
     recovery_recommendation: str
     next_workout_suggestion: str
-    
+
     # 历史对比
     comparison_with_history: Optional[str]
-    
+
     # 综合建议
     key_insights: List[str]
     improvement_tips: List[str]
@@ -275,21 +275,20 @@ class WorkoutChartData(BaseModel):
     workout_id: int
     workout_type: str
     duration_seconds: int
-    
+
     # 心率曲线
     heart_rate_timeline: Optional[List[HeartRatePoint]] = None
     heart_rate_zones: Optional[HeartRateZoneDistribution] = None
-    
+
     # 配速曲线
     pace_timeline: Optional[List[PacePoint]] = None
-    
+
     # 海拔曲线
     elevation_timeline: Optional[List[ElevationPoint]] = None
-    
+
     # 汇总数据
     avg_heart_rate: Optional[int]
     max_heart_rate: Optional[int]
     avg_pace_display: Optional[str]  # "5:30/km"
     total_distance_km: Optional[float]
     calories: Optional[int]
-

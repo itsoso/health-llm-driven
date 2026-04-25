@@ -40,21 +40,21 @@ if echo "$RECOMMENDATION" | grep -q "success"; then
   echo ""
   echo "✅ API 测试成功"
   echo ""
-  
+
   # 3. 提取关键信息
   echo "3. 关键信息摘要"
   echo "========================================="
-  
+
   echo "$RECOMMENDATION" | python3 << 'EOF'
 import json
 import sys
 
 try:
     data = json.load(sys.stdin)
-    
+
     if data.get('success'):
         print(f"✅ 推荐生成成功\n")
-        
+
         # 用户信息
         user_info = data.get('user_info', {})
         print(f"👤 用户信息:")
@@ -64,14 +64,14 @@ try:
         print(f"   体重: {user_info.get('current_weight_kg')}kg")
         print(f"   目标: {user_info.get('weight_goal')}")
         print()
-        
+
         # 代谢信息
         metabolism = data.get('metabolism', {})
         print(f"🔥 代谢信息:")
         print(f"   BMR: {metabolism.get('bmr')} kcal/天")
         print(f"   TDEE: {metabolism.get('tdee')} kcal/天")
         print()
-        
+
         # 营养目标
         daily_target = data.get('daily_target', {})
         print(f"📊 每日营养目标:")
@@ -80,7 +80,7 @@ try:
         print(f"   碳水: {daily_target.get('carbs_g')} g")
         print(f"   脂肪: {daily_target.get('fat_g')} g")
         print()
-        
+
         # 今日摄入
         today_intake = data.get('today_intake', {})
         print(f"🍽️ 今日摄入 ({today_intake.get('meals_count')}餐):")
@@ -89,7 +89,7 @@ try:
         print(f"   碳水: {today_intake.get('carbs_g')} g")
         print(f"   脂肪: {today_intake.get('fat_g')} g")
         print()
-        
+
         # 进度
         progress = data.get('progress', {})
         print(f"📈 完成进度:")
@@ -98,7 +98,7 @@ try:
         print(f"   碳水: {progress.get('carbs_percent')}%")
         print(f"   脂肪: {progress.get('fat_percent')}%")
         print()
-        
+
         # 健康状态
         health_status = data.get('health_status', {})
         if health_status:
@@ -110,7 +110,7 @@ try:
             if 'stress_level' in health_status:
                 print(f"   压力水平: {health_status.get('stress_level')}/100")
             print()
-        
+
         # 警告
         warnings = data.get('warnings', [])
         if warnings:
@@ -118,7 +118,7 @@ try:
             for warning in warnings:
                 print(f"   {warning}")
             print()
-        
+
         # 提示
         tips = data.get('tips', [])
         if tips:
@@ -126,7 +126,7 @@ try:
             for tip in tips:
                 print(f"   {tip}")
             print()
-        
+
         # 食物推荐
         food_recommendations = data.get('food_recommendations', [])
         if food_recommendations:
@@ -136,7 +136,7 @@ try:
                 print(f"      理由: {rec.get('reason')}")
                 print(f"      推荐: {', '.join(rec.get('foods', [])[:3])}...")
             print()
-        
+
         # 科学依据
         scientific_insights = data.get('scientific_insights', {})
         if scientific_insights.get('available'):
@@ -144,15 +144,15 @@ try:
         else:
             print(f"🔬 科学依据: {scientific_insights.get('reason', '不可用')}")
         print()
-        
+
     else:
         print(f"❌ 推荐生成失败: {data.get('error')}")
-        
+
 except Exception as e:
     print(f"❌ 解析失败: {e}")
     sys.exit(1)
 EOF
-  
+
 else
   echo "❌ API 测试失败"
   echo "响应: $RECOMMENDATION"

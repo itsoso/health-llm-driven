@@ -39,4 +39,3 @@ fi
 # 启动服务（使用watchfiles作为reload引擎）
 echo "启动服务（使用watchfiles自动重载）..."
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-engine watchfiles
-

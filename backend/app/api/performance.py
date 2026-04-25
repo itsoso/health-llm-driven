@@ -106,10 +106,10 @@ async def report_metric(
         success=metric.success,
         error_message=metric.error_message
     )
-    
+
     db.add(db_metric)
     db.commit()
-    
+
     return {"success": True, "message": "性能指标已记录"}
 
 
@@ -139,10 +139,10 @@ async def report_metrics_batch(
             error_message=metric.error_message
         )
         db_metrics.append(db_metric)
-    
+
     db.bulk_save_objects(db_metrics)
     db.commit()
-    
+
     return {
         "success": True,
         "message": f"已记录 {len(db_metrics)} 条性能指标"
@@ -162,45 +162,45 @@ async def get_performance_overview(
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    
+
     start_time = datetime.now() - timedelta(hours=hours)
-    
+
     # 构建查询条件
     conditions = [PerformanceMetric.created_at >= start_time]
     if platform:
         conditions.append(PerformanceMetric.platform == platform)
-    
+
     # 获取各平台的性能数据
     platforms = [PlatformType.MINI_PROGRAM, PlatformType.WEB]
     if platform:
         platforms = [platform]
-    
+
     result = []
-    
+
     for plat in platforms:
         plat_conditions = conditions + [PerformanceMetric.platform == plat]
-        
+
         # 总指标数
         total_metrics = db.query(func.count(PerformanceMetric.id)).filter(
             and_(*plat_conditions)
         ).scalar() or 0
-        
+
         # 平均页面加载时间
         avg_page_load = db.query(func.avg(PerformanceMetric.duration)).filter(
             and_(*plat_conditions, PerformanceMetric.metric_type == MetricType.PAGE_LOAD)
         ).scalar() or 0
-        
+
         # 平均 API 调用时间
         avg_api_call = db.query(func.avg(PerformanceMetric.duration)).filter(
             and_(*plat_conditions, PerformanceMetric.metric_type == MetricType.API_CALL)
         ).scalar() or 0
-        
+
         # 错误率
         error_count = db.query(func.count(PerformanceMetric.id)).filter(
             and_(*plat_conditions, PerformanceMetric.success == 0)
         ).scalar() or 0
         error_rate = (error_count / total_metrics * 100) if total_metrics > 0 else 0
-        
+
         # 慢页面（P95 > 3000ms）
         slow_pages = db.query(
             PerformanceMetric.metric_name,
@@ -215,7 +215,7 @@ async def get_performance_overview(
         ).order_by(
             desc('avg_duration')
         ).limit(5).all()
-        
+
         # 慢 API（P95 > 1000ms）
         slow_apis = db.query(
             PerformanceMetric.metric_name,
@@ -230,7 +230,7 @@ async def get_performance_overview(
         ).order_by(
             desc('avg_duration')
         ).limit(5).all()
-        
+
         result.append({
             "platform": plat.value,
             "total_metrics": total_metrics,
@@ -254,7 +254,7 @@ async def get_performance_overview(
                 for api in slow_apis
             ]
         })
-    
+
     return result
 
 
@@ -270,16 +270,16 @@ async def get_page_performance(
     获取页面性能详情
     """
     start_time = datetime.now() - timedelta(hours=hours)
-    
+
     conditions = [
         PerformanceMetric.created_at >= start_time,
         PerformanceMetric.platform == platform,
         PerformanceMetric.metric_type == MetricType.PAGE_LOAD
     ]
-    
+
     if page_name:
         conditions.append(PerformanceMetric.metric_name == page_name)
-    
+
     # 获取所有页面的性能统计
     pages = db.query(
         PerformanceMetric.metric_name,
@@ -293,7 +293,7 @@ async def get_page_performance(
     ).order_by(
         desc('total_visits')
     ).all()
-    
+
     result = []
     for page in pages:
         # 获取百分位数
@@ -305,9 +305,9 @@ async def get_page_performance(
                 PerformanceMetric.metric_name == page[0]
             )
         ).order_by(PerformanceMetric.duration).all()
-        
+
         durations_list = [d[0] for d in durations]
-        
+
         def percentile(data, p):
             if not data:
                 return 0
@@ -315,7 +315,7 @@ async def get_page_performance(
             f = int(k)
             c = f + 1 if f < len(data) - 1 else f
             return data[f] + (data[c] - data[f]) * (k - f)
-        
+
         result.append({
             "page_name": page[0],
             "platform": platform.value,
@@ -327,7 +327,7 @@ async def get_page_performance(
             "p99_duration": round(percentile(durations_list, 99), 2),
             "error_rate": round(page[3] / page[1] * 100, 2) if page[1] > 0 else 0
         })
-    
+
     return result
 
 
@@ -342,15 +342,15 @@ async def get_api_performance(
     获取 API 性能详情
     """
     start_time = datetime.now() - timedelta(hours=hours)
-    
+
     conditions = [
         PerformanceMetric.created_at >= start_time,
         PerformanceMetric.metric_type == MetricType.API_CALL
     ]
-    
+
     if api_name:
         conditions.append(PerformanceMetric.metric_name == api_name)
-    
+
     # 获取所有 API 的性能统计
     apis = db.query(
         PerformanceMetric.metric_name,
@@ -365,7 +365,7 @@ async def get_api_performance(
     ).order_by(
         desc('total_calls')
     ).all()
-    
+
     result = []
     for api in apis:
         # 获取百分位数
@@ -376,9 +376,9 @@ async def get_api_performance(
                 PerformanceMetric.metric_name == api[0]
             )
         ).order_by(PerformanceMetric.duration).all()
-        
+
         durations_list = [d[0] for d in durations]
-        
+
         def percentile(data, p):
             if not data:
                 return 0
@@ -386,7 +386,7 @@ async def get_api_performance(
             f = int(k)
             c = f + 1 if f < len(data) - 1 else f
             return data[f] + (data[c] - data[f]) * (k - f)
-        
+
         result.append({
             "api_name": api[0],
             "total_calls": api[1],
@@ -398,7 +398,7 @@ async def get_api_performance(
             "success_rate": round(api[4] / api[1] * 100, 2) if api[1] > 0 else 0,
             "error_rate": round(api[3] / api[1] * 100, 2) if api[1] > 0 else 0
         })
-    
+
     return result
 
 
@@ -415,16 +415,16 @@ async def get_performance_trends(
     获取性能趋势（按小时聚合）
     """
     start_time = datetime.now() - timedelta(hours=hours)
-    
+
     conditions = [
         PerformanceMetric.created_at >= start_time,
         PerformanceMetric.platform == platform,
         PerformanceMetric.metric_type == metric_type
     ]
-    
+
     if metric_name:
         conditions.append(PerformanceMetric.metric_name == metric_name)
-    
+
     # 按小时聚合
     trends = db.query(
         func.date_trunc('hour', PerformanceMetric.created_at).label('hour'),
@@ -438,7 +438,7 @@ async def get_performance_trends(
     ).order_by(
         'hour'
     ).all()
-    
+
     return [
         {
             "time": trend[0].isoformat(),
@@ -462,14 +462,14 @@ async def get_performance_alerts(
     获取性能告警列表
     """
     query = db.query(PerformanceAlert)
-    
+
     if status:
         query = query.filter(PerformanceAlert.status == status)
-    
+
     alerts = query.order_by(
         desc(PerformanceAlert.created_at)
     ).limit(limit).all()
-    
+
     return [
         {
             "id": alert.id,

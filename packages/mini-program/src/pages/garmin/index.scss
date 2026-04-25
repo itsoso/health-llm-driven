@@ -100,12 +100,12 @@
   padding: 8px 20px;
   border-radius: 20px;
   font-size: 24px;
-  
+
   &.cn {
     background: rgba(239, 68, 68, 0.2);
     color: #fca5a5;
   }
-  
+
   &.global {
     background: rgba(59, 130, 246, 0.2);
     color: #93c5fd;
@@ -140,7 +140,7 @@
   color: rgba(255, 255, 255, 0.7);
   font-size: 26px;
   transition: all 0.2s ease;
-  
+
   &.active {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: #ffffff;
@@ -157,11 +157,11 @@
   font-weight: 600;
   border-radius: 16px;
   border: none;
-  
+
   &::after {
     border: none;
   }
-  
+
   &:active {
     opacity: 0.9;
   }
@@ -181,19 +181,19 @@
   font-weight: 500;
   border-radius: 12px;
   border: none;
-  
+
   &.edit {
     background: rgba(59, 130, 246, 0.2);
     color: #93c5fd;
     border: 1px solid rgba(59, 130, 246, 0.3);
   }
-  
+
   &.delete {
     background: rgba(239, 68, 68, 0.2);
     color: #fca5a5;
     border: 1px solid rgba(239, 68, 68, 0.3);
   }
-  
+
   &::after {
     border: none;
   }
@@ -217,7 +217,7 @@
 
 .form-item {
   margin-bottom: 24px;
-  
+
   &.switch-item {
     display: flex;
     align-items: center;
@@ -252,7 +252,7 @@
   font-size: 30px;
   padding: 0 24px;
   box-sizing: border-box;
-  
+
   &::placeholder {
     color: rgba(255, 255, 255, 0.4);
   }
@@ -295,21 +295,21 @@
   font-weight: 600;
   border-radius: 16px;
   border: none;
-  
+
   &.test {
     background: rgba(255, 255, 255, 0.15);
     color: #ffffff;
   }
-  
+
   &.save {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: #ffffff;
   }
-  
+
   &::after {
     border: none;
   }
-  
+
   &:active {
     opacity: 0.9;
   }
@@ -323,7 +323,7 @@
   font-size: 28px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  
+
   &::after {
     border: none;
   }
@@ -376,7 +376,7 @@
   letter-spacing: 16px;
   padding: 0 24px;
   box-sizing: border-box;
-  
+
   &::placeholder {
     color: rgba(255, 255, 255, 0.4);
     font-size: 28px;
@@ -398,21 +398,21 @@
   font-weight: 600;
   border-radius: 12px;
   border: none;
-  
+
   &.cancel {
     background: rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 0.8);
   }
-  
+
   &.verify {
     background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
     color: #ffffff;
   }
-  
+
   &::after {
     border: none;
   }
-  
+
   &:disabled {
     opacity: 0.5;
   }

@@ -61,7 +61,7 @@ def test_client(test_db):
             yield test_db
         finally:
             pass
-    
+
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as client:
         yield client
@@ -134,7 +134,7 @@ def mock_garmin_data():
     data.id = 1
     data.user_id = 1
     data.record_date = date.today()
-    
+
     # 睡眠数据
     data.sleep_score = 85
     data.total_sleep_duration = 450  # 7.5小时（分钟）
@@ -142,7 +142,7 @@ def mock_garmin_data():
     data.rem_sleep_duration = 90
     data.light_sleep_duration = 180
     data.awake_duration = 60
-    
+
     # 心率数据
     data.avg_heart_rate = 65
     data.max_heart_rate = 150
@@ -150,19 +150,19 @@ def mock_garmin_data():
     data.resting_heart_rate = 55
     data.hrv = 45.5
     data.hrv_status = "balanced"
-    
+
     # 压力和能量
     data.stress_level = 35
     data.body_battery = 75
     data.body_battery_charged = 80
     data.body_battery_drained = 5
-    
+
     # 活动数据
     data.steps = 8500
     data.calories_burned = 2200
     data.active_minutes = 45
     data.intensity_minutes = 30
-    
+
     return data
 
 
@@ -230,7 +230,7 @@ def mock_workout_list():
     from app.models.daily_health import WorkoutRecord
     workouts = []
     workout_types = ["running", "cycling", "swimming", "strength"]
-    
+
     for i in range(4):
         workout = Mock(spec=WorkoutRecord)
         workout.workout_date = date.today() - timedelta(days=i)
@@ -239,7 +239,7 @@ def mock_workout_list():
         workout.calories = 300 + i * 50
         workout.avg_heart_rate = 140 + i * 5
         workouts.append(workout)
-    
+
     return workouts
 
 
@@ -271,7 +271,7 @@ def mock_diet_list():
     from app.models.daily_health import DietRecord
     diets = []
     meal_types = ["breakfast", "lunch", "dinner", "snack"]
-    
+
     for i, meal_type in enumerate(meal_types):
         diet = Mock(spec=DietRecord)
         diet.record_date = date.today()
@@ -281,7 +281,7 @@ def mock_diet_list():
         diet.carbs = 50 + i * 10
         diet.fat = 10 + i * 5
         diets.append(diet)
-    
+
     return diets
 
 
@@ -315,7 +315,7 @@ def mock_supplement_list():
         ("蛋白粉", "30g", "post_workout", "protein"),
         ("镁", "400mg", "bedtime", "mineral")
     ]
-    
+
     for i, (name, dosage, timing, category) in enumerate(supplement_data):
         supplement = Mock(spec=SupplementDefinition)
         supplement.id = i + 1
@@ -325,7 +325,7 @@ def mock_supplement_list():
         supplement.category = category
         supplement.is_active = True
         supplements.append(supplement)
-    
+
     return supplements
 
 
@@ -460,7 +460,7 @@ def create_test_user(test_db):
     def _create(email="test@example.com", **kwargs):
         from app.models.user import User
         from app.services.auth import get_password_hash
-        
+
         user = User(
             email=email,
             hashed_password=get_password_hash("Test123!@#"),
@@ -496,13 +496,13 @@ def pytest_configure(config):
 def configure_test_logging():
     """配置测试日志"""
     import logging
-    
+
     # 设置测试日志级别
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
     )
-    
+
     # 禁用某些库的详细日志
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)

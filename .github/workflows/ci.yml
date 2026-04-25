@@ -25,6 +25,7 @@ jobs:
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: sqlite:///:memory:
         run: pytest tests/ -q --no-cov --tb=short -x
 
   frontend-build:

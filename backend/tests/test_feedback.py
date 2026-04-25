@@ -393,6 +393,16 @@ class TestSkillRegistry:
         yield Path(tmp)
         shutil.rmtree(tmp, ignore_errors=True)
 
+    @pytest.fixture(autouse=True)
+    def _stub_gateway_sync(self, monkeypatch):
+        """测试环境下不连远程 OpenClaw Gateway（CI 无 SSH 通路）"""
+        from app.services import skill_registry as skill_registry_mod
+        monkeypatch.setattr(
+            skill_registry_mod.SkillRegistry,
+            "_sync_to_gateway",
+            lambda self, name: None,
+        )
+
     def test_list_skills(self, temp_skills_dir):
         from app.services.skill_registry import SkillRegistry
         registry = SkillRegistry(temp_skills_dir)

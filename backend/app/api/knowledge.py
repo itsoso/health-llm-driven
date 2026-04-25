@@ -110,7 +110,7 @@ def add_documents(
 ):
     """
     批量添加文档到知识库
-    
+
     需要管理员权限
     """
     if not current_user.is_admin:
@@ -118,22 +118,22 @@ def add_documents(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以添加知识库内容"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     documents = [doc.model_dump() for doc in input_data.documents]
     result = vector_store.add_documents(documents, source=input_data.source)
-    
+
     if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=result.get("error", "添加文档失败")
         )
-    
+
     return result
 
 
@@ -145,7 +145,7 @@ def add_text_document(
 ):
     """
     添加纯文本内容到知识库
-    
+
     文本会自动分块处理
     """
     if not current_user.is_admin:
@@ -153,13 +153,13 @@ def add_text_document(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以添加知识库内容"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     # 使用文档加载器处理文本
     documents = document_loader.load_from_text(
         text=input_data.text,
@@ -167,21 +167,21 @@ def add_text_document(
         category=input_data.category,
         source=input_data.source
     )
-    
+
     if not documents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="文本内容为空"
         )
-    
+
     result = vector_store.add_documents(documents, source=input_data.source)
-    
+
     if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=result.get("error", "添加文档失败")
         )
-    
+
     return result
 
 
@@ -198,15 +198,15 @@ async def upload_course_files(
 ):
     """
     批量上传课程 Markdown 文件到知识库（使用增强版加载器）
-    
+
     支持一次上传多个 .md 文件，自动解析和分块
-    
+
     专为运动科学课程（如张展晖课程）优化：
     - 保留标题层级和面包屑导航
     - 更大的分块大小（1800-2000字符）
     - 丰富的元数据（作者、难度、目标人群、关键概念）
     - 智能识别课程结构
-    
+
     需要管理员权限
     """
     if not current_user.is_admin:
@@ -214,13 +214,13 @@ async def upload_course_files(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以添加知识库内容"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     # 解析目标人群
     try:
         target_audience_list = json.loads(target_audiences)
@@ -228,12 +228,12 @@ async def upload_course_files(
             target_audience_list = []
     except json.JSONDecodeError:
         target_audience_list = []
-    
+
     # 记录接收到的文件
     logger.info(f"[课程上传] 接收到 {len(files)} 个文件")
     for i, file in enumerate(files):
         logger.info(f"[课程上传] 文件 {i+1}: {file.filename}, content_type: {file.content_type}")
-    
+
     # 验证文件格式
     for file in files:
         filename = file.filename or ""
@@ -244,24 +244,24 @@ async def upload_course_files(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"文件 {filename} 格式不支持，仅支持 .md 或 .markdown 文件"
             )
-    
+
     try:
         all_documents = []
         file_results = []
-        
+
         # 逐个处理文件
         for file in files:
             filename = file.filename or "未命名文件"
             logger.info(f"[课程上传] 开始处理文件: {filename}")
-            
+
             try:
                 # 读取文件内容
                 content = await file.read()
                 file_size_kb = len(content) / 1024
                 logger.info(f"[课程上传] 文件大小: {file_size_kb:.1f} KB")
-                
+
                 text = content.decode("utf-8")
-                
+
                 # 使用增强版加载器处理
                 documents = enhanced_loader.load_course_markdown(
                     content=text,
@@ -270,18 +270,18 @@ async def upload_course_files(
                     difficulty=difficulty,
                     target_audience=target_audience_list
                 )
-                
+
                 all_documents.extend(documents)
-                
+
                 file_results.append({
                     "filename": filename,
                     "success": True,
                     "chunks": len(documents),
                     "size_kb": round(file_size_kb, 1)
                 })
-                
+
                 logger.info(f"[课程上传] 文件 {filename} 处理完成，生成 {len(documents)} 个文档块")
-                
+
             except UnicodeDecodeError:
                 logger.error(f"[课程上传] 文件 {filename} 编码错误")
                 file_results.append({
@@ -296,35 +296,35 @@ async def upload_course_files(
                     "success": False,
                     "error": str(e)
                 })
-        
+
         if not all_documents:
             logger.error(f"[课程上传] 没有生成任何文档块。file_results: {file_results}")
             error_details = []
             for fr in file_results:
                 if not fr['success']:
                     error_details.append(f"{fr['filename']}: {fr.get('error', '未知错误')}")
-            
+
             detail_msg = "没有成功处理任何文件"
             if error_details:
                 detail_msg += "。错误详情：" + "; ".join(error_details)
-            
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=detail_msg
             )
-        
+
         # 添加到向量存储
         logger.info(f"[课程上传] 开始添加 {len(all_documents)} 个文档块到向量存储")
         result = vector_store.add_documents(all_documents, source=source)
-        
+
         if not result.get("success"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "添加文档失败")
             )
-        
+
         logger.info(f"[课程上传] 成功添加 {result.get('added_count', 0)} 个文档块")
-        
+
         return {
             "success": True,
             "message": f"成功上传 {len([f for f in file_results if f['success']])} 个文件",
@@ -333,7 +333,7 @@ async def upload_course_files(
             "added_count": result.get("added_count", 0),
             "total_in_kb": result.get("total_count", 0)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -352,15 +352,15 @@ def upload_course(
 ):
     """
     上传专业课程内容到知识库（使用增强版加载器）
-    
+
     通过文本输入方式上传单个课程内容
-    
+
     专为运动科学课程（如张展晖课程）优化：
     - 保留标题层级和面包屑导航
     - 更大的分块大小（1800-2000字符）
     - 丰富的元数据（作者、难度、目标人群、关键概念）
     - 智能识别课程结构
-    
+
     需要管理员权限
     """
     if not current_user.is_admin:
@@ -368,16 +368,16 @@ def upload_course(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以添加知识库内容"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     logger.info(f"[课程上传] 用户 {current_user.id} 开始上传课程: {input_data.title}")
     logger.info(f"[课程上传] 作者: {input_data.author}, 来源: {input_data.source}")
-    
+
     try:
         # 使用增强版加载器处理课程内容
         documents = zhang_zhanhui_loader.load_course_markdown(
@@ -388,26 +388,26 @@ def upload_course(
             target_audience=input_data.target_audience,
             course_metadata=input_data.course_metadata
         )
-        
+
         if not documents:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="课程内容解析失败或为空"
             )
-        
+
         logger.info(f"[课程上传] 课程解析完成，共 {len(documents)} 个文档块，开始向量化...")
-        
+
         # 添加到向量库
         result = vector_store.add_documents(documents, source=input_data.source)
-        
+
         if not result.get("success"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "添加文档失败")
             )
-        
+
         logger.info(f"[课程上传] 完成！结果: {result}")
-        
+
         return {
             **result,
             "course_title": input_data.title,
@@ -415,7 +415,7 @@ def upload_course(
             "difficulty": input_data.difficulty,
             "target_audience": input_data.target_audience
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -436,7 +436,7 @@ async def upload_document(
 ):
     """
     上传文件到知识库
-    
+
     支持的格式：.txt, .md, .json
     """
     if not current_user.is_admin:
@@ -444,23 +444,23 @@ async def upload_document(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以添加知识库内容"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     # 检查文件类型
     filename = file.filename or ""
     ext = filename.split(".")[-1].lower() if "." in filename else ""
-    
+
     if ext not in ["txt", "md", "json"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="不支持的文件格式，请上传 .txt, .md 或 .json 文件"
         )
-    
+
     try:
         # 读取文件内容
         logger.info(f"[知识库上传] 用户 {current_user.id} 开始上传文件: {filename}")
@@ -468,7 +468,7 @@ async def upload_document(
         file_size_kb = len(content) / 1024
         logger.info(f"[知识库上传] 文件大小: {file_size_kb:.1f} KB")
         text = content.decode("utf-8")
-        
+
         # 根据文件类型处理
         if ext == "json":
             try:
@@ -503,29 +503,29 @@ async def upload_document(
                 category=category,
                 source=source
             )
-        
+
         if not documents:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="文件内容为空或无法解析"
             )
-        
+
         logger.info(f"[知识库上传] 文件解析完成，共 {len(documents)} 个文档块，开始向量化...")
         result = vector_store.add_documents(documents, source=source)
         logger.info(f"[知识库上传] 完成，结果: {result}")
-        
+
         if not result.get("success"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=result.get("error", "添加文档失败")
             )
-        
+
         return {
             **result,
             "filename": filename,
             "file_type": ext
         }
-        
+
     except UnicodeDecodeError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -540,7 +540,7 @@ def search_knowledge(
 ):
     """
     搜索知识库内容
-    
+
     使用向量相似度搜索相关文档
     """
     if not vector_store.is_available():
@@ -548,14 +548,14 @@ def search_knowledge(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     results = vector_store.search(
         query=query.query,
         n_results=query.n_results,
         category=query.category,
         source=query.source
     )
-    
+
     return {
         "query": query.query,
         "results": results,
@@ -571,7 +571,7 @@ def ask_question(
 ):
     """
     基于知识库的 RAG 问答
-    
+
     结合知识库内容和用户画像生成个性化回答
     """
     if not rag_pipeline.is_available():
@@ -579,22 +579,22 @@ def ask_question(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="RAG 服务不可用"
         )
-    
+
     # 构建用户上下文
     from app.services.llm_health_analyzer import LLMHealthAnalyzer
     analyzer = LLMHealthAnalyzer()
     user_context = analyzer._build_user_context(db, current_user.id)
-    
+
     # 获取健康数据（如果需要）
     health_data = None
     if query.include_health_data:
         from app.models.daily_health import GarminData
         from app.utils.timezone import get_china_today
-        
+
         latest_data = db.query(GarminData).filter(
             GarminData.user_id == current_user.id
         ).order_by(GarminData.record_date.desc()).first()
-        
+
         if latest_data:
             health_data = {
                 "sleep_score": latest_data.sleep_score,
@@ -603,7 +603,7 @@ def ask_question(
                 "stress_level": latest_data.stress_level,
                 "body_battery": latest_data.body_battery_most_charged
             }
-    
+
     # 生成回答
     result = rag_pipeline.generate_with_knowledge(
         user_query=query.question,
@@ -611,7 +611,7 @@ def ask_question(
         health_data=health_data,
         category=query.category
     )
-    
+
     return result
 
 
@@ -622,7 +622,7 @@ def delete_by_source(
 ):
     """
     删除指定来源的所有文档
-    
+
     需要管理员权限
     """
     if not current_user.is_admin:
@@ -630,21 +630,21 @@ def delete_by_source(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以删除知识库内容"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     result = vector_store.delete_by_source(input_data.source)
-    
+
     if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=result.get("error", "删除失败")
         )
-    
+
     return result
 
 
@@ -655,7 +655,7 @@ def clear_all_documents(
 ):
     """
     清空整个知识库
-    
+
     需要管理员权限，且需要确认
     """
     if not current_user.is_admin:
@@ -663,27 +663,27 @@ def clear_all_documents(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以清空知识库"
         )
-    
+
     if not confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="请确认清空操作 (confirm=true)"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     result = vector_store.clear_all()
-    
+
     if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=result.get("error", "清空失败")
         )
-    
+
     return {"message": "知识库已清空", **result}
 
 
@@ -875,7 +875,7 @@ def init_health_basics(
 ):
     """
     初始化基础健康知识到知识库
-    
+
     包含睡眠、运动、营养等基础健康内容
     """
     if not current_user.is_admin:
@@ -883,13 +883,13 @@ def init_health_basics(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="只有管理员可以初始化知识库"
         )
-    
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="知识库服务不可用"
         )
-    
+
     # 基础健康知识内容
     basic_knowledge = [
         {
@@ -1130,9 +1130,9 @@ HRV的意义：
 """
         }
     ]
-    
+
     result = vector_store.add_documents(basic_knowledge, source="system_health_basics")
-    
+
     return {
         "message": "基础健康知识已初始化",
         **result

@@ -26,7 +26,7 @@ export default function Footer() {
             />
             <span>浙公网安备33010602014266号</span>
           </a>
-          
+
           {/* ICP 备案 */}
           <a
             href="https://beian.miit.gov.cn/"
@@ -36,7 +36,7 @@ export default function Footer() {
           >
             浙ICP备2025212705号-3
           </a>
-          
+
           {/* 版权信息 */}
           <span className="text-gray-500">
             © {new Date().getFullYear()} Executor.Life. All rights reserved.

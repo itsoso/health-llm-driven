@@ -145,4 +145,3 @@ class SupplementBatchCheckin(BaseModel):
 class SupplementWithRecord(BaseModel):
     supplement: SupplementDefinitionResponse
     record: Optional[SupplementRecordResponse] = None
-

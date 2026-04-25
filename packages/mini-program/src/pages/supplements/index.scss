@@ -174,7 +174,7 @@ $indigo: #6366F1;
   align-items: center;
   padding: 16rpx 24rpx;
   border-radius: 16rpx 16rpx 0 0;
-  
+
   &.orange { background: rgba($orange, 0.2); }
   &.yellow { background: rgba($yellow, 0.2); }
   &.purple { background: rgba($purple, 0.2); }
@@ -202,14 +202,14 @@ $indigo: #6366F1;
   border: 1px solid $card-border;
   border-top: none;
   position: relative;
-  
+
   &:last-child {
     border-radius: 0 0 16rpx 16rpx;
   }
-  
+
   &.taken {
     background: rgba($green, 0.1);
-    
+
     .supplement-name {
       color: $green;
     }
@@ -217,7 +217,7 @@ $indigo: #6366F1;
 
   &.inactive {
     opacity: 0.6;
-    
+
     .supplement-name {
       text-decoration: line-through;
     }
@@ -290,7 +290,7 @@ $indigo: #6366F1;
   display: flex;
   align-items: center;
   justify-content: center;
-  
+
   &.checked {
     background: $green;
     border-color: $green;
@@ -376,7 +376,7 @@ $indigo: #6366F1;
   border-radius: 20rpx;
   font-size: 24rpx;
   color: $text-secondary;
-  
+
   &.active {
     background: rgba($purple, 0.2);
     border-color: $purple;
@@ -396,16 +396,16 @@ $indigo: #6366F1;
   border-radius: 40rpx;
   font-size: 28rpx;
   border: none;
-  
+
   &::after {
     border: none;
   }
-  
+
   &.cancel {
     background: rgba(255, 255, 255, 0.1);
     color: $text-secondary;
   }
-  
+
   &.confirm {
     background: linear-gradient(135deg, $indigo, $purple);
     color: #fff;
@@ -431,7 +431,7 @@ $indigo: #6366F1;
 
 .stat-item-row {
   margin-bottom: 24rpx;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -473,7 +473,7 @@ $indigo: #6366F1;
   height: 100%;
   border-radius: 6rpx;
   transition: width 0.3s ease;
-  
+
   &.green { background: $green; }
   &.yellow { background: $yellow; }
   &.red { background: #EF4444; }
@@ -535,7 +535,7 @@ $indigo: #6366F1;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 16rpx;
   margin-bottom: 12rpx;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -570,7 +570,7 @@ $indigo: #6366F1;
   border-radius: 40rpx;
   font-size: 28rpx;
   border: none;
-  
+
   &::after {
     border: none;
   }
@@ -913,7 +913,7 @@ $indigo: #6366F1;
   font-size: 20rpx;
   padding: 4rpx 12rpx;
   border-radius: 8rpx;
-  
+
   &.high {
     background: rgba(#EF4444, 0.2);
     color: #EF4444;
@@ -1008,7 +1008,7 @@ $indigo: #6366F1;
   border-radius: 40rpx;
   font-size: 28rpx;
   border: none;
-  
+
   &::after {
     border: none;
   }
@@ -1044,7 +1044,7 @@ $indigo: #6366F1;
   margin-bottom: 8rpx;
   font-family: monospace;
   line-height: 1.5;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -1055,7 +1055,7 @@ $indigo: #6366F1;
   padding: 12rpx;
   background: rgba(255, 255, 255, 0.02);
   border-radius: 8rpx;
-  
+
   &:last-child {
     margin-bottom: 0;
   }

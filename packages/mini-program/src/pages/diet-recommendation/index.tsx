@@ -94,7 +94,7 @@ export default function DietRecommendationPage() {
         url: '/diet-recommendation/me',
         method: 'GET'
       })
-      
+
       if (res.success) {
         setRecommendation(res)
       } else {
@@ -173,7 +173,7 @@ export default function DietRecommendationPage() {
           <Text className="title-text">今日营养进度</Text>
           <Text className="meals-count">({recommendation.today_intake.meals_count}餐)</Text>
         </View>
-        
+
         {/* 卡路里进度 */}
         <View className="progress-item">
           <View className="progress-header">
@@ -183,7 +183,7 @@ export default function DietRecommendationPage() {
             </View>
           </View>
           <View className="progress-bar">
-            <View 
+            <View
               className="progress-fill calories"
               style={{ width: `${Math.min(recommendation.progress.calories_percent, 100)}%` }}
             />
@@ -199,7 +199,7 @@ export default function DietRecommendationPage() {
             </View>
           </View>
           <View className="progress-bar">
-            <View 
+            <View
               className="progress-fill protein"
               style={{ width: `${Math.min(recommendation.progress.protein_percent, 100)}%` }}
             />
@@ -215,7 +215,7 @@ export default function DietRecommendationPage() {
             </View>
           </View>
           <View className="progress-bar">
-            <View 
+            <View
               className="progress-fill carbs"
               style={{ width: `${Math.min(recommendation.progress.carbs_percent, 100)}%` }}
             />
@@ -231,7 +231,7 @@ export default function DietRecommendationPage() {
             </View>
           </View>
           <View className="progress-bar">
-            <View 
+            <View
               className="progress-fill fat"
               style={{ width: `${Math.min(recommendation.progress.fat_percent, 100)}%` }}
             />
@@ -279,7 +279,7 @@ export default function DietRecommendationPage() {
           {recommendation.food_recommendations.map((category, index) => (
             <View key={index} className="food-category">
               <View className="category-header">
-                <View 
+                <View
                   className="priority-badge"
                   style={{ backgroundColor: getPriorityColor(category.priority) }}
                 >
@@ -404,7 +404,7 @@ export default function DietRecommendationPage() {
       {/* 科学见解卡片 */}
       {recommendation.scientific_insights?.available && (
         <View className="card scientific-card">
-          <View 
+          <View
             className="card-title clickable"
             onClick={() => setShowScientific(!showScientific)}
           >
@@ -412,7 +412,7 @@ export default function DietRecommendationPage() {
             <Text className="title-text">科学依据</Text>
             <Text className="toggle-icon">{showScientific ? '▼' : '▶'}</Text>
           </View>
-          
+
           {showScientific && (
             <View className="scientific-content">
               {recommendation.scientific_insights.bmr_tdee_explanation && (
@@ -423,7 +423,7 @@ export default function DietRecommendationPage() {
                   </Text>
                 </View>
               )}
-              
+
               {recommendation.scientific_insights.macronutrient_rationale && (
                 <View className="scientific-section">
                   <Text className="scientific-subtitle">营养素分配依据</Text>
@@ -432,7 +432,7 @@ export default function DietRecommendationPage() {
                   </Text>
                 </View>
               )}
-              
+
               {recommendation.scientific_insights.diet_mode_guidance && (
                 <View className="scientific-section">
                   <Text className="scientific-subtitle">饮食模式指导</Text>
@@ -441,8 +441,8 @@ export default function DietRecommendationPage() {
                   </Text>
                 </View>
               )}
-              
-              {recommendation.scientific_insights.chronic_disease_guidance && 
+
+              {recommendation.scientific_insights.chronic_disease_guidance &&
                recommendation.scientific_insights.chronic_disease_guidance.length > 0 && (
                 <View className="scientific-section">
                   <Text className="scientific-subtitle">慢性病饮食管理</Text>
@@ -454,7 +454,7 @@ export default function DietRecommendationPage() {
                   ))}
                 </View>
               )}
-              
+
               {recommendation.scientific_insights.sleep_nutrition && (
                 <View className="scientific-section">
                   <Text className="scientific-subtitle">睡眠营养建议</Text>
@@ -463,7 +463,7 @@ export default function DietRecommendationPage() {
                   </Text>
                 </View>
               )}
-              
+
               {recommendation.scientific_insights.stress_nutrition && (
                 <View className="scientific-section">
                   <Text className="scientific-subtitle">压力营养建议</Text>

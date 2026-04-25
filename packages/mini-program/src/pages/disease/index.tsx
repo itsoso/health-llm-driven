@@ -306,7 +306,7 @@ export default function DiseasePage() {
               </View>
               <View className="alert-env">
                 <Text className="env-text">
-                  {alert.environment.weather} {alert.environment.temperature}°C · 
+                  {alert.environment.weather} {alert.environment.temperature}°C ·
                   空气{alert.environment.aqi_description} (AQI {alert.environment.aqi})
                 </Text>
               </View>

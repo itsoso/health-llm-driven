@@ -84,31 +84,31 @@ export default function EnvironmentPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       // 分开请求，避免一个失败导致全部失败
       let adviceData: EnvironmentAdvice | null = null;
       let briefingData: MorningBriefing | null = null;
-      
+
       try {
-        adviceData = await request<EnvironmentAdvice>({ 
-          url: '/environment/advice', 
+        adviceData = await request<EnvironmentAdvice>({
+          url: '/environment/advice',
           method: 'GET',
           params: { city: targetCity }
         });
       } catch (e) {
         console.error('获取环境建议失败:', e);
       }
-      
+
       try {
-        briefingData = await request<MorningBriefing>({ 
-          url: '/environment/morning-briefing', 
+        briefingData = await request<MorningBriefing>({
+          url: '/environment/morning-briefing',
           method: 'GET',
           params: { city: targetCity }
         });
       } catch (e) {
         console.error('获取早间简报失败:', e);
       }
-      
+
       if (!adviceData && !briefingData) {
         setError('无法获取环境数据，请检查网络连接');
       } else {
@@ -122,7 +122,7 @@ export default function EnvironmentPage() {
       setLoading(false);
     }
   };
-  
+
   const handleRefresh = () => {
     loadData();
   };
@@ -144,7 +144,7 @@ export default function EnvironmentPage() {
       </View>
     );
   }
-  
+
   // 错误状态
   if (error) {
     return (
@@ -161,7 +161,7 @@ export default function EnvironmentPage() {
   const weather = advice?.weather;
   const airQuality = advice?.air_quality;
   const exercise = advice?.exercise;
-  
+
   // 空状态
   if (!advice && !briefing) {
     return (
@@ -190,12 +190,12 @@ export default function EnvironmentPage() {
           <Text className="city-name">{currentCity || '选择城市'}</Text>
           <Text className="city-arrow">{showCityPicker ? '▲' : '▼'}</Text>
         </View>
-        
+
         {showCityPicker && (
           <View className="city-list">
             {COMMON_CITIES.map((city) => (
-              <View 
-                key={city} 
+              <View
+                key={city}
                 className={`city-item ${city === currentCity ? 'active' : ''}`}
                 onClick={() => handleCityChange(city)}
               >
@@ -206,7 +206,7 @@ export default function EnvironmentPage() {
           </View>
         )}
       </View>
-      
+
       {/* 户外运动评分 */}
       {exercise && (
         <View className={`score-card ${exercise.status}`}>
@@ -354,7 +354,7 @@ export default function EnvironmentPage() {
           </View>
         </View>
       )}
-      
+
       {/* 刷新按钮 */}
       <View className="refresh-section">
         <View className="refresh-btn" onClick={handleRefresh}>

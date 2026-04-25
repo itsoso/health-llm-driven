@@ -33,10 +33,10 @@ def create_goal(
     """创建目标（需要登录）"""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     try:
         logger.info(f"[创建目标] 用户 {current_user.id} 请求创建目标，数据: {goal.model_dump()}")
-        
+
         # 强制使用当前用户ID
         goal_data = goal.model_dump()
         goal_data["user_id"] = current_user.id
@@ -44,7 +44,7 @@ def create_goal(
         goal = GC(**goal_data)
         service = GoalManagementService()
         result = service.create_goal(db, goal)
-        
+
         logger.info(f"[创建目标] 目标创建成功，ID: {result.id}")
         return result
     except Exception as e:
@@ -65,18 +65,18 @@ def get_my_goals(
     """获取当前用户目标（需要登录）"""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     try:
         # 转换字符串参数为枚举类型（转换为小写以匹配数据库值）
         status_enum = GoalStatus(status.lower()) if status and isinstance(status, str) else None
         goal_type_enum = GoalType(goal_type.lower()) if goal_type and isinstance(goal_type, str) else None
         goal_period_enum = GoalPeriod(goal_period.lower()) if goal_period and isinstance(goal_period, str) else None
-        
+
         logger.info(f"[获取我的目标] 用户 {current_user.id}, status={status_enum}, type={goal_type_enum}, period={goal_period_enum}")
-        
+
         service = GoalManagementService()
         goals = service.get_user_goals(db, current_user.id, status_enum, goal_type_enum, goal_period_enum)
-        
+
         logger.info(f"[获取我的目标] 找到 {len(goals)} 个目标")
         return goals
     except ValueError as e:
@@ -99,13 +99,13 @@ def get_user_goals(
     """获取用户目标（需要登录，只能查看自己的）"""
     if user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权访问其他用户的数据")
-    
+
     try:
         # 转换字符串参数为枚举类型
         status_enum = GoalStatus(status) if status else None
         goal_type_enum = GoalType(goal_type) if goal_type else None
         goal_period_enum = GoalPeriod(goal_period) if goal_period else None
-        
+
         service = GoalManagementService()
         return service.get_user_goals(db, current_user.id, status_enum, goal_type_enum, goal_period_enum)
     except ValueError as e:
@@ -176,13 +176,13 @@ def get_goal_guidance(
 ):
     """
     获取目标智能引导
-    
+
     基于张展晖课程知识库和用户数据，生成个性化的训练建议：
     - 心率区间计算（基于年龄和静息心率）
     - 训练计划建议（频率、时长、强度分配）
     - 课程知识要点
     - 个性化建议
-    
+
     需要登录
     """
     guidance = goal_guidance_service.generate_goal_guidance(
@@ -192,13 +192,13 @@ def get_goal_guidance(
         goal_description=request.goal_description,
         target_value=request.target_value
     )
-    
+
     if not guidance.get("success"):
         raise HTTPException(
             status_code=500,
             detail=guidance.get("message", "生成引导失败")
         )
-    
+
     return guidance
 
 
@@ -211,4 +211,3 @@ def check_goal_completion(
     """检查目标完成情况"""
     service = GoalManagementService()
     return service.check_goal_completion(db, goal_id, check_date)
-

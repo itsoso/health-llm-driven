@@ -11,23 +11,23 @@ class BloodPressureRecord(Base):
     __table_args__ = (
         Index("idx_blood_pressure_records_user_date", "user_id", "record_date"),
     )
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     record_date = Column(Date, nullable=False, index=True)
     measured_at = Column(DateTime(timezone=True))  # 测量时间（数据库实际字段）
-    
+
     systolic = Column(Integer, nullable=False)  # 收缩压 (mmHg)
     diastolic = Column(Integer, nullable=False)  # 舒张压 (mmHg)
     pulse = Column(Integer)  # 脉搏 (次/分)
-    
+
     notes = Column(Text)  # 备注
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     user = relationship("User", backref="blood_pressure_records")
-    
+
     # 为了兼容前端API，添加属性别名
     @property
     def record_time(self):
@@ -35,17 +35,17 @@ class BloodPressureRecord(Base):
         if self.measured_at:
             return self.measured_at.time()
         return None
-    
+
     @property
     def measurement_position(self):
         """测量姿势（旧数据库没有此字段，返回默认值）"""
         return "坐"
-    
+
     @property
     def arm(self):
         """测量手臂（旧数据库没有此字段，返回默认值）"""
         return "左"
-    
+
     @property
     def category(self):
         """血压分类"""
@@ -59,4 +59,3 @@ class BloodPressureRecord(Base):
             return "高血压"
         else:
             return "未知"
-

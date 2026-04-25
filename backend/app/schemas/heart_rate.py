@@ -33,7 +33,7 @@ class DailyHeartRateResponse(BaseModel):
     summary: HeartRateSummary
     heart_rate_timeline: List[HeartRatePoint] = Field(default_factory=list, description="心率时间线数据")
     hrv: Optional[float] = Field(None, description="HRV值（夜间平均）")
-    
+
     # 分析数据
     zones: Optional[Dict[str, int]] = Field(None, description="心率区间分布（分钟）")
 
@@ -45,7 +45,7 @@ class HeartRateTrendResponse(BaseModel):
     days: int = Field(..., description="统计天数")
     daily_data: List[HeartRateSummary] = Field(default_factory=list)
     hrv_data: List[Dict[str, Any]] = Field(default_factory=list, description="每日HRV数据")
-    
+
     # 统计数据
     avg_heart_rate: Optional[float] = Field(None, description="平均心率")
     avg_resting_heart_rate: Optional[float] = Field(None, description="平均静息心率")
@@ -54,4 +54,3 @@ class HeartRateTrendResponse(BaseModel):
     min_heart_rate: Optional[int] = Field(None, description="最低心率")
 
     model_config = ConfigDict(from_attributes=True)
-

@@ -17,6 +17,5 @@ class UserResponse(BaseModel):
     name: str
     birth_date: Optional[date] = None
     gender: Optional[str] = None
-    
-    model_config = ConfigDict(from_attributes=True)
 
+    model_config = ConfigDict(from_attributes=True)

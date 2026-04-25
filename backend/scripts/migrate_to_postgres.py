@@ -49,20 +49,20 @@ POSTGRES_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST
 def create_tables_from_models(target_engine):
     """使用 SQLAlchemy 模型创建表结构"""
     logger.info("使用 SQLAlchemy 模型创建表结构...")
-    
+
     # 创建一个新的 Base 用于 PostgreSQL
     # 这样不会影响 app.database 中的 SQLite 连接
     from sqlalchemy.ext.declarative import declarative_base
     PostgresBase = declarative_base()
-    
+
     # 从 SQLite 反射表结构，但用 PostgreSQL 兼容类型创建
     # 这里我们直接用 SQLAlchemy 的表反射和创建功能
     sqlite_engine = create_engine(SQLITE_URL)
-    
+
     # 使用 MetaData 反射 SQLite 表结构
     metadata = MetaData()
     metadata.reflect(bind=sqlite_engine)
-    
+
     # 在 PostgreSQL 中创建表
     # 需要转换不兼容的类型
     for table in metadata.tables.values():
@@ -72,7 +72,7 @@ def create_tables_from_models(target_engine):
             logger.info(f"  创建表: {table.name}")
         except Exception as e:
             logger.warning(f"  创建表 {table.name} 跳过: {e}")
-    
+
     logger.info("✓ 表结构创建完成")
 
 
@@ -85,33 +85,33 @@ def get_all_tables(engine):
 def migrate_table_data(source_engine, target_engine, table_name):
     """迁移单个表的数据"""
     logger.info(f"迁移表数据: {table_name}")
-    
+
     try:
         # 读取源数据
         with source_engine.connect() as source_conn:
             result = source_conn.execute(text(f"SELECT * FROM {table_name}"))
             rows = result.fetchall()
             columns = list(result.keys())
-        
+
         if not rows:
             logger.info(f"  表 {table_name} 为空，跳过")
             return 0
-        
+
         # 构建插入语句
         placeholders = ", ".join([f":{col}" for col in columns])
         columns_str = ", ".join([f'"{col}"' for col in columns])
         insert_sql = f'INSERT INTO "{table_name}" ({columns_str}) VALUES ({placeholders})'
-        
+
         # 写入目标数据库
         with target_engine.connect() as target_conn:
             # 先清空目标表
             target_conn.execute(text(f'DELETE FROM "{table_name}"'))
             target_conn.commit()
-            
+
             # 分批插入数据
             batch_size = 500
             data_list = [dict(zip(columns, row)) for row in rows]
-            
+
             inserted_count = 0
             for i in range(0, len(data_list), batch_size):
                 batch = data_list[i:i + batch_size]
@@ -121,20 +121,20 @@ def migrate_table_data(source_engine, target_engine, table_name):
                         # 处理 boolean 类型
                         if isinstance(value, int) and key.startswith('is_'):
                             row_data[key] = bool(value)
-                    
+
                     try:
                         target_conn.execute(text(insert_sql), row_data)
                         inserted_count += 1
                     except Exception as e:
                         logger.debug(f"  插入行失败: {e}")
                         continue
-                        
+
                 target_conn.commit()
-            
+
             logger.info(f"  迁移 {inserted_count}/{len(rows)} 条记录")
-        
+
         return inserted_count
-        
+
     except Exception as e:
         logger.error(f"  迁移表 {table_name} 失败: {e}")
         return 0
@@ -147,7 +147,7 @@ def reset_sequences(target_engine, table_name):
             # 获取当前最大ID
             result = conn.execute(text(f'SELECT MAX(id) FROM "{table_name}"'))
             max_id = result.scalar() or 0
-            
+
             if max_id > 0:
                 # 重置序列
                 seq_name = f"{table_name}_id_seq"
@@ -161,7 +161,7 @@ def reset_sequences(target_engine, table_name):
 def create_postgres_tables_manually(target_engine):
     """手动创建 PostgreSQL 表（使用兼容类型）"""
     logger.info("手动创建 PostgreSQL 表结构...")
-    
+
     # 核心表创建 SQL（PostgreSQL 兼容）
     tables_sql = [
         # users 表
@@ -187,7 +187,7 @@ def create_postgres_tables_manually(target_engine):
             invite_code VARCHAR(50)
         )
         """,
-        
+
         # garmin_credentials 表
         """
         CREATE TABLE IF NOT EXISTS garmin_credentials (
@@ -203,7 +203,7 @@ def create_postgres_tables_manually(target_engine):
             session_expires_at TIMESTAMP
         )
         """,
-        
+
         # invitation_codes 表
         """
         CREATE TABLE IF NOT EXISTS invitation_codes (
@@ -218,7 +218,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # user_applications 表
         """
         CREATE TABLE IF NOT EXISTS user_applications (
@@ -238,7 +238,7 @@ def create_postgres_tables_manually(target_engine):
             hashed_password TEXT
         )
         """,
-        
+
         # user_profiles 表
         """
         CREATE TABLE IF NOT EXISTS user_profiles (
@@ -270,7 +270,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # garmin_data 表
         """
         CREATE TABLE IF NOT EXISTS garmin_data (
@@ -312,7 +312,7 @@ def create_postgres_tables_manually(target_engine):
             UNIQUE (user_id, record_date)
         )
         """,
-        
+
         # workout_records 表
         """
         CREATE TABLE IF NOT EXISTS workout_records (
@@ -340,7 +340,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # checkin_templates 表
         """
         CREATE TABLE IF NOT EXISTS checkin_templates (
@@ -355,7 +355,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # checkin_records 表
         """
         CREATE TABLE IF NOT EXISTS checkin_records (
@@ -370,7 +370,7 @@ def create_postgres_tables_manually(target_engine):
             UNIQUE (user_id, template_id, checkin_date)
         )
         """,
-        
+
         # diet_records 表
         """
         CREATE TABLE IF NOT EXISTS diet_records (
@@ -390,7 +390,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # water_intakes 表
         """
         CREATE TABLE IF NOT EXISTS water_intakes (
@@ -403,7 +403,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # weight_records 表
         """
         CREATE TABLE IF NOT EXISTS weight_records (
@@ -419,7 +419,7 @@ def create_postgres_tables_manually(target_engine):
             UNIQUE (user_id, record_date)
         )
         """,
-        
+
         # blood_pressure_records 表
         """
         CREATE TABLE IF NOT EXISTS blood_pressure_records (
@@ -434,7 +434,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # goals 表
         """
         CREATE TABLE IF NOT EXISTS goals (
@@ -454,7 +454,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # goal_progress 表
         """
         CREATE TABLE IF NOT EXISTS goal_progress (
@@ -466,7 +466,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # supplement_definitions 表
         """
         CREATE TABLE IF NOT EXISTS supplement_definitions (
@@ -480,7 +480,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # supplement_records 表
         """
         CREATE TABLE IF NOT EXISTS supplement_records (
@@ -493,7 +493,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # habit_definitions 表
         """
         CREATE TABLE IF NOT EXISTS habit_definitions (
@@ -509,7 +509,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # habit_records 表
         """
         CREATE TABLE IF NOT EXISTS habit_records (
@@ -523,7 +523,7 @@ def create_postgres_tables_manually(target_engine):
             UNIQUE (user_id, habit_id, record_date)
         )
         """,
-        
+
         # medical_exams 表
         """
         CREATE TABLE IF NOT EXISTS medical_exams (
@@ -538,7 +538,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # medical_exam_items 表
         """
         CREATE TABLE IF NOT EXISTS medical_exam_items (
@@ -553,7 +553,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # health_analysis_cache 表
         """
         CREATE TABLE IF NOT EXISTS health_analysis_cache (
@@ -568,7 +568,7 @@ def create_postgres_tables_manually(target_engine):
             UNIQUE (user_id, analysis_date, cache_type)
         )
         """,
-        
+
         # disease_templates 表
         """
         CREATE TABLE IF NOT EXISTS disease_templates (
@@ -584,7 +584,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # user_disease_profiles 表
         """
         CREATE TABLE IF NOT EXISTS user_disease_profiles (
@@ -600,7 +600,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # symptom_logs 表
         """
         CREATE TABLE IF NOT EXISTS symptom_logs (
@@ -616,7 +616,7 @@ def create_postgres_tables_manually(target_engine):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        
+
         # user_notification_settings 表
         """
         CREATE TABLE IF NOT EXISTS user_notification_settings (
@@ -636,7 +636,7 @@ def create_postgres_tables_manually(target_engine):
             updated_at TIMESTAMP
         )
         """,
-        
+
         # notification_logs 表
         """
         CREATE TABLE IF NOT EXISTS notification_logs (
@@ -653,7 +653,7 @@ def create_postgres_tables_manually(target_engine):
         )
         """,
     ]
-    
+
     with target_engine.connect() as conn:
         for sql in tables_sql:
             try:
@@ -661,7 +661,7 @@ def create_postgres_tables_manually(target_engine):
                 conn.commit()
             except Exception as e:
                 logger.debug(f"  表创建跳过: {e}")
-    
+
     logger.info("✓ 表结构创建完成")
 
 
@@ -670,14 +670,14 @@ def main():
     logger.info("=" * 60)
     logger.info("SQLite → PostgreSQL 数据迁移 (改进版)")
     logger.info("=" * 60)
-    
+
     # 创建数据库引擎
     logger.info(f"源数据库: {SQLITE_URL}")
     logger.info(f"目标数据库: postgresql://{POSTGRES_USER}:***@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
-    
+
     source_engine = create_engine(SQLITE_URL)
     target_engine = create_engine(POSTGRES_URL)
-    
+
     # 测试连接
     try:
         with source_engine.connect() as conn:
@@ -686,7 +686,7 @@ def main():
     except Exception as e:
         logger.error(f"✗ SQLite 连接失败: {e}")
         sys.exit(1)
-    
+
     try:
         with target_engine.connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -694,21 +694,21 @@ def main():
     except Exception as e:
         logger.error(f"✗ PostgreSQL 连接失败: {e}")
         sys.exit(1)
-    
+
     # 使用手动 SQL 创建表结构
     create_postgres_tables_manually(target_engine)
-    
+
     # 获取所有源表
     source_tables = get_all_tables(source_engine)
     target_tables = get_all_tables(target_engine)
-    
+
     logger.info(f"源数据库: {len(source_tables)} 个表")
     logger.info(f"目标数据库: {len(target_tables)} 个表")
-    
+
     # 定义迁移顺序（按外键依赖）
     priority_order = [
         "users",
-        "invitation_codes", 
+        "invitation_codes",
         "user_applications",
         "user_profiles",
         "garmin_credentials",
@@ -718,35 +718,35 @@ def main():
         "disease_templates",
         "goals",
     ]
-    
+
     # 排序表
     ordered_tables = []
     for t in priority_order:
         if t in source_tables and t in target_tables:
             ordered_tables.append(t)
-    
+
     for t in source_tables:
         if t in target_tables and t not in ordered_tables:
             ordered_tables.append(t)
-    
+
     # 迁移数据
     total_records = 0
     success_tables = []
-    
+
     for table_name in ordered_tables:
         count = migrate_table_data(source_engine, target_engine, table_name)
         if count > 0:
             total_records += count
             success_tables.append(table_name)
             reset_sequences(target_engine, table_name)
-    
+
     # 打印迁移结果
     logger.info("=" * 60)
     logger.info("迁移完成")
     logger.info("=" * 60)
     logger.info(f"成功迁移: {len(success_tables)} 个表")
     logger.info(f"总记录数: {total_records} 条")
-    
+
     # 验证关键表
     logger.info("")
     logger.info("验证关键表数据:")
@@ -759,7 +759,7 @@ def main():
                     logger.info(f"  {table}: {count} 条记录")
                 except:
                     pass
-    
+
     logger.info("")
     logger.info("下一步操作:")
     logger.info("1. 更新 .env 文件启用 PostgreSQL:")

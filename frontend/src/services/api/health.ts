@@ -169,7 +169,7 @@ export const dailyHealthApi = {
 
 // 健康打卡
 export const healthAnalysisApi = {
-  analyzeIssues: (userId: number, forceRefresh: boolean = false) => 
+  analyzeIssues: (userId: number, forceRefresh: boolean = false) =>
     api.get(`/analysis/user/${userId}/issues`, { params: { force_refresh: forceRefresh } }),
   getAdvice: (userId: number, checkinDate: string) =>
     api.get(`/analysis/user/${userId}/advice`, { params: { checkin_date: checkinDate } }),

@@ -48,4 +48,3 @@ export interface RegisterRequest {
   name: string;
   username?: string;
 }
-

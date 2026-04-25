@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from app.models.notification import (
-    NotificationLog, 
+    NotificationLog,
     UserNotificationSetting,
     ReminderConfig,
     NotificationType,
@@ -21,16 +21,16 @@ logger = logging.getLogger(__name__)
 class PushService:
     """
     推送服务主类
-    
+
     统一管理微信、iOS、邮件等多渠道推送
     """
-    
+
     def __init__(self, db: Session):
         self.db = db
         self._wechat_service = None
         self._ios_service = None
         self._telegram_service = None
-    
+
     @property
     def wechat(self):
         """延迟加载微信推送服务"""
@@ -38,7 +38,7 @@ class PushService:
             from .wechat_push import WeChatPushService
             self._wechat_service = WeChatPushService()
         return self._wechat_service
-    
+
     @property
     def ios(self):
         """延迟加载 iOS 推送服务"""
@@ -54,21 +54,21 @@ class PushService:
             from .telegram_push import TelegramPushService
             self._telegram_service = TelegramPushService()
         return self._telegram_service
-    
+
     def get_user_settings(self, user_id: int) -> Optional[UserNotificationSetting]:
         """获取用户推送设置"""
         return self.db.query(UserNotificationSetting).filter(
             UserNotificationSetting.user_id == user_id
         ).first()
-    
+
     def create_or_update_settings(
-        self, 
-        user_id: int, 
+        self,
+        user_id: int,
         settings: Dict[str, Any]
     ) -> UserNotificationSetting:
         """创建或更新用户推送设置"""
         existing = self.get_user_settings(user_id)
-        
+
         if existing:
             for key, value in settings.items():
                 if hasattr(existing, key):
@@ -81,19 +81,19 @@ class PushService:
             self.db.commit()
             self.db.refresh(new_settings)
             return new_settings
-    
+
     def is_quiet_hours(self, user_id: int) -> bool:
         """检查当前是否在免打扰时段"""
         settings = self.get_user_settings(user_id)
         if not settings:
             return False
-        
+
         now = get_china_now()
         current_time = now.strftime("%H:%M")
-        
+
         start = settings.quiet_hours_start or "22:00"
         end = settings.quiet_hours_end or "07:00"
-        
+
         # 处理跨越午夜的情况
         if start > end:
             # 例如 22:00 - 07:00
@@ -101,25 +101,25 @@ class PushService:
         else:
             # 例如 01:00 - 06:00
             return start <= current_time < end
-    
+
     def can_send_notification(
-        self, 
-        user_id: int, 
+        self,
+        user_id: int,
         notification_type: str,
         respect_quiet_hours: bool = True
     ) -> bool:
         """检查是否可以发送通知"""
         settings = self.get_user_settings(user_id)
-        
+
         if not settings or not settings.enabled:
             return False
-        
+
         # 检查免打扰时段（健康预警除外）
         if respect_quiet_hours and notification_type != NotificationType.HEALTH_ALERT.value:
             if self.is_quiet_hours(user_id):
                 logger.info(f"用户 {user_id} 当前在免打扰时段，跳过推送")
                 return False
-        
+
         # 检查具体类型开关
         type_switches = {
             NotificationType.MORNING_BRIEFING.value: settings.morning_briefing_enabled,
@@ -127,9 +127,9 @@ class PushService:
             NotificationType.HEALTH_ALERT.value: settings.health_alert_enabled,
             NotificationType.AI_ADVICE.value: settings.ai_advice_enabled,
         }
-        
+
         return type_switches.get(notification_type, True)
-    
+
     async def send_notification(
         self,
         user_id: int,
@@ -142,7 +142,7 @@ class PushService:
     ) -> Dict[str, Any]:
         """
         发送推送通知
-        
+
         Args:
             user_id: 用户ID
             notification_type: 通知类型
@@ -151,7 +151,7 @@ class PushService:
             data: 额外数据
             channels: 指定渠道，None 表示使用用户设置的渠道
             respect_quiet_hours: 是否遵守免打扰时段
-            
+
         Returns:
             发送结果 {"success": bool, "channels": {...}}
         """
@@ -161,10 +161,10 @@ class PushService:
                 "success": False,
                 "reason": "通知已禁用或在免打扰时段"
             }
-        
+
         settings = self.get_user_settings(user_id)
         results = {"success": False, "channels": {}}
-        
+
         # 确定要使用的渠道
         if channels is None:
             channels = []
@@ -176,14 +176,14 @@ class PushService:
             # Telegram 作为兜底通道（不依赖用户设置，只要配了 bot token）
             if self.telegram.configured:
                 channels.append("telegram")
-        
+
         if not channels:
             logger.warning(f"用户 {user_id} 没有可用的推送渠道")
             return {
                 "success": False,
                 "reason": "没有可用的推送渠道"
             }
-        
+
         # 逐渠道发送
         for channel in channels:
             try:
@@ -201,9 +201,9 @@ class PushService:
                     )
                 else:
                     result = {"success": False, "error": f"不支持的渠道: {channel}"}
-                
+
                 results["channels"][channel] = result
-                
+
                 # 记录日志
                 self._log_notification(
                     user_id=user_id,
@@ -215,10 +215,10 @@ class PushService:
                     status=NotificationStatus.SENT.value if result.get("success") else NotificationStatus.FAILED.value,
                     error_message=result.get("error")
                 )
-                
+
                 if result.get("success"):
                     results["success"] = True
-                    
+
             except Exception as e:
                 logger.error(f"发送推送失败 (user={user_id}, channel={channel}): {e}")
                 results["channels"][channel] = {"success": False, "error": str(e)}
@@ -232,9 +232,9 @@ class PushService:
                     status=NotificationStatus.FAILED.value,
                     error_message=str(e)
                 )
-        
+
         return results
-    
+
     async def _send_wechat(
         self,
         user_id: int,
@@ -247,7 +247,7 @@ class PushService:
         """发送微信订阅消息"""
         if not settings or not settings.wechat_openid:
             return {"success": False, "error": "未配置微信 OpenID"}
-        
+
         return await self.wechat.send_subscription_message(
             openid=settings.wechat_openid,
             template_id=self._get_wechat_template(notification_type, settings),
@@ -255,7 +255,7 @@ class PushService:
             content=content,
             data=data
         )
-    
+
     async def _send_ios(
         self,
         user_id: int,
@@ -268,7 +268,7 @@ class PushService:
         """发送 iOS APNs 推送"""
         if not settings or not settings.ios_device_token:
             return {"success": False, "error": "未配置 iOS Device Token"}
-        
+
         return await self.ios.send_push(
             device_token=settings.ios_device_token,
             title=title,
@@ -291,21 +291,21 @@ class PushService:
             message=content,
             severity=severity,
         )
-    
+
     def _get_wechat_template(
-        self, 
-        notification_type: str, 
+        self,
+        notification_type: str,
         settings: UserNotificationSetting
     ) -> Optional[str]:
         """获取微信模板消息 ID"""
         if not settings or not settings.wechat_template_ids:
             return None
-        
+
         templates = settings.wechat_template_ids
         if isinstance(templates, dict):
             return templates.get(notification_type)
         return None
-    
+
     def _log_notification(
         self,
         user_id: int,
@@ -331,7 +331,7 @@ class PushService:
         )
         self.db.add(log)
         self.db.commit()
-    
+
     def get_notification_logs(
         self,
         user_id: int,
@@ -342,21 +342,21 @@ class PushService:
         query = self.db.query(NotificationLog).filter(
             NotificationLog.user_id == user_id
         )
-        
+
         if notification_type:
             query = query.filter(NotificationLog.notification_type == notification_type)
-        
+
         return query.order_by(NotificationLog.created_at.desc()).limit(limit).all()
-    
+
     # ============ 提醒配置管理 ============
-    
+
     def get_reminders(self, user_id: int) -> List[ReminderConfig]:
         """获取用户的提醒配置"""
         return self.db.query(ReminderConfig).filter(
             ReminderConfig.user_id == user_id,
             ReminderConfig.enabled == True
         ).all()
-    
+
     def create_reminder(
         self,
         user_id: int,
@@ -379,7 +379,7 @@ class PushService:
         self.db.commit()
         self.db.refresh(reminder)
         return reminder
-    
+
     def update_reminder(
         self,
         reminder_id: int,
@@ -391,51 +391,51 @@ class PushService:
             ReminderConfig.id == reminder_id,
             ReminderConfig.user_id == user_id
         ).first()
-        
+
         if not reminder:
             return None
-        
+
         for key, value in updates.items():
             if hasattr(reminder, key):
                 setattr(reminder, key, value)
-        
+
         self.db.commit()
         return reminder
-    
+
     def delete_reminder(self, reminder_id: int, user_id: int) -> bool:
         """删除提醒配置"""
         reminder = self.db.query(ReminderConfig).filter(
             ReminderConfig.id == reminder_id,
             ReminderConfig.user_id == user_id
         ).first()
-        
+
         if reminder:
             self.db.delete(reminder)
             self.db.commit()
             return True
         return False
-    
+
     def get_due_reminders(self) -> List[Dict[str, Any]]:
         """
         获取当前时间应该发送的提醒
-        
+
         返回格式: [{"user_id": int, "reminder": ReminderConfig}, ...]
         """
         now = get_china_now()
         current_time = now.strftime("%H:%M")
         current_day = now.isoweekday()  # 1=周一, 7=周日
-        
+
         # 获取所有启用的提醒
         all_reminders = self.db.query(ReminderConfig).filter(
             ReminderConfig.enabled == True
         ).all()
-        
+
         due_reminders = []
         for reminder in all_reminders:
             # 检查星期
             if current_day not in (reminder.days_of_week or [1, 2, 3, 4, 5, 6, 7]):
                 continue
-            
+
             # 检查时间（允许1分钟误差）
             for reminder_time in (reminder.reminder_times or []):
                 if self._time_matches(current_time, reminder_time):
@@ -444,18 +444,18 @@ class PushService:
                         "reminder": reminder
                     })
                     break
-        
+
         return due_reminders
-    
+
     def _time_matches(self, current: str, target: str, tolerance_minutes: int = 1) -> bool:
         """检查时间是否匹配（允许一定误差）"""
         try:
             current_parts = [int(x) for x in current.split(":")]
             target_parts = [int(x) for x in target.split(":")]
-            
+
             current_minutes = current_parts[0] * 60 + current_parts[1]
             target_minutes = target_parts[0] * 60 + target_parts[1]
-            
+
             return abs(current_minutes - target_minutes) <= tolerance_minutes
         except:
             return False

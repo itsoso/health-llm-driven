@@ -84,4 +84,3 @@ class HabitStats(BaseModel):
     completion_rate: float
     current_streak: int
     longest_streak: int
-

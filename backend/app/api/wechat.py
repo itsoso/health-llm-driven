@@ -64,7 +64,7 @@ def create_access_token(user_id: int) -> str:
 async def get_wechat_session(code: str) -> dict:
     """
     用 code 换取微信 session_key 和 openid
-    
+
     微信接口文档: https://developers.weixin.qq.com/miniprogram/dev/api-backend/open-api/login/auth.code2Session.html
     """
     if not settings.wechat_appid or not settings.wechat_secret:
@@ -72,7 +72,7 @@ async def get_wechat_session(code: str) -> dict:
             status_code=500,
             detail="微信小程序未配置，请在 .env 中设置 WECHAT_APPID 和 WECHAT_SECRET"
         )
-    
+
     url = "https://api.weixin.qq.com/sns/jscode2session"
     params = {
         "appid": settings.wechat_appid,
@@ -80,13 +80,13 @@ async def get_wechat_session(code: str) -> dict:
         "js_code": code,
         "grant_type": "authorization_code"
     }
-    
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(url, params=params)
         data = response.json()
-    
+
     logger.info(f"微信登录响应: {data}")
-    
+
     if "errcode" in data and data["errcode"] != 0:
         error_msg = data.get("errmsg", "未知错误")
         logger.error(f"微信登录失败: {error_msg}")
@@ -94,7 +94,7 @@ async def get_wechat_session(code: str) -> dict:
             status_code=400,
             detail=f"微信登录失败: {error_msg}"
         )
-    
+
     return data
 
 
@@ -107,7 +107,7 @@ async def wechat_login(
 ):
     """
     微信小程序登录
-    
+
     流程:
     1. 前端调用 wx.login() 获取 code
     2. 前端将 code 发送到此接口
@@ -117,22 +117,22 @@ async def wechat_login(
     """
     # 1. 用 code 换取 openid
     wechat_data = await get_wechat_session(login_request.code)
-    
+
     openid = wechat_data.get("openid")
     session_key = wechat_data.get("session_key")
     unionid = wechat_data.get("unionid")  # 只有绑定了开放平台才有
-    
+
     if not openid:
         raise HTTPException(status_code=400, detail="获取微信 openid 失败")
-    
+
     # 2. 验证邀请码（新用户需要）
     from app.config import settings
-    
+
     # 查找用户
     user = db.query(User).filter(User.wechat_openid == openid).first()
     is_new_user = False
     merged_user_id = None
-    
+
     if not user:
         # 新用户 - 验证邀请码
         if not login_request.invite_code:
@@ -140,16 +140,16 @@ async def wechat_login(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"新用户注册需要邀请码，请输入邀请码"
             )
-        
+
         # 验证邀请码：先检查数据库中的邀请码，再检查默认邀请码
         from app.models.invitation import InvitationCode
         invite_code_upper = login_request.invite_code.upper()
-        
+
         # 查找数据库中的邀请码
         db_invite = db.query(InvitationCode).filter(
             InvitationCode.code == invite_code_upper
         ).first()
-        
+
         invite_valid = False
         if db_invite and db_invite.is_valid:
             # 数据库邀请码有效
@@ -162,16 +162,16 @@ async def wechat_login(
             # 默认邀请码有效
             invite_valid = True
             logger.info(f"使用默认邀请码: {invite_code_upper}")
-        
+
         if not invite_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"邀请码无效或已过期，请输入正确的邀请码"
             )
-        
+
         # 检查是否有匹配的PC用户可以合并
         from app.services.user_merge import UserMergeService
-        
+
         # 先创建临时用户对象用于匹配
         temp_user = User(
             wechat_openid=openid,
@@ -181,15 +181,15 @@ async def wechat_login(
             avatar_url=login_request.avatar_url,
             is_active=True
         )
-        
+
         # 查找匹配的PC用户
         candidates = UserMergeService.find_potential_merge_candidates(db, temp_user)
-        
+
         if candidates:
             # 找到匹配的用户，合并到第一个匹配的用户
             pc_user = candidates[0]
             logger.info(f"🔗 发现匹配的PC用户 {pc_user.id}，准备合并...")
-            
+
             # 将微信信息添加到PC用户
             pc_user.wechat_openid = openid
             pc_user.wechat_unionid = unionid
@@ -198,7 +198,7 @@ async def wechat_login(
                 pc_user.name = login_request.nickname
             if login_request.avatar_url and not pc_user.avatar_url:
                 pc_user.avatar_url = login_request.avatar_url
-            
+
             db.commit()
             db.refresh(pc_user)
             user = pc_user
@@ -236,7 +236,7 @@ async def wechat_login(
             user.avatar_url = login_request.avatar_url
         db.commit()
         logger.info(f"微信用户登录: {user.id} ({user.name})")
-    
+
     # 3. 检查审核状态
     if not user.is_approved:
         return WechatLoginResponse(
@@ -248,10 +248,10 @@ async def wechat_login(
             is_approved=False,
             message="注册成功！请等待管理员审核通过后即可使用。"
         )
-    
+
     # 4. 生成 token（已审核用户）
     access_token = create_access_token(user.id)
-    
+
     return WechatLoginResponse(
         access_token=access_token,
         user_id=user.id,
@@ -281,11 +281,11 @@ async def check_garmin_bindding(
 ):
     """检查微信用户是否已绑定 Garmin 账号"""
     from app.models.user import GarminCredential
-    
+
     credential = db.query(GarminCredential).filter(
         GarminCredential.user_id == user_id
     ).first()
-    
+
     return {
         "has_garmin": credential is not None,
         "garmin_email": credential.garmin_email if credential else None,
@@ -324,7 +324,7 @@ async def save_subscribe_settings(
 ):
     """
     保存用户订阅的模板ID
-    
+
     小程序端调用 wx.requestSubscribeMessage 获取用户授权后，
     将授权的模板ID发送到此接口保存
     """
@@ -332,7 +332,7 @@ async def save_subscribe_settings(
     settings_record = db.query(UserNotificationSetting).filter(
         UserNotificationSetting.user_id == current_user.id
     ).first()
-    
+
     if not settings_record:
         settings_record = UserNotificationSetting(
             user_id=current_user.id,
@@ -348,7 +348,7 @@ async def save_subscribe_settings(
         settings_record.wechat_enabled = True
         if current_user.wechat_openid:
             settings_record.wechat_openid = current_user.wechat_openid
-        
+
         # 合并模板ID（保留已有的，添加新的）
         existing_templates = settings_record.wechat_template_ids or {}
         # 处理数据库中存储为字符串的JSON
@@ -359,12 +359,12 @@ async def save_subscribe_settings(
                 existing_templates = {}
         existing_templates.update(request.template_ids)
         settings_record.wechat_template_ids = existing_templates
-    
+
     db.commit()
     db.refresh(settings_record)
-    
+
     logger.info(f"用户 {current_user.id} 保存订阅设置: {request.template_ids}")
-    
+
     return {
         "success": True,
         "message": "订阅设置已保存",
@@ -381,7 +381,7 @@ async def get_subscribe_settings(
     settings_record = db.query(UserNotificationSetting).filter(
         UserNotificationSetting.user_id == current_user.id
     ).first()
-    
+
     if not settings_record:
         # 返回默认设置
         return SubscribeSettingsResponse(
@@ -396,7 +396,7 @@ async def get_subscribe_settings(
             quiet_hours_start="22:00",
             quiet_hours_end="07:00"
         )
-    
+
     # 处理 JSON 字段（数据库中可能是字符串）
     template_ids = settings_record.wechat_template_ids
     if isinstance(template_ids, str):
@@ -404,7 +404,7 @@ async def get_subscribe_settings(
             template_ids = json.loads(template_ids)
         except:
             template_ids = None
-    
+
     return SubscribeSettingsResponse(
         enabled=settings_record.enabled,
         wechat_enabled=settings_record.wechat_enabled,
@@ -441,27 +441,26 @@ async def update_notification_settings(
     settings_record = db.query(UserNotificationSetting).filter(
         UserNotificationSetting.user_id == current_user.id
     ).first()
-    
+
     if not settings_record:
         settings_record = UserNotificationSetting(
             user_id=current_user.id,
             wechat_openid=current_user.wechat_openid
         )
         db.add(settings_record)
-    
+
     # 更新非空字段
     update_fields = request.dict(exclude_unset=True)
     for field, value in update_fields.items():
         if value is not None and hasattr(settings_record, field):
             setattr(settings_record, field, value)
-    
+
     db.commit()
     db.refresh(settings_record)
-    
+
     logger.info(f"用户 {current_user.id} 更新通知设置: {update_fields}")
-    
+
     return {
         "success": True,
         "message": "设置已更新"
     }
-
