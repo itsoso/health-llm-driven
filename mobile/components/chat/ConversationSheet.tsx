@@ -22,12 +22,15 @@ export default function ConversationSheet({
   currentConversationId, onSelectConversation, onDeleteConversation,
 }: Props) {
   const PINNED_TITLES = ['每日健康简报', '每周健康周报'];
+  const titleOf = (c: any) => (c?.title || '').trim();
   const byNewest = (a: any, b: any) =>
-    (b.created_at || '').localeCompare(a.created_at || '');
+    ((b.updated_at || b.created_at || '') as string).localeCompare(
+      (a.updated_at || a.created_at || '') as string,
+    );
   const sortedConversations = [
-    ...conversations.filter((c: any) => c.title === '每日健康简报').sort(byNewest),
-    ...conversations.filter((c: any) => c.title === '每周健康周报').sort(byNewest),
-    ...conversations.filter((c: any) => !PINNED_TITLES.includes(c.title)),
+    ...conversations.filter((c: any) => titleOf(c) === '每日健康简报').sort(byNewest),
+    ...conversations.filter((c: any) => titleOf(c) === '每周健康周报').sort(byNewest),
+    ...conversations.filter((c: any) => !PINNED_TITLES.includes(titleOf(c))),
   ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -56,7 +59,7 @@ export default function ConversationSheet({
                       {item.title || `对话 #${item.id}`}
                     </Text>
                     <Text style={styles.rowDate}>
-                      {item.created_at?.slice(0, 10) || ''}
+                      {(item.updated_at || item.created_at)?.slice(0, 10) || ''}
                     </Text>
                   </View>
                   <TouchableOpacity
