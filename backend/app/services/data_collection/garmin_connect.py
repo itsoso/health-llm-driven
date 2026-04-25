@@ -1,4 +1,19 @@
-"""Garmin Connect数据收集服务（使用社区库garminconnect）"""
+"""Garmin Connect 数据收集服务 (使用社区库 garminconnect).
+
+⚠️ 本文件 3294 行, 超过 500 行硬限. 已拆出:
+- garmin_errors.py    : 自定义异常 + 锁定常量
+- garmin_mfa.py       : MFA 会话 + display_name 兜底
+- garmin_sso.py       : SSO 可用性探测
+
+下一阶段拆分目标 (按风险升序):
+- garmin_getters.py   : get_user_summary / get_sleep_data / get_heart_rates 等
+                        ~360 行, 都是 self.client.* 的瘦封装, 改 mixin 即可
+- garmin_parsers.py   : parse_to_garmin_data_create (1060 行 transform 逻辑,
+                        只有 2 处 self.client 调用, 抽成 free function 可行)
+- garmin_sync.py      : _sync_heart_rate_samples / _sync_spo2_samples / ...
+                        700 行 sample 写入, 与 GarminConnectService 解耦后
+                        各类 sample 写入可独立测试
+"""
 import asyncio
 import json
 import os
@@ -31,256 +46,30 @@ except Exception as _garmin_load_err:  # noqa: BLE001
     )
 
 
-class GarminAuthenticationError(Exception):
-    """Garmin认证错误，用于标识凭证问题"""
-    pass
+# 自定义异常 + 登录锁定配置已抽出到 garmin_errors.py.
+# 这里 re-export 保持 backward compat (auth.py / heart_rate.py / scheduler.py 等都从本模块 import).
+from app.services.data_collection.garmin_errors import (  # noqa: E402,F401
+    GarminAuthenticationError,
+    GarminLoginLockedError,
+    GarminMFARequiredError,
+    LOGIN_FAIL_THRESHOLD,
+    LOGIN_LOCK_MINUTES_SCHEDULE,
+)
 
 
-class GarminLoginLockedError(Exception):
-    """Garmin登录被锁定（防止频繁登录）"""
-    def __init__(self, message: str, locked_until: datetime):
-        super().__init__(message)
-        self.locked_until = locked_until
-
-
-# 登录失败阈值和锁定时间配置
-LOGIN_FAIL_THRESHOLD = 2  # 连续失败次数阈值（429 立即触发，其他错误 2 次后锁定）
-# 指数退避锁定时间（分钟）：第1次30分钟, 第2次2小时, 第3次8小时, 第4次+24小时
-LOGIN_LOCK_MINUTES_SCHEDULE = [30, 120, 480, 1440]
-
-
-class GarminMFARequiredError(Exception):
-    """Garmin需要两步验证"""
-    def __init__(self, message: str, client_state: dict):
-        super().__init__(message)
-        self.client_state = client_state
-
-
-# 全局 MFA 会话存储（用于跨请求保持 client 对象）
-# 格式: {session_id: {"client": Garmin, "client_state": dict, "expires": timestamp}}
-_mfa_sessions: Dict[str, Any] = {}
-
-def _cleanup_expired_mfa_sessions():
-    """清理过期的 MFA 会话"""
-    import time
-    current_time = time.time()
-    expired_keys = [k for k, v in _mfa_sessions.items() if v.get("expires", 0) < current_time]
-    for k in expired_keys:
-        del _mfa_sessions[k]
-
-def _generate_mfa_session_id() -> str:
-    """生成 MFA 会话 ID"""
-    import uuid
-    return str(uuid.uuid4())
-
-
-def _ensure_display_name_for_client(client, email: str) -> bool:
-    """
-    确保 client 的 display_name 已设置，尝试多种方式获取
-
-    这是一个独立函数，用于 verify_mfa_with_session 等场景
-
-    Args:
-        client: Garmin client 对象
-        email: 用户邮箱
-
-    Returns:
-        bool: 是否成功获取 display_name
-    """
-    if client.display_name:
-        return True
-
-    # 方法1: 尝试 userprofile API
-    try:
-        prof = client.garth.connectapi("/userprofile-service/userprofile/profile")
-        if prof and isinstance(prof, dict):
-            client.display_name = prof.get("displayName") or prof.get("userName")
-            client.full_name = prof.get("fullName")
-            if client.display_name:
-                logger.info(f"[MFA] 从 userprofile API 获取 display_name: {client.display_name}")
-                return True
-    except Exception as e:
-        logger.debug(f"[MFA] userprofile API 失败: {e}")
-
-    # 方法2: 尝试 socialProfile API
-    try:
-        social = client.garth.connectapi("/userprofile-service/socialProfile")
-        if social and isinstance(social, dict):
-            client.display_name = social.get("displayName") or social.get("userName")
-            client.full_name = social.get("fullName")
-            if client.display_name:
-                logger.info(f"[MFA] 从 socialProfile API 获取 display_name: {client.display_name}")
-                return True
-    except Exception as e:
-        logger.debug(f"[MFA] socialProfile API 失败: {e}")
-
-    # 方法3: 尝试从 garth 的 profile 属性获取
-    try:
-        if hasattr(client.garth, 'profile') and client.garth.profile:
-            profile = client.garth.profile
-            client.display_name = getattr(profile, 'display_name', None) or getattr(profile, 'email', None)
-            if client.display_name:
-                logger.info(f"[MFA] 从 garth.profile 获取 display_name: {client.display_name}")
-                return True
-    except Exception as e:
-        logger.debug(f"[MFA] garth.profile 获取失败: {e}")
-
-    # 方法4: 尝试调用 get_full_name()
-    try:
-        full_name = client.get_full_name()
-        if full_name:
-            client.display_name = full_name
-            logger.info(f"[MFA] 从 get_full_name() 获取 display_name: {client.display_name}")
-            return True
-    except Exception as e:
-        logger.debug(f"[MFA] get_full_name() 失败: {e}")
-
-    # 方法5: 从邮箱地址提取用户名作为后备
-    try:
-        email_username = email.split('@')[0]
-        if email_username:
-            client.display_name = email_username
-            logger.warning(f"[MFA] 使用邮箱用户名作为 display_name: {client.display_name}")
-            return True
-    except Exception as e:
-        logger.debug(f"[MFA] 邮箱提取失败: {e}")
-
-    logger.error(f"[MFA] 无法获取 display_name，部分 API 可能无法正常工作")
-    return False
-
-
-def verify_mfa_with_session(session_id: str, mfa_code: str) -> Dict[str, Any]:
-    """
-    使用 session_id 和 MFA 验证码完成登录
-
-    这是一个模块级函数，用于处理 MFA 验证流程。
-    因为 client 对象需要在请求之间保持，所以使用全局 session 存储。
-
-    Args:
-        session_id: test_connection_with_mfa 返回的 session_id
-        mfa_code: 用户输入的 MFA 验证码
-
-    Returns:
-        dict: {
-            "success": bool,
-            "message": str,
-            "email": str (如果成功),
-            "is_cn": bool (如果成功)
-        }
-    """
-    import time
-
-    # 清理过期会话
-    _cleanup_expired_mfa_sessions()
-
-    # 查找会话
-    if session_id not in _mfa_sessions:
-        logger.warning(f"MFA session not found: {session_id}")
-        return {
-            "success": False,
-            "message": "❌ 验证会话已过期，请重新测试连接。"
-        }
-
-    session = _mfa_sessions[session_id]
-
-    # 检查是否过期
-    if session.get("expires", 0) < time.time():
-        del _mfa_sessions[session_id]
-        return {
-            "success": False,
-            "message": "❌ 验证会话已过期，请重新测试连接。"
-        }
-
-    client = session.get("client")
-    client_state = session.get("client_state")
-    email = session.get("email")
-    is_cn = session.get("is_cn")
-
-    if not client or not client_state:
-        del _mfa_sessions[session_id]
-        return {
-            "success": False,
-            "message": "❌ 会话数据无效，请重新测试连接。"
-        }
-
-    try:
-        # 使用验证码恢复登录
-        client.resume_login(client_state, mfa_code)
-
-        # 重要：MFA验证后需要手动加载 profile 来获取 display_name
-        # 否则后续的 API 调用会因为 display_name 为 None 而失败
-        _ensure_display_name_for_client(client, email)
-
-        server_type = "中国版" if is_cn else "国际版"
-        logger.info(f"[MFA] Garmin {server_type} ({email}) MFA 验证成功, display_name={client.display_name}")
-
-        # 不要立即删除会话，标记为已认证，并延长过期时间（10分钟）
-        # 这样后续同步可以复用已认证的client
-        import time
-        _mfa_sessions[session_id] = {
-            "client": client,
-            "client_state": client_state,
-            "email": email,
-            "is_cn": is_cn,
-            "authenticated": True,  # 标记为已认证
-            "expires": time.time() + 600  # 10分钟后过期
-        }
-
-        return {
-            "success": True,
-            "message": "✅ 验证成功！Garmin账号连接成功，可以保存凭证了。",
-            "email": email,
-            "is_cn": is_cn,
-            "session_id": session_id  # 返回session_id，以便后续复用
-        }
-
-    except Exception as e:
-        error_msg = str(e).lower()
-
-        if 'invalid' in error_msg or 'incorrect' in error_msg or 'wrong' in error_msg:
-            # 验证码错误，保留会话供重试
-            return {
-                "success": False,
-                "message": "❌ 验证码错误！请检查并重新输入。"
-            }
-
-        # 其他错误，清理会话
-        del _mfa_sessions[session_id]
-        logger.error(f"[MFA] MFA 验证失败: {e}")
-        return {
-            "success": False,
-            "message": f"❌ 验证失败: {str(e)}"
-        }
-
-
-def probe_sso_availability(is_cn: bool = False, timeout: int = 10) -> bool:
-    """
-    轻量级探测 Garmin SSO 是否可用（GET 请求，不会触发登录）
-
-    用于在调度器中，当 DB 锁定到期后，先探测 SSO 是否还在限流，
-    避免直接尝试登录导致再次触发 429 并延长锁定。
-
-    Args:
-        is_cn: 是否探测中国版 SSO
-        timeout: 请求超时秒数
-
-    Returns:
-        True 表示 SSO 可用（返回 200），False 表示仍在限流或不可达
-    """
-    import requests
-
-    sso_url = "https://sso.garmin.cn/sso/signin" if is_cn else "https://sso.garmin.com/sso/signin"
-
-    try:
-        resp = requests.get(sso_url, timeout=timeout, allow_redirects=True)
-        if resp.status_code == 429:
-            logger.info(f"🔍 SSO 探测: {sso_url} 返回 429，仍在限流中")
-            return False
-        logger.info(f"🔍 SSO 探测: {sso_url} 返回 {resp.status_code}，SSO 可用")
-        return True
-    except Exception as e:
-        logger.warning(f"🔍 SSO 探测失败 ({sso_url}): {e}")
-        return False
+# MFA 会话管理 + display_name 兜底获取已抽出到 garmin_mfa.py.
+# SSO 探测器抽出到 garmin_sso.py.
+# 这里 re-export 名字, 老调用方 (api/auth.py 等) 不破.
+from app.services.data_collection.garmin_mfa import (  # noqa: E402,F401
+    _mfa_sessions,
+    _cleanup_expired_mfa_sessions,
+    _generate_mfa_session_id,
+    _ensure_display_name_for_client,
+    verify_mfa_with_session,
+)
+from app.services.data_collection.garmin_sso import (  # noqa: E402,F401
+    probe_sso_availability,
+)
 
 
 class GarminConnectService:
