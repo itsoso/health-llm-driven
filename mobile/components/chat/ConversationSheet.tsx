@@ -21,6 +21,14 @@ export default function ConversationSheet({
   visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
 }: Props) {
+  const PINNED_TITLES = ['每日健康简报', '每周健康周报'];
+  const byNewest = (a: any, b: any) =>
+    (b.created_at || '').localeCompare(a.created_at || '');
+  const sortedConversations = [
+    ...conversations.filter((c: any) => c.title === '每日健康简报').sort(byNewest),
+    ...conversations.filter((c: any) => c.title === '每周健康周报').sort(byNewest),
+    ...conversations.filter((c: any) => !PINNED_TITLES.includes(c.title)),
+  ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
@@ -34,7 +42,7 @@ export default function ConversationSheet({
             </View>
           ) : (
             <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-              {conversations.slice(0, 20).map((item: any) => (
+              {sortedConversations.slice(0, 20).map((item: any) => (
                 <TouchableOpacity
                   key={item.id}
                   style={styles.row}

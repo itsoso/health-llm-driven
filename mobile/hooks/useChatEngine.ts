@@ -46,6 +46,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     try {
       // 1. 优先找"每日健康简报"对话
       let convs = await getConversations(BRIEFING_CONVERSATION_TITLE);
+      // 同名简报按 created_at 倒序，确保选到当天的而非历史的
+      convs = [...convs].sort((a: any, b: any) =>
+        (b.created_at || '').localeCompare(a.created_at || '')
+      );
       // 2. fallback：任意最近对话
       if (convs.length === 0) convs = await getConversations();
       if (convs.length === 0) return;
