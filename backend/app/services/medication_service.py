@@ -153,15 +153,38 @@ class MedicationService:
 
         result = []
         for med in meds:
-            # 获取今日记录
+            # 获取今日记录（按 taken_time 排序方便取 last）
             logs = db.query(MedicationLog).filter(
                 MedicationLog.medication_id == med.id,
                 MedicationLog.user_id == user_id,
                 MedicationLog.taken_date == today,
-            ).all()
+            ).order_by(MedicationLog.taken_time.asc()).all()
 
             taken_count = sum(1 for l in logs if l.status == "taken")
             skipped_count = sum(1 for l in logs if l.status == "skipped")
+
+            # 今日最后一次 taken
+            last_today = None
+            for l in reversed(logs):
+                if l.status == "taken":
+                    last_today = l.taken_time
+                    break
+
+            # 若今日无记录，查最近一次 taken（可能昨天或更早）
+            last_overall = None
+            last_overall_date = None
+            if last_today is None:
+                last_log = db.query(MedicationLog).filter(
+                    MedicationLog.medication_id == med.id,
+                    MedicationLog.user_id == user_id,
+                    MedicationLog.status == "taken",
+                ).order_by(
+                    MedicationLog.taken_date.desc(),
+                    MedicationLog.taken_time.desc(),
+                ).first()
+                if last_log:
+                    last_overall = last_log.taken_time
+                    last_overall_date = str(last_log.taken_date)
 
             result.append({
                 "medication_id": med.id,
@@ -171,6 +194,9 @@ class MedicationService:
                 "total_count": med.times_per_day,
                 "taken_count": taken_count,
                 "skipped_count": skipped_count,
+                "last_taken_time": last_today,  # HH:MM today or None
+                "last_taken_time_overall": last_overall,  # 若今日未记录，最近一次时间
+                "last_taken_date_overall": last_overall_date,  # 最近一次日期
                 "reminder_times": med.reminder_times or [],
                 "logs": [
                     {"time": l.taken_time, "status": l.status, "id": l.id}

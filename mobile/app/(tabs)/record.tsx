@@ -196,23 +196,49 @@ export default function RecordScreen() {
         {/* 8. Medication */}
         {Array.isArray(medications) && medications.length > 0 && (
           <HealthCard title="用药状态" icon="medical-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
-            <View style={styles.medRow}>
-              {medications.map((m: any) => (
-                <TouchableOpacity key={m.medication_id}
-                  style={[styles.medChip, m.taken_count > 0 && { backgroundColor: '#E8FAF0' }]}
-                  onPress={async () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    try {
-                      await api.post('/medication/log', { medication_id: m.medication_id, action: m.taken_count > 0 ? 'undo' : 'take' });
-                      qc.invalidateQueries({ queryKey: ['dashboard'] });
-                    } catch { Alert.alert('操作失败', '用药记录更新失败'); }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name={m.taken_count > 0 ? 'checkmark-circle' : 'ellipse-outline'} size={14} color={m.taken_count > 0 ? '#30D158' : colors.labelTertiary} />
-                  <Text style={txt.medName} numberOfLines={1}>{m.name}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.medList}>
+              {medications.map((m: any) => {
+                const lastToday: string | undefined = m.last_taken_time;
+                const lastOverall: string | undefined = m.last_taken_time_overall;
+                const lastOverallDate: string | undefined = m.last_taken_date_overall;
+                const done = m.taken_count >= (m.total_count || 1);
+                return (
+                  <TouchableOpacity key={m.medication_id}
+                    style={[styles.medItem, done && { backgroundColor: '#E8FAF0' }]}
+                    onPress={async () => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      const now = new Date();
+                      const hh = String(now.getHours()).padStart(2, '0');
+                      const mm = String(now.getMinutes()).padStart(2, '0');
+                      try {
+                        const res = await api.post('/medication/logs', {
+                          medication_id: m.medication_id,
+                          taken_time: `${hh}:${mm}`,
+                          status: 'taken',
+                        });
+                        qc.invalidateQueries({ queryKey: ['dashboard'] });
+                        showUndo(`已记录 ${m.name} ${hh}:${mm}`, async () => {
+                          try { await api.delete(`/medication/logs/${res.data.id}`); qc.invalidateQueries({ queryKey: ['dashboard'] }); } catch {}
+                        });
+                      } catch { Alert.alert('记录失败'); }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.medLeft}>
+                      <Ionicons name={done ? 'checkmark-circle' : 'medical'} size={18} color={done ? '#30D158' : colors.brand} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={txt.medItemName} numberOfLines={1}>{m.name}</Text>
+                        <Text style={txt.medItemMeta}>
+                          {lastToday ? `今日 ${m.taken_count}/${m.total_count || 1} · 上次 ${lastToday}` :
+                           lastOverall ? `上次 ${lastOverallDate} ${lastOverall}` :
+                           '今日未记录'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="add-circle" size={22} color={colors.brand} />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </HealthCard>
         )}
@@ -310,6 +336,13 @@ const styles = StyleSheet.create({
   // Medication
   medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   medChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.full, backgroundColor: colors.bgPrimary },
+  medList: { gap: 6 },
+  medItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: colors.bgPrimary, borderRadius: radii.md,
+  },
+  medLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
 
   // Water
   waterBtnRow: { flexDirection: 'row', gap: spacing.sm },
@@ -342,6 +375,8 @@ const txt = {
   bodyUnit: { fontSize: 11, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
   bodyChange: { fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
   medName: { fontSize: 13, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
+  medItemName: { fontSize: 14, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
+  medItemMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
   waterTotal: { fontSize: 14, fontWeight: '700', color: '#64D2FF' } as TextStyle,
   waterBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
   quickSaveTxt: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
