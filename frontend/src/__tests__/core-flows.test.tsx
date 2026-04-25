@@ -115,13 +115,12 @@ describe('Login', () => {
   });
 });
 
-// TODO(2026-Q3): family/reports 路由用了 useParams + dynamic import,
-// 测试拿不到 "加载中..." 文本(可能是 server component 行为变了).
-// 临时 skip 保护回归基线; 修复路由 mock 后改回 describe.
-describe.skip('Report Detail (skipped — useParams 未正确 mock)', () => {
+describe('Report Detail', () => {
   it('renders without crashing', async () => {
-    const Page = (await import('@/app/family/reports/[id]/page')).default;
-    render(<Page />);
+    // 旧版本测试 import 了 page.tsx (dynamic + ssr:false), 在 vitest 里
+    // 需要等异步 chunk 解析才会渲染 "加载中...". 直接测 ClientPage 更稳.
+    const ClientPage = (await import('@/app/family/reports/[id]/ClientPage')).default;
+    render(<ClientPage />);
     expect(screen.getByText('加载中...')).toBeDefined();
   });
 });
