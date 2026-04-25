@@ -63,6 +63,7 @@ class NightAnalysisOut(BaseModel):
     events: List[EventOut]
     correlations: List[CorrelationOut]
     action_priorities: List[str]
+    ask_questions: List[str] = []  # 数据缺口追问（如：是否饮酒、是否服药）
 
 
 class BehaviorABOut(BaseModel):
@@ -161,7 +162,11 @@ def _build_night_context(db: Session, user_id: int, night_date: date) -> NightCo
             "food_items": r.food_items,
             "meal_type": r.meal_type,
             "meal_time": r.meal_time,
-            "alcohol_units": _estimate_alcohol_units(r.food_items or r.food_name or ''),
+            "alcohol_units": (
+                float(r.alcohol_units)
+                if r.alcohol_units is not None
+                else _estimate_alcohol_units(r.food_items or r.food_name or '')
+            ),
         }
         for r in diet
     ]
@@ -256,6 +261,50 @@ def _action_priorities(findings: List[CorrelationFinding]) -> List[str]:
     return out
 
 
+def _compute_ask_questions(night: NightAnalysis, ctx: NightContext) -> List[str]:
+    """夜间有问题但关键数据缺口时返回追问列表。
+
+    触发前提：ODI ≥ 5 OR min_spo2 < 88（即夜间真有事），否则不追问。
+    缺口判定：
+      - 无饮食记录 OR 饮食记录里 alcohol_units 全部为 0 → 问饮酒
+      - 用户在 active_meds 有异丙托溴铵 + 当日无服药记录 → 问用药
+      - 当日无运动记录 → 问晚间运动
+    """
+    night_has_issue = (
+        (night.odi is not None and night.odi >= 5)
+        or (night.min_spo2 is not None and night.min_spo2 < 88)
+    )
+    if not night_has_issue:
+        return []
+
+    questions: List[str] = []
+
+    # 饮酒缺口
+    has_alcohol_signal = any(
+        float(d.get('alcohol_units') or 0) > 0 for d in ctx.diet_records
+    )
+    if not has_alcohol_signal:
+        questions.append("昨晚是否饮酒？酒精会松弛上气道，是夜间血氧下降的常见诱因。")
+
+    # 异丙托溴铵漏录
+    has_ipra_active = any(
+        '异丙托溴铵' in (m.get('name') or '') or 'ipratropium' in (m.get('name') or '').lower()
+        for m in ctx.active_meds
+    )
+    has_ipra_log = any(
+        '异丙托溴铵' in (m.get('name') or '') or 'ipratropium' in (m.get('name') or '').lower()
+        for m in ctx.med_logs if m.get('status') == 'taken'
+    )
+    if has_ipra_active and not has_ipra_log:
+        questions.append("昨日是否使用了异丙托溴铵？最后一次使用时间是几点？")
+
+    # 运动缺口
+    if not ctx.workouts:
+        questions.append("昨日是否有运动？尤其是入睡前 3 小时内的高强度训练？")
+
+    return questions[:3]
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -306,6 +355,7 @@ def get_night_analysis(
             for f in findings
         ],
         action_priorities=_action_priorities(findings),
+        ask_questions=_compute_ask_questions(night, ctx),
     )
 
 

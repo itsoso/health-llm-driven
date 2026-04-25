@@ -36,6 +36,7 @@ export interface SpO2NightAnalysis {
   events: SpO2Event[];
   correlations: SpO2Correlation[];
   action_priorities: string[];
+  ask_questions?: string[];
 }
 
 export interface SpO2BehaviorAB {

@@ -196,6 +196,26 @@ export default function SleepSpo2AnalysisScreen() {
               </View>
             ) : null}
 
+            {/* 数据缺口追问 — 当夜有问题但关键数据没录入 */}
+            {analysis.ask_questions && analysis.ask_questions.length > 0 ? (
+              <View style={styles.askCard}>
+                <Text style={txt.askTitle}>❓ 帮我补全这些信息</Text>
+                <Text style={txt.askSub}>当夜确认有低氧/事件，但缺关键背景。补一下能让分析更准。</Text>
+                {analysis.ask_questions.map((q, i) => (
+                  <View key={i} style={styles.askRow}>
+                    <Text style={txt.askText}>{q}</Text>
+                  </View>
+                ))}
+                <TouchableOpacity
+                  style={styles.askGoBtn}
+                  onPress={() => router.push('/diet')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={txt.askGoText}>去补录 →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {/* 今晚可试 — action priorities */}
             {analysis.action_priorities.length > 0 ? (
               <View style={styles.actionCard}>
@@ -354,6 +374,23 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#10B981',
   },
+  askCard: {
+    backgroundColor: '#FFF7ED',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F97316',
+  },
+  askRow: { marginTop: 8 },
+  askGoBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#F97316',
+    borderRadius: radii.full,
+  },
   actionRow: {
     flexDirection: 'row',
     marginTop: 8,
@@ -382,6 +419,10 @@ const txt = {
   title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
   dateLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
   sectionTitle: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
+  askTitle: { fontSize: 15, fontWeight: '600', color: '#9A3412' } as TextStyle,
+  askSub: { fontSize: 12, color: '#9A3412', marginTop: 4 } as TextStyle,
+  askText: { fontSize: 13, color: '#7C2D12', lineHeight: 19 } as TextStyle,
+  askGoText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
   body: { fontSize: 14, color: colors.labelPrimary } as TextStyle,
   caption: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
   sumLabel: { fontSize: 11, color: colors.labelSecondary, marginBottom: 4 } as TextStyle,

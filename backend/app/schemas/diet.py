@@ -24,6 +24,7 @@ class DietRecordBase(BaseModel):
     carbs: Optional[float] = None  # 碳水化合物 (g)
     fat: Optional[float] = None  # 脂肪 (g)
     fiber: Optional[float] = None  # 膳食纤维 (g)
+    alcohol_units: Optional[float] = None  # 酒精标准杯数 (1 unit ≈ 14g 纯酒精)
     notes: Optional[str] = None
     image_url: Optional[str] = None  # 食物图片URL
     ai_recognized: Optional[int] = 0  # 是否AI识别
@@ -47,6 +48,7 @@ class DietRecordUpdate(BaseModel):
     carbs: Optional[float] = None
     fat: Optional[float] = None
     fiber: Optional[float] = None
+    alcohol_units: Optional[float] = None
     notes: Optional[str] = None
     image_url: Optional[str] = None
     health_tips: Optional[str] = None

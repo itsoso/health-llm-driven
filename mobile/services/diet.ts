@@ -11,6 +11,7 @@ export interface DietRecord {
   carbs: number | null;
   fat: number | null;
   fiber: number | null;
+  alcohol_units: number | null;
   image_url: string | null;
   notes: string | null;
   health_tips: string | null;
@@ -25,6 +26,7 @@ export interface DietRecordCreate {
   carbs?: number;
   fat?: number;
   fiber?: number;
+  alcohol_units?: number;
   notes?: string;
 }
 

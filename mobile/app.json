@@ -21,7 +21,8 @@
         "NSSiriUsageDescription": "使用 Siri 语音记录健康数据",
         "NSPhotoLibraryUsageDescription": "选择图片发送给 AI 助手分析",
         "NSCameraUsageDescription": "拍摄食物或健康数据进行分析",
-        "NSMicrophoneUsageDescription": "使用语音输入"
+        "NSMicrophoneUsageDescription": "使用语音输入",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -60,6 +61,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "911ea84f-bc7e-4a12-90cf-33966b6f7398"
+      }
+    },
+    "owner": "itsoso"
   }
 }

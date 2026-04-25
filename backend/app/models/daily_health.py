@@ -156,6 +156,7 @@ class DietRecord(Base):
     carbs = Column(Float)  # 碳水化合物 (g)
     fat = Column(Float)  # 脂肪 (g)
     fiber = Column(Float)  # 纤维 (g)
+    alcohol_units = Column(Float, nullable=True)  # 酒精标准杯数 (1 unit ≈ 14g 纯酒精)
     
     # 图片和AI识别
     image_url = Column(String, nullable=True)  # 食物图片URL
