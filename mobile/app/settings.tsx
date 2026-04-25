@@ -20,6 +20,13 @@ export default function SettingsScreen() {
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city || '未设置';
 
+  const { data: garminStatus, refetch: refetchGarminStatus } = useQuery({
+    queryKey: ['garminStatus'],
+    queryFn: () => api.get('/data-collection/garmin/me/credential-status').then(r => r.data),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+
   const syncGarmin = async () => {
     setSyncing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -30,6 +37,7 @@ export default function SettingsScreen() {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['healthScore'] });
       qc.invalidateQueries({ queryKey: ['safety'] });
+      refetchGarminStatus();
     } catch {
       Alert.alert('同步失败', '请稍后再试');
     } finally {
@@ -80,9 +88,7 @@ export default function SettingsScreen() {
         {/* Settings items */}
         <View style={styles.card}>
           <SettingRow icon="location-outline" label="当前城市" value={city} />
-          <SettingRow icon="watch-outline" label="Garmin 同步"
-            value={syncing ? '同步中...' : '点击同步'}
-            onPress={syncGarmin} />
+          <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
         </View>
 
         {/* Health tools */}
@@ -135,6 +141,54 @@ function SettingRow({ icon, label, value, onPress }: { icon: any; label: string;
       <Text style={txt.settingValue}>{value || ''}</Text>
       {onPress && <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />}
     </Wrapper>
+  );
+}
+
+function GarminStatusRow({
+  status,
+  syncing,
+  onSync,
+}: {
+  status: any;
+  syncing: boolean;
+  onSync: () => void;
+}) {
+  const health = status?.health as 'healthy' | 'stale' | 'error' | 'unbound' | undefined;
+  const mins = status?.minutes_since_last_sync as number | null | undefined;
+
+  const dot =
+    health === 'healthy' ? '#30D158' :
+    health === 'stale' ? '#FF9F0A' :
+    health === 'error' ? '#FF453A' :
+    colors.labelTertiary;
+
+  const statusText = (() => {
+    if (syncing) return '同步中...';
+    if (!status) return '...';
+    if (health === 'unbound') return '未绑定';
+    if (health === 'error') {
+      if (status.requires_mfa) return '需 MFA 验证';
+      if (!status.credentials_valid) return '凭证失效';
+      return `${status.error_count} 次失败`;
+    }
+    if (mins == null) return '从未同步';
+    if (mins < 60) return `${mins} 分钟前`;
+    if (mins < 60 * 24) return `${Math.floor(mins / 60)} 小时前`;
+    return `${Math.floor(mins / (60 * 24))} 天前`;
+  })();
+
+  return (
+    <TouchableOpacity style={styles.settingRow} onPress={onSync} activeOpacity={0.6} disabled={syncing}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Ionicons name="watch-outline" size={18} color={colors.labelSecondary} />
+        <View style={{
+          width: 8, height: 8, borderRadius: 4, backgroundColor: dot,
+        }} />
+      </View>
+      <Text style={txt.settingLabel}>Garmin</Text>
+      <Text style={[txt.settingValue, health === 'error' && { color: '#FF453A' }]}>{statusText}</Text>
+      <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={colors.labelTertiary} />
+    </TouchableOpacity>
   );
 }
 

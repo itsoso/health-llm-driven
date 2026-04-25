@@ -135,6 +135,79 @@ def get_sync_status(
     }
 
 
+@router.get("/garmin/me/credential-status")
+def get_credential_status(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Garmin 凭证 + 同步健康度（给 UI 显示绿点/红点用）。
+
+    返回字段：
+      - bound: 是否绑定了 Garmin
+      - last_sync_at: 最后一次同步时间 (ISO)
+      - minutes_since_last_sync: 距今多少分钟
+      - credentials_valid: 凭证是否还能登录
+      - requires_mfa: 是否需要 MFA
+      - last_error: 最近错误信息（脱敏）
+      - error_count: 连续错误次数
+      - health: "healthy" | "stale" | "error" | "unbound"
+    """
+    from datetime import datetime, timezone
+
+    cred = db.query(GarminCredential).filter(
+        GarminCredential.user_id == current_user.id
+    ).first()
+
+    if not cred:
+        return {
+            "bound": False,
+            "health": "unbound",
+            "last_sync_at": None,
+            "minutes_since_last_sync": None,
+            "credentials_valid": None,
+            "requires_mfa": False,
+            "last_error": None,
+            "error_count": 0,
+        }
+
+    minutes_since = None
+    if cred.last_sync_at:
+        now = datetime.now(timezone.utc)
+        last = cred.last_sync_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        minutes_since = int((now - last).total_seconds() / 60)
+
+    # health 判定
+    if not cred.credentials_valid:
+        health = "error"
+    elif cred.error_count >= 3:
+        health = "error"
+    elif minutes_since is None:
+        health = "unbound"
+    elif minutes_since > 60 * 12:  # 12h 没同步
+        health = "stale"
+    else:
+        health = "healthy"
+
+    # 脱敏错误信息（去掉密码/邮箱）
+    err = cred.last_error
+    if err and len(err) > 200:
+        err = err[:200] + "..."
+
+    return {
+        "bound": True,
+        "health": health,
+        "last_sync_at": cred.last_sync_at.isoformat() if cred.last_sync_at else None,
+        "minutes_since_last_sync": minutes_since,
+        "credentials_valid": bool(cred.credentials_valid),
+        "requires_mfa": bool(cred.requires_mfa),
+        "last_error": err,
+        "error_count": cred.error_count or 0,
+        "sync_enabled": bool(cred.sync_enabled),
+    }
+
+
 @router.get("/garmin/me/sync-status")
 def get_my_sync_status(
     days: int = 30,
