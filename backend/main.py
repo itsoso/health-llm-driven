@@ -26,6 +26,29 @@ import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 # 设置日志，使用北京时间
 setup_beijing_logging()
 
+# Sentry 错误监控（仅当配置了 DSN 才启用，未配置时是 noop）
+if settings.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        # 健康数据合规：不上传 PII（IP / cookie / headers）
+        send_default_pii=False,
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            SqlalchemyIntegration(),
+            CeleryIntegration(),
+        ],
+        # 把 logging.error 自动转成 Sentry event
+        _experiments={"continuous_profiling_auto_start": False},
+    )
+    logger.info(f"[Sentry] 错误监控已启用，环境={settings.sentry_environment}")
+
 # Patch garth 使用 Chrome TLS 指纹（绕过 Cloudflare bot 检测）
 from app.services.garmin_cffi_patch import patch_garth_with_cffi
 patch_garth_with_cffi()

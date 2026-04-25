@@ -49,3 +49,4 @@ alibabacloud_tea_openapi>=0.3.0
 alibabacloud_tea_util>=0.3.0
 curl_cffi==0.14.0
 pdfplumber==0.11.8
+sentry-sdk[fastapi]==2.20.0

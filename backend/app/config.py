@@ -7,6 +7,11 @@ from typing import Optional, List
 class Settings(BaseSettings):
     """应用设置"""
 
+    # === Sentry 错误监控（可选）===
+    sentry_dsn: Optional[str] = None
+    sentry_environment: str = "production"
+    sentry_traces_sample_rate: float = 0.05  # 性能采样 5%，控制额度
+
     # === LLM Provider 统一配置 ===
     llm_provider: str = "openclaw"  # openclaw | openai | ollama（默认 openclaw 避免 openai proxy 429）
     llm_api_key: Optional[str] = None
