@@ -1,0 +1,94 @@
+import React from 'react';
+import { render, fireEvent } from '@testing-library/react-native';
+
+import ConversationSheet from '../ConversationSheet';
+
+const baseProps = {
+  visible: true,
+  onClose: jest.fn(),
+  setConversations: jest.fn(),
+  currentConversationId: undefined,
+  onSelectConversation: jest.fn(),
+  onDeleteConversation: jest.fn(),
+};
+
+describe('ConversationSheet pinning', () => {
+  it('pins per-day briefings to top sorted by updated_at desc', () => {
+    const conversations = [
+      // 一条普通的、updated_at 最新的对话
+      { id: 391, title: '记录饮食', created_at: '2026-04-25T18:02:00Z', updated_at: '2026-04-25T18:04:00Z' },
+      // 简报对话: 03-31 老格式 + 多条按日期切片的新格式
+      { id: 408, title: '每日健康简报 · 04-16', created_at: '2026-04-15T17:01:00Z', updated_at: '2026-04-15T17:32:00Z' },
+      { id: 415, title: '每日健康简报 · 04-25', created_at: '2026-04-25T01:01:00Z', updated_at: '2026-04-25T15:01:00Z' },
+      { id: 412, title: '每日健康简报 · 04-21', created_at: '2026-04-21T01:01:00Z', updated_at: '2026-04-21T15:04:00Z' },
+      // 一条周报
+      { id: 200, title: '每周健康周报 · w17', created_at: '2026-04-20T09:00:00Z', updated_at: '2026-04-20T09:00:00Z' },
+      // 一条尾部空白的旧简报 (验证 trim)
+      { id: 134, title: '每日健康简报 ', created_at: '2026-03-31T08:00:00Z', updated_at: '2026-03-31T08:00:00Z' },
+    ];
+
+    const { getAllByRole } = render(
+      <ConversationSheet {...baseProps} conversations={conversations as any} />
+    );
+
+    // 第一个 button 是 row, 删除按钮是嵌套 button. 用 accessibilityLabel 区分.
+    const rows = getAllByRole('button').filter((node: any) =>
+      typeof node.props.accessibilityLabel === 'string' &&
+      node.props.accessibilityLabel.startsWith('对话:')
+    );
+    const labels = rows.map((r: any) => r.props.accessibilityLabel);
+
+    // 简报应在最前 4 条 (4-25, 4-21, 4-16, 03-31 按 updated_at desc)
+    expect(labels[0]).toBe('对话: 每日健康简报 · 04-25');
+    expect(labels[1]).toBe('对话: 每日健康简报 · 04-21');
+    expect(labels[2]).toBe('对话: 每日健康简报 · 04-16');
+    expect(labels[3]).toBe('对话: 每日健康简报 ');
+    // 周报紧随其后
+    expect(labels[4]).toBe('对话: 每周健康周报 · w17');
+    // 普通对话在末尾
+    expect(labels[5]).toBe('对话: 记录饮食');
+  });
+
+  it('falls back to created_at if updated_at missing', () => {
+    const conversations = [
+      { id: 1, title: '每日健康简报 · 04-20', created_at: '2026-04-20T01:00:00Z' },
+      { id: 2, title: '每日健康简报 · 04-25', created_at: '2026-04-25T01:00:00Z' },
+    ];
+
+    const { getAllByRole } = render(
+      <ConversationSheet {...baseProps} conversations={conversations as any} />
+    );
+
+    const rows = getAllByRole('button').filter((n: any) =>
+      typeof n.props.accessibilityLabel === 'string' &&
+      n.props.accessibilityLabel.startsWith('对话:')
+    );
+    expect(rows[0].props.accessibilityLabel).toBe('对话: 每日健康简报 · 04-25');
+    expect(rows[1].props.accessibilityLabel).toBe('对话: 每日健康简报 · 04-20');
+  });
+
+  it('invokes onSelectConversation with the row id', () => {
+    const onSelect = jest.fn();
+    const conversations = [
+      { id: 415, title: '每日健康简报 · 04-25', created_at: '2026-04-25T01:00:00Z', updated_at: '2026-04-25T15:00:00Z' },
+    ];
+
+    const { getByLabelText } = render(
+      <ConversationSheet {...baseProps} onSelectConversation={onSelect} conversations={conversations as any} />
+    );
+    fireEvent.press(getByLabelText('对话: 每日健康简报 · 04-25'));
+    expect(onSelect).toHaveBeenCalledWith(415);
+  });
+
+  it('shows updated_at as the displayed date (not original created_at)', () => {
+    const conversations = [
+      // 简报老格式: created_at 03-31, 但 updated_at 是今天
+      { id: 135, title: '每日健康简报', created_at: '2026-03-31T02:59:00Z', updated_at: '2026-04-25T15:01:00Z' },
+    ];
+
+    const { getByText } = render(
+      <ConversationSheet {...baseProps} conversations={conversations as any} />
+    );
+    expect(getByText('2026-04-25')).toBeTruthy();
+  });
+});

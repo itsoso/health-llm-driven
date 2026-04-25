@@ -71,6 +71,12 @@
         "projectId": "911ea84f-bc7e-4a12-90cf-33966b6f7398"
       }
     },
-    "owner": "itsoso"
+    "owner": "itsoso",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398"
+    }
   }
 }
