@@ -35,9 +35,13 @@ export default function HistorySidebar({
       (c.last_message && c.last_message.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  // 同名 pinned 条目按 updated_at 倒序, 让今天的"每日健康简报"永远排第一
+  const byNewest = (a: Conversation, b: Conversation) =>
+    (b.updated_at || '').localeCompare(a.updated_at || '');
+
   const sorted = [
-    ...filtered.filter((c) => c.title === '每日健康简报'),
-    ...filtered.filter((c) => c.title === '每周健康周报'),
+    ...filtered.filter((c) => c.title === '每日健康简报').sort(byNewest),
+    ...filtered.filter((c) => c.title === '每周健康周报').sort(byNewest),
     ...filtered.filter((c) => !PINNED_TITLES.includes(c.title)),
   ];
 
