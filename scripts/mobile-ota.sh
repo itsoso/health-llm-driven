@@ -21,7 +21,8 @@ echo "==> EAS Update → channel=${CHANNEL}"
 echo "    message: ${MESSAGE}"
 echo ""
 
-npx eas-cli update --branch "${CHANNEL}" --message "${MESSAGE}" --non-interactive
+# 不打 web bundle (react-native-maps 不支持 web)
+npx eas-cli update --branch "${CHANNEL}" --message "${MESSAGE}" --platform ios --non-interactive
 
 echo ""
 echo "✓ 推送完成. 设备下次冷启 (或后台 30s+) 会自动拉取新 bundle."
