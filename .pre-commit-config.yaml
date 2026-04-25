@@ -1,0 +1,31 @@
+# Pre-commit hooks. 安装一次即可:
+#   pip install pre-commit
+#   pre-commit install
+#
+# 之后每次 git commit 自动跑这些检查. 失败则阻止 commit.
+# 手动跑全部: pre-commit run --all-files
+# 跳过单次: git commit --no-verify
+
+repos:
+  # ── 通用卫生 ──────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+        exclude: '\.md$'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      - id: check-json
+        exclude: 'tsconfig.*\.json|\.vscode/'
+
+  # ── Backend (Python) — Ruff lint (不自动修复, 让开发者手动看) ──
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        files: ^backend/app/
+        # 只 warn 已知问题, 不阻塞 commit
+        args: [--exit-zero]
