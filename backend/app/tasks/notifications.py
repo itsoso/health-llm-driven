@@ -676,23 +676,26 @@ def send_morning_health_summary():
 # 工具函数：写入 OpenClaw "每日健康简报" 对话
 # ---------------------------------------------------------------------------
 
-BRIEFING_CONVERSATION_TITLE = "每日健康简报"
+BRIEFING_CONVERSATION_TITLE = "每日健康简报"  # 历史复用条目的旧标题（向后兼容查询用）
 
 
-def _get_or_create_briefing_conversation(db, user_id: int):
-    """获取或创建用户的「每日健康简报」对话"""
+def _briefing_title_for(target_date: date) -> str:
+    """生成当日简报标题：每日健康简报 · 04-25"""
+    return f"{BRIEFING_CONVERSATION_TITLE} · {target_date.strftime('%m-%d')}"
+
+
+def _get_or_create_briefing_conversation(db, user_id: int, target_date: date):
+    """获取或创建用户当天的「每日健康简报」对话（每天独立一条）"""
     from app.models.openclaw import OpenClawConversation
 
+    title = _briefing_title_for(target_date)
     conv = db.query(OpenClawConversation).filter(
         OpenClawConversation.user_id == user_id,
-        OpenClawConversation.title == BRIEFING_CONVERSATION_TITLE,
+        OpenClawConversation.title == title,
     ).first()
 
     if not conv:
-        conv = OpenClawConversation(
-            user_id=user_id,
-            title=BRIEFING_CONVERSATION_TITLE,
-        )
+        conv = OpenClawConversation(user_id=user_id, title=title)
         db.add(conv)
         db.commit()
         db.refresh(conv)
@@ -700,11 +703,11 @@ def _get_or_create_briefing_conversation(db, user_id: int):
     return conv
 
 
-def _write_briefing_message(db, user_id: int, content: str):
-    """将日报内容作为 assistant 消息写入「每日健康简报」对话"""
+def _write_briefing_message(db, user_id: int, content: str, target_date: date):
+    """将日报内容作为 assistant 消息写入当日「每日健康简报」对话"""
     from app.models.openclaw import OpenClawMessage
 
-    conv = _get_or_create_briefing_conversation(db, user_id)
+    conv = _get_or_create_briefing_conversation(db, user_id, target_date)
     msg = OpenClawMessage(
         conversation_id=conv.id,
         role="assistant",
@@ -907,7 +910,7 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
                 f"今日 Garmin 数据尚未同步，简报将在数据到位后更新。\n\n"
                 f"如需手动同步，可以在 AI 助手中发送「同步 Garmin」。"
             )
-            _write_briefing_message(db, user_id, placeholder)
+            _write_briefing_message(db, user_id, placeholder, target_date)
             return
 
         # 2. 7 日 HRV 均值（用于比较）
@@ -1066,7 +1069,7 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
             logger.warning(f"[每日简报] 用户 {user_id} AI 叙事生成失败（不影响简报）: {e}")
 
         # 写入对话
-        _write_briefing_message(db, user_id, briefing_md)
+        _write_briefing_message(db, user_id, briefing_md, target_date)
         logger.info(f"[每日简报] 用户 {user_id} 简报已写入对话")
 
 

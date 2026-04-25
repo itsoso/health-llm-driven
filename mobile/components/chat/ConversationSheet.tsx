@@ -21,16 +21,18 @@ export default function ConversationSheet({
   visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
 }: Props) {
-  const PINNED_TITLES = ['每日健康简报', '每周健康周报'];
   const titleOf = (c: any) => (c?.title || '').trim();
+  const isBriefing = (t: string) => t === '每日健康简报' || t.startsWith('每日健康简报 ');
+  const isWeekly = (t: string) => t === '每周健康周报' || t.startsWith('每周健康周报 ');
+  const isPinned = (t: string) => isBriefing(t) || isWeekly(t);
   const byNewest = (a: any, b: any) =>
     ((b.updated_at || b.created_at || '') as string).localeCompare(
       (a.updated_at || a.created_at || '') as string,
     );
   const sortedConversations = [
-    ...conversations.filter((c: any) => titleOf(c) === '每日健康简报').sort(byNewest),
-    ...conversations.filter((c: any) => titleOf(c) === '每周健康周报').sort(byNewest),
-    ...conversations.filter((c: any) => !PINNED_TITLES.includes(titleOf(c))),
+    ...conversations.filter((c: any) => isBriefing(titleOf(c))).sort(byNewest),
+    ...conversations.filter((c: any) => isWeekly(titleOf(c))).sort(byNewest),
+    ...conversations.filter((c: any) => !isPinned(titleOf(c))),
   ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>

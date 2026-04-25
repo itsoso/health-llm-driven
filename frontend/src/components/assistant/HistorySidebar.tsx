@@ -14,7 +14,11 @@ interface HistorySidebarProps {
   onShare: (convId: number) => void;
 }
 
-const PINNED_TITLES = ['每日健康简报', '每周健康周报'];
+const BRIEFING_PREFIX = '每日健康简报';
+const WEEKLY_PREFIX = '每周健康周报';
+const isBriefingTitle = (t: string) => t === BRIEFING_PREFIX || t.startsWith(BRIEFING_PREFIX + ' ');
+const isWeeklyTitle = (t: string) => t === WEEKLY_PREFIX || t.startsWith(WEEKLY_PREFIX + ' ');
+const isPinned = (t: string) => isBriefingTitle(t) || isWeeklyTitle(t);
 
 export default function HistorySidebar({
   conversations,
@@ -40,9 +44,9 @@ export default function HistorySidebar({
     (b.updated_at || '').localeCompare(a.updated_at || '');
 
   const sorted = [
-    ...filtered.filter((c) => c.title === '每日健康简报').sort(byNewest),
-    ...filtered.filter((c) => c.title === '每周健康周报').sort(byNewest),
-    ...filtered.filter((c) => !PINNED_TITLES.includes(c.title)),
+    ...filtered.filter((c) => isBriefingTitle(c.title)).sort(byNewest),
+    ...filtered.filter((c) => isWeeklyTitle(c.title)).sort(byNewest),
+    ...filtered.filter((c) => !isPinned(c.title)),
   ];
 
   const totalPages = Math.ceil(sorted.length / itemsPerPage);
@@ -99,8 +103,8 @@ export default function HistorySidebar({
         ) : (
           <div className="space-y-1.5">
             {paginated.map((conv) => {
-              const isBriefing = conv.title === '每日健康简报';
-              const isWeekly = conv.title === '每周健康周报';
+              const isBriefing = isBriefingTitle(conv.title);
+              const isWeekly = isWeeklyTitle(conv.title);
               const isActive = conv.id === currentConversationId;
               return (
                 <button
