@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getNightAnalysis,
   reanalyzeNight,
+  confirmNoAlcohol,
   getInsights,
   getNightlyTimeseries,
   SpO2NightAnalysis,
@@ -43,6 +44,16 @@ export function useReanalyzeNight() {
     onSuccess: (_data, nightDate) => {
       qc.invalidateQueries({ queryKey: ['spo2-analysis', nightDate] });
       qc.invalidateQueries({ queryKey: ['spo2-insights'] });
+    },
+  });
+}
+
+export function useConfirmNoAlcohol() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (nightDate: string) => confirmNoAlcohol(nightDate),
+    onSuccess: (_data, nightDate) => {
+      qc.invalidateQueries({ queryKey: ['spo2-analysis', nightDate] });
     },
   });
 }

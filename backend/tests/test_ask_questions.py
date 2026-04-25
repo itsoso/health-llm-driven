@@ -54,10 +54,20 @@ class TestAlcoholGap:
         qs = _compute_ask_questions(_night(), ctx)
         assert not any('饮酒' in q for q in qs)
 
-    def test_zero_alcohol_still_asks(self):
+    def test_zero_alcohol_is_explicit_no_ask(self):
+        """alcohol_units=0.0 表示"用户明确说没喝"（占位 record），不再问。"""
+        ctx = _ctx(diet_records=[
+            {'food_items': '（已确认无饮酒）', 'meal_type': 'snack',
+             'meal_time': None, 'alcohol_units': 0.0}
+        ])
+        qs = _compute_ask_questions(_night(), ctx)
+        assert not any('饮酒' in q for q in qs)
+
+    def test_null_alcohol_asks(self):
+        """有 diet_record 但 alcohol_units 未设（None），仍要问。"""
         ctx = _ctx(diet_records=[
             {'food_items': '米饭', 'meal_type': 'dinner',
-             'meal_time': None, 'alcohol_units': 0.0}
+             'meal_time': None, 'alcohol_units': None}
         ])
         qs = _compute_ask_questions(_night(), ctx)
         assert any('饮酒' in q for q in qs)

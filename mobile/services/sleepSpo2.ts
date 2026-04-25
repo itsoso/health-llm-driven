@@ -72,6 +72,13 @@ export async function reanalyzeNight(nightDate: string): Promise<SpO2NightAnalys
   return data;
 }
 
+export async function confirmNoAlcohol(nightDate: string): Promise<{ ok: boolean; created: boolean; id: number }> {
+  const { data } = await api.post('/sleep/spo2/confirm-no-alcohol', null, {
+    params: { night_date: nightDate },
+  });
+  return data;
+}
+
 export async function getInsights(weeks = 4): Promise<SpO2Insights> {
   const { data } = await api.get<SpO2Insights>('/sleep/spo2/insights', {
     params: { weeks },

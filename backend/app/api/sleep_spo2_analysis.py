@@ -279,11 +279,13 @@ def _compute_ask_questions(night: NightAnalysis, ctx: NightContext) -> List[str]
 
     questions: List[str] = []
 
-    # 饮酒缺口
-    has_alcohol_signal = any(
-        float(d.get('alcohol_units') or 0) > 0 for d in ctx.diet_records
+    # 饮酒缺口：只要有一条 diet_record 显式记录了 alcohol_units（0 或 >0），就不再问
+    # 0 = 用户明确说没喝 (占位) 或 MealForm 没填（走估算为 0）
+    # None = 尚未录入
+    alcohol_recorded = any(
+        d.get('alcohol_units') is not None for d in ctx.diet_records
     )
-    if not has_alcohol_signal:
+    if not alcohol_recorded:
         questions.append("昨晚是否饮酒？酒精会松弛上气道，是夜间血氧下降的常见诱因。")
 
     # 异丙托溴铵漏录
@@ -367,6 +369,40 @@ def reanalyze_night(
 ) -> NightAnalysisOut:
     """与 GET /analysis 行为等价（analyze_night 本身幂等，每次重跑）。"""
     return get_night_analysis(night_date=night_date, current_user=current_user, db=db)
+
+
+@router.post("/confirm-no-alcohol")
+def confirm_no_alcohol(
+    night_date: date = Query(..., description="确认哪夜未饮酒 YYYY-MM-DD"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """用户明确回答"昨晚没喝酒"时调用 —— 写一条占位 DietRecord(alcohol_units=0)
+    让 rule_alcohol 不再触发 + ask_questions 不再问。
+
+    幂等：当日已有 alcohol_units=0 占位则不重复写。
+    """
+    from app.models.daily_health import DietRecord
+    existing = db.query(DietRecord).filter(
+        DietRecord.user_id == current_user.id,
+        DietRecord.record_date == night_date,
+        DietRecord.food_items == "（已确认无饮酒）",
+    ).first()
+    if existing:
+        return {"ok": True, "created": False, "id": existing.id}
+
+    rec = DietRecord(
+        user_id=current_user.id,
+        record_date=night_date,
+        meal_type="snack",
+        food_items="（已确认无饮酒）",
+        alcohol_units=0.0,
+        notes="auto-confirmed via ask_questions",
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return {"ok": True, "created": True, "id": rec.id}
 
 
 @router.get("/insights", response_model=InsightsOut)

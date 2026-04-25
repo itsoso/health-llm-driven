@@ -11,7 +11,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import SpO2AnalysisChart from '@/components/sleep/SpO2AnalysisChart';
-import { useNightAnalysis, useNightTimeseries, useReanalyzeNight } from '@/hooks/useSpo2Analysis';
+import { useNightAnalysis, useNightTimeseries, useReanalyzeNight, useConfirmNoAlcohol } from '@/hooks/useSpo2Analysis';
 import { SpO2Correlation } from '@/services/sleepSpo2';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
@@ -51,6 +51,7 @@ export default function SleepSpo2AnalysisScreen() {
   const analysisQ = useNightAnalysis(selectedDate);
   const tsQ = useNightTimeseries(selectedDate, 'spo2,hr,respiration,sleep_stage');
   const reanalyzeM = useReanalyzeNight();
+  const confirmNoAlcoholM = useConfirmNoAlcohol();
 
   const analysis = analysisQ.data;
   const ts = tsQ.data;
@@ -201,18 +202,44 @@ export default function SleepSpo2AnalysisScreen() {
               <View style={styles.askCard}>
                 <Text style={txt.askTitle}>❓ 帮我补全这些信息</Text>
                 <Text style={txt.askSub}>当夜确认有低氧/事件，但缺关键背景。补一下能让分析更准。</Text>
-                {analysis.ask_questions.map((q, i) => (
-                  <View key={i} style={styles.askRow}>
-                    <Text style={txt.askText}>{q}</Text>
-                  </View>
-                ))}
-                <TouchableOpacity
-                  style={styles.askGoBtn}
-                  onPress={() => router.push('/diet')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={txt.askGoText}>去补录 →</Text>
-                </TouchableOpacity>
+                {analysis.ask_questions.map((q, i) => {
+                  const isAlcohol = q.includes('饮酒');
+                  const isIpra = q.includes('异丙托溴铵');
+                  const isWorkout = q.includes('运动');
+                  return (
+                    <View key={i} style={styles.askItem}>
+                      <Text style={txt.askText}>{q}</Text>
+                      <View style={styles.askBtnRow}>
+                        {isAlcohol ? (
+                          <TouchableOpacity
+                            style={[styles.askChip, styles.askChipPrimary]}
+                            onPress={() => {
+                              Haptics.selectionAsync();
+                              confirmNoAlcoholM.mutate(selectedDate);
+                            }}
+                            disabled={confirmNoAlcoholM.isPending}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={txt.askChipPrimary}>没喝</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        <TouchableOpacity
+                          style={styles.askChip}
+                          onPress={() => {
+                            if (isIpra) router.push('/(tabs)/record');
+                            else if (isWorkout) router.push('/workout-list');
+                            else router.push('/diet');
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={txt.askChipSecondary}>
+                            {isIpra ? '去打卡 →' : isWorkout ? '去记录 →' : '补录 →'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             ) : null}
 
@@ -383,6 +410,17 @@ const styles = StyleSheet.create({
     borderLeftColor: '#F97316',
   },
   askRow: { marginTop: 8 },
+  askItem: {
+    marginTop: 10, paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FED7AA',
+  },
+  askBtnRow: { flexDirection: 'row', gap: 8, marginTop: 8, justifyContent: 'flex-end' },
+  askChip: {
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: radii.full, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#F97316',
+  },
+  askChipPrimary: { backgroundColor: '#F97316', borderColor: '#F97316' },
   askGoBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
@@ -423,6 +461,8 @@ const txt = {
   askSub: { fontSize: 12, color: '#9A3412', marginTop: 4 } as TextStyle,
   askText: { fontSize: 13, color: '#7C2D12', lineHeight: 19 } as TextStyle,
   askGoText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
+  askChipPrimary: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
+  askChipSecondary: { fontSize: 13, fontWeight: '600', color: '#F97316' } as TextStyle,
   body: { fontSize: 14, color: colors.labelPrimary } as TextStyle,
   caption: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
   sumLabel: { fontSize: 11, color: colors.labelSecondary, marginBottom: 4 } as TextStyle,
