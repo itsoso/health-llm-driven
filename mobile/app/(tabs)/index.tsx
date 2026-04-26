@@ -14,13 +14,16 @@ import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
 import TodayCoachPanel from '@/components/dashboard/TodayCoachPanel';
+import AgentAgendaPanel from '@/components/dashboard/AgentAgendaPanel';
 import ChatInputBar from '@/components/chat/ChatInputBar';
 import ConversationSheet from '@/components/chat/ConversationSheet';
 import BrandCircle from '@/components/chat/BrandCircle';
 import ChatBubble from '@/components/chat/ChatBubble';
 import { useChatEngine, type UIMessage } from '@/hooks/useChatEngine';
 import { useTodayCoach } from '@/hooks/useTodayCoach';
+import { useAgentAgenda } from '@/hooks/useAgentAgenda';
 import type { TodayCoachFocus } from '@/services/todayCoach';
+import type { AgentAgendaItem } from '@/services/agentAgenda';
 import { invalidateHealthSnapshot, queryKeys } from '@/lib/queryKeys';
 import { colors, spacing, radii } from '@/constants/theme';
 
@@ -49,6 +52,7 @@ export default function HomeScreen() {
   const { data: profileData } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const { data: forecastData } = useQuery({ queryKey: queryKeys.forecast, queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
   const todayCoach = useTodayCoach();
+  const agentAgenda = useAgentAgenda();
 
   const contextData = useMemo(() => ({
     garmin: Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null,
@@ -101,6 +105,10 @@ export default function HomeScreen() {
     }
     handleSend('今天健康如何？给我一份简报', null);
   }, [handleSend, router]);
+
+  const handleAgendaItem = useCallback((item: AgentAgendaItem) => {
+    if (item.route) router.push(item.route as any);
+  }, [router]);
 
   // ── Render message ──
   const renderMessage = useCallback(({ item }: { item: UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' } }) => {
@@ -178,6 +186,11 @@ export default function HomeScreen() {
         focus={todayCoach.data}
         isLoading={todayCoach.isLoading}
         onAction={handleTodayCoachAction}
+      />
+
+      <AgentAgendaPanel
+        agenda={agentAgenda.data}
+        onOpenItem={handleAgendaItem}
       />
 
       {criticalAlerts.length > 0 && (
