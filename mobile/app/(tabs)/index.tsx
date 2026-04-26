@@ -49,7 +49,7 @@ export default function HomeScreen() {
   const { data: weatherData } = useQuery({ queryKey: queryKeys.weather, queryFn: () => api.get('/environment/weather').then(r => r.data), staleTime: 300_000 });
   const { data: aqiData } = useQuery({ queryKey: queryKeys.aqi, queryFn: () => api.get('/environment/air-quality').then(r => r.data), staleTime: 300_000 });
   const { data: safetyData } = useQuery({ queryKey: queryKeys.safety, queryFn: getSafetyReport, staleTime: 300_000 });
-  const { data: profileData } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
+  const { data: profileData } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const { data: forecastData } = useQuery({ queryKey: queryKeys.forecast, queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
   const todayCoach = useTodayCoach();
   const agentAgenda = useAgentAgenda();

@@ -12,6 +12,7 @@ export const queryKeys = {
   todayCoachRoot: ['todayCoach'] as const,
   agentAgendaRoot: ['agentAgenda'] as const,
   actionCards: ['actionCards'] as const,
+  profile: ['profile'] as const,
 } as const;
 
 export const healthSnapshotQueryKeys = [

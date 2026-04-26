@@ -8,7 +8,7 @@ import * as Haptics from 'expo-haptics';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useBiometricLock } from '@/hooks/useBiometricLock';
-import { invalidateHealthSnapshot } from '@/lib/queryKeys';
+import { invalidateHealthSnapshot, queryKeys } from '@/lib/queryKeys';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 export default function SettingsScreen() {
@@ -18,7 +18,7 @@ export default function SettingsScreen() {
   const [syncing, setSyncing] = useState(false);
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
-  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
+  const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
   const city = profile?.manual_location?.city || profile?.detected_location?.city || profile?.city || '未设置';
 
   const { data: garminStatus, refetch: refetchGarminStatus } = useQuery({
