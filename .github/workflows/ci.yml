@@ -20,13 +20,28 @@ jobs:
         working-directory: backend
         run: pip install -r requirements.txt
 
+      - name: Lint (ruff, non-blocking warnings)
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          pip install ruff
+          # 现有 776 个 lint 警告, 暂不阻塞 CI; 只暴露给 PR review
+          ruff check app/ --output-format=github
+
       - name: Run tests
         working-directory: backend
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: sqlite:///:memory:
+          DATABASE_URL: "sqlite:///:memory:"
         run: pytest tests/ -q --no-cov --tb=short -x
+
+      - name: Check CLAUDE.md doc drift
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+        run: python scripts/check_doc_drift.py
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -42,6 +57,10 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Test (vitest)
+        working-directory: frontend
+        run: npm run test
 
       - name: Build
         working-directory: frontend
@@ -69,3 +88,7 @@ jobs:
       - name: TypeScript check
         working-directory: mobile
         run: npx tsc --noEmit
+
+      - name: Test (jest)
+        working-directory: mobile
+        run: npx jest --silent --passWithNoTests

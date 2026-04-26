@@ -5,7 +5,6 @@ import logging
 from datetime import datetime, timedelta
 from app.celery_app import celery_app
 from app.database import SessionLocal
-from app.models.notification import Notification
 from app.utils.timezone import get_china_now
 
 logger = logging.getLogger(__name__)
@@ -22,10 +21,10 @@ def cleanup_expired_data():
         now = get_china_now()
 
         # 清理90天前的已读通知
+        from app.models.notification import NotificationLog
         cutoff_date = now - timedelta(days=90)
-        deleted_notifications = db.query(Notification).filter(
-            Notification.is_read == True,
-            Notification.sent_at < cutoff_date
+        deleted_notifications = db.query(NotificationLog).filter(
+            NotificationLog.sent_at < cutoff_date
         ).delete()
 
         db.commit()
@@ -68,3 +67,20 @@ def health_check():
         logger.error(f"Redis 检查失败: {e}")
 
     return checks
+
+
+@celery_app.task(time_limit=600, name="app.tasks.maintenance.rebuild_knowledge_index")
+def rebuild_knowledge_index():
+    """每周一 4:00 重建得到 wiki 知识库索引 (force=True).
+
+    防止本地 wiki 更新后, ChromaDB 索引仍是旧快照导致 KnowledgeLibrarian
+    检索到过期内容.
+    """
+    try:
+        from app.agents.knowledge_librarian.indexer import build_index
+        result = build_index(force=True)
+        logger.info(f"[Knowledge Index] 重建完成: {result}")
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"[Knowledge Index] 重建失败: {e}", exc_info=True)
+        return {"status": "error", "error": str(e)}

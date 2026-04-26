@@ -181,6 +181,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.intervention_assessment.assess_active_interventions",
         "schedule": crontab(hour=11, minute=0, day_of_week=1),
     },
+
+    # 每周一 4:00 重建 dedao wiki 知识库索引 (force=True)
+    # 防止 wiki 内容更新后 ChromaDB 索引漂移
+    "rebuild-knowledge-index": {
+        "task": "app.tasks.maintenance.rebuild_knowledge_index",
+        "schedule": crontab(hour=4, minute=0, day_of_week=1),
+    },
 }
 
 logger.info("Celery 配置加载完成")

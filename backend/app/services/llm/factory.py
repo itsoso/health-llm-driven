@@ -146,7 +146,8 @@ def get_llm_provider() -> LLMProvider:
     """
     global _provider_instance
     if _provider_instance is None:
-        _provider_instance = create_llm_provider()
+        from app.services.llm.usage_tracker import wrap_provider
+        _provider_instance = wrap_provider(create_llm_provider())
     return _provider_instance
 
 

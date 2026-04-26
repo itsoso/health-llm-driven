@@ -1,0 +1,166 @@
+"""
+LLM 用量/成本追踪.
+
+设计:
+- 用 tiktoken 估算 prompt + completion token 数 (provider 不返回 usage 时的回退)
+- 价格表硬编码常用模型 ($/M tokens)
+- 写入 llm_usage_logs (旁路, fail-soft, 出错只 log 不抛)
+- 通过 wrap_provider() 把任意 LLMProvider.chat 包一层, 调用方零改动
+"""
+from __future__ import annotations
+
+import logging
+import time
+import json
+from contextvars import ContextVar
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# 价格表: $/1M tokens (input, output). 找不到的模型回退到 0.0 (只算 token 不算钱).
+# 来源: openai pricing 2026-04, qwen/openclaw 内部估算.
+_MODEL_PRICING: Dict[str, tuple] = {
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4-turbo": (10.00, 30.00),
+    "qwen-vl-max": (1.50, 4.50),
+    "openclaw:main": (0.20, 0.80),  # 估算
+    "openclaw/main": (0.20, 0.80),
+    "llama3": (0.0, 0.0),  # 本地 ollama 不计费
+}
+
+# 调用方上下文 — orchestrator / specialist / endpoint 可以通过 set_caller() 标注自己
+_caller_ctx: ContextVar[Optional[str]] = ContextVar("llm_caller", default=None)
+_user_id_ctx: ContextVar[Optional[int]] = ContextVar("llm_user_id", default=None)
+
+
+def set_caller(caller: str, user_id: Optional[int] = None) -> None:
+    """在调用 LLM 前调用, 标注本次调用归属哪个业务."""
+    _caller_ctx.set(caller)
+    if user_id is not None:
+        _user_id_ctx.set(user_id)
+
+
+def _estimate_tokens(text: str, model: str = "gpt-4o-mini") -> int:
+    """tiktoken 估算 token 数, 失败回退到 len(text) / 4."""
+    if not text:
+        return 0
+    try:
+        import tiktoken
+        try:
+            enc = tiktoken.encoding_for_model(model)
+        except KeyError:
+            enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, len(text) // 4)
+
+
+def _messages_to_text(messages: List[Dict[str, Any]]) -> str:
+    """把 messages 拼成估算 token 用的纯文本."""
+    parts = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            # vision messages: [{type: text, text: ...}, {type: image_url, ...}]
+            for c in content:
+                if isinstance(c, dict) and c.get("type") == "text":
+                    parts.append(c.get("text", ""))
+        elif content is not None:
+            parts.append(json.dumps(content, ensure_ascii=False))
+    return "\n".join(parts)
+
+
+def _price_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    pricing = _MODEL_PRICING.get(model) or _MODEL_PRICING.get(model.split(":")[0]) or (0.0, 0.0)
+    in_price, out_price = pricing
+    return (prompt_tokens * in_price + completion_tokens * out_price) / 1_000_000
+
+
+def record_usage(
+    provider: str,
+    model: str,
+    prompt_text: str,
+    completion_text: str,
+    *,
+    caller: Optional[str] = None,
+    user_id: Optional[int] = None,
+    latency_ms: Optional[int] = None,
+    success: bool = True,
+) -> None:
+    """写一条 LlmUsageLog (旁路, 失败只 log)."""
+    try:
+        from app.database import SessionLocal
+        from app.models.llm_usage import LlmUsageLog
+
+        prompt_tokens = _estimate_tokens(prompt_text, model)
+        completion_tokens = _estimate_tokens(completion_text, model)
+        cost = _price_usd(model, prompt_tokens, completion_tokens)
+
+        with SessionLocal() as db:
+            row = LlmUsageLog(
+                provider=provider,
+                model=model,
+                caller=caller or _caller_ctx.get() or "unknown",
+                user_id=user_id if user_id is not None else _user_id_ctx.get(),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                cost_usd=cost,
+                latency_ms=latency_ms,
+                success=1 if success else 0,
+            )
+            db.add(row)
+            db.commit()
+    except Exception as e:
+        logger.warning(f"[LLM Usage] 写日志失败 (旁路, 不影响业务): {e}")
+
+
+def wrap_provider(provider):
+    """
+    把 LLMProvider 实例的 chat() 包一层 usage 追踪.
+    返回原 provider (就地修改 chat 方法).
+    """
+    if getattr(provider, "_usage_wrapped", False):
+        return provider
+
+    original_chat = getattr(provider, "chat", None)
+    if original_chat is None:
+        # Mock / 测试 provider 没实现 chat — 直接跳过
+        return provider
+
+    async def chat_with_tracking(messages, model=None, temperature=0.7, max_tokens=2000, stream=False, **kwargs):
+        if stream:
+            # 流式不追踪 (会破坏 AsyncIterator 语义); 流式调用本身少
+            return await original_chat(messages, model=model, temperature=temperature,
+                                       max_tokens=max_tokens, stream=True, **kwargs)
+        start = time.monotonic()
+        success = True
+        result = ""
+        try:
+            result = await original_chat(messages, model=model, temperature=temperature,
+                                         max_tokens=max_tokens, stream=False, **kwargs)
+            return result
+        except Exception:
+            success = False
+            raise
+        finally:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            actual_model = model or getattr(provider, "default_model", "unknown")
+            prompt_text = _messages_to_text(messages)
+            # result 可能是 str 或 dict (tool_calls), 后者只记 0 completion tokens
+            completion_text = result if isinstance(result, str) else ""
+            record_usage(
+                provider=provider.provider_name,
+                model=actual_model,
+                prompt_text=prompt_text,
+                completion_text=completion_text,
+                latency_ms=latency_ms,
+                success=success,
+            )
+
+    provider.chat = chat_with_tracking
+    provider._usage_wrapped = True
+    return provider

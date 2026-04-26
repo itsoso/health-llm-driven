@@ -903,6 +903,38 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
         ).first()
 
         if not garmin:
+            # 检查最近 N 天内有几次缺数据 — 连续缺 ≥3 天就停止生成假简报, 改发一次"sync 可能挂了"提醒
+            from app.models.openclaw import OpenClawConversation, OpenClawMessage
+            recent_no_data_days = db.query(GarminData).filter(
+                GarminData.user_id == user_id,
+                GarminData.record_date >= target_date - timedelta(days=2),
+                GarminData.record_date <= target_date,
+            ).count()  # 0/1/2/3 = 最近 3 天内有几天有数据
+
+            if recent_no_data_days == 0:
+                # 最近 3 天 (含今天) 都没数据 — Garmin sync 大概率挂了
+                logger.warning(f"[每日简报] 用户 {user_id} 最近 3 天均无 Garmin 数据，跳过占位简报")
+                # 检查是否已经发过 sync 中断提醒, 避免每天重发
+                title = _briefing_title_for(target_date)
+                already_warned = db.query(OpenClawConversation).join(OpenClawMessage).filter(
+                    OpenClawConversation.user_id == user_id,
+                    OpenClawConversation.title == title,
+                    OpenClawMessage.content.like("%Garmin 同步可能中断%"),
+                ).first()
+                if not already_warned:
+                    warn_msg = (
+                        f"⚠️ **Garmin 同步可能中断**\n\n"
+                        f"最近 3 天 ({target_date - timedelta(days=2)} 至 {target_date}) 都没有同步到 Garmin 数据，"
+                        f"简报功能将暂停, 直到数据恢复.\n\n"
+                        f"可能原因:\n"
+                        f"- 手表/手机蓝牙断开\n"
+                        f"- Garmin Connect 账号需要重新登录\n"
+                        f"- 服务器 sync 任务异常\n\n"
+                        f"请在 AI 助手中发送「同步 Garmin」手动触发, 或检查 Garmin Connect 登录状态."
+                    )
+                    _write_briefing_message(db, user_id, warn_msg, target_date)
+                return
+
             logger.info(f"[每日简报] 用户 {user_id} 无 {target_date} Garmin 数据，写占位简报")
             date_str = target_date.strftime("%-m月%-d日")
             placeholder = (

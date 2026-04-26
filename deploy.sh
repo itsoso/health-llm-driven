@@ -277,8 +277,10 @@ deploy_backend() {
         systemctl restart celery-worker celery-beat && \
         echo '同步 Skills 到 OpenClaw Gateway...' && \
         python3 -c '
+import sys
 from app.services.openclaw_skills_service import openclaw_skills_service
 from pathlib import Path
+ok, fail = [], []
 skills_dir = Path(\"skills\")
 if skills_dir.exists():
     for d in sorted(skills_dir.iterdir()):
@@ -288,10 +290,27 @@ if skills_dir.exists():
                 content = skill_md.read_text()
                 openclaw_skills_service.create_or_update_skill(name=d.name, skill_md_content=content, enabled=True)
                 print(f\"  ✓ {d.name}\")
+                ok.append(d.name)
             except Exception as e:
                 print(f\"  ✗ {d.name}: {e}\")
-' 2>&1 || echo '  ⚠ Skills 同步跳过（Gateway 可能不可用）'
+                fail.append((d.name, str(e)))
+total = len(ok) + len(fail)
+print(f\"\\n[Skills] {len(ok)}/{total} synced, {len(fail)} failed\")
+if fail:
+    half = total / 2 if total else 0
+    if len(fail) >= 5 or len(fail) >= half:
+        print(f\"::error::{len(fail)} skills 同步失败 (>=5 或 >=50%) — 部署失败\")
+        sys.exit(2)
+    else:
+        print(f\"::warning::{len(fail)} 个 skill 失败但低于阈值, 部署继续 (失败列表见上)\")
+'
     "
+    SKILL_EXIT=$?
+    if [ $SKILL_EXIT -eq 2 ]; then
+        rollback_deploy
+        print_error "Skills 大规模同步失败，已自动回滚"
+        exit 1
+    fi
 
     # 4. 部署后验证（快速失败）
     if ! verify_deployment; then

@@ -21,6 +21,7 @@ from app.config import settings
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - OpenClaw Native 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
+import app.models.llm_usage  # noqa: F401 - LLM 用量追踪表
 import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 
 # 设置日志，使用北京时间
