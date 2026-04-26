@@ -1,14 +1,14 @@
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import * as SecureStore from 'expo-secure-store';
-import api from './api';
+import api, { TOKEN_KEY } from './api';
 
 const TASK_NAME = 'GARMIN_SYNC';
 const LAST_SYNC_KEY = 'garmin_last_sync';
 
 TaskManager.defineTask(TASK_NAME, async () => {
   try {
-    const token = await SecureStore.getItemAsync('auth_token');
+    const token = await SecureStore.getItemAsync(TOKEN_KEY);
     if (!token) return BackgroundFetch.BackgroundFetchResult.NoData;
 
     await api.post('/data-collection/garmin/me/sync', null, {

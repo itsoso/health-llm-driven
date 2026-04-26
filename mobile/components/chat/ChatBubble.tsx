@@ -1,8 +1,9 @@
 import React from 'react';
 import {
-  View, Text, TouchableOpacity, Image, StyleSheet, TextStyle,
+  View, Text, TouchableOpacity, StyleSheet, TextStyle,
   Alert, ActivityIndicator, ScrollView,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -58,7 +59,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
                   <Image
                     source={{ uri }}
                     style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid}
-                    resizeMode="cover"
+                    contentFit="cover"
                   />
                 </TouchableOpacity>
               ))}

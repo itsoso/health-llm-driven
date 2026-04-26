@@ -26,6 +26,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: '首页',
+          tabBarAccessibilityLabel: '首页，查看健康概览',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'sparkles' : 'sparkles-outline'} size={22} color={color} />
           ),
@@ -35,6 +36,7 @@ export default function TabLayout() {
         name="alerts"
         options={{
           title: '行动',
+          tabBarAccessibilityLabel: '行动，查看安全告警与今日建议',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'clipboard' : 'clipboard-outline'} size={22} color={color} />
           ),
@@ -44,6 +46,7 @@ export default function TabLayout() {
         name="record"
         options={{
           title: '记录',
+          tabBarAccessibilityLabel: '记录，快速打卡健康数据',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'grid' : 'grid-outline'} size={22} color={color} />
           ),

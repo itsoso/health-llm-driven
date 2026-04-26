@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, StyleSheet, Image,
+  View, Text, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, TextStyle,
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteConversation } from '@/services/chat';
@@ -54,7 +55,7 @@ export default function ChatScreen() {
         <Ionicons name="sparkles" size={18} color={colors.brand} />
         <Text style={txt.headerTitle}>AI 健康助理</Text>
         <View style={{ flex: 1 }} />
-        <TouchableOpacity onPress={chat.newChat} hitSlop={8}>
+        <TouchableOpacity onPress={chat.newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
           <Ionicons name="create-outline" size={20} color={colors.labelSecondary} />
         </TouchableOpacity>
         {chat.conversationId && chat.messages.length > 0 && (
@@ -66,7 +67,7 @@ export default function ChatScreen() {
                 chat.newChat();
               }},
             ]);
-          }} hitSlop={8} style={{ marginLeft: 12 }}>
+          }} hitSlop={8} style={{ marginLeft: 12 }} accessibilityLabel="删除当前对话" accessibilityRole="button">
             <Ionicons name="trash-outline" size={18} color={colors.red} />
           </TouchableOpacity>
         )}
@@ -110,7 +111,7 @@ export default function ChatScreen() {
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
           {viewingImage && (
-            <Image source={{ uri: viewingImage }} style={{ width: windowWidth - 32, height: windowHeight * 0.7 }} resizeMode="contain" />
+            <Image source={{ uri: viewingImage }} style={{ width: windowWidth - 32, height: windowHeight * 0.7 }} contentFit="contain" />
           )}
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
             <Ionicons name="close-circle" size={32} color="#fff" />

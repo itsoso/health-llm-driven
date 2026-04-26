@@ -78,7 +78,7 @@ export default function ActionsScreen() {
           </View>
           <Text style={txt.emptyTitle}>一切正常</Text>
           <Text style={txt.emptySub}>暂无待办行动，继续保持</Text>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, backgroundColor: colors.brandLight, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }} onPress={refetchAll}>
+          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, backgroundColor: colors.brandLight, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }} onPress={refetchAll} accessibilityLabel="刷新行动列表" accessibilityRole="button">
             <Ionicons name="refresh-outline" size={14} color={colors.brand} />
             <Text style={{ fontSize: 14, fontWeight: '500', color: colors.brand }}>刷新</Text>
           </TouchableOpacity>
@@ -136,7 +136,7 @@ function AlertRow({ alert }: { alert: SafetyAlert }) {
           <Text style={txt.alertMsg}>{alert.message}</Text>
           {alert.action && <Text style={txt.alertAction}>→ {alert.action}</Text>}
           {!explanation && (
-            <TouchableOpacity style={styles.aiBtn} onPress={async () => {
+            <TouchableOpacity style={styles.aiBtn} accessibilityLabel="让 AI 解读这条告警" accessibilityRole="button" onPress={async () => {
               setExplaining(true);
               try { const r = await explainAlert(alert.rule_id, alert.message); setExplanation(r.explanation); } catch { setExplanation('无法获取解读'); } finally { setExplaining(false); }
             }}>
@@ -164,7 +164,7 @@ function CardRow({ card, onComplete }: { card: ActionCard; onComplete: () => voi
   const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
 
   const renderRightAction = () => (
-    <TouchableOpacity style={styles.swipeAction} onPress={() => { swipeRef.current?.close(); onComplete(); }}>
+    <TouchableOpacity style={styles.swipeAction} accessibilityLabel="标记为已完成" accessibilityRole="button" onPress={() => { swipeRef.current?.close(); onComplete(); }}>
       <Ionicons name="checkmark-circle" size={20} color="#fff" />
       <Text style={{ fontSize: 12, color: '#fff', fontWeight: '600' }}>完成</Text>
     </TouchableOpacity>

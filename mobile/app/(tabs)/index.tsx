@@ -1,10 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, StyleSheet, Image,
+  View, Text, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, TextStyle,
   Alert, RefreshControl, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -226,7 +227,7 @@ export default function HomeScreen() {
             <Image
               source={{ uri: viewingImage }}
               style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
-              resizeMode="contain"
+              contentFit="contain"
             />
           )}
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>

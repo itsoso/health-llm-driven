@@ -2,8 +2,8 @@
 // 路由: /sleep-spo2-analysis?night_date=YYYY-MM-DD（缺省 = 昨天）
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, RefreshControl, TextStyle,
+  View, Text, ScrollView, TouchableOpacity,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,8 @@ import * as Haptics from 'expo-haptics';
 import SpO2AnalysisChart from '@/components/sleep/SpO2AnalysisChart';
 import { useNightAnalysis, useNightTimeseries, useReanalyzeNight, useConfirmNoAlcohol } from '@/hooks/useSpo2Analysis';
 import { SpO2Correlation } from '@/services/sleepSpo2';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
+import { styles, txt } from './sleep-spo2-analysis.styles';
 
 function yesterdayISO(): string {
   const d = new Date();
@@ -337,153 +338,3 @@ function OverlayBtn({ active, label, onPress }: { active: boolean; label: string
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  btn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  dateBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: spacing.sm,
-    gap: 16,
-  },
-  dateBtn: { padding: 4 },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
-  loading: { paddingVertical: 60, alignItems: 'center' },
-  summary: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  sumTile: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    alignItems: 'center',
-    ...shadows.subtle,
-  },
-  chartCard: {
-    backgroundColor: '#fff',
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    marginBottom: spacing.md,
-    ...shadows.subtle,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xs,
-    marginBottom: 4,
-  },
-  overlayBtns: { flexDirection: 'row', gap: 4 },
-  overlayBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#F3F4F6',
-  },
-  overlayBtnActive: { backgroundColor: colors.brand },
-  actionCard: {
-    backgroundColor: '#ECFDF5',
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderLeftWidth: 3,
-    borderLeftColor: '#10B981',
-  },
-  askCard: {
-    backgroundColor: '#FFF7ED',
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderLeftWidth: 3,
-    borderLeftColor: '#F97316',
-  },
-  askRow: { marginTop: 8 },
-  askItem: {
-    marginTop: 10, paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FED7AA',
-  },
-  askBtnRow: { flexDirection: 'row', gap: 8, marginTop: 8, justifyContent: 'flex-end' },
-  askChip: {
-    paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: radii.full, backgroundColor: '#fff',
-    borderWidth: 1, borderColor: '#F97316',
-  },
-  askChipPrimary: { backgroundColor: '#F97316', borderColor: '#F97316' },
-  askGoBtn: {
-    marginTop: 12,
-    alignSelf: 'flex-end',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#F97316',
-    borderRadius: radii.full,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-    gap: 8,
-    alignItems: 'flex-start',
-  },
-  findingCard: {
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderLeftWidth: 3,
-  },
-  findingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  noFindings: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-});
-
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  dateLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  sectionTitle: { fontSize: 15, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  askTitle: { fontSize: 15, fontWeight: '600', color: '#9A3412' } as TextStyle,
-  askSub: { fontSize: 12, color: '#9A3412', marginTop: 4 } as TextStyle,
-  askText: { fontSize: 13, color: '#7C2D12', lineHeight: 19 } as TextStyle,
-  askGoText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-  askChipPrimary: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-  askChipSecondary: { fontSize: 13, fontWeight: '600', color: '#F97316' } as TextStyle,
-  body: { fontSize: 14, color: colors.labelPrimary } as TextStyle,
-  caption: { fontSize: 12, color: colors.labelSecondary } as TextStyle,
-  sumLabel: { fontSize: 11, color: colors.labelSecondary, marginBottom: 4 } as TextStyle,
-  sumValue: { fontSize: 20, fontWeight: '700' } as TextStyle,
-  sumSub: { fontSize: 11, fontWeight: '400', color: colors.labelSecondary } as TextStyle,
-  findingSubject: { fontSize: 14, fontWeight: '600', flex: 1 } as TextStyle,
-  confidence: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  hypothesis: { fontSize: 13, color: colors.labelPrimary, marginTop: 4, lineHeight: 19 } as TextStyle,
-  action: { fontSize: 13, fontWeight: '500', marginTop: 8, lineHeight: 19 } as TextStyle,
-  overlayBtn: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
-  overlayBtnActive: { color: '#fff', fontWeight: '600' } as TextStyle,
-  actionNum: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#065F46',
-    minWidth: 18,
-  } as TextStyle,
-  actionText: {
-    fontSize: 13,
-    color: '#065F46',
-    flex: 1,
-    lineHeight: 19,
-  } as TextStyle,
-};

@@ -98,10 +98,10 @@ export default function RecordScreen() {
         {/* 7. Body + Diet (tabbed) */}
         <View style={styles.tabCard}>
           <View style={styles.tabHeader}>
-            <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'diet' && styles.tabBtnActive]} onPress={() => setBodyDietTab('diet')}>
+            <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'diet' && styles.tabBtnActive]} onPress={() => setBodyDietTab('diet')} accessibilityRole="tab" accessibilityState={{ selected: bodyDietTab === 'diet' }} accessibilityLabel="饮食营养">
               <Text style={[txt.tabText, bodyDietTab === 'diet' && txt.tabTextActive]}>饮食营养</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'body' && styles.tabBtnActive]} onPress={() => setBodyDietTab('body')}>
+            <TouchableOpacity style={[styles.tabBtn, bodyDietTab === 'body' && styles.tabBtnActive]} onPress={() => setBodyDietTab('body')} accessibilityRole="tab" accessibilityState={{ selected: bodyDietTab === 'body' }} accessibilityLabel="身体数据">
               <Text style={[txt.tabText, bodyDietTab === 'body' && txt.tabTextActive]}>身体数据</Text>
             </TouchableOpacity>
           </View>

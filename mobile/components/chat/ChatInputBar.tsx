@@ -1,8 +1,9 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  View, TextInput, TouchableOpacity, StyleSheet, Image, Text,
+  View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView, Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
