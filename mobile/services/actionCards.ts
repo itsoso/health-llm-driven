@@ -1,5 +1,6 @@
 import api from './api';
 import type { SafetyAlert } from './safety';
+import { normalizeInterventionDraft, type InterventionDraft } from './interventionDraft';
 
 export interface ActionCard {
   id: number;
@@ -103,4 +104,8 @@ export async function completeCard(id: number): Promise<ActionCard> {
 export async function createActionCard(input: ActionCardCreateInput): Promise<ActionCard> {
   const { data } = await api.post<ActionCard>('/action-cards', input);
   return data;
+}
+
+export async function createInterventionDraft(draft: InterventionDraft): Promise<ActionCard> {
+  return createActionCard(normalizeInterventionDraft(draft));
 }

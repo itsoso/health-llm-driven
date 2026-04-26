@@ -8,14 +8,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 
 import SpO2AnalysisChart from '@/components/sleep/SpO2AnalysisChart';
 import SleepExperimentCard from '@/components/sleep/SleepExperimentCard';
+import InterventionDraftSheet from '@/components/actions/InterventionDraftSheet';
 import { useNightAnalysis, useNightTimeseries, useReanalyzeNight, useConfirmNoAlcohol } from '@/hooks/useSpo2Analysis';
-import { buildSleepExperimentCardPayload, SpO2Correlation } from '@/services/sleepSpo2';
+import { SpO2Correlation } from '@/services/sleepSpo2';
 import { getSleepQuestionPrompt } from '@/services/dataHealth';
-import { createActionCard } from '@/services/actionCards';
+import { createInterventionDraft } from '@/services/actionCards';
+import { buildInterventionDraft, type InterventionDraft } from '@/services/interventionDraft';
+import { invalidateQueryKeys, queryKeys } from '@/lib/queryKeys';
 import { colors, spacing } from '@/constants/theme';
 import { styles, txt } from './sleep-spo2-analysis.styles';
 
@@ -48,11 +52,13 @@ const CATEGORY_ICON: Record<string, any> = {
 
 export default function SleepSpo2AnalysisScreen() {
   const router = useRouter();
+  const qc = useQueryClient();
   const params = useLocalSearchParams<{ night_date?: string }>();
   const [selectedDate, setSelectedDate] = useState(params.night_date || yesterdayISO());
   const [overlay, setOverlay] = useState<'hr' | 'respiration' | 'none'>('none');
   const [experimentStates, setExperimentStates] = useState<Record<string, 'queued' | 'done' | 'skipped'>>({});
   const [savingExperiment, setSavingExperiment] = useState<string | null>(null);
+  const [draftExperiment, setDraftExperiment] = useState<{ action: string; draft: InterventionDraft } | null>(null);
 
   const analysisQ = useNightAnalysis(selectedDate);
   const tsQ = useNightTimeseries(selectedDate, 'spo2,hr,respiration,sleep_stage');
@@ -83,12 +89,33 @@ export default function SleepSpo2AnalysisScreen() {
 
   const getExperimentState = (action: string) => experimentStates[`${selectedDate}:${action}`];
 
-  const tryExperimentTonight = async (action: string) => {
-    setSavingExperiment(action);
+  const tryExperimentTonight = (action: string) => {
     Haptics.selectionAsync();
+    setDraftExperiment({
+      action,
+      draft: buildInterventionDraft({
+        title: action.length > 18 ? action.slice(0, 18) : action,
+        advice: action,
+        sourceType: 'sleep_spo2',
+        sourceId: selectedDate,
+        metricHint: 'spo2_odi',
+        verificationDays: 1,
+      }),
+    });
+  };
+
+  const submitExperimentDraft = async (draft: InterventionDraft) => {
+    if (!draftExperiment) return;
+    setSavingExperiment(draftExperiment.action);
     try {
-      await createActionCard(buildSleepExperimentCardPayload(action, selectedDate));
-      setExperimentState(action, 'queued');
+      await createInterventionDraft(draft);
+      await invalidateQueryKeys(qc, [
+        queryKeys.actionCards,
+        queryKeys.todayCoachRoot,
+        queryKeys.agentAgendaRoot,
+      ]);
+      setExperimentState(draftExperiment.action, 'queued');
+      setDraftExperiment(null);
       Alert.alert('已加入行动', '明天可以回到这里复盘 ODI、最低血氧和事件数。');
     } catch {
       Alert.alert('创建失败', '睡眠实验行动保存失败，请稍后重试。');
@@ -339,6 +366,13 @@ export default function SleepSpo2AnalysisScreen() {
           </>
         )}
       </ScrollView>
+      <InterventionDraftSheet
+        visible={!!draftExperiment}
+        draft={draftExperiment?.draft ?? null}
+        isSaving={!!savingExperiment}
+        onClose={() => setDraftExperiment(null)}
+        onSubmit={submitExperimentDraft}
+      />
     </SafeAreaView>
   );
 }
