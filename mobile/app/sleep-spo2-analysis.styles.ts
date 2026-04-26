@@ -63,6 +63,7 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderLeftWidth: 3,
     borderLeftColor: '#10B981',
+    gap: spacing.sm,
   },
   askCard: {
     backgroundColor: '#FFF7ED',
@@ -72,7 +73,6 @@ export const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#F97316',
   },
-  askRow: { marginTop: 8 },
   askItem: {
     marginTop: 10, paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#FED7AA',
@@ -84,20 +84,6 @@ export const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#F97316',
   },
   askChipPrimary: { backgroundColor: '#F97316', borderColor: '#F97316' },
-  askGoBtn: {
-    marginTop: 12,
-    alignSelf: 'flex-end',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#F97316',
-    borderRadius: radii.full,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-    gap: 8,
-    alignItems: 'flex-start',
-  },
   findingCard: {
     borderRadius: radii.md,
     padding: spacing.md,
@@ -123,7 +109,6 @@ export const txt = {
   askTitle: { fontSize: 15, fontWeight: '600', color: '#9A3412' } as TextStyle,
   askSub: { fontSize: 12, color: '#9A3412', marginTop: 4 } as TextStyle,
   askText: { fontSize: 13, color: '#7C2D12', lineHeight: 19 } as TextStyle,
-  askGoText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
   askChipPrimary: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
   askChipSecondary: { fontSize: 13, fontWeight: '600', color: '#F97316' } as TextStyle,
   body: { fontSize: 14, color: colors.labelPrimary } as TextStyle,
@@ -137,16 +122,4 @@ export const txt = {
   action: { fontSize: 13, fontWeight: '500', marginTop: 8, lineHeight: 19 } as TextStyle,
   overlayBtn: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
   overlayBtnActive: { color: '#fff', fontWeight: '600' } as TextStyle,
-  actionNum: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#065F46',
-    minWidth: 18,
-  } as TextStyle,
-  actionText: {
-    fontSize: 13,
-    color: '#065F46',
-    flex: 1,
-    lineHeight: 19,
-  } as TextStyle,
 };

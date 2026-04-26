@@ -8,6 +8,7 @@ import * as Haptics from 'expo-haptics';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useBiometricLock } from '@/hooks/useBiometricLock';
+import { invalidateHealthSnapshot } from '@/lib/queryKeys';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 export default function SettingsScreen() {
@@ -33,10 +34,7 @@ export default function SettingsScreen() {
     try {
       await api.post('/data-collection/garmin/me/sync?days=1');
       Alert.alert('同步成功', 'Garmin 数据已更新');
-      qc.invalidateQueries({ queryKey: ['garminToday'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-      qc.invalidateQueries({ queryKey: ['healthScore'] });
-      qc.invalidateQueries({ queryKey: ['safety'] });
+      await invalidateHealthSnapshot(qc);
       refetchGarminStatus();
     } catch {
       Alert.alert('同步失败', '请稍后再试');

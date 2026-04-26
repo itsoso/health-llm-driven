@@ -2,6 +2,7 @@
 // 调 /sleep/spo2/analysis 和 /sleep/spo2/insights
 
 import api from './api';
+import type { ActionCardCreateInput } from './actionCards';
 
 export interface SpO2Event {
   start_ts: string;
@@ -26,6 +27,13 @@ export interface SpO2Correlation {
   evidence: Record<string, any>;
 }
 
+export interface SpO2SnoreEvent {
+  start_ts: string;
+  end_ts: string;
+  intensity?: 'low' | 'medium' | 'high';
+  confidence?: number;
+}
+
 export interface SpO2NightAnalysis {
   night_date: string;
   odi: number;
@@ -37,6 +45,7 @@ export interface SpO2NightAnalysis {
   correlations: SpO2Correlation[];
   action_priorities: string[];
   ask_questions?: string[];
+  snore_events?: SpO2SnoreEvent[];
 }
 
 export interface SpO2BehaviorAB {
@@ -84,6 +93,24 @@ export async function getInsights(weeks = 4): Promise<SpO2Insights> {
     params: { weeks },
   });
   return data;
+}
+
+export function buildSleepExperimentCardPayload(action: string, nightDate: string): ActionCardCreateInput {
+  const trimmed = action.trim();
+  return {
+    title: `睡眠实验：${trimmed}`.slice(0, 80),
+    content: [
+      '## 睡眠呼吸实验',
+      '',
+      `- 参考夜晚：${nightDate}`,
+      `- 今晚尝试：${trimmed}`,
+      '- 明天复盘：对比 ODI、最低 SpO2、氧降事件数和主观睡眠感受。',
+    ].join('\n'),
+    card_type: 'plan',
+    source_type: 'sleep_spo2',
+    source_id: nightDate,
+    priority: 2,
+  };
 }
 
 // 夜间对齐时序（P1a API 复用）

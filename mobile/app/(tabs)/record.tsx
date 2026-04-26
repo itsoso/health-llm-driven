@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, TextStyle, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,10 @@ import { fetchDashboardData } from '@/services/dashboard';
 import api from '@/services/api';
 import { useRouter } from 'expo-router';
 import { useLatestGarmin } from '@/hooks/useDashboardData';
+import { useDataHealth } from '@/hooks/useDataHealth';
 import { recordWater, deleteWater } from '@/services/records';
+import DataPromptCard from '@/components/data-health/DataPromptCard';
+import { invalidateRecordMutation, queryKeys } from '@/lib/queryKeys';
 import VitalsGrid from '@/components/dashboard/VitalsGrid';
 import ActivityRingBar from '@/components/dashboard/ActivityRingBar';
 import SupplementCheckin from '@/components/dashboard/SupplementCheckin';
@@ -16,7 +19,6 @@ import RhinitisCard from '@/components/dashboard/RhinitisCard';
 import StrengthCard from '@/components/dashboard/StrengthCard';
 import WorkoutWeekCard from '@/components/dashboard/WorkoutWeekCard';
 import TrendMiniCharts from '@/components/dashboard/TrendMiniCharts';
-import SectionHeader from '@/components/design-system/SectionHeader';
 import HealthCard from '@/components/design-system/HealthCard';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
@@ -25,13 +27,15 @@ const mealTypeMap: Record<string, string> = { breakfast: '早餐', lunch: '午�
 export default function RecordScreen() {
   const router = useRouter();
   const qc = useQueryClient();
-  const { data, refetch, isRefetching } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboardData, staleTime: 60_000 });
+  const { data, refetch, isRefetching } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboardData, staleTime: 60_000 });
+  const dataHealth = useDataHealth();
   const garmin = useLatestGarmin(data);
   const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
   const [weightInput, setWeightInput] = useState('');
   const [bpSysInput, setBpSysInput] = useState('');
   const [bpDiaInput, setBpDiaInput] = useState('');
   const [undo, setUndo] = useState<{ label: string; action: () => Promise<void> } | null>(null);
+  const [dismissedPrompts, setDismissedPrompts] = useState<string[]>([]);
 
   const sleepH = garmin?.total_sleep_duration ? garmin.total_sleep_duration / 60 : null;
   const deepH = garmin?.deep_sleep_duration ? garmin.deep_sleep_duration / 60 : null;
@@ -57,17 +61,34 @@ export default function RecordScreen() {
   const waterData = data?.waterRecords;
   const waterTotal = waterData?.total_amount ?? (Array.isArray(waterData) ? waterData.reduce((s: number, r: any) => s + (r.amount || 0), 0) : 0);
   const waterTarget = waterData?.target_amount ?? 2000;
+  const visibleDataPrompts = useMemo(
+    () => dataHealth.prompts.filter(prompt => !dismissedPrompts.includes(prompt.key)).slice(0, 3),
+    [dataHealth.prompts, dismissedPrompts],
+  );
 
   const showUndo = (label: string, action: () => Promise<void>) => { setUndo({ label, action }); setTimeout(() => setUndo(null), 5000); };
   const doWater = useCallback(async (amt: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try { const rec = await recordWater(amt); qc.invalidateQueries({ queryKey: ['dashboard'] }); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); qc.invalidateQueries({ queryKey: ['dashboard'] }); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
+    try { const rec = await recordWater(amt); await invalidateRecordMutation(qc); showUndo(`${amt}ml`, async () => { await deleteWater(rec.id); await invalidateRecordMutation(qc); }); } catch { Alert.alert('记录失败', '饮水记录保存失败，请重试'); }
   }, [qc]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />} showsVerticalScrollIndicator={false}>
         <Text style={txt.title}>健康记录</Text>
+
+        {visibleDataPrompts.length > 0 && (
+          <View style={styles.promptStack}>
+            {visibleDataPrompts.map(prompt => (
+              <DataPromptCard
+                key={prompt.key}
+                prompt={prompt}
+                onPress={prompt.route ? () => router.push(prompt.route as any) : undefined}
+                onDismiss={() => setDismissedPrompts(prev => [...prev, prompt.key])}
+              />
+            ))}
+          </View>
+        )}
 
         {/* Quick navigation */}
         <View style={styles.quickNav}>
@@ -169,7 +190,7 @@ export default function RecordScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
                     await api.post('/weight/records', { weight: w, record_date: new Date().toISOString().split('T')[0] });
-                    setWeightInput(''); qc.invalidateQueries({ queryKey: ['dashboard'] });
+                    setWeightInput(''); await invalidateRecordMutation(qc);
                   } catch { Alert.alert('记录失败'); }
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
               </View>
@@ -185,7 +206,7 @@ export default function RecordScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
                     await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: new Date().toISOString().split('T')[0] });
-                    setBpSysInput(''); setBpDiaInput(''); qc.invalidateQueries({ queryKey: ['dashboard'] });
+                    setBpSysInput(''); setBpDiaInput(''); await invalidateRecordMutation(qc);
                   } catch { Alert.alert('记录失败'); }
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
               </View>
@@ -216,9 +237,9 @@ export default function RecordScreen() {
                           taken_time: `${hh}:${mm}`,
                           status: 'taken',
                         });
-                        qc.invalidateQueries({ queryKey: ['dashboard'] });
+                        await invalidateRecordMutation(qc);
                         showUndo(`已记录 ${m.name} ${hh}:${mm}`, async () => {
-                          try { await api.delete(`/medication/logs/${res.data.id}`); qc.invalidateQueries({ queryKey: ['dashboard'] }); } catch {}
+                          try { await api.delete(`/medication/logs/${res.data.id}`); await invalidateRecordMutation(qc); } catch {}
                         });
                       } catch { Alert.alert('记录失败'); }
                     }}
@@ -299,6 +320,7 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.lg },
+  promptStack: { marginBottom: spacing.md },
 
   // Quick navigation
   quickNav: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },

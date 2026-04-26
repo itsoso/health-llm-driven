@@ -1,0 +1,174 @@
+import React, { useState } from 'react';
+import { LayoutAnimation, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
+import Markdown from 'react-native-markdown-display';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  getActionCardProgress,
+  getActionCardVerificationLabel,
+  type ActionCard,
+} from '@/services/actionCards';
+import { colors, radii, shadows, spacing } from '@/constants/theme';
+import ActionEvidenceRow from './ActionEvidenceRow';
+
+interface Props {
+  card: ActionCard;
+  onComplete: () => void;
+}
+
+const CARD_TYPE: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
+  guide: { color: '#0A8F8F', bg: '#E6F5F5', icon: 'compass-outline', label: '指南' },
+  plan: { color: '#007AFF', bg: '#E6F0FF', icon: 'calendar-outline', label: '计划' },
+  recommendation: { color: '#30D158', bg: '#E8FAF0', icon: 'bulb-outline', label: '建议' },
+  reminder: { color: '#FF9F0A', bg: '#FFF5E6', icon: 'alarm-outline', label: '提醒' },
+  insight: { color: '#5856D6', bg: '#EEEEFF', icon: 'analytics-outline', label: '洞察' },
+  note: { color: '#8E8E93', bg: '#F2F2F7', icon: 'document-text-outline', label: '笔记' },
+};
+
+export default function InterventionCard({ card, onComplete }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
+  const progress = getActionCardProgress(card);
+  const verification = getActionCardVerificationLabel(card);
+  const assessment = card.latest_assessment;
+
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(value => !value);
+  };
+
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      onPress={toggle}
+      accessibilityRole="button"
+      accessibilityLabel={card.title}
+      accessibilityState={{ expanded }}
+    >
+      <View style={styles.header}>
+        <View style={[styles.iconWrap, { backgroundColor: cfg.bg }]}>
+          <Ionicons name={cfg.icon} size={16} color={cfg.color} />
+        </View>
+        <View style={styles.titleBlock}>
+          <Text style={txt.title} numberOfLines={expanded ? undefined : 2}>{card.title}</Text>
+          <View style={styles.metaRow}>
+            <Text style={[txt.typeBadge, { color: cfg.color }]}>{cfg.label}</Text>
+            {card.created_at ? <Text style={txt.timeStamp}>{card.created_at.slice(0, 10)}</Text> : null}
+            {progress ? <Text style={txt.progress}>{progress.completed}/{progress.total}</Text> : null}
+          </View>
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={15} color={colors.labelTertiary} />
+      </View>
+
+      {verification ? (
+        <View style={styles.inlineEvidence}>
+          <ActionEvidenceRow label="验证" value={verification} tone={assessment ? 'good' : 'warn'} icon="checkmark-done-outline" />
+        </View>
+      ) : null}
+
+      {expanded ? (
+        <View style={styles.expanded}>
+          {assessment?.summary ? (
+            <ActionEvidenceRow label="最近评估" value={assessment.summary} tone="good" icon="pulse-outline" />
+          ) : null}
+
+          {progress && card.checklist ? (
+            <View style={styles.checklist}>
+              {card.checklist.map((item, index) => (
+                <View key={`${item.item}-${index}`} style={styles.checkRow}>
+                  <Ionicons
+                    name={item.done ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={15}
+                    color={item.done ? '#30D158' : colors.labelTertiary}
+                  />
+                  <Text style={[txt.checkText, item.done && txt.checkDone]}>{item.item}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={styles.markdownWrap}>
+            <Markdown style={mdStyles}>{card.content || ''}</Markdown>
+          </View>
+
+          <Pressable
+            style={({ pressed }) => [styles.completeBtn, pressed && styles.completeBtnPressed]}
+            onPress={event => {
+              event?.stopPropagation?.();
+              onComplete();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="标记完成"
+          >
+            <Ionicons name="checkmark-circle" size={16} color="#fff" />
+            <Text style={txt.completeBtnText}>标记完成</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    marginBottom: 8,
+    ...shadows.subtle,
+  },
+  cardPressed: { opacity: 0.88 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 14,
+  },
+  iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  titleBlock: { flex: 1 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
+  inlineEvidence: { paddingHorizontal: 14, paddingBottom: 12, marginTop: -4 },
+  expanded: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    paddingTop: 12,
+    gap: 10,
+  },
+  checklist: { gap: 7 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  markdownWrap: { marginTop: 2 },
+  completeBtn: {
+    minHeight: 40,
+    borderRadius: radii.md,
+    backgroundColor: '#30D158',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.xs,
+  },
+  completeBtnPressed: { opacity: 0.82 },
+});
+
+const txt = {
+  title: { fontSize: 15, fontWeight: '700', color: colors.labelPrimary, lineHeight: 20 } as TextStyle,
+  typeBadge: { fontSize: 11, fontWeight: '700' } as TextStyle,
+  timeStamp: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
+  progress: { fontSize: 11, color: colors.labelSecondary, fontWeight: '700' } as TextStyle,
+  checkText: { flex: 1, fontSize: 13, color: colors.labelSecondary } as TextStyle,
+  checkDone: { color: colors.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
+  completeBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
+};
+
+const mdStyles = StyleSheet.create({
+  body: { fontSize: 14, lineHeight: 20, color: colors.labelSecondary },
+  heading1: { fontSize: 16, fontWeight: '700', color: colors.labelPrimary, marginTop: 8, marginBottom: 4 },
+  heading2: { fontSize: 15, fontWeight: '700', color: colors.labelPrimary, marginTop: 8, marginBottom: 4 },
+  heading3: { fontSize: 14, fontWeight: '600', color: colors.labelPrimary, marginTop: 6, marginBottom: 2 },
+  strong: { fontWeight: '700', color: colors.labelPrimary },
+  paragraph: { marginVertical: 3 },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { flexDirection: 'row', marginVertical: 2 },
+  link: { color: colors.brand },
+});

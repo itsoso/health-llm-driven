@@ -13,12 +13,16 @@ import { getConversations, deleteConversation } from '@/services/chat';
 import api from '@/services/api';
 import { getSafetyReport } from '@/services/safety';
 import HomeHeader from '@/components/dashboard/HomeHeader';
+import TodayCoachPanel from '@/components/dashboard/TodayCoachPanel';
 import ChatInputBar from '@/components/chat/ChatInputBar';
 import ConversationSheet from '@/components/chat/ConversationSheet';
 import BrandCircle from '@/components/chat/BrandCircle';
 import ChatBubble from '@/components/chat/ChatBubble';
 import { useChatEngine, type UIMessage } from '@/hooks/useChatEngine';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { useTodayCoach } from '@/hooks/useTodayCoach';
+import type { TodayCoachFocus } from '@/services/todayCoach';
+import { invalidateHealthSnapshot, queryKeys } from '@/lib/queryKeys';
+import { colors, spacing, radii } from '@/constants/theme';
 
 function today(): string {
   const d = new Date();
@@ -37,13 +41,14 @@ export default function HomeScreen() {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   // ── Data queries ──
-  const { data: scoreData, isLoading: scoreLoading } = useQuery({ queryKey: ['healthScore'], queryFn: () => api.get(`/health-score/daily/me?target_date=${today()}`).then(r => r.data), staleTime: 120_000 });
-  const { data: garminData, isLoading: garminLoading } = useQuery({ queryKey: ['garminToday'], queryFn: () => api.get(`/daily-health/garmin/me?start_date=${today()}&end_date=${today()}`).then(r => r.data), staleTime: 120_000 });
-  const { data: weatherData } = useQuery({ queryKey: ['weather'], queryFn: () => api.get('/environment/weather').then(r => r.data), staleTime: 300_000 });
-  const { data: aqiData } = useQuery({ queryKey: ['aqi'], queryFn: () => api.get('/environment/air-quality').then(r => r.data), staleTime: 300_000 });
-  const { data: safetyData } = useQuery({ queryKey: ['safety'], queryFn: getSafetyReport, staleTime: 300_000 });
+  const { data: scoreData, isLoading: scoreLoading } = useQuery({ queryKey: queryKeys.healthScore, queryFn: () => api.get(`/health-score/daily/me?target_date=${today()}`).then(r => r.data), staleTime: 120_000 });
+  const { data: garminData, isLoading: garminLoading } = useQuery({ queryKey: queryKeys.garminToday, queryFn: () => api.get(`/daily-health/garmin/me?start_date=${today()}&end_date=${today()}`).then(r => r.data), staleTime: 120_000 });
+  const { data: weatherData } = useQuery({ queryKey: queryKeys.weather, queryFn: () => api.get('/environment/weather').then(r => r.data), staleTime: 300_000 });
+  const { data: aqiData } = useQuery({ queryKey: queryKeys.aqi, queryFn: () => api.get('/environment/air-quality').then(r => r.data), staleTime: 300_000 });
+  const { data: safetyData } = useQuery({ queryKey: queryKeys.safety, queryFn: getSafetyReport, staleTime: 300_000 });
   const { data: profileData } = useQuery({ queryKey: ['profile'], queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
-  const { data: forecastData } = useQuery({ queryKey: ['forecast'], queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
+  const { data: forecastData } = useQuery({ queryKey: queryKeys.forecast, queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
+  const todayCoach = useTodayCoach();
 
   const contextData = useMemo(() => ({
     garmin: Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null,
@@ -89,6 +94,14 @@ export default function HomeScreen() {
     chat.sendMessage(text, images);
   }, [chat.sendMessage]);
 
+  const handleTodayCoachAction = useCallback((focus: TodayCoachFocus) => {
+    if (focus.actionRoute) {
+      router.push(focus.actionRoute as any);
+      return;
+    }
+    handleSend('今天健康如何？给我一份简报', null);
+  }, [handleSend, router]);
+
   // ── Render message ──
   const renderMessage = useCallback(({ item }: { item: UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' } }) => {
     if ((item as any).type === 'date') {
@@ -113,7 +126,7 @@ export default function HomeScreen() {
 
   // 在消息之间插入日期分割条
   const itemsWithDateDividers = useMemo(() => {
-    const out: Array<UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' }> = [];
+    const out: (UIMessage | { id: string; type: 'date'; label: string } | { id: string; type: 'load-more' })[] = [];
     if (chat.hasMoreHistory && chat.messages.length > 0) {
       out.push({ id: 'load-more', type: 'load-more' });
     }
@@ -161,6 +174,12 @@ export default function HomeScreen() {
         }}
       />
 
+      <TodayCoachPanel
+        focus={todayCoach.data}
+        isLoading={todayCoach.isLoading}
+        onAction={handleTodayCoachAction}
+      />
+
       {criticalAlerts.length > 0 && (
         <View style={styles.alertBanner} accessibilityRole="alert">
           <Ionicons name="warning" size={16} color="#FF453A" />
@@ -181,12 +200,10 @@ export default function HomeScreen() {
               setRefreshing(true);
               try { await api.post('/data-collection/garmin/me/sync?days=1'); } catch { console.warn('Garmin sync failed'); }
               await Promise.all([
-                qc.invalidateQueries({ queryKey: ['healthScore'] }),
-                qc.invalidateQueries({ queryKey: ['garminToday'] }),
-                qc.invalidateQueries({ queryKey: ['weather'] }),
-                qc.invalidateQueries({ queryKey: ['aqi'] }),
-                qc.invalidateQueries({ queryKey: ['safety'] }),
-                qc.invalidateQueries({ queryKey: ['forecast'] }),
+                invalidateHealthSnapshot(qc),
+                qc.invalidateQueries({ queryKey: queryKeys.weather }),
+                qc.invalidateQueries({ queryKey: queryKeys.aqi }),
+                qc.invalidateQueries({ queryKey: queryKeys.forecast }),
               ]);
               setRefreshing(false);
             }} tintColor={colors.brand} />

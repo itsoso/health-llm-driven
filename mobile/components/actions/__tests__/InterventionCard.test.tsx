@@ -1,0 +1,45 @@
+import React from 'react';
+import { fireEvent, render } from '@testing-library/react-native';
+import InterventionCard from '../InterventionCard';
+import type { ActionCard } from '@/services/actionCards';
+
+jest.mock('@/services/api', () => ({
+  __esModule: true,
+  default: { get: jest.fn(), patch: jest.fn() },
+}));
+
+describe('InterventionCard', () => {
+  const card: ActionCard = {
+    id: 1,
+    title: '连续记录晚餐时间',
+    content: '今晚开始记录晚餐时间，并观察睡眠变化。',
+    card_type: 'plan',
+    status: 'active',
+    priority: 10,
+    created_at: '2026-04-26T08:00:00Z',
+    expires_at: '2026-05-03T08:00:00Z',
+    checklist: [
+      { item: '记录晚餐', done: true },
+      { item: '睡前不饮酒', done: false },
+    ],
+    latest_assessment: null,
+  };
+
+  it('renders intervention status and checklist progress', () => {
+    const { getByText } = render(<InterventionCard card={card} onComplete={jest.fn()} />);
+
+    expect(getByText('连续记录晚餐时间')).toBeTruthy();
+    expect(getByText('1/2')).toBeTruthy();
+    expect(getByText('待验证 2026-05-03')).toBeTruthy();
+  });
+
+  it('calls onComplete from the expanded action button', () => {
+    const onComplete = jest.fn();
+    const { getByText } = render(<InterventionCard card={card} onComplete={onComplete} />);
+
+    fireEvent.press(getByText('连续记录晚餐时间'));
+    fireEvent.press(getByText('标记完成'));
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});

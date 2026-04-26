@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextStyle,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextStyle, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import Markdown from 'react-native-markdown-display';
 import {
   getConsultation, updateConsultationItem, verifyPredictions,
-  type ConsultationDetail, type ConsultationItem,
+  type ConsultationItem, type ConsultationPredictionVerification,
 } from '@/services/consultations';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
@@ -55,7 +55,17 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function ItemCard({ item, onAdvance }: { item: ConsultationItem; onAdvance: () => void }) {
+function ItemCard({
+  item,
+  verification,
+  onAdvance,
+  onConfirmVerification,
+}: {
+  item: ConsultationItem;
+  verification?: ConsultationPredictionVerification;
+  onAdvance: () => void;
+  onConfirmVerification: () => void;
+}) {
   const c = ITEM_TYPE_COLOR[item.item_type] || ITEM_TYPE_COLOR.note;
   const canAdvance = STATUS_NEXT[item.status];
   return (
@@ -84,6 +94,22 @@ function ItemCard({ item, onAdvance }: { item: ConsultationItem; onAdvance: () =
         <Text style={[txt.itemMeta, { color: colors.labelSecondary }]}>实测：{item.actual_value}</Text>
       ) : null}
 
+      {verification ? (
+        <View style={styles.verificationBox}>
+          <Text style={txt.verificationTitle}>验证建议：{verification.suggested_status}</Text>
+          <Text style={txt.verificationText}>
+            {verification.metric_name ? `${verification.metric_name} ` : ''}
+            {verification.actual_value != null ? `实测 ${verification.actual_value}` : '暂无实测数据'}
+            {verification.target ? ` · 目标 ${verification.target}` : ''}
+          </Text>
+          {verification.note ? <Text style={txt.verificationNote}>{verification.note}</Text> : null}
+          <TouchableOpacity style={styles.confirmBtn} onPress={onConfirmVerification} activeOpacity={0.75}>
+            <Ionicons name="checkmark-done-outline" size={14} color="#fff" />
+            <Text style={txt.confirmText}>确认写入结果</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {canAdvance ? (
         <TouchableOpacity style={styles.advanceBtn} onPress={onAdvance} activeOpacity={0.75}>
           <Ionicons name="checkmark-circle-outline" size={14} color={c.accent} />
@@ -102,6 +128,7 @@ export default function ConsultationDetailScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const [verifying, setVerifying] = useState(false);
+  const [verificationSuggestions, setVerificationSuggestions] = useState<Record<number, ConsultationPredictionVerification>>({});
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['consultation', consultationId],
@@ -131,12 +158,15 @@ export default function ConsultationDetailScreen() {
     try {
       const result = await verifyPredictions(consultationId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setVerificationSuggestions(Object.fromEntries(
+        result.predictions.map(prediction => [prediction.item_id, prediction]),
+      ));
       const lines = result.predictions
-        .map((p) => `${p.item_code || `#${p.item_id}`} → ${p.status}${p.actual_value ? ` (${p.actual_value})` : ''}`)
+        .map((p) => `${p.item_code || `#${p.item_id}`} → ${p.suggested_status}${p.actual_value != null ? ` (${p.actual_value})` : ''}`)
         .join('\n');
       Alert.alert(
-        `验证完成 · ${result.verified_count} 条`,
-        lines || '无到期预测',
+        `生成验证建议 · ${result.verified_count} 条`,
+        lines || '无待验证预测',
       );
       qc.invalidateQueries({ queryKey: ['consultation', consultationId] });
       qc.invalidateQueries({ queryKey: ['consultations', 'list'] });
@@ -257,7 +287,29 @@ export default function ConsultationDetailScreen() {
                   <ItemCard
                     key={item.id}
                     item={item}
+                    verification={verificationSuggestions[item.id]}
                     onAdvance={() => advanceMut.mutate(item)}
+                    onConfirmVerification={async () => {
+                      const suggestion = verificationSuggestions[item.id];
+                      if (!suggestion) return;
+                      try {
+                        await updateConsultationItem(item.id, {
+                          status: suggestion.suggested_status,
+                          actual_value: suggestion.actual_value == null ? undefined : String(suggestion.actual_value),
+                          outcome: suggestion.note,
+                        });
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        setVerificationSuggestions(prev => {
+                          const next = { ...prev };
+                          delete next[item.id];
+                          return next;
+                        });
+                        qc.invalidateQueries({ queryKey: ['consultation', consultationId] });
+                        qc.invalidateQueries({ queryKey: ['consultations', 'list'] });
+                      } catch {
+                        Alert.alert('写入失败', '请检查网络后重试');
+                      }
+                    }}
                   />
                 ))}
               </View>
@@ -278,8 +330,6 @@ export default function ConsultationDetailScreen() {
   );
 }
 
-// 简易 RefreshControl wrapper (expo-router 的 ScrollView refreshControl 走原生 RN)
-import { RefreshControl } from 'react-native';
 function RefreshControlShim(props: { refreshing: boolean; onRefresh: () => void }) {
   return <RefreshControl refreshing={props.refreshing} onRefresh={props.onRefresh} tintColor={colors.brand} />;
 }
@@ -334,6 +384,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: radii.sm, borderWidth: 1, borderColor: colors.separator,
   },
+  verificationBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    gap: 4,
+    marginTop: 4,
+  },
+  confirmBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.brand,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
 });
 
 const txt = {
@@ -346,6 +414,10 @@ const txt = {
   itemMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
   statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' } as TextStyle,
   advanceText: { fontSize: 11, fontWeight: '600' } as TextStyle,
+  verificationTitle: { fontSize: 12, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
+  verificationText: { fontSize: 12, color: colors.labelSecondary, lineHeight: 17 } as TextStyle,
+  verificationNote: { fontSize: 11, color: colors.labelTertiary, lineHeight: 16 } as TextStyle,
+  confirmText: { fontSize: 12, fontWeight: '700', color: '#fff' } as TextStyle,
   verifyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
   emptyText: { fontSize: 13, color: colors.labelTertiary } as TextStyle,
   retryText: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,

@@ -3,16 +3,15 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import MetricTile from '@/components/design-system/MetricTile';
-import SectionHeader from '@/components/design-system/SectionHeader';
 import HealthCard from '@/components/design-system/HealthCard';
 import SleepWeeklyChart from '@/components/sleep/SleepWeeklyChart';
 import SpO2NightChart from '@/components/sleep/SpO2NightChart';
+import SleepBreathingSummary from '@/components/sleep/SleepBreathingSummary';
 import { useSleepStats, useSleepDebt } from '@/hooks/useSleepData';
 import { useSpO2LatestNight } from '@/hooks/useSpO2Data';
 import { getDeepAnalysis } from '@/services/sleep';
-import { colors, spacing, radii, shadows, scoreColor, scoreGrade, metricColors } from '@/constants/theme';
+import { colors, spacing, radii, scoreColor, scoreGrade, metricColors } from '@/constants/theme';
 
 export default function SleepScreen() {
   const router = useRouter();
@@ -107,26 +106,18 @@ export default function SleepScreen() {
                   </TouchableOpacity>
                 }>
                 <SpO2NightChart data={spo2Data.timeline} sleepStart={spo2Data.sleep_start} sleepEnd={spo2Data.sleep_end} />
-                <View style={styles.spo2Metrics}>
-                  <View style={styles.spo2Metric}>
-                    <Text style={txt.spo2Value}>{spo2Data.summary.avg_spo2?.toFixed(0) ?? '--'}</Text>
-                    <Text style={txt.spo2Label}>平均 %</Text>
-                  </View>
-                  <View style={styles.spo2Metric}>
-                    <Text style={[txt.spo2Value, spo2Data.summary.min_spo2 != null && spo2Data.summary.min_spo2 < 90 && { color: '#FF453A' }]}>
-                      {spo2Data.summary.min_spo2 ?? '--'}
-                    </Text>
-                    <Text style={txt.spo2Label}>最低 %</Text>
-                  </View>
-                  <View style={styles.spo2Metric}>
-                    <Text style={[txt.spo2Value, spo2Data.summary.odi != null && spo2Data.summary.odi >= 5 && { color: '#FF9F0A' }]}>
-                      {spo2Data.summary.odi?.toFixed(1) ?? '--'}
-                    </Text>
-                    <Text style={txt.spo2Label}>ODI 次/h</Text>
-                  </View>
-                </View>
               </HealthCard>
             )}
+
+            {spo2Data ? (
+              <SleepBreathingSummary
+                date={spo2Data.summary.record_date}
+                odi={spo2Data.summary.odi}
+                minSpO2={spo2Data.summary.min_spo2}
+                eventCount={spo2Data.summary.desaturation_events}
+                onOpenAnalysis={() => router.push('/sleep-spo2-analysis' as any)}
+              />
+            ) : null}
 
             {/* Deep analysis */}
             <HealthCard title="AI 深度分析" icon="sparkles-outline" iconColor={colors.purple} iconBg={colors.tintPurple}
@@ -163,8 +154,6 @@ const styles = StyleSheet.create({
   periodBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: radii.full, backgroundColor: colors.bgCard },
   periodBtnActive: { backgroundColor: colors.brand },
   metricsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
-  spo2Metrics: { flexDirection: 'row', justifyContent: 'space-around', marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator },
-  spo2Metric: { alignItems: 'center' },
   osaBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF5E6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
 });
 
@@ -175,7 +164,5 @@ const txt = {
   analyzeBtn: { fontSize: 14, fontWeight: '600', color: colors.purple } as TextStyle,
   analysisText: { fontSize: 14, color: colors.labelPrimary, lineHeight: 21 } as TextStyle,
   placeholder: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
-  spo2Value: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  spo2Label: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
   osaBadgeText: { fontSize: 11, fontWeight: '600', color: '#FF9F0A' } as TextStyle,
 };

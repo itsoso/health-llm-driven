@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { listConsultations, type ConsultListItem } from '@/services/consultations';
+import { buildOutcomeReviewMetrics, getMyOutcomeTimeline } from '@/services/personalOutcome';
+import OutcomeReviewCard from '@/components/outcome/OutcomeReviewCard';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -92,6 +94,19 @@ export default function ConsultationsScreen() {
     queryFn: () => listConsultations(30),
     staleTime: 60_000,
   });
+  const { data: outcome } = useQuery({
+    queryKey: ['personalOutcome', 'timeline', '6m', 'month'],
+    queryFn: () => getMyOutcomeTimeline('6m', 'month'),
+    staleTime: 300_000,
+  });
+  const outcomeMetrics = buildOutcomeReviewMetrics(outcome);
+  const outcomeCard = (
+    <OutcomeReviewCard
+      metrics={outcomeMetrics}
+      coveredDays={outcome?.summary?.covered_days}
+      totalDays={outcome?.summary?.total_days}
+    />
+  );
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -117,6 +132,7 @@ export default function ConsultationsScreen() {
         </View>
       ) : data.length === 0 ? (
         <View style={styles.empty}>
+          {outcomeCard}
           <Text style={txt.emptyText}>暂无咨询记录。</Text>
         </View>
       ) : (
@@ -126,6 +142,7 @@ export default function ConsultationsScreen() {
           contentContainerStyle={styles.list}
           refreshing={isRefetching}
           onRefresh={refetch}
+          ListHeaderComponent={outcomeCard}
           renderItem={({ item }) => (
             <ConsultationRow item={item} onPress={() => router.push(`/consultations/${item.id}` as any)} />
           )}

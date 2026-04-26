@@ -85,10 +85,27 @@ export async function updateConsultationItem(
   return data;
 }
 
+export interface ConsultationPredictionVerification {
+  item_id: number;
+  item_code?: string;
+  title?: string;
+  metric_name?: string;
+  target?: string;
+  baseline?: unknown;
+  actual_value?: string | number | null;
+  note?: string;
+  suggested_status: string;
+  data_source?: string;
+}
+
 export async function verifyPredictions(id: number): Promise<{
   verified_count: number;
-  predictions: Array<{ item_id: number; item_code?: string; status: string; actual_value?: string }>;
+  predictions: ConsultationPredictionVerification[];
 }> {
   const { data } = await api.post(`/health-consultations/me/${id}/verify`);
-  return data;
+  const predictions = Array.isArray(data) ? data : data?.predictions || [];
+  return {
+    verified_count: data?.verified_count ?? predictions.length,
+    predictions,
+  };
 }

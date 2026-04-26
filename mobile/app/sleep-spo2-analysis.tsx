@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +11,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import SpO2AnalysisChart from '@/components/sleep/SpO2AnalysisChart';
+import SleepExperimentCard from '@/components/sleep/SleepExperimentCard';
 import { useNightAnalysis, useNightTimeseries, useReanalyzeNight, useConfirmNoAlcohol } from '@/hooks/useSpo2Analysis';
-import { SpO2Correlation } from '@/services/sleepSpo2';
+import { buildSleepExperimentCardPayload, SpO2Correlation } from '@/services/sleepSpo2';
+import { getSleepQuestionPrompt } from '@/services/dataHealth';
+import { createActionCard } from '@/services/actionCards';
 import { colors, spacing } from '@/constants/theme';
 import { styles, txt } from './sleep-spo2-analysis.styles';
 
@@ -48,6 +51,8 @@ export default function SleepSpo2AnalysisScreen() {
   const params = useLocalSearchParams<{ night_date?: string }>();
   const [selectedDate, setSelectedDate] = useState(params.night_date || yesterdayISO());
   const [overlay, setOverlay] = useState<'hr' | 'respiration' | 'none'>('none');
+  const [experimentStates, setExperimentStates] = useState<Record<string, 'queued' | 'done' | 'skipped'>>({});
+  const [savingExperiment, setSavingExperiment] = useState<string | null>(null);
 
   const analysisQ = useNightAnalysis(selectedDate);
   const tsQ = useNightTimeseries(selectedDate, 'spo2,hr,respiration,sleep_stage');
@@ -70,6 +75,26 @@ export default function SleepSpo2AnalysisScreen() {
   const onRefresh = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     reanalyzeM.mutate(selectedDate);
+  };
+
+  const setExperimentState = (action: string, state: 'queued' | 'done' | 'skipped') => {
+    setExperimentStates(prev => ({ ...prev, [`${selectedDate}:${action}`]: state }));
+  };
+
+  const getExperimentState = (action: string) => experimentStates[`${selectedDate}:${action}`];
+
+  const tryExperimentTonight = async (action: string) => {
+    setSavingExperiment(action);
+    Haptics.selectionAsync();
+    try {
+      await createActionCard(buildSleepExperimentCardPayload(action, selectedDate));
+      setExperimentState(action, 'queued');
+      Alert.alert('已加入行动', '明天可以回到这里复盘 ODI、最低血氧和事件数。');
+    } catch {
+      Alert.alert('创建失败', '睡眠实验行动保存失败，请稍后重试。');
+    } finally {
+      setSavingExperiment(null);
+    }
   };
 
   // 规则按 severity 分组
@@ -205,8 +230,7 @@ export default function SleepSpo2AnalysisScreen() {
                 <Text style={txt.askSub}>当夜确认有低氧/事件，但缺关键背景。补一下能让分析更准。</Text>
                 {analysis.ask_questions.map((q, i) => {
                   const isAlcohol = q.includes('饮酒');
-                  const isIpra = q.includes('异丙托溴铵');
-                  const isWorkout = q.includes('运动');
+                  const prompt = getSleepQuestionPrompt(q);
                   return (
                     <View key={i} style={styles.askItem}>
                       <Text style={txt.askText}>{q}</Text>
@@ -227,14 +251,12 @@ export default function SleepSpo2AnalysisScreen() {
                         <TouchableOpacity
                           style={styles.askChip}
                           onPress={() => {
-                            if (isIpra) router.push('/(tabs)/record');
-                            else if (isWorkout) router.push('/workout-list');
-                            else router.push('/diet');
+                            router.push(prompt.route as any);
                           }}
                           activeOpacity={0.7}
                         >
                           <Text style={txt.askChipSecondary}>
-                            {isIpra ? '去打卡 →' : isWorkout ? '去记录 →' : '补录 →'}
+                            {prompt.label} →
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -249,10 +271,22 @@ export default function SleepSpo2AnalysisScreen() {
               <View style={styles.actionCard}>
                 <Text style={txt.sectionTitle}>✨ 今晚可试</Text>
                 {analysis.action_priorities.map((a, i) => (
-                  <View key={i} style={styles.actionRow}>
-                    <Text style={txt.actionNum}>{i + 1}</Text>
-                    <Text style={txt.actionText}>{a}</Text>
-                  </View>
+                  <SleepExperimentCard
+                    key={`${a}-${i}`}
+                    index={i}
+                    action={a}
+                    state={getExperimentState(a)}
+                    isSaving={savingExperiment === a}
+                    onTryTonight={() => tryExperimentTonight(a)}
+                    onDone={() => {
+                      Haptics.selectionAsync();
+                      setExperimentState(a, 'done');
+                    }}
+                    onSkip={() => {
+                      Haptics.selectionAsync();
+                      setExperimentState(a, 'skipped');
+                    }}
+                  />
                 ))}
               </View>
             ) : null}
