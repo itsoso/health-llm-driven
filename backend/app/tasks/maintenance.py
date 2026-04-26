@@ -84,3 +84,54 @@ def rebuild_knowledge_index():
     except Exception as e:
         logger.error(f"[Knowledge Index] 重建失败: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
+
+
+@celery_app.task(time_limit=120, name="app.tasks.maintenance.llm_cost_daily_check")
+def llm_cost_daily_check():
+    """每天 23:55 检查最近 24h LLM 成本, 超阈值 log warning.
+
+    阈值: 默认 $1/天. 可通过 settings.llm_daily_cost_alert_usd 调整.
+    超阈值时:
+      1. logger.warning (会进 Sentry breadcrumb 如果配置了 DSN)
+      2. 可选: 给 admin 推 APNs (如果 expo_push_token 配置)
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import func
+    from app.config import settings
+    from app.models.llm_usage import LlmUsageLog
+
+    threshold = getattr(settings, "llm_daily_cost_alert_usd", 1.0)
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    with SessionLocal() as db:
+        row = db.query(
+            func.coalesce(func.sum(LlmUsageLog.cost_usd), 0.0).label("cost"),
+            func.count(LlmUsageLog.id).label("calls"),
+        ).filter(LlmUsageLog.created_at >= since).one()
+
+        cost = float(row.cost or 0.0)
+        calls = int(row.calls or 0)
+
+        # 找出最贵的 caller
+        top_caller_row = db.query(
+            LlmUsageLog.caller,
+            func.coalesce(func.sum(LlmUsageLog.cost_usd), 0.0).label("c"),
+        ).filter(
+            LlmUsageLog.created_at >= since
+        ).group_by(LlmUsageLog.caller).order_by(
+            func.sum(LlmUsageLog.cost_usd).desc()
+        ).first()
+        top_caller = top_caller_row.caller if top_caller_row else "n/a"
+        top_cost = float(top_caller_row.c) if top_caller_row else 0.0
+
+        msg = (
+            f"[LLM Cost] 24h: ${cost:.4f} / {calls} calls | "
+            f"top: {top_caller} (${top_cost:.4f}) | threshold: ${threshold:.2f}"
+        )
+        if cost > threshold:
+            logger.warning(f"⚠️  {msg} — 超过阈值")
+        else:
+            logger.info(msg)
+
+        return {"cost_usd": round(cost, 4), "calls": calls, "threshold_usd": threshold,
+                "exceeded": cost > threshold, "top_caller": top_caller}

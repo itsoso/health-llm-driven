@@ -272,6 +272,8 @@ async def explain_alert(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_required),
 ):
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("safety.explain", user_id=current_user.id)
     """
     对某条安全告警请求 LLM 个性化解读。
 

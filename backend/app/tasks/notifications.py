@@ -1076,6 +1076,8 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
         # AI 叙事：用 LLM 把数据转为一段自然语言分析
         try:
             from app.services.llm.factory import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("daily_briefing.ai_narrative", user_id=user_id)
             provider = get_llm_provider()
 
             data_summary = (

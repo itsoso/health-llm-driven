@@ -58,6 +58,8 @@ class AgentExecutor:
         file_name: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("agent_executor.run_stream", user_id=user_id)
         # OpenClaw provider 不支持 function calling，记录类意图委托给 OpenClaw Gateway（有 skill）
         has_tools_support = bool(settings.agent_base_url and settings.agent_api_key) or settings.llm_provider != "openclaw"
         if not has_tools_support and (_needs_skill(message) or images or file_base64):

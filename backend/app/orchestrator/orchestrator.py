@@ -264,6 +264,8 @@ async def run_orchestrator(
     db: Session, user_id: int, req: OrchestratorRequest
 ) -> OrchestratorResponse:
     """非流式主入口。"""
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("orchestrator.synthesis", user_id=user_id)
     t_start = time.monotonic()
 
     twin = build_twin(db, user_id)
@@ -301,6 +303,8 @@ async def stream_orchestrator(
     - chunk:       LLM 合并结果的流式文本片段
     - done:        结束信号，带 total_ms
     """
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("orchestrator.stream", user_id=user_id)
 
     t_start = time.monotonic()
 

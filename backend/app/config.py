@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     sentry_environment: str = "production"
     sentry_traces_sample_rate: float = 0.05  # 性能采样 5%，控制额度
 
+    # === LLM 成本告警 ===
+    llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
+
     # === LLM Provider 统一配置 ===
     llm_provider: str = "openclaw"  # openclaw | openai | ollama（默认 openclaw 避免 openai proxy 429）
     llm_api_key: Optional[str] = None

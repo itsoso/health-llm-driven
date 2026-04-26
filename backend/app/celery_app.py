@@ -188,6 +188,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.maintenance.rebuild_knowledge_index",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
     },
+
+    # 每天 23:55 检查 24h LLM 成本, 超阈值 log warning (Sentry breadcrumb)
+    "llm-cost-daily-check": {
+        "task": "app.tasks.maintenance.llm_cost_daily_check",
+        "schedule": crontab(hour=23, minute=55),
+    },
 }
 
 logger.info("Celery 配置加载完成")
