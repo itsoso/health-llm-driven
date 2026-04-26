@@ -258,7 +258,8 @@ deploy_backend() {
     # 2. 同步环境变量
     sync_env
 
-    # 3. 部署代码
+    # 3. 部署代码 (skill 同步可能失败 → 我们自己处理回滚, 临时关闭 set -e)
+    set +e
     ssh $SERVER "
         cd $REMOTE_PATH && \
         echo '暂存服务器本地改动...' && \
@@ -278,8 +279,15 @@ deploy_backend() {
         echo '同步 Skills 到 OpenClaw Gateway...' && \
         python3 -c '
 import sys
-from app.services.openclaw_skills_service import openclaw_skills_service
+from app.config import settings
 from pathlib import Path
+
+# Gateway 未配置 → 显式跳过, 不计入失败
+if not settings.openclaw_ssh_host:
+    print(\"::warning::OPENCLAW_SSH_HOST 未配置, 跳过 skill 同步 (skill 改动不会生效)\")
+    sys.exit(0)
+
+from app.services.openclaw_skills_service import openclaw_skills_service
 ok, fail = [], []
 skills_dir = Path(\"skills\")
 if skills_dir.exists():
@@ -306,9 +314,15 @@ if fail:
 '
     "
     SKILL_EXIT=$?
+    set -e
     if [ $SKILL_EXIT -eq 2 ]; then
         rollback_deploy
         print_error "Skills 大规模同步失败，已自动回滚"
+        exit 1
+    elif [ $SKILL_EXIT -ne 0 ]; then
+        # 任何其它非零 (例如 pip install 失败 / git pull 冲突) 也要走回滚
+        rollback_deploy
+        print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，已自动回滚"
         exit 1
     fi
 
