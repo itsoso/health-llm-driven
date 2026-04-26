@@ -60,8 +60,7 @@
           "color": "#0A8F8F"
         }
       ],
-      "./plugins/withIntentsExtension",
-      "@sentry/react-native"
+      "./plugins/withIntentsExtension"
     ],
     "experiments": {
       "typedRoutes": true
