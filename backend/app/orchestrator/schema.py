@@ -41,6 +41,23 @@ class SpecialistFinding(BaseModel):
         description="原始输出（用于下游合并 / 审计）",
     )
     ms_elapsed: int = 0
+    proposed_cards: List["ProposedCard"] = Field(
+        default_factory=list,
+        description="可选: specialist 提出的可验证假设, orchestrator 自动落地为 ActionCard",
+    )
+
+
+class ProposedCard(BaseModel):
+    """Specialist 提出的'可验证假设' — 落地为 ActionCard 进入信任循环."""
+
+    title: str = Field(..., max_length=200)
+    content: str = Field(..., description="给用户的具体行动 markdown")
+    metric_key: str = Field(..., description="待评分的指标 (hrv/weight/bp/...)")
+    baseline_value: str = Field(..., description="起点值, 评分时与 target 比较")
+    target_value: str = Field(..., description="目标值, 含方向 ('>42' / '<35' / '78')")
+    verification_days: int = Field(..., ge=1, le=90, description="多少天后评分")
+    card_type: str = Field("plan", description="plan/insight/recommendation/note")
+    priority: int = Field(10, ge=0, le=100)
 
 
 class OrchestratorResponse(BaseModel):
@@ -54,3 +71,11 @@ class OrchestratorResponse(BaseModel):
     twin_build_ms: int = 0
     total_ms: int = 0
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    persisted_card_ids: List[int] = Field(
+        default_factory=list,
+        description="本次 specialist proposed_cards 落地后的 ActionCard ID 列表",
+    )
+
+
+# Forward-ref resolution for SpecialistFinding.proposed_cards
+SpecialistFinding.model_rebuild()

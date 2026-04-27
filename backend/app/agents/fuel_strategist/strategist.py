@@ -17,7 +17,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.orchestrator.schema import Intent, SpecialistFinding
+from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -291,6 +291,33 @@ class FuelStrategistSpecialist:
 
             summary = " · ".join(summary_parts) or "数据暂缺，无法评估营养状态"
 
+            # 信任循环: 如果体重 + 减重诉求明确, 提一个 14 天减重 0.7kg 的可验证假设
+            proposed_cards: List[ProposedCard] = []
+            cur_weight = body.weight_kg
+            target_weight = getattr(twin.goals, "target_weight_kg", None) if hasattr(twin, "goals") else None
+            if cur_weight and target_weight and cur_weight > target_weight + 0.5:
+                # 14 天减 0.7kg 是 -350kcal/天 的安全节奏
+                step_target = round(cur_weight - 0.7, 1)
+                proposed_cards.append(ProposedCard(
+                    title=f"14 天减重实验：{cur_weight:g} → {step_target}kg",
+                    content=(
+                        f"## 14 天减重小步实验\n\n"
+                        f"**起点**: {cur_weight}kg → **目标**: {step_target}kg (减 0.7kg)\n\n"
+                        f"### 行动\n"
+                        f"- 每日热量缺口 350-400 kcal (TDEE 估 {int(tdee) if tdee else '~2200'} kcal)\n"
+                        f"- 蛋白每日 ≥ {int(protein_target) if protein_target else int((cur_weight or 70)*1.6)}g\n"
+                        f"- 每日饮水 ≥ {water_goal}ml\n"
+                        f"- 每周 3 次有氧 + 2 次抗阻\n\n"
+                        f"14 天后系统用最新体重数据自动评分。"
+                    ),
+                    metric_key="weight",
+                    baseline_value=str(cur_weight),
+                    target_value=f"<{step_target}",
+                    verification_days=14,
+                    card_type="plan",
+                    priority=14,
+                ))
+
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
@@ -304,6 +331,7 @@ class FuelStrategistSpecialist:
                     "meal_slot": slot,
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
+                proposed_cards=proposed_cards,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[fuel_strategist] run failed: {e}")

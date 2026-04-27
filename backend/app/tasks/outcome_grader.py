@@ -42,13 +42,13 @@ def _parse_numeric(s: Optional[str]) -> Optional[float]:
 
 
 def _parse_direction(target: Optional[str]) -> str:
-    """从 target_value 推断目标方向: '>' / '<' / '='."""
+    """从 target_value 推断目标方向: '>' / '<' / '='. 支持 <=/>=."""
     if not target:
         return "="
     t = target.strip()
-    if t.startswith(">") or t.startswith("≥") or "提高" in t or "增加" in t:
+    if t.startswith(">") or t.startswith("≥") or t.startswith(">=") or "提高" in t or "增加" in t:
         return ">"
-    if t.startswith("<") or t.startswith("≤") or "降低" in t or "减少" in t or "减重" in t:
+    if t.startswith("<") or t.startswith("≤") or t.startswith("<=") or "降低" in t or "减少" in t or "减重" in t:
         return "<"
     return "="
 

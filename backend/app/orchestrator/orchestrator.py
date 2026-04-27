@@ -114,6 +114,70 @@ def _run_specialists(
     return findings
 
 
+def _persist_proposed_cards(
+    db: Session, user_id: int, findings: List[SpecialistFinding]
+) -> List[int]:
+    """
+    把每个 specialist 的 proposed_cards 落地为 ActionCard, 进入信任循环.
+
+    去重: 如果该用户当前 active 状态已存在同 (creator_specialist, metric_key) 的卡片,
+    跳过新建 (避免每次 orchestrator 跑都重复创建).
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.models.action_card import ActionCard
+
+    persisted_ids: List[int] = []
+    now = datetime.now(timezone.utc)
+
+    for finding in findings:
+        for proposed in finding.proposed_cards:
+            # 去重: active + 同 specialist + 同 metric_key
+            existing = db.query(ActionCard.id).filter(
+                ActionCard.user_id == user_id,
+                ActionCard.creator_specialist == finding.specialist_name,
+                ActionCard.metric_key == proposed.metric_key,
+                ActionCard.status == "active",
+            ).first()
+            if existing:
+                logger.info(
+                    f"[orchestrator] 跳过重复 proposed_card: "
+                    f"specialist={finding.specialist_name} metric={proposed.metric_key} "
+                    f"existing_id={existing[0]}"
+                )
+                continue
+
+            check_back = now + timedelta(days=proposed.verification_days)
+            card = ActionCard(
+                user_id=user_id,
+                title=proposed.title,
+                content=proposed.content,
+                card_type=proposed.card_type,
+                source_type="orchestrator",
+                priority=proposed.priority,
+                metric_key=proposed.metric_key,
+                baseline_value=proposed.baseline_value,
+                target_value=proposed.target_value,
+                verification_days=proposed.verification_days,
+                creator_specialist=finding.specialist_name,
+                check_back_date=check_back,
+            )
+            try:
+                db.add(card)
+                db.commit()
+                db.refresh(card)
+                persisted_ids.append(card.id)
+                logger.info(
+                    f"[orchestrator] 落地 proposed_card #{card.id} "
+                    f"({finding.specialist_name} → {proposed.metric_key} {proposed.target_value}, "
+                    f"复查 {proposed.verification_days}d)"
+                )
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                logger.warning(f"[orchestrator] 落地 proposed_card 失败: {e}")
+
+    return persisted_ids
+
+
 # ───────────────────── LLM 合并 prompt ────────────────────
 
 
@@ -280,6 +344,9 @@ async def run_orchestrator(
 
     synthesis = await _call_llm(system_prompt, user_prompt)
 
+    # 信任循环: 把 specialist 的 proposed_cards 落地为 ActionCard
+    persisted_card_ids = _persist_proposed_cards(db, user_id, findings)
+
     return OrchestratorResponse(
         query=req.query,
         intent=intent,
@@ -288,6 +355,7 @@ async def run_orchestrator(
         used_specialists=[s.name for s in specialists],
         twin_build_ms=twin.meta.build_ms,
         total_ms=int((time.monotonic() - t_start) * 1000),
+        persisted_card_ids=persisted_card_ids,
     )
 
 
@@ -331,6 +399,11 @@ async def stream_orchestrator(
         for f in findings:
             yield _sse("specialist", f.model_dump(mode="json"))
 
+        # 信任循环: 落地 proposed_cards
+        persisted_ids = _persist_proposed_cards(db, user_id, findings)
+        if persisted_ids:
+            yield _sse("action_cards_created", {"ids": persisted_ids})
+
         system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings)
         user_prompt = _inject_memory(db, user_id, user_prompt)
 
@@ -338,7 +411,10 @@ async def stream_orchestrator(
         async for chunk in _stream_llm(system_prompt, user_prompt):
             yield _sse("chunk", chunk)
 
-        yield _sse("done", {"total_ms": int((time.monotonic() - t_start) * 1000)})
+        yield _sse("done", {
+            "total_ms": int((time.monotonic() - t_start) * 1000),
+            "persisted_card_ids": persisted_ids,
+        })
     except Exception as e:  # noqa: BLE001
         logger.exception("[orchestrator.stream] 未捕获异常")
         yield _sse("error", {"detail": str(e)})

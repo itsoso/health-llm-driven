@@ -17,7 +17,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from app.orchestrator.schema import Intent, SpecialistFinding
+from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,34 @@ class HypertensionSpecialist:
             for i, a in enumerate(actions, 1):
                 findings.append({"type": "action", "order": i, "text": a})
 
+            # 信任循环: stage1+ 给一个 14 天降压实验
+            proposed_cards: List[ProposedCard] = []
+            if stage in {"elevated", "stage1", "stage2"} and sys_bp:
+                # 目标 SBP: stage2 -10mmHg, stage1 -7mmHg, elevated -5mmHg, 但不低于 115
+                drop = {"stage2": 10, "stage1": 7, "elevated": 5}[stage]
+                target = max(115, sys_bp - drop)
+                proposed_cards.append(ProposedCard(
+                    title=f"14 天降压实验：SBP {sys_bp} → ≤ {target}",
+                    content=(
+                        f"## 14 天降压小步实验\n\n"
+                        f"**起点**: SBP {sys_bp} / DBP {dia_bp} ({stage_zh})\n"
+                        f"**目标**: 14 天后 SBP ≤ {target}\n\n"
+                        f"### 行动 (DASH + ACC/AHA 共识)\n"
+                        f"- 钠摄入 < 2.3g/天 (尽量 < 1.5g)\n"
+                        f"- 每周有氧 ≥ 150 分钟 (快走/游泳/骑车)\n"
+                        f"- 限酒 (男 ≤ 2 杯/天, 女 ≤ 1 杯)\n"
+                        f"- 每天测 1 次 BP, 早晨起床 30 分钟内\n"
+                        f"{'- 按医嘱规律服降压药' if antihyper else '- 如复测 SBP 始终 ≥ 140, 联系医生'}\n\n"
+                        f"14 天后系统用最近 BP 数据自动评分。"
+                    ),
+                    metric_key="systolic_bp",
+                    baseline_value=str(sys_bp),
+                    target_value=f"<={target}",
+                    verification_days=14,
+                    card_type="plan",
+                    priority=18,
+                ))
+
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
@@ -150,6 +178,7 @@ class HypertensionSpecialist:
                     "has_med": bool(antihyper),
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
+                proposed_cards=proposed_cards,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[hypertension_specialist] run failed: {e}")

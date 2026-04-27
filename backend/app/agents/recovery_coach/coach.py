@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.orchestrator.schema import Intent, SpecialistFinding
+from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,77 @@ def _gene_recovery_modifiers(twin: HealthTwin) -> List[Dict[str, Any]]:
     return results[:4]
 
 
+# ─────────────────────── 可验证假设 (信任循环) ─────────────────
+
+
+def _build_proposed_cards(breakdown: ReadinessBreakdown, twin: HealthTwin) -> List[ProposedCard]:
+    """根据 readiness 状态产出最多 1 张可验证假设卡片.
+
+    触发条件:
+      - readiness < 60 且 HRV 在 baseline 之下 → "增加睡眠 7 天验证 HRV 回升"
+      - readiness < 50 且 sleep < 6h → "保证 7+ 小时睡眠 5 天"
+    """
+    cards: List[ProposedCard] = []
+    p = twin.physiological
+    score = breakdown.score
+    zone = breakdown.zone
+
+    if zone in {"unknown", "hard"} or score >= 70:
+        return cards  # 状态好，不生成 card
+
+    hrv_latest = getattr(p, "hrv_latest", None)
+    hrv_baseline = getattr(p, "hrv_7d_avg", None)
+
+    # 主卡: HRV 回升 (最常见场景)
+    if hrv_latest is not None and hrv_baseline is not None and hrv_latest < hrv_baseline:
+        target = max(int(hrv_baseline), int(hrv_latest) + 5)
+        cards.append(ProposedCard(
+            title=f"7 天恢复实验：HRV 从 {hrv_latest:.0f} 回升到 ≥ {target}",
+            content=(
+                f"## 7 天恢复实验\n\n"
+                f"**起点**: 当前 HRV {hrv_latest:.0f}ms（7 日均值 {hrv_baseline:.0f}ms）\n"
+                f"**目标**: 7 天后 HRV ≥ {target}ms\n\n"
+                f"### 行动\n"
+                f"- 每晚 22:30 前上床，目标 7.5h 睡眠\n"
+                f"- 训练强度降到 light（zone 1-2 有氧 30 分钟内）\n"
+                f"- 睡前 1h 不看屏幕\n"
+                f"- 限酒精 / 咖啡因 14:00 后停\n\n"
+                f"7 天后系统会自动用 Garmin HRV 数据评分。"
+            ),
+            metric_key="hrv",
+            baseline_value=f"{hrv_latest:.0f}",
+            target_value=f">{target}",
+            verification_days=7,
+            card_type="plan",
+            priority=15,
+        ))
+    elif zone == "rest":
+        # 没 HRV 数据但 zone=rest, 押睡眠分
+        sleep_score = getattr(p, "sleep_score_latest", None) or 60
+        target = min(80, sleep_score + 15)
+        cards.append(ProposedCard(
+            title=f"5 天睡眠修复：sleep_score 从 {sleep_score} 提升到 ≥ {target}",
+            content=(
+                f"## 5 天睡眠修复实验\n\n"
+                f"**起点**: 最近睡眠分 {sleep_score}/100\n"
+                f"**目标**: 5 天后 sleep_score ≥ {target}\n\n"
+                f"### 行动\n"
+                f"- 固定 23:00 前上床\n"
+                f"- 卧室温度 19-21°C\n"
+                f"- 训练后到睡眠间隔 ≥ 3h\n"
+                f"- 不在床上看手机\n"
+            ),
+            metric_key="sleep_score",
+            baseline_value=str(sleep_score),
+            target_value=f">{target}",
+            verification_days=5,
+            card_type="plan",
+            priority=12,
+        ))
+
+    return cards
+
+
 # ─────────────────────── Specialist 适配器 ────────────────────
 
 
@@ -390,6 +461,8 @@ class RecoveryCoachSpecialist:
                 }[breakdown.zone]
                 summary = f"Readiness {breakdown.score}/100 — {zone_zh}"
 
+            proposed_cards = _build_proposed_cards(breakdown, twin)
+
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
@@ -402,6 +475,7 @@ class RecoveryCoachSpecialist:
                     "penalty": breakdown.penalty,
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
+                proposed_cards=proposed_cards,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[recovery_coach] run failed: {e}")
