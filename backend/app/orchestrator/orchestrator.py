@@ -181,8 +181,43 @@ def _persist_proposed_cards(
 # ───────────────────── LLM 合并 prompt ────────────────────
 
 
+def _build_specialist_credit_block(db: Session, user_id: int, days: int = 30) -> str:
+    """生成 specialist 命中率简短文本, 供 LLM 决策时参考 (信任循环反馈)."""
+    try:
+        from sqlalchemy import func, Integer
+        from datetime import datetime, timezone, timedelta as _td
+        from app.models.action_card import ActionCard
+
+        since = datetime.now(timezone.utc) - _td(days=days)
+        rows = db.query(
+            ActionCard.creator_specialist,
+            func.count(ActionCard.id).label("total"),
+            func.avg(ActionCard.accuracy_score).label("avg_score"),
+            func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
+        ).filter(
+            ActionCard.user_id == user_id,
+            ActionCard.graded_at.isnot(None),
+            ActionCard.graded_at >= since,
+            ActionCard.creator_specialist.isnot(None),
+        ).group_by(ActionCard.creator_specialist).all()
+
+        if not rows:
+            return ""
+        parts = []
+        for r in rows:
+            total = int(r.total)
+            hits = int(r.hits or 0)
+            rate = (hits / total * 100) if total else 0
+            parts.append(f"{r.creator_specialist}={rate:.0f}% ({hits}/{total}, avg {float(r.avg_score or 0):.0f})")
+        return " | ".join(parts)
+    except Exception as e:
+        logger.warning(f"[orchestrator] credit block 失败 (旁路): {e}")
+        return ""
+
+
 def _build_synthesis_prompt(
-    query: str, twin: HealthTwin, findings: List[SpecialistFinding]
+    query: str, twin: HealthTwin, findings: List[SpecialistFinding],
+    db: Optional[Session] = None, user_id: Optional[int] = None,
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt)。"""
 
@@ -202,6 +237,11 @@ def _build_synthesis_prompt(
                 findings_text_parts.append(line)
     findings_text = "\n".join(findings_text_parts) or "(无 specialist 输出)"
 
+    # 信任循环反馈: 把过去 30 天的 specialist 命中率注入 prompt
+    credit_text = ""
+    if db is not None and user_id is not None:
+        credit_text = _build_specialist_credit_block(db, user_id, days=30)
+
     system_prompt = (
         "你是健康助理的首席分析师。下游 specialist agent 已经对用户的 Digital Health Twin 做了结构化裁决，"
         "你的任务是：\n"
@@ -212,16 +252,22 @@ def _build_synthesis_prompt(
         "5. 给出 2-4 个具体的下一步行动（时间/频率/剂量要具体）\n"
         "6. 涉及药物/剂量调整时，明确说需要和医生确认\n"
         "7. 不超过 500 字，简洁有力，避免废话\n"
+        "8. **信任校准**: 你下方会看到过去 30 天各 specialist 的预测命中率."
+        " 命中率 ≥ 70% 的 specialist 建议优先采纳;"
+        " 命中率 < 40% 的 specialist 建议表达时加 '仅供参考' 或要求用户复测;"
+        " 没有命中率数据的 specialist 视为中等可信."
     )
 
-    user_prompt = (
-        f"【用户原始问题】\n{query}\n\n"
-        f"【用户当前健康快照】\n{twin_blob or '(数据暂缺)'}\n\n"
-        f"【专家裁决】\n{findings_text}\n\n"
-        "请基于以上信息写回答。"
-    )
+    user_prompt_parts = [
+        f"【用户原始问题】\n{query}",
+        f"【用户当前健康快照】\n{twin_blob or '(数据暂缺)'}",
+    ]
+    if credit_text:
+        user_prompt_parts.append(f"【Specialist 历史命中率 (近 30 天)】\n{credit_text}")
+    user_prompt_parts.append(f"【专家裁决】\n{findings_text}")
+    user_prompt_parts.append("请基于以上信息写回答。")
 
-    return system_prompt, user_prompt
+    return system_prompt, "\n\n".join(user_prompt_parts)
 
 
 def _inject_memory(db: Session, user_id: int, user_prompt: str) -> str:
@@ -337,7 +383,7 @@ async def run_orchestrator(
     specialists = _select_specialists(intent, twin, req.specialists)
     findings = _run_specialists(twin, specialists, {"query": req.query, "db": db})
 
-    system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings)
+    system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
 
     # 注入对话记忆（用户历史偏好/医嘱/过敏等）
     user_prompt = _inject_memory(db, user_id, user_prompt)
@@ -404,7 +450,7 @@ async def stream_orchestrator(
         if persisted_ids:
             yield _sse("action_cards_created", {"ids": persisted_ids})
 
-        system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings)
+        system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
         user_prompt = _inject_memory(db, user_id, user_prompt)
 
         # 流式 LLM

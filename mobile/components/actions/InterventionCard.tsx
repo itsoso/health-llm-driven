@@ -61,10 +61,15 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
             <Text style={[txt.typeBadge, { color: cfg.color }]}>{cfg.label}</Text>
             {card.created_at ? <Text style={txt.timeStamp}>{card.created_at.slice(0, 10)}</Text> : null}
             {progress ? <Text style={txt.progress}>{progress.completed}/{progress.total}</Text> : null}
+            {card.creator_specialist ? (
+              <Text style={txt.specialist}>{card.creator_specialist}</Text>
+            ) : null}
           </View>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={15} color={colors.labelTertiary} />
       </View>
+
+      <TrustLoopBadge card={card} />
 
       {verification ? (
         <View style={styles.inlineEvidence}>
@@ -74,6 +79,14 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
 
       {expanded ? (
         <View style={styles.expanded}>
+          {card.grading_notes ? (
+            <ActionEvidenceRow
+              label="评分"
+              value={card.grading_notes}
+              tone={card.accuracy_score != null && card.accuracy_score >= 70 ? 'good' : 'warn'}
+              icon="trophy-outline"
+            />
+          ) : null}
           {assessment?.summary ? (
             <ActionEvidenceRow label="最近评估" value={assessment.summary} tone="good" icon="pulse-outline" />
           ) : null}
@@ -141,6 +154,50 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
   );
 }
 
+function TrustLoopBadge({ card }: { card: ActionCard }) {
+  if (!card.metric_key || !card.target_value) return null;
+  const graded = card.accuracy_score != null && card.graded_at;
+
+  if (graded) {
+    const score = card.accuracy_score!;
+    const tone = score >= 70 ? '#30D158' : score >= 40 ? '#FF9F0A' : '#FF453A';
+    const label = score >= 70 ? '命中' : score >= 40 ? '部分' : '未达';
+    return (
+      <View style={[styles.trustRow, { backgroundColor: tone + '15', borderColor: tone + '40' }]}>
+        <Text style={[trustTxt.score, { color: tone }]}>
+          {label} {score}
+        </Text>
+        <Text style={trustTxt.detail}>
+          {card.baseline_value} → {card.actual_value} (目标 {card.target_value})
+        </Text>
+      </View>
+    );
+  }
+
+  if (card.check_back_date) {
+    const days = Math.max(0, Math.ceil((new Date(card.check_back_date).getTime() - Date.now()) / 86400000));
+    const tone = days <= 1 ? '#FF453A' : colors.labelSecondary;
+    return (
+      <View style={[styles.trustRow, { backgroundColor: '#F2F2F7', borderColor: '#D1D1D6' }]}>
+        <Text style={trustTxt.detail}>
+          {card.baseline_value} → 目标 {card.target_value}
+        </Text>
+        <Text style={[trustTxt.countdown, { color: tone }]}>
+          {days === 0 ? '今天评分' : `${days}天后评分`}
+        </Text>
+      </View>
+    );
+  }
+
+  return null;
+}
+
+const trustTxt = {
+  score: { fontSize: 12, fontWeight: '700' as const, marginRight: 8 } as TextStyle,
+  detail: { fontSize: 11, color: colors.labelSecondary, flex: 1 } as TextStyle,
+  countdown: { fontSize: 11, fontWeight: '600' as const } as TextStyle,
+};
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.bgCard,
@@ -159,6 +216,12 @@ const styles = StyleSheet.create({
   titleBlock: { flex: 1 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
   inlineEvidence: { paddingHorizontal: 14, paddingBottom: 12, marginTop: -4 },
+  trustRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 14, marginBottom: 10,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 8, borderWidth: 1,
+  },
   expanded: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.separator,
@@ -188,6 +251,11 @@ const txt = {
   typeBadge: { fontSize: 11, fontWeight: '700' } as TextStyle,
   timeStamp: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
   progress: { fontSize: 11, color: colors.labelSecondary, fontWeight: '700' } as TextStyle,
+  specialist: {
+    fontSize: 10, color: colors.labelSecondary,
+    fontFamily: 'Menlo', fontWeight: '600',
+    backgroundColor: '#F2F2F7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+  } as TextStyle,
   checkText: { flex: 1, fontSize: 13, color: colors.labelSecondary } as TextStyle,
   checkDone: { color: colors.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
   completeBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,

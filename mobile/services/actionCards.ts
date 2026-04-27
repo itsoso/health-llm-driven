@@ -3,7 +3,15 @@ import type { SafetyAlert } from './safety';
 import { normalizeInterventionDraft, type InterventionDraft } from './interventionDraft';
 import type { OutcomeReviewDraft } from './outcomeReview';
 
-export type ActionCardMetricKey = 'sleep_score' | 'hrv' | 'rhr' | 'weight' | 'bp' | 'spo2_odi' | 'custom';
+export type ActionCardMetricKey =
+  | 'sleep_score' | 'hrv' | 'rhr' | 'weight' | 'bp' | 'spo2_odi' | 'custom'
+  // 化验项
+  | 'alt' | 'ast' | 'ggt' | 'alp' | 'creatinine' | 'uric_acid' | 'urea'
+  | 'hba1c' | 'tsh' | 'ft3' | 'ft4' | 'vitamin_d' | 'b12' | 'ferritin'
+  | 'crp' | 'esr' | 'wbc' | 'rbc' | 'hgb' | 'plt' | 'lp_a' | 'apo_b'
+  // 血脂血糖
+  | 'ldl' | 'hdl' | 'tc' | 'tg' | 'fasting_glucose' | 'blood_glucose'
+  | 'systolic_bp' | 'diastolic_bp' | 'bmi' | 'body_fat';
 
 export interface ActionCard {
   id: number;
@@ -28,6 +36,13 @@ export interface ActionCard {
   baseline_value?: string | null;
   target_value?: string | null;
   verification_days?: number | null;
+  // 信任循环字段 (Specialist 信用)
+  creator_specialist?: string | null;
+  check_back_date?: string | null;
+  actual_value?: string | null;
+  accuracy_score?: number | null;
+  graded_at?: string | null;
+  grading_notes?: string | null;
 }
 
 export interface ActionCardCreateInput {
