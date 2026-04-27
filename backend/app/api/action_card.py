@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,17 @@ router = APIRouter(prefix="/action-cards", tags=["action-cards"])
 
 ActionMetricKey = Literal["sleep_score", "hrv", "rhr", "weight", "bp", "spo2_odi", "custom"]
 
+# 信任循环支持的化验项 metric_key (在 outcome_grader._fetch_metric 里实现)
+LAB_METRIC_KEYS = {
+    "alt", "ast", "ggt", "alp", "creatinine", "uric_acid", "urea",
+    "hba1c", "tsh", "ft3", "ft4", "vitamin_d", "b12", "ferritin",
+    "crp", "esr", "wbc", "rbc", "hgb", "plt", "lp_a", "apo_b",
+    "ldl", "hdl", "tc", "tg", "fasting_glucose", "blood_glucose",
+    "systolic_bp", "diastolic_bp", "bmi", "body_fat",
+}
+ALLOWED_METRIC_KEYS = {"sleep_score", "hrv", "rhr", "weight", "bp",
+                       "spo2_odi", "custom"} | LAB_METRIC_KEYS
+
 
 class ChecklistItem(BaseModel):
     item: str = Field(..., min_length=1, max_length=200)
@@ -48,17 +59,29 @@ class ActionCardCreate(BaseModel):
     source_id: Optional[str] = None
     priority: int = 0
     expires_at: Optional[datetime] = None
-    metric_key: Optional[ActionMetricKey] = None
+    metric_key: Optional[str] = Field(None, max_length=50)
     baseline_value: Optional[str] = Field(None, max_length=100)
     target_value: Optional[str] = Field(None, max_length=100)
     verification_days: Optional[int] = Field(None, ge=1, le=90)
     checklist: list[ChecklistItem] = Field(default_factory=list)
+    # 信任循环字段
+    creator_specialist: Optional[str] = Field(None, max_length=64)
+    check_back_date: Optional[datetime] = None
+
+    @field_validator("metric_key")
+    @classmethod
+    def _validate_metric_key(cls, v):
+        if v is not None and v not in ALLOWED_METRIC_KEYS:
+            raise ValueError(f"未知 metric_key: {v}. 支持: {sorted(ALLOWED_METRIC_KEYS)}")
+        return v
 
 
 class ActionCardFromMessage(BaseModel):
     content: str = Field(..., description="AI 消息的完整内容（markdown）")
     source_id: Optional[str] = None
     card_type: str = "plan"
+    creator_specialist: Optional[str] = Field(None, max_length=64,
+        description="若由 specialist 触发, 标注 specialist 名 (recovery_coach 等)")
 
 
 class ActionCardUpdate(BaseModel):
@@ -142,6 +165,12 @@ def create_card(
     if expires_at is None and body.verification_days is not None:
         expires_at = datetime.now(UTC) + timedelta(days=body.verification_days)
 
+    # 自动推算 check_back_date: 显式给 > verification_days > 默认 7 天 (有 metric_key 才设)
+    check_back = body.check_back_date
+    if check_back is None and body.metric_key:
+        days = body.verification_days or 7
+        check_back = datetime.now(UTC) + timedelta(days=days)
+
     card = ActionCard(
         user_id=current_user.id,
         title=body.title,
@@ -157,6 +186,8 @@ def create_card(
         target_value=body.target_value,
         verification_days=body.verification_days,
         checklist=[item.model_dump() for item in body.checklist],
+        creator_specialist=body.creator_specialist,
+        check_back_date=check_back,
     )
     db.add(card)
     db.commit()
@@ -186,6 +217,7 @@ def create_from_message(
         source_type="conversation",
         source_id=body.source_id,
         priority=10,  # 从对话固化的默认优先级高
+        creator_specialist=body.creator_specialist,
     )
     db.add(card)
     db.commit()
@@ -301,4 +333,10 @@ def _card_to_dict(card: ActionCard) -> dict:
         "baseline_value": card.baseline_value,
         "target_value": card.target_value,
         "verification_days": card.verification_days,
+        "creator_specialist": card.creator_specialist,
+        "check_back_date": card.check_back_date.isoformat() if card.check_back_date else None,
+        "actual_value": card.actual_value,
+        "accuracy_score": card.accuracy_score,
+        "graded_at": card.graded_at.isoformat() if card.graded_at else None,
+        "grading_notes": card.grading_notes,
     }

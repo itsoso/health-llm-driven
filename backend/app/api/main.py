@@ -110,6 +110,7 @@ from app.api import (
     rhinitis_trend,
     spo2,
     llm_usage,
+    specialist_hit_rate,
 )
 
 api_router = APIRouter()
@@ -210,6 +211,7 @@ api_router.include_router(cgm.router, tags=["cgm"])
 api_router.include_router(body_composition.router)
 api_router.include_router(knowledge.router, tags=["knowledge-base"])
 api_router.include_router(llm_usage.router)
+api_router.include_router(specialist_hit_rate.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])

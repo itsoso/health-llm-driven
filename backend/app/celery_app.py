@@ -29,6 +29,8 @@ celery_app = Celery(
         "app.tasks.notifications",
         "app.tasks.health_analysis",
         "app.tasks.intervention_assessment",
+        "app.tasks.maintenance",
+        "app.tasks.outcome_grader",
     ]
 )
 
@@ -193,6 +195,12 @@ celery_app.conf.beat_schedule = {
     "llm-cost-daily-check": {
         "task": "app.tasks.maintenance.llm_cost_daily_check",
         "schedule": crontab(hour=23, minute=55),
+    },
+
+    # 每天 8:00 评分到期的 ActionCard (Specialist 信任循环)
+    "grade-action-cards": {
+        "task": "app.tasks.outcome_grader.grade_due_action_cards",
+        "schedule": crontab(hour=8, minute=0),
     },
 }
 

@@ -56,4 +56,12 @@ class ActionCard(Base):
     target_value = Column(String(100))
     verification_days = Column(Integer)
 
+    # 信任循环 (Outcome Tracking) — 用于 specialist hit-rate 计算
+    creator_specialist = Column(String(64), index=True)  # recovery_coach / fuel_strategist / ...
+    check_back_date = Column(DateTime(timezone=True), index=True)  # 自动评分日期
+    actual_value = Column(String(100))      # 评分时拉到的实测值
+    accuracy_score = Column(Integer)        # 0-100 命中度（None=未评分）
+    graded_at = Column(DateTime(timezone=True))  # 评分时间
+    grading_notes = Column(Text)            # 评分解释
+
     user = relationship("User", backref="action_cards")

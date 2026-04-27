@@ -1,0 +1,146 @@
+"""ActionCard outcome grading tests."""
+from datetime import datetime, timedelta, timezone, date
+
+from app.tasks.outcome_grader import _parse_numeric, _parse_direction, _grade
+
+
+class TestParseNumeric:
+    def test_plain(self):
+        assert _parse_numeric("82.5") == 82.5
+
+    def test_with_unit(self):
+        assert _parse_numeric("82kg") == 82.0
+        assert _parse_numeric("3.5 mmol/L") == 3.5
+
+    def test_with_prefix(self):
+        assert _parse_numeric("<35") == 35.0
+        assert _parse_numeric(">90") == 90.0
+
+    def test_blood_pressure(self):
+        # "120/80" → 取首数, systolic
+        assert _parse_numeric("120/80") == 120.0
+
+    def test_none(self):
+        assert _parse_numeric(None) is None
+        assert _parse_numeric("") is None
+        assert _parse_numeric("abc") is None
+
+
+class TestParseDirection:
+    def test_greater(self):
+        assert _parse_direction(">90") == ">"
+        assert _parse_direction("≥7000") == ">"
+        assert _parse_direction("提高 HRV") == ">"
+
+    def test_less(self):
+        assert _parse_direction("<35") == "<"
+        assert _parse_direction("减重到 80kg") == "<"
+        assert _parse_direction("降低 LDL") == "<"
+
+    def test_equal(self):
+        assert _parse_direction("80kg") == "="
+        assert _parse_direction(None) == "="
+
+
+class TestGrade:
+    def test_full_progress(self):
+        # baseline=82, target=78, actual=78 (达成)
+        score, note = _grade(82, 78, 78, "<")
+        assert score == 100
+
+    def test_overshot(self):
+        # actual 比 target 还更进一步
+        score, note = _grade(82, 78, 76, "<")
+        assert score == 100
+
+    def test_partial_progress(self):
+        # 走了一半
+        score, note = _grade(82, 78, 80, "<")
+        # progress = (80-82)/(78-82) = 0.5 → 60 分档
+        assert 50 <= score <= 70
+
+    def test_no_movement(self):
+        score, note = _grade(82, 78, 82, "<")
+        assert score == 25
+        assert "原地踏步" in note
+
+    def test_reverse_direction(self):
+        # 想减重却胖了
+        score, note = _grade(82, 78, 84, "<")
+        assert score < 30
+        assert "反向" in note
+
+    def test_missing_actual(self):
+        score, note = _grade(82, 78, None, "<")
+        assert score == 0
+        assert "缺失" in note
+
+    def test_no_baseline_direction_only(self):
+        # 没起点, 只看方向
+        score, note = _grade(None, 35, 28, "<")
+        assert score == 100  # actual <= target
+
+        score, note = _grade(None, 35, 40, "<")
+        assert score == 30  # actual > target
+
+
+class TestGradeFlow:
+    """端到端: ActionCard 创建 → 数据写入 → 评分."""
+
+    def test_grades_due_card_with_actual_data(self, db):
+        """到期 + 有数据 → 评分."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=7, record_date=date.today() - timedelta(days=30), weight=82.0))
+        db.add(WeightRecord(user_id=7, record_date=date.today(), weight=80.0))
+
+        card = ActionCard(
+            user_id=7,
+            title="减重 4kg",
+            content="...",
+            card_type="plan",
+            metric_key="weight",
+            baseline_value="82",
+            target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        result = _grade_loop(db, now)
+        assert result["graded"] >= 1
+
+        db.refresh(card)
+        assert card.graded_at is not None
+        assert card.actual_value == "80"
+        assert 50 <= card.accuracy_score <= 70
+
+    def test_postpones_when_no_data(self, db):
+        from app.models.action_card import ActionCard
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        card = ActionCard(
+            user_id=999,
+            title="测试",
+            content="...",
+            metric_key="weight",
+            baseline_value="80",
+            target_value="75",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        original_check_back = card.check_back_date
+        result = _grade_loop(db, now)
+        assert result["skipped_no_data"] >= 1
+
+        db.refresh(card)
+        assert card.graded_at is None
+        assert card.check_back_date > original_check_back
