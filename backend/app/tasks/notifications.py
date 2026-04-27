@@ -1144,6 +1144,63 @@ def generate_weekly_report_message():
     return {"generated_count": generated_count, "total_users": len(user_ids)}
 
 
+def _build_hit_rate_block(db, user_id: int, days: int = 30) -> str:
+    """生成 specialist 信用面板 markdown — 周报顶部, 让用户看到 agent 准不准."""
+    from app.models.action_card import ActionCard
+    from sqlalchemy import func, Integer
+    from datetime import datetime, timezone, timedelta as _td
+
+    since = datetime.now(timezone.utc) - _td(days=days)
+
+    rows = db.query(
+        ActionCard.creator_specialist,
+        func.count(ActionCard.id).label("total"),
+        func.avg(ActionCard.accuracy_score).label("avg_score"),
+        func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
+    ).filter(
+        ActionCard.user_id == user_id,
+        ActionCard.graded_at.isnot(None),
+        ActionCard.graded_at >= since,
+        ActionCard.creator_specialist.isnot(None),
+    ).group_by(ActionCard.creator_specialist).all()
+
+    pending = db.query(func.count(ActionCard.id)).filter(
+        ActionCard.user_id == user_id,
+        ActionCard.check_back_date.isnot(None),
+        ActionCard.graded_at.is_(None),
+    ).scalar() or 0
+
+    if not rows and pending == 0:
+        return ""  # 还没产生过 ActionCard, 不展示
+
+    lines = [f"### 🎯 Specialist 信用 (最近 {days} 天)"]
+
+    if rows:
+        # 排序: hit_rate 降序
+        ranked = sorted(
+            [(r.creator_specialist, int(r.total),
+              int(r.hits or 0), float(r.avg_score or 0))
+             for r in rows],
+            key=lambda x: (x[2] / x[1] if x[1] else 0),
+            reverse=True,
+        )
+        best = ranked[0]
+        lines.append(f"**本期最该信的 specialist**: `{best[0]}` "
+                     f"(命中 {best[2]}/{best[1]}, 平均分 {best[3]:.0f})")
+        lines.append("")
+        lines.append("| Specialist | 已评 | 命中 (≥70) | 平均分 |")
+        lines.append("|---|---|---|---|")
+        for name, total, hits, avg in ranked:
+            rate = (hits / total * 100) if total else 0
+            lines.append(f"| {name} | {total} | {hits} ({rate:.0f}%) | {avg:.0f} |")
+
+    if pending > 0:
+        lines.append("")
+        lines.append(f"⏳ **{pending} 张卡片待复查**（到期会自动评分）")
+
+    return "\n".join(lines)
+
+
 def _generate_weekly_report_for_user(user_id: int, today: date):
     """为单个用户生成周报"""
     from app.models.daily_health import GarminData, DietRecord, WaterIntake, WorkoutRecord
@@ -1229,6 +1286,12 @@ def _generate_weekly_report_for_user(user_id: int, today: date):
         # --- 构建 Markdown ---
         date_range = f"{this_week_start.strftime('%-m/%-d')}~{(this_week_end - timedelta(days=1)).strftime('%-m/%-d')}"
         lines = [f"📊 **周报 ({date_range})**\n"]
+
+        # ─── 信任循环面板 (顶部置顶) ──────────────────
+        hit_rate_block = _build_hit_rate_block(db, user_id, days=30)
+        if hit_rate_block:
+            lines.append(hit_rate_block)
+            lines.append("")
 
         def _compare(current, previous, unit="", higher_is_better=True):
             """生成对比文字"""

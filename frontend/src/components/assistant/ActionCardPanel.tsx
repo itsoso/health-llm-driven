@@ -7,13 +7,49 @@
  * 支持展开/折叠、标记完成、归档。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActionCard,
   archiveActionCard,
   getMyActionCards,
   updateActionCard,
 } from '@/services/api/actionCard';
+
+interface TrustSummary {
+  graded: number;
+  hits: number;
+  pending: number;
+  bestSpecialist: string | null;
+  bestRate: number;
+}
+
+function buildTrustSummary(cards: ActionCard[]): TrustSummary | null {
+  const graded = cards.filter((c) => c.accuracy_score !== null && c.accuracy_score !== undefined && c.graded_at);
+  const pending = cards.filter((c) => c.check_back_date && !c.graded_at).length;
+  if (graded.length === 0 && pending === 0) return null;
+
+  const hits = graded.filter((c) => (c.accuracy_score ?? 0) >= 70).length;
+
+  const bySpec: Record<string, { total: number; hits: number }> = {};
+  graded.forEach((c) => {
+    const k = c.creator_specialist || 'unknown';
+    if (!bySpec[k]) bySpec[k] = { total: 0, hits: 0 };
+    bySpec[k].total++;
+    if ((c.accuracy_score ?? 0) >= 70) bySpec[k].hits++;
+  });
+  const ranked = Object.entries(bySpec).sort(
+    (a, b) => b[1].hits / b[1].total - a[1].hits / a[1].total
+  );
+  const [bestName, bestStats] = ranked[0] || [null, null];
+
+  return {
+    graded: graded.length,
+    hits,
+    pending,
+    bestSpecialist: bestName,
+    bestRate: bestStats ? Math.round((bestStats.hits / bestStats.total) * 100) : 0,
+  };
+}
 
 const TYPE_STYLE: Record<string, { bg: string; border: string; fg: string; icon: string }> = {
   guide: { bg: '#f0fdfa', border: '#99f6e4', fg: '#0d9488', icon: '📖' },
@@ -22,6 +58,61 @@ const TYPE_STYLE: Record<string, { bg: string; border: string; fg: string; icon:
   recommendation: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#16a34a', icon: '✅' },
   note: { bg: '#f8fafc', border: '#e2e8f0', fg: '#475569', icon: '📝' },
 };
+
+function TrustLoopBadge({ card }: { card: ActionCard }) {
+  // 没启用信用循环 → 不渲染
+  if (!card.metric_key || !card.target_value) return null;
+
+  const graded = card.accuracy_score !== null && card.accuracy_score !== undefined && card.graded_at;
+  const specialist = card.creator_specialist;
+
+  // 已评分: 显示进度条 + 分数
+  if (graded) {
+    const score = card.accuracy_score!;
+    const color = score >= 70 ? '#16a34a' : score >= 40 ? '#f59e0b' : '#dc2626';
+    const label = score >= 70 ? '命中' : score >= 40 ? '部分' : '未达';
+    return (
+      <div className="mt-1.5 flex items-center gap-2 text-[10px]">
+        {specialist && (
+          <span className="px-1.5 py-0.5 rounded font-mono" style={{ background: '#f1f5f9', color: '#475569' }}>
+            {specialist}
+          </span>
+        )}
+        <span className="font-mono" style={{ color: '#64748b' }}>
+          {card.baseline_value} → <strong>{card.actual_value}</strong> (目标 {card.target_value})
+        </span>
+        <span
+          className="ml-auto px-1.5 py-0.5 rounded font-bold"
+          style={{ background: color, color: 'white' }}
+        >
+          {label} {score}
+        </span>
+      </div>
+    );
+  }
+
+  // 待复查: 显示倒计时
+  if (card.check_back_date) {
+    const days = Math.max(0, Math.ceil((new Date(card.check_back_date).getTime() - Date.now()) / 86400000));
+    return (
+      <div className="mt-1.5 flex items-center gap-2 text-[10px]" style={{ color: '#64748b' }}>
+        {specialist && (
+          <span className="px-1.5 py-0.5 rounded font-mono" style={{ background: '#f1f5f9' }}>
+            {specialist}
+          </span>
+        )}
+        <span className="font-mono">
+          {card.baseline_value} → 目标 {card.target_value} ({card.metric_key})
+        </span>
+        <span className="ml-auto" style={{ color: days <= 1 ? '#dc2626' : '#64748b' }}>
+          {days === 0 ? '今天评分' : `${days} 天后评分`}
+        </span>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 function CardItem({
   card,
@@ -67,6 +158,7 @@ function CardItem({
               {card.content.replace(/[#*`>-]/g, '').slice(0, 100)}
             </div>
           )}
+          <TrustLoopBadge card={card} />
         </div>
         <span
           className="shrink-0 text-xs mt-1"
@@ -82,6 +174,20 @@ function CardItem({
 
       {expanded && (
         <div className="mt-3 pl-7 space-y-3">
+          {/* 信用循环评分注释 */}
+          {card.grading_notes && (
+            <div
+              className="text-[11px] px-3 py-2 rounded-lg border"
+              style={{
+                background: card.accuracy_score && card.accuracy_score >= 70 ? '#f0fdf4' : '#fef9c3',
+                borderColor: card.accuracy_score && card.accuracy_score >= 70 ? '#bbf7d0' : '#fde68a',
+                color: '#475569',
+              }}
+            >
+              📊 <strong>评分:</strong> {card.grading_notes}
+            </div>
+          )}
+
           {/* Markdown 内容 */}
           <div
             className="text-xs leading-relaxed prose prose-sm max-w-none"
@@ -181,14 +287,27 @@ export default function ActionCardPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getMyActionCards('active', 10);
-      setCards(data);
+      // 加载 active + 最近 graded 的, 信用面板才能显示历史命中率
+      const [active, completed] = await Promise.all([
+        getMyActionCards('active', 10),
+        getMyActionCards('completed', 10).catch(() => []),
+      ]);
+      // 去重 (按 id), 取最多 15 张
+      const seen = new Set<number>();
+      const merged = [...active, ...completed].filter((c) => {
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+      });
+      setCards(merged.slice(0, 15));
     } catch (e) {
       console.error('加载行动卡片失败', e);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const trustSummary = useMemo(() => buildTrustSummary(cards), [cards]);
 
   useEffect(() => {
     load();
@@ -228,6 +347,27 @@ export default function ActionCardPanel() {
           ↻
         </button>
       </div>
+
+      {trustSummary && (
+        <div
+          className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-3"
+          style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e' }}
+        >
+          <span>🎯 <strong>Specialist 信用</strong></span>
+          {trustSummary.bestSpecialist ? (
+            <span>
+              最准: <code className="px-1 rounded bg-amber-200/50">{trustSummary.bestSpecialist}</code> {trustSummary.bestRate}%
+            </span>
+          ) : (
+            <span style={{ color: '#a16207' }}>等待第一次评分</span>
+          )}
+          <span className="ml-auto">
+            {trustSummary.graded > 0 && <>已评 {trustSummary.hits}/{trustSummary.graded}</>}
+            {trustSummary.graded > 0 && trustSummary.pending > 0 && <> · </>}
+            {trustSummary.pending > 0 && <>{trustSummary.pending} 张待评</>}
+          </span>
+        </div>
+      )}
 
       {cards.map((card) => (
         <CardItem

@@ -13,6 +13,17 @@ export interface ActionCard {
   expires_at: string | null;
   completed_at: string | null;
   created_at: string | null;
+  // 信任循环字段
+  metric_key?: string | null;
+  baseline_value?: string | null;
+  target_value?: string | null;
+  verification_days?: number | null;
+  creator_specialist?: string | null;
+  check_back_date?: string | null;
+  actual_value?: string | null;
+  accuracy_score?: number | null;
+  graded_at?: string | null;
+  grading_notes?: string | null;
 }
 
 export const getMyActionCards = async (

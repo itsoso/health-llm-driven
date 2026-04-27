@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from app.orchestrator.schema import Intent, SpecialistFinding
+from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -164,6 +164,74 @@ class MetabolicSpecialist:
             if ms["is_metabolic_syndrome"]:
                 summary = "⚠️ 代谢综合征 · " + summary
 
+            # 信任循环: LDL > 3.4 / HbA1c > 5.7 / TG > 1.7 → 各产 1 张
+            proposed_cards: List[ProposedCard] = []
+            if labs.ldl is not None and labs.ldl > 3.4:
+                target = round(max(2.6, labs.ldl - 0.5), 1)
+                proposed_cards.append(ProposedCard(
+                    title=f"60 天降 LDL：{labs.ldl} → ≤ {target} mmol/L",
+                    content=(
+                        f"## 60 天降 LDL 实验\n\n"
+                        f"**起点**: LDL {labs.ldl} mmol/L\n"
+                        f"**目标**: 60 天后 LDL ≤ {target} mmol/L\n\n"
+                        f"### 行动 (饮食结构性改变)\n"
+                        f"- 饱和脂肪 < 7% 总热量 (减红肉/全脂奶/椰子油)\n"
+                        f"- 每日可溶性纤维 ≥ 10g (燕麦/豆类/苹果)\n"
+                        f"- 植物甾醇 2g/天 (强化食品或胶囊)\n"
+                        f"- 每周有氧 ≥ 150 分钟\n\n"
+                        f"60 天后系统按最新化验值评分。"
+                    ),
+                    metric_key="ldl",
+                    baseline_value=str(labs.ldl),
+                    target_value=f"<={target}",
+                    verification_days=60,
+                    card_type="plan",
+                    priority=15,
+                ))
+            if labs.hba1c is not None and labs.hba1c >= 5.7:
+                target = round(max(5.4, labs.hba1c - 0.3), 1)
+                proposed_cards.append(ProposedCard(
+                    title=f"90 天降 HbA1c：{labs.hba1c} → ≤ {target}%",
+                    content=(
+                        f"## 90 天降糖化血红蛋白实验\n\n"
+                        f"**起点**: HbA1c {labs.hba1c}%\n"
+                        f"**目标**: 90 天后 HbA1c ≤ {target}%\n\n"
+                        f"### 行动\n"
+                        f"- 减少精制碳水, 主食至少 1/3 替换全谷/豆类\n"
+                        f"- 餐后 10 分钟散步 (降餐后血糖)\n"
+                        f"- 每周 ≥ 2 次抗阻训练 (改善肌肉胰岛素敏感性)\n"
+                        f"- 限糖饮料 / 果汁\n\n"
+                        f"HbA1c 反映近 90 天平均血糖, 评分窗口 90 天。"
+                    ),
+                    metric_key="hba1c",
+                    baseline_value=str(labs.hba1c),
+                    target_value=f"<={target}",
+                    verification_days=90,
+                    card_type="plan",
+                    priority=18,
+                ))
+            if labs.triglycerides is not None and labs.triglycerides >= 1.7:
+                target = 1.5
+                proposed_cards.append(ProposedCard(
+                    title=f"30 天降 TG：{labs.triglycerides} → ≤ {target} mmol/L",
+                    content=(
+                        f"## 30 天降甘油三酯实验\n\n"
+                        f"**起点**: TG {labs.triglycerides} mmol/L\n"
+                        f"**目标**: 30 天后 TG ≤ {target}\n\n"
+                        f"### 行动\n"
+                        f"- 限糖 / 限酒 (TG 对糖和酒最敏感)\n"
+                        f"- Omega-3 (鱼油 EPA+DHA 2-4g/天)\n"
+                        f"- 减重 5% (如有空间)\n"
+                        f"- 每周 ≥ 3 次有氧运动\n"
+                    ),
+                    metric_key="tg",
+                    baseline_value=str(labs.triglycerides),
+                    target_value=f"<={target}",
+                    verification_days=30,
+                    card_type="plan",
+                    priority=14,
+                ))
+
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
@@ -176,6 +244,7 @@ class MetabolicSpecialist:
                     "bmi": body.bmi,
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
+                proposed_cards=proposed_cards,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[metabolic_specialist] run failed: {e}")

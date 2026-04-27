@@ -25,7 +25,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from app.orchestrator.schema import Intent, SpecialistFinding
+from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -253,6 +253,54 @@ class MovementCoachSpecialist:
             else:
                 summary = f"训练 {status_zh} · 今日建议 {intensity_code}"
 
+            # 信任循环: undertrained / overload 各产一张可验证假设
+            proposed_cards: List[ProposedCard] = []
+            wpw = b.workouts_this_week or 0
+            if status == "undertrained" and wpw < 3:
+                target_count = max(3, wpw + 2)
+                proposed_cards.append(ProposedCard(
+                    title=f"未来 7 天加训：每周训练 {wpw} → {target_count} 次",
+                    content=(
+                        f"## 7 天训练量提升实验\n\n"
+                        f"**起点**: 本周训练 {wpw} 次\n"
+                        f"**目标**: 7 天后周训练 ≥ {target_count} 次\n\n"
+                        f"### 行动\n"
+                        f"- 周一/三/五: 30-40 分钟 zone 2 有氧 (快走/慢跑/骑车)\n"
+                        f"- 周末加 1 次力量 (深蹲/卧推/划船 各 3 组 × 8-12)\n"
+                        f"- 单次训练心率不超过 HRmax × 0.7 (避免一上来过载)\n\n"
+                        f"7 天后系统检查 workouts_this_week 数据自动评分。"
+                    ),
+                    metric_key="custom",
+                    baseline_value=str(wpw),
+                    target_value=f">={target_count}",
+                    verification_days=7,
+                    card_type="plan",
+                    priority=12,
+                ))
+            elif status == "overload" and acwr:
+                # ACWR > 1.5 — 强制 deload
+                target_acwr = 1.0
+                proposed_cards.append(ProposedCard(
+                    title=f"7 天 deload：ACWR {acwr:.1f} → ≤ 1.0",
+                    content=(
+                        f"## 7 天主动减量恢复\n\n"
+                        f"**起点**: ACWR {acwr:.1f} (overload)\n"
+                        f"**目标**: 7 天后 ACWR ≤ 1.0\n\n"
+                        f"### 行动\n"
+                        f"- 本周训练负荷降到上周的 60% (时长或强度)\n"
+                        f"- 高强度 (zone 4-5) 0 次，全部转 zone 2\n"
+                        f"- 增加睡眠 30-60 min/天\n"
+                        f"- 力量训练改为技术性 (轻重量, 高质量动作)\n\n"
+                        f"过载是受伤窗口，强制 deload 比硬训更省时间。"
+                    ),
+                    metric_key="custom",
+                    baseline_value=f"{acwr:.2f}",
+                    target_value="<=1.0",
+                    verification_days=7,
+                    card_type="plan",
+                    priority=20,  # overload 高优先级
+                ))
+
             return SpecialistFinding(
                 specialist_name=self.name,
                 category=self.category,
@@ -265,6 +313,7 @@ class MovementCoachSpecialist:
                     "readiness_used": readiness_zone,
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
+                proposed_cards=proposed_cards,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[movement_coach] run failed: {e}")
