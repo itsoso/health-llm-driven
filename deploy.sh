@@ -276,54 +276,32 @@ deploy_backend() {
         systemctl restart health-backend && \
         echo '重启 Celery worker & beat...' && \
         systemctl restart celery-worker celery-beat && \
-        echo '同步 Skills 到 OpenClaw Gateway...' && \
-        python3 -c '
-import sys
-from app.config import settings
-from pathlib import Path
-
-# Gateway 未配置 → 显式跳过, 不计入失败
-if not settings.openclaw_ssh_host:
-    print(\"::warning::OPENCLAW_SSH_HOST 未配置, 跳过 skill 同步 (skill 改动不会生效)\")
-    sys.exit(0)
-
-from app.services.openclaw_skills_service import openclaw_skills_service
-ok, fail = [], []
-skills_dir = Path(\"skills\")
-if skills_dir.exists():
-    for d in sorted(skills_dir.iterdir()):
-        skill_md = d / \"SKILL.md\"
-        if skill_md.exists():
-            try:
-                content = skill_md.read_text()
-                openclaw_skills_service.create_or_update_skill(name=d.name, skill_md_content=content, enabled=True)
-                print(f\"  ✓ {d.name}\")
-                ok.append(d.name)
-            except Exception as e:
-                print(f\"  ✗ {d.name}: {e}\")
-                fail.append((d.name, str(e)))
-total = len(ok) + len(fail)
-print(f\"\\n[Skills] {len(ok)}/{total} synced, {len(fail)} failed\")
-if fail:
-    half = total / 2 if total else 0
-    if len(fail) >= 5 or len(fail) >= half:
-        print(f\"::error::{len(fail)} skills 同步失败 (>=5 或 >=50%) — 部署失败\")
-        sys.exit(2)
-    else:
-        print(f\"::warning::{len(fail)} 个 skill 失败但低于阈值, 部署继续 (失败列表见上)\")
-'
+        echo '统计本地 skills...' && \
+        find skills -maxdepth 2 -name SKILL.md | wc -l | xargs printf '  本地 SKILL.md: %s 个\\n'
     "
     SKILL_EXIT=$?
     set -e
-    if [ $SKILL_EXIT -eq 2 ]; then
-        rollback_deploy
-        print_error "Skills 大规模同步失败，已自动回滚"
-        exit 1
-    elif [ $SKILL_EXIT -ne 0 ]; then
-        # 任何其它非零 (例如 pip install 失败 / git pull 冲突) 也要走回滚
+    if [ $SKILL_EXIT -ne 0 ]; then
         rollback_deploy
         print_error "后端部署 SSH 命令失败 (exit=$SKILL_EXIT)，已自动回滚"
         exit 1
+    fi
+
+    # 3.5 验证 OpenClaw skills manifest 端点对外可达 + skill 数量与本地一致
+    print_step "验证 skills manifest 可达..."
+    LOCAL_COUNT=$(find backend/skills -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+    REMOTE_COUNT=$(curl -sS --max-time 10 \
+        -H "Authorization: Bearer ${SKILLS_MANIFEST_TOKEN:-uZGKPqDLY3Wd0eTT3lVyDG7cEz5y7DuwkIcfH7zDqW8}" \
+        "https://health.executor.life/api/skills/manifest.json" \
+        | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('skills', [])))" 2>/dev/null || echo "0")
+    if [ "$REMOTE_COUNT" = "0" ]; then
+        rollback_deploy
+        print_error "Skills manifest 端点不可达或返回空 — 已回滚"
+        exit 1
+    elif [ "$LOCAL_COUNT" != "$REMOTE_COUNT" ]; then
+        print_warning "Skills 数量不匹配: 本地 $LOCAL_COUNT vs 线上 $REMOTE_COUNT (可能正常: skills 走文件系统, 重启后立即一致)"
+    else
+        print_success "Skills 同步: 本地 $LOCAL_COUNT = 线上 $REMOTE_COUNT"
     fi
 
     # 4. 部署后验证（快速失败）
