@@ -1,6 +1,9 @@
 import api from './api';
 import type { SafetyAlert } from './safety';
 import { normalizeInterventionDraft, type InterventionDraft } from './interventionDraft';
+import type { OutcomeReviewDraft } from './outcomeReview';
+
+export type ActionCardMetricKey = 'sleep_score' | 'hrv' | 'rhr' | 'weight' | 'bp' | 'spo2_odi' | 'custom';
 
 export interface ActionCard {
   id: number;
@@ -21,6 +24,10 @@ export interface ActionCard {
   } | null;
   source_type?: string;
   source_id?: string | null;
+  metric_key?: ActionCardMetricKey | null;
+  baseline_value?: string | null;
+  target_value?: string | null;
+  verification_days?: number | null;
 }
 
 export interface ActionCardCreateInput {
@@ -32,6 +39,11 @@ export interface ActionCardCreateInput {
   source_id?: string | null;
   priority?: number;
   expires_at?: string | null;
+  metric_key?: ActionCardMetricKey;
+  baseline_value?: string;
+  target_value?: string;
+  verification_days?: number;
+  checklist?: Array<{ item: string; done: boolean }>;
 }
 
 export type ActionCockpitItem =
@@ -108,4 +120,25 @@ export async function createActionCard(input: ActionCardCreateInput): Promise<Ac
 
 export async function createInterventionDraft(draft: InterventionDraft): Promise<ActionCard> {
   return createActionCard(normalizeInterventionDraft(draft));
+}
+
+export async function reviewActionCard(id: number, draft: OutcomeReviewDraft): Promise<ActionCard> {
+  const { data } = await api.post<ActionCard>(`/action-cards/${id}/review`, {
+    status: 'completed',
+    outcome_status: draft.status,
+    actual_value: draft.actualValue || undefined,
+    latest_assessment: {
+      score: scoreFromOutcomeStatus(draft.status),
+      summary: draft.summary,
+      evidence: draft.evidence,
+    },
+  });
+  return data;
+}
+
+function scoreFromOutcomeStatus(status: OutcomeReviewDraft['status']): number {
+  if (status === 'met') return 8;
+  if (status === 'not_met') return 3;
+  if (status === 'inconclusive') return 5;
+  return 0;
 }

@@ -7,12 +7,16 @@ import {
   getActionCardVerificationLabel,
   type ActionCard,
 } from '@/services/actionCards';
+import { buildActionCardOutcomeDraft } from '@/services/outcomeReview';
+import type { OutcomeReviewDraft } from '@/services/outcomeReview';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import ActionEvidenceRow from './ActionEvidenceRow';
+import OutcomeVerificationSheet from './OutcomeVerificationSheet';
 
 interface Props {
   card: ActionCard;
   onComplete: () => void;
+  onReview?: (draft: OutcomeReviewDraft) => void | Promise<void>;
 }
 
 const CARD_TYPE: Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> = {
@@ -24,12 +28,14 @@ const CARD_TYPE: Record<string, { color: string; bg: string; icon: keyof typeof 
   note: { color: '#8E8E93', bg: '#F2F2F7', icon: 'document-text-outline', label: '笔记' },
 };
 
-export default function InterventionCard({ card, onComplete }: Props) {
+export default function InterventionCard({ card, onComplete, onReview }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
   const progress = getActionCardProgress(card);
   const verification = getActionCardVerificationLabel(card);
   const assessment = card.latest_assessment;
+  const reviewDraft = verification ? buildActionCardOutcomeDraft(card) : null;
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -37,13 +43,14 @@ export default function InterventionCard({ card, onComplete }: Props) {
   };
 
   return (
-    <Pressable
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-      onPress={toggle}
-      accessibilityRole="button"
-      accessibilityLabel={card.title}
-      accessibilityState={{ expanded }}
-    >
+    <>
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={toggle}
+        accessibilityRole="button"
+        accessibilityLabel={card.title}
+        accessibilityState={{ expanded }}
+      >
       <View style={styles.header}>
         <View style={[styles.iconWrap, { backgroundColor: cfg.bg }]}>
           <Ionicons name={cfg.icon} size={16} color={cfg.color} />
@@ -90,21 +97,47 @@ export default function InterventionCard({ card, onComplete }: Props) {
             <Markdown style={mdStyles}>{card.content || ''}</Markdown>
           </View>
 
-          <Pressable
-            style={({ pressed }) => [styles.completeBtn, pressed && styles.completeBtnPressed]}
-            onPress={event => {
-              event?.stopPropagation?.();
-              onComplete();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="标记完成"
-          >
-            <Ionicons name="checkmark-circle" size={16} color="#fff" />
-            <Text style={txt.completeBtnText}>标记完成</Text>
-          </Pressable>
+          {reviewDraft ? (
+            <Pressable
+              style={({ pressed }) => [styles.completeBtn, pressed && styles.completeBtnPressed]}
+              onPress={event => {
+                event?.stopPropagation?.();
+                setReviewOpen(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="复盘结果"
+            >
+              <Ionicons name="checkmark-done" size={16} color="#fff" />
+              <Text style={txt.completeBtnText}>复盘结果</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [styles.completeBtn, pressed && styles.completeBtnPressed]}
+              onPress={event => {
+                event?.stopPropagation?.();
+                onComplete();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="标记完成"
+            >
+              <Ionicons name="checkmark-circle" size={16} color="#fff" />
+              <Text style={txt.completeBtnText}>标记完成</Text>
+            </Pressable>
+          )}
         </View>
       ) : null}
-    </Pressable>
+      </Pressable>
+      <OutcomeVerificationSheet
+        visible={reviewOpen}
+        title={card.title}
+        draft={reviewDraft}
+        onClose={() => setReviewOpen(false)}
+        onSubmit={async draft => {
+          await onReview?.(draft);
+          setReviewOpen(false);
+        }}
+      />
+    </>
   );
 }
 

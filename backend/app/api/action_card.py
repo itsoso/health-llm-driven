@@ -10,8 +10,8 @@ ActionCard API —— 对话固化到首页。
 
 import logging
 import re
-from datetime import UTC, datetime
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -31,6 +31,14 @@ router = APIRouter(prefix="/action-cards", tags=["action-cards"])
 # ─────────────────────── Schemas ────────────────────────
 
 
+ActionMetricKey = Literal["sleep_score", "hrv", "rhr", "weight", "bp", "spo2_odi", "custom"]
+
+
+class ChecklistItem(BaseModel):
+    item: str = Field(..., min_length=1, max_length=200)
+    done: bool = False
+
+
 class ActionCardCreate(BaseModel):
     title: str = Field(..., max_length=200)
     content: str
@@ -40,6 +48,11 @@ class ActionCardCreate(BaseModel):
     source_id: Optional[str] = None
     priority: int = 0
     expires_at: Optional[datetime] = None
+    metric_key: Optional[ActionMetricKey] = None
+    baseline_value: Optional[str] = Field(None, max_length=100)
+    target_value: Optional[str] = Field(None, max_length=100)
+    verification_days: Optional[int] = Field(None, ge=1, le=90)
+    checklist: list[ChecklistItem] = Field(default_factory=list)
 
 
 class ActionCardFromMessage(BaseModel):
@@ -54,6 +67,19 @@ class ActionCardUpdate(BaseModel):
     priority: Optional[int] = None
     is_visible: Optional[bool] = None
     color: Optional[str] = None
+
+
+class LatestAssessmentInput(BaseModel):
+    score: Optional[int] = Field(None, ge=0, le=10)
+    summary: str = Field(..., max_length=1000)
+    evidence: list[str] = Field(default_factory=list)
+
+
+class ActionCardReview(BaseModel):
+    status: Literal["active", "completed", "archived"] = "completed"
+    outcome_status: Literal["met", "not_met", "inconclusive", "pending"]
+    actual_value: Optional[str] = Field(None, max_length=100)
+    latest_assessment: LatestAssessmentInput
 
 
 # ─────────────────────── 工具 ────────────────────────
@@ -112,6 +138,10 @@ def create_card(
     current_user: User = Depends(get_current_user_required),
 ):
     """手动创建卡片。"""
+    expires_at = body.expires_at
+    if expires_at is None and body.verification_days is not None:
+        expires_at = datetime.now(UTC) + timedelta(days=body.verification_days)
+
     card = ActionCard(
         user_id=current_user.id,
         title=body.title,
@@ -121,7 +151,12 @@ def create_card(
         source_type=body.source_type,
         source_id=body.source_id,
         priority=body.priority,
-        expires_at=body.expires_at,
+        expires_at=expires_at,
+        metric_key=body.metric_key,
+        baseline_value=body.baseline_value,
+        target_value=body.target_value,
+        verification_days=body.verification_days,
+        checklist=[item.model_dump() for item in body.checklist],
     )
     db.add(card)
     db.commit()
@@ -192,6 +227,38 @@ def update_card(
     return _card_to_dict(card)
 
 
+@router.post("/{card_id}/review")
+def review_card(
+    card_id: int,
+    body: ActionCardReview,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """写入行动卡片复盘结果。"""
+    card = db.query(ActionCard).filter(
+        ActionCard.id == card_id,
+        ActionCard.user_id == current_user.id,
+    ).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+
+    card.status = body.status
+    if body.status == "completed":
+        card.completed_at = datetime.now(UTC)
+    card.latest_assessment = {
+        **body.latest_assessment.model_dump(),
+        "outcome_status": body.outcome_status,
+        "actual_value": body.actual_value,
+    }
+    card.last_assessed_at = datetime.now(UTC)
+    card.assessment_count = (card.assessment_count or 0) + 1
+
+    db.commit()
+    db.refresh(card)
+    logger.info(f"[ActionCard] 用户 {current_user.id} 复盘行动卡片: card_id={card_id}, outcome={body.outcome_status}")
+    return _card_to_dict(card)
+
+
 @router.delete("/{card_id}")
 def archive_card(
     card_id: int,
@@ -228,4 +295,10 @@ def _card_to_dict(card: ActionCard) -> dict:
         "expires_at": card.expires_at.isoformat() if card.expires_at else None,
         "completed_at": card.completed_at.isoformat() if card.completed_at else None,
         "created_at": card.created_at.isoformat() if card.created_at else None,
+        "checklist": card.checklist or [],
+        "latest_assessment": card.latest_assessment,
+        "metric_key": card.metric_key,
+        "baseline_value": card.baseline_value,
+        "target_value": card.target_value,
+        "verification_days": card.verification_days,
     }

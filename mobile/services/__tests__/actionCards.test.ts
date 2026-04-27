@@ -7,6 +7,7 @@ import api from '../api';
 import {
   buildActionCockpitSections,
   createActionCard,
+  reviewActionCard,
   getActionCardProgress,
   getActionCardVerificationLabel,
   type ActionCard,
@@ -90,6 +91,30 @@ describe('actionCards helpers', () => {
       source_type: 'sleep_spo2',
       source_id: '2026-04-25',
       priority: 2,
+    });
+    expect(result).toBe(card);
+  });
+
+  it('submits an action card outcome review as a completed assessment', async () => {
+    const card = { id: 9, title: '睡眠实验', status: 'completed' } as ActionCard;
+    mockPost.mockResolvedValueOnce({ data: card });
+
+    const result = await reviewActionCard(9, {
+      status: 'met',
+      actualValue: '84',
+      summary: '睡眠评分达到目标',
+      evidence: ['Garmin sleep_score'],
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/action-cards/9/review', {
+      status: 'completed',
+      outcome_status: 'met',
+      actual_value: '84',
+      latest_assessment: {
+        score: 8,
+        summary: '睡眠评分达到目标',
+        evidence: ['Garmin sleep_score'],
+      },
     });
     expect(result).toBe(card);
   });

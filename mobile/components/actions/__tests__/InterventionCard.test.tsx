@@ -35,11 +35,22 @@ describe('InterventionCard', () => {
 
   it('calls onComplete from the expanded action button', () => {
     const onComplete = jest.fn();
-    const { getByText } = render(<InterventionCard card={card} onComplete={onComplete} />);
+    const immediateCard = { ...card, expires_at: null, latest_assessment: null };
+    const { getByText } = render(<InterventionCard card={immediateCard} onComplete={onComplete} />);
 
     fireEvent.press(getByText('连续记录晚餐时间'));
     fireEvent.press(getByText('标记完成'));
 
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens outcome review for cards waiting verification', () => {
+    const onReview = jest.fn();
+    const { getByText } = render(<InterventionCard card={card} onComplete={jest.fn()} onReview={onReview} />);
+
+    fireEvent.press(getByText('连续记录晚餐时间'));
+    fireEvent.press(getByText('复盘结果'));
+
+    expect(getByText('干预复盘')).toBeTruthy();
   });
 });

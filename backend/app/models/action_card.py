@@ -50,4 +50,10 @@ class ActionCard(Base):
     assessment_count = Column(Integer, default=0)  # 累计评估次数
     latest_assessment = Column(JSON)  # 最近一次评估结果 {"score":N, "summary":"..."}
 
+    # 结构化干预字段：用于 Agent 把建议转成可验证实验
+    metric_key = Column(String(50))  # sleep_score / hrv / rhr / weight / bp / spo2_odi / custom
+    baseline_value = Column(String(100))
+    target_value = Column(String(100))
+    verification_days = Column(Integer)
+
     user = relationship("User", backref="action_cards")

@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '@/services/safety';
-import { buildActionCockpitSections, getActiveCards, completeCard } from '@/services/actionCards';
+import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '@/services/actionCards';
 import InterventionCard from '@/components/actions/InterventionCard';
 import { queryKeys } from '@/lib/queryKeys';
 import { colors, spacing, radii, shadows } from '@/constants/theme';
@@ -92,7 +92,11 @@ export default function ActionsScreen() {
           renderItem={({ item }) =>
             item.type === 'alert'
               ? <AlertRow alert={item.item} />
-              : <InterventionCard card={item.item} onComplete={async () => { await completeCard(item.item.id); refetchCards(); }} />
+              : <InterventionCard
+                  card={item.item}
+                  onComplete={async () => { await completeCard(item.item.id); refetchCards(); }}
+                  onReview={async draft => { await reviewActionCard(item.item.id, draft); refetchCards(); }}
+                />
           }
           SectionSeparatorComponent={() => <View style={{ height: 8 }} />}
         />
