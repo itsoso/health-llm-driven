@@ -45,6 +45,9 @@ class OpenLoop:
     body: str            # APNs 推送正文 (≤ 100字)
     score: int           # 0-100, 严重度 + 到期度
     deeplink: Optional[str] = None    # 点击推送跳哪
+    # signal_key: 同 (user_id, kind, signal_key) 在去重窗口内不重复推
+    # 例: kind=lab_overdue -> signal_key='LDL', kind=action_card_due -> signal_key='card_id=123'
+    signal_key: str = ""
     metadata: dict = field(default_factory=dict)
 
 
@@ -99,6 +102,7 @@ def _detect_lab_overdue(db, user_id: int) -> List[OpenLoop]:
                  f"超过推荐间隔 {overdue_days} 天",
             score=score,
             deeplink="health://medical-exams/upload",
+            signal_key=code_key,
             metadata={"code": code_key, "last_value": value, "last_date": str(last_date),
                       "overdue_days": overdue_days},
         ))
@@ -131,6 +135,7 @@ def _detect_action_card_due(db, user_id: int) -> List[OpenLoop]:
             body=f"{score_label} {c.accuracy_score}/100 — {c.grading_notes or '点开看详情'}",
             score=70 if (c.accuracy_score or 0) >= 70 else 60,
             deeplink=f"health://action-cards/{c.id}",
+            signal_key=f"card_id={c.id}",
             metadata={"card_id": c.id, "score": c.accuracy_score},
         ))
 
@@ -160,6 +165,7 @@ def _detect_sync_stale(db, user_id: int) -> List[OpenLoop]:
         body=f"已 {days_since} 天没收到 Garmin 数据. 检查手表蓝牙 / 重新登录 Garmin Connect.",
         score=min(80, 30 + days_since * 5),
         deeplink="health://settings/garmin",
+        signal_key="garmin",
         metadata={"days_since": days_since, "last_record": str(last_record[0])},
     )]
 
@@ -196,6 +202,7 @@ def _detect_trend_anomaly(db, user_id: int) -> List[OpenLoop]:
                      f"压力/睡眠/训练负荷需关注.",
                 score=int(60 + min(30, (pa - ra) / pa * 100)),
                 deeplink="health://digital-twin",
+                signal_key="hrv_drop",
                 metadata={"recent_hrv": round(ra, 1), "prev_hrv": round(pa, 1)},
             ))
 
@@ -222,8 +229,71 @@ def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
     return loops
 
 
+DEDUP_WINDOW_DAYS = 7  # 同一 (user, kind, signal_key) 在 7 天内不重复推
+
+
+def _is_recently_pushed_or_snoozed(db, user_id: int, loop: OpenLoop) -> bool:
+    """该信号在 dedup 窗口内已推过 OR 用户主动 snooze 了 → 跳过."""
+    from app.models.open_loop_history import OpenLoopHistory
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=DEDUP_WINDOW_DAYS)
+    now_utc = datetime.now(timezone.utc)
+
+    # 1) 在 snooze 窗口内 → 不推
+    snoozed = db.query(OpenLoopHistory.id).filter(
+        OpenLoopHistory.user_id == user_id,
+        OpenLoopHistory.kind == loop.kind,
+        OpenLoopHistory.signal_key == (loop.signal_key or ""),
+        OpenLoopHistory.snoozed_until.isnot(None),
+        OpenLoopHistory.snoozed_until > now_utc,
+    ).first()
+    if snoozed:
+        return True
+
+    # 2) 7 天内已推同 (kind, signal_key) → 不重发
+    recent = db.query(OpenLoopHistory.id).filter(
+        OpenLoopHistory.user_id == user_id,
+        OpenLoopHistory.kind == loop.kind,
+        OpenLoopHistory.signal_key == (loop.signal_key or ""),
+        OpenLoopHistory.sent_at >= cutoff,
+        OpenLoopHistory.delivery_ok == 1,
+    ).first()
+    return bool(recent)
+
+
+def _record_history(db, user_id: int, loop: OpenLoop, ok: bool, error: str = "") -> None:
+    """写入 open_loop_history (去重 + 后续 feedback 关联)."""
+    from app.models.open_loop_history import OpenLoopHistory
+
+    try:
+        row = OpenLoopHistory(
+            user_id=user_id,
+            kind=loop.kind,
+            signal_key=loop.signal_key or "",
+            score=loop.score,
+            title=loop.title,
+            body=loop.body,
+            deeplink=loop.deeplink,
+            delivery_ok=1 if ok else 0,
+            delivery_error=error or None,
+        )
+        db.add(row)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[open_loop] 写 history 失败 (旁路): {e}")
+
+
 def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
-    """通过 ios_push.send_push 发 APNs. 查找用户 device_token + 检查总开关."""
+    """通过 ios_push.send_push 发 APNs + 写 history. 含 dedup."""
+    # dedup
+    if _is_recently_pushed_or_snoozed(db, user_id, loop):
+        logger.info(
+            f"[open_loop] dedup skip user={user_id} kind={loop.kind} "
+            f"signal_key={loop.signal_key} (7d 内已推 or snoozed)"
+        )
+        return False
+
     try:
         from app.models.notification import UserNotificationSetting
         from app.services.notification.ios_push import IOSPushService
@@ -237,25 +307,29 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
         if not (setting.enabled and setting.ios_push_enabled and setting.ios_device_token):
             return False
         if not setting.health_alert_enabled:
-            # open_loop 复用 health_alert 这个开关 (不需新加)
             return False
 
         service = IOSPushService()
-        # ios_push 是 async, 我们在 Celery sync 上下文里跑
         result = asyncio.run(service.send_push(
             device_token=setting.ios_device_token,
             title=loop.title,
             body=loop.body,
+            category="OPEN_LOOP",  # iOS 上对应 actions: 已处理 / 暂停7天 / 不感兴趣
             data={
                 "type": "open_loop",
                 "kind": loop.kind,
+                "signal_key": loop.signal_key or "",
                 "deeplink": loop.deeplink or "",
                 **{k: str(v) for k, v in loop.metadata.items()},
             },
         ))
-        return bool(result and result.get("success"))
+        ok = bool(result and result.get("success"))
+        _record_history(db, user_id, loop, ok=ok,
+                        error="" if ok else (result or {}).get("error", "unknown"))
+        return ok
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[open_loop] APNs 推送失败 user={user_id}: {e}")
+        _record_history(db, user_id, loop, ok=False, error=str(e))
         return False
 
 
