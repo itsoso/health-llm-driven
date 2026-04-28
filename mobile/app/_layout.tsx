@@ -1,14 +1,14 @@
 // Sentry: side-effect import. Must be the very first import so that
 // Sentry.init runs before any other code (including other imports)
-// executes — see mobile/lib/sentry.ts for rationale.
-import { Sentry, SENTRY_ENABLED } from '../lib/sentry';
+// executes — see mobile/applib/sentry.ts for rationale.
+import { Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { queryClient, persistOptions } from '../lib/queryClient';
+import { queryClient, persistOptions } from '../applib/queryClient';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { ToastProvider } from '../hooks/useToast';
 import { useNotifications } from '../hooks/useNotifications';
@@ -94,6 +94,7 @@ function AppContent() {
         <Stack.Screen name="workout-detail" options={{ headerShown: false }} />
         <Stack.Screen name="diet" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="goals" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="directives" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="indicator-history" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
       <NotificationBanner />

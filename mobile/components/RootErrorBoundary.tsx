@@ -2,7 +2,7 @@ import React from 'react';
 import { ErrorBoundary as REBErrorBoundary, type FallbackProps } from 'react-error-boundary';
 import { useQueryClient } from '@tanstack/react-query';
 import ErrorFallback from './ErrorFallback';
-import { Sentry } from '../lib/sentry';
+import { Sentry } from '../applib/sentry';
 
 /**
  * App-level error boundary.

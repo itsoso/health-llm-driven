@@ -8,7 +8,7 @@ import * as Haptics from 'expo-haptics';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
-import { invalidateHealthSnapshot, queryKeys } from '../lib/queryKeys';
+import { invalidateHealthSnapshot, queryKeys } from '../applib/queryKeys';
 import { colors, spacing, radii, shadows } from '../constants/theme';
 
 export default function SettingsScreen() {
@@ -97,6 +97,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/workout-list' as any)} />
           <SettingRow icon="flag-outline" label="健康目标"
             onPress={() => router.push('/goals' as any)} />
+          <SettingRow icon="document-text-outline" label="硬性指令"
+            onPress={() => router.push('/directives' as any)} />
         </View>
 
         {/* Notifications & Siri & Security */}

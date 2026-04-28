@@ -11,7 +11,7 @@ import { useLatestGarmin } from '../../hooks/useDashboardData';
 import { useDataHealth } from '../../hooks/useDataHealth';
 import { recordWater, deleteWater } from '../../services/records';
 import DataPromptCard from '../../components/data-health/DataPromptCard';
-import { invalidateRecordMutation, queryKeys } from '../../lib/queryKeys';
+import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
 import SupplementCheckin from '../../components/dashboard/SupplementCheckin';

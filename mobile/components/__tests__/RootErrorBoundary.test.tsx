@@ -7,7 +7,7 @@
  *   - errors are forwarded to Sentry for server-side visibility
  */
 
-jest.mock('../../lib/sentry', () => ({
+jest.mock('../../applib/sentry', () => ({
   Sentry: { captureException: jest.fn() },
   SENTRY_ENABLED: false,
 }));
@@ -17,7 +17,7 @@ import { Text, Pressable } from 'react-native';
 import { renderWithProviders } from '../../test-utils';
 import { fireEvent } from '@testing-library/react-native';
 import RootErrorBoundary from '../RootErrorBoundary';
-import { Sentry } from '../../lib/sentry';
+import { Sentry } from '../../applib/sentry';
 
 function Boom(): React.ReactElement {
   throw new Error('oh no');

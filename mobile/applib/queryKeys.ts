@@ -13,6 +13,7 @@ export const queryKeys = {
   agentAgendaRoot: ['agentAgenda'] as const,
   actionCards: ['actionCards'] as const,
   profile: ['profile'] as const,
+  twin: ['twin'] as const,
 } as const;
 
 export const healthSnapshotQueryKeys = [
@@ -23,6 +24,7 @@ export const healthSnapshotQueryKeys = [
   queryKeys.dataHealth,
   queryKeys.todayCoachRoot,
   queryKeys.agentAgendaRoot,
+  queryKeys.twin,
 ] as const;
 
 export const recordMutationQueryKeys = [

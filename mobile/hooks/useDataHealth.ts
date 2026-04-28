@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { buildDataPrompts, fetchDataHealthStatus } from '../services/dataHealth';
-import { queryKeys } from '../lib/queryKeys';
+import { queryKeys } from '../applib/queryKeys';
 
 export function useDataHealth() {
   const query = useQuery({

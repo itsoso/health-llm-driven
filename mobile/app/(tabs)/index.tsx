@@ -15,6 +15,7 @@ import { getSafetyReport } from '../../services/safety';
 import HomeHeader from '../../components/dashboard/HomeHeader';
 import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
 import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
+import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import BrandCircle from '../../components/chat/BrandCircle';
@@ -24,7 +25,7 @@ import { useTodayCoach } from '../../hooks/useTodayCoach';
 import { useAgentAgenda } from '../../hooks/useAgentAgenda';
 import type { TodayCoachFocus } from '../../services/todayCoach';
 import type { AgentAgendaItem } from '../../services/agentAgenda';
-import { invalidateHealthSnapshot, queryKeys } from '../../lib/queryKeys';
+import { invalidateHealthSnapshot, queryKeys } from '../../applib/queryKeys';
 import { colors, spacing, radii } from '../../constants/theme';
 
 function today(): string {
@@ -187,6 +188,8 @@ export default function HomeScreen() {
         isLoading={todayCoach.isLoading}
         onAction={handleTodayCoachAction}
       />
+
+      <DataFreshnessPanel />
 
       <AgentAgendaPanel
         agenda={agentAgenda.data}

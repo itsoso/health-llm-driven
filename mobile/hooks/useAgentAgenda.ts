@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { queryKeys } from '../lib/queryKeys';
+import { queryKeys } from '../applib/queryKeys';
 import { getAgentAgenda } from '../services/agentAgenda';
 
 function today(): string {

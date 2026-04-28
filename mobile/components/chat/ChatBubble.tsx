@@ -14,7 +14,7 @@ import { renderCard } from './cards';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { mdStylesChat } from '../../constants/markdownStyles';
 import type { UIMessage } from '../../hooks/useChatEngine';
-import { invalidateQueryKeys, queryKeys } from '../../lib/queryKeys';
+import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { colors, radii, shadows } from '../../constants/theme';

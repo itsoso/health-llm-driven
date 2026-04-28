@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getTodayCoachFocus } from '../services/todayCoach';
-import { queryKeys } from '../lib/queryKeys';
+import { queryKeys } from '../applib/queryKeys';
 
 function today(): string {
   const d = new Date();

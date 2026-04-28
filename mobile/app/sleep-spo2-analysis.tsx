@@ -19,7 +19,7 @@ import { SpO2Correlation } from '../services/sleepSpo2';
 import { getSleepQuestionPrompt } from '../services/dataHealth';
 import { createInterventionDraft } from '../services/actionCards';
 import { buildInterventionDraft, type InterventionDraft } from '../services/interventionDraft';
-import { invalidateQueryKeys, queryKeys } from '../lib/queryKeys';
+import { invalidateQueryKeys, queryKeys } from '../applib/queryKeys';
 import { colors, spacing } from '../constants/theme';
 import { styles, txt } from './sleep-spo2-analysis.styles';
 

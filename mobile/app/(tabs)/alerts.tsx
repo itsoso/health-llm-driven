@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '../../services/safety';
 import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '../../services/actionCards';
 import InterventionCard from '../../components/actions/InterventionCard';
-import { queryKeys } from '../../lib/queryKeys';
+import { queryKeys } from '../../applib/queryKeys';
 import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 function getSeverityKey(s: any): string { return typeof s === 'string' ? s : s?.label ?? 'info'; }
