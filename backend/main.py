@@ -26,6 +26,7 @@ import app.models.open_loop_history  # noqa: F401 - Open-Loop 推送历史 + ded
 import app.models.clinical_journal  # noqa: F401 - Clinical Journal SOAP + case threads
 import app.models.user_directive  # noqa: F401 - 医生指令 / 用户硬约束
 import app.models.memory_fact  # noqa: F401 - LLM Wiki v2 事实级记忆
+import app.models.health_kg  # noqa: F401 - 知识图谱 entities + relations
 import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 
 # 设置日志，使用北京时间

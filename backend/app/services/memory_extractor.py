@@ -222,6 +222,78 @@ def extract_from_medical_exam_item(
     return f.id if f else None
 
 
+def extract_kg_from_medication(
+    db: Session, user_id: int, medication,
+) -> Optional[int]:
+    """Medication → HealthEntity (type=medication) + relation owns.
+
+    medication: app.models.medication.Medication
+    """
+    from app.services.kg_service import upsert_entity, create_relation
+
+    name = getattr(medication, "name", None) or getattr(medication, "medication_name", None)
+    if not name:
+        return None
+
+    # User node (type=condition 'self')
+    user_ent = upsert_entity(
+        db, user_id=user_id, type="condition",
+        canonical_name="self_user", aliases=["我", "用户"],
+        confidence=1.0, source={"type": "system"},
+    )
+    med_ent = upsert_entity(
+        db, user_id=user_id, type="medication",
+        canonical_name=name,
+        attributes={
+            "dosage": getattr(medication, "dosage", None),
+            "schedule": getattr(medication, "schedule", None),
+        },
+        source={"type": "medication", "id": getattr(medication, "id", None)},
+    )
+    if user_ent and med_ent:
+        create_relation(
+            db, user_id=user_id,
+            subject_id=user_ent.id, predicate="owns",
+            object_id=med_ent.id, confidence=0.95,
+            source={"type": "medication", "id": getattr(medication, "id", None)},
+        )
+        return med_ent.id
+    return None
+
+
+def extract_kg_from_lab(
+    db: Session, user_id: int, item,
+) -> Optional[int]:
+    """MedicalIndicator (异常项) → HealthEntity (type=lab_value) + 'self_user owns lab_value'."""
+    from app.services.kg_service import upsert_entity, create_relation
+
+    name = item.name or "未知化验项"
+    user_ent = upsert_entity(
+        db, user_id=user_id, type="condition",
+        canonical_name="self_user", aliases=["我", "用户"],
+        confidence=1.0, source={"type": "system"},
+    )
+    lab_ent = upsert_entity(
+        db, user_id=user_id, type="lab_value",
+        canonical_name=name,
+        attributes={
+            "latest": item.value,
+            "unit": item.unit,
+            "is_abnormal": getattr(item, "is_abnormal", False),
+        },
+        source={"type": "medical_indicator", "id": getattr(item, "id", None)},
+    )
+    if user_ent and lab_ent:
+        create_relation(
+            db, user_id=user_id,
+            subject_id=user_ent.id, predicate="owns",
+            object_id=lab_ent.id, confidence=0.9,
+            source={"type": "medical_indicator", "id": getattr(item, "id", None)},
+        )
+        return lab_ent.id
+    return None
+
+
 def extract_from_directive(
     db: Session, directive,
 ) -> Optional[int]:

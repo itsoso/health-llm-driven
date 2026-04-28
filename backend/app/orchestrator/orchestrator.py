@@ -367,6 +367,21 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] memory facts 注入失败 (跳过): {e}")
 
+    # 5) Knowledge Graph 2-hop: 把 query 提到的 entity 周围连接的关系拼进 prompt
+    # (LLM Wiki v2 graph traversal — 让 specialist 看到 medication ↔ condition ↔ lab 的链条)
+    try:
+        from app.services.kg_service import render_neighborhood_for_prompt
+        # 从原 user_prompt (不含已注入的 memory) 取 query 文本
+        # 简化: 用 user_prompt 前 200 字作 mention 检测
+        query_seed = (user_prompt or "")[:300]
+        kg_md = render_neighborhood_for_prompt(
+            db, user_id, query_seed, max_seeds=3, hops=2, max_per_hop=5,
+        )
+        if kg_md:
+            out += f"\n\n{kg_md}\n"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] KG neighborhood 注入失败 (跳过): {e}")
+
     return out
 
 
