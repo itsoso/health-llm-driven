@@ -11,7 +11,6 @@ from app.config import settings
 # 确保所有 ORM 模型在 Celery worker 启动时被加载，
 # 避免 relationship() lazy resolution 失败（如 UserApiKey）
 import app.models.user_api_key  # noqa: F401
-import app.models.external_recommendation  # noqa: F401
 
 # Patch garth 使用 Chrome TLS 指纹（Celery worker 也需要）
 from app.services.garmin_cffi_patch import patch_garth_with_cffi
@@ -32,6 +31,7 @@ celery_app = Celery(
         "app.tasks.maintenance",
         "app.tasks.outcome_grader",
         "app.tasks.open_loop_manager",
+        "app.tasks.memory_lifecycle",
     ]
 )
 
@@ -210,6 +210,13 @@ celery_app.conf.beat_schedule = {
     "open-loop-manager": {
         "task": "app.tasks.open_loop_manager.run_open_loop_check",
         "schedule": crontab(hour=7, minute=0),
+    },
+
+    # 每天 4:00 LLM Wiki v2 lifecycle: decay + crystallization
+    # 应用遗忘曲线 + 多次出现的 working facts 升级到 episodic/semantic
+    "memory-lifecycle": {
+        "task": "app.tasks.memory_lifecycle.run_memory_lifecycle",
+        "schedule": crontab(hour=4, minute=0),
     },
 }
 
