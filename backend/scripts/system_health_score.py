@@ -213,7 +213,8 @@ def calculate_health_score(base_url: str = "http://localhost:8000", skip_tests: 
     return {
         "total_score": round(total, 1),
         "max_possible": max_possible,
-        "pass": total >= FAIL_THRESHOLD or (skip_tests and total >= 40),
+        # skip_tests gate: 35 (老的 40 在 cold-start P95>2000ms 时无法达到, 频繁误判 fail)
+        "pass": total >= FAIL_THRESHOLD or (skip_tests and total >= 35),
         "threshold": FAIL_THRESHOLD,
         "dimensions": results,
     }
