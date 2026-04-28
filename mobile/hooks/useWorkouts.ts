@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getWorkouts, getWorkoutStats, getWorkoutDetail, type WorkoutSummary, type WorkoutStats, type WorkoutDetail } from '@/services/workouts';
+import { getWorkouts, getWorkoutStats, getWorkoutDetail, type WorkoutSummary, type WorkoutStats, type WorkoutDetail } from '../services/workouts';
 
 export function useWorkoutList(limit = 20) {
   return useQuery<WorkoutSummary[]>({

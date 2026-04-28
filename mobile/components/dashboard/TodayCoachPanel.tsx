@@ -1,8 +1,8 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
-import type { TodayCoachFocus } from '@/services/todayCoach';
+import { colors, radii, shadows, spacing } from '../../constants/theme';
+import type { TodayCoachFocus } from '../../services/todayCoach';
 
 interface Props {
   focus?: TodayCoachFocus;

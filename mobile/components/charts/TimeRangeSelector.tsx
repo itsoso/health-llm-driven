@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { colors, spacing, radii, typography } from '@/constants/theme';
-import type { TimeRange } from '@/services/trends';
+import { colors, spacing, radii, typography } from '../../constants/theme';
+import type { TimeRange } from '../../services/trends';
 
 const RANGES: TimeRange[] = ['1W', '1M', '3M', '6M', '1Y'];
 

@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/hooks/useAuth';
-import { colors } from '@/constants/theme';
+import { useAuth } from '../hooks/useAuth';
+import { colors } from '../constants/theme';
 
 export default function LoginScreen() {
   const { login } = useAuth();

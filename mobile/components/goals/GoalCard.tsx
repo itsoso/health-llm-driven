@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii, shadows, scoreColor } from '@/constants/theme';
-import type { GoalResponse } from '@/services/goals';
+import { colors, spacing, radii, shadows, scoreColor } from '../../constants/theme';
+import type { GoalResponse } from '../../services/goals';
 
 interface Props {
   goal: GoalResponse;

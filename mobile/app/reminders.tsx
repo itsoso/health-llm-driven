@@ -9,8 +9,8 @@ import * as Haptics from 'expo-haptics';
 import {
   getReminders, getReminderTemplates, createReminder, deleteReminder, updateReminder,
   type Reminder, type ReminderTemplate,
-} from '@/services/notifications';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+} from '../services/notifications';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 export default function RemindersScreen() {
   const router = useRouter();

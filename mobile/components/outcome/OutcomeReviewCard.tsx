@@ -1,9 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import HealthCard from '@/components/design-system/HealthCard';
-import { colors, radii, spacing } from '@/constants/theme';
-import type { OutcomeReviewMetric } from '@/services/personalOutcome';
+import HealthCard from '../design-system/HealthCard';
+import { colors, radii, spacing } from '../../constants/theme';
+import type { OutcomeReviewMetric } from '../../services/personalOutcome';
 
 interface Props {
   metrics: OutcomeReviewMetric[];

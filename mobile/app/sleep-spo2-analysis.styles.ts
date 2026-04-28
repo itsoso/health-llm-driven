@@ -1,5 +1,5 @@
 import { StyleSheet, type TextStyle } from 'react-native';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 export const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },

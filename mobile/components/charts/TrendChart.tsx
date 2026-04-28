@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Circle, Polyline, Rect, G, Text as SvgText } from 'react-native-svg';
-import { colors, spacing, typography } from '@/constants/theme';
-import type { TrendSeries } from '@/services/trends';
+import { colors, spacing, typography } from '../../constants/theme';
+import type { TrendSeries } from '../../services/trends';
 import DataPointTooltip from './DataPointTooltip';
 
 interface Props {

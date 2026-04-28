@@ -2,8 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import api from '@/services/api';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import api from '../../services/api';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 function today(): string {
   const d = new Date();

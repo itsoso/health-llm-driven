@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing, radii, shadows } from '@/constants/theme';
+import { colors, typography, spacing, radii, shadows } from '../../constants/theme';
 
 interface Props {
   label: string;

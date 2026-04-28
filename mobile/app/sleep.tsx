@@ -3,15 +3,15 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import MetricTile from '@/components/design-system/MetricTile';
-import HealthCard from '@/components/design-system/HealthCard';
-import SleepWeeklyChart from '@/components/sleep/SleepWeeklyChart';
-import SpO2NightChart from '@/components/sleep/SpO2NightChart';
-import SleepBreathingSummary from '@/components/sleep/SleepBreathingSummary';
-import { useSleepStats, useSleepDebt } from '@/hooks/useSleepData';
-import { useSpO2LatestNight } from '@/hooks/useSpO2Data';
-import { getDeepAnalysis } from '@/services/sleep';
-import { colors, spacing, radii, scoreColor, scoreGrade, metricColors } from '@/constants/theme';
+import MetricTile from '../components/design-system/MetricTile';
+import HealthCard from '../components/design-system/HealthCard';
+import SleepWeeklyChart from '../components/sleep/SleepWeeklyChart';
+import SpO2NightChart from '../components/sleep/SpO2NightChart';
+import SleepBreathingSummary from '../components/sleep/SleepBreathingSummary';
+import { useSleepStats, useSleepDebt } from '../hooks/useSleepData';
+import { useSpO2LatestNight } from '../hooks/useSpO2Data';
+import { getDeepAnalysis } from '../services/sleep';
+import { colors, spacing, radii, scoreColor, scoreGrade, metricColors } from '../constants/theme';
 
 export default function SleepScreen() {
   const router = useRouter();

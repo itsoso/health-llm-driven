@@ -1,23 +1,23 @@
 // Sentry: side-effect import. Must be the very first import so that
 // Sentry.init runs before any other code (including other imports)
 // executes — see mobile/lib/sentry.ts for rationale.
-import { Sentry, SENTRY_ENABLED } from '@/lib/sentry';
+import { Sentry, SENTRY_ENABLED } from '../lib/sentry';
 
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { queryClient, persistOptions } from '@/lib/queryClient';
-import { AuthProvider, useAuth } from '@/hooks/useAuth';
-import { ToastProvider } from '@/hooks/useToast';
-import { useNotifications } from '@/hooks/useNotifications';
-import { useBiometricLock } from '@/hooks/useBiometricLock';
-import NotificationBanner from '@/components/notifications/NotificationBanner';
-import NetworkBanner from '@/components/NetworkBanner';
-import RootErrorBoundary from '@/components/RootErrorBoundary';
-import LoginScreen from '@/app/login';
-import { colors } from '@/constants/theme';
+import { queryClient, persistOptions } from '../lib/queryClient';
+import { AuthProvider, useAuth } from '../hooks/useAuth';
+import { ToastProvider } from '../hooks/useToast';
+import { useNotifications } from '../hooks/useNotifications';
+import { useBiometricLock } from '../hooks/useBiometricLock';
+import NotificationBanner from '../components/notifications/NotificationBanner';
+import NetworkBanner from '../components/NetworkBanner';
+import RootErrorBoundary from '../components/RootErrorBoundary';
+import LoginScreen from './login';
+import { colors } from '../constants/theme';
 import {
   View,
   Text,

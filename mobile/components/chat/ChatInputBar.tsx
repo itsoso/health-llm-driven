@@ -8,9 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSpring } from 'react-native-reanimated';
-import { useMediaPicker, type PendingImage } from '@/hooks/useMediaPicker';
-import { useVoiceRecording } from '@/hooks/useVoiceRecording';
-import { colors, spacing } from '@/constants/theme';
+import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
+import { useVoiceRecording } from '../../hooks/useVoiceRecording';
+import { colors, spacing } from '../../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CANCEL_THRESHOLD = 80;

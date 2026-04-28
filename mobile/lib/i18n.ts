@@ -9,7 +9,7 @@
  *   with zero runtime or bundle-size cost.
  *
  * Usage:
- *   import { t } from '@/lib/i18n';
+ *   import { t } from './i18n';
  *   <Text>{t('home.title')}</Text>
  *
  * Migration discipline:
@@ -26,7 +26,7 @@
  *   - Until then: do NOT add a library. One-file solutions are cheaper.
  */
 
-import zh from '@/strings/zh';
+import zh from '../strings/zh';
 
 type Locale = 'zh';
 

@@ -3,7 +3,7 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useWeightHistory, useBPHistory, useIndicatorTrend } from '../useTrendData';
 
-jest.mock('@/services/trends', () => ({
+jest.mock('../../services/trends', () => ({
   fetchWeightTrend: jest.fn().mockResolvedValue([{ label: '体重', color: '#FF9F0A', data: [] }]),
   fetchBPTrend: jest.fn().mockResolvedValue([]),
   fetchIndicatorTrend: jest.fn().mockResolvedValue([]),

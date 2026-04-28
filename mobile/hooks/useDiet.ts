@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getDailyDiet, getDietStats, type DailyDietSummary, type DietStats } from '@/services/diet';
+import { getDailyDiet, getDietStats, type DailyDietSummary, type DietStats } from '../services/diet';
 
 function todayStr(): string {
   const d = new Date();

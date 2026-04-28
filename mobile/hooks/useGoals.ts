@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { getGoals, updateGoalProgress, type GoalResponse, type GoalStatus } from '@/services/goals';
+import { getGoals, updateGoalProgress, type GoalResponse, type GoalStatus } from '../services/goals';
 
 export function useGoals(status?: GoalStatus) {
   return useQuery<GoalResponse[]>({

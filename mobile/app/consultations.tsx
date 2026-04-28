@@ -4,10 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { listConsultations, type ConsultListItem } from '@/services/consultations';
-import { buildOutcomeReviewMetrics, getMyOutcomeTimeline } from '@/services/personalOutcome';
-import OutcomeReviewCard from '@/components/outcome/OutcomeReviewCard';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { listConsultations, type ConsultListItem } from '../services/consultations';
+import { buildOutcomeReviewMetrics, getMyOutcomeTimeline } from '../services/personalOutcome';
+import OutcomeReviewCard from '../components/outcome/OutcomeReviewCard';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 const TYPE_LABEL: Record<string, string> = {
   symptom_advisory: '症状',

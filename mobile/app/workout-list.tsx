@@ -5,9 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { useWorkoutList, useWorkoutStats } from '@/hooks/useWorkouts';
-import { syncGarminWorkouts, type WorkoutSummary } from '@/services/workouts';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { useWorkoutList, useWorkoutStats } from '../hooks/useWorkouts';
+import { syncGarminWorkouts, type WorkoutSummary } from '../services/workouts';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   running: 'walk-outline',

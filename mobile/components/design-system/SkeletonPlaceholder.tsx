@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, spacing } from '../../constants/theme';
 
 function Bone({ width, height = 14, style }: { width: number | string; height?: number; style?: any }) {
   const opacity = useRef(new Animated.Value(0.3)).current;

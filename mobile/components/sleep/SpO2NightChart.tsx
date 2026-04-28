@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, LayoutChangeEvent, TextStyle } from 'react-native';
 import Svg, { Line, Polyline, Rect, G, Text as SvgText, Circle } from 'react-native-svg';
-import { colors, spacing } from '@/constants/theme';
-import type { SpO2Point } from '@/services/spo2';
+import { colors, spacing } from '../../constants/theme';
+import type { SpO2Point } from '../../services/spo2';
 
 interface Props {
   data: SpO2Point[];
@@ -15,6 +15,9 @@ const PAD = { top: 16, right: 12, bottom: 28, left: 36 };
 const Y_MIN = 60;
 const Y_MAX = 100;
 const Y_TICKS = [60, 70, 80, 90, 95, 100];
+// 相邻数据点超过此分钟数 → 断开折线 (避免白天稀疏点被错误连成一条直线).
+// Garmin 默认白天 spot-check 模式间隔 1-2 小时, 30 min 是稳定的阈值.
+const GAP_BREAK_MINUTES = 30;
 
 function lttbDownsample(data: SpO2Point[], threshold: number): SpO2Point[] {
   if (data.length <= threshold) return data;
@@ -92,7 +95,28 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
     return PAD.top + (1 - (clamped - Y_MIN) / (Y_MAX - Y_MIN)) * plotH;
   };
 
-  const polylinePoints = downsampled.map(p => `${toX(p.time).toFixed(1)},${toY(p.value).toFixed(1)}`).join(' ');
+  // 把 downsampled 切成多段 segments — 相邻两点 wall-clock 间隔 > GAP_BREAK_MINUTES
+  // 就断开. 单点 segments 当成 scatter dot 渲染.
+  const segments = useMemo(() => {
+    if (downsampled.length === 0) return [] as SpO2Point[][];
+    const segs: SpO2Point[][] = [[downsampled[0]]];
+    for (let i = 1; i < downsampled.length; i++) {
+      const prev = downsampled[i - 1];
+      const cur = downsampled[i];
+      let prevM = timeToMinutes(prev.time);
+      let curM = timeToMinutes(cur.time);
+      // 跨午夜归一化 (与 toX 同逻辑)
+      if (prevM > 18 * 60) prevM -= 24 * 60;
+      if (curM > 18 * 60) curM -= 24 * 60;
+      const gap = curM - prevM;
+      if (gap > GAP_BREAK_MINUTES) {
+        segs.push([cur]);
+      } else {
+        segs[segs.length - 1].push(cur);
+      }
+    }
+    return segs;
+  }, [downsampled]);
 
   const xLabels = useMemo(() => {
     if (data.length < 2) return [];
@@ -138,8 +162,24 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
           <Rect x={PAD.left} y={toY(95)} width={plotW} height={toY(90) - toY(95)} fill="#FF9F0A08" />
           <Rect x={PAD.left} y={toY(90)} width={plotW} height={toY(Y_MIN) - toY(90)} fill="#FF453A08" />
 
-          {/* SpO2 line */}
-          <Polyline points={polylinePoints} fill="none" stroke="#007AFF" strokeWidth={1.5} strokeLinejoin="round" />
+          {/* SpO2 line — 多段 polyline + 单点散点
+              (gap > 30min 自动断开, 避免白天稀疏点连成长直线 misleading) */}
+          {segments.map((seg, i) => {
+            if (seg.length === 1) {
+              // 孤立散点 (白天偶发测量) — 用空心圆区分于连续监测段
+              const p = seg[0];
+              return (
+                <Circle key={`pt-${i}`}
+                  cx={toX(p.time)} cy={toY(p.value)} r={2}
+                  fill="#fff" stroke="#007AFF" strokeWidth={1.2} />
+              );
+            }
+            const pts = seg.map(p => `${toX(p.time).toFixed(1)},${toY(p.value).toFixed(1)}`).join(' ');
+            return (
+              <Polyline key={`seg-${i}`} points={pts} fill="none"
+                stroke="#007AFF" strokeWidth={1.5} strokeLinejoin="round" />
+            );
+          })}
 
           {/* X labels */}
           {xLabels.map((t, i) => (

@@ -10,8 +10,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
-import type { InterventionDraft, InterventionMetricKey } from '@/services/interventionDraft';
+import { colors, radii, shadows, spacing } from '../../constants/theme';
+import type { InterventionDraft, InterventionMetricKey } from '../../services/interventionDraft';
 
 interface Props {
   visible: boolean;

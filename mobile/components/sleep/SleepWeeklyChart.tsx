@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
-import { colors, spacing, radii } from '@/constants/theme';
-import { scoreColor } from '@/constants/theme';
+import { colors, spacing, radii } from '../../constants/theme';
+import { scoreColor } from '../../constants/theme';
 
 interface ChartItem {
   date: string;

@@ -12,8 +12,8 @@ import {
   getToken,
   fetchCurrentUser,
   type User,
-} from '@/services/auth';
-import { setOnUnauthorized } from '@/services/api';
+} from '../services/auth';
+import { setOnUnauthorized } from '../services/api';
 
 interface AuthState {
   user: User | null;

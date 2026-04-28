@@ -11,8 +11,8 @@ import Markdown from 'react-native-markdown-display';
 import {
   getConsultation, updateConsultationItem, verifyPredictions,
   type ConsultationItem, type ConsultationPredictionVerification,
-} from '@/services/consultations';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+} from '../../services/consultations';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 const ITEM_TYPE_LABEL: Record<string, string> = {
   hypothesis: '🧠 假设',

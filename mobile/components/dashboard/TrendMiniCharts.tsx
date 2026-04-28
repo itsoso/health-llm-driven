@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Svg, { Polyline, Rect } from 'react-native-svg';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 interface ChartData {
   label: string;

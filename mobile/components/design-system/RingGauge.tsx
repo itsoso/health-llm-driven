@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { colors, typography, scoreColor, scoreGrade } from '@/constants/theme';
+import { colors, typography, scoreColor, scoreGrade } from '../../constants/theme';
 
 interface Props {
   score: number;

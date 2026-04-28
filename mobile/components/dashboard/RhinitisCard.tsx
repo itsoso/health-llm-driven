@@ -2,9 +2,9 @@ import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { updateCheckin } from '@/services/records';
-import api from '@/services/api';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { updateCheckin } from '../../services/records';
+import api from '../../services/api';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 interface Props {
   checkin: any;

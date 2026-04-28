@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { supplementApi } from '@/services/records';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { supplementApi } from '../../services/records';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
 const timingOrder = ['morning', 'noon', 'evening', 'bedtime'];

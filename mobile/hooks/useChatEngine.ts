@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
-import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '@/services/chat';
-import { dispatchCard, renderServerCards } from '@/components/chat/cards';
-import api, { BASE_URL } from '@/services/api';
+import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '../services/chat';
+import { dispatchCard, renderServerCards } from '../components/chat/cards';
+import api, { BASE_URL } from '../services/api';
 
 const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 

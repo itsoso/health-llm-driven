@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii } from '@/constants/theme';
+import { colors, spacing, radii } from '../../constants/theme';
 
 interface Props {
   score: number;

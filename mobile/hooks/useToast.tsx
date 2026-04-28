@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, TextStyle } from 'react-native';
-import { colors, radii, shadows } from '@/constants/theme';
+import { colors, radii, shadows } from '../constants/theme';
 
 interface ToastCtx {
   show: (msg: string, type?: 'info' | 'error' | 'success') => void;

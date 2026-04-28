@@ -2,7 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Platform, useColorScheme } from 'react-native';
-import { colors, darkColors } from '@/constants/theme';
+import { colors, darkColors } from '../../constants/theme';
 
 export default function TabLayout() {
   const scheme = useColorScheme();

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { colors } from '@/constants/theme';
+import { colors } from '../../constants/theme';
 
 interface Props {
   size: number;

@@ -5,13 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { useDailyDiet } from '@/hooks/useDiet';
-import { createDietRecord, estimateNutrition, recognizeFood, type DietRecordCreate } from '@/services/diet';
+import { useDailyDiet } from '../hooks/useDiet';
+import { createDietRecord, estimateNutrition, recognizeFood, type DietRecordCreate } from '../services/diet';
 import * as ImagePicker from 'expo-image-picker';
-import HealthCard from '@/components/design-system/HealthCard';
-import MealForm from '@/components/diet/MealForm';
-import DietFAB from '@/components/diet/DietFAB';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import HealthCard from '../components/design-system/HealthCard';
+import MealForm from '../components/diet/MealForm';
+import DietFAB from '../components/diet/DietFAB';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 function todayStr() {
   const d = new Date();

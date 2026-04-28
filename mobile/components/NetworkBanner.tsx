@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing } from '@/constants/theme';
-import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { colors, spacing } from '../constants/theme';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 export default function NetworkBanner() {
   const { isOnline } = useNetworkStatus();

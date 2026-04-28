@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, TextStyle, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { colors, spacing, radii } from '@/constants/theme';
-import type { DietRecordCreate } from '@/services/diet';
+import { colors, spacing, radii } from '../../constants/theme';
+import type { DietRecordCreate } from '../../services/diet';
 
 interface Props {
   date: string;

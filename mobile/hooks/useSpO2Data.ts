@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getSpO2Nightly, getSpO2LatestNight, type SpO2NightlyData } from '@/services/spo2';
+import { getSpO2Nightly, getSpO2LatestNight, type SpO2NightlyData } from '../services/spo2';
 
 export function useSpO2Nightly(date: string | null) {
   return useQuery<SpO2NightlyData>({

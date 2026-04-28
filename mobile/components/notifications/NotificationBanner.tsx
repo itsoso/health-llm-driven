@@ -4,8 +4,8 @@ import Animated, { useSharedValue, useAnimatedStyle, withSpring, withDelay, runO
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { Notification } from 'expo-notifications';
-import { setOnForegroundNotification } from '@/hooks/useNotifications';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { setOnForegroundNotification } from '../../hooks/useNotifications';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 const AUTO_DISMISS_MS = 4000;
 

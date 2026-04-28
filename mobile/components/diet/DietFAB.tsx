@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radii, shadows } from '@/constants/theme';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface Props {
   onPhoto: () => void;

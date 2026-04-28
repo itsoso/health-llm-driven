@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { colors } from '@/constants/theme';
+import { colors } from './theme';
 
 export const mdStylesChat = StyleSheet.create({
   body: { fontSize: 15, lineHeight: 22, color: colors.labelPrimary },

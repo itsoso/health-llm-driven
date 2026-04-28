@@ -11,11 +11,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, typography, radii } from '@/constants/theme';
-import type { TimeRange } from '@/services/trends';
-import { useWeightHistory, useBPHistory, useIndicatorTrend } from '@/hooks/useTrendData';
-import TrendChart from '@/components/charts/TrendChart';
-import TimeRangeSelector from '@/components/charts/TimeRangeSelector';
+import { colors, spacing, typography, radii } from '../constants/theme';
+import type { TimeRange } from '../services/trends';
+import { useWeightHistory, useBPHistory, useIndicatorTrend } from '../hooks/useTrendData';
+import TrendChart from '../components/charts/TrendChart';
+import TimeRangeSelector from '../components/charts/TimeRangeSelector';
 
 const TYPE_TITLES: Record<string, string> = {
   weight: '体重趋势',

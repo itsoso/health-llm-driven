@@ -7,7 +7,7 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: jest.fn().mockReturnValue({ type: 'weight' }),
 }));
 
-jest.mock('@/hooks/useTrendData', () => ({
+jest.mock('../../hooks/useTrendData', () => ({
   useWeightHistory: jest.fn().mockReturnValue({
     data: [{ label: '体重', color: '#FF9F0A', data: [{ date: '2026-04-20', value: 72, unit: 'kg' }] }],
     isLoading: false,

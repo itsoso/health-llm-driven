@@ -1,11 +1,11 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
 
-jest.mock('@/hooks/useNetworkStatus', () => ({
+jest.mock('../../hooks/useNetworkStatus', () => ({
   useNetworkStatus: jest.fn().mockReturnValue({ isOnline: true }),
 }));
 
-import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import NetworkBanner from '../NetworkBanner';
 
 describe('NetworkBanner', () => {

@@ -6,11 +6,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { getSafetyReport, explainAlert, type SafetyAlert } from '@/services/safety';
-import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '@/services/actionCards';
-import InterventionCard from '@/components/actions/InterventionCard';
-import { queryKeys } from '@/lib/queryKeys';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { getSafetyReport, explainAlert, type SafetyAlert } from '../../services/safety';
+import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '../../services/actionCards';
+import InterventionCard from '../../components/actions/InterventionCard';
+import { queryKeys } from '../../lib/queryKeys';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 function getSeverityKey(s: any): string { return typeof s === 'string' ? s : s?.label ?? 'info'; }
 

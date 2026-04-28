@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { colors } from '@/constants/theme';
+import { colors } from '../../../constants/theme';
 import type { CardSpec } from './types';
 
 interface AbnormalItem {

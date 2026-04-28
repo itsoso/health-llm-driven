@@ -10,8 +10,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
-import type { OutcomeReviewDraft, OutcomeReviewStatus } from '@/services/outcomeReview';
+import { colors, radii, shadows, spacing } from '../../constants/theme';
+import type { OutcomeReviewDraft, OutcomeReviewStatus } from '../../services/outcomeReview';
 
 interface Props {
   visible: boolean;

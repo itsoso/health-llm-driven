@@ -1,5 +1,5 @@
 /**
- * Backward-compat barrel. 请改用 '@/components/chat/cards'.
+ * Backward-compat barrel. 请改用 './cards'.
  * 这里只 re-export 旧的 3 个 view 保持既有 import 不断裂.
  */
 export {

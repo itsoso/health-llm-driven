@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { router } from 'expo-router';
-import { bindIOSToken } from '@/services/notifications';
+import { bindIOSToken } from '../services/notifications';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -142,7 +142,7 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
 async function handleQuickAction(action: string, data?: Record<string, any>) {
   if (!data) return;
   try {
-    const { default: api } = await import('@/services/api');
+    const { default: api } = await import('../services/api');
     const type = data.reminder_type; // 'supplement' | 'medication'
     if (type === 'supplement' && data.supplement_id) {
       await api.post('/supplements/me/checkin', {

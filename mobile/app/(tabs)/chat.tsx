@@ -7,12 +7,12 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { deleteConversation } from '@/services/chat';
-import { useChatEngine, type UIMessage } from '@/hooks/useChatEngine';
-import ChatInputBar from '@/components/chat/ChatInputBar';
-import BrandCircle from '@/components/chat/BrandCircle';
-import ChatBubble from '@/components/chat/ChatBubble';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { deleteConversation } from '../../services/chat';
+import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
+import ChatInputBar from '../../components/chat/ChatInputBar';
+import BrandCircle from '../../components/chat/BrandCircle';
+import ChatBubble from '../../components/chat/ChatBubble';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 const SUGGESTIONS = [
   { icon: 'pulse-outline' as const, text: '今天的健康状况如何？' },

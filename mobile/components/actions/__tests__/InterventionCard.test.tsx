@@ -1,9 +1,9 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import InterventionCard from '../InterventionCard';
-import type { ActionCard } from '@/services/actionCards';
+import type { ActionCard } from '../../../services/actionCards';
 
-jest.mock('@/services/api', () => ({
+jest.mock('../../../services/api', () => ({
   __esModule: true,
   default: { get: jest.fn(), patch: jest.fn() },
 }));

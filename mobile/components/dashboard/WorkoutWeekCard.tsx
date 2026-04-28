@@ -3,9 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { getWorkouts, type WorkoutSummary } from '@/services/workouts';
-import HealthCard from '@/components/design-system/HealthCard';
-import { colors, spacing, radii } from '@/constants/theme';
+import { getWorkouts, type WorkoutSummary } from '../../services/workouts';
+import HealthCard from '../design-system/HealthCard';
+import { colors, spacing, radii } from '../../constants/theme';
 
 const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
   running: { icon: 'walk', color: '#FF375F' },

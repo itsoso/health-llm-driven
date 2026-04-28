@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { CardShell } from './CardShell';
-import { colors } from '@/constants/theme';
+import { colors } from '../../../constants/theme';
 import type { CardSpec } from './types';
 
 interface ScoreData {

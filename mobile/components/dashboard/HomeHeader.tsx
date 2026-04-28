@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextStyle, TouchableOpacity, LayoutAnimation, Animated } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 function Shimmer({ width, height = 12 }: { width: number; height?: number }) {
   const opacity = useRef(new Animated.Value(0.3)).current;

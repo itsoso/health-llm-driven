@@ -11,16 +11,16 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 
-import SpO2AnalysisChart from '@/components/sleep/SpO2AnalysisChart';
-import SleepExperimentCard from '@/components/sleep/SleepExperimentCard';
-import InterventionDraftSheet from '@/components/actions/InterventionDraftSheet';
-import { useNightAnalysis, useNightTimeseries, useReanalyzeNight, useConfirmNoAlcohol } from '@/hooks/useSpo2Analysis';
-import { SpO2Correlation } from '@/services/sleepSpo2';
-import { getSleepQuestionPrompt } from '@/services/dataHealth';
-import { createInterventionDraft } from '@/services/actionCards';
-import { buildInterventionDraft, type InterventionDraft } from '@/services/interventionDraft';
-import { invalidateQueryKeys, queryKeys } from '@/lib/queryKeys';
-import { colors, spacing } from '@/constants/theme';
+import SpO2AnalysisChart from '../components/sleep/SpO2AnalysisChart';
+import SleepExperimentCard from '../components/sleep/SleepExperimentCard';
+import InterventionDraftSheet from '../components/actions/InterventionDraftSheet';
+import { useNightAnalysis, useNightTimeseries, useReanalyzeNight, useConfirmNoAlcohol } from '../hooks/useSpo2Analysis';
+import { SpO2Correlation } from '../services/sleepSpo2';
+import { getSleepQuestionPrompt } from '../services/dataHealth';
+import { createInterventionDraft } from '../services/actionCards';
+import { buildInterventionDraft, type InterventionDraft } from '../services/interventionDraft';
+import { invalidateQueryKeys, queryKeys } from '../lib/queryKeys';
+import { colors, spacing } from '../constants/theme';
 import { styles, txt } from './sleep-spo2-analysis.styles';
 
 function yesterdayISO(): string {

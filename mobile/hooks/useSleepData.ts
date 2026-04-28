@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getGarminSleepData, computeSleepStats, getSleepDebt, type GarminSleepDay, type SleepStats, type SleepDebt } from '@/services/sleep';
+import { getGarminSleepData, computeSleepStats, getSleepDebt, type GarminSleepDay, type SleepStats, type SleepDebt } from '../services/sleep';
 
 export function useSleepStats(days = 7) {
   return useQuery<SleepStats>({

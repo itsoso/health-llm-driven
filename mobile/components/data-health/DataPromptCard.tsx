@@ -1,8 +1,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
-import type { DataPrompt } from '@/services/dataHealth';
+import { colors, radii, shadows, spacing } from '../../constants/theme';
+import type { DataPrompt } from '../../services/dataHealth';
 
 interface Props {
   prompt: DataPrompt;

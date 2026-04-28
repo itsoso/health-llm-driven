@@ -4,8 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { getLogs, type NotificationLog } from '@/services/notifications';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { getLogs, type NotificationLog } from '../services/notifications';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 const TYPE_META: Record<string, { icon: string; color: string }> = {
   health_alert: { icon: 'warning', color: '#FF453A' },

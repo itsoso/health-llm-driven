@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, KeyboardAvoidingView, Platform, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
-import type { GoalResponse } from '@/services/goals';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
+import type { GoalResponse } from '../../services/goals';
 
 interface Props {
   goal: GoalResponse | null;

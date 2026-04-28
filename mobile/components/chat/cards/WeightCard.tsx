@@ -4,7 +4,7 @@ import Svg, { Polyline, Circle as SvgCircle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
-import { colors } from '@/constants/theme';
+import { colors } from '../../../constants/theme';
 import type { CardSpec } from './types';
 
 interface WeightData {

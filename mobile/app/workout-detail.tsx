@@ -5,11 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MapView, { Polyline as MapPolyline } from 'react-native-maps';
 import Markdown from 'react-native-markdown-display';
-import { useWorkoutDetail } from '@/hooks/useWorkouts';
-import { analyzeWorkout, getPostWorkoutAnalysis, type WorkoutAnalysis, type PostWorkoutAnalysisResponse } from '@/services/workouts';
-import MetricTile from '@/components/design-system/MetricTile';
-import HealthCard from '@/components/design-system/HealthCard';
-import { colors, spacing, radii, metricColors } from '@/constants/theme';
+import { useWorkoutDetail } from '../hooks/useWorkouts';
+import { analyzeWorkout, getPostWorkoutAnalysis, type WorkoutAnalysis, type PostWorkoutAnalysisResponse } from '../services/workouts';
+import MetricTile from '../components/design-system/MetricTile';
+import HealthCard from '../components/design-system/HealthCard';
+import { colors, spacing, radii, metricColors } from '../constants/theme';
 
 interface RoutePoint { lat: number; lng: number }
 

@@ -5,11 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import api from '@/services/api';
-import { useAuth } from '@/hooks/useAuth';
-import { useBiometricLock } from '@/hooks/useBiometricLock';
-import { invalidateHealthSnapshot, queryKeys } from '@/lib/queryKeys';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import api from '../services/api';
+import { useAuth } from '../hooks/useAuth';
+import { useBiometricLock } from '../hooks/useBiometricLock';
+import { invalidateHealthSnapshot, queryKeys } from '../lib/queryKeys';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 export default function SettingsScreen() {
   const router = useRouter();

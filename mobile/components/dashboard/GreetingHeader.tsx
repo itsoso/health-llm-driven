@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 interface Forecast {
   date: string;

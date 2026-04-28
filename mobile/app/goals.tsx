@@ -5,12 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { useGoals, useUpdateGoalProgress } from '@/hooks/useGoals';
-import { createGoal, generateGoalsFromAnalysis, type GoalResponse, type GoalCreate } from '@/services/goals';
-import GoalCard from '@/components/goals/GoalCard';
-import ProgressUpdateSheet from '@/components/goals/ProgressUpdateSheet';
-import SectionHeader from '@/components/design-system/SectionHeader';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { useGoals, useUpdateGoalProgress } from '../hooks/useGoals';
+import { createGoal, generateGoalsFromAnalysis, type GoalResponse, type GoalCreate } from '../services/goals';
+import GoalCard from '../components/goals/GoalCard';
+import ProgressUpdateSheet from '../components/goals/ProgressUpdateSheet';
+import SectionHeader from '../components/design-system/SectionHeader';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 export default function GoalsScreen() {
   const router = useRouter();

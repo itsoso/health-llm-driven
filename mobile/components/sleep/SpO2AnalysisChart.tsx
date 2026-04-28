@@ -6,7 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, LayoutChangeEvent, TextStyle } from 'react-native';
 import Svg, { Line, Polyline, Rect, G, Text as SvgText, Circle, Path } from 'react-native-svg';
-import { colors, spacing } from '@/constants/theme';
+import { colors, spacing } from '../../constants/theme';
 
 interface TsPoint {
   sample_time: string; // HH:MM or HH:MM:SS

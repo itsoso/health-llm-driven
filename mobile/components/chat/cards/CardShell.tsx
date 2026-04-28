@@ -6,7 +6,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, spacing } from '../../../constants/theme';
 
 interface CardShellProps {
   icon: string;

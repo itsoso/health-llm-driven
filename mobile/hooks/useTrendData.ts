@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import type { TrendSeries, TimeRange } from '@/services/trends';
-import { fetchWeightTrend, fetchBPTrend, fetchIndicatorTrend } from '@/services/trends';
+import type { TrendSeries, TimeRange } from '../services/trends';
+import { fetchWeightTrend, fetchBPTrend, fetchIndicatorTrend } from '../services/trends';
 
 export function useWeightHistory(range: TimeRange) {
   return useQuery<TrendSeries[]>({

@@ -9,7 +9,7 @@ import {
   SpO2NightAnalysis,
   SpO2Insights,
   NightlyTimeseriesResponse,
-} from '@/services/sleepSpo2';
+} from '../services/sleepSpo2';
 
 export function useNightAnalysis(nightDate: string | null) {
   return useQuery<SpO2NightAnalysis>({

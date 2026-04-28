@@ -11,13 +11,13 @@ import * as Haptics from 'expo-haptics';
 import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { renderCard } from './cards';
-import InterventionDraftSheet from '@/components/actions/InterventionDraftSheet';
-import { mdStylesChat } from '@/constants/markdownStyles';
-import type { UIMessage } from '@/hooks/useChatEngine';
-import { invalidateQueryKeys, queryKeys } from '@/lib/queryKeys';
-import { createInterventionDraft } from '@/services/actionCards';
-import { buildInterventionDraft, type InterventionDraft } from '@/services/interventionDraft';
-import { colors, radii, shadows } from '@/constants/theme';
+import InterventionDraftSheet from '../actions/InterventionDraftSheet';
+import { mdStylesChat } from '../../constants/markdownStyles';
+import type { UIMessage } from '../../hooks/useChatEngine';
+import { invalidateQueryKeys, queryKeys } from '../../lib/queryKeys';
+import { createInterventionDraft } from '../../services/actionCards';
+import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface Props {
   item: UIMessage;

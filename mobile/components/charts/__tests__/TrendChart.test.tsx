@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import TrendChart from '../TrendChart';
-import type { TrendSeries } from '@/services/trends';
+import type { TrendSeries } from '../../../services/trends';
 
 const mockSeries: TrendSeries[] = [
   {

@@ -6,10 +6,10 @@ import {
   getActionCardProgress,
   getActionCardVerificationLabel,
   type ActionCard,
-} from '@/services/actionCards';
-import { buildActionCardOutcomeDraft } from '@/services/outcomeReview';
-import type { OutcomeReviewDraft } from '@/services/outcomeReview';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
+} from '../../services/actionCards';
+import { buildActionCardOutcomeDraft } from '../../services/outcomeReview';
+import type { OutcomeReviewDraft } from '../../services/outcomeReview';
+import { colors, radii, shadows, spacing } from '../../constants/theme';
 import ActionEvidenceRow from './ActionEvidenceRow';
 import OutcomeVerificationSheet from './OutcomeVerificationSheet';
 

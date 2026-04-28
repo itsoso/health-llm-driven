@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii, typography } from '@/constants/theme';
+import { colors, spacing, radii, typography } from '../constants/theme';
 
 interface Props {
   error: Error;

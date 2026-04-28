@@ -5,8 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { getSettings, updateSettings, sendTestPush, type NotificationSettings, type NotificationSettingsUpdate } from '@/services/notifications';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { getSettings, updateSettings, sendTestPush, type NotificationSettings, type NotificationSettingsUpdate } from '../services/notifications';
+import { colors, spacing, radii, shadows } from '../constants/theme';
 
 export default function NotificationSettingsScreen() {
   const router = useRouter();

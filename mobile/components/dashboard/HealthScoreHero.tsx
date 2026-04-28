@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { colors, spacing, radii, shadows } from '@/constants/theme';
+import { colors, spacing, radii, shadows } from '../../constants/theme';
 
 interface Dimension {
   name: string;

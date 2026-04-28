@@ -4,8 +4,8 @@ import {
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getConversations, deleteConversation } from '@/services/chat';
-import { colors, spacing, radii } from '@/constants/theme';
+import { getConversations, deleteConversation } from '../../services/chat';
+import { colors, spacing, radii } from '../../constants/theme';
 
 interface Props {
   visible: boolean;
