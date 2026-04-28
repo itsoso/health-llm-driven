@@ -66,6 +66,36 @@ def log_orchestrator_run(
     )
 
 
+def log_cross_review_conflicts(
+    db: Session,
+    user_id: int,
+    conflicts: List[Dict[str, Any]],
+    used_specialists: List[str],
+) -> None:
+    """记录一次 cross-review 检测到的 specialist 矛盾.
+
+    每个 conflict 的字段: specialist_a, specialist_b, severity, description,
+    resolution_hint. 全部存到 result_detail.
+    """
+    if not conflicts:
+        return
+    hard_count = sum(1 for c in conflicts if c.get("severity") == "hard")
+    summary = (
+        f"检测到 {len(conflicts)} 个 specialist 矛盾 "
+        f"(hard={hard_count}, soft={len(conflicts) - hard_count}); "
+        f"涉及 specialist: {', '.join(used_specialists)}"
+    )
+    _write(
+        db,
+        user_id=user_id,
+        agent_type="cross_review",
+        action="detect_conflicts",
+        result_summary=summary,
+        findings_count=len(conflicts),
+        result_detail={"conflicts": conflicts, "used_specialists": used_specialists},
+    )
+
+
 def _write(
     db: Session,
     user_id: int,

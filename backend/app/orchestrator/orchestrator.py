@@ -242,7 +242,7 @@ def _build_synthesis_prompt(
     if db is not None and user_id is not None:
         credit_text = _build_specialist_credit_block(db, user_id, days=30)
 
-    # Cross-Review: specialist 之间矛盾检测
+    # Cross-Review: specialist 之间矛盾检测 + audit log
     conflicts_text = ""
     try:
         from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
@@ -250,6 +250,22 @@ def _build_synthesis_prompt(
         if conflicts:
             conflicts_text = render_conflicts_for_prompt(conflicts)
             logger.info(f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突")
+            # Audit log (旁路, 失败不影响主流程)
+            try:
+                from app.agents.audit import log_cross_review_conflicts
+                log_cross_review_conflicts(
+                    db, user_id=user_id or twin.meta.user_id,
+                    conflicts=[{
+                        "specialist_a": c.specialist_a,
+                        "specialist_b": c.specialist_b,
+                        "severity": c.severity,
+                        "description": c.description,
+                        "resolution_hint": c.resolution_hint,
+                    } for c in conflicts],
+                    used_specialists=[f.specialist_name for f in findings],
+                )
+            except Exception as e_audit:  # noqa: BLE001
+                logger.debug(f"[orchestrator] cross_review audit 失败: {e_audit}")
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] cross_review 跳过: {e}")
 
