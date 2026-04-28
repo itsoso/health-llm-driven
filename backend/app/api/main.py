@@ -44,7 +44,6 @@ from app.api import (
     review,
     diet_recommendation,
     performance,
-    news,
     user_api_key,
     speech,
     ai_insights,
@@ -55,26 +54,15 @@ from app.api import (
     medication,
     womens_health,
     vision,
-    trip,
     siri,
     illness,
-    kids_pet,
     excretion,
     sleep_record,
     activity_status,
-    friendship,
-    pk_challenge,
-    daily_points,
-    vocabulary,
-    kids_plan,
-    direct_message,
-    group_chat,
-    security_life,
     smart_plan,
     health_event,
     withings,
     onboarding,
-    achievement,
     data_export,
     health_trend,
     openclaw,
@@ -91,10 +79,8 @@ from app.api import (
     garmin_import,
     quick_questions,
     genetic_data,
-    affiliate_products,
     quick_record,
     data_health,
-    massage,
     sleep_analysis,
     exercise_recovery,
     chronic_risk,
@@ -115,6 +101,7 @@ from app.api import (
     clinical_journal,
     user_directive,
     telegram_webhook,
+    memory_facts,
 )
 
 api_router = APIRouter()
@@ -220,6 +207,7 @@ api_router.include_router(open_loop.router)
 api_router.include_router(clinical_journal.router)
 api_router.include_router(user_directive.router)
 api_router.include_router(telegram_webhook.router)
+api_router.include_router(memory_facts.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])
@@ -238,27 +226,11 @@ api_router.include_router(genetic_data.router, prefix="/genetic", tags=["genetic
 api_router.include_router(womens_health.router)
 api_router.include_router(illness.router)
 api_router.include_router(vision.router)
-api_router.include_router(massage.router, prefix="/massage", tags=["massage"])
 
-# ── Social & Family ────────────────────────────────────────────────
-api_router.include_router(friendship.router)
-api_router.include_router(pk_challenge.router)
-api_router.include_router(direct_message.router)
-api_router.include_router(group_chat.router)
+# ── Family ─────────────────────────────────────────────────────────
 api_router.include_router(family.router)
 api_router.include_router(family_health.router, prefix="/family-health", tags=["family-health"])
 
-# ── Kids & Gamification ────────────────────────────────────────────
-api_router.include_router(kids_pet.router)
-api_router.include_router(kids_plan.router)
-api_router.include_router(daily_points.router)
-api_router.include_router(achievement.router)
-api_router.include_router(vocabulary.router)
-
 # ── Lifestyle & Misc ──────────────────────────────────────────────
-api_router.include_router(trip.router)
 api_router.include_router(siri.router)
-api_router.include_router(news.router)
-api_router.include_router(security_life.router, prefix="/security-life", tags=["security-life"])
-api_router.include_router(affiliate_products.router, prefix="/affiliate-products", tags=["affiliate-products"])
 api_router.include_router(goals.router, prefix="/goals", tags=["goals"])

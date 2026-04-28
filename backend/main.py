@@ -25,6 +25,7 @@ import app.models.llm_usage  # noqa: F401 - LLM 用量追踪表
 import app.models.open_loop_history  # noqa: F401 - Open-Loop 推送历史 + dedup
 import app.models.clinical_journal  # noqa: F401 - Clinical Journal SOAP + case threads
 import app.models.user_directive  # noqa: F401 - 医生指令 / 用户硬约束
+import app.models.memory_fact  # noqa: F401 - LLM Wiki v2 事实级记忆
 import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
 
 # 设置日志，使用北京时间
@@ -152,7 +153,6 @@ async def startup_event():
         _add_col("openclaw_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
         _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
         _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
-        _add_col("users", "kids_points", "INTEGER DEFAULT 0")
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")

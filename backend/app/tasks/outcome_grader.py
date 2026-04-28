@@ -1,14 +1,16 @@
 """
 ActionCard outcome grading — Specialist 信任循环.
 
-每天 08:00 跑: 找出所有到期未评分的 ActionCard,
+每天 08:00 (Asia/Shanghai) 跑: 找出所有到期未评分的 ActionCard,
 拉取对应 metric, 跟 target_value 对比, 算 0-100 的 accuracy_score.
 
 字段约定:
-- metric_key: 'sleep_score' | 'hrv' | 'rhr' | 'weight' | 'bp' | 'spo2_odi' | 'alt' | 'ldl' | 'hba1c' | ...
+- metric_key: 'sleep_score' | 'hrv' | 'rhr' | 'weight' | 'spo2_odi' |
+              'systolic_bp' | 'diastolic_bp' | 'alt' | 'ldl' | 'hba1c' | ...
+              (注意: 'bp' 已废弃, 请显式使用 'systolic_bp' 或 'diastolic_bp')
 - baseline_value: str — 卡片创建时的起点值 (如 "82kg")
 - target_value:   str — specialist 预测/目标值 (如 "80kg" 或 ">90"  或 "<35")
-- check_back_date: 评分日期
+- check_back_date: 评分日期 (UTC)
 - actual_value:   评分时实测
 - accuracy_score: 0-100, 100=完全命中, 0=完全反向
 
@@ -16,7 +18,15 @@ ActionCard outcome grading — Specialist 信任循环.
   方向正确 + 距离 target < 30% baseline-target 距离 → 100
   方向正确 + 距离更远                              → 50-90 线性
   方向反了                                        → 0-30 (越反越低)
-  数据缺失                                        → 跳过, check_back_date 顺延 7 天
+  数据缺失 or 仅有陈旧数据                         → 跳过, check_back_date 顺延 3 天
+
+陈旧数据定义 — 每类 metric 有 MAX_AGE_DAYS 上限:
+- Garmin 日级 (sleep_score/hrv/rhr): 7 天
+- 自测 vitals (weight/bp/glucose/bmi/body_fat): 14 天
+- 自测血脂 (ldl/hdl/tc/tg): 90 天 (自测少, 检测间隔长)
+- 化验项 (MedicalExamItem): 90 天
+
+时区: grader 按 Asia/Shanghai 派生 target_date, 保证"今天"和用户本地日历对齐.
 """
 from __future__ import annotations
 
@@ -24,12 +34,36 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.action_card import ActionCard
 
 logger = logging.getLogger(__name__)
+
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+
+# 每类 metric 向前能接受的最旧数据窗口 (单位: 天)
+MAX_AGE_DAYS = {
+    # Garmin 日级
+    "sleep_score": 7, "hrv": 7, "rhr": 7,
+    # 自测 vitals
+    "weight": 14, "bmi": 14, "body_fat": 14,
+    "systolic_bp": 14, "diastolic_bp": 14,
+    "fasting_glucose": 14, "blood_glucose": 14,
+    # 自测 / 化验血脂 — 检测间隔长
+    "ldl": 90, "hdl": 90, "tc": 90, "tg": 90,
+}
+# 化验项 MedicalExamItem 默认 90 天
+EXAM_LAB_MAX_AGE = 90
+
+
+def _max_age_for(metric_key: str) -> int:
+    """返回该 metric 的最大数据陈旧度 (天). 未知 metric 默认 30 天."""
+    if metric_key in MAX_AGE_DAYS:
+        return MAX_AGE_DAYS[metric_key]
+    return 30  # 保守默认
 
 
 def _parse_numeric(s: Optional[str]) -> Optional[float]:
@@ -54,14 +88,18 @@ def _parse_direction(target: Optional[str]) -> str:
 
 
 def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optional[float]:
-    """根据 metric_key 拉取实测值 (评分日附近)."""
+    """根据 metric_key 拉取实测值 (评分日附近, 有 max_age floor 防陈旧)."""
     from app.models.daily_health import GarminData
     from app.models.basic_health import BasicHealthData
     from app.models.weight import WeightRecord
     from app.models.medical_exam import MedicalExam, MedicalExamItem
 
-    target_date = on_date.date()
-    week_window = target_date - timedelta(days=7)
+    # target_date 从上海本地日期派生, 避免 UTC-Shanghai 跨日歧义
+    shanghai_now = on_date.astimezone(SHANGHAI_TZ) if on_date.tzinfo else on_date.replace(tzinfo=timezone.utc).astimezone(SHANGHAI_TZ)
+    target_date = shanghai_now.date()
+
+    max_age = _max_age_for(metric_key)
+    floor_date = target_date - timedelta(days=max_age)
 
     # Garmin 日级指标
     if metric_key in {"sleep_score", "hrv", "rhr"}:
@@ -70,7 +108,7 @@ def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optio
                "rhr": GarminData.resting_heart_rate}[metric_key]
         row = db.query(col).filter(
             GarminData.user_id == user_id,
-            GarminData.record_date >= week_window,
+            GarminData.record_date >= floor_date,
             GarminData.record_date <= target_date,
             col.isnot(None),
         ).order_by(GarminData.record_date.desc()).first()
@@ -80,6 +118,7 @@ def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optio
     if metric_key == "weight":
         row = db.query(WeightRecord.weight).filter(
             WeightRecord.user_id == user_id,
+            WeightRecord.record_date >= floor_date,
             WeightRecord.record_date <= target_date,
         ).order_by(WeightRecord.record_date.desc()).first()
         if row:
@@ -87,13 +126,17 @@ def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optio
         row = db.query(BasicHealthData.weight).filter(
             BasicHealthData.user_id == user_id,
             BasicHealthData.weight.isnot(None),
+            BasicHealthData.record_date >= floor_date,
             BasicHealthData.record_date <= target_date,
         ).order_by(BasicHealthData.record_date.desc()).first()
         return float(row[0]) if row else None
 
     # 血压 / 血脂 / 血糖 — BasicHealthData 列
+    #
+    # 注意: 'bp' key 已废弃. 新代码请用 'systolic_bp' + 'diastolic_bp' 双指标明确评分.
+    # 留 'bp' 作为 systolic_bp 的 legacy alias 仅为向后兼容历史卡片.
     bhd_cols = {
-        "bp": BasicHealthData.systolic_bp,
+        "bp": BasicHealthData.systolic_bp,  # DEPRECATED: 等价 systolic_bp
         "systolic_bp": BasicHealthData.systolic_bp,
         "diastolic_bp": BasicHealthData.diastolic_bp,
         "ldl": BasicHealthData.ldl_cholesterol,
@@ -110,6 +153,7 @@ def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optio
         row = db.query(col).filter(
             BasicHealthData.user_id == user_id,
             col.isnot(None),
+            BasicHealthData.record_date >= floor_date,
             BasicHealthData.record_date <= target_date,
         ).order_by(BasicHealthData.record_date.desc()).first()
         return float(row[0]) if row else None
@@ -121,10 +165,12 @@ def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optio
         "crp", "esr", "wbc", "rbc", "hgb", "plt", "lp_a", "apo_b",
     }
     if metric_key in exam_lab_keys:
+        exam_floor = target_date - timedelta(days=EXAM_LAB_MAX_AGE)
         # item_code 直接匹配 (大写) 或 item_name 含关键字
         upper = metric_key.upper().replace("_", "")
         item = db.query(MedicalExamItem.value).join(MedicalExam).filter(
             MedicalExam.user_id == user_id,
+            MedicalExam.exam_date >= exam_floor,
             MedicalExam.exam_date <= target_date,
             MedicalExamItem.value.isnot(None),
             (MedicalExamItem.item_code.ilike(f"%{upper}%") |
@@ -133,6 +179,48 @@ def _fetch_metric(db, user_id: int, metric_key: str, on_date: datetime) -> Optio
         return float(item[0]) if item else None
 
     return None
+
+
+def _grade_bp_dual(
+    db, user_id: int, baseline_value: str, target_value: str, on_date: datetime,
+) -> Tuple[Optional[int], str]:
+    """BP 双指标评分: 解析 '120/80' 形式的 baseline/target, 同时评 systolic + diastolic,
+    取较差者作为最终分数.
+
+    返回 (score, note). 若数据缺失返回 (None, reason).
+    """
+    def _parse_pair(s: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+        if not s:
+            return None, None
+        m = re.match(r"\s*[<>≤≥]*\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", s)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+        # 只有一个值, 认为是 systolic
+        single = _parse_numeric(s)
+        return single, None
+
+    base_sys, base_dia = _parse_pair(baseline_value)
+    tgt_sys, tgt_dia = _parse_pair(target_value)
+    direction = _parse_direction(target_value)
+
+    sys_actual = _fetch_metric(db, user_id, "systolic_bp", on_date)
+    dia_actual = _fetch_metric(db, user_id, "diastolic_bp", on_date)
+
+    # 至少收缩压要有目标 + 数据
+    if sys_actual is None or tgt_sys is None:
+        return None, "数据缺失 (BP 需 systolic + diastolic)"
+
+    sys_score, sys_note = _grade(base_sys, tgt_sys, sys_actual, direction)
+
+    if tgt_dia is None or dia_actual is None:
+        # 只评 systolic
+        return sys_score, f"仅 systolic 评分: {sys_note}"
+
+    dia_score, dia_note = _grade(base_dia, tgt_dia, dia_actual, direction)
+    # 取较差者 (不被高分拉高误判)
+    if sys_score <= dia_score:
+        return sys_score, f"BP systolic={sys_note} | diastolic={dia_note} (按 systolic 较差)"
+    return dia_score, f"BP systolic={sys_note} | diastolic={dia_note} (按 diastolic 较差)"
 
 
 def _grade(baseline: Optional[float], target: Optional[float], actual: Optional[float],
@@ -174,6 +262,47 @@ def _grade(baseline: Optional[float], target: Optional[float], actual: Optional[
     return max(0, int(20 + progress_ratio * 20)), f"反向: {baseline} → {actual} (目标 {target})"
 
 
+def _derive_adherence_confidence(card: ActionCard) -> Tuple[int, str]:
+    """基于卡片状态 + checklist 勾选率 + adherence_kind 派生 0-100 置信度.
+
+    返回 (confidence_0_100, source_kind).
+
+    规则:
+    - 若已显式设置 adherence_confidence (非 None) → 直接用, kind 取字段值
+    - else 若有 checklist → 勾完成比例 × 50 (自报信号上限 50)
+      (50 不是 100 因为只是 self_reported, 不证明真做到)
+    - else → None, 按 100 处理 (兼容历史卡, 不降分)
+    """
+    if card.adherence_confidence is not None:
+        return card.adherence_confidence, (card.adherence_kind or "explicit")
+
+    # 从 checklist 派生
+    checklist = card.checklist or []
+    if isinstance(checklist, list) and checklist:
+        done = sum(1 for item in checklist if (isinstance(item, dict) and item.get("done")))
+        total = len(checklist)
+        if total > 0:
+            pct = int(done / total * 50)  # self-report 上限 50
+            return pct, "self_reported"
+
+    return 100, "default"
+
+
+def _apply_adherence(raw_score: int, card: ActionCard) -> Tuple[int, str]:
+    """评分公式: final = accuracy × adherence_confidence / 100.
+
+    返回 (final_score, adherence_note).
+    confidence < 30 的卡 final_score 会被显著压低, 让 hit-rate 不被"没做却碰巧改善"污染.
+    """
+    conf, kind = _derive_adherence_confidence(card)
+    if conf >= 100 and kind == "default":
+        return raw_score, ""  # 未评估依从度, 不改分
+
+    final = int(round(raw_score * conf / 100))
+    note = f" [adherence={kind} {conf}%]"
+    return final, note
+
+
 def _grade_loop(db, now: datetime) -> dict:
     """核心循环, 与 Celery / 测试 都可复用."""
     graded = 0
@@ -190,11 +319,34 @@ def _grade_loop(db, now: datetime) -> dict:
     logger.info(f"[OutcomeGrader] {len(cards)} cards 到期待评")
 
     for card in cards:
+        # BP 双指标特殊路径 — 只有当 target 明确写成 "120/80" 形式时才走
+        if card.metric_key == "bp" and card.target_value and "/" in card.target_value:
+            score, note = _grade_bp_dual(
+                db, card.user_id, card.baseline_value or "", card.target_value, now,
+            )
+            if score is None:
+                card.check_back_date = now + timedelta(days=3)
+                card.grading_notes = (card.grading_notes or "") + \
+                    f"\n[{now.strftime('%Y-%m-%d')}] {note}, 复查日期顺延 3 天"
+                skipped_no_data += 1
+                continue
+            final_score, adh_note = _apply_adherence(score, card)
+            card.accuracy_score = final_score
+            card.graded_at = now
+            card.grading_notes = note + adh_note
+            graded += 1
+            logger.info(
+                f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
+                f"metric=bp-dual): score={final_score} (raw {score}) — {note}{adh_note}"
+            )
+            continue
+
         actual = _fetch_metric(db, card.user_id, card.metric_key, now)
         if actual is None:
             card.check_back_date = now + timedelta(days=3)
+            max_age = _max_age_for(card.metric_key)
             card.grading_notes = (card.grading_notes or "") + \
-                f"\n[{now.strftime('%Y-%m-%d')}] 数据缺失，复查日期顺延 3 天"
+                f"\n[{now.strftime('%Y-%m-%d')}] {card.metric_key} 无 {max_age} 天内数据，复查顺延 3 天"
             skipped_no_data += 1
             continue
 
@@ -203,16 +355,25 @@ def _grade_loop(db, now: datetime) -> dict:
         direction = _parse_direction(card.target_value)
         score, note = _grade(baseline, target, actual, direction)
 
+        final_score, adh_note = _apply_adherence(score, card)
+
         card.actual_value = f"{actual:g}"
-        card.accuracy_score = score
+        card.accuracy_score = final_score
         card.graded_at = now
-        card.grading_notes = note
+        card.grading_notes = note + adh_note
         graded += 1
 
         logger.info(
             f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
-            f"metric={card.metric_key}): score={score} — {note}"
+            f"metric={card.metric_key}): score={final_score} (raw {score}) — {note}{adh_note}"
         )
+
+        # 旁路: 评分结果写入 procedural memory (LLM Wiki v2)
+        try:
+            from app.services.memory_extractor import extract_from_action_card_outcome
+            extract_from_action_card_outcome(db, card)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[OutcomeGrader] memory extract 失败 (跳过): {e}")
 
     db.commit()
     logger.info(f"[OutcomeGrader] 完成: graded={graded}, skipped_no_data={skipped_no_data}")
@@ -221,6 +382,6 @@ def _grade_loop(db, now: datetime) -> dict:
 
 @celery_app.task(time_limit=300, name="app.tasks.outcome_grader.grade_due_action_cards")
 def grade_due_action_cards():
-    """每天 8:00 评分所有到期未评分的 ActionCard."""
+    """每天 08:00 (Asia/Shanghai) 评分所有到期未评分的 ActionCard."""
     with SessionLocal() as db:
         return _grade_loop(db, datetime.now(timezone.utc))

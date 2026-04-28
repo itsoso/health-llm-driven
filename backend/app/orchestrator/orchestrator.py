@@ -342,6 +342,31 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] directive 注入失败 (跳过): {e}")
 
+    # 4) Memory Facts (LLM Wiki v2): 个人知识库 — 高 confidence + 相关 tag 的事实
+    try:
+        from app.services.memory_service import get_active_facts, render_facts_for_prompt
+        # 优先抓 semantic / procedural tier (跨 session 已固化的)
+        # 用 metric_key 做 tag 过滤 (case_thread.theme = tag)
+        from app.services.clinical_journal_service import _theme_from_metric
+        tag = _theme_from_metric(metric_key) if metric_key else None
+        facts = []
+        for tier in ("procedural", "semantic"):
+            facts.extend(get_active_facts(
+                db, user_id, tier=tier, tag=tag,
+                min_confidence=0.4, limit=8,
+            ))
+        # 去重 (按 id)
+        seen = set()
+        unique = []
+        for f in facts:
+            if f.id not in seen:
+                seen.add(f.id)
+                unique.append(f)
+        if unique:
+            out += f"\n\n{render_facts_for_prompt(unique, max_lines=10)}\n"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] memory facts 注入失败 (跳过): {e}")
+
     return out
 
 
@@ -466,6 +491,14 @@ async def run_orchestrator(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] write_soap_entry 失败 (旁路): {e}")
 
+    # Memory Extractor: specialist findings → 个人知识库 facts (旁路)
+    try:
+        from app.services.memory_extractor import extract_from_specialist_finding
+        for f in findings:
+            extract_from_specialist_finding(db, user_id, f, f.specialist_name)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[orchestrator] memory extract 失败 (旁路): {e}")
+
     return OrchestratorResponse(
         query=req.query,
         intent=intent,
@@ -533,6 +566,14 @@ async def stream_orchestrator(
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator.stream] write_soap_entry 失败: {e}")
+
+        # Memory Extractor: specialist findings → 个人知识库 facts (旁路)
+        try:
+            from app.services.memory_extractor import extract_from_specialist_finding
+            for f in findings:
+                extract_from_specialist_finding(db, user_id, f, f.specialist_name)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
 
         system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
         user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
