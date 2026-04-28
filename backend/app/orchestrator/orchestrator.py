@@ -285,6 +285,7 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
         pass
 
     # 2) Clinical Journal case timeline (本次 finding 相关的 metric 历史)
+    metric_key = None
     try:
         from app.services.clinical_journal_service import (
             get_recent_case_summary,
@@ -299,6 +300,15 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
                            f"{history}\n")
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] case timeline 注入失败 (跳过): {e}")
+
+    # 3) User Directives — 医生 / 用户硬性指令 (specialist 必须遵循)
+    try:
+        from app.services.directive_parser import get_active_directives_for_prompt
+        directives_md = get_active_directives_for_prompt(db, user_id, metric_key=metric_key)
+        if directives_md:
+            out += f"\n\n{directives_md}\n"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] directive 注入失败 (跳过): {e}")
 
     return out
 
