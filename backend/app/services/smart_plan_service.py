@@ -738,6 +738,8 @@ class SmartPlanService:
 
     async def _call_llm(self, prompt: str, debug: bool = False):
         """返回 (plan_json, llm_debug_info)"""
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("smart_plan.generate", user_id=getattr(self, "user_id", None))
         llm_debug = {} if debug else None
 
         provider = get_llm_provider()

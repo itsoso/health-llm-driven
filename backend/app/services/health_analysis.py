@@ -161,7 +161,18 @@ class HealthAnalysisService:
         force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
-        分析健康问题（带缓存）
+        分析健康问题（带缓存）"""
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("health_analysis.analyze_issues", user_id=user_id)
+        return self._analyze_health_issues_impl(db, user_id, force_refresh)
+
+    def _analyze_health_issues_impl(
+        self,
+        db: Session,
+        user_id: int,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """实际实现 (set_caller 已在外层注入)
 
         Args:
             user_id: 用户ID

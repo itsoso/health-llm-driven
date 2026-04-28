@@ -31,6 +31,7 @@ celery_app = Celery(
         "app.tasks.intervention_assessment",
         "app.tasks.maintenance",
         "app.tasks.outcome_grader",
+        "app.tasks.open_loop_manager",
     ]
 )
 
@@ -201,6 +202,13 @@ celery_app.conf.beat_schedule = {
     "grade-action-cards": {
         "task": "app.tasks.outcome_grader.grade_due_action_cards",
         "schedule": crontab(hour=8, minute=0),
+    },
+
+    # 每天 7:00 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
+    # vertical health agent 的灵魂: AI 主动盯, 不再被动等问.
+    "open-loop-manager": {
+        "task": "app.tasks.open_loop_manager.run_open_loop_check",
+        "schedule": crontab(hour=7, minute=0),
     },
 }
 

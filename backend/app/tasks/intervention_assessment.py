@@ -74,8 +74,10 @@ def _assess_single_card(db, card: ActionCard) -> dict:
     from app.twin.builder import build_twin
     from app.twin.formatter import twin_to_prompt_blob
     from app.services.llm.factory import create_llm_provider
+    from app.services.llm.usage_tracker import set_caller
 
     user_id = card.user_id
+    set_caller("intervention_assessment.assess_card", user_id=user_id)
 
     # 构建 Twin
     twin = build_twin(db, user_id)

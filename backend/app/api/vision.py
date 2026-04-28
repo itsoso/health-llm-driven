@@ -107,6 +107,8 @@ async def analyze_beauty(
     db: Session = Depends(get_db),
 ):
     """拍照测颜值 - 给出趣味评分和夸奖"""
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("vision.beauty", user_id=current_user.id)
     used = _get_today_usage(db, current_user.id)
     remaining = max(0, DAILY_LIMIT - used)
     if remaining <= 0:
@@ -183,6 +185,8 @@ async def recognize_image(
     db: Session = Depends(get_db),
 ):
     """通用图片识别 - 识别图片中的物体、场景等"""
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("vision.recognize", user_id=current_user.id)
     used = _get_today_usage(db, current_user.id)
     remaining = max(0, DAILY_LIMIT - used)
     if remaining <= 0:

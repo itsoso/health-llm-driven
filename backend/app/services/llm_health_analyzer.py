@@ -695,6 +695,8 @@ class LLMHealthAnalyzer:
         rule_analysis: Dict[str, Any],
         environment_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("llm_health_analyzer.analyze_daily", user_id=user_id)
         """
         使用大模型分析每日健康数据
 

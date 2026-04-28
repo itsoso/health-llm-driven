@@ -188,6 +188,13 @@ class AIInsightsService:
             target_date: 目标日期，默认为昨天
             force_regenerate: 是否强制重新生成（覆盖已有洞察）
         """
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("ai_insights.daily", user_id=user_id)
+        return await self._generate_daily_insight_impl(user_id, target_date, force_regenerate)
+
+    async def _generate_daily_insight_impl(self, user_id: int, target_date: date = None, force_regenerate: bool = False) -> Optional[AIInsight]:
+        """实际实现 (set_caller 已外层注入).
+        """
         if target_date is None:
             target_date = date.today() - timedelta(days=1)  # 默认昨天
 

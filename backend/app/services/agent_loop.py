@@ -162,6 +162,8 @@ async def post_sync_reasoning(
     # 调用 LLM
     try:
         from app.services.llm.factory import create_llm_provider
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("agent_loop.run", user_id=user_id)
         provider = create_llm_provider(None)  # 默认 provider
         if not provider:
             provider = create_llm_provider("openclaw")

@@ -92,6 +92,8 @@ async def parse_medical_text_with_llm(text: str) -> Optional[Dict[str, Any]]:
     """
     try:
         from app.services.llm import get_llm_provider
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("medical_text_parser.parse_with_llm")
         llm = get_llm_provider()
 
         messages = [

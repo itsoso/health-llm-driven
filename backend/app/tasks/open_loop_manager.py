@@ -1,0 +1,298 @@
+"""
+Open-Loop Manager — 主动循环管理 (vertical health agent 的灵魂).
+
+每天 7:00 (北京) 跑一次, 扫所有用户的 "开放健康循环",
+按严重度+到期度评分, 给每个用户最多推 2 条 APNs.
+
+什么是"开放循环":
+  - 过期 lab 复查      ("LDL 6 个月前 4.1, 建议 4 周内复查")
+  - 到期 ActionCard    (信任循环卡片到期 — 已由 outcome_grader 评分)
+  - Plan item 偏离    (连续 3 天没运动 / 没吃药)
+  - 异常趋势刚出现     (HRV 连降 5 天 / 体重连升 3 周)
+  - Garmin sync 中断   (3+ 天没数据)
+
+设计原则:
+  1. 每个 Loop 给一个 score 0-100 (严重度 + 到期度), 排序后取 top N
+  2. 全局 N = 2/天/用户 (避免推送疲劳, 这个值是产品决策, 不是技术)
+  3. 用户可对每条推送反馈: '不感兴趣' / '暂停 7 天' / '已处理' (后续接通)
+  4. 旁路 fail-soft: 单 user 失败不影响其他
+
+输出: APNs 推送 (复用现有 notification_service)
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone, date
+from typing import List, Optional
+
+from app.celery_app import celery_app
+from app.database import SessionLocal
+from app.utils.timezone import CHINA_TIMEZONE
+
+logger = logging.getLogger(__name__)
+
+
+# ────────────────────── 数据结构 ──────────────────────
+
+
+@dataclass
+class OpenLoop:
+    """一个待跟进的开放循环."""
+    user_id: int
+    kind: str            # 'lab_overdue' / 'action_card_due' / 'plan_drift' / 'trend_anomaly' / 'sync_stale'
+    title: str           # 给用户看的标题 (≤ 30字)
+    body: str            # APNs 推送正文 (≤ 100字)
+    score: int           # 0-100, 严重度 + 到期度
+    deeplink: Optional[str] = None    # 点击推送跳哪
+    metadata: dict = field(default_factory=dict)
+
+
+# ────────────────────── 各类 loop 检测 ──────────────────────
+
+
+def _detect_lab_overdue(db, user_id: int) -> List[OpenLoop]:
+    """LDL/HbA1c/ALT 等关键化验 6+ 月没复查."""
+    from app.models.medical_exam import MedicalExam, MedicalExamItem
+
+    LAB_RECHECK_INTERVALS = {
+        # item_code/name 关键字 → 推荐复查间隔 (天) + 严重度因子
+        "LDL": (180, 60),
+        "HBA1C": (90, 80),
+        "ALT": (180, 50),
+        "AST": (180, 50),
+        "GGT": (180, 50),
+        "TG": (180, 40),
+        "CREATININE": (180, 70),
+        "URIC_ACID": (180, 50),
+    }
+
+    loops: List[OpenLoop] = []
+    today = datetime.now(CHINA_TIMEZONE).date()
+
+    for code_key, (interval_days, severity) in LAB_RECHECK_INTERVALS.items():
+        # 找该用户最近一次该化验
+        latest = db.query(MedicalExamItem.value, MedicalExam.exam_date).join(MedicalExam).filter(
+            MedicalExam.user_id == user_id,
+            (MedicalExamItem.item_code.ilike(f"%{code_key}%") |
+             MedicalExamItem.item_name.ilike(f"%{code_key}%")),
+            MedicalExamItem.value.isnot(None),
+        ).order_by(MedicalExam.exam_date.desc()).first()
+
+        if not latest:
+            continue  # 没记录, 不主动催检
+
+        value, last_date = latest
+        days_since = (today - last_date).days
+        overdue_days = days_since - interval_days
+        if overdue_days <= 0:
+            continue  # 还没到期
+
+        # score = severity * (1 + overdue_days/interval, capped 2x)
+        ratio = min(2.0, 1.0 + overdue_days / interval_days)
+        score = int(severity * ratio)
+        loops.append(OpenLoop(
+            user_id=user_id,
+            kind="lab_overdue",
+            title=f"该复查 {code_key} 了",
+            body=f"上次 {code_key} 是 {days_since} 天前 ({value}), "
+                 f"超过推荐间隔 {overdue_days} 天",
+            score=score,
+            deeplink="health://medical-exams/upload",
+            metadata={"code": code_key, "last_value": value, "last_date": str(last_date),
+                      "overdue_days": overdue_days},
+        ))
+
+    return loops
+
+
+def _detect_action_card_due(db, user_id: int) -> List[OpenLoop]:
+    """到期未评分的 ActionCard (outcome_grader 应该评了, 但用户也该看到结果)."""
+    from app.models.action_card import ActionCard
+
+    today_dt = datetime.now(timezone.utc)
+    cards = db.query(ActionCard).filter(
+        ActionCard.user_id == user_id,
+        ActionCard.check_back_date.isnot(None),
+        ActionCard.check_back_date <= today_dt,
+        ActionCard.graded_at.isnot(None),
+        ActionCard.graded_at >= today_dt - timedelta(days=2),  # 最近 2 天才评分的
+    ).all()
+
+    loops: List[OpenLoop] = []
+    for c in cards:
+        score_label = "命中 ✅" if (c.accuracy_score or 0) >= 70 else (
+            "部分 ⚠️" if (c.accuracy_score or 0) >= 40 else "未达 ❌"
+        )
+        loops.append(OpenLoop(
+            user_id=user_id,
+            kind="action_card_due",
+            title=f"{c.title[:18]}…评分出来了",
+            body=f"{score_label} {c.accuracy_score}/100 — {c.grading_notes or '点开看详情'}",
+            score=70 if (c.accuracy_score or 0) >= 70 else 60,
+            deeplink=f"health://action-cards/{c.id}",
+            metadata={"card_id": c.id, "score": c.accuracy_score},
+        ))
+
+    return loops
+
+
+def _detect_sync_stale(db, user_id: int) -> List[OpenLoop]:
+    """Garmin 3+ 天没数据."""
+    from app.models.daily_health import GarminData
+
+    today = datetime.now(CHINA_TIMEZONE).date()
+    last_record = db.query(GarminData.record_date).filter(
+        GarminData.user_id == user_id,
+    ).order_by(GarminData.record_date.desc()).first()
+
+    if not last_record:
+        return []  # 用户从来没接 Garmin, 不催
+
+    days_since = (today - last_record[0]).days
+    if days_since < 3:
+        return []
+
+    return [OpenLoop(
+        user_id=user_id,
+        kind="sync_stale",
+        title="Garmin 同步可能中断",
+        body=f"已 {days_since} 天没收到 Garmin 数据. 检查手表蓝牙 / 重新登录 Garmin Connect.",
+        score=min(80, 30 + days_since * 5),
+        deeplink="health://settings/garmin",
+        metadata={"days_since": days_since, "last_record": str(last_record[0])},
+    )]
+
+
+def _detect_trend_anomaly(db, user_id: int) -> List[OpenLoop]:
+    """HRV 连降 5 天 / 体重连升 3 周."""
+    from app.models.daily_health import GarminData
+
+    loops: List[OpenLoop] = []
+    today = datetime.now(CHINA_TIMEZONE).date()
+    week_ago = today - timedelta(days=7)
+
+    # HRV 趋势: 最近 7 天平均 vs 之前 7 天平均, 跌幅 > 15% 报
+    recent = db.query(GarminData.hrv).filter(
+        GarminData.user_id == user_id,
+        GarminData.record_date >= week_ago,
+        GarminData.hrv.isnot(None),
+    ).all()
+    prev = db.query(GarminData.hrv).filter(
+        GarminData.user_id == user_id,
+        GarminData.record_date >= week_ago - timedelta(days=7),
+        GarminData.record_date < week_ago,
+        GarminData.hrv.isnot(None),
+    ).all()
+    if len(recent) >= 4 and len(prev) >= 4:
+        ra = sum(r[0] for r in recent) / len(recent)
+        pa = sum(r[0] for r in prev) / len(prev)
+        if pa > 0 and (pa - ra) / pa > 0.15:
+            loops.append(OpenLoop(
+                user_id=user_id,
+                kind="trend_anomaly",
+                title="HRV 最近一周下滑",
+                body=f"7 天均值 {ra:.0f}ms (前 7 天 {pa:.0f}ms, 下降 {(pa-ra)/pa*100:.0f}%). "
+                     f"压力/睡眠/训练负荷需关注.",
+                score=int(60 + min(30, (pa - ra) / pa * 100)),
+                deeplink="health://digital-twin",
+                metadata={"recent_hrv": round(ra, 1), "prev_hrv": round(pa, 1)},
+            ))
+
+    return loops
+
+
+# ────────────────────── 主入口 ──────────────────────
+
+
+def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
+    """汇总该用户所有开放循环, 按 score 倒序."""
+    loops: List[OpenLoop] = []
+    for detector in (
+        _detect_lab_overdue,
+        _detect_action_card_due,
+        _detect_sync_stale,
+        _detect_trend_anomaly,
+    ):
+        try:
+            loops.extend(detector(db, user_id) or [])
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[open_loop] {detector.__name__} user={user_id} 失败 (跳过): {e}")
+    loops.sort(key=lambda x: x.score, reverse=True)
+    return loops
+
+
+def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
+    """通过 ios_push.send_push 发 APNs. 查找用户 device_token + 检查总开关."""
+    try:
+        from app.models.notification import UserNotificationSetting
+        from app.services.notification.ios_push import IOSPushService
+        import asyncio
+
+        setting = db.query(UserNotificationSetting).filter(
+            UserNotificationSetting.user_id == user_id,
+        ).first()
+        if not setting:
+            return False
+        if not (setting.enabled and setting.ios_push_enabled and setting.ios_device_token):
+            return False
+        if not setting.health_alert_enabled:
+            # open_loop 复用 health_alert 这个开关 (不需新加)
+            return False
+
+        service = IOSPushService()
+        # ios_push 是 async, 我们在 Celery sync 上下文里跑
+        result = asyncio.run(service.send_push(
+            device_token=setting.ios_device_token,
+            title=loop.title,
+            body=loop.body,
+            data={
+                "type": "open_loop",
+                "kind": loop.kind,
+                "deeplink": loop.deeplink or "",
+                **{k: str(v) for k, v in loop.metadata.items()},
+            },
+        ))
+        return bool(result and result.get("success"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[open_loop] APNs 推送失败 user={user_id}: {e}")
+        return False
+
+
+@celery_app.task(time_limit=600, name="app.tasks.open_loop_manager.run_open_loop_check")
+def run_open_loop_check(max_per_user: int = 2):
+    """
+    每天 7:00 (北京) 扫所有 active 用户的开放循环, 推送 top N.
+
+    返回 {users_scanned, total_loops, pushed}.
+    """
+    from app.models.user import User
+
+    pushed_total = 0
+    loops_total = 0
+    users_scanned = 0
+
+    with SessionLocal() as db:
+        users = db.query(User).filter(User.is_active == True).all()  # noqa: E712
+        for u in users:
+            users_scanned += 1
+            try:
+                loops = collect_open_loops(db, u.id)
+                loops_total += len(loops)
+                # Top max_per_user, 但 score < 50 不推 (噪音过滤)
+                for loop in loops[:max_per_user]:
+                    if loop.score < 50:
+                        continue
+                    if _push_loop(db, u.id, loop):
+                        pushed_total += 1
+                        logger.info(
+                            f"[open_loop] pushed user={u.id} kind={loop.kind} "
+                            f"score={loop.score} title={loop.title}"
+                        )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[open_loop] user={u.id} 处理失败 (跳过): {e}")
+
+    logger.info(
+        f"[open_loop] 完成: users={users_scanned}, loops={loops_total}, pushed={pushed_total}"
+    )
+    return {"users_scanned": users_scanned, "total_loops": loops_total, "pushed": pushed_total}

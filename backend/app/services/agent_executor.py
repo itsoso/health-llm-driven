@@ -604,26 +604,16 @@ class AgentExecutor:
         """执行健康数据记录"""
         rtype = args.get("record_type", "")
         data = args.get("data", {})
-        today_dt = datetime.now(BEIJING_TZ).date()
-        today = today_dt.strftime("%Y-%m-%d")
+        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
-        # === LLM 日期幻觉守门 ===
-        # 经验: GPT-4o-mini 经常返回 2023/2024 等过期日期, 用户记今天的事但写到几年前.
-        # 守门规则: 若 LLM 给的 record_date 离今天 > 7 天 或 > 明天, 一律覆盖为今天.
-        # 用户若真要补记昨天/前天的, 必须在 user message 里明确说日期, agent 再重传给 LLM.
-        if "record_date" in data:
-            try:
-                rec_date = datetime.strptime(str(data["record_date"]), "%Y-%m-%d").date()
-                delta = (today_dt - rec_date).days
-                if delta > 7 or delta < -1:
-                    logger.warning(
-                        f"[health_record] LLM 给的 record_date={data['record_date']} 偏离今天 {delta} 天, "
-                        f"覆盖为 {today} 防止幻觉写错日期"
-                    )
-                    data["record_date"] = today
-            except (ValueError, TypeError) as e:
-                logger.warning(f"[health_record] LLM 给的 record_date 格式无效 {data.get('record_date')!r}: {e}, 改为 {today}")
-                data["record_date"] = today
+        # === 统一 tool_call 守门 ===
+        # 检查日期/数值范围/引用 ID 存在性. 触发覆盖只 log warning, 不阻塞.
+        # 必填缺失才返回 error 给 LLM (它会重试).
+        from app.services.llm.tool_validator import validate_health_record
+        v = validate_health_record(rtype, data, db=self.db, user_id=self._current_user_id)
+        if v["error"]:
+            return v["error"]
+        data = v["data"]
 
         # 补全 diet 必填字段
         if rtype == "diet":
