@@ -119,6 +119,12 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_alert_chat_id: Optional[str] = None  # 默认告警推送的 chat_id
 
+    # 医生 Telegram (反向通道 — 医生的回复 → user_directives)
+    # 单用户场景: 整个 chat 都是医生 → patient 的, doctor reply user_id 固定
+    telegram_doctor_chat_id: Optional[str] = None  # 医生在哪个 chat 回复
+    telegram_doctor_user_id: Optional[int] = None  # 医生回复对应哪个 patient (我们的 User.id)
+    telegram_webhook_secret: Optional[str] = None  # webhook 验证: ?secret=XXX
+
     @property
     def effective_database_url(self) -> str:
         """获取实际使用的数据库URL"""

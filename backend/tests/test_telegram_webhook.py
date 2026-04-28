@@ -1,0 +1,116 @@
+"""Telegram webhook → directive 解析端到端."""
+import pytest
+from unittest.mock import patch
+
+from app.models.user_directive import UserDirective
+
+
+@pytest.fixture(autouse=True)
+def _patch_settings(monkeypatch):
+    """配置模拟的 doctor chat."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "telegram_doctor_chat_id", "12345")
+    monkeypatch.setattr(settings, "telegram_doctor_user_id", 7)
+    monkeypatch.setattr(settings, "telegram_webhook_secret", "test-secret")
+
+
+@pytest.fixture(autouse=True)
+def _no_telegram_send(monkeypatch):
+    """默认不真发 Telegram 回复."""
+    async def _fake_reply(chat_id, text, reply_to_message_id=None):
+        return None
+    from app.api import telegram_webhook
+    monkeypatch.setattr(telegram_webhook, "_reply_to_telegram", _fake_reply)
+
+
+@pytest.fixture
+def _force_fallback_parser(monkeypatch):
+    """LLM mock 失败强制走 fallback 关键词."""
+    from app.services import directive_parser
+    monkeypatch.setattr(directive_parser, "_parse_with_llm", lambda text: [])
+
+
+class TestSecretAuth:
+    def test_no_secret_rejected(self, client):
+        r = client.post("/api/v1/telegram/webhook", json={"message": {"text": "x"}})
+        assert r.status_code == 403
+
+    def test_wrong_secret_rejected(self, client):
+        r = client.post("/api/v1/telegram/webhook?secret=wrong",
+                       json={"message": {"text": "x"}})
+        assert r.status_code == 403
+
+    def test_correct_secret_passes(self, client):
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={"message": {"chat": {"id": 99999}, "text": "hi"}})
+        assert r.status_code == 200
+        assert r.json()["ignored"] == "not_doctor_chat"
+
+
+class TestNonDoctorChat:
+    def test_other_chat_ignored(self, client, db, _force_fallback_parser):
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={"message": {"chat": {"id": 99999}, "text": "LDL < 2.6 严格戒酒"}})
+        assert r.status_code == 200
+        assert r.json()["ignored"] == "not_doctor_chat"
+        # 没创建 directive
+        assert db.query(UserDirective).count() == 0
+
+
+class TestDoctorReply:
+    def test_command_ignored(self, client, db):
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={"message": {"chat": {"id": 12345}, "text": "/start"}})
+        assert r.status_code == 200
+        assert r.json()["ignored"] == "command"
+
+    def test_short_text_ignored(self, client, db):
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={"message": {"chat": {"id": 12345}, "text": "ok"}})
+        assert r.status_code == 200
+        assert r.json()["ignored"] == "text_too_short"
+
+    def test_creates_directive_from_text(self, client, db, _force_fallback_parser):
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={
+                           "message": {
+                               "chat": {"id": 12345},
+                               "text": "LDL 控制在 2.6 以下",
+                               "message_id": 100,
+                           }
+                       })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is True
+        assert body["created"] >= 1
+
+        rows = db.query(UserDirective).filter(UserDirective.user_id == 7).all()
+        assert len(rows) >= 1
+        assert rows[0].source == "doctor_telegram"
+        assert rows[0].source_message_id == "100"
+
+    def test_no_recognizable_pattern(self, client, db, _force_fallback_parser):
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={"message": {"chat": {"id": 12345},
+                                         "text": "今天天气真好谢谢"}})
+        assert r.status_code == 200
+        assert r.json()["created"] == 0
+        assert db.query(UserDirective).count() == 0
+
+
+class TestDoctorNotConfigured:
+    def test_doctor_chat_not_set_ignores_all(self, client, db, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "telegram_doctor_chat_id", None)
+        r = client.post("/api/v1/telegram/webhook?secret=test-secret",
+                       json={"message": {"chat": {"id": 12345}, "text": "LDL < 2.6"}})
+        assert r.status_code == 200
+        assert r.json()["ignored"] == "doctor_not_configured"
+
+
+class TestWebhookSecretRequired:
+    def test_no_secret_in_settings_returns_503(self, client, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "telegram_webhook_secret", None)
+        r = client.post("/api/v1/telegram/webhook?secret=anything", json={})
+        assert r.status_code == 503

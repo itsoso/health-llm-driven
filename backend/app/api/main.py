@@ -114,6 +114,7 @@ from app.api import (
     open_loop,
     clinical_journal,
     user_directive,
+    telegram_webhook,
 )
 
 api_router = APIRouter()
@@ -218,6 +219,7 @@ api_router.include_router(specialist_hit_rate.router)
 api_router.include_router(open_loop.router)
 api_router.include_router(clinical_journal.router)
 api_router.include_router(user_directive.router)
+api_router.include_router(telegram_webhook.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])
