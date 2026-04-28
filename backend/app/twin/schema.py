@@ -94,6 +94,14 @@ class LabsContext(BaseModel):
     blood_pressure_diastolic: Optional[int] = None
     blood_pressure_date: Optional[date] = None
 
+    # 肝肾功能 (cross-review 用 — 高蛋白 vs 肾, 药物代谢 vs 肝)
+    alt: Optional[float] = None             # ALT (谷丙转氨酶)
+    ast: Optional[float] = None
+    ggt: Optional[float] = None
+    creatinine: Optional[float] = None      # μmol/L
+    egfr: Optional[float] = None            # eGFR mL/min/1.73m²
+    uric_acid: Optional[float] = None
+
     last_exam_date: Optional[date] = None
     last_exam_type: Optional[str] = None
     flagged_abnormal: List[Dict[str, Any]] = Field(default_factory=list)

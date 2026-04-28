@@ -242,6 +242,17 @@ def _build_synthesis_prompt(
     if db is not None and user_id is not None:
         credit_text = _build_specialist_credit_block(db, user_id, days=30)
 
+    # Cross-Review: specialist 之间矛盾检测
+    conflicts_text = ""
+    try:
+        from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
+        conflicts = detect_conflicts(findings, twin, db=db)
+        if conflicts:
+            conflicts_text = render_conflicts_for_prompt(conflicts)
+            logger.info(f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突")
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] cross_review 跳过: {e}")
+
     system_prompt = (
         "你是健康助理的首席分析师。下游 specialist agent 已经对用户的 Digital Health Twin 做了结构化裁决，"
         "你的任务是：\n"
@@ -255,7 +266,9 @@ def _build_synthesis_prompt(
         "8. **信任校准**: 你下方会看到过去 30 天各 specialist 的预测命中率."
         " 命中率 ≥ 70% 的 specialist 建议优先采纳;"
         " 命中率 < 40% 的 specialist 建议表达时加 '仅供参考' 或要求用户复测;"
-        " 没有命中率数据的 specialist 视为中等可信."
+        " 没有命中率数据的 specialist 视为中等可信.\n"
+        "9. **冲突仲裁**: 如果下方'Specialist 矛盾'区域有内容, 你必须在回答里明示如何裁决,"
+        " 不能两个矛盾建议并列输出. hard 矛盾按 resolution_hint 走, soft 矛盾说明权衡."
     )
 
     user_prompt_parts = [
@@ -265,6 +278,9 @@ def _build_synthesis_prompt(
     if credit_text:
         user_prompt_parts.append(f"【Specialist 历史命中率 (近 30 天)】\n{credit_text}")
     user_prompt_parts.append(f"【专家裁决】\n{findings_text}")
+    if conflicts_text:
+        # 冲突放在 specialist 输出之后, 醒目位置
+        user_prompt_parts.append(conflicts_text)
     user_prompt_parts.append("请基于以上信息写回答。")
 
     return system_prompt, "\n\n".join(user_prompt_parts)
