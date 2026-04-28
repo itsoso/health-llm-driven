@@ -1,17 +1,20 @@
 """
-User Directive — 来自医生 / 用户自己的"硬性指令", specialist 必须遵循.
+User Directive — "硬性指令", specialist 必须遵循.
+
+注: 本系统不提供医疗服务. 涉及用药/化验目标的决策, 应由用户和其执业医师确认后,
+作为指令录入. 系统的角色是执行用户授权的约束, 不是医疗判断方.
 
 设计原则:
 1. specialist 跑评估时优先读 active directives, 与 specialist 原始判断冲突 → 听 directive
 2. directives 来自:
-   - 医生 Telegram 回复 (LLM 解析自由文本 → 结构化)
+   - 外部 Telegram 通道 (用户/健康教练/家人 输入, LLM 解析为结构化)
    - 用户自己设置 (web/mobile UI)
-   - 体检报告里的医嘱条目
+   - 体检报告里的备注条目
 3. 类型化:
-   - medication_change:  '继续/停用/更换/调整剂量' 某药
+   - medication_change:  '继续/停用/更换/调整剂量' 某药 (须用户已与医生确认)
    - target_override:    '把 LDL 目标设到 < 2.6' (覆盖 specialist 默认)
    - lifestyle:          '严格戒酒 30 天' / '低钠饮食'
-   - watch_metric:       '每天测血压, 收缩压 > 135 立刻告诉医生'
+   - watch_metric:       '每天测血压, 收缩压 > 135 立刻提醒'
    - skip_recommendation: '不要给我推鱼油了'
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, Index
@@ -40,8 +43,8 @@ class UserDirective(Base):
 
     # 来源 (审计)
     source = Column(String(40), default="manual", index=True)
-    # 'doctor_telegram' / 'doctor_email' / 'user_self' / 'medical_exam_parsed' / 'manual'
-    source_message_id = Column(String(100))   # Telegram message_id / email-id
+    # 'external_telegram' / 'user_self' / 'medical_exam_parsed' / 'manual'
+    source_message_id = Column(String(100))   # Telegram message_id / 等
 
     # 生命周期
     status = Column(String(20), default="active", index=True)

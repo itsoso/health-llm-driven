@@ -78,7 +78,7 @@ class TestParseAndStore:
                 "medication_name": "美托洛尔", "severity": "mandatory",
             },
         ])
-        ids = parse_and_store(db, user_id=42, text="任意输入", source="doctor_telegram")
+        ids = parse_and_store(db, user_id=42, text="任意输入", source="external_telegram")
         assert len(ids) == 2
 
         rows = db.query(UserDirective).filter(UserDirective.user_id == 42).all()
@@ -110,7 +110,7 @@ class TestPromptInject:
         db.commit()
 
         out = get_active_directives_for_prompt(db, user_id=99)
-        assert "医生 / 硬性指令" in out
+        assert "硬性指令" in out
         assert "LDL < 2.6" in out
         assert "戒酒" in out
         # mandatory severity 显示红圈

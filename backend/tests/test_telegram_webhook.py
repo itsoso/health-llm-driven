@@ -7,10 +7,12 @@ from app.models.user_directive import UserDirective
 
 @pytest.fixture(autouse=True)
 def _patch_settings(monkeypatch):
-    """配置模拟的 doctor chat."""
+    """配置模拟的 advisor chat."""
     from app.config import settings
-    monkeypatch.setattr(settings, "telegram_doctor_chat_id", "12345")
-    monkeypatch.setattr(settings, "telegram_doctor_user_id", 7)
+    monkeypatch.setattr(settings, "telegram_advisor_chat_id", "12345")
+    monkeypatch.setattr(settings, "telegram_advisor_user_id", 7)
+    monkeypatch.setattr(settings, "telegram_doctor_chat_id", None)
+    monkeypatch.setattr(settings, "telegram_doctor_user_id", None)
     monkeypatch.setattr(settings, "telegram_webhook_secret", "test-secret")
 
 
@@ -44,7 +46,7 @@ class TestSecretAuth:
         r = client.post("/api/v1/telegram/webhook?secret=test-secret",
                        json={"message": {"chat": {"id": 99999}, "text": "hi"}})
         assert r.status_code == 200
-        assert r.json()["ignored"] == "not_doctor_chat"
+        assert r.json()["ignored"] == "not_advisor_chat"
 
 
 class TestNonDoctorChat:
@@ -52,7 +54,7 @@ class TestNonDoctorChat:
         r = client.post("/api/v1/telegram/webhook?secret=test-secret",
                        json={"message": {"chat": {"id": 99999}, "text": "LDL < 2.6 严格戒酒"}})
         assert r.status_code == 200
-        assert r.json()["ignored"] == "not_doctor_chat"
+        assert r.json()["ignored"] == "not_advisor_chat"
         # 没创建 directive
         assert db.query(UserDirective).count() == 0
 
@@ -86,7 +88,7 @@ class TestDoctorReply:
 
         rows = db.query(UserDirective).filter(UserDirective.user_id == 7).all()
         assert len(rows) >= 1
-        assert rows[0].source == "doctor_telegram"
+        assert rows[0].source == "external_telegram"
         assert rows[0].source_message_id == "100"
 
     def test_no_recognizable_pattern(self, client, db, _force_fallback_parser):
@@ -99,13 +101,14 @@ class TestDoctorReply:
 
 
 class TestDoctorNotConfigured:
-    def test_doctor_chat_not_set_ignores_all(self, client, db, monkeypatch):
+    def test_advisor_chat_not_set_ignores_all(self, client, db, monkeypatch):
         from app.config import settings
+        monkeypatch.setattr(settings, "telegram_advisor_chat_id", None)
         monkeypatch.setattr(settings, "telegram_doctor_chat_id", None)
         r = client.post("/api/v1/telegram/webhook?secret=test-secret",
                        json={"message": {"chat": {"id": 12345}, "text": "LDL < 2.6"}})
         assert r.status_code == 200
-        assert r.json()["ignored"] == "doctor_not_configured"
+        assert r.json()["ignored"] == "advisor_not_configured"
 
 
 class TestWebhookSecretRequired:

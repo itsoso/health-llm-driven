@@ -1,13 +1,16 @@
 """
-Directive Parser — 把医生 / 用户的自由文本指令解析为 UserDirective.
+Directive Parser — 把用户 / 健康顾问 / 家人 的自由文本指令解析为 UserDirective.
 
-输入: "把他的 LDL 目标降到 2.6 以下, 降压药继续吃" (中文)
-输出: 2 条 directive (target_override + medication_change)
+输入: "把 LDL 目标降到 2.6 以下, 限酒" (中文)
+输出: 2 条 directive (target_override + lifestyle)
+
+注: 本系统不提供医疗服务, 不出具医嘱. directives 是用户自己 (或委托人)
+对 agent 的硬性约束. 如需医疗判断, 始终建议咨询执业医师.
 
 策略:
 1. 调 LLM 解析 (gpt-4o-mini), 用结构化 JSON schema
 2. fallback 关键字: 如果 LLM 失败, 简单关键词匹配总比丢消息好
-3. 落库时打 source='doctor_telegram' 等
+3. 落库时打 source='external_telegram' / 'user_self' / ...
 """
 from __future__ import annotations
 
@@ -22,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 # 结构化 schema 给 LLM
-PARSE_PROMPT_SYSTEM = """你是医疗指令解析助手. 把医生/用户的中文自由文本拆成 0 个或多个 directive.
+PARSE_PROMPT_SYSTEM = """你是健康指令解析助手. 把用户/健康教练/家人的中文自由文本拆成 0 个或多个 directive.
 
 每个 directive 输出 JSON 字段:
   kind: 'medication_change' | 'target_override' | 'lifestyle' | 'watch_metric' | 'skip_recommendation'
@@ -30,7 +33,7 @@ PARSE_PROMPT_SYSTEM = """你是医疗指令解析助手. 把医生/用户的中�
   metric_key: hrv/weight/ldl/hdl/tg/hba1c/systolic_bp/diastolic_bp/alt/...  (没有就 null)
   target_value: 比如 '<2.6' 或 '继续' 或 '<140/90' (没有就 null)
   medication_name: 药品名, 如 '美托洛尔' (kind=medication_change 时)
-  severity: 'advisory' | 'strong' | 'mandatory' (默认 strong, 医生说"必须"才 mandatory)
+  severity: 'advisory' | 'strong' | 'mandatory' (默认 strong, 文本里强调"必须"才 mandatory)
   expires_days: 可选数字, 多少天后过期 (没说则 null)
 
 输出 JSON 数组. 没有指令就输出 [].
@@ -112,7 +115,7 @@ def parse_and_store(
     user_id: int,
     text: str,
     *,
-    source: str = "doctor_telegram",
+    source: str = "external_telegram",
     source_message_id: Optional[str] = None,
 ) -> List[int]:
     """主入口. 返回新创建的 directive ID 列表."""
@@ -193,7 +196,7 @@ def get_active_directives_for_prompt(
     if not rows:
         return ""
 
-    lines = ["## 医生 / 硬性指令 (specialist 必须遵循)"]
+    lines = ["## 硬性指令 (specialist 必须遵循)"]
     for r in rows:
         sev_emoji = {"mandatory": "🔴", "strong": "🟡", "advisory": "ℹ️"}.get(r.severity, "")
         prefix = f"[{r.kind}]"
