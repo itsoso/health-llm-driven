@@ -112,6 +112,7 @@ from app.api import (
     llm_usage,
     specialist_hit_rate,
     open_loop,
+    clinical_journal,
 )
 
 api_router = APIRouter()
@@ -214,6 +215,7 @@ api_router.include_router(knowledge.router, tags=["knowledge-base"])
 api_router.include_router(llm_usage.router)
 api_router.include_router(specialist_hit_rate.router)
 api_router.include_router(open_loop.router)
+api_router.include_router(clinical_journal.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])

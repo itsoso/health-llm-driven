@@ -270,17 +270,37 @@ def _build_synthesis_prompt(
     return system_prompt, "\n\n".join(user_prompt_parts)
 
 
-def _inject_memory(db: Session, user_id: int, user_prompt: str) -> str:
-    """注入用户对话记忆（过敏/医嘱/偏好等）。失败降级。"""
+def _inject_memory(db: Session, user_id: int, user_prompt: str,
+                    findings: Optional[List[SpecialistFinding]] = None) -> str:
+    """注入用户对话记忆 + Clinical Journal 相关 case timeline."""
+    out = user_prompt
+
+    # 1) 通用对话记忆 (过敏/医嘱/偏好)
     try:
         from app.services.conversation_memory_service import get_relevant_memories
-
         memories = get_relevant_memories(db, user_id, limit=5)
         if memories:
-            return user_prompt + f"\n\n【用户历史偏好/记忆】\n{memories}\n"
+            out += f"\n\n【用户历史偏好/记忆】\n{memories}\n"
     except Exception:
         pass
-    return user_prompt
+
+    # 2) Clinical Journal case timeline (本次 finding 相关的 metric 历史)
+    try:
+        from app.services.clinical_journal_service import (
+            get_recent_case_summary,
+            _pick_primary_metric,
+        )
+        if findings:
+            metric_key = _pick_primary_metric(findings)
+            if metric_key:
+                history = get_recent_case_summary(db, user_id, metric_key, max_entries=3)
+                if history:
+                    out += (f"\n\n【相关 case 历史 — agent 应基于此连贯回应】\n"
+                           f"{history}\n")
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] case timeline 注入失败 (跳过): {e}")
+
+    return out
 
 
 # ───────────────────── LLM 调用（带回退） ─────────────────
@@ -386,12 +406,23 @@ async def run_orchestrator(
     system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
 
     # 注入对话记忆（用户历史偏好/医嘱/过敏等）
-    user_prompt = _inject_memory(db, user_id, user_prompt)
+    user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
 
     synthesis = await _call_llm(system_prompt, user_prompt)
 
     # 信任循环: 把 specialist 的 proposed_cards 落地为 ActionCard
     persisted_card_ids = _persist_proposed_cards(db, user_id, findings)
+
+    # Clinical Journal: 旁路写一条 SOAP entry (失败不阻塞主流程)
+    try:
+        from app.services.clinical_journal_service import write_soap_entry
+        write_soap_entry(
+            db, user_id=user_id, query=req.query, twin=twin,
+            findings=findings, persisted_card_ids=persisted_card_ids,
+            created_by="orchestrator",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[orchestrator] write_soap_entry 失败 (旁路): {e}")
 
     return OrchestratorResponse(
         query=req.query,
@@ -450,8 +481,19 @@ async def stream_orchestrator(
         if persisted_ids:
             yield _sse("action_cards_created", {"ids": persisted_ids})
 
+        # Clinical Journal: 异步写 SOAP (旁路, 失败只 log)
+        try:
+            from app.services.clinical_journal_service import write_soap_entry
+            write_soap_entry(
+                db, user_id=user_id, query=req.query, twin=twin,
+                findings=findings, persisted_card_ids=persisted_ids,
+                created_by="orchestrator",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[orchestrator.stream] write_soap_entry 失败: {e}")
+
         system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
-        user_prompt = _inject_memory(db, user_id, user_prompt)
+        user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
 
         # 流式 LLM
         async for chunk in _stream_llm(system_prompt, user_prompt):
