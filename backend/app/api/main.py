@@ -103,6 +103,7 @@ from app.api import (
     telegram_webhook,
     memory_facts,
     health_kg,
+    hybrid_search,
 )
 
 api_router = APIRouter()
@@ -210,6 +211,7 @@ api_router.include_router(user_directive.router)
 api_router.include_router(telegram_webhook.router)
 api_router.include_router(memory_facts.router)
 api_router.include_router(health_kg.router)
+api_router.include_router(hybrid_search.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])

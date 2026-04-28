@@ -342,45 +342,17 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] directive 注入失败 (跳过): {e}")
 
-    # 4) Memory Facts (LLM Wiki v2): 个人知识库 — 高 confidence + 相关 tag 的事实
+    # 4) Hybrid Retrieval (BM25 + Graph + RRF) — LLM Wiki v2 阶段 C
+    # 一路替换原来的 facts + KG 双路注入. 检索结果按 RRF 融合排序.
     try:
-        from app.services.memory_service import get_active_facts, render_facts_for_prompt
-        # 优先抓 semantic / procedural tier (跨 session 已固化的)
-        # 用 metric_key 做 tag 过滤 (case_thread.theme = tag)
-        from app.services.clinical_journal_service import _theme_from_metric
-        tag = _theme_from_metric(metric_key) if metric_key else None
-        facts = []
-        for tier in ("procedural", "semantic"):
-            facts.extend(get_active_facts(
-                db, user_id, tier=tier, tag=tag,
-                min_confidence=0.4, limit=8,
-            ))
-        # 去重 (按 id)
-        seen = set()
-        unique = []
-        for f in facts:
-            if f.id not in seen:
-                seen.add(f.id)
-                unique.append(f)
-        if unique:
-            out += f"\n\n{render_facts_for_prompt(unique, max_lines=10)}\n"
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[orchestrator] memory facts 注入失败 (跳过): {e}")
-
-    # 5) Knowledge Graph 2-hop: 把 query 提到的 entity 周围连接的关系拼进 prompt
-    # (LLM Wiki v2 graph traversal — 让 specialist 看到 medication ↔ condition ↔ lab 的链条)
-    try:
-        from app.services.kg_service import render_neighborhood_for_prompt
-        # 从原 user_prompt (不含已注入的 memory) 取 query 文本
-        # 简化: 用 user_prompt 前 200 字作 mention 检测
+        from app.services.hybrid_search import hybrid_retrieve, render_hits_for_prompt
+        # query seed: 取 user_prompt 前 300 字 (含 query + twin_blob 开头)
         query_seed = (user_prompt or "")[:300]
-        kg_md = render_neighborhood_for_prompt(
-            db, user_id, query_seed, max_seeds=3, hops=2, max_per_hop=5,
-        )
-        if kg_md:
-            out += f"\n\n{kg_md}\n"
+        hits = hybrid_retrieve(db, user_id, query_seed, top_k=10)
+        if hits:
+            out += f"\n\n{render_hits_for_prompt(hits, max_lines=10)}\n"
     except Exception as e:  # noqa: BLE001
-        logger.debug(f"[orchestrator] KG neighborhood 注入失败 (跳过): {e}")
+        logger.debug(f"[orchestrator] hybrid retrieval 注入失败 (跳过): {e}")
 
     return out
 
