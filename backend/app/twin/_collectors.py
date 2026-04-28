@@ -183,6 +183,72 @@ def fetch_blood_pressure_latest(db: Session, user_id: int) -> Optional[Dict[str,
 # ─────────────────────────── medical exam abnormal ────────────────────
 
 
+def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
+    """从 MedicalIndicator 抓最新一次的常用化验项数值.
+
+    返回 {key: value}, key 与 LabsContext 字段名对齐:
+      ldl / hdl / total_cholesterol / triglycerides / blood_glucose / hba1c
+      alt / ast / ggt / creatinine / egfr / uric_acid
+
+    每个 key 取该用户该指标的最新一次记录 (按 record_date desc).
+    """
+    out: Dict[str, float] = {}
+    try:
+        from app.models.family_health import MedicalIndicator
+        from sqlalchemy import func
+
+        # 字段名/中文名/英文缩写到 key 的映射
+        # 形如: 'creatinine' 关键字 → key='creatinine'
+        # 用 ilike 模糊匹配, 一个 key 命中多个 candidate, 取最新
+        KEY_PATTERNS = {
+            "ldl": ["LDL", "低密度脂蛋白"],
+            "hdl": ["HDL", "高密度脂蛋白"],
+            "total_cholesterol": ["TC", "总胆固醇"],
+            "triglycerides": ["TG", "甘油三酯"],
+            "blood_glucose": ["FBG", "空腹血糖"],
+            "hba1c": ["HBA1C", "HbA1c", "糖化血红蛋白"],
+            "alt": ["ALT", "谷丙转氨酶"],
+            "ast": ["AST", "谷草转氨酶"],
+            "ggt": ["GGT", "γ-谷氨酰", "谷氨酰转肽酶"],
+            "creatinine": ["CREA", "肌酐"],
+            "egfr": ["eGFR", "肾小球滤过率"],
+            "uric_acid": ["UA", "尿酸"],
+        }
+
+        for key, patterns in KEY_PATTERNS.items():
+            # 构建 OR 条件: name_en/name/item_code 任一匹配关键字
+            from sqlalchemy import or_
+            cond = or_(*[
+                MedicalIndicator.name.ilike(f"%{p}%") |
+                MedicalIndicator.name_en.ilike(f"%{p}%") |
+                MedicalIndicator.item_code.ilike(f"%{p}%")
+                for p in patterns
+            ])
+            row = (
+                db.query(MedicalIndicator.value)
+                .filter(
+                    MedicalIndicator.user_id == user_id,
+                    MedicalIndicator.value.isnot(None),
+                    cond,
+                )
+                .order_by(desc(MedicalIndicator.record_date))
+                .first()
+            )
+            if row and row[0] is not None:
+                try:
+                    out[key] = float(row[0])
+                except (TypeError, ValueError):
+                    pass
+        return out
+    except Exception as e:
+        logger.warning(f"[twin.collectors] fetch_latest_labs 失败: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {}
+
+
 def fetch_medical_exam_abnormal(
     db: Session, user_id: int, limit: int = 10
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:

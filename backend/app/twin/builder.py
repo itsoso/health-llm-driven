@@ -643,6 +643,15 @@ def _fill_collectors(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         twin.labs.last_exam_date = latest_exam.get("exam_date")
         twin.labs.last_exam_type = latest_exam.get("exam_type")
 
+    # — Specific lab values (cross-review 依赖: alt / ast / ggt / creatinine / egfr / ldl / ...)
+    # 不覆盖 integrated_profile 已填的, 只补缺失项
+    latest_labs = _collectors.fetch_latest_labs(db, user_id)
+    if latest_labs:
+        for key, val in latest_labs.items():
+            if hasattr(twin.labs, key) and getattr(twin.labs, key, None) is None:
+                setattr(twin.labs, key, val)
+        sources.add("medical_indicators")
+
     # — Genetic (细分类别覆盖 integrated_profile 的字符串列表)
     gen = _collectors.fetch_genetic_variants_categorized(db, user_id)
     if gen and gen.get("total", 0) > 0:
