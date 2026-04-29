@@ -77,31 +77,51 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
         <>
           <Text style={txt.reason} numberOfLines={3}>{focus.reason}</Text>
 
-          {focus.evidence.length > 0 ? (
+          {/* evidence: 只展示数据点 (有具体 tone 的), 避免 "安全告警 高优先" 这种 meta 单条占整行 */}
+          {focus.evidence.filter(e => e.tone).length >= 2 ? (
             <View style={styles.evidenceRow}>
-              {focus.evidence.slice(0, 3).map(item => (
+              {focus.evidence.filter(e => e.tone).slice(0, 3).map(item => (
                 <View key={`${item.label}-${item.value}`} style={styles.evidencePill}>
-                  <Text style={txt.evidenceLabel}>{item.label}</Text>
+                  <Text style={txt.evidenceLabel} numberOfLines={1}>{item.label}</Text>
                   <Text style={[
                     txt.evidenceValue,
                     item.tone === 'bad' && { color: '#FF453A' },
                     item.tone === 'warn' && { color: '#FF9F0A' },
                     item.tone === 'good' && { color: '#0A8F8F' },
-                  ]}>{item.value}</Text>
+                  ]} numberOfLines={1}>{item.value}</Text>
                 </View>
               ))}
             </View>
           ) : null}
 
-          <Pressable
-            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-            onPress={() => onAction(focus)}
-            accessibilityRole="button"
-            accessibilityLabel={focus.actionLabel}
-          >
-            <Text style={txt.action} numberOfLines={2}>{focus.actionLabel}</Text>
-            <Ionicons name="arrow-forward" size={15} color="#fff" />
-          </Pressable>
+          {/* actionLabel: 短 CTA 直接放按钮; 长建议拆成独立段落 + 固定短按钮 */}
+          {focus.actionLabel && focus.actionLabel.length <= 20 ? (
+            <Pressable
+              style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+              onPress={() => onAction(focus)}
+              accessibilityRole="button"
+              accessibilityLabel={focus.actionLabel}
+            >
+              <Text style={txt.action} numberOfLines={1}>{focus.actionLabel}</Text>
+              <Ionicons name="arrow-forward" size={15} color="#fff" />
+            </Pressable>
+          ) : focus.actionLabel ? (
+            <>
+              <View style={styles.adviceBox}>
+                <Text style={txt.adviceLabel}>💡 建议</Text>
+                <Text style={txt.adviceBody}>{focus.actionLabel}</Text>
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+                onPress={() => onAction(focus)}
+                accessibilityRole="button"
+                accessibilityLabel="标记已处理"
+              >
+                <Text style={txt.action}>标记已处理</Text>
+                <Ionicons name="checkmark" size={15} color="#fff" />
+              </Pressable>
+            </>
+          ) : null}
         </>
       )}
     </CardWrapper>
@@ -148,8 +168,18 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
+    overflow: 'hidden',
+    alignSelf: 'stretch',
   },
   actionBtnPressed: { opacity: 0.82 },
+  adviceBox: {
+    marginTop: 12,
+    padding: spacing.sm + 2,
+    backgroundColor: colors.bgPrimary,
+    borderRadius: radii.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.brand,
+  },
 });
 
 const txt = {
@@ -160,5 +190,7 @@ const txt = {
   reason: { fontSize: 13, color: colors.labelSecondary, lineHeight: 19, marginTop: 10 } as TextStyle,
   evidenceLabel: { fontSize: 10, color: colors.labelTertiary, marginBottom: 2 } as TextStyle,
   evidenceValue: { fontSize: 13, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  action: { fontSize: 14, fontWeight: '700', color: '#fff', flexShrink: 1, textAlign: 'center' } as TextStyle,
+  action: { fontSize: 14, fontWeight: '700', color: '#fff', flexShrink: 1 } as TextStyle,
+  adviceLabel: { fontSize: 11, fontWeight: '700', color: colors.brand, marginBottom: 4 } as TextStyle,
+  adviceBody: { fontSize: 13, color: colors.labelPrimary, lineHeight: 19 } as TextStyle,
 };
