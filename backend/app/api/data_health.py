@@ -19,6 +19,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    """把 naive datetime 当作 UTC 处理, 避免 tz-aware vs naive 比较 TypeError.
+
+    SQLAlchemy DateTime(timezone=True) 在某些 psycopg2 版本下仍可能返回 naive,
+    防御性兜底.
+    """
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
 @router.get("/status")
 def get_data_health_status(
     current_user: User = Depends(get_current_user_required),
@@ -64,10 +75,14 @@ def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
             "message": "未绑定 Garmin 账号",
         }
 
+    # SQLAlchemy DateTime(timezone=True) 有时返回 naive, 强制 normalize
+    session_expires = _ensure_utc(cred.session_expires_at)
+    last_sync = _ensure_utc(cred.last_sync_at)
+
     session_valid = bool(
         cred.garth_session
-        and cred.session_expires_at
-        and cred.session_expires_at > now
+        and session_expires
+        and session_expires > now
     )
 
     if not cred.sync_enabled:
@@ -81,7 +96,7 @@ def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
         message = "Session 已过期，等待自动续期"
     else:
         # 检查最近是否有成功同步
-        if cred.last_sync_at and (now - cred.last_sync_at).total_seconds() < 86400:
+        if last_sync and (now - last_sync).total_seconds() < 86400:
             status = "ok"
             message = "正常同步中"
         else:
@@ -90,9 +105,9 @@ def _garmin_status(db: Session, user_id: int, now: datetime) -> dict:
 
     return {
         "status": status,
-        "last_sync": cred.last_sync_at.isoformat() if cred.last_sync_at else None,
+        "last_sync": last_sync.isoformat() if last_sync else None,
         "session_valid": session_valid,
-        "session_expires": cred.session_expires_at.isoformat() if cred.session_expires_at else None,
+        "session_expires": session_expires.isoformat() if session_expires else None,
         "message": message,
     }
 
@@ -240,9 +255,7 @@ def _notification_status(db: Session, user_id: int, now: datetime) -> dict:
     # 如果全局最新一条推送在 25 小时内，说明 worker 最近正常运行过
     worker_likely_ok = False
     if latest_any is not None and latest_any[0] is not None:
-        ts = latest_any[0]
-        if hasattr(ts, 'tzinfo') and ts.tzinfo:
-            ts = ts.replace(tzinfo=None)
+        ts = _ensure_utc(latest_any[0])
         worker_likely_ok = (now - ts).total_seconds() < 90000  # 25h
 
     if last_24h_count > 0:
