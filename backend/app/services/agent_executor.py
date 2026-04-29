@@ -660,6 +660,28 @@ class AgentExecutor:
             if not data.get("exercise_type"):
                 data["exercise_type"] = data.get("type") or data.get("name") or "其他"
 
+        # rhinitis: 症状计数转 illness_episode (复用 illness 流程, 跟 rhinitis-tracker skill 对齐)
+        if rtype == "rhinitis":
+            sneezing = int(data.get("sneezing", 0) or 0)
+            congestion = int(data.get("congestion", 0) or 0)
+            runny_nose = int(data.get("runny_nose", 0) or 0)
+            # 严重度取 congestion/runny_nose 的 1-10 量表 max, 无则按喷嚏频率兜底
+            severity_vals = [v for v in (congestion, runny_nose) if v and 0 < v <= 10]
+            severity = (max(severity_vals) if severity_vals
+                        else (min(8, max(3, sneezing // 3)) if sneezing else 2))
+            parts = []
+            if sneezing: parts.append(f"喷嚏 {sneezing} 次")
+            if congestion: parts.append(f"鼻塞 {congestion}/10")
+            if runny_nose: parts.append(f"流涕 {runny_nose} 次")
+            notes = data.get("notes") or "、".join(parts) or "鼻炎症状"
+            payload = {
+                "illness_name": "鼻炎发作",
+                "severity": severity,
+                "notes": notes,
+                "start_date": data.get("record_date") or today,
+            }
+            return await self._api_post(f"{base}/illness/episodes", headers, payload)
+
         # supplement_group: 按时段批量打卡
         if rtype == "supplement_group":
             timing = data.get("timing", "morning")
@@ -723,7 +745,7 @@ class AgentExecutor:
             "exercise": ("/daily-health/exercise", "POST", data),
             "diet": ("/diet/records", "POST", data),
             "supplement": ("/supplements/records", "POST", data),
-            "rhinitis": ("/health-checkin/me/rhinitis", "POST", data),
+            # rhinitis 走 special case (见上方 rtype=="rhinitis" 分支), 不在 record_map 里
             "mood": ("/mood/records", "POST", data),
             "illness": ("/illness/episodes", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
