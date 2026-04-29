@@ -338,6 +338,16 @@ def upload_genetic_txt(
     profile.notes = f"TXT 解析完成，匹配 {len(matched)} 个健康位点"
     db.commit()
 
+    # Memory KG: 基因位点 → entity + 'self_user has_genotype variant' (旁路)
+    try:
+        from app.services.memory_extractor import bulk_extract_genes_for_profile
+        n = bulk_extract_genes_for_profile(db, current_user.id, profile.id)
+        db.commit()
+        logger.info(f"[基因TXT] profile={profile.id} KG 写入 {n} 个有临床意义的位点")
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[基因TXT] KG extract 失败 (旁路): {e}")
+
     return {
         "id": profile.id,
         "matched_count": len(matched),
@@ -483,6 +493,16 @@ category 分类规则：
             profile.notes = f"PDF 自动提取完成，共 {saved} 个位点"
         db.commit()
         logger.info(f"[基因PDF] profile={profile_id} 完成，提取 {saved} 个位点")
+
+        # Memory KG: 基因位点 → entity + 'self_user has_genotype variant' (旁路)
+        try:
+            from app.services.memory_extractor import bulk_extract_genes_for_profile
+            n = bulk_extract_genes_for_profile(db, user_id, profile_id)
+            db.commit()
+            logger.info(f"[基因PDF] profile={profile_id} KG 写入 {n} 个有临床意义的位点")
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning(f"[基因PDF] KG extract 失败 (旁路): {e}")
 
     except Exception as e:
         logger.error(f"[基因PDF] profile={profile_id} 处理失败: {e}", exc_info=True)
@@ -661,6 +681,16 @@ def batch_create_variants(
     db.commit()
     for v in created:
         db.refresh(v)
+
+    # Memory KG: 批量创建的基因位点 → entity (旁路)
+    try:
+        from app.services.memory_extractor import extract_kg_from_gene_variant
+        for v in created:
+            extract_kg_from_gene_variant(db, current_user.id, v)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[基因批量] KG extract 失败 (旁路): {e}")
 
     return {
         "created": len(created),

@@ -162,6 +162,12 @@ def parse_and_store(
             created.append(row.id)
             logger.info(f"[directive_parser] 创建 directive #{row.id} kind={kind} "
                        f"metric={row.metric_key} for user={user_id}")
+            # Memory: directive → high-confidence semantic fact (旁路)
+            try:
+                from app.services.memory_extractor import extract_from_directive
+                extract_from_directive(db, row)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[directive_parser] memory extract 失败 (旁路): {e}")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[directive_parser] 单条 directive 写入失败: {e}")
     db.commit()

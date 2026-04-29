@@ -325,3 +325,188 @@ def extract_from_directive(
         decay_rate=0.0,  # 永不衰减直到 directive 被 revoke
     )
     return f.id if f else None
+
+
+# 临床有意义的基因类别: 用药 + 营养 + 疾病风险中的 risk/protective
+_GENE_CLINICAL_CATEGORIES = {
+    "drug_sensitivity",
+    "pharmacogenomics",
+    "nutrition",
+    "disease_risk",
+    "exercise",
+    "sleep",
+}
+
+
+def extract_kg_from_gene_variant(
+    db: Session, user_id: int, variant,
+) -> Optional[int]:
+    """基因位点 → HealthEntity (type=gene_variant) + 'self_user owns gene_variant'.
+
+    过滤规则: 只收**临床有意义**的位点, 避免 709 条 neutral/info 污染 KG:
+    - risk_level in ('high', 'medium') 的 risk 位点
+    - variant_nature 是 'risk' 或 'protective' 的
+    - 用药相关全收 (drug_sensitivity / pharmacogenomics)
+    """
+    from app.services.kg_service import upsert_entity, create_relation
+
+    category = (getattr(variant, "category", "") or "").lower()
+    risk_level = (getattr(variant, "risk_level", "") or "").lower()
+    nature = (getattr(variant, "variant_nature", "") or "").lower()
+
+    # 过滤: 临床无意义的不进 KG
+    is_drug = category in {"drug_sensitivity", "pharmacogenomics"}
+    is_risky = risk_level in {"high", "medium"}
+    is_typed = nature in {"risk", "protective"}
+    if not (is_drug or is_risky or is_typed):
+        return None
+
+    gene_name = getattr(variant, "gene_name", None)
+    if not gene_name:
+        return None
+    genotype = getattr(variant, "genotype", None)
+    variant_label = getattr(variant, "variant_name", None) or gene_name
+    canonical = f"{gene_name}_{genotype}" if genotype else gene_name
+
+    # 置信度: 用药相关 0.95, 高风险 0.9, 其他 0.8
+    if is_drug:
+        conf = 0.95
+    elif risk_level == "high":
+        conf = 0.9
+    else:
+        conf = 0.8
+
+    user_ent = upsert_entity(
+        db, user_id=user_id, type="condition",
+        canonical_name="self_user", aliases=["我", "用户"],
+        confidence=1.0, source={"type": "system"},
+    )
+    gene_ent = upsert_entity(
+        db, user_id=user_id, type="gene_variant",
+        canonical_name=canonical,
+        aliases=[gene_name, variant_label] if variant_label != gene_name else [gene_name],
+        attributes={
+            "gene_name": gene_name,
+            "genotype": genotype,
+            "category": category,
+            "risk_level": risk_level,
+            "variant_nature": nature,
+            "result_label": getattr(variant, "result_label", None),
+        },
+        confidence=conf,
+        source={"type": "genetic_variant", "id": getattr(variant, "id", None)},
+    )
+    if user_ent and gene_ent:
+        # User has_genotype gene_variant (decay_rate=0 隐含于 predicate, KG 不显式带 decay)
+        create_relation(
+            db, user_id=user_id,
+            subject_id=user_ent.id, predicate="has_genotype" if genotype else "owns",
+            object_id=gene_ent.id, confidence=conf,
+            source={"type": "genetic_variant", "id": getattr(variant, "id", None)},
+        )
+        return gene_ent.id
+    return None
+
+
+def extract_from_briefing_entry(
+    db: Session, entry,
+) -> List[int]:
+    """ClinicalJournalEntry (briefing SOAP) → MemoryFact(s).
+
+    从 SOAP 四字段里抽:
+      - objective: 数字型 vital / lab 值 (正则挖数字+单位)
+      - assessment: theme-level tag → symptom/condition entity
+      - plan: 计划关键字 → intervention fact
+    旁路调用, 失败不影响主链路.
+    """
+    import re
+    from app.services.memory_service import write_fact
+
+    created: List[int] = []
+    src = {
+        "type": "clinical_journal",
+        "id": entry.id,
+        "weight": 0.7,
+    }
+    tags = [entry.created_by or "briefing"]
+
+    # 从 objective 抓数字 (HRV 72 ms, 睡眠评分 85, LDL 3.4 mmol/L 等)
+    obj = entry.objective or ""
+    # 模式: 词汇 + 数字 + 可选单位; 支持中文词汇
+    pattern = re.compile(
+        r"([A-Za-z一-龥]{1,12}?)\s*[：:=是为]?\s*"
+        r"(-?\d+(?:\.\d+)?)\s*"
+        r"(mmHg|bpm|%|分|ms|mmol/L|mg/dL|kg|次|小时|h|min)?",
+    )
+    seen_subjects: set = set()
+    for m in list(pattern.finditer(obj))[:15]:
+        try:
+            subj = m.group(1).strip()
+            val = m.group(2)
+            unit = m.group(3) or ""
+            # 过滤: subj 过短 / 纯数字字 / 重复
+            if not subj or len(subj) < 2 or subj in seen_subjects or subj.isdigit():
+                continue
+            seen_subjects.add(subj)
+            f = _safe_call(
+                write_fact, db,
+                user_id=entry.user_id, tier="working",
+                subject=subj,
+                predicate="is_value",
+                object_value=val,
+                object_unit=unit,
+                confidence=0.6,
+                source=src, tags=tags + ["briefing_snapshot"],
+                decay_rate=0.05,  # 快衰减: 每日简报是瞬时快照
+            )
+            if f:
+                created.append(f.id)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[memory_extractor] briefing regex fail (skip): {e}")
+            continue
+
+    # 从 assessment 抓"关注点": 以 · 开头的 bullet 或 "⚠️" 条目
+    assess = entry.assessment or ""
+    for line in assess.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("·") or line.startswith("-") or line.startswith("⚠"):
+            bullet = line.lstrip("·-⚠️ ").strip()[:200]
+            if len(bullet) < 4:
+                continue
+            f = _safe_call(
+                write_fact, db,
+                user_id=entry.user_id, tier="working",
+                subject="本日关注点",
+                predicate="mentions",
+                object_value=bullet,
+                confidence=0.55,
+                source=src, tags=tags + ["assessment"],
+                decay_rate=0.08,  # 关注点 ~10 天衰减
+            )
+            if f:
+                created.append(f.id)
+
+    return created
+
+
+def bulk_extract_genes_for_profile(
+    db: Session, user_id: int, profile_id: Optional[int] = None,
+) -> int:
+    """基因档案入库后一次性 extract. 返回写入 KG 的 variant 数.
+
+    3 个基因上传入口 (TXT/PDF/batch API) 统一用此 helper. profile_id=None 时处理该 user 所有 variant.
+    """
+    from app.models.genetic_data import GeneticVariant
+    q = db.query(GeneticVariant).filter(GeneticVariant.user_id == user_id)
+    if profile_id is not None:
+        q = q.filter(GeneticVariant.profile_id == profile_id)
+    written = 0
+    for v in q.all():
+        try:
+            if extract_kg_from_gene_variant(db, user_id, v):
+                written += 1
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[memory_extractor] gene skip id={v.id}: {e}")
+    return written

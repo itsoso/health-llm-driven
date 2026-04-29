@@ -59,6 +59,16 @@ async def add_medication(
     """添加药品"""
     logger.info(f"[MedAPI] 用户 {current_user.id} 添加药品: {data.name}")
     med = medication_service.add_medication(db, current_user.id, data.model_dump(exclude_none=True))
+
+    # Memory KG: 药 → entity + 'self_user owns medication' 关系 (旁路)
+    try:
+        from app.services.memory_extractor import extract_kg_from_medication
+        extract_kg_from_medication(db, current_user.id, med)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[MedAPI] KG extract 失败 (旁路): {e}")
+
     return _serialize_medication(med)
 
 

@@ -224,6 +224,17 @@ def write_soap_entry(
         db.refresh(entry)
         logger.info(f"[journal] entry #{entry.id} written user={user_id} "
                    f"theme={theme} thread={thread.id}")
+
+        # Memory Extractor: SOAP → fact(s) (旁路, 失败不影响)
+        try:
+            from app.services.memory_extractor import extract_from_briefing_entry
+            fids = extract_from_briefing_entry(db, entry)
+            if fids:
+                db.commit()
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning(f"[journal] orchestrator SOAP extract 失败 (旁路): {e}")
+
         return entry.id
     except Exception as e:  # noqa: BLE001
         db.rollback()
@@ -382,6 +393,18 @@ def write_briefing_soap_entry(
         db.commit()
         db.refresh(entry)
         logger.info(f"[journal] briefing SOAP #{entry.id} user={user_id} date={target_date}")
+
+        # Memory Extractor: briefing SOAP → fact(s) (旁路, 失败不影响)
+        try:
+            from app.services.memory_extractor import extract_from_briefing_entry
+            fids = extract_from_briefing_entry(db, entry)
+            if fids:
+                db.commit()
+                logger.info(f"[journal] briefing #{entry.id} 抽出 {len(fids)} 条 fact")
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning(f"[journal] briefing extract 失败 (旁路): {e}")
+
         return entry.id
     except Exception as e:  # noqa: BLE001
         db.rollback()

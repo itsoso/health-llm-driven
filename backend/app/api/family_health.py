@@ -964,6 +964,26 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
             db.commit()
             logger.info(f"报告 {report_id} AI 提取完成：{len(extracted_items)} 项指标，{len(abnormal_items)} 项异常")
 
+            # Memory Extractor: 异常化验项 → fact + KG entity (旁路, fail-soft)
+            try:
+                from app.services.memory_extractor import (
+                    extract_from_medical_exam_item, extract_kg_from_lab,
+                )
+                abnormal_inds = db.query(MedicalIndicator).filter(
+                    MedicalIndicator.report_id == report_id,
+                    MedicalIndicator.is_abnormal.is_(True),
+                ).all()
+                extracted_count = 0
+                for ind in abnormal_inds:
+                    if extract_from_medical_exam_item(db, user_id, ind):
+                        extracted_count += 1
+                    extract_kg_from_lab(db, user_id, ind)
+                db.commit()
+                logger.info(f"报告 {report_id} memory: 写入 {extracted_count}/{len(abnormal_inds)} facts")
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                logger.warning(f"报告 {report_id} memory extract 失败 (旁路): {e}")
+
         except Exception as e:
             logger.error(f"报告 {report_id} AI 提取失败: {e}", exc_info=True)
             report.status = "failed"

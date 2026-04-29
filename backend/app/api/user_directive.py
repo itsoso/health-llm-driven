@@ -85,6 +85,15 @@ def create(
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    # Memory: directive → semantic fact (旁路)
+    try:
+        from app.services.memory_extractor import extract_from_directive
+        extract_from_directive(db, row)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+
     return {"id": row.id, "kind": row.kind}
 
 

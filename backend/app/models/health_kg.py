@@ -54,6 +54,7 @@ RELATION_TYPES = {
     "depends_on", "is_part_of", "is_a",
     # 用户态
     "owns",                # User → entity (有这种症状 / 在服这种药)
+    "has_genotype",        # User → gene_variant (携带该基因型, 终生不衰减)
     "responds_to",         # Patient → intervention (有效)
     "does_not_respond_to", # Patient → intervention (无效)
     "exposed_to",          # Patient → lifestyle_factor / trigger
