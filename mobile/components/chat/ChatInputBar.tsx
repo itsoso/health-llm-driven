@@ -56,8 +56,8 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
     onTranscript: (text) => {
       setInput(prev => prev ? prev + ' ' + text : text);
       setVoiceMode(false);
-      // 聚焦 TextInput 弹起软键盘, 用户可继续编辑或直接按 return 发送
-      setTimeout(() => textInputRef.current?.focus(), 100);
+      // 不 auto-focus TextInput — 避免触发软键盘弹出, 让用户直接点右侧发送按钮
+      // (之前为了"按 return 发送"加过 focus, 但实际用户按发送按钮即可, 软键盘是多余的)
     },
   });
 

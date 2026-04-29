@@ -115,10 +115,10 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
                 style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
                 onPress={() => onAction(focus)}
                 accessibilityRole="button"
-                accessibilityLabel="标记已处理"
+                accessibilityLabel="查看详情"
               >
-                <Text style={txt.action}>标记已处理</Text>
-                <Ionicons name="checkmark" size={15} color="#fff" />
+                <Text style={txt.action}>查看详情</Text>
+                <Ionicons name="arrow-forward" size={15} color="#fff" />
               </Pressable>
             </>
           ) : null}
