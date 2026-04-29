@@ -131,6 +131,8 @@ class FoodRecognitionService:
 4. 只返回JSON，不要有任何额外说明文字"""
 
             provider = self._get_provider()
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("food_recognition.from_base64")
             raw_content = await provider.chat_with_vision(
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -278,6 +280,8 @@ class FoodRecognitionService:
 }"""
 
             provider = self._get_provider()
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("food_recognition.from_url")
             raw_content = await provider.chat_with_vision(
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -369,6 +373,8 @@ class FoodRecognitionService:
 只返回JSON，无其他文字。"""
 
             provider = self._get_provider()
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("food_recognition.estimate_nutrition")
             content = await provider.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},

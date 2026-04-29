@@ -281,6 +281,8 @@ class PeriodGoalService:
         """调用 LLM，返回 (json_data, debug_info)"""
         llm_debug = {} if debug else None
 
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("period_goal.generate")
         provider = get_llm_provider()
 
         messages = [

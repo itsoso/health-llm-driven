@@ -414,6 +414,8 @@ class HealthAnalysisService:
         checkin_date: date
     ) -> str:
         """为每日打卡生成个性化建议"""
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("health_analysis.personalized_advice", user_id=user_id)
         provider = self._get_provider()
         if not provider:
             return "个性化建议服务暂不可用"
@@ -540,6 +542,8 @@ class HealthAnalysisService:
         force_refresh: bool = False,
     ) -> Dict[str, Any]:
         """结构化多维健康分析（新版本，分维度分析 + 知识库注入 + 趋势）"""
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("health_analysis.structured", user_id=user_id)
         today = date.today()
 
         # 缓存检查

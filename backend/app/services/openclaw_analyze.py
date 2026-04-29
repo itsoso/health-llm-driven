@@ -18,6 +18,8 @@ class OpenClawAnalyzeClient:
         """提交分析并等待结果。委托给统一的 LLM Provider。"""
         try:
             from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("openclaw_analyze.multi_model")
             provider = get_llm_provider()
             return await provider.multi_model_analyze(prompt)
         except Exception as e:

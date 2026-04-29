@@ -349,6 +349,8 @@ class AIInsightsService:
         生成实时健康建议
         基于：当前时间、天气、空气质量、身体状态、近期饮食等
         """
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("ai_insights.realtime", user_id=user_id)
         # 获取天气和空气质量
         weather_context = await weather_service.get_comprehensive_context(city, latitude, longitude)
 

@@ -354,6 +354,9 @@ class HealthTrendService:
 
         logger.info(f"[趋势分析] 开始: user={user_id}, date={target_date}")
 
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("health_trend.analyze", user_id=user_id)
+
         aggregators = {
             "weight": lambda: self._aggregate_weight_data(user_id, target_date, days=7),
             "sleep": lambda: self._aggregate_sleep_data(user_id, target_date, days=7),

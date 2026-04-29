@@ -322,17 +322,18 @@ class WorkoutAnalysisService:
 请直接给出建议，不要重复数据。"""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("workout_analysis.enhance")
+            provider = get_llm_provider()
+            llm_response = await provider.chat(
                 messages=[
                     {"role": "system", "content": "你是一位专业的运动教练和智能助理，擅长分析运动数据并给出个性化建议。"},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
                 max_tokens=800,
-                temperature=0.7
+                temperature=0.7,
             )
-
-            llm_response = response.choices[0].message.content
 
             # 将LLM响应添加到分析结果
             return {

@@ -428,6 +428,8 @@ async def recognize_medication(
     """拍药盒照片，AI 自动识别药名、剂量、用法并添加到用药清单"""
     try:
         from app.services.llm import get_vision_provider
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("family_health.medication_ocr", user_id=current_user.id)
         llm = get_vision_provider()
 
         system_prompt = (
@@ -793,6 +795,8 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
         extracted_items = []
         try:
             from app.services.llm import get_vision_provider
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("family_health.exam_vision", user_id=user_id)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             llm = get_vision_provider()
@@ -855,6 +859,8 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
             ai_summary = ""
             if extracted_items:
                 try:
+                    from app.services.llm.usage_tracker import set_caller
+                    set_caller("family_health.exam_summary", user_id=user_id)
                     summary_msg = [
                         {"role": "system", "content": "你是健康管理专家。根据以下体检指标，用中文简要总结：1）主要异常项及风险 2）需要关注的趋势 3）建议的后续检查。150字以内。"},
                         {"role": "user", "content": json.dumps(extracted_items, ensure_ascii=False)},
@@ -867,6 +873,8 @@ def _process_report_background(report_id: int, user_id: int, report_date, image_
             ai_suggestions_list = []
             if abnormal_items:
                 try:
+                    from app.services.llm.usage_tracker import set_caller
+                    set_caller("family_health.exam_suggestions", user_id=user_id)
                     # 获取用户画像信息
                     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
                     user_context = ""

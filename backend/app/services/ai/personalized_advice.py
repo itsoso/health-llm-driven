@@ -17,19 +17,22 @@ logger = logging.getLogger(__name__)
 def get_llm_advice(prompt: str) -> str:
     """调用LLM生成建议"""
     try:
-        from app.services.llm_health_analyzer import LLMHealthAnalyzer
-        analyzer = LLMHealthAnalyzer()
-        if analyzer.is_available() and analyzer.client:
-            response = analyzer.client.chat.completions.create(
-                model=analyzer.model,
-                messages=[
-                    {"role": "system", "content": "你是一位专业的健康管理顾问，善于根据用户的个人情况提供个性化的健康建议。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=500
-            )
-            return response.choices[0].message.content
+        from app.services.llm import get_llm_provider
+        from app.services.llm.usage_tracker import set_caller
+        from app.utils.async_helpers import run_async
+        provider = get_llm_provider()
+        if provider is None:
+            return "暂无个性化建议，请稍后再试。"
+        set_caller("personalized_advice.get_advice")
+        content = run_async(provider.chat(
+            messages=[
+                {"role": "system", "content": "你是一位专业的健康管理顾问，善于根据用户的个人情况提供个性化的健康建议。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=500,
+        ))
+        return content or "暂无个性化建议，请稍后再试。"
     except Exception as e:
         logger.error(f"LLM调用失败: {e}")
 

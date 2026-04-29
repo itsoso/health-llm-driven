@@ -115,6 +115,8 @@ class OpenClawService:
         """用 vision 模型识别图片内容，返回文字描述"""
         try:
             from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("openclaw.describe_image")
             compressed = self._compress_image_base64(image_base64, image_type)
             messages = [
                 {"role": "system", "content": "你是图片识别助手。请详细描述图片中的内容。如果是食物，请列出每种食物的名称和大概份量。"},
@@ -566,6 +568,8 @@ AI: {ai_reply}
 
         try:
             from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            set_caller("openclaw.reminder_extract", user_id=user_id)
             llm = get_llm_provider()
             result_text = await llm.chat(
                 [{"role": "user", "content": extract_prompt}],

@@ -169,18 +169,20 @@ class RAGPipeline:
 请基于以上信息给出专业回答。"""
 
         try:
-            response = self.openai_client.chat.completions.create(
-                model=self.model,
+            from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            from app.utils.async_helpers import run_async
+            set_caller("rag_pipeline.generate_with_knowledge")
+            provider = get_llm_provider()
+            content = run_async(provider.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7,
                 max_tokens=1500,
-                timeout=60
-            )
-
-            content = response.choices[0].message.content.strip()
+            ))
+            content = (content or "").strip()
 
             # 解析 JSON 响应
             import json
@@ -307,18 +309,20 @@ class RAGPipeline:
 请提供增强的健康建议。"""
 
         try:
-            response = self.openai_client.chat.completions.create(
-                model=self.model,
+            from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            from app.utils.async_helpers import run_async
+            set_caller("rag_pipeline.enhance_daily_advice")
+            provider = get_llm_provider()
+            content = run_async(provider.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7,
                 max_tokens=800,
-                timeout=45
-            )
-
-            content = response.choices[0].message.content.strip()
+            ))
+            content = (content or "").strip()
 
             import json
             if content.startswith("```"):

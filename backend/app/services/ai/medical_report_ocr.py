@@ -48,6 +48,8 @@ async def recognize_medical_report(
 ) -> Dict[str, Any]:
     """从体检报告图片中提取结构化指标。"""
     try:
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("medical_report_ocr.recognize")
         provider = get_vision_provider()
         if not provider:
             return {"error": "Vision model not configured"}

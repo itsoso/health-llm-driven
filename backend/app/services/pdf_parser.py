@@ -548,24 +548,25 @@ class MedicalReportPDFParser:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            from app.services.llm import get_llm_provider
+            from app.services.llm.usage_tracker import set_caller
+            from app.utils.async_helpers import run_async
+            set_caller("pdf_parser.extract_exam")
+            provider = get_llm_provider()
+            result_text = run_async(provider.chat(
                 messages=[
                     {
                         "role": "system",
-                        "content": "你是专业的医疗报告解析专家，擅长从体检报告中提取结构化数据。只返回JSON格式，不要包含任何解释性文字。"
+                        "content": "你是专业的医疗报告解析专家，擅长从体检报告中提取结构化数据。只返回JSON格式，不要包含任何解释性文字。",
                     },
                     {
                         "role": "user",
-                        "content": prompt.format(text=text_content[:8000])  # 限制长度
-                    }
+                        "content": prompt.format(text=text_content[:8000]),
+                    },
                 ],
                 temperature=0.1,
                 max_tokens=4000,
-                timeout=120  # PDF解析可能需要更长时间
-            )
-
-            result_text = response.choices[0].message.content
+            ))
             if not result_text:
                 raise ValueError("LLM返回内容为空")
 

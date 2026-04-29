@@ -392,6 +392,8 @@ def _extract_genetic_from_pdf(profile_id: int, user_id: int, pdf_base64: str):
     try:
         # PDF 转图片
         from app.api.family_health import _pdf_to_images_base64
+        from app.services.llm.usage_tracker import set_caller
+        set_caller("genetic.pdf_vision", user_id=current_user.id)
         images = _pdf_to_images_base64(pdf_base64)
         logger.info(f"[基因PDF] profile={profile_id} PDF 转换为 {len(images)} 页")
 
@@ -1103,8 +1105,10 @@ def get_cross_analysis(
     # 6. 调用 LLM
     try:
         from app.services.llm.factory import get_llm_provider
+        from app.services.llm.usage_tracker import set_caller
         from app.utils.async_helpers import run_async
 
+        set_caller("genetic.cross_analysis", user_id=current_user.id)
         provider = get_llm_provider()
         messages = [
             {"role": "system", "content": "你是一位精通基因组学和精准医学的健康顾问。请基于用户的基因检测数据和健康数据，给出个性化的交叉分析。回复使用中文，以 JSON 格式返回。"},
