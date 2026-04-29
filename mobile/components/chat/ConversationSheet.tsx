@@ -15,11 +15,15 @@ interface Props {
   currentConversationId?: number;
   onSelectConversation: (id: number) => void;
   onDeleteConversation: (id: number) => void;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export default function ConversationSheet({
   visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
+  loading, error, onRetry,
 }: Props) {
   const { height: screenH, width: screenW } = useWindowDimensions();
   const isTablet = screenW >= 768;
@@ -55,10 +59,25 @@ export default function ConversationSheet({
         >
           <View style={styles.handle} />
           <Text style={styles.title}>对话历史</Text>
-          {conversations.length === 0 ? (
+          {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="small" color={colors.brand} />
               <Text style={styles.loadingText}>加载中...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.loadingWrap}>
+              <Ionicons name="alert-circle-outline" size={28} color={colors.red} />
+              <Text style={[styles.loadingText, { color: colors.red }]}>{error}</Text>
+              {onRetry && (
+                <TouchableOpacity onPress={onRetry} style={styles.retryBtn} activeOpacity={0.7}>
+                  <Text style={styles.retryBtnText}>重试</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : conversations.length === 0 ? (
+            <View style={styles.loadingWrap}>
+              <Ionicons name="chatbubbles-outline" size={28} color={colors.labelTertiary} />
+              <Text style={styles.loadingText}>还没有历史对话</Text>
             </View>
           ) : (
             <ScrollView style={{ maxHeight: listMaxHeight }} showsVerticalScrollIndicator={false}>
@@ -125,4 +144,9 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 15, color: colors.labelPrimary },
   rowDate: { fontSize: 12, color: colors.labelTertiary, marginTop: 2 },
+  retryBtn: {
+    marginTop: 8, paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: radii.md, backgroundColor: colors.brand,
+  },
+  retryBtnText: { fontSize: 14, color: '#fff', fontWeight: '500' },
 });

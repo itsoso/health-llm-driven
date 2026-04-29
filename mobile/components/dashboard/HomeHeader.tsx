@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextStyle, TouchableOpacity, LayoutAnimation, Animated } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radii, shadows } from '../../constants/theme';
@@ -94,16 +95,34 @@ export default function HomeHeader({
         <MiniVital color="#30D158" value={battery || '--'} />
         </TouchableOpacity>
         {onHistory && (
-          <TouchableOpacity onPress={(e) => { e.stopPropagation(); onHistory(); }} style={styles.miniAction} activeOpacity={0.6}>
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onHistory();
+            }}
+            style={styles.miniAction}
+            hitSlop={10}
+            activeOpacity={0.6}
+          >
             <Ionicons name="chatbubbles-outline" size={15} color={colors.labelTertiary} />
           </TouchableOpacity>
         )}
         {onNewChat && (
-          <TouchableOpacity onPress={(e) => { e.stopPropagation(); onNewChat(); }} style={styles.miniAction} activeOpacity={0.6}>
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onNewChat();
+            }}
+            style={styles.miniAction}
+            hitSlop={10}
+            activeOpacity={0.6}
+          >
             <Ionicons name="create-outline" size={15} color={colors.labelTertiary} />
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={toggle} style={styles.miniAction} activeOpacity={0.6}>
+        <TouchableOpacity onPress={toggle} style={styles.miniAction} hitSlop={8} activeOpacity={0.6}>
           <Ionicons name="chevron-down" size={14} color={colors.labelTertiary} />
         </TouchableOpacity>
       </View>
@@ -119,17 +138,29 @@ export default function HomeHeader({
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={[txt.greeting, { flex: 1 }]}>{greeting}</Text>
             {onHistory && (
-              <TouchableOpacity onPress={onHistory} style={styles.actionBtn} activeOpacity={0.6}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onHistory();
+                }}
+                style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}
+              >
                 <Ionicons name="chatbubbles-outline" size={18} color={colors.labelTertiary} />
               </TouchableOpacity>
             )}
             {onNewChat && (
-              <TouchableOpacity onPress={onNewChat} style={styles.actionBtn} activeOpacity={0.6}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onNewChat();
+                }}
+                style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}
+              >
                 <Ionicons name="create-outline" size={18} color={colors.labelTertiary} />
               </TouchableOpacity>
             )}
             {onSettings && (
-              <TouchableOpacity onPress={onSettings} style={styles.actionBtn} activeOpacity={0.6}>
+              <TouchableOpacity onPress={onSettings} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
                 <Ionicons name="settings-outline" size={18} color={colors.labelTertiary} />
               </TouchableOpacity>
             )}

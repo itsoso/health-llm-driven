@@ -37,7 +37,9 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
   const [showMenu, setShowMenu] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);
+  const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
+  const textInputRef = useRef<TextInput>(null);
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();
@@ -45,12 +47,17 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
     onSend(msg || '请分析这些图片', pendingImages.length > 0 ? pendingImages : null);
     setInput('');
     clearImages();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setJustSent(true);
+    setTimeout(() => setJustSent(false), 1000);
   }, [input, pendingImages, onSend, clearImages]);
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
       setInput(prev => prev ? prev + ' ' + text : text);
       setVoiceMode(false);
+      // 聚焦 TextInput 弹起软键盘, 用户可继续编辑或直接按 return 发送
+      setTimeout(() => textInputRef.current?.focus(), 100);
     },
   });
 
@@ -194,6 +201,7 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
           /* 键盘模式：文本输入框 */
           <View style={styles.inputWrap}>
             <TextInput
+              ref={textInputRef}
               style={styles.textInput}
               placeholder="有问题，尽管问"
               placeholderTextColor={colors.labelTertiary}
@@ -208,11 +216,16 @@ export default function ChatInputBar({ onSend, isStreaming }: Props) {
           </View>
         )}
 
-        {/* 右侧按钮：发送 / 语音切换 */}
+        {/* 右侧按钮：发送 / 语音切换
+            刚发送 (justSent) 时保持发送按钮样式 disabled 1s, 避免立即切回 mic 导致误触再次录音 */}
         {canSend ? (
           <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} accessibilityLabel="发送消息">
             <Ionicons name="arrow-up" size={20} color="#fff" />
           </TouchableOpacity>
+        ) : justSent ? (
+          <View style={[styles.sendBtn, { opacity: 0.4 }]}>
+            <Ionicons name="checkmark" size={20} color="#fff" />
+          </View>
         ) : (
           <TouchableOpacity onPress={toggleVoiceMode} style={styles.modeBtn} accessibilityLabel="切换语音/键盘">
             <Ionicons

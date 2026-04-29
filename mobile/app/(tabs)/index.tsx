@@ -38,6 +38,21 @@ export default function HomeScreen() {
   const qc = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const convs = await getConversations();
+      setConversations(convs);
+    } catch (e: any) {
+      setHistoryError(e?.message ? `加载失败: ${e.message.slice(0, 60)}` : '加载失败，检查网络');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
   const [refreshing, setRefreshing] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef<FlatList>(null);
@@ -179,7 +194,7 @@ export default function HomeScreen() {
         onNewChat={chat.newChat}
         onHistory={() => {
           setShowHistory(true);
-          getConversations().then(convs => setConversations(convs)).catch(() => setConversations([]));
+          loadHistory();
         }}
       />
 
@@ -275,6 +290,9 @@ export default function HomeScreen() {
         conversations={conversations}
         setConversations={setConversations}
         currentConversationId={chat.conversationId}
+        loading={historyLoading}
+        error={historyError}
+        onRetry={loadHistory}
         onSelectConversation={async (id) => {
           try { await chat.loadConversation(id); } catch { Alert.alert('加载失败', '无法加载对话内容'); }
         }}
