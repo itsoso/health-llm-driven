@@ -461,6 +461,9 @@ class AnomalyDetectionService:
           2. 连续 3 天同类告警 → 标 is_suppressed, 不推 (避免告警疲劳)
              新告警仍写 DB, 用户主动进 App 能看
           3. critical 级别不受疲劳规则影响, 一定推
+
+        P4 信任循环接入: 每条非 info 告警自动产一张 ActionCard (可 grade 的 metric),
+        check_back_date = 3 天 (critical) / 7 天 (warning), 让 outcome_grader 有活干.
         """
         if not alerts:
             return
@@ -486,13 +489,16 @@ class AnomalyDetectionService:
                 continue
 
             # 规则 2: 连续 N 天同类疲劳 (critical 除外)
-            if severity != "critical" and self._is_fatigued(user_id, alert.alert_type, alert.detection_date):
+            is_fatigued = (severity != "critical"
+                           and self._is_fatigued(user_id, alert.alert_type, alert.detection_date))
+            if is_fatigued:
                 alert.notification_sent = True
                 alert.is_suppressed = True
                 logger.info(
                     f"[anomaly] suppress fatigued alert type={alert.alert_type} user={user_id} "
                     f"(连续 3+ 天同类告警)"
                 )
+                # 疲劳时不创建新 ActionCard (已有同 metric 的 active card 在跑)
                 continue
 
             # critical 级别绕过静默时段
@@ -512,7 +518,95 @@ class AnomalyDetectionService:
             except Exception as e:
                 logger.warning(f"发送预警通知失败 alert={alert.id}: {e}")
 
+            # P4 信任循环: 自动创建 ActionCard (旁路, 失败不影响推送)
+            try:
+                self._create_action_card_from_alert(user_id, alert)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[anomaly] 自动创建 ActionCard 失败 (旁路) alert={alert.id}: {e}")
+
         self.db.commit()
+
+    # metric_name → outcome_grader 能接受的 metric_key 映射
+    _METRIC_KEY_MAP = {
+        "resting_heart_rate": "rhr",
+        "hrv": "hrv",
+        "sleep_score": "sleep_score",
+        "spo2_avg": "spo2_odi",
+        # 以下不能 grade 的 metric 不自动产 card
+        # "stress_level": None, "body_battery": None,
+    }
+
+    def _create_action_card_from_alert(self, user_id: int, alert: AnomalyAlert) -> Optional[int]:
+        """AnomalyAlert → ActionCard. 返回 card id 或 None.
+
+        - 仅对可 grade 的 metric 创建 (避免 stress_level 等产无法评分的 card)
+        - 同 metric 最近 7 天已有 active card 则跳过 (防止刷屏)
+        - check_back_date: critical 3 天 / warning 7 天
+        """
+        metric_key = self._METRIC_KEY_MAP.get(alert.metric_name)
+        if not metric_key:
+            return None
+
+        from app.models.action_card import ActionCard
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+        # Dedup: 7 天内同 metric active card 跳过
+        existing = (
+            self.db.query(ActionCard)
+            .filter(
+                ActionCard.user_id == user_id,
+                ActionCard.metric_key == metric_key,
+                ActionCard.status == "active",
+                ActionCard.creator_specialist == "anomaly_detector",
+                ActionCard.created_at > _dt.now(_tz.utc) - _td(days=7),
+            )
+            .first()
+        )
+        if existing:
+            return None
+
+        severity = (alert.severity or "").lower()
+        check_back_days = 3 if severity == "critical" else 7
+        title = f"[{alert.metric_name}] {alert.message[:40]}"
+        content_lines = [f"**触发原因**: {alert.message}"]
+        if alert.deviation_pct is not None:
+            content_lines.append(
+                f"**基线**: {alert.baseline_value} · **当前**: {alert.current_value} "
+                f"({alert.deviation_pct:+.1f}% 偏离)"
+            )
+        else:
+            content_lines.append(
+                f"**基线**: {alert.baseline_value} · **当前**: {alert.current_value}"
+            )
+        content_lines.append(
+            f"**建议**: 关注 {check_back_days} 天, 记录作息 / 运动 / 压力, "
+            f"{check_back_days} 天后看指标是否回归."
+        )
+        content = "\n\n".join(content_lines)
+
+        card = ActionCard(
+            user_id=user_id,
+            title=title[:200],
+            content=content,
+            card_type="recommendation",
+            source_type="anomaly_alert",
+            source_id=str(alert.id),
+            status="active",
+            priority=10 if severity == "critical" else 5,
+            metric_key=metric_key,
+            baseline_value=str(alert.baseline_value) if alert.baseline_value is not None else None,
+            target_value=f"回归到基线 ±10%",
+            verification_days=check_back_days,
+            creator_specialist="anomaly_detector",
+            check_back_date=_dt.now(_tz.utc) + _td(days=check_back_days),
+        )
+        self.db.add(card)
+        self.db.flush()
+        logger.info(
+            f"[anomaly] 创建 ActionCard #{card.id} user={user_id} metric={metric_key} "
+            f"check_back={check_back_days}d"
+        )
+        return card.id
 
     def _is_fatigued(self, user_id: int, alert_type: str, check_date: date) -> bool:
         """最近 3 天 (不含今天) 每天都有同类告警推送过 → 疲劳, 今天静默.
