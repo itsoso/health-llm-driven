@@ -1428,6 +1428,94 @@ def check_action_card_followups():
 
 
 @celery_app.task(time_limit=300)
+def _build_doctor_medication_adherence_block(db, user_id: int, since_date: date) -> str:
+    """医生周报: 过去 7 天用药依从率 (daily frequency 的 medicine 模板).
+
+    依从率 < 70% 标 ⚠️ 提示. 返回空串若用户无 medicine 模板.
+    """
+    from sqlalchemy import func
+    from app.models.checkin import CheckinTemplate, CheckinRecord
+
+    templates = db.query(CheckinTemplate).filter(
+        CheckinTemplate.user_id == user_id,
+        CheckinTemplate.is_active == True,  # noqa: E712
+        CheckinTemplate.is_archived == False,  # noqa: E712
+        CheckinTemplate.category == "medicine",
+        CheckinTemplate.frequency == "daily",
+    ).all()
+
+    if not templates:
+        return ""
+
+    tmpl_ids = [t.id for t in templates]
+    counts = dict(
+        db.query(
+            CheckinRecord.template_id,
+            func.count(CheckinRecord.id),
+        ).filter(
+            CheckinRecord.template_id.in_(tmpl_ids),
+            CheckinRecord.user_id == user_id,
+            CheckinRecord.checkin_date >= since_date,
+        ).group_by(CheckinRecord.template_id).all()
+    )
+
+    lines = ["\n💊 *用药依从率 (7 天)*"]
+    for t in templates:
+        actual = counts.get(t.id, 0)
+        rate = round(100 * actual / 7)
+        mark = " ⚠️" if rate < 70 else ""
+        lines.append(f"  • {t.name}: {actual}/7 ({rate}%){mark}")
+    return "\n".join(lines)
+
+
+def _build_doctor_journal_summary_block(db, user_id: int, since_date: date) -> str:
+    """医生周报: 过去 7 天 Clinical Journal SOAP 条目分主题计数 + 最重一条.
+
+    返回空串若无 entries. 最重标准: assessment 包含 ⚠️ 或 related_action_card_ids 非空.
+    """
+    from sqlalchemy import func
+    from app.models.clinical_journal import ClinicalJournalEntry, CaseThread
+
+    since_dt = datetime.combine(since_date, datetime.min.time()).replace(tzinfo=UTC)
+
+    theme_counts = dict(
+        db.query(
+            CaseThread.theme,
+            func.count(ClinicalJournalEntry.id),
+        ).join(
+            ClinicalJournalEntry, ClinicalJournalEntry.case_thread_id == CaseThread.id,
+        ).filter(
+            ClinicalJournalEntry.user_id == user_id,
+            ClinicalJournalEntry.generated_at >= since_dt,
+        ).group_by(CaseThread.theme).all()
+    )
+
+    if not theme_counts:
+        return ""
+
+    total = sum(theme_counts.values())
+    theme_zh = {
+        "rhinitis": "鼻炎", "sleep_osahs": "睡眠呼吸", "sleep_quality": "睡眠",
+        "liver": "肝功能", "lipid": "血脂", "metabolic": "代谢",
+        "weight_loss": "体重", "hypertension": "血压", "recovery": "恢复",
+        "daily_briefing": "日报", "general": "综合",
+    }
+    parts = [f"{theme_zh.get(k, k)}×{v}" for k, v in sorted(
+        theme_counts.items(), key=lambda x: -x[1])]
+    lines = [f"\n📓 *AI 记录 {total} 条*: " + " / ".join(parts)]
+
+    # 取最重一条: assessment 含 ⚠️ 优先, 否则取最新
+    priority_entry = db.query(ClinicalJournalEntry).filter(
+        ClinicalJournalEntry.user_id == user_id,
+        ClinicalJournalEntry.generated_at >= since_dt,
+        ClinicalJournalEntry.assessment.like("%⚠️%"),
+    ).order_by(ClinicalJournalEntry.generated_at.desc()).first()
+    if priority_entry and priority_entry.assessment:
+        first_line = priority_entry.assessment.split("\n")[0][:120]
+        lines.append(f"  最需关注: {first_line}")
+    return "\n".join(lines)
+
+
 def generate_doctor_weekly_report():
     """
     生成保健医生周报 — 每周一自动运行。
@@ -1509,7 +1597,8 @@ def generate_doctor_weekly_report():
                 alert_types = list(set(a.alert_type for a in week_alerts))
 
                 report = (
-                    f"📊 *{user_name} 周报* ({week_ago} ~ {today})\n\n"
+                    f"📊 *{user_name} 周度数据摘要* ({week_ago} ~ {today})\n"
+                    f"_本报告为用户授权的健康数据自动汇总，仅供参考，不构成医疗建议。_\n\n"
                     f"❤️ 静息心率: {avg_rhr or '-'} bpm ({_trend('resting_heart_rate')})\n"
                     f"💚 HRV: {avg_hrv or '-'} ms ({_trend('hrv')})\n"
                     f"😴 睡眠评分: {avg_sleep or '-'} ({_trend('sleep_score')})\n"
@@ -1521,21 +1610,45 @@ def generate_doctor_weekly_report():
                 if alert_types:
                     report += f"  类型: {', '.join(alert_types)}\n"
 
-                # 标注关注点
+                # 标注关注点 (非诊断性措辞)
                 concerns = []
                 if avg_hrv and avg_hrv < 40:
-                    concerns.append("HRV 偏低，关注自主神经调节")
+                    concerns.append("HRV 低于参考下限")
                 if avg_sleep and avg_sleep < 60:
-                    concerns.append("睡眠评分偏低")
+                    concerns.append("睡眠评分低于参考下限")
                 if avg_stress and avg_stress > 50:
-                    concerns.append("压力持续偏高")
+                    concerns.append("压力指标持续偏高")
                 if avg_rhr and avg_rhr > 75:
-                    concerns.append("静息心率偏高")
+                    concerns.append("静息心率高于参考上限")
 
                 if concerns:
-                    report += "\n🔍 *关注点:*\n" + "\n".join(f"  • {c}" for c in concerns)
+                    report += "\n🔍 *关注指标:*\n" + "\n".join(f"  • {c}" for c in concerns)
                 else:
-                    report += "\n✅ 本周各项指标正常"
+                    report += "\n✅ 本周各项指标在参考区间内"
+
+                # 干预闭环证据 (3 块扩展): ActionCard 命中率 / 用药依从 / Journal 摘要
+                try:
+                    hit_rate_block = _build_hit_rate_block(db, user_id, days=30)
+                    if hit_rate_block:
+                        report += "\n\n" + hit_rate_block
+                except Exception as e:
+                    logger.debug(f"[医生周报] hit_rate 块生成失败: {e}")
+
+                try:
+                    adherence_block = _build_doctor_medication_adherence_block(
+                        db, user_id, week_ago)
+                    if adherence_block:
+                        report += adherence_block
+                except Exception as e:
+                    logger.debug(f"[医生周报] adherence 块生成失败: {e}")
+
+                try:
+                    journal_block = _build_doctor_journal_summary_block(
+                        db, user_id, week_ago)
+                    if journal_block:
+                        report += journal_block
+                except Exception as e:
+                    logger.debug(f"[医生周报] journal 块生成失败: {e}")
 
                 asyncio.run(telegram.send_message(report))
                 generated += 1

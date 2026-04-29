@@ -173,12 +173,14 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=10, minute=0),
     },
 
-    # 保健医生周报已暂停 (2026-04-28: 系统不出具医疗建议, 暂不向"医生"角色推送)
-    # 保留代码以备未来与持证医师合作时启用. 不在 beat schedule 中.
-    # "doctor-weekly-report": {
-    #     "task": "app.tasks.notifications.generate_doctor_weekly_report",
-    #     "schedule": crontab(hour=9, minute=15, day_of_week=1),
-    # },
+    # 保健顾问周度数据摘要 (2026-04-29 重新启用):
+    # 推送对象是用户授权的 Telegram advisor_chat_id (单点定向, 不对外广播).
+    # 内容为数据摘要 (Garmin 周均值 + 告警 + ActionCard 命中率 + 用药依从 + Journal),
+    # 明文标注"不构成医疗建议". 若后续与持证医师合作, 再切换到 email 通道.
+    "doctor-weekly-report": {
+        "task": "app.tasks.notifications.generate_doctor_weekly_report",
+        "schedule": crontab(hour=9, minute=15, day_of_week=1),
+    },
 
     # Agent Native: 干预效果评估（每周一 11:00 LLM 评估 ActionCard 效果）
     "intervention-assessment": {
