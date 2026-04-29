@@ -377,11 +377,14 @@ def _finalize_history(db, history_id: int, ok: bool, error: str = "") -> None:
 
 
 def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
-    """通过 ios_push.send_push 发 APNs + 写 history. 含 dedup.
+    """通过 ios_push.send_push 发 APNs + 写 history. 含 dedup + Telegram fallback.
 
     流程: 先写 history (delivery_ok=0, 拿 id) → 把 history_id 塞进 APNs data →
     push → 用 id 回填 delivery_ok. 这样 mobile 点按钮回调时能带上
     history_id 直接打 POST /open-loop/{id}/feedback.
+
+    Fallback: APNs 未配置 / 失败 / 用户未绑定 iOS token 时降级 Telegram advisor chat.
+    避免 APNs 链路断则一个推送都送不出的 silent failure.
     """
     # dedup
     if _is_recently_pushed_or_snoozed(db, user_id, loop):
@@ -401,10 +404,11 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
         ).first()
         if not setting:
             return False
-        if not (setting.enabled and setting.ios_push_enabled and setting.ios_device_token):
+        if not setting.enabled:
             return False
         if not setting.health_alert_enabled:
             return False
+        has_ios = bool(setting.ios_push_enabled and setting.ios_device_token)
 
         # 1) 预写 history (delivery_ok=0), 拿 id 给 APNs data
         try:
@@ -414,36 +418,81 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
             logger.warning(f"[open_loop] 预写 history 失败, 降级无 id 推送: {e}")
             history_id = None
 
-        service = IOSPushService()
-        result = asyncio.run(service.send_push(
-            device_token=setting.ios_device_token,
-            title=loop.title,
-            body=loop.body,
-            category="OPEN_LOOP",  # iOS 上对应 actions: 已处理 / 暂停7天 / 不感兴趣
-            data={
-                "type": "open_loop",
-                "history_id": str(history_id) if history_id else "",
-                "kind": loop.kind,
-                "signal_key": loop.signal_key or "",
-                "deeplink": loop.deeplink or "",
-                **{k: str(v) for k, v in loop.metadata.items()},
-            },
-        ))
-        ok = bool(result and result.get("success"))
-        err = "" if ok else (result or {}).get("error", "unknown")
+        ok = False
+        err = "no_channel"
+        channel_used = None
 
-        # 2) 回填 delivery_ok
+        # 2) 主通道: APNs
+        if has_ios:
+            service = IOSPushService()
+            if service.is_configured:
+                result = asyncio.run(service.send_push(
+                    device_token=setting.ios_device_token,
+                    title=loop.title,
+                    body=loop.body,
+                    category="OPEN_LOOP",
+                    data={
+                        "type": "open_loop",
+                        "history_id": str(history_id) if history_id else "",
+                        "kind": loop.kind,
+                        "signal_key": loop.signal_key or "",
+                        "deeplink": loop.deeplink or "",
+                        **{k: str(v) for k, v in loop.metadata.items()},
+                    },
+                ))
+                ok = bool(result and result.get("success"))
+                err = "" if ok else (result or {}).get("error", "unknown")
+                if ok:
+                    channel_used = "apns"
+            else:
+                err = "APNs not configured"
+
+        # 3) Fallback: Telegram advisor chat (仅产品 owner 可达, 但覆盖 silent failure)
+        if not ok:
+            fallback_ok, fallback_err = _push_via_telegram(loop)
+            if fallback_ok:
+                ok = True
+                channel_used = "telegram_fallback"
+                err = f"apns_{err or 'unavailable'}__tg_ok"
+            else:
+                err = f"apns_{err or 'unavailable'}__tg_{fallback_err}"
+
+        # 4) 回填 delivery_ok
         if history_id is not None:
             _finalize_history(db, history_id, ok=ok, error=err)
         else:
-            # 降级路径: 没拿到 id, 走老 _record_history
             _record_history(db, user_id, loop, ok=ok, error=err)
 
+        if ok:
+            logger.info(f"[open_loop] pushed user={user_id} kind={loop.kind} via {channel_used}")
         return ok
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[open_loop] APNs 推送失败 user={user_id}: {e}")
+        logger.warning(f"[open_loop] 推送异常 user={user_id}: {e}")
         _record_history(db, user_id, loop, ok=False, error=str(e))
         return False
+
+
+def _push_via_telegram(loop: OpenLoop) -> tuple[bool, str]:
+    """Telegram advisor chat fallback. 返回 (ok, reason).
+
+    所有 open-loop 推送统一送到 TELEGRAM_ALERT_CHAT_ID, 避免 APNs 断链时
+    用户完全看不到通知. 消息含 [kind] 标签方便识别。
+    """
+    try:
+        from app.services.notification.telegram_push import TelegramPushService
+        import asyncio
+        svc = TelegramPushService()
+        if not svc.configured:
+            return False, "not_configured"
+        text = f"🔔 *{loop.title}*\n_[open-loop/{loop.kind}]_\n\n{loop.body}"
+        if loop.deeplink:
+            text += f"\n\n🔗 {loop.deeplink}"
+        result = asyncio.run(svc.send_message(text))
+        if result and result.get("success"):
+            return True, "ok"
+        return False, str((result or {}).get("reason") or (result or {}).get("error") or "unknown")[:80]
+    except Exception as e:  # noqa: BLE001
+        return False, f"exc:{str(e)[:60]}"
 
 
 @celery_app.task(time_limit=600, name="app.tasks.open_loop_manager.run_open_loop_check")
