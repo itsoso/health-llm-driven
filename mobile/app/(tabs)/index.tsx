@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, TextStyle,
   Alert, RefreshControl, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -69,6 +69,9 @@ export default function HomeScreen() {
   const { data: forecastData } = useQuery({ queryKey: queryKeys.forecast, queryFn: () => api.get('/environment/weather/forecast?days=2').then(r => r.data).catch(() => null), staleTime: 300_000 });
   const todayCoach = useTodayCoach();
   const agentAgenda = useAgentAgenda();
+  const insets = useSafeAreaInsets();
+  // tab bar(49) + bottom safe area: iPhone home indicator=83, iPad=49, home button=49
+  const kbOffset = Platform.OS === 'ios' ? 49 + insets.bottom : 0;
 
   const contextData = useMemo(() => ({
     garmin: Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null,
@@ -219,7 +222,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={kbOffset}>
         <FlatList
           ref={flatListRef}
           data={itemsWithDateDividers}

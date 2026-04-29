@@ -5,7 +5,7 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteConversation } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
@@ -48,6 +48,8 @@ export default function ChatScreen() {
   ), []);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const kbOffset = Platform.OS === 'ios' ? 49 + insets.bottom : 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -73,7 +75,7 @@ export default function ChatScreen() {
         )}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={kbOffset}>
         <FlatList
           ref={flatListRef}
           data={chat.messages}
