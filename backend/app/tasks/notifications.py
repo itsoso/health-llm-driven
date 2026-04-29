@@ -1520,12 +1520,17 @@ def generate_doctor_weekly_report():
     """
     生成保健医生周报 — 每周一自动运行。
 
-    聚合过去 7 天的健康数据，生成结构化摘要，
-    通过 Telegram 推送。便于保健医生快速了解用户状况。
+    优先策略 (线上 Telegram 出境不通时的韧性设计):
+      1. 生成周度 SOAP entry 写入 Clinical Journal (theme=doctor_weekly_summary, 永久化)
+      2. 尝试 Telegram 推送 — 失败不影响整体 status (generated 只算 SOAP 写入)
+      3. 若 Telegram 失败且用户绑了 iOS token, 推一条 "本周摘要已生成, 进 App 查看"
+
+    未来有真执业医师合作时, 再加 email / concierge 通道, 报告生成逻辑不动.
     """
     import asyncio
     from app.models.daily_health import GarminData
     from app.services.notification.telegram_push import TelegramPushService
+    from app.services.clinical_journal_service import write_briefing_soap_entry
 
     logger.info("[医生周报] 开始生成")
 
@@ -1541,9 +1546,8 @@ def generate_doctor_weekly_report():
         ).all()
 
         telegram = TelegramPushService()
-        if not telegram.configured:
-            logger.info("[医生周报] Telegram 未配置，跳过")
-            return {"status": "skipped", "reason": "telegram_not_configured"}
+        telegram_ok_count = 0
+        tg_skip_reason = None if telegram.configured else "telegram_not_configured"
 
         generated = 0
         for cred in credentials:
@@ -1650,15 +1654,71 @@ def generate_doctor_weekly_report():
                 except Exception as e:
                     logger.debug(f"[医生周报] journal 块生成失败: {e}")
 
-                asyncio.run(telegram.send_message(report))
-                generated += 1
-                logger.info(f"[医生周报] 用户 {user_id} 周报已发送 Telegram")
+                # === 关键改动: Telegram 是可选通道, 失败不算整体失败 ===
+                # 1) 永久化到 Clinical Journal (主持久层, 未来在 App 里能看)
+                soap_id = None
+                try:
+                    # 提取 concerns 作为 ai_narrative, alerts 作为 alert_messages
+                    narrative = "本周数据摘要生成. " + ("关注指标: " + "; ".join(concerns) if concerns else "各项指标在参考区间内")
+                    soap_id = write_briefing_soap_entry(
+                        db,
+                        user_id=user_id,
+                        target_date=today,
+                        briefing_md=report,
+                        ai_narrative=narrative,
+                        alert_messages=[str(a.alert_type) + ": " + (a.message or "")[:80]
+                                        for a in week_alerts[:3]],
+                        theme="doctor_weekly_summary",
+                        thread_title="周度数据摘要",
+                        created_by="doctor_weekly_task",
+                    )
+                    if soap_id:
+                        generated += 1
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[医生周报] 用户 {user_id} 持久化失败: {e}")
+
+                # 2) 尝试 Telegram (出境不通时 fail-soft)
+                tg_ok = False
+                if telegram.configured:
+                    try:
+                        tg_result = asyncio.run(telegram.send_message(report))
+                        tg_ok = bool(tg_result and tg_result.get("success"))
+                        if tg_ok:
+                            telegram_ok_count += 1
+                            logger.info(f"[医生周报] 用户 {user_id} Telegram 推送成功")
+                        else:
+                            logger.info(f"[医生周报] 用户 {user_id} Telegram 失败: {tg_result}")
+                    except Exception as e:  # noqa: BLE001
+                        logger.info(f"[医生周报] 用户 {user_id} Telegram 异常: {e}")
+
+                # 3) Telegram 失败且有 iOS token → APNs 提示 "本周摘要已生成"
+                if not tg_ok and soap_id:
+                    try:
+                        from app.models.notification import UserNotificationSetting
+                        from app.services.notification.ios_push import IOSPushService
+                        setting = db.query(UserNotificationSetting).filter(
+                            UserNotificationSetting.user_id == user_id,
+                        ).first()
+                        if setting and setting.enabled and setting.ios_push_enabled and setting.ios_device_token:
+                            push = IOSPushService()
+                            if push.is_configured:
+                                asyncio.run(push.send_push(
+                                    device_token=setting.ios_device_token,
+                                    title="📊 本周数据摘要已生成",
+                                    body="进入 App 查看过去 7 天健康趋势 + 关注指标",
+                                    data={"type": "doctor_weekly_summary",
+                                          "journal_entry_id": str(soap_id)},
+                                ))
+                                logger.info(f"[医生周报] 用户 {user_id} APNs 提醒已发")
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug(f"[医生周报] 用户 {user_id} APNs 提醒失败 (旁路): {e}")
 
             except Exception as e:
                 logger.warning(f"[医生周报] 用户 {user_id} 生成失败: {e}")
 
-    logger.info(f"[医生周报] 完成，生成 {generated} 份")
-    return {"generated": generated}
+    logger.info(f"[医生周报] 完成，Journal 写入 {generated} 份, Telegram 成功 {telegram_ok_count} 份")
+    return {"generated": generated, "telegram_sent": telegram_ok_count,
+            "telegram_skip_reason": tg_skip_reason}
 
 
 # ─────────────────────── 用药定时提醒 ────────────────────────

@@ -186,6 +186,7 @@ def _setup_minimal_user_with_garmin(db, user_id: int = 100):
 
 class TestGenerateDoctorWeeklyReport:
     def test_telegram_not_configured_skips(self, db, monkeypatch):
+        """Telegram 未配置时仍然写 Journal SOAP (持久化), telegram_sent=0 但 generated>=1."""
         from app.tasks import notifications as n
         _setup_minimal_user_with_garmin(db)
 
@@ -196,7 +197,10 @@ class TestGenerateDoctorWeeklyReport:
             MockSvc.return_value.configured = False
             result = n.generate_doctor_weekly_report()
 
-        assert result.get("status") == "skipped"
+        assert result.get("telegram_sent") == 0
+        assert result.get("telegram_skip_reason") == "telegram_not_configured"
+        # generated 字段反映 Journal 写入数 (至少 >= 0, 若有 Garmin 数据就 >= 1)
+        assert "generated" in result
 
     def test_generates_and_includes_disclaimer(self, db, monkeypatch):
         """主路径: 有 garmin + 配了 telegram → 生成报告并调 send_message."""

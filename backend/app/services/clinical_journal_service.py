@@ -316,36 +316,43 @@ def write_briefing_soap_entry(
     alert_messages: Optional[List[str]] = None,
     source_conversation_id: Optional[int] = None,
     source_message_id: Optional[int] = None,
+    theme: str = "daily_briefing",
+    thread_title: Optional[str] = None,
+    created_by: str = "briefing_task",
 ) -> Optional[int]:
-    """每日简报末尾旁路写一条 SOAP entry, theme='daily_briefing'.
+    """每日简报 (或 doctor_weekly) 末尾旁路写一条 SOAP entry.
 
     与 write_soap_entry 不同: briefing 没跑 specialist 也没 findings, 所以直接
     从 briefing_md / ai_narrative / alerts 切片组装 SOAP. fail-soft.
 
-    同一 (user, date) 已写过 → 跳过 (幂等).
+    同一 (user, date, created_by) 已写过 → 跳过 (幂等).
     """
     from app.models.clinical_journal import CaseThread, ClinicalJournalEntry
 
     try:
-        # 幂等: 同日 briefing 只写一条
+        # 幂等: 同日同来源只写一条
         existing = db.query(ClinicalJournalEntry.id).filter(
             ClinicalJournalEntry.user_id == user_id,
-            ClinicalJournalEntry.created_by == "briefing_task",
+            ClinicalJournalEntry.created_by == created_by,
             ClinicalJournalEntry.subjective.like(f"{target_date}%"),
         ).first()
         if existing:
-            logger.info(f"[journal] briefing SOAP 已存在 user={user_id} date={target_date}, 跳过")
+            logger.info(f"[journal] {theme} SOAP 已存在 user={user_id} date={target_date}, 跳过")
             return None
 
-        # briefing 用专属 theme, 不绑 metric (是通用日记)
-        thread = _get_or_create_case_thread(db, user_id, theme="daily_briefing",
+        thread = _get_or_create_case_thread(db, user_id, theme=theme,
                                              metric_key=None)
         # 覆盖 title 更友好
-        if thread.title == "daily_briefing":
-            thread.title = "每日健康简报"
+        default_titles = {
+            "daily_briefing": "每日健康简报",
+            "doctor_weekly_summary": "周度数据摘要 (医生视图)",
+        }
+        preferred = thread_title or default_titles.get(theme)
+        if preferred and thread.title == theme:
+            thread.title = preferred
 
-        # S: 日期 + "每日简报"
-        subjective = f"{target_date} 每日简报"
+        # S: 日期 + 标题
+        subjective = f"{target_date} {preferred or theme}"
 
         # O: briefing_md 前 500 字 (已含睡眠/HRV/体重/化验 数字段)
         objective = (briefing_md or "").strip()[:500]
@@ -382,7 +389,7 @@ def write_briefing_soap_entry(
             source_message_id=source_message_id,
             used_specialists=None,
             related_action_card_ids=None,
-            created_by="briefing_task",
+            created_by=created_by,
         )
         db.add(entry)
 
@@ -392,7 +399,7 @@ def write_briefing_soap_entry(
 
         db.commit()
         db.refresh(entry)
-        logger.info(f"[journal] briefing SOAP #{entry.id} user={user_id} date={target_date}")
+        logger.info(f"[journal] {theme} SOAP #{entry.id} user={user_id} date={target_date}")
 
         # Memory Extractor: briefing SOAP → fact(s) (旁路, 失败不影响)
         try:
