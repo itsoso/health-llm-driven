@@ -136,12 +136,19 @@ export async function* streamChat(
           if (text) yield { type: 'token', content: text };
         } else if (parsed.event === 'tool_call') {
           const tool = parsed.data?.tool || '';
-          const round = parsed.data?.round || '';
-          yield { type: 'tool', content: `🔧 ${tool} (第${round}轮)\n`, toolName: tool };
+          // 不把 "🔧 health_record (第1轮)" 这种技术文本注入消息气泡
+          // toolName 仍传给前端, cards dispatcher / analytics 可用
+          yield { type: 'tool', content: '', toolName: tool };
         } else if (parsed.event === 'tool_result') {
           const tool = parsed.data?.tool || '';
           const ok = parsed.data?.success;
-          yield { type: 'tool', content: `${ok ? '✅' : '❌'} ${tool} ${ok ? '完成' : '失败'}\n\n`, toolName: tool, toolSuccess: ok };
+          // 成功静默 (AI token 流会接着讲), 失败才给用户可见的简短提示
+          yield {
+            type: 'tool',
+            content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
+            toolName: tool,
+            toolSuccess: ok,
+          };
         } else if (parsed.event === 'done') {
           yield { type: 'done', conversationId: parsed.data?.conversation_id, messageId: parsed.data?.message_id };
         } else if (parsed.event === 'error') {
