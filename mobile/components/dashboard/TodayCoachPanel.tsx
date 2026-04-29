@@ -38,9 +38,21 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
     setCollapsed(v => !v);
   };
 
+  // collapsed 态整卡片可点展开; expanded 态只头部可点 (留空间给 actionBtn)
+  const CardWrapper: any = collapsed ? Pressable : View;
+  const wrapperProps = collapsed
+    ? { onPress: toggle, accessibilityRole: 'button' as const, accessibilityLabel: '展开今日重点' }
+    : {};
+
   return (
-    <View style={styles.panel}>
-      <Pressable onPress={toggle} style={styles.topRow} accessibilityRole="button" accessibilityLabel={collapsed ? '展开今日重点' : '收起今日重点'}>
+    <CardWrapper style={styles.panel} {...wrapperProps}>
+      <Pressable
+        onPress={toggle}
+        style={({ pressed }) => [styles.topRow, pressed && styles.topRowPressed]}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={collapsed ? '展开今日重点' : '收起今日重点'}
+      >
         <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
           <Ionicons name={meta.icon} size={18} color={meta.color} />
         </View>
@@ -51,12 +63,14 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
           </View>
           <Text style={txt.title} numberOfLines={collapsed ? 1 : 2}>{focus.title}</Text>
         </View>
-        <Ionicons
-          name={collapsed ? 'chevron-down' : 'chevron-up'}
-          size={18}
-          color={colors.labelTertiary}
-          style={{ marginLeft: 4 }}
-        />
+        {/* 明显的 chevron 按钮 — 圆形背景 + brand 色 */}
+        <View style={styles.chevronBtn}>
+          <Ionicons
+            name={collapsed ? 'chevron-down' : 'chevron-up'}
+            size={20}
+            color={colors.brand}
+          />
+        </View>
       </Pressable>
 
       {!collapsed && (
@@ -90,7 +104,7 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
           </Pressable>
         </>
       )}
-    </View>
+    </CardWrapper>
   );
 }
 
@@ -104,10 +118,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadows.subtle,
   },
-  topRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  topRow: { flexDirection: 'row', gap: 10, alignItems: 'center', minHeight: 44 },
+  topRowPressed: { opacity: 0.6 },
   iconWrap: { width: 34, height: 34, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
   titleBlock: { flex: 1 },
   kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  chevronBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(10, 143, 143, 0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   evidenceRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   evidencePill: {
     flex: 1,

@@ -29,9 +29,20 @@ export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
   // 计算总条数供 collapsed 态展示
   const totalItems = agenda.sections.reduce((sum, s) => sum + (s.items?.length || 0), 0);
 
+  const CardWrapper: any = collapsed ? Pressable : View;
+  const wrapperProps = collapsed
+    ? { onPress: toggle, accessibilityRole: 'button' as const, accessibilityLabel: '展开 Agent 议程' }
+    : {};
+
   return (
-    <View style={styles.panel}>
-      <Pressable onPress={toggle} style={styles.header} accessibilityRole="button" accessibilityLabel={collapsed ? '展开 Agent 议程' : '收起 Agent 议程'}>
+    <CardWrapper style={styles.panel} {...wrapperProps}>
+      <Pressable
+        onPress={toggle}
+        style={({ pressed }) => [styles.header, pressed && styles.headerPressed]}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={collapsed ? '展开 Agent 议程' : '收起 Agent 议程'}
+      >
         <View style={styles.headerLeft}>
           <Ionicons name="pulse-outline" size={15} color={colors.brand} />
           <Text style={txt.header}>Agent 议程</Text>
@@ -39,11 +50,13 @@ export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={txt.date}>{agenda.date.slice(5)}</Text>
-          <Ionicons
-            name={collapsed ? 'chevron-down' : 'chevron-up'}
-            size={16}
-            color={colors.labelTertiary}
-          />
+          <View style={styles.chevronBtn}>
+            <Ionicons
+              name={collapsed ? 'chevron-down' : 'chevron-up'}
+              size={18}
+              color={colors.brand}
+            />
+          </View>
         </View>
       </Pressable>
 
@@ -75,7 +88,7 @@ export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
           </View>
         );
       })}
-    </View>
+    </CardWrapper>
   );
 }
 
@@ -96,8 +109,14 @@ const styles = StyleSheet.create({
     gap: 10,
     ...shadows.subtle,
   },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 36 },
+  headerPressed: { opacity: 0.6 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chevronBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(10, 143, 143, 0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   section: { gap: 5 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   row: {
