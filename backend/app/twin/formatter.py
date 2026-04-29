@@ -10,11 +10,49 @@ Twin → LLM context formatter。
   - Token 节省：每行不超过 ~100 字符
   - 紧凑但仍可读，适合作为 system/user prompt 片段
   - 不做解读、不做判断（那是 agent 的职责）
+  - 数据新鲜度标签: 每个分区 header 带 (今日/昨日/N 天前) + ⚠ 过期提示,
+    让 LLM synthesis 明白"这是几天前的数据", 而不是假设全部实时
 """
 
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from app.twin.schema import HealthTwin
+
+
+def _age_label(freshness_ts: Optional[str], stale_days: int = 7, dead_days: int = 30) -> str:
+    """把 ISO 时间戳转成 "(今日)" / "(昨日)" / "(3 天前) ⚠" / "(1 月前) ⚠⚠" / ""
+
+    Args:
+        freshness_ts: Twin.freshness.<field> 里的 ISO 字符串, 可为 None
+        stale_days: 超过这个天数标一个 ⚠
+        dead_days: 超过这个天数标两个 ⚠⚠
+    """
+    if not freshness_ts:
+        return ""
+    try:
+        s = freshness_ts if "T" in freshness_ts else freshness_ts
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        ts = datetime.fromisoformat(s)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - ts).days
+    except Exception:
+        return ""
+    if age < 0:
+        return ""
+    if age == 0:
+        return "(今日)"
+    if age == 1:
+        return "(昨日)"
+    if age < stale_days:
+        return f"({age} 天前)"
+    if age < dead_days:
+        return f"({age} 天前) ⚠"
+    if age < 365:
+        return f"({age // 30} 月前) ⚠⚠"
+    return f"({age // 365} 年前) ⚠⚠"
 
 
 def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int = 8) -> str:
@@ -66,7 +104,8 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if p.vo2max_running is not None:
         phys_parts.append(f"VO2max {p.vo2max_running:.0f}")
     if phys_parts:
-        lines.append("生理: " + ", ".join(phys_parts))
+        age = _age_label(twin.freshness.garmin)
+        lines.append(f"生理{age}: " + ", ".join(phys_parts))
 
     # ─── 身体
     b = twin.body_composition
@@ -83,7 +122,8 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if b.tdee_kcal is not None:
         body_parts.append(f"TDEE {b.tdee_kcal:.0f}kcal")
     if body_parts:
-        lines.append("身体: " + ", ".join(body_parts))
+        age = _age_label(twin.freshness.weight)
+        lines.append(f"身体{age}: " + ", ".join(body_parts))
 
     # ─── CGM 连续血糖
     c = twin.cgm
@@ -117,7 +157,8 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if L.blood_glucose is not None:
         lab_parts.append(f"血糖 {L.blood_glucose}")
     if lab_parts:
-        lines.append("化验: " + ", ".join(lab_parts))
+        age = _age_label(twin.freshness.labs, stale_days=90, dead_days=365)
+        lines.append(f"化验{age}: " + ", ".join(lab_parts))
     if L.flagged_abnormal:
         abn_names = [str(a.get("item_name")) for a in L.flagged_abnormal[:max_abnormal] if a.get("item_name")]
         if abn_names:
@@ -127,7 +168,8 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
     if twin.medication.active_meds:
         med_names = [m.get("name") for m in twin.medication.active_meds if m.get("name")]
         if med_names:
-            line = f"在服药物 ({len(med_names)}种): " + ", ".join(med_names[:6])
+            age = _age_label(twin.freshness.medication)
+            line = f"在服药物{age} ({len(med_names)}种): " + ", ".join(med_names[:6])
             if twin.medication.adherence_7d_pct is not None:
                 line += f" | 7日依从率 {twin.medication.adherence_7d_pct:.0f}%"
             lines.append(line)
@@ -220,7 +262,8 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
             acwr_text += f"({beh.acwr_zone})"
         beh_parts.append(acwr_text)
     if beh_parts:
-        lines.append("今日行为: " + ", ".join(beh_parts))
+        age = _age_label(twin.freshness.diet, stale_days=2, dead_days=7)
+        lines.append(f"今日行为{age}: " + ", ".join(beh_parts))
 
     # ─── 鼻炎 / 慢病
     if beh.sneeze_count_today or beh.nasal_wash_count_today:

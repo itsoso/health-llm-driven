@@ -10,7 +10,7 @@ Digital Health Twin builder 单元测试。
 """
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -381,3 +381,76 @@ class TestTwinFormatter:
         assert "HRV 50ms" in text
         assert "None" not in text
         assert "压力" not in text  # 没设值就不该出现
+
+
+class TestAgeLabel:
+    def test_none_returns_empty(self):
+        from app.twin.formatter import _age_label
+        assert _age_label(None) == ""
+        assert _age_label("") == ""
+
+    def test_today(self):
+        from app.twin.formatter import _age_label
+        ts = datetime.now(timezone.utc).isoformat()
+        assert _age_label(ts) == "(今日)"
+
+    def test_yesterday(self):
+        from app.twin.formatter import _age_label
+        ts = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        assert _age_label(ts) == "(昨日)"
+
+    def test_stale_warns_one(self):
+        from app.twin.formatter import _age_label
+        ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        assert _age_label(ts) == "(10 天前) ⚠"
+
+    def test_dead_warns_two(self):
+        from app.twin.formatter import _age_label
+        ts = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+        assert _age_label(ts) == "(2 月前) ⚠⚠"
+
+    def test_years(self):
+        from app.twin.formatter import _age_label
+        ts = (datetime.now(timezone.utc) - timedelta(days=400)).isoformat()
+        assert _age_label(ts) == "(1 年前) ⚠⚠"
+
+    def test_labs_use_longer_window(self):
+        """化验默认 stale_days=90, 7 天不报 ⚠."""
+        from app.twin.formatter import _age_label
+        ts = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        assert _age_label(ts, stale_days=90, dead_days=365) == "(30 天前)"
+
+    def test_invalid_iso_returns_empty(self):
+        from app.twin.formatter import _age_label
+        assert _age_label("not-a-date") == ""
+
+    def test_physiological_header_with_stale_garmin(self):
+        """Garmin 7 天前 → Twin 生理分区应出现 "⚠" 提示 LLM."""
+        from app.twin.formatter import twin_to_prompt_blob
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+        twin.physiological = PhysiologicalState(hrv_latest=38.0)
+        twin.freshness.garmin = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        text = twin_to_prompt_blob(twin)
+        assert "⚠" in text
+        assert "生理(" in text
+
+    def test_labs_header_with_stale_6_months(self):
+        """化验 6 月前 → 应出现 ⚠ (stale 但还没 dead)."""
+        from app.twin.formatter import twin_to_prompt_blob
+        from app.twin.schema import LabsContext
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+        twin.labs = LabsContext(total_cholesterol=5.5)
+        twin.freshness.labs = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
+        text = twin_to_prompt_blob(twin)
+        assert "⚠" in text
+        assert "化验(" in text
+
+    def test_labs_header_with_dead_2_years(self):
+        """化验 2 年前 → 应出现 ⚠⚠ (dead)."""
+        from app.twin.formatter import twin_to_prompt_blob
+        from app.twin.schema import LabsContext
+        twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.utcnow()))
+        twin.labs = LabsContext(total_cholesterol=5.5)
+        twin.freshness.labs = (datetime.now(timezone.utc) - timedelta(days=730)).isoformat()
+        text = twin_to_prompt_blob(twin)
+        assert "⚠⚠" in text
