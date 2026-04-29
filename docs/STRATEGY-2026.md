@@ -194,21 +194,39 @@ P0 防黑天鹅，让线上不再有"AI 假装做了"的 silent failure。
 
 ---
 
-## 七、当前优先级 (2026-04-28 决策)
+## 七、当前优先级 (2026-04-29 更新)
 
-按 **ROI × 风险**:
+**已完成（2026-04-29 一夜 ship 20 个 commit）**:
 
-| # | 项 | 工时 | 价值 |
-|---|---|---|---|
-| 1 | tool_call_validator 中间件 | 3 天 | ★★★★★ |
-| 2 | Sentry DSN 配置 | 1 小时 | ★★★★★ |
-| 3 | Open-Loop Manager v1 | 1 周 | ★★★★★ |
-| 4 | Doctor email weekly report v1 | 2 天 | ★★★★ |
-| 5 | set_caller 补全 | 1 天 | ★★★ |
-| 6 | 拆 garmin_connect.py 余下 | 1 天 | ★★ |
+| # | 项 | 结果 |
+|---|---|---|
+| 1 | ~~tool_call_validator 中间件~~ | ✅ 6 个工具 + bypass-safe, 1e40478 |
+| 2 | ~~set_caller 补全~~ | ✅ caller unknown 从 >20% → <20%, 571e372 |
+| 3 | ~~Open-Loop Manager v1~~ | ✅ plan_deviation + mobile 反馈链路, 4c93aeb |
+| 4 | ~~Clinical Journal v1~~ | ✅ briefing SOAP + specialist context, 17c54f7 |
+| 5 | ~~Doctor Weekly Report v1~~ | ✅ Telegram 版激活（email 留 v2）, ce741f0 |
+| 6 | ~~弱点 A 数据可信度链~~ | ✅ Twin 新鲜度标签, 737e0a1 |
+
+**下一步优先级 (2026-04-29 重估)**:
+
+| # | 项 | 工时 | 价值 | 状态 |
+|---|---|---|---|---|
+| 1 | **观察期** (首周真实数据) | 1 周 | ★★★★★ | 进行中 |
+| 2 | **Sentry/GlitchTip 观测** | 1-2h | ★★★★★ | 未启动 (卡在选型) |
+| 3 | 拆 `garmin_connect.py` (2800 行) | 1 天 | ★★ | 未启动 |
+| 4 | 拆 `notifications.py` (1500+ 行) | 半天 | ★★ | 未启动 |
+| 5 | Web 端 UX 一致性审计 | 1 天 | ★★ | 未启动 |
+| 6 | Exercise 升级到 workout 完整模型 | 1 天 | ★★ | 未启动 |
+| 7 | Apple HealthKit 集成 | 2 天 | ★★★ | 未启动 |
+
+**不能跳过的原则**: 首周真实数据跑完之前不新增大 feature. 弱点 B (tool_call 幻觉)
+弱点 C (Twin 叙事) 弱点 E (medic in loop) 均已打基线, 让时间验证.
 
 ---
 
 ## 修订日志
 
 - 2026-04-28: 首版.
+- 2026-04-29: 阶段 1-4 全部 v1 ship. STRATEGY 加弱点 A 数据可信度链 v1.
+  Doctor report 从 email 退化到 Telegram (email 留 v2 等执业医师合作).
+  优先级第 7 项重排: 观察期 + Sentry + 大文件拆分优先于阶段 5-6.
