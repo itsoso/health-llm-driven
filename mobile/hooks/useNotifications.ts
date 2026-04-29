@@ -94,6 +94,12 @@ async function registerNotificationCategories() {
     { identifier: 'TAKEN', buttonTitle: '已服用', options: { opensAppToForeground: false } },
     { identifier: 'SKIP', buttonTitle: '跳过', options: { opensAppToForeground: false } },
   ]);
+  // Open-Loop Manager (主动循环推送): 3 actions 无需打开 app
+  await Notifications.setNotificationCategoryAsync('OPEN_LOOP', [
+    { identifier: 'DONE', buttonTitle: '已处理', options: { opensAppToForeground: false } },
+    { identifier: 'SNOOZE_7D', buttonTitle: '暂停 7 天', options: { opensAppToForeground: false } },
+    { identifier: 'NOT_INTERESTED', buttonTitle: '不感兴趣', options: { opensAppToForeground: false, isDestructive: true } },
+  ]);
 }
 
 function handleNotificationResponse(response: Notifications.NotificationResponse) {
@@ -104,6 +110,10 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
   // Handle actionable notification buttons (background actions)
   if (actionId === 'TAKEN' || actionId === 'SKIP') {
     handleQuickAction(actionId, data);
+    return;
+  }
+  if (actionId === 'DONE' || actionId === 'SNOOZE_7D' || actionId === 'NOT_INTERESTED') {
+    handleOpenLoopAction(actionId, data);
     return;
   }
 
@@ -157,5 +167,31 @@ async function handleQuickAction(action: string, data?: Record<string, any>) {
     }
   } catch {
     // Background action failed silently — user can check in the app later
+  }
+}
+
+// Open-Loop Manager 的 3 个 action → POST /open-loop/{history_id}/feedback
+// history_id 由后端预写 OpenLoopHistory 时生成, 塞进 APNs data.
+async function handleOpenLoopAction(
+  actionId: 'DONE' | 'SNOOZE_7D' | 'NOT_INTERESTED',
+  data?: Record<string, any>,
+) {
+  if (!data?.history_id) return;
+  const historyId = Number(data.history_id);
+  if (!historyId || isNaN(historyId)) return;
+
+  const actionMap: Record<string, string> = {
+    DONE: 'done',
+    SNOOZE_7D: 'snooze_7d',
+    NOT_INTERESTED: 'not_interested',
+  };
+  const action = actionMap[actionId];
+  if (!action) return;
+
+  try {
+    const { default: api } = await import('../services/api');
+    await api.post(`/open-loop/${historyId}/feedback`, { action });
+  } catch {
+    // Background feedback failed silently — server-side dedup still applies
   }
 }

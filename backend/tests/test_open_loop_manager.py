@@ -10,6 +10,7 @@ from app.tasks.open_loop_manager import (
     _detect_action_card_due,
     _detect_sync_stale,
     _detect_trend_anomaly,
+    _detect_plan_deviation,
 )
 
 
@@ -188,3 +189,115 @@ def test_collect_sorts_by_score(db):
     assert len(loops) >= 2
     scores = [l.score for l in loops]
     assert scores == sorted(scores, reverse=True)
+
+
+# ────── plan_deviation ──────
+
+
+def _make_tmpl(db, user_id, category="exercise", days_since_checkin=None, **overrides):
+    """帮手: 建一个 daily CheckinTemplate, last_checkin_date 从今天倒推."""
+    from app.models.checkin import CheckinTemplate
+    defaults = dict(
+        user_id=user_id,
+        name=overrides.get("name", "跑步" if category == "exercise" else "维生素D"),
+        category=category,
+        frequency="daily",
+        is_active=True,
+        is_archived=False,
+        icon=overrides.get("icon", "🏃" if category == "exercise" else "💊"),
+    )
+    defaults.update(overrides)
+    if days_since_checkin is not None:
+        defaults["last_checkin_date"] = date.today() - timedelta(days=days_since_checkin)
+    t = CheckinTemplate(**defaults)
+    db.add(t); db.commit(); db.refresh(t)
+    return t
+
+
+def test_plan_deviation_exercise_3_days_triggers(db):
+    _make_tmpl(db, user_id=100, category="exercise", days_since_checkin=3, name="深蹲")
+    loops = _detect_plan_deviation(db, user_id=100)
+    assert len(loops) == 1
+    assert loops[0].kind == "plan_drift"
+    assert "深蹲" in loops[0].title
+    assert "3 天" in loops[0].title
+    # exercise base 45 → 3 天刚到阈值 → score = 45
+    assert loops[0].score == 45
+
+
+def test_plan_deviation_exercise_2_days_quiet(db):
+    """2 天没打卡未到阈值 (3 天), 不报."""
+    _make_tmpl(db, user_id=101, category="exercise", days_since_checkin=2)
+    assert _detect_plan_deviation(db, user_id=101) == []
+
+
+def test_plan_deviation_medicine_higher_severity(db):
+    """同样 3 天断卡, medicine 基础分 70, 远高于 exercise 的 45."""
+    _make_tmpl(db, user_id=102, category="medicine", days_since_checkin=3, name="二甲双胍")
+    loops = _detect_plan_deviation(db, user_id=102)
+    assert len(loops) == 1
+    assert loops[0].score == 70
+    assert "用药" in loops[0].body
+    assert "二甲双胍" in loops[0].body
+
+
+def test_plan_deviation_score_grows_with_days(db):
+    """断裂越久分越高 (每多一天 +5)."""
+    _make_tmpl(db, user_id=103, category="medicine", days_since_checkin=7, name="钙片")
+    loops = _detect_plan_deviation(db, user_id=103)
+    # medicine base 70 + (7-3)*5 = 90
+    assert loops[0].score == 90
+
+
+def test_plan_deviation_score_capped_at_95(db):
+    """再长的断裂不超过 95 (保留给更紧急信号)."""
+    _make_tmpl(db, user_id=104, category="medicine", days_since_checkin=60)
+    loops = _detect_plan_deviation(db, user_id=104)
+    assert loops[0].score == 95
+
+
+def test_plan_deviation_cold_start_silent(db):
+    """从未打卡 (last_checkin_date=None) 的模板不报, 不骚扰新用户."""
+    _make_tmpl(db, user_id=105, category="exercise", days_since_checkin=None)
+    assert _detect_plan_deviation(db, user_id=105) == []
+
+
+def test_plan_deviation_ignores_health_and_habit(db):
+    """只抓 exercise/medicine, health/habit 不报."""
+    _make_tmpl(db, user_id=106, category="health", days_since_checkin=5, name="测血压")
+    _make_tmpl(db, user_id=106, category="habit", days_since_checkin=10, name="冥想")
+    assert _detect_plan_deviation(db, user_id=106) == []
+
+
+def test_plan_deviation_ignores_archived_and_inactive(db):
+    """归档或停用的模板不报."""
+    _make_tmpl(db, user_id=107, category="exercise",
+               days_since_checkin=10, is_archived=True, name="跳绳1")
+    _make_tmpl(db, user_id=107, category="medicine",
+               days_since_checkin=10, is_active=False, name="已停药")
+    assert _detect_plan_deviation(db, user_id=107) == []
+
+
+def test_plan_deviation_ignores_non_daily_frequency(db):
+    """weekly / monthly 频率的模板不被 3 天阈值误伤."""
+    _make_tmpl(db, user_id=108, category="exercise",
+               days_since_checkin=5, frequency="weekly")
+    assert _detect_plan_deviation(db, user_id=108) == []
+
+
+def test_plan_deviation_signal_key_uses_template_id(db):
+    """signal_key 带 template_id, 保证 dedup 粒度是"某个打卡项", 而不是"运动"整类."""
+    t1 = _make_tmpl(db, user_id=109, category="exercise", days_since_checkin=4, name="俯卧撑")
+    t2 = _make_tmpl(db, user_id=109, category="medicine", days_since_checkin=4, name="益生菌")
+    loops = _detect_plan_deviation(db, user_id=109)
+    assert len(loops) == 2
+    keys = {l.signal_key for l in loops}
+    assert f"template_id={t1.id}" in keys
+    assert f"template_id={t2.id}" in keys
+
+
+def test_plan_deviation_collect_integration(db):
+    """plan_deviation 已接入 collect_open_loops."""
+    _make_tmpl(db, user_id=110, category="medicine", days_since_checkin=5, name="华法林")
+    loops = collect_open_loops(db, user_id=110)
+    assert any(l.kind == "plan_drift" for l in loops)

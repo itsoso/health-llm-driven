@@ -209,6 +209,61 @@ def _detect_trend_anomaly(db, user_id: int) -> List[OpenLoop]:
     return loops
 
 
+def _detect_plan_deviation(db, user_id: int) -> List[OpenLoop]:
+    """exercise / medicine 类日打卡连续 3+ 天未完成 → 断点提示.
+
+    数据源: CheckinTemplate.last_checkin_date (update_completion_rate 后冗余更新).
+    只抓 frequency=daily + is_active + 非 archived 的 exercise/medicine 模板.
+    last_checkin_date=None 视为冷启动, 不报 (不骚扰新用户).
+    """
+    from app.models.checkin import CheckinTemplate
+
+    THRESHOLD_DAYS = 3
+    today = datetime.now(CHINA_TIMEZONE).date()
+
+    templates = db.query(CheckinTemplate).filter(
+        CheckinTemplate.user_id == user_id,
+        CheckinTemplate.is_active == True,   # noqa: E712
+        CheckinTemplate.is_archived == False,  # noqa: E712
+        CheckinTemplate.category.in_(["exercise", "medicine"]),
+        CheckinTemplate.frequency == "daily",
+    ).all()
+
+    loops: List[OpenLoop] = []
+    for t in templates:
+        # 冷启动 (从未打卡) 不报; 该催的是 "打过但断了"
+        if t.last_checkin_date is None:
+            continue
+        days_since = (today - t.last_checkin_date).days
+        if days_since < THRESHOLD_DAYS:
+            continue
+
+        # medicine 严重度高于 exercise (忘药比漏运动后果更重)
+        severity_base = 70 if t.category == "medicine" else 45
+        score = min(95, severity_base + (days_since - THRESHOLD_DAYS) * 5)
+
+        cat_label = "用药" if t.category == "medicine" else "运动"
+        icon = t.icon or ("💊" if t.category == "medicine" else "🏃")
+        loops.append(OpenLoop(
+            user_id=user_id,
+            kind="plan_drift",
+            title=f"{icon} {t.name} 断了 {days_since} 天",
+            body=f"{cat_label}「{t.name}」连续 {days_since} 天未完成. 重建节奏从今天开始.",
+            score=score,
+            deeplink=f"health://checkin/{t.id}",
+            signal_key=f"template_id={t.id}",
+            metadata={
+                "template_id": t.id,
+                "template_name": t.name,
+                "category": t.category,
+                "days_since": days_since,
+                "last_date": str(t.last_checkin_date),
+            },
+        ))
+
+    return loops
+
+
 # ────────────────────── 主入口 ──────────────────────
 
 
@@ -220,6 +275,7 @@ def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
         _detect_action_card_due,
         _detect_sync_stale,
         _detect_trend_anomaly,
+        _detect_plan_deviation,
     ):
         try:
             loops.extend(detector(db, user_id) or [])
@@ -284,8 +340,49 @@ def _record_history(db, user_id: int, loop: OpenLoop, ok: bool, error: str = "")
         logger.warning(f"[open_loop] 写 history 失败 (旁路): {e}")
 
 
+def _create_history_pending(db, user_id: int, loop: OpenLoop):
+    """预写一条 delivery_ok=0 的 history, 返回 row (含 id). mobile 回调要这个 id."""
+    from app.models.open_loop_history import OpenLoopHistory
+
+    row = OpenLoopHistory(
+        user_id=user_id,
+        kind=loop.kind,
+        signal_key=loop.signal_key or "",
+        score=loop.score,
+        title=loop.title,
+        body=loop.body,
+        deeplink=loop.deeplink,
+        delivery_ok=0,  # pending, 推送完后更新
+        delivery_error=None,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _finalize_history(db, history_id: int, ok: bool, error: str = "") -> None:
+    """推送完成后更新 delivery_ok / delivery_error."""
+    from app.models.open_loop_history import OpenLoopHistory
+
+    try:
+        row = db.query(OpenLoopHistory).filter(OpenLoopHistory.id == history_id).first()
+        if row:
+            row.delivery_ok = 1 if ok else 0
+            row.delivery_error = error or None
+            db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[open_loop] finalize history id={history_id} 失败 (旁路): {e}")
+
+
 def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
-    """通过 ios_push.send_push 发 APNs + 写 history. 含 dedup."""
+    """通过 ios_push.send_push 发 APNs + 写 history. 含 dedup.
+
+    流程: 先写 history (delivery_ok=0, 拿 id) → 把 history_id 塞进 APNs data →
+    push → 用 id 回填 delivery_ok. 这样 mobile 点按钮回调时能带上
+    history_id 直接打 POST /open-loop/{id}/feedback.
+    """
     # dedup
     if _is_recently_pushed_or_snoozed(db, user_id, loop):
         logger.info(
@@ -309,6 +406,14 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
         if not setting.health_alert_enabled:
             return False
 
+        # 1) 预写 history (delivery_ok=0), 拿 id 给 APNs data
+        try:
+            history_row = _create_history_pending(db, user_id, loop)
+            history_id = history_row.id
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[open_loop] 预写 history 失败, 降级无 id 推送: {e}")
+            history_id = None
+
         service = IOSPushService()
         result = asyncio.run(service.send_push(
             device_token=setting.ios_device_token,
@@ -317,6 +422,7 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
             category="OPEN_LOOP",  # iOS 上对应 actions: 已处理 / 暂停7天 / 不感兴趣
             data={
                 "type": "open_loop",
+                "history_id": str(history_id) if history_id else "",
                 "kind": loop.kind,
                 "signal_key": loop.signal_key or "",
                 "deeplink": loop.deeplink or "",
@@ -324,8 +430,15 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
             },
         ))
         ok = bool(result and result.get("success"))
-        _record_history(db, user_id, loop, ok=ok,
-                        error="" if ok else (result or {}).get("error", "unknown"))
+        err = "" if ok else (result or {}).get("error", "unknown")
+
+        # 2) 回填 delivery_ok
+        if history_id is not None:
+            _finalize_history(db, history_id, ok=ok, error=err)
+        else:
+            # 降级路径: 没拿到 id, 走老 _record_history
+            _record_history(db, user_id, loop, ok=ok, error=err)
+
         return ok
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[open_loop] APNs 推送失败 user={user_id}: {e}")
