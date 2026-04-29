@@ -266,3 +266,124 @@ def get_recent_case_summary(db: Session, user_id: int, metric_key: Optional[str]
             lines.append(f"- 行动: {e.plan.split(chr(10))[0]}")
 
     return "\n".join(lines)
+
+
+def get_active_case_briefs(db: Session, user_id: int, limit: int = 5) -> List[dict]:
+    """返回该用户所有 active case thread 的简要 (theme/title/summary/last_updated).
+
+    供 specialist 或 cross-review 作为"用户有哪些 active 问题线"的上下文.
+    不加载 entries, 保持轻量 (specialist 会被并发调用, 查询成本要可控).
+    """
+    from app.models.clinical_journal import CaseThread
+
+    threads = db.query(CaseThread).filter(
+        CaseThread.user_id == user_id,
+        CaseThread.status == "active",
+    ).order_by(CaseThread.last_updated_at.desc()).limit(limit).all()
+
+    return [
+        {
+            "thread_id": t.id,
+            "theme": t.theme,
+            "metric_key": t.metric_key,
+            "title": t.title,
+            "summary": t.summary,
+            "severity": t.severity,
+            "last_updated_at": t.last_updated_at.isoformat() if t.last_updated_at else None,
+        }
+        for t in threads
+    ]
+
+
+def write_briefing_soap_entry(
+    db: Session,
+    *,
+    user_id: int,
+    target_date,  # datetime.date
+    briefing_md: str,
+    ai_narrative: Optional[str],
+    alert_messages: Optional[List[str]] = None,
+    source_conversation_id: Optional[int] = None,
+    source_message_id: Optional[int] = None,
+) -> Optional[int]:
+    """每日简报末尾旁路写一条 SOAP entry, theme='daily_briefing'.
+
+    与 write_soap_entry 不同: briefing 没跑 specialist 也没 findings, 所以直接
+    从 briefing_md / ai_narrative / alerts 切片组装 SOAP. fail-soft.
+
+    同一 (user, date) 已写过 → 跳过 (幂等).
+    """
+    from app.models.clinical_journal import CaseThread, ClinicalJournalEntry
+
+    try:
+        # 幂等: 同日 briefing 只写一条
+        existing = db.query(ClinicalJournalEntry.id).filter(
+            ClinicalJournalEntry.user_id == user_id,
+            ClinicalJournalEntry.created_by == "briefing_task",
+            ClinicalJournalEntry.subjective.like(f"{target_date}%"),
+        ).first()
+        if existing:
+            logger.info(f"[journal] briefing SOAP 已存在 user={user_id} date={target_date}, 跳过")
+            return None
+
+        # briefing 用专属 theme, 不绑 metric (是通用日记)
+        thread = _get_or_create_case_thread(db, user_id, theme="daily_briefing",
+                                             metric_key=None)
+        # 覆盖 title 更友好
+        if thread.title == "daily_briefing":
+            thread.title = "每日健康简报"
+
+        # S: 日期 + "每日简报"
+        subjective = f"{target_date} 每日简报"
+
+        # O: briefing_md 前 500 字 (已含睡眠/HRV/体重/化验 数字段)
+        objective = (briefing_md or "").strip()[:500]
+
+        # A: AI 叙事段 (≤800) + alerts 前 2 条
+        assessment_parts: List[str] = []
+        if ai_narrative:
+            assessment_parts.append(ai_narrative.strip()[:800])
+        if alert_messages:
+            for msg in alert_messages[:2]:
+                if msg:
+                    assessment_parts.append(f"⚠️ {msg[:120]}")
+        assessment = "\n".join(assessment_parts) or "(无 AI 叙事)"
+
+        # P: 从 briefing_md 里拆 "今日建议" 段 (notifications.py 用 "📌 今日建议：" 做 marker)
+        plan = "(本次无新行动卡片)"
+        if briefing_md and "今日建议" in briefing_md:
+            try:
+                after = briefing_md.split("今日建议", 1)[1]
+                # 拿到 "**" 之后到下一个段落分隔之间
+                plan_body = after.split("\n---", 1)[0].strip()
+                plan = plan_body[:500] if plan_body else plan
+            except Exception:
+                pass
+
+        entry = ClinicalJournalEntry(
+            user_id=user_id,
+            case_thread_id=thread.id,
+            subjective=subjective,
+            objective=objective,
+            assessment=assessment,
+            plan=plan,
+            source_conversation_id=source_conversation_id,
+            source_message_id=source_message_id,
+            used_specialists=None,
+            related_action_card_ids=None,
+            created_by="briefing_task",
+        )
+        db.add(entry)
+
+        thread.last_updated_at = datetime.now(timezone.utc)
+        if ai_narrative:
+            thread.summary = ai_narrative.strip().split("\n")[0][:300]
+
+        db.commit()
+        db.refresh(entry)
+        logger.info(f"[journal] briefing SOAP #{entry.id} user={user_id} date={target_date}")
+        return entry.id
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[journal] 写 briefing SOAP 失败 (旁路): {e}", exc_info=True)
+        return None

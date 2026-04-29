@@ -704,7 +704,10 @@ def _get_or_create_briefing_conversation(db, user_id: int, target_date: date):
 
 
 def _write_briefing_message(db, user_id: int, content: str, target_date: date):
-    """将日报内容作为 assistant 消息写入当日「每日健康简报」对话"""
+    """将日报内容作为 assistant 消息写入当日「每日健康简报」对话.
+
+    返回 (conversation_id, message_id), 供上层写 Clinical Journal SOAP 溯源.
+    """
     from app.models.openclaw import OpenClawMessage
 
     conv = _get_or_create_briefing_conversation(db, user_id, target_date)
@@ -716,6 +719,8 @@ def _write_briefing_message(db, user_id: int, content: str, target_date: date):
     db.add(msg)
     conv.updated_at = datetime.now(UTC)
     db.commit()
+    db.refresh(msg)
+    return conv.id, msg.id
 
 
 WEEKLY_REPORT_TITLE = "每周健康周报"
@@ -1074,6 +1079,7 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
         briefing_md = "\n".join(lines)
 
         # AI 叙事：用 LLM 把数据转为一段自然语言分析
+        ai_narrative = None  # 默认 None, try 失败时保留, 供后面写 SOAP 用
         try:
             from app.services.llm.factory import get_llm_provider
             from app.services.llm.usage_tracker import set_caller
@@ -1103,8 +1109,24 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
             logger.warning(f"[每日简报] 用户 {user_id} AI 叙事生成失败（不影响简报）: {e}")
 
         # 写入对话
-        _write_briefing_message(db, user_id, briefing_md, target_date)
+        conv_id, msg_id = _write_briefing_message(db, user_id, briefing_md, target_date)
         logger.info(f"[每日简报] 用户 {user_id} 简报已写入对话")
+
+        # 旁路: Clinical Journal 记一条 briefing SOAP entry (阶段 3 v1)
+        try:
+            from app.services.clinical_journal_service import write_briefing_soap_entry
+            write_briefing_soap_entry(
+                db,
+                user_id=user_id,
+                target_date=target_date,
+                briefing_md=briefing_md,
+                ai_narrative=ai_narrative,
+                alert_messages=[a.message for a in alerts if getattr(a, "message", None)],
+                source_conversation_id=conv_id,
+                source_message_id=msg_id,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[每日简报] 用户 {user_id} 写 Clinical Journal 失败（不影响简报）: {e}")
 
 
 # ---------------------------------------------------------------------------

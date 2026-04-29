@@ -215,3 +215,142 @@ class TestPromptInjection:
         # 时间正序 (旧 -> 新), 两条都该出现
         assert "昨天好累" in out
         assert "今天 HRV" in out
+
+
+# ─────────────── 阶段 3 v1 新增 ───────────────
+
+
+class TestActiveCaseBriefs:
+    def test_empty_for_new_user(self, db):
+        from app.services.clinical_journal_service import get_active_case_briefs
+        assert get_active_case_briefs(db, user_id=500) == []
+
+    def test_returns_only_active(self, db):
+        from app.services.clinical_journal_service import get_active_case_briefs
+
+        db.add(CaseThread(user_id=501, theme="liver", metric_key="alt",
+                         title="肝功能", status="active"))
+        db.add(CaseThread(user_id=501, theme="lipid", metric_key="ldl",
+                         title="血脂", status="resolved"))
+        db.commit()
+
+        briefs = get_active_case_briefs(db, user_id=501)
+        assert len(briefs) == 1
+        assert briefs[0]["theme"] == "liver"
+        assert briefs[0]["title"] == "肝功能"
+        assert "last_updated_at" in briefs[0]
+
+    def test_respects_limit(self, db):
+        from app.services.clinical_journal_service import get_active_case_briefs
+        for i, theme in enumerate(["liver", "lipid", "metabolic", "hypertension",
+                                    "recovery", "rhinitis"]):
+            db.add(CaseThread(user_id=502, theme=theme,
+                             metric_key=f"m{i}", title=f"t{i}", status="active"))
+        db.commit()
+        briefs = get_active_case_briefs(db, user_id=502, limit=3)
+        assert len(briefs) == 3
+
+    def test_ordered_by_last_updated(self, db):
+        from app.services.clinical_journal_service import get_active_case_briefs
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        db.add(CaseThread(user_id=503, theme="liver", title="旧", status="active",
+                         last_updated_at=now - timedelta(days=5)))
+        db.add(CaseThread(user_id=503, theme="lipid", title="新", status="active",
+                         last_updated_at=now))
+        db.commit()
+        briefs = get_active_case_briefs(db, user_id=503)
+        assert briefs[0]["title"] == "新"
+        assert briefs[1]["title"] == "旧"
+
+
+class TestBriefingSoap:
+    def test_writes_entry(self, db):
+        from datetime import date
+        from app.services.clinical_journal_service import write_briefing_soap_entry
+
+        entry_id = write_briefing_soap_entry(
+            db,
+            user_id=600,
+            target_date=date(2026, 4, 28),
+            briefing_md="昨日数据汇总:\n睡眠: 78分\n\n📌 今日建议：\n1. 早睡\n2. 喝水",
+            ai_narrative="你昨天睡眠一般，HRV 偏低，今天注意节奏。",
+            alert_messages=["HRV 持续偏低 3 天"],
+            source_conversation_id=1001,
+            source_message_id=2001,
+        )
+        assert entry_id is not None
+        entry = db.query(ClinicalJournalEntry).get(entry_id)
+        assert entry.created_by == "briefing_task"
+        assert "2026-04-28" in entry.subjective
+        assert "睡眠" in entry.objective
+        assert "HRV 偏低" in entry.assessment
+        assert "⚠️" in entry.assessment
+        assert "早睡" in entry.plan
+        assert entry.source_conversation_id == 1001
+        assert entry.source_message_id == 2001
+
+    def test_creates_daily_briefing_thread(self, db):
+        from datetime import date
+        from app.services.clinical_journal_service import write_briefing_soap_entry
+
+        write_briefing_soap_entry(
+            db, user_id=601, target_date=date(2026, 4, 28),
+            briefing_md="test", ai_narrative=None,
+        )
+        threads = db.query(CaseThread).filter(CaseThread.user_id == 601).all()
+        assert len(threads) == 1
+        assert threads[0].theme == "daily_briefing"
+        assert threads[0].title == "每日健康简报"
+
+    def test_idempotent_same_date(self, db):
+        """同 (user, date) 重复调用不产重复 entry."""
+        from datetime import date
+        from app.services.clinical_journal_service import write_briefing_soap_entry
+
+        id1 = write_briefing_soap_entry(
+            db, user_id=602, target_date=date(2026, 4, 28),
+            briefing_md="v1", ai_narrative="n1",
+        )
+        assert id1 is not None
+        id2 = write_briefing_soap_entry(
+            db, user_id=602, target_date=date(2026, 4, 28),
+            briefing_md="v2", ai_narrative="n2",
+        )
+        # 第二次应返回 None (已存在)
+        assert id2 is None
+        entries = db.query(ClinicalJournalEntry).filter(
+            ClinicalJournalEntry.user_id == 602).all()
+        assert len(entries) == 1
+        assert "v1" in entries[0].objective or "n1" in entries[0].assessment
+
+    def test_reuses_existing_thread(self, db):
+        """同用户多日 briefing 都聚合到同一 daily_briefing thread."""
+        from datetime import date
+        from app.services.clinical_journal_service import write_briefing_soap_entry
+
+        write_briefing_soap_entry(db, user_id=603,
+                                  target_date=date(2026, 4, 27),
+                                  briefing_md="d1", ai_narrative="n1")
+        write_briefing_soap_entry(db, user_id=603,
+                                  target_date=date(2026, 4, 28),
+                                  briefing_md="d2", ai_narrative="n2")
+        threads = db.query(CaseThread).filter(
+            CaseThread.user_id == 603,
+            CaseThread.theme == "daily_briefing",
+        ).all()
+        assert len(threads) == 1
+
+    def test_fail_soft_on_missing_fields(self, db):
+        """briefing_md / ai_narrative 都 None 也不崩 (fail-soft)."""
+        from datetime import date
+        from app.services.clinical_journal_service import write_briefing_soap_entry
+
+        entry_id = write_briefing_soap_entry(
+            db, user_id=604, target_date=date(2026, 4, 28),
+            briefing_md=None, ai_narrative=None,
+        )
+        # None briefing 还是能写 (assessment 会是 "(无 AI 叙事)")
+        assert entry_id is not None
+        entry = db.query(ClinicalJournalEntry).get(entry_id)
+        assert entry.assessment == "(无 AI 叙事)"

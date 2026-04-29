@@ -455,7 +455,16 @@ async def run_orchestrator(
     twin = build_twin(db, user_id)
     intent = classify_intent(req.query)
     specialists = _select_specialists(intent, twin, req.specialists)
-    findings = _run_specialists(twin, specialists, {"query": req.query, "db": db})
+    # 注入 active case threads (STRATEGY 阶段 3): specialist 可读 context['recent_cases']
+    # 了解用户有哪些"进行中的问题线"来决定是否开新 card / 避免重复.
+    try:
+        from app.services.clinical_journal_service import get_active_case_briefs
+        recent_cases = get_active_case_briefs(db, user_id, limit=5)
+    except Exception:
+        recent_cases = []
+    findings = _run_specialists(
+        twin, specialists, {"query": req.query, "db": db, "recent_cases": recent_cases}
+    )
 
     system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
 
@@ -523,6 +532,11 @@ async def stream_orchestrator(
         twin = build_twin(db, user_id)
         intent = classify_intent(req.query)
         specialists = _select_specialists(intent, twin, req.specialists)
+        try:
+            from app.services.clinical_journal_service import get_active_case_briefs
+            recent_cases = get_active_case_briefs(db, user_id, limit=5)
+        except Exception:
+            recent_cases = []
 
         yield _sse(
             "intent",
@@ -534,7 +548,10 @@ async def stream_orchestrator(
             },
         )
 
-        findings = _run_specialists(twin, specialists, {"query": req.query, "db": db})
+        findings = _run_specialists(
+            twin, specialists,
+            {"query": req.query, "db": db, "recent_cases": recent_cases},
+        )
         for f in findings:
             yield _sse("specialist", f.model_dump(mode="json"))
 
