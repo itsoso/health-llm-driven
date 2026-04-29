@@ -1,4 +1,9 @@
-"""LLM 日期幻觉守门 — 防止 GPT-4o-mini 把今天的记录写到 2023/2024."""
+"""LLM 日期幻觉守门 — 防止 GPT-4o-mini 把今天的记录写到 2023/2024.
+
+走真实链路 _execute_tool (prelude 里的 validate_tool_call 会先 coerce 日期),
+而不是直接打 _exec_health_record, 以免绕过守门.
+"""
+import json
 from datetime import datetime, date, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -19,10 +24,9 @@ async def test_overrides_record_date_when_far_past(db):
         return '{"id": 1, "ok": true}'
 
     with patch.object(executor, '_api_post', new=AsyncMock(side_effect=fake_post)):
-        result = await executor._exec_health_record(
-            base="http://test",
-            headers={},
-            args={
+        await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
                 "record_type": "diet",
                 "data": {
                     "meal_type": "dinner",
@@ -30,11 +34,10 @@ async def test_overrides_record_date_when_far_past(db):
                     "calories": 350,
                     "record_date": "2023-10-09",  # LLM 幻觉
                 },
-            },
+            }),
+            user_token=None,
         )
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    # 但 BEIJING_TZ 可能跟测试机时区差 8h, 允许 ±1 天
     expected_today = date.today()
     actual_dates = {(expected_today - timedelta(days=1)).isoformat(),
                     expected_today.isoformat(),
@@ -59,15 +62,16 @@ async def test_keeps_recent_date(db):
         return '{"id": 1}'
 
     with patch.object(executor, '_api_post', new=AsyncMock(side_effect=fake_post)):
-        await executor._exec_health_record(
-            base="http://test", headers={},
-            args={
+        await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
                 "record_type": "diet",
                 "data": {
                     "meal_type": "lunch", "food_items": "三明治",
                     "record_date": yesterday,
                 },
-            },
+            }),
+            user_token=None,
         )
 
     assert captured.get("record_date") == yesterday
@@ -86,15 +90,16 @@ async def test_overrides_invalid_format(db):
         return '{"id": 1}'
 
     with patch.object(executor, '_api_post', new=AsyncMock(side_effect=fake_post)):
-        await executor._exec_health_record(
-            base="http://test", headers={},
-            args={
+        await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
                 "record_type": "diet",
                 "data": {
                     "meal_type": "lunch", "food_items": "三明治",
                     "record_date": "Tuesday",  # 不合法
                 },
-            },
+            }),
+            user_token=None,
         )
 
     # 应该被改成有效的 YYYY-MM-DD

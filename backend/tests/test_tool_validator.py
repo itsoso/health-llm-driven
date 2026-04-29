@@ -1,9 +1,9 @@
-"""tool_call_validator 单测 — 守门所有 LLM 给的 health_record 参数."""
+"""tool_call_validator 单测 — 守门所有 LLM 给的 tool_call 参数."""
 from datetime import date, datetime, timedelta
 
 import pytest
 
-from app.services.llm.tool_validator import validate_health_record
+from app.services.llm.tool_validator import validate_health_record, validate_tool_call
 
 
 # ───────────── 日期守门 ─────────────
@@ -151,3 +151,235 @@ def test_yesterday_repro_bug_now_caught():
     assert v["data"]["record_date"] != "2023-10-09"
     today_year = str(datetime.now().year)
     assert today_year in v["data"]["record_date"]
+
+
+# ═══════════════════════════════════════════════════════════════
+# 统一入口 validate_tool_call — 覆盖所有 6 个工具
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestDispatcher:
+    def test_unknown_tool_silent_passthrough(self):
+        v = validate_tool_call("unknown_tool", {"foo": "bar"})
+        assert v["error"] is None
+        assert v["warnings"] == []
+        assert v["data"]["foo"] == "bar"
+
+    def test_non_dict_args_passthrough(self):
+        v = validate_tool_call("health_query", "not a dict")  # type: ignore
+        assert v["error"] is None
+
+    def test_health_record_routes_through(self):
+        """health_record 分支复用 validate_health_record."""
+        v = validate_tool_call("health_record", {
+            "record_type": "weight",
+            "data": {"weight": 72.0, "record_date": "2023-10-09"},
+        })
+        assert v["error"] is None
+        assert v["data"]["data"]["record_date"] != "2023-10-09"
+
+    def test_health_record_with_non_dict_data(self):
+        """LLM 乱塞 data=str, 应当 coerce 成 dict 而不是崩."""
+        v = validate_tool_call("health_record", {
+            "record_type": "water",
+            "data": "not a dict",
+        })
+        assert isinstance(v["data"]["data"], dict)
+
+    def test_enum_registry_sync_with_schema(self):
+        """validate_tool_call 的 enum 必须和 tool_schema_registry 一致."""
+        from app.services.tool_schema_registry import HEALTH_TOOLS
+        from app.services.llm.tool_validator import (
+            _QUERY_DIMENSIONS, _ANALYSIS_TYPES, _ENV_CHECK_TYPES, _PLAN_ACTIONS,
+        )
+        schemas = {t["function"]["name"]: t["function"]["parameters"]["properties"]
+                   for t in HEALTH_TOOLS}
+        assert set(schemas["health_query"]["dimension"]["enum"]) == _QUERY_DIMENSIONS
+        assert set(schemas["health_analysis"]["analysis_type"]["enum"]) == _ANALYSIS_TYPES
+        assert set(schemas["environment_check"]["check_type"]["enum"]) == _ENV_CHECK_TYPES
+        assert set(schemas["manage_plan"]["action"]["enum"]) == _PLAN_ACTIONS
+
+
+class TestQueryGuard:
+    def test_unknown_dimension_coerced(self):
+        v = validate_tool_call("health_query", {"dimension": "foo"})
+        assert v["data"]["dimension"] == "comprehensive"
+        assert any("dimension" in w for w in v["warnings"])
+
+    def test_valid_dimension_kept(self):
+        v = validate_tool_call("health_query", {"dimension": "hrv", "days": 14})
+        assert v["data"]["dimension"] == "hrv"
+        assert v["data"]["days"] == 14
+        assert v["warnings"] == []
+
+    def test_days_out_of_range_coerced(self):
+        v = validate_tool_call("health_query", {"dimension": "sleep", "days": 99999})
+        assert v["data"]["days"] == 7
+
+    def test_days_zero_coerced(self):
+        v = validate_tool_call("health_query", {"dimension": "sleep", "days": 0})
+        assert v["data"]["days"] == 7
+
+    def test_days_not_int_coerced(self):
+        v = validate_tool_call("health_query", {"dimension": "sleep", "days": "many"})
+        assert v["data"]["days"] == 7
+
+    def test_indicator_dropped_when_dim_irrelevant(self):
+        v = validate_tool_call("health_query", {"dimension": "sleep", "indicator": "LDL"})
+        assert "indicator" not in v["data"]
+
+    def test_indicator_kept_for_medical_exam(self):
+        v = validate_tool_call("health_query", {
+            "dimension": "medical_exam", "indicator": "LDL",
+        })
+        assert v["data"]["indicator"] == "LDL"
+
+    def test_indicator_truncated(self):
+        v = validate_tool_call("health_query", {
+            "dimension": "genetic", "indicator": "X" * 500,
+        })
+        assert len(v["data"]["indicator"]) == 64
+
+    def test_dimension_missing_coerced_to_default(self):
+        v = validate_tool_call("health_query", {})
+        assert v["data"]["dimension"] == "comprehensive"
+
+
+class TestAnalysisGuard:
+    def test_unknown_type_coerced(self):
+        v = validate_tool_call("health_analysis", {"analysis_type": "foo"})
+        assert v["data"]["analysis_type"] == "comprehensive"
+        assert any("analysis_type" in w for w in v["warnings"])
+
+    def test_orchestrator_requires_question(self):
+        v = validate_tool_call("health_analysis", {"analysis_type": "orchestrator"})
+        assert v["error"] is not None
+        assert "question" in v["error"]
+
+    def test_orchestrator_with_question_ok(self):
+        v = validate_tool_call("health_analysis", {
+            "analysis_type": "orchestrator", "question": "我最近为什么 HRV 偏低?",
+        })
+        assert v["error"] is None
+
+    def test_non_orchestrator_no_question_ok(self):
+        v = validate_tool_call("health_analysis", {"analysis_type": "trend"})
+        assert v["error"] is None
+
+    def test_question_truncated(self):
+        v = validate_tool_call("health_analysis", {
+            "analysis_type": "orchestrator", "question": "x" * 3000,
+        })
+        assert len(v["data"]["question"]) == 2000
+
+    def test_days_bounded(self):
+        v = validate_tool_call("health_analysis", {
+            "analysis_type": "trend", "days": -5,
+        })
+        assert v["data"]["days"] == 7
+
+
+class TestEnvironmentGuard:
+    def test_unknown_check_type_coerced(self):
+        v = validate_tool_call("environment_check", {"check_type": "foo"})
+        assert v["data"]["check_type"] == "weather"
+
+    def test_valid_check_type_kept(self):
+        v = validate_tool_call("environment_check", {"check_type": "air_quality"})
+        assert v["data"]["check_type"] == "air_quality"
+        assert v["warnings"] == []
+
+
+class TestSupplementGuard:
+    def test_empty_args_ok(self):
+        v = validate_tool_call("supplement_guide", {})
+        assert v["error"] is None
+
+    def test_extra_args_stripped_silently(self):
+        """LLM 乱塞字段是常见幻觉, 不 warn 不 error, silent strip."""
+        v = validate_tool_call("supplement_guide", {"foo": "bar", "days": 7})
+        assert v["error"] is None
+        assert v["data"] == {}
+        assert v["warnings"] == []
+
+
+class TestManagePlanGuard:
+    def test_unknown_action_error(self):
+        v = validate_tool_call("manage_plan", {"action": "delete_everything", "data": {}})
+        assert v["error"] is not None
+        assert "action" in v["error"]
+
+    def test_missing_action_error(self):
+        v = validate_tool_call("manage_plan", {"data": {}})
+        assert v["error"] is not None
+
+    def test_generate_weekly_target_week_coerced(self):
+        v = validate_tool_call("manage_plan", {
+            "action": "generate_weekly",
+            "data": {"target_week": "someday"},
+        })
+        assert v["data"]["data"]["target_week"] == "current"
+
+    def test_generate_weekly_valid(self):
+        v = validate_tool_call("manage_plan", {
+            "action": "generate_weekly", "data": {"target_week": "next"},
+        })
+        assert v["error"] is None
+
+    def test_complete_item_missing_plan_id_error(self):
+        v = validate_tool_call("manage_plan", {
+            "action": "complete_item", "data": {"item_id": 5},
+        })
+        assert v["error"] is not None
+        assert "plan_id" in v["error"]
+
+    def test_complete_item_no_db_skips_check(self):
+        """测试模式 (无 db) 跳过越权检查."""
+        v = validate_tool_call("manage_plan", {
+            "action": "complete_item", "data": {"plan_id": 99, "item_id": 5},
+        })
+        assert v["error"] is None
+
+    def test_complete_item_cross_user_blocked(self, db):
+        """LLM 编造 plan_id 属于别人, 应当拦截."""
+        v = validate_tool_call("manage_plan", {
+            "action": "complete_item",
+            "data": {"plan_id": 99999, "item_id": 5},
+        }, db=db, user_id=1)
+        assert v["error"] is not None
+        assert "99999" in v["error"]
+
+    def test_save_to_card_card_type_coerced(self):
+        v = validate_tool_call("manage_plan", {
+            "action": "save_to_card",
+            "data": {"card_type": "foo", "title": "t", "content": "c"},
+        })
+        assert v["data"]["data"]["card_type"] == "insight"
+
+    def test_save_to_card_content_truncated(self):
+        v = validate_tool_call("manage_plan", {
+            "action": "save_to_card",
+            "data": {"card_type": "plan", "title": "t", "content": "x" * 20000},
+        })
+        assert len(v["data"]["data"]["content"]) == 10000
+
+    def test_save_to_card_title_truncated(self):
+        v = validate_tool_call("manage_plan", {
+            "action": "save_to_card",
+            "data": {"card_type": "plan", "title": "t" * 500, "content": "c"},
+        })
+        assert len(v["data"]["data"]["title"]) == 200
+
+
+class TestBypassSafe:
+    def test_validator_exception_does_not_propagate(self, monkeypatch):
+        """validator 自身崩 → 放行, 不让工具调用挂."""
+        from app.services.llm import tool_validator as tv
+
+        def boom(*a, **k):
+            raise RuntimeError("validator crashed")
+
+        monkeypatch.setitem(tv._TOOL_VALIDATORS, "health_query", boom)
+        v = tv.validate_tool_call("health_query", {"dimension": "sleep"})
+        assert v["error"] is None
+        assert v["warnings"] == []

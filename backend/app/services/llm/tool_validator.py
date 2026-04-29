@@ -250,3 +250,245 @@ def validate_health_record(
         "warnings": warnings,
         "error": error,
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# 统一入口 validate_tool_call — 所有 6 个工具的总守门
+# ═══════════════════════════════════════════════════════════════
+
+# 工具枚举白名单 (与 tool_schema_registry.HEALTH_TOOLS 对齐, 测试会比对一致性)
+_QUERY_DIMENSIONS = {
+    "comprehensive", "sleep", "heart_rate", "hrv", "activity",
+    "spo2", "spo2_sleep_correlation", "weight", "blood_pressure",
+    "supplements", "water", "diet", "exercise", "body_battery", "stress",
+    "medical_exam", "genetic", "genetic_cognitive", "genetic_personality",
+    "genetic_comprehensive", "medication",
+}
+_ANALYSIS_TYPES = {
+    "comprehensive", "sleep_insight", "heart_rate_insight",
+    "recovery_status", "risk_factors", "trend",
+    "supplement_effectiveness", "orchestrator",
+}
+_ENV_CHECK_TYPES = {"weather", "air_quality", "outdoor_suitability"}
+_PLAN_ACTIONS = {"generate_weekly", "complete_item", "save_to_card"}
+_CARD_TYPES = {"plan", "insight", "recommendation"}
+_TARGET_WEEKS = {"current", "next"}
+
+_INDICATOR_ALLOWED_DIMS = {"medical_exam", "genetic"}
+
+
+def _metric(tool: str, field: str, reason: str) -> None:
+    """结构化 metric 日志 — Sentry 接入后可直接聚合 (STRATEGY 第七节项 2)."""
+    logger.info("metric: tool_validator_coerced tool=%s field=%s reason=%s",
+                tool, field, reason)
+
+
+def _coerce_enum(
+    tool: str, args: Dict[str, Any], field: str,
+    allowed: set, default: Optional[str], warnings: list,
+) -> None:
+    """枚举越界 → coerce 到 default. default=None 表示越界则 pop."""
+    v = args.get(field)
+    if v is None or v in allowed:
+        return
+    msg = f"[tool_validator] {tool}.{field}={v!r} 不在白名单, 修正为 {default!r}"
+    warnings.append(msg)
+    logger.warning(msg)
+    _metric(tool, field, "enum_out_of_range")
+    if default is None:
+        args.pop(field, None)
+    else:
+        args[field] = default
+
+
+def _coerce_int_range(
+    tool: str, args: Dict[str, Any], field: str,
+    low: int, high: int, default: int, warnings: list,
+) -> None:
+    """整数越界 → coerce 到 default."""
+    if field not in args:
+        return
+    try:
+        v = int(args[field])
+    except (TypeError, ValueError):
+        msg = f"[tool_validator] {tool}.{field}={args[field]!r} 非整数, 修正为 {default}"
+        warnings.append(msg)
+        logger.warning(msg)
+        _metric(tool, field, "not_integer")
+        args[field] = default
+        return
+    if v < low or v > high:
+        msg = f"[tool_validator] {tool}.{field}={v} 超界 [{low},{high}], 修正为 {default}"
+        warnings.append(msg)
+        logger.warning(msg)
+        _metric(tool, field, "out_of_range")
+        args[field] = default
+    else:
+        args[field] = v
+
+
+def _validate_query(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    _coerce_enum("health_query", args, "dimension", _QUERY_DIMENSIONS, "comprehensive", warnings)
+    _coerce_int_range("health_query", args, "days", 1, 365, 7, warnings)
+    # indicator 只在 medical_exam / genetic 有意义, 其余 dim silent drop
+    if args.get("indicator") and args.get("dimension") not in _INDICATOR_ALLOWED_DIMS:
+        _metric("health_query", "indicator", "irrelevant_to_dim")
+        args.pop("indicator", None)
+    # indicator 长度兜底 (防止超长字串)
+    if isinstance(args.get("indicator"), str) and len(args["indicator"]) > 64:
+        args["indicator"] = args["indicator"][:64]
+        warnings.append("[tool_validator] health_query.indicator 截断到 64 字符")
+    if not args.get("dimension"):
+        args["dimension"] = "comprehensive"  # 必填, required 检查
+    return None
+
+
+def _validate_analysis(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    _coerce_enum("health_analysis", args, "analysis_type", _ANALYSIS_TYPES,
+                 "comprehensive", warnings)
+    _coerce_int_range("health_analysis", args, "days", 1, 365, 7, warnings)
+    # orchestrator 必填 question
+    if args.get("analysis_type") == "orchestrator" and not args.get("question"):
+        return "Error: analysis_type=orchestrator 必须提供 question 字段 (用户具体问题)."
+    # question 长度截断
+    if isinstance(args.get("question"), str) and len(args["question"]) > 2000:
+        args["question"] = args["question"][:2000]
+        warnings.append("[tool_validator] health_analysis.question 截断到 2000 字符")
+    return None
+
+
+def _validate_environment(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    _coerce_enum("environment_check", args, "check_type", _ENV_CHECK_TYPES,
+                 "weather", warnings)
+    return None
+
+
+def _validate_supplement_guide(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    """无参工具. 额外字段 silent strip, 不 warn (LLM 乱塞不是错误)."""
+    extra = [k for k in list(args.keys())]
+    for k in extra:
+        args.pop(k, None)
+    return None
+
+
+def _validate_manage_plan(
+    args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
+) -> Optional[str]:
+    action = args.get("action")
+    if action not in _PLAN_ACTIONS:
+        return f"Error: manage_plan.action 必须是 {sorted(_PLAN_ACTIONS)} 之一, 收到 {action!r}."
+
+    data = args.get("data") or {}
+    if not isinstance(data, dict):
+        args["data"] = data = {}
+
+    if action == "generate_weekly":
+        _coerce_enum("manage_plan", data, "target_week", _TARGET_WEEKS, "current", warnings)
+
+    elif action == "complete_item":
+        plan_id = data.get("plan_id")
+        item_id = data.get("item_id")
+        if plan_id is None or item_id is None:
+            return "Error: manage_plan.complete_item 需要 data.plan_id 和 data.item_id."
+        # 越权检查: WeeklyPlan 属于该用户 + PlanItem 属于该 plan
+        if db is not None and user_id is not None:
+            try:
+                from app.models.smart_plan import WeeklyPlan, PlanItem
+                plan_ok = db.query(WeeklyPlan.id).filter(
+                    WeeklyPlan.id == plan_id, WeeklyPlan.user_id == user_id,
+                ).first()
+                if not plan_ok:
+                    msg = (f"[tool_validator] manage_plan plan_id={plan_id} "
+                           f"不存在或不属于 user={user_id} — LLM 编造 ID")
+                    warnings.append(msg)
+                    logger.warning(msg)
+                    _metric("manage_plan", "plan_id", "cross_user_access")
+                    return f"Error: plan_id={plan_id} 不存在或不属于当前用户."
+                item_ok = db.query(PlanItem.id).filter(
+                    PlanItem.id == item_id, PlanItem.plan_id == plan_id,
+                ).first()
+                if not item_ok:
+                    msg = (f"[tool_validator] manage_plan item_id={item_id} "
+                           f"不属于 plan_id={plan_id}")
+                    warnings.append(msg)
+                    logger.warning(msg)
+                    _metric("manage_plan", "item_id", "cross_plan_access")
+                    return f"Error: item_id={item_id} 不属于 plan_id={plan_id}."
+            except Exception as e:
+                logger.warning(f"[tool_validator] manage_plan 越权校验失败 (跳过): {e}")
+
+    elif action == "save_to_card":
+        _coerce_enum("manage_plan", data, "card_type", _CARD_TYPES, "insight", warnings)
+        for field, max_len in (("title", 200), ("content", 10000)):
+            v = data.get(field)
+            if isinstance(v, str) and len(v) > max_len:
+                data[field] = v[:max_len]
+                warnings.append(f"[tool_validator] manage_plan.{field} 截断到 {max_len} 字符")
+                _metric("manage_plan", field, "truncated")
+
+    return None
+
+
+# 工具名 → 校验函数分发表
+_TOOL_VALIDATORS: Dict[str, Any] = {
+    "health_query": _validate_query,
+    "health_analysis": _validate_analysis,
+    "environment_check": _validate_environment,
+    "supplement_guide": _validate_supplement_guide,
+    "manage_plan": _validate_manage_plan,
+}
+
+
+def validate_tool_call(
+    tool_name: str,
+    args: Dict[str, Any],
+    db=None,
+    user_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    所有 LLM tool_call 的统一守门入口.
+
+    bypass-safe: 任何内部异常都 fall through 为"无 warning 无 error 放行",
+    保证 validator 自身崩了也不会让工具调用挂掉 (仿 agents/audit.py 样板).
+
+    返回: {
+        'data': 修正后的 args (同一对象, in-place),
+        'warnings': List[str],
+        'error': Optional[str] — 非空时 agent_executor 应返回给 LLM 让其重试,
+    }
+    """
+    if not isinstance(args, dict):
+        return {"data": args, "warnings": [], "error": None}
+
+    try:
+        if tool_name == "health_record":
+            rtype = args.get("record_type", "")
+            data = args.get("data") or {}
+            if not isinstance(data, dict):
+                data = {}
+                args["data"] = data
+            v = validate_health_record(rtype, data, db=db, user_id=user_id)
+            return {"data": args, "warnings": v["warnings"], "error": v["error"]}
+
+        validator = _TOOL_VALIDATORS.get(tool_name)
+        if validator is None:
+            return {"data": args, "warnings": [], "error": None}
+
+        warnings: list = []
+        error = validator(args, warnings, db, user_id)
+        if warnings:
+            logger.info(f"[tool_validator] {tool_name} 守门触发 {len(warnings)} 条")
+        return {"data": args, "warnings": warnings, "error": error}
+
+    except Exception as e:
+        # bypass-safe: validator 自身崩 → 放行, 绝不阻塞工具调用
+        logger.exception(f"[tool_validator] {tool_name} validator 自身异常 (跳过): {e}")
+        return {"data": args, "warnings": [], "error": None}

@@ -517,6 +517,15 @@ class AgentExecutor:
         except json.JSONDecodeError:
             return f"Error: 参数解析失败: {args_raw}"
 
+        # === 统一 tool_call 守门 (所有 6 个工具必过) ===
+        # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
+        # 必填缺失或越权才返回 error 给 LLM (它会重试).
+        from app.services.llm.tool_validator import validate_tool_call
+        v = validate_tool_call(tool_name, args, db=self.db, user_id=self._current_user_id)
+        if v["error"]:
+            return v["error"]
+        args = v["data"]
+
         base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
 
@@ -605,15 +614,6 @@ class AgentExecutor:
         rtype = args.get("record_type", "")
         data = args.get("data", {})
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
-
-        # === 统一 tool_call 守门 ===
-        # 检查日期/数值范围/引用 ID 存在性. 触发覆盖只 log warning, 不阻塞.
-        # 必填缺失才返回 error 给 LLM (它会重试).
-        from app.services.llm.tool_validator import validate_health_record
-        v = validate_health_record(rtype, data, db=self.db, user_id=self._current_user_id)
-        if v["error"]:
-            return v["error"]
-        data = v["data"]
 
         # 补全 diet 必填字段
         if rtype == "diet":
