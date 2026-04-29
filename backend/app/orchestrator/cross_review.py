@@ -171,12 +171,289 @@ def _check_supplement_vs_medication(
     return []
 
 
+def _check_high_intensity_vs_uncontrolled_bp(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """MovementCoach 建议 hard intensity + 血压 stage2+ (≥140/90) → 硬冲突."""
+    conflicts = []
+    movement = _get_finding(findings, "movement_coach")
+    if not movement:
+        return conflicts
+    intensity = (movement.raw or {}).get("intensity")
+    if intensity not in {"hard", "moderate"}:
+        return conflicts
+    sbp = twin.labs.blood_pressure_systolic
+    dbp = twin.labs.blood_pressure_diastolic
+    if (sbp and sbp >= 140) or (dbp and dbp >= 90):
+        conflicts.append(Conflict(
+            specialist_a="movement_coach",
+            specialist_b="hypertension_specialist",
+            severity="hard",
+            description=(
+                f"MovementCoach 建议 {intensity} 训练强度, 但血压 {sbp}/{dbp} mmHg "
+                f"处于 stage 2+ 未控制. 高强度运动可急性升压至危险区."
+            ),
+            resolution_hint=(
+                "今日改为 zone 1-2 低强度 30 分钟内. 血压稳定回 <130/80 且按医嘱规范服药后再加强度."
+            ),
+        ))
+    return conflicts
+
+
+def _check_protein_vs_gout(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """FuelStrategist 推高蛋白 + 尿酸偏高 → 痛风风险."""
+    conflicts = []
+    fuel = _get_finding(findings, "fuel_strategist")
+    if not fuel:
+        return conflicts
+    fuel_text = (fuel.summary or "") + " ".join(
+        str(f.get("text", "") or "") for f in fuel.findings
+    )
+    if not any(k in fuel_text for k in ["高蛋白", "蛋白每日 ≥", "蛋白增加", "红肉", "动物蛋白"]):
+        return conflicts
+    ua = twin.labs.uric_acid
+    # 男性 > 420 μmol/L, 保守用 420 作统一阈值（更严格需结合性别）
+    if ua and ua > 420:
+        conflicts.append(Conflict(
+            specialist_a="fuel_strategist",
+            specialist_b="metabolic_specialist",
+            severity="hard",
+            description=(
+                f"FuelStrategist 建议高蛋白/红肉类摄入, 但尿酸 {ua} μmol/L 偏高, "
+                f"红肉/海鲜/内脏 prurine 易诱发痛风急性发作."
+            ),
+            resolution_hint=(
+                "蛋白源优先选择低嘌呤（乳清/鸡蛋/鱼肉淡水鱼/豆腐）, "
+                "避免动物内脏/贝类/浓肉汤. 建议复查尿酸, 涉及降尿酸药需咨询执业医师."
+            ),
+        ))
+    return conflicts
+
+
+def _check_caffeine_vs_poor_sleep(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """Fuel 推咖啡因 + 睡眠 7d 差 → 放大睡眠问题."""
+    conflicts = []
+    fuel = _get_finding(findings, "fuel_strategist")
+    if not fuel:
+        return conflicts
+    fuel_text = (fuel.summary or "") + " ".join(
+        str(f.get("text", "") or "") for f in fuel.findings
+    )
+    if not any(k in fuel_text for k in ["咖啡", "caffeine", "浓茶"]):
+        return conflicts
+    sleep_7d = twin.mental.sleep_quality_7d_avg
+    sleep_latest = twin.physiological.sleep_score_latest
+    if (sleep_7d is not None and sleep_7d < 60) or (sleep_latest is not None and sleep_latest < 60):
+        conflicts.append(Conflict(
+            specialist_a="fuel_strategist",
+            specialist_b="recovery_coach",
+            severity="soft",
+            description=(
+                f"FuelStrategist 建议含咖啡因饮品, 但近期睡眠评分偏低 "
+                f"(7d 均值={sleep_7d}, 最新={sleep_latest}). 咖啡因半衰期 5-6h, 下午后摄入会加剧."
+            ),
+            resolution_hint=(
+                "若确需咖啡因, 限制在午前 (< 14:00) + 总量 < 200 mg. "
+                "已有睡眠问题时优先改善睡眠卫生而非依赖咖啡因提神."
+            ),
+        ))
+    return conflicts
+
+
+def _check_supplement_bleeding_vs_anticoagulant(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """补剂推鱼油/银杏/大蒜/维E + 用户在服抗凝药 → 出血风险."""
+    conflicts = []
+    # 收集所有 finding 文本
+    all_text = ""
+    for f in findings:
+        all_text += " " + (f.summary or "")
+        for item in (f.findings or []):
+            all_text += " " + str(item.get("text", "") or "")
+        for pc in (f.proposed_cards or []):
+            all_text += " " + (pc.title or "") + " " + (pc.content or "")
+
+    bleed_supplements = [k for k in ["鱼油", "ω-3", "omega-3", "银杏", "ginkgo",
+                                      "大蒜", "garlic", "维生素E", "vitamin E", "姜黄", "turmeric"]
+                         if k.lower() in all_text.lower()]
+    if not bleed_supplements:
+        return conflicts
+
+    # 检查 med list
+    anticoag_names = ["华法林", "warfarin", "阿司匹林", "aspirin", "氯吡格雷", "clopidogrel",
+                      "利伐沙班", "rivaroxaban", "阿哌沙班", "apixaban", "达比加群", "dabigatran",
+                      "依度沙班", "edoxaban"]
+    user_meds = twin.medication.active_meds or []
+    matched_anticoag = None
+    for med in user_meds:
+        name = (med.get("name") or med.get("drug_name") or "").lower()
+        for a in anticoag_names:
+            if a.lower() in name:
+                matched_anticoag = name
+                break
+        if matched_anticoag:
+            break
+
+    if matched_anticoag:
+        conflicts.append(Conflict(
+            specialist_a="supplement_advisor",
+            specialist_b="safety_guardian",
+            severity="hard",
+            description=(
+                f"建议中包含 {', '.join(bleed_supplements)} 等具有抗血小板/抗凝活性的成分, "
+                f"但用户正在服用抗凝药 {matched_anticoag}. 联用显著增加出血风险."
+            ),
+            resolution_hint=(
+                "移除以上补剂建议. 任何补剂与抗凝药的联用需执业医师评估 INR / 出血风险后决策."
+            ),
+        ))
+    return conflicts
+
+
+def _check_rhinitis_dose_up_vs_adherence(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """RhinitisSpecialist 建议加量 + 用药依从度 < 50% → 先解决依从性再加量."""
+    conflicts = []
+    rhinitis = _get_finding(findings, "rhinitis_specialist")
+    if not rhinitis:
+        return conflicts
+    rhin_text = (rhinitis.summary or "") + " ".join(
+        str(f.get("text", "") or "") for f in rhinitis.findings
+    )
+    if not any(k in rhin_text for k in ["加量", "增加剂量", "加一喷", "升级治疗", "step up"]):
+        return conflicts
+    adherence = twin.medication.adherence_7d_pct
+    if adherence is not None and adherence < 50:
+        conflicts.append(Conflict(
+            specialist_a="rhinitis_specialist",
+            specialist_b="safety_guardian",
+            severity="soft",
+            description=(
+                f"RhinitisSpecialist 建议上调鼻炎用药剂量, 但近 7 天用药依从度仅 {adherence:.0f}%. "
+                f"剂量问题之前应先解决\"是否按时用\"的问题."
+            ),
+            resolution_hint=(
+                "先把现有剂量按时用满 7 天（用提醒/固定使用情景锚点）, 再评估是否加量. "
+                "依从度不足的加量是在\"用更大剂量治 50% 的遵循\"."
+            ),
+        ))
+    return conflicts
+
+
+def _check_high_intensity_vs_sleep_debt(
+    findings: List[SpecialistFinding], twin: HealthTwin,
+) -> List[Conflict]:
+    """MovementCoach 建议 hard + 睡眠时长短/质量差 → 恢复不足, 伤病风险."""
+    conflicts = []
+    movement = _get_finding(findings, "movement_coach")
+    if not movement:
+        return conflicts
+    intensity = (movement.raw or {}).get("intensity")
+    if intensity != "hard":
+        return conflicts
+    sleep_latest = twin.physiological.sleep_duration_h_latest
+    deep_14d = twin.physiological.sleep_deep_h_avg_14d
+    conditions = []
+    if sleep_latest is not None and sleep_latest < 6.0:
+        conditions.append(f"昨夜仅睡 {sleep_latest:.1f}h")
+    if deep_14d is not None and deep_14d < 0.8:
+        conditions.append(f"14d 深睡均值仅 {deep_14d:.1f}h")
+    if not conditions:
+        return conflicts
+    conflicts.append(Conflict(
+        specialist_a="movement_coach",
+        specialist_b="recovery_coach",
+        severity="soft",
+        description=(
+            f"MovementCoach 建议 hard 强度, 但 {', '.join(conditions)}. "
+            f"恢复不足状态硬练会累积伤病和过度训练风险."
+        ),
+        resolution_hint=(
+            "今日降级至 zone 2 / moderate, 优先补足睡眠. 连续 2 夜 ≥ 7h 后再考虑 hard 训练."
+        ),
+    ))
+    return conflicts
+
+
+def _check_stopped_med_directive(
+    findings: List[SpecialistFinding], twin: HealthTwin, db,
+) -> List[Conflict]:
+    """user_directive 明确"停用 X 药", 但 specialist 仍引用该药 → 矛盾."""
+    if not db:
+        return []
+    conflicts = []
+    try:
+        from app.models.user_directive import UserDirective
+        from datetime import datetime, timezone
+        from sqlalchemy import or_
+        now = datetime.now(timezone.utc)
+        stopped_directives = db.query(UserDirective).filter(
+            UserDirective.user_id == twin.meta.user_id,
+            UserDirective.status == "active",
+            UserDirective.kind == "medication_change",
+            or_(UserDirective.expires_at.is_(None), UserDirective.expires_at > now),
+            UserDirective.instruction.op("~*")(r"停(用|服|药)|暂停|discontinue|stop"),
+        ).all()
+        if not stopped_directives:
+            return []
+
+        # 拿到 directive 涉及的药名 (structured field 或 从 instruction 中提)
+        stopped_names = []
+        for d in stopped_directives:
+            if getattr(d, "medication_name", None):
+                stopped_names.append(d.medication_name)
+            # 也从 instruction 里抓中文药名（粗略）
+            stopped_names.append(d.instruction[:80])
+
+        # 扫所有 finding 文本
+        for f in findings:
+            if f.specialist_name == "user_directive":
+                continue
+            f_text = (f.summary or "") + " ".join(
+                str(item.get("text", "") or "") for item in f.findings
+            )
+            for name in stopped_names:
+                if not name or len(name) < 2:
+                    continue
+                # 取药名头部 3-4 字符做 loose 匹配, 避免 '停用 X' instruction 字符串误匹配自己
+                key = name[:4]
+                if key in f_text and "停" not in f_text:
+                    conflicts.append(Conflict(
+                        specialist_a=f.specialist_name,
+                        specialist_b="user_directive",
+                        severity="hard",
+                        description=(
+                            f"用户已设 directive 停用某药 (\"{name[:40]}...\"), "
+                            f"但 {f.specialist_name} 输出仍引用该药名."
+                        ),
+                        resolution_hint=(
+                            f"{f.specialist_name} 应忽略已停用药物, 重新评估分析结论."
+                        ),
+                    ))
+                    break  # 同一个 finding 匹到一个就够了
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[cross_review] stopped med directive check failed: {e}")
+    return conflicts
+
+
 # ─────────────────────── 主入口 ───────────────────────
 
 
 CHECKS = [
     _check_protein_vs_kidney,
     _check_movement_vs_recovery,
+    _check_high_intensity_vs_uncontrolled_bp,
+    _check_protein_vs_gout,
+    _check_caffeine_vs_poor_sleep,
+    _check_supplement_bleeding_vs_anticoagulant,
+    _check_rhinitis_dose_up_vs_adherence,
+    _check_high_intensity_vs_sleep_debt,
 ]
 
 
@@ -192,10 +469,11 @@ def detect_conflicts(
             logger.warning(f"[cross_review] {check.__name__} 失败 (跳过): {e}")
     # 单独跑 directive-aware checks (需要 db)
     if db:
-        try:
-            conflicts.extend(_check_alcohol_directive(findings, twin, db) or [])
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[cross_review] alcohol directive check 失败: {e}")
+        for db_check in (_check_alcohol_directive, _check_stopped_med_directive):
+            try:
+                conflicts.extend(db_check(findings, twin, db) or [])
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[cross_review] {db_check.__name__} 失败: {e}")
     return conflicts
 
 

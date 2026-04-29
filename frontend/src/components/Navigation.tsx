@@ -120,7 +120,6 @@ export default function Navigation() {
         { href: '/water', label: '饮水追踪', icon: <Droplets className="w-4 h-4" /> },
         { href: '/garmin', label: 'Garmin数据', icon: <Watch className="w-4 h-4" /> },
         { href: '/analysis', label: '健康分析', icon: <LineChart className="w-4 h-4" /> },
-        { href: '/trip', label: '行程记录', icon: <Plane className="w-4 h-4" /> },
         { href: '/illness', label: '当前病症', icon: <Stethoscope className="w-4 h-4" /> },
         { href: '/excretion', label: '排泄记录', icon: <Droplets className="w-4 h-4" /> },
         { href: '/sleep', label: '睡眠记录', icon: <Moon className="w-4 h-4" /> },
@@ -142,27 +141,9 @@ export default function Navigation() {
         { href: '/goals', label: '目标管理', icon: <Target className="w-4 h-4" /> },
         { href: '/medical-exams', label: '体检记录', icon: <FileText className="w-4 h-4" /> },
         { href: '/genetic', label: '基因数据', icon: <Zap className="w-4 h-4" /> },
-        { href: '/massage', label: '按摩理疗', icon: <Heart className="w-4 h-4" /> },
         { href: '/data-collection', label: '数据收集', icon: <Database className="w-4 h-4" /> },
-        { href: '/external-advice', label: '外部健康建议', icon: <Sparkles className="w-4 h-4" /> },
         { href: '/skills', label: 'AI Skills', icon: <Zap className="w-4 h-4" /> },
         { href: '/settings', label: '个人设置', icon: <Settings className="w-4 h-4" /> },
-      ],
-    },
-    {
-      label: '资讯',
-      icon: <Newspaper className="w-4 h-4" />,
-      items: [
-        { href: '/news', label: '健康资讯', icon: <Newspaper className="w-4 h-4" /> },
-        ...(user?.is_approved ? [
-          { href: '/security-life', label: '资产总览', icon: <LayoutDashboard className="w-4 h-4" /> },
-          { href: '/security-life/assets', label: '两层资产', icon: <Database className="w-4 h-4" /> },
-          { href: '/security-life/baskets', label: '资产篮子', icon: <LineChart className="w-4 h-4" /> },
-          { href: '/security-life/checklist', label: '90天清单', icon: <ClipboardList className="w-4 h-4" /> },
-          { href: '/security-life/risk', label: '风险与应对', icon: <Shield className="w-4 h-4" /> },
-          { href: '/security-life/dont-list', label: '不要清单', icon: <X className="w-4 h-4" /> },
-          { href: '/security-life/profile', label: '防御设置', icon: <Settings className="w-4 h-4" /> },
-        ] : []),
       ],
     },
   ];
@@ -348,14 +329,6 @@ export default function Navigation() {
                           <User className="w-4 h-4" />
                           <span>个人画像</span>
                         </Link>
-                        <Link
-                          href="/kids"
-                          onClick={() => setShowUserMenu(false)}
-                          className="flex items-center gap-3 px-4 py-2 text-lg font-medium text-pink-400 hover:bg-pink-600/10 hover:text-pink-300 transition-all"
-                        >
-                          <span className="w-4 h-4 text-center">👧</span>
-                          <span>儿童模式</span>
-                        </Link>
                       </div>
                       {user?.is_admin && (
                         <div className="border-t border-purple-900/30 py-1">
@@ -509,14 +482,6 @@ export default function Navigation() {
                     >
                       <User className="mr-3 w-5 h-5" />
                       个人画像
-                    </Link>
-                    <Link
-                      href="/kids"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="flex items-center px-4 py-3 rounded-lg text-lg font-medium text-pink-400 hover:bg-pink-600/10"
-                    >
-                      <span className="mr-3 w-5 h-5 text-center">👧</span>
-                      儿童模式
                     </Link>
                     {user?.is_admin && (
                       <>

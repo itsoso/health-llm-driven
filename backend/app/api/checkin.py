@@ -383,30 +383,12 @@ async def quick_checkin(
     # 自动标记匹配的计划项为完成
     _auto_complete_plan_items(current_user.id, template.id, today, db)
 
-    # 触发成就检查
-    unlocked_badges = []
-    try:
-        from app.services.achievement_service import AchievementService
-        newly = AchievementService(db).check_and_award(current_user.id, trigger="checkin")
-        if newly:
-            badge_defs = {d.id: d for d in AchievementService(db).get_all_definitions()}
-            unlocked_badges = [
-                {"name": badge_defs[ub.badge_id].name, "icon": badge_defs[ub.badge_id].icon}
-                for ub in newly if ub.badge_id in badge_defs
-            ]
-    except Exception as e:
-        logger.warning(f"成就检查失败 user={current_user.id}: {e}")
-
     response = CheckinRecordResponse.model_validate(record)
     response.template_name = template.name
     response.template_icon = template.icon
     response.template_category = template.category
 
-    # 附加解锁成就信息
-    result = response.model_dump()
-    if unlocked_badges:
-        result["unlocked_badges"] = unlocked_badges
-    return result
+    return response.model_dump()
 
 
 @router.get("/records/today", response_model=CheckinDailySummary)

@@ -240,7 +240,6 @@ export default function ApiKeySection({ token, setMessage }: ApiKeySectionProps)
                 <li>创建 API Key 后，复制并保存（Key 只显示一次）</li>
                 <li>在外部 AI 系统中配置此 API Key</li>
                 <li>外部系统将通过 <code className="bg-gray-200 px-1 rounded">X-API-Key</code> 头部访问您的数据</li>
-                <li>外部系统写入的健康建议将显示在「外部健康建议」页面</li>
               </ol>
             </div>
 
@@ -252,56 +251,17 @@ export default function ApiKeySection({ token, setMessage }: ApiKeySectionProps)
                   <span className="ml-2 text-gray-800">https://health.executor.life/api/v1/external/health-data</span>
                   <p className="text-gray-500 mt-1 font-sans">获取健康数据（支持 ?date=2024-01-25 或 ?start_date=...&end_date=...）</p>
                 </div>
-                <div className="bg-white p-2 rounded border">
-                  <span className="text-blue-600 font-bold">POST</span>
-                  <span className="ml-2 text-gray-800">https://health.executor.life/api/v1/external/recommendations</span>
-                  <p className="text-gray-500 mt-1 font-sans">写入健康建议（JSON Body）</p>
-                </div>
               </div>
             </div>
 
             <div>
-              <p className="font-semibold mb-2">{'\u{1F4E6}'} GET 请求示例（读取健康数据）：</p>
+              <p className="font-semibold mb-2">{'\u{1F4E6}'} 请求示例（读取健康数据）：</p>
               <pre className="bg-gray-800 text-green-400 p-3 rounded-lg text-xs overflow-x-auto">
 {`curl -X GET "https://health.executor.life/api/v1/external/health-data?date=2024-01-25" \\
   -H "X-API-Key: 你的API密钥"`}
               </pre>
             </div>
-
-            <div>
-              <p className="font-semibold mb-2">{'\u{1F4E4}'} POST 请求示例（写入健康建议）：</p>
-              <pre className="bg-gray-800 text-green-400 p-3 rounded-lg text-xs overflow-x-auto whitespace-pre-wrap">
-{`curl -X POST "https://health.executor.life/api/v1/external/recommendations" \\
-  -H "X-API-Key: 你的API密钥" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "category": "exercise",
-    "title": "今日运动建议",
-    "content": "根据睡眠数据，建议进行30分钟有氧运动",
-    "source_name": "我的AI助手",
-    "recommendation_date": "2024-01-25"
-  }'`}
-              </pre>
-              <div className="mt-2 text-xs text-gray-600">
-                <p className="font-semibold">POST 请求字段说明：</p>
-                <ul className="mt-1 space-y-1 list-disc list-inside">
-                  <li><code className="bg-gray-200 px-1 rounded">category</code>: 建议类别 - <code className="text-blue-600">exercise</code>(运动) / <code className="text-blue-600">diet</code>(饮食) / <code className="text-blue-600">sleep</code>(睡眠) / <code className="text-blue-600">supplement</code>(补剂) / <code className="text-blue-600">general</code>(综合)</li>
-                  <li><code className="bg-gray-200 px-1 rounded">title</code>: 建议标题</li>
-                  <li><code className="bg-gray-200 px-1 rounded">content</code>: 建议内容（支持 Markdown 格式）</li>
-                  <li><code className="bg-gray-200 px-1 rounded">source_name</code>: 来源名称（如 &quot;GPT Health&quot;）</li>
-                  <li><code className="bg-gray-200 px-1 rounded">recommendation_date</code>: 建议日期（可选，默认今天）</li>
-                </ul>
-              </div>
-            </div>
           </div>
-
-          {/* 跳转外部建议页面 */}
-          <a
-            href="/external-advice"
-            className="block w-full text-center px-4 py-3 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium"
-          >
-            {'\u{1F4E1}'} 查看外部健康建议 {'\u{2192}'}
-          </a>
         </div>
       )}
     </div>

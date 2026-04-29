@@ -46,7 +46,6 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
     has_garmin_credentials: bool = False
     avatar_url: Optional[str] = None
-    kids_points: int = 0
     onboarding_completed: bool = False
 
     model_config = ConfigDict(from_attributes=True)
@@ -69,16 +68,6 @@ class BindWebLogin(BaseModel):
     """微信用户绑定Web登录凭证"""
     email: EmailStr = Field(..., description="邮箱地址")
     password: str = Field(..., min_length=6, max_length=100, description="登录密码")
-
-
-class KidsPointsUpdate(BaseModel):
-    """儿童模式积分更新"""
-    kids_points: int = Field(..., ge=0, le=1000000, description="儿童模式积分（总值）")
-
-
-class KidsPointsResponse(BaseModel):
-    """儿童模式积分响应"""
-    kids_points: int
 
 
 class GarminCredentialCreate(BaseModel):

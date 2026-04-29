@@ -35,15 +35,6 @@ export const onboardingApi = {
     api.post('/onboarding/skip'),
 };
 
-export const achievementApi = {
-  getDefinitions: () =>
-    api.get<Array<{ id: number; code: string; name: string; description: string; icon: string; category: string; criteria_type: string; criteria_value: number; rarity: string; sort_order: number }>>('/achievements/definitions'),
-  getMyAchievements: () =>
-    api.get<{ total: number; unlocked: number; achievements: Array<{ id: number; code: string; name: string; description: string; icon: string; category: string; rarity: string; criteria_value: number; progress: number; unlocked: boolean; unlocked_at: string | null }> }>('/achievements/me'),
-  checkAchievements: () =>
-    api.post<{ newly_unlocked: number; badges: Array<{ badge_id: number; progress: number }> }>('/achievements/check'),
-};
-
 export const goalApi = {
   create: (data: any) => api.post('/goals/', data),
   getUserGoals: (userId: number, status?: string, goalType?: string, goalPeriod?: string) =>

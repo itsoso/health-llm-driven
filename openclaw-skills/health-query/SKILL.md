@@ -1,6 +1,6 @@
 ---
 name: health-query
-description: Query health data from the Health Management System - steps, heart rate, sleep, weight, blood pressure, workouts, diet, checkin status, achievements, environment, illness, plans, anomalies, supplements, mood, and more.
+description: Query health data from the Health Management System - steps, heart rate, sleep, weight, blood pressure, workouts, diet, checkin status, environment, illness, plans, anomalies, supplements, mood, and more.
 version: 2.0.0
 requires:
   env:
@@ -91,11 +91,6 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/workou
 ### 运动统计
 ```bash
 curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/workout/me/stats"
-```
-
-### 成就徽章
-```bash
-curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/achievements/me"
 ```
 
 ### 健康评分
@@ -265,15 +260,6 @@ dimension 可选: weight / sleep / exercise / overall
 curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/health-context/me/cross-analysis"
 ```
 返回: recovery_readiness（恢复就绪度）、sleep_exercise_correlation（睡眠运动关联）、energy_balance（能量平衡）、hydration（饮水充足度）
-
----
-
-## 行程
-
-### 我的行程
-```bash
-curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/trip/trips?days=30"
-```
 
 ---
 

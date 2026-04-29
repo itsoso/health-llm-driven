@@ -96,31 +96,6 @@ export interface ReminderData {
   activity_name: string;
 }
 
-export interface VocabularyListResponse {
-  total: number;
-  words: VocabularyWord[];
-}
-
-export interface VocabularyWord {
-  id: number;
-  word: string;
-  phonetic_us?: string;
-  phonetic_uk?: string;
-  meanings?: string;
-  example_sentences?: string;
-  synonyms?: string;
-  antonyms?: string;
-  word_roots?: string;
-  notes?: string;
-  review_count: number;
-  correct_count: number;
-  mastery_level: number;
-  last_reviewed_at?: string;
-  next_review_date?: string;
-  is_mastered: boolean;
-  created_at?: string;
-}
-
 export const chatApi = {
   // 语音转文字（via speech.py，保留 /chat 前缀兼容前端）
   transcribe: (audioBase64: string, audioFormat: string = 'webm') =>
@@ -294,24 +269,3 @@ export const sharedApi = {
   revokeShare: (shareToken: string) =>
     api.delete(`/shared/${shareToken}`),
 };
-
-// ===== 活动状态 API =====
-export const vocabularyApi = {
-  getWords: (page: number = 1, pageSize: number = 20, mastered?: boolean) => {
-    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    if (mastered !== undefined) params.append('mastered', String(mastered));
-    return api.get<VocabularyListResponse>(`/vocabulary/words?${params}`);
-  },
-  getWord: (wordId: number) =>
-    api.get<VocabularyWord>(`/vocabulary/words/${wordId}`),
-  getReviewWords: (limit: number = 10) =>
-    api.get<VocabularyListResponse>(`/vocabulary/review?limit=${limit}`),
-  submitReview: (wordId: number, isCorrect: boolean) =>
-    api.post<{ ok: boolean; mastery_level: number; next_review_date: string }>(
-      '/vocabulary/review', { word_id: wordId, is_correct: isCorrect }
-    ),
-  deleteWord: (wordId: number) =>
-    api.delete(`/vocabulary/words/${wordId}`),
-};
-
-// ── 资产防御与布局 (Security Life) ─────────────────────

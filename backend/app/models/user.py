@@ -31,7 +31,6 @@ class User(Base):
     birth_date = Column(Date, nullable=True)  # 用于计算年龄
     gender = Column(String, nullable=True)  # 男/女
     phone = Column(String, nullable=True)  # 手机号
-    kids_points = Column(Integer, nullable=False, default=0)  # 儿童模式积分
     onboarding_completed = Column(Boolean, default=False)  # 是否完成新手引导
 
     # 家庭代管（shadow user，不需要登录凭据，由管理员代管）

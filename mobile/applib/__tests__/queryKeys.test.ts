@@ -10,6 +10,7 @@ describe('queryKeys', () => {
       queryKeys.dataHealth,
       queryKeys.todayCoachRoot,
       queryKeys.agentAgendaRoot,
+      queryKeys.twin,
     ]);
   });
 

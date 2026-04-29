@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import Integer, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -26,30 +26,38 @@ def specialist_hit_rate(
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # 已评分卡片按 specialist 聚合
+    # 过滤低依从度卡 (adherence_confidence < 30): 用户根本没做的不算 specialist 准不准
     rows = db.query(
         ActionCard.creator_specialist,
         func.count(ActionCard.id).label("total"),
         func.avg(ActionCard.accuracy_score).label("avg_score"),
         func.sum(
-            (ActionCard.accuracy_score >= 70).cast(__import__('sqlalchemy').Integer)
+            (ActionCard.accuracy_score >= 70).cast(Integer)
         ).label("hits"),
     ).filter(
         ActionCard.user_id == current_user.id,
         ActionCard.graded_at.isnot(None),
         ActionCard.graded_at >= since,
         ActionCard.creator_specialist.isnot(None),
+        # adherence_confidence 为 NULL (兼容旧卡) 或 >= 30
+        or_(
+            ActionCard.adherence_confidence.is_(None),
+            ActionCard.adherence_confidence >= 30,
+        ),
     ).group_by(ActionCard.creator_specialist).all()
 
     by_specialist = []
     for r in rows:
         total = int(r.total)
         hits = int(r.hits or 0)
+        # 样本量 < 3 不参与 best_specialist 排名, 但仍展示数据
         by_specialist.append({
             "specialist": r.creator_specialist,
             "total_graded": total,
             "hit_rate": round(hits / total, 2) if total else 0,
             "avg_accuracy_score": round(float(r.avg_score or 0), 1),
             "hits": hits,
+            "is_significant": total >= 3,  # 样本量充足才可信
         })
 
     by_specialist.sort(key=lambda x: x["hit_rate"], reverse=True)
@@ -61,12 +69,15 @@ def specialist_hit_rate(
         ActionCard.graded_at.is_(None),
     ).scalar() or 0
 
+    # best_specialist 必须有足够样本量 (≥3)
+    best = next((s["specialist"] for s in by_specialist if s["is_significant"]), None)
+
     return {
         "since": since.isoformat(),
         "days": days,
         "by_specialist": by_specialist,
         "pending_grading": int(pending),
-        "best_specialist": by_specialist[0]["specialist"] if by_specialist else None,
+        "best_specialist": best,
     }
 
 
@@ -92,4 +103,6 @@ def my_recent_graded_cards(
         "accuracy_score": c.accuracy_score,
         "graded_at": c.graded_at.isoformat() if c.graded_at else None,
         "notes": c.grading_notes,
+        "adherence_kind": c.adherence_kind,
+        "adherence_confidence": c.adherence_confidence,
     } for c in cards]

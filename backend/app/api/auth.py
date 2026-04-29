@@ -13,7 +13,7 @@ from app.models.user import User, GarminCredential
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
     PasswordChange, BindWebLogin, GarminCredentialCreate, GarminCredentialResponse,
-    GarminSyncRequest, GarminSyncResponse, KidsPointsUpdate, KidsPointsResponse,
+    GarminSyncRequest, GarminSyncResponse,
     GarminTestConnectionResponse, GarminMFAVerifyRequest, GarminMFAVerifyResponse
 )
 from app.services.auth import auth_service, garmin_credential_service, AuthService
@@ -45,7 +45,6 @@ def user_to_response(user: User, db: Session) -> UserResponse:
         created_at=user.created_at,
         has_garmin_credentials=has_garmin,
         avatar_url=getattr(user, 'avatar_url', None),
-        kids_points=getattr(user, 'kids_points', 0) or 0,
         onboarding_completed=getattr(user, 'onboarding_completed', False) or False
     )
 
@@ -251,19 +250,6 @@ async def update_me(
     db.commit()
     db.refresh(current_user)
     return user_to_response(current_user, db)
-
-
-@router.put("/me/kids-points", response_model=KidsPointsResponse, summary="更新儿童模式积分")
-async def update_my_kids_points(
-    payload: KidsPointsUpdate,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
-):
-    """更新当前用户的儿童模式积分（总值覆盖）"""
-    current_user.kids_points = payload.kids_points
-    db.commit()
-    db.refresh(current_user)
-    return KidsPointsResponse(kids_points=current_user.kids_points or 0)
 
 
 @router.post("/change-password", summary="修改密码")

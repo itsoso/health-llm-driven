@@ -17,7 +17,6 @@ interface User {
   is_approved: boolean;
   has_garmin_credentials: boolean;
   avatar_url: string | null;
-  kids_points?: number;
   onboarding_completed?: boolean;
 }
 

@@ -22,45 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_city(db: Session, user_id: int) -> str:
-    """解析用户当前城市：行程 > 手动设置 > IP检测 > 静态城市 > 杭州"""
-    today = date.today()
-
-    # 1. 行程：今天是否在旅途中
-    try:
-        from app.models.trip import Trip, TripItem
-        ongoing_trip = db.query(Trip).filter(
-            Trip.user_id == user_id,
-            Trip.start_date <= today,
-            Trip.end_date >= today,
-        ).first()
-        if ongoing_trip:
-            today_items = db.query(TripItem).filter(
-                TripItem.trip_id == ongoing_trip.id,
-                TripItem.item_date == today,
-            ).order_by(TripItem.item_order).all()
-            for item in reversed(today_items):
-                if item.item_type in ('flight', 'train', 'bus') and item.destination:
-                    # 提取城市名（去掉 "市"/"区" 等后缀）
-                    city = item.destination.strip()
-                    for suffix in ('市', '区', '县', '省', '自治区'):
-                        if city.endswith(suffix) and len(city) > 2:
-                            city = city[:-len(suffix)]
-                            break
-                    return city
-            for item in today_items:
-                if item.item_type in ('activity', 'hotel', 'other') and item.location:
-                    city = item.location.strip()
-                    for suffix in ('市', '区', '县', '省', '自治区'):
-                        if city.endswith(suffix) and len(city) > 2:
-                            city = city[:-len(suffix)]
-                            break
-                    return city
-            if ongoing_trip.destination:
-                return ongoing_trip.destination
-    except Exception:
-        pass
-
-    # 2. 用户画像：手动 > IP检测 > city字段
+    """解析用户当前城市：手动设置 > IP检测 > 静态城市 > 杭州"""
+    # 用户画像：手动 > IP检测 > city字段
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
     if profile:
         if profile.use_manual_location and profile.manual_city:

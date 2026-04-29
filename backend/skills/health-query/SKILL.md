@@ -1,6 +1,6 @@
 ---
 name: health-query
-description: Query health data from the Health Management System - steps, heart rate, HRV, SpO2, sleep, weight, blood pressure, workouts, diet, checkin status, and achievements. Use when the user asks about their health metrics, fitness data, or daily stats.
+description: Query health data from the Health Management System - steps, heart rate, HRV, SpO2, sleep, weight, blood pressure, workouts, diet, and checkin status. Use when the user asks about their health metrics, fitness data, or daily stats.
 version: 1.0.0
 metadata:
   openclaw:
@@ -85,11 +85,6 @@ curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/checkin/st
 ### 运动记录
 ```bash
 curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/workout/me?days=7"
-```
-
-### 成就徽章
-```bash
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/achievements/me"
 ```
 
 ### 健康评分

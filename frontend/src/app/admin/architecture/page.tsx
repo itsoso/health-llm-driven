@@ -485,11 +485,10 @@ export default function ArchitecturePage() {
                       ['AI 对话', '/chat (对话核心), /openclaw (Channel代理), /ai-insights, /daily-recommendation'],
                       ['运动与活动', '/garmin-connect, /garmin-analysis, /workout, /activity-status'],
                       ['饮食与营养', '/diet, /diet-recommendation, /water, /supplements'],
-                      ['打卡与目标', '/checkin, /goals, /daily-points'],
+                      ['打卡与目标', '/checkin, /goals'],
                       ['医疗与疾病', '/medical-exams, /diseases, /disease-tracking, /illness'],
                       ['专项追踪', '/mood, /medication, /womens-health, /vision, /sleep, /excretion, /rhinitis'],
-                      ['社交与通讯', '/friendship, /pk-challenge, /direct-message, /group-chat'],
-                      ['系统管理', '/admin, /monitoring, /performance, /news, /devices, /upload'],
+                      ['系统管理', '/admin, /monitoring, /performance, /devices, /upload'],
                       ['外部集成', '/siri, /data-collection, /external (用户 API Key)'],
                     ].map(([category, routes], i) => (
                       <tr key={i} className="border-b border-white/5">

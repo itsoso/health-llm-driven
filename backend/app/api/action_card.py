@@ -259,6 +259,50 @@ def update_card(
     return _card_to_dict(card)
 
 
+class ActionCardAdherence(BaseModel):
+    """用户/系统设置这张卡的执行依从度."""
+    kind: Literal["self_reported", "device", "proxy"] = "self_reported"
+    confidence: int = Field(..., ge=0, le=100, description="0-100, 0=完全没做, 100=完全做到")
+
+
+@router.post("/{card_id}/adherence")
+def set_card_adherence(
+    card_id: int,
+    body: ActionCardAdherence,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_required),
+):
+    """标注执行依从度. outcome_grader 评分时会 accuracy × adherence_confidence.
+
+    kind:
+      - self_reported: 用户自报 (confidence 上限通常应 ≤ 70)
+      - device: 设备数据证实 (Garmin 步数/HR/sleep_time 等)
+      - proxy: 间接信号 (早餐打卡频率 / 用药 log 等)
+    """
+    card = db.query(ActionCard).filter(
+        ActionCard.id == card_id,
+        ActionCard.user_id == current_user.id,
+    ).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+
+    # self_reported 信号置信度软上限 70 — 防止用户一律勾 100
+    if body.kind == "self_reported" and body.confidence > 70:
+        body_confidence = 70
+    else:
+        body_confidence = body.confidence
+
+    card.adherence_kind = body.kind
+    card.adherence_confidence = body_confidence
+    db.commit()
+    db.refresh(card)
+    logger.info(
+        f"[ActionCard] 用户 {current_user.id} 标注依从度: card_id={card_id}, "
+        f"kind={body.kind}, confidence={body_confidence}"
+    )
+    return _card_to_dict(card)
+
+
 @router.post("/{card_id}/review")
 def review_card(
     card_id: int,
@@ -339,4 +383,6 @@ def _card_to_dict(card: ActionCard) -> dict:
         "accuracy_score": card.accuracy_score,
         "graded_at": card.graded_at.isoformat() if card.graded_at else None,
         "grading_notes": card.grading_notes,
+        "adherence_kind": card.adherence_kind,
+        "adherence_confidence": card.adherence_confidence,
     }

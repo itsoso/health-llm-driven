@@ -105,26 +105,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/me/kids-points": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * 更新儿童模式积分
-         * @description 更新当前用户的儿童模式积分（总值覆盖）
-         */
-        put: operations["update_my_kids_points_api_v1_auth_me_kids_points_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/change-password": {
         parameters: {
             query?: never;
@@ -1869,89 +1849,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/external/recommendations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create External Recommendation
-         * @description 外部系统写入健康建议
-         *
-         *     - 使用 X-API-Key 头部认证
-         *     - category: exercise, diet, sleep, supplement, general
-         */
-        post: operations["create_external_recommendation_api_v1_external_recommendations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/external-recommendations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List External Recommendations
-         * @description 获取当前用户的外部建议（支持分页和日期范围筛选）
-         */
-        get: operations["list_external_recommendations_api_v1_external_recommendations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/external-recommendations/today": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Today External Recommendations
-         * @description 获取今日的外部建议（按类别分组）
-         */
-        get: operations["get_today_external_recommendations_api_v1_external_recommendations_today_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/external-recommendations/{recommendation_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete External Recommendation
-         * @description 删除指定的外部建议
-         */
-        delete: operations["delete_external_recommendation_api_v1_external_recommendations__recommendation_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6979,18 +6876,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Explain Alert
-         * @description 对某条安全告警请求 LLM 个性化解读。
-         *
-         *     输入：rule_id + 可选的 data_citation（用户直接从前端回传，避免再建 Twin）
-         *     输出：基于用户当前健康上下文的白话解读 + 具体建议
-         *
-         *     策略：
-         *     - 1 小时进程内缓存（按 user_id + rule_id + data_citation 哈希）
-         *     - 调用默认 LLM provider，短 prompt，temperature=0.3 求稳定
-         *     - 失败不抛，返回规则自身的 message 作为降级
-         */
+        /** Explain Alert */
         post: operations["explain_alert_api_v1_safety_explain_post"];
         delete?: never;
         options?: never;
@@ -7984,6 +7870,51 @@ export interface paths {
          * @description 更新卡片状态/标题/优先级。
          */
         patch: operations["update_card_api_v1_action_cards__card_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/action-cards/{card_id}/adherence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Card Adherence
+         * @description 标注执行依从度. outcome_grader 评分时会 accuracy × adherence_confidence.
+         *
+         *     kind:
+         *       - self_reported: 用户自报 (confidence 上限通常应 ≤ 70)
+         *       - device: 设备数据证实 (Garmin 步数/HR/sleep_time 等)
+         *       - proxy: 间接信号 (早餐打卡频率 / 用药 log 等)
+         */
+        post: operations["set_card_adherence_api_v1_action_cards__card_id__adherence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/action-cards/{card_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Card
+         * @description 写入行动卡片复盘结果。
+         */
+        post: operations["review_card_api_v1_action_cards__card_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/quick-record": {
@@ -9841,6 +9772,527 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/llm-usage/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** LLM 用量/成本聚合 (默认最近 7 天) */
+        get: operations["usage_summary_api_v1_llm_usage_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/specialists/hit-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 各 specialist 的预测命中率 (最近 N 天) */
+        get: operations["specialist_hit_rate_api_v1_specialists_hit_rate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/specialists/me/recent-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 带评分的近期 ActionCard 列表 (信任面板) */
+        get: operations["my_recent_graded_cards_api_v1_specialists_me_recent_cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/open-loop/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 近 N 天的推送历史 + 反馈 */
+        get: operations["list_history_api_v1_open_loop_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/open-loop/{history_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 对某条推送反馈 */
+        post: operations["submit_feedback_api_v1_open_loop__history_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/open-loop/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 开放循环汇总 (前端面板用, 不发推送)
+         * @description 同步调 collect_open_loops, 返回该用户当前所有开放循环 (按 score 倒序).
+         *
+         *     用于在 web/mobile 上做 "AI 在跟进的事" 面板, 不依赖推送.
+         */
+        get: operations["summary_api_v1_open_loop_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clinical-journal/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 用户所有 case_threads (按最近活跃排序) */
+        get: operations["list_cases_api_v1_clinical_journal_cases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clinical-journal/cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 单个 case 详情 + 所有 entries */
+        get: operations["case_detail_api_v1_clinical_journal_cases__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clinical-journal/entries/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 最近 N 天的 SOAP entry (跨 case) */
+        get: operations["recent_entries_api_v1_clinical_journal_entries_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-directives/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的 active directives */
+        get: operations["list_mine_api_v1_user_directives_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-directives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动创建 directive (用户自己设) */
+        post: operations["create_api_v1_user_directives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-directives/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 自由文本解析为 directives (LLM)
+         * @description 通常给医生 Telegram bot 用. 用户也能用 (source='manual').
+         */
+        post: operations["parse_text_api_v1_user_directives_parse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-directives/{directive_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销 directive (status → revoked) */
+        delete: operations["revoke_api_v1_user_directives__directive_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/telegram/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Telegram bot webhook (医生回复入口)
+         * @description 处理 Telegram 推送的 update.
+         */
+        post: operations["telegram_webhook_api_v1_telegram_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/telegram/webhook/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** webhook 配置状态 (无需认证, 但 secret 鉴权) */
+        get: operations["webhook_status_api_v1_telegram_webhook_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-facts/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的活跃事实 (按 effective_confidence 排) */
+        get: operations["list_mine_api_v1_memory_facts_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动创建事实 */
+        post: operations["create_fact_api_v1_memory_facts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-facts/{fact_id}/reinforce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 增强事实 (新 source) */
+        post: operations["reinforce_api_v1_memory_facts__fact_id__reinforce_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-facts/{old_id}/supersede/{new_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 标记 old fact 被 new fact 替代 */
+        post: operations["supersede_api_v1_memory_facts__old_id__supersede__new_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-facts/contradictions/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 检测新事实与现有的矛盾 */
+        get: operations["check_contradictions_api_v1_memory_facts_contradictions_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory-facts/stats/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的记忆统计 */
+        get: operations["stats_api_v1_memory_facts_stats_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/entities/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的所有 active entities */
+        get: operations["list_entities_api_v1_health_kg_entities_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/entities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动创建 entity */
+        post: operations["create_entity_api_v1_health_kg_entities_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/entities/{entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** entity 详情 */
+        get: operations["get_entity_api_v1_health_kg_entities__entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/entities/{entity_id}/neighborhood": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** entity 2-hop 邻域 */
+        get: operations["neighborhood_api_v1_health_kg_entities__entity_id__neighborhood_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 文字 → 匹配的 entity (canonical/alias) */
+        get: operations["match_api_v1_health_kg_match_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动创建 relation */
+        post: operations["create_rel_api_v1_health_kg_relations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/relations/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的所有 relations */
+        get: operations["list_relations_api_v1_health_kg_relations_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-kg/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 从一段文字抽 mentioned entities */
+        get: operations["extract_api_v1_health_kg_extract_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hybrid-search/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 个人语料 + 图谱混合检索 */
+        get: operations["my_hybrid_api_v1_hybrid_search_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/environment/weather": {
         parameters: {
             query?: never;
@@ -11564,440 +12016,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/massage/records": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Records */
-        get: operations["list_records_api_v1_massage_records_get"];
-        put?: never;
-        /** Create Record */
-        post: operations["create_record_api_v1_massage_records_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/massage/records/{record_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Record */
-        get: operations["get_record_api_v1_massage_records__record_id__get"];
-        /** Update Record */
-        put: operations["update_record_api_v1_massage_records__record_id__put"];
-        post?: never;
-        /** Delete Record */
-        delete: operations["delete_record_api_v1_massage_records__record_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/massage/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Stats */
-        get: operations["get_stats_api_v1_massage_stats_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/request": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 发送好友请求 */
-        post: operations["send_friend_request_api_v1_friends_request_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/request/{request_id}/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** 接受好友请求 */
-        put: operations["accept_request_api_v1_friends_request__request_id__accept_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/request/{request_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** 拒绝好友请求 */
-        put: operations["reject_request_api_v1_friends_request__request_id__reject_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 我的好友列表 */
-        get: operations["list_friends_api_v1_friends_list_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/requests/pending": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 待处理的好友请求 */
-        get: operations["pending_requests_api_v1_friends_requests_pending_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/{friendship_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** 删除好友 */
-        delete: operations["remove_friend_api_v1_friends__friendship_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/friends/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 搜索用户 */
-        get: operations["search_users_api_v1_friends_search_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/pk-challenges": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 我的PK挑战列表 */
-        get: operations["list_challenges_api_v1_pk_challenges_get"];
-        put?: never;
-        /** 创建PK挑战 */
-        post: operations["create_challenge_api_v1_pk_challenges_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/pk-challenges/stats/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 我的PK统计 */
-        get: operations["my_stats_api_v1_pk_challenges_stats_me_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/pk-challenges/{challenge_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** PK挑战详情 */
-        get: operations["get_challenge_api_v1_pk_challenges__challenge_id__get"];
-        put?: never;
-        post?: never;
-        /** 取消挑战（仅创建者） */
-        delete: operations["cancel_challenge_api_v1_pk_challenges__challenge_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/pk-challenges/{challenge_id}/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 刷新挑战分数 */
-        post: operations["refresh_scores_api_v1_pk_challenges__challenge_id__refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/dm/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取对话列表 */
-        get: operations["get_conversations_api_v1_dm_conversations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/dm/messages/{friend_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取消息历史 */
-        get: operations["get_messages_api_v1_dm_messages__friend_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/dm/send": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 发送消息 */
-        post: operations["send_message_api_v1_dm_send_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/dm/read/{friend_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** 标记与某好友的消息已读 */
-        put: operations["mark_read_api_v1_dm_read__friend_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/dm/unread-count": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取总未读消息数 */
-        get: operations["get_unread_count_api_v1_dm_unread_count_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 我的群聊列表 */
-        get: operations["list_groups_api_v1_groups_get"];
-        put?: never;
-        /** 创建群聊 */
-        post: operations["create_group_api_v1_groups_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/groups/{group_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 群聊详情 */
-        get: operations["get_group_api_v1_groups__group_id__get"];
-        /** 修改群名称 */
-        put: operations["update_group_api_v1_groups__group_id__put"];
-        post?: never;
-        /** 解散群聊（仅群主） */
-        delete: operations["dissolve_group_api_v1_groups__group_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/groups/{group_id}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 群消息历史 */
-        get: operations["get_messages_api_v1_groups__group_id__messages_get"];
-        put?: never;
-        /** 发送群消息 */
-        post: operations["send_message_api_v1_groups__group_id__messages_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/groups/{group_id}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 添加群成员 */
-        post: operations["add_member_api_v1_groups__group_id__members_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/groups/{group_id}/members/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** 移除群成员 */
-        delete: operations["remove_member_api_v1_groups__group_id__members__user_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/groups/{group_id}/leave": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 退出群聊 */
-        post: operations["leave_group_api_v1_groups__group_id__leave_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/family/groups": {
         parameters: {
             query?: never;
@@ -12470,403 +12488,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/kids-pet/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取我的狗狗空间 */
-        get: operations["get_my_pet_api_v1_kids_pet_me_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/kids-pet/adopt": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 领养狗狗 */
-        post: operations["adopt_pet_api_v1_kids_pet_adopt_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/kids-pet/action": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 狗狗互动 */
-        post: operations["pet_action_api_v1_kids_pet_action_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/kids-plan/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取计划历史统计 */
-        get: operations["get_plan_history_api_v1_kids_plan_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/kids-plan/review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** AI生成计划复盘 */
-        post: operations["generate_plan_review_api_v1_kids_plan_review_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/kids-plan/{plan_date}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取某天计划 */
-        get: operations["get_plan_api_v1_kids_plan__plan_date__get"];
-        /** 保存/更新计划 */
-        put: operations["save_plan_api_v1_kids_plan__plan_date__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/kids-plan/copy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 复制计划到指定日期 */
-        post: operations["copy_plan_api_v1_kids_plan_copy_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/points/today": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 今日积分 */
-        get: operations["get_today_points_api_v1_points_today_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/points/date/{target_date}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 指定日期积分 */
-        get: operations["get_date_points_api_v1_points_date__target_date__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/points/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 积分总览 */
-        get: operations["get_points_summary_api_v1_points_summary_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/points/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 积分历史 */
-        get: operations["get_points_history_api_v1_points_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/achievements/definitions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Definitions
-         * @description 获取所有徽章定义（公开）
-         */
-        get: operations["get_definitions_api_v1_achievements_definitions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/achievements/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get My Achievements
-         * @description 获取当前用户成就 + 进度
-         */
-        get: operations["get_my_achievements_api_v1_achievements_me_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/achievements/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Check Achievements
-         * @description 手动触发成就检查
-         */
-        post: operations["check_achievements_api_v1_achievements_check_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/vocabulary/words": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 单词本列表 */
-        get: operations["list_words_api_v1_vocabulary_words_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/vocabulary/words/{word_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 单词详情 */
-        get: operations["get_word_api_v1_vocabulary_words__word_id__get"];
-        put?: never;
-        post?: never;
-        /** 删除单词 */
-        delete: operations["delete_word_api_v1_vocabulary_words__word_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/vocabulary/review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 今日待复习单词 */
-        get: operations["get_review_words_api_v1_vocabulary_review_get"];
-        put?: never;
-        /** 提交复习结果 */
-        post: operations["submit_review_api_v1_vocabulary_review_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/trip/trips": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Trips
-         * @description 获取行程列表
-         */
-        get: operations["list_trips_api_v1_trip_trips_get"];
-        put?: never;
-        /**
-         * Create Trip
-         * @description 创建行程（可携带明细）
-         */
-        post: operations["create_trip_api_v1_trip_trips_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/trip/trips/{trip_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Trip
-         * @description 获取行程详情（含所有明细）
-         */
-        get: operations["get_trip_api_v1_trip_trips__trip_id__get"];
-        /**
-         * Update Trip
-         * @description 更新行程基本信息
-         */
-        put: operations["update_trip_api_v1_trip_trips__trip_id__put"];
-        post?: never;
-        /**
-         * Delete Trip
-         * @description 删除行程（级联删除明细）
-         */
-        delete: operations["delete_trip_api_v1_trip_trips__trip_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/trip/trips/{trip_id}/items": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add Trip Item
-         * @description 添加行程明细
-         */
-        post: operations["add_trip_item_api_v1_trip_trips__trip_id__items_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/trip/items/{item_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Trip Item
-         * @description 更新行程明细
-         */
-        put: operations["update_trip_item_api_v1_trip_items__item_id__put"];
-        post?: never;
-        /**
-         * Delete Trip Item
-         * @description 删除行程明细
-         */
-        delete: operations["delete_trip_item_api_v1_trip_items__item_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/siri/say": {
         parameters: {
             query?: never;
@@ -12967,610 +12588,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/articles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Articles
-         * @description 获取资讯列表，支持 feed 过滤：all/mine/community
-         */
-        get: operations["list_articles_api_v1_news_articles_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/articles/{article_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Article
-         * @description 获取资讯详情，含可见性检查
-         */
-        get: operations["get_article_api_v1_news_articles__article_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Article
-         * @description 删除文章（本人或管理员）
-         */
-        delete: operations["delete_article_api_v1_news_articles__article_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/articles/push": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Push Article
-         * @description 推送 LLM 分析结果到自己的资讯（JWT 认证）
-         */
-        post: operations["push_article_api_v1_news_articles_push_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/articles/{article_id}/visibility": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Article Visibility
-         * @description 切换自己文章的公开/私密
-         */
-        patch: operations["update_article_visibility_api_v1_news_articles__article_id__visibility_patch"];
-        trace?: never;
-    };
-    "/api/v1/news/public/feed/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Public User Feed
-         * @description 公开 API：获取用户的公开资讯（无需登录）
-         */
-        get: operations["get_public_user_feed_api_v1_news_public_feed__user_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/external/articles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Article External
-         * @description 创建文章（外部系统通过 API Key 调用，系统级文章）
-         */
-        post: operations["create_article_external_api_v1_news_external_articles_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/admin/api-keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Api Keys
-         * @description 列出所有 API Key（仅管理员）
-         */
-        get: operations["list_api_keys_api_v1_news_admin_api_keys_get"];
-        put?: never;
-        /**
-         * Create Api Key
-         * @description 创建新的 API Key（仅管理员）
-         */
-        post: operations["create_api_key_api_v1_news_admin_api_keys_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/admin/api-keys/{key_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Api Key
-         * @description 删除 API Key（仅管理员）
-         */
-        delete: operations["delete_api_key_api_v1_news_admin_api_keys__key_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/admin/articles/{article_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Article Admin
-         * @description 管理员更新文章状态（发布/置顶）
-         */
-        patch: operations["update_article_admin_api_v1_news_admin_articles__article_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/news/articles/{article_id}/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Article Comments
-         * @description 获取文章评论
-         */
-        get: operations["get_article_comments_api_v1_news_articles__article_id__comments_get"];
-        put?: never;
-        /**
-         * Create Comment
-         * @description 发表评论
-         */
-        post: operations["create_comment_api_v1_news_articles__article_id__comments_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/news/comments/{comment_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Comment
-         * @description 删除评论（仅评论者本人或管理员）
-         */
-        delete: operations["delete_comment_api_v1_news_comments__comment_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/profile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Profile
-         * @description 获取或自动创建用户防御配置
-         */
-        get: operations["get_profile_api_v1_security_life_profile_get"];
-        /**
-         * Update Profile
-         * @description 更新防御配置
-         */
-        put: operations["update_profile_api_v1_security_life_profile_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/assets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Assets
-         * @description 获取两层资产
-         */
-        get: operations["get_assets_api_v1_security_life_assets_get"];
-        /**
-         * Update Assets
-         * @description 更新职业/股权 & 第二层总额
-         */
-        put: operations["update_assets_api_v1_security_life_assets_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/properties": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add Property
-         * @description 添加房产
-         */
-        post: operations["add_property_api_v1_security_life_properties_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/properties/{prop_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Property
-         * @description 更新房产
-         */
-        put: operations["update_property_api_v1_security_life_properties__prop_id__put"];
-        post?: never;
-        /**
-         * Delete Property
-         * @description 删除房产
-         */
-        delete: operations["delete_property_api_v1_security_life_properties__prop_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/baskets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Baskets
-         * @description 获取四大篮子
-         */
-        get: operations["get_baskets_api_v1_security_life_baskets_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/baskets/{basket_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Basket
-         * @description 更新篮子金额/自定义区间
-         */
-        put: operations["update_basket_api_v1_security_life_baskets__basket_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/cash-layers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Cash Layers
-         * @description 获取三层现金
-         */
-        get: operations["get_cash_layers_api_v1_security_life_cash_layers_get"];
-        /**
-         * Update Cash Layers
-         * @description 批量更新三层现金
-         */
-        put: operations["update_cash_layers_api_v1_security_life_cash_layers_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/checklist/init": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Init Checklist
-         * @description 初始化默认清单项（幂等操作）
-         */
-        post: operations["init_checklist_api_v1_security_life_checklist_init_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/checklist": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Checklist
-         * @description 获取清单（自动初始化默认项）
-         */
-        get: operations["get_checklist_api_v1_security_life_checklist_get"];
-        put?: never;
-        /**
-         * Add Checklist Item
-         * @description 添加自定义清单项
-         */
-        post: operations["add_checklist_item_api_v1_security_life_checklist_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/checklist/{item_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Checklist Item
-         * @description 更新清单项
-         */
-        put: operations["update_checklist_item_api_v1_security_life_checklist__item_id__put"];
-        post?: never;
-        /**
-         * Delete Checklist Item
-         * @description 删除自定义清单项（默认项不可删除）
-         */
-        delete: operations["delete_checklist_item_api_v1_security_life_checklist__item_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/checklist/{item_id}/toggle": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Toggle Checklist Item
-         * @description 切换清单项完成状态
-         */
-        patch: operations["toggle_checklist_item_api_v1_security_life_checklist__item_id__toggle_patch"];
-        trace?: never;
-    };
-    "/api/v1/security-life/red-lines": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Red Lines
-         * @description 获取三条红线状态
-         */
-        get: operations["get_red_lines_api_v1_security_life_red_lines_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/red-lines/{line_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Red Line
-         * @description 更新红线状态
-         */
-        put: operations["update_red_line_api_v1_security_life_red_lines__line_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/security-life/dashboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Dashboard
-         * @description 获取总览数据（全部 KPI）
-         */
-        get: operations["get_dashboard_api_v1_security_life_dashboard_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/affiliate-products/match": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Match Products
-         * @description 根据补剂名称匹配可购买产品，结合用户基因加权
-         */
-        get: operations["match_products_api_v1_affiliate_products_match_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/affiliate-products": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Products
-         * @description 列出产品（管理员）
-         */
-        get: operations["list_products_api_v1_affiliate_products_get"];
-        put?: never;
-        /**
-         * Create Product
-         * @description 创建产品（管理员）
-         */
-        post: operations["create_product_api_v1_affiliate_products_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/affiliate-products/{product_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Product
-         * @description 更新产品（管理员）
-         */
-        put: operations["update_product_api_v1_affiliate_products__product_id__put"];
-        post?: never;
-        /**
-         * Delete Product
-         * @description 软删除产品（管理员）
-         */
-        delete: operations["delete_product_api_v1_affiliate_products__product_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -13863,6 +12880,23 @@ export interface components {
              */
             period: string;
         };
+        /**
+         * ActionCardAdherence
+         * @description 用户/系统设置这张卡的执行依从度.
+         */
+        ActionCardAdherence: {
+            /**
+             * Kind
+             * @default self_reported
+             * @enum {string}
+             */
+            kind: "self_reported" | "device" | "proxy";
+            /**
+             * Confidence
+             * @description 0-100, 0=完全没做, 100=完全做到
+             */
+            confidence: number;
+        };
         /** ActionCardCreate */
         ActionCardCreate: {
             /** Title */
@@ -13890,6 +12924,20 @@ export interface components {
             priority: number;
             /** Expires At */
             expires_at?: string | null;
+            /** Metric Key */
+            metric_key?: string | null;
+            /** Baseline Value */
+            baseline_value?: string | null;
+            /** Target Value */
+            target_value?: string | null;
+            /** Verification Days */
+            verification_days?: number | null;
+            /** Checklist */
+            checklist?: components["schemas"]["ChecklistItem"][];
+            /** Creator Specialist */
+            creator_specialist?: string | null;
+            /** Check Back Date */
+            check_back_date?: string | null;
         };
         /** ActionCardFromMessage */
         ActionCardFromMessage: {
@@ -13905,6 +12953,28 @@ export interface components {
              * @default plan
              */
             card_type: string;
+            /**
+             * Creator Specialist
+             * @description 若由 specialist 触发, 标注 specialist 名 (recovery_coach 等)
+             */
+            creator_specialist?: string | null;
+        };
+        /** ActionCardReview */
+        ActionCardReview: {
+            /**
+             * Status
+             * @default completed
+             * @enum {string}
+             */
+            status: "active" | "completed" | "archived";
+            /**
+             * Outcome Status
+             * @enum {string}
+             */
+            outcome_status: "met" | "not_met" | "inconclusive" | "pending";
+            /** Actual Value */
+            actual_value?: string | null;
+            latest_assessment: components["schemas"]["LatestAssessmentInput"];
         };
         /** ActionCardUpdate */
         ActionCardUpdate: {
@@ -14181,153 +13251,6 @@ export interface components {
             /** Medical Exams Count */
             medical_exams_count: number;
         };
-        /** AffiliateProductCreate */
-        AffiliateProductCreate: {
-            /** Name */
-            name: string;
-            /** Brand */
-            brand?: string | null;
-            /** Image Url */
-            image_url?: string | null;
-            /** Supplement Name */
-            supplement_name: string;
-            /**
-             * Category
-             * @default basic
-             */
-            category: string;
-            /**
-             * Keywords
-             * @default []
-             */
-            keywords: string[];
-            /**
-             * Platform
-             * @default iherb
-             */
-            platform: string;
-            /** Affiliate Url */
-            affiliate_url: string;
-            /** Price Display */
-            price_display?: string | null;
-            /**
-             * Currency
-             * @default CNY
-             */
-            currency: string;
-            /**
-             * Gene Tags
-             * @default []
-             */
-            gene_tags: string[];
-            /** Gene Description */
-            gene_description?: string | null;
-            /**
-             * Is Active
-             * @default true
-             */
-            is_active: boolean;
-            /**
-             * Sort Order
-             * @default 0
-             */
-            sort_order: number;
-            /** Notes */
-            notes?: string | null;
-        };
-        /** AffiliateProductResponse */
-        AffiliateProductResponse: {
-            /** Name */
-            name: string;
-            /** Brand */
-            brand?: string | null;
-            /** Image Url */
-            image_url?: string | null;
-            /** Supplement Name */
-            supplement_name: string;
-            /**
-             * Category
-             * @default basic
-             */
-            category: string;
-            /**
-             * Keywords
-             * @default []
-             */
-            keywords: string[];
-            /**
-             * Platform
-             * @default iherb
-             */
-            platform: string;
-            /** Affiliate Url */
-            affiliate_url: string;
-            /** Price Display */
-            price_display?: string | null;
-            /**
-             * Currency
-             * @default CNY
-             */
-            currency: string;
-            /**
-             * Gene Tags
-             * @default []
-             */
-            gene_tags: string[];
-            /** Gene Description */
-            gene_description?: string | null;
-            /**
-             * Is Active
-             * @default true
-             */
-            is_active: boolean;
-            /**
-             * Sort Order
-             * @default 0
-             */
-            sort_order: number;
-            /** Notes */
-            notes?: string | null;
-            /** Id */
-            id: number;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /** AffiliateProductUpdate */
-        AffiliateProductUpdate: {
-            /** Name */
-            name?: string | null;
-            /** Brand */
-            brand?: string | null;
-            /** Image Url */
-            image_url?: string | null;
-            /** Supplement Name */
-            supplement_name?: string | null;
-            /** Category */
-            category?: string | null;
-            /** Keywords */
-            keywords?: string[] | null;
-            /** Platform */
-            platform?: string | null;
-            /** Affiliate Url */
-            affiliate_url?: string | null;
-            /** Price Display */
-            price_display?: string | null;
-            /** Currency */
-            currency?: string | null;
-            /** Gene Tags */
-            gene_tags?: string[] | null;
-            /** Gene Description */
-            gene_description?: string | null;
-            /** Is Active */
-            is_active?: boolean | null;
-            /** Sort Order */
-            sort_order?: number | null;
-            /** Notes */
-            notes?: string | null;
-        };
         /** AgentRequest */
         AgentRequest: {
             /** Message */
@@ -14368,11 +13291,13 @@ export interface components {
             /** Name */
             name: string;
             /** Api Key */
-            api_key: string | null;
+            api_key?: string | null;
+            /** Scopes */
+            scopes: string;
             /** Is Active */
             is_active: boolean;
             /** Last Used At */
-            last_used_at: string | null;
+            last_used_at?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -14396,173 +13321,6 @@ export interface components {
         ApproveUserRequest: {
             /** Is Approved */
             is_approved: boolean;
-        };
-        /**
-         * ArticleCreate
-         * @description 创建文章请求（外部系统）
-         */
-        ArticleCreate: {
-            /** Source Batch Id */
-            source_batch_id: string;
-            /** Source Type */
-            source_type: string;
-            /** Title */
-            title: string;
-            /** Summary */
-            summary?: string | null;
-            /** Content */
-            content: string;
-            /** Tags */
-            tags?: string[] | null;
-            /** Topics */
-            topics?: string[] | null;
-            /** Key People */
-            key_people?: string[] | null;
-            /** Source Group */
-            source_group?: string | null;
-            /** Llm Models */
-            llm_models?: string[] | null;
-            /** Aggregator Model */
-            aggregator_model?: string | null;
-            /** Source Created At */
-            source_created_at?: string | null;
-        };
-        /**
-         * ArticleListItem
-         * @description 文章列表项（不含完整内容）
-         */
-        ArticleListItem: {
-            /** Id */
-            id: number;
-            /** Source Batch Id */
-            source_batch_id: string;
-            /** Source Type */
-            source_type: string;
-            /** Title */
-            title: string;
-            /** Summary */
-            summary: string | null;
-            /** Tags */
-            tags: string[] | null;
-            /** Source Group */
-            source_group: string | null;
-            /** Is Pinned */
-            is_pinned: boolean;
-            /** View Count */
-            view_count: number;
-            /** User Id */
-            user_id?: number | null;
-            /**
-             * Visibility
-             * @default public
-             */
-            visibility: string;
-            /** Author Name */
-            author_name?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /**
-         * ArticleResponse
-         * @description 文章响应
-         */
-        ArticleResponse: {
-            /** Id */
-            id: number;
-            /** Source Batch Id */
-            source_batch_id: string;
-            /** Source Type */
-            source_type: string;
-            /** Title */
-            title: string;
-            /** Summary */
-            summary: string | null;
-            /** Content */
-            content: string | null;
-            /** Tags */
-            tags: string[] | null;
-            /** Topics */
-            topics: string[] | null;
-            /** Key People */
-            key_people: string[] | null;
-            /** Source Group */
-            source_group: string | null;
-            /** Llm Models */
-            llm_models: string[] | null;
-            /** Aggregator Model */
-            aggregator_model: string | null;
-            /** Is Pinned */
-            is_pinned: boolean;
-            /** View Count */
-            view_count: number;
-            /** User Id */
-            user_id?: number | null;
-            /**
-             * Visibility
-             * @default public
-             */
-            visibility: string;
-            /** Author Name */
-            author_name?: string | null;
-            /** Source Created At */
-            source_created_at: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /** AssetResponse */
-        AssetResponse: {
-            /** Career Description */
-            career_description?: string | null;
-            /**
-             * Career Valuation
-             * @default 0
-             */
-            career_valuation: number | null;
-            /** Career Note */
-            career_note?: string | null;
-            /**
-             * Second Layer Total
-             * @default 0
-             */
-            second_layer_total: number | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /**
-             * Properties
-             * @default []
-             */
-            properties: components["schemas"]["PropertyResponse"][];
-            /** First Layer Total */
-            first_layer_total?: number | null;
-            /** Second Layer Share */
-            second_layer_share?: number | null;
-            /** Created At */
-            created_at?: string | null;
-        };
-        /** AssetUpdate */
-        AssetUpdate: {
-            /** Career Description */
-            career_description?: string | null;
-            /**
-             * Career Valuation
-             * @default 0
-             */
-            career_valuation: number | null;
-            /** Career Note */
-            career_note?: string | null;
-            /**
-             * Second Layer Total
-             * @default 0
-             */
-            second_layer_total: number | null;
         };
         /**
          * AssistantDashboardDeviceLayout
@@ -14737,43 +13495,6 @@ export interface components {
             record_date: string;
             /** Notes */
             notes: string | null;
-        };
-        /** BasketListResponse */
-        BasketListResponse: {
-            /** Baskets */
-            baskets: components["schemas"]["BasketResponse"][];
-            /**
-             * Total
-             * @default 0
-             */
-            total: number;
-        };
-        /** BasketResponse */
-        BasketResponse: {
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Basket Id */
-            basket_id: string;
-            /**
-             * Amount
-             * @default 0
-             */
-            amount: number;
-            /** Custom Min Percent */
-            custom_min_percent?: number | null;
-            /** Custom Max Percent */
-            custom_max_percent?: number | null;
-        };
-        /** BasketUpdate */
-        BasketUpdate: {
-            /** Amount */
-            amount?: number | null;
-            /** Custom Min Percent */
-            custom_min_percent?: number | null;
-            /** Custom Max Percent */
-            custom_max_percent?: number | null;
         };
         /**
          * BatchConfirmRequest
@@ -15126,49 +13847,6 @@ export interface components {
              * @default other
              */
             category: string;
-        };
-        /** CashLayerItem */
-        CashLayerItem: {
-            /**
-             * Layer
-             * @description T0 / T7 / T30
-             */
-            layer: string;
-            /**
-             * Amount
-             * @default 0
-             */
-            amount: number;
-            /** Institution */
-            institution?: string | null;
-            /** Note */
-            note?: string | null;
-        };
-        /** CashLayerResponse */
-        CashLayerResponse: {
-            /**
-             * Layer
-             * @description T0 / T7 / T30
-             */
-            layer: string;
-            /**
-             * Amount
-             * @default 0
-             */
-            amount: number;
-            /** Institution */
-            institution?: string | null;
-            /** Note */
-            note?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-        };
-        /** CashLayerUpdate */
-        CashLayerUpdate: {
-            /** Layers */
-            layers: components["schemas"]["CashLayerItem"][];
         };
         /** CgmBatchIn */
         CgmBatchIn: {
@@ -15878,104 +14556,15 @@ export interface components {
             /** Sort Order */
             sort_order?: number | null;
         };
-        /** ChecklistItemCreate */
-        ChecklistItemCreate: {
+        /** ChecklistItem */
+        ChecklistItem: {
+            /** Item */
+            item: string;
             /**
-             * Phase
-             * @description 0-2 / 3-6 / 7-12
-             */
-            phase: string;
-            /**
-             * System Id
-             * @description 1-5 对应五大系统
-             */
-            system_id: number;
-            /** Label */
-            label: string;
-            /** Detail */
-            detail?: string | null;
-        };
-        /** ChecklistItemResponse */
-        ChecklistItemResponse: {
-            /**
-             * Phase
-             * @description 0-2 / 3-6 / 7-12
-             */
-            phase: string;
-            /**
-             * System Id
-             * @description 1-5 对应五大系统
-             */
-            system_id: number;
-            /** Label */
-            label: string;
-            /** Detail */
-            detail?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /**
-             * Is Default
+             * Done
              * @default false
              */
-            is_default: boolean;
-            /** Default Item Id */
-            default_item_id?: string | null;
-            /**
-             * Completed
-             * @default false
-             */
-            completed: boolean;
-            /** Completed At */
-            completed_at?: string | null;
-            /**
-             * Sort Order
-             * @default 0
-             */
-            sort_order: number;
-            /** Created At */
-            created_at?: string | null;
-        };
-        /** ChecklistItemUpdate */
-        ChecklistItemUpdate: {
-            /** Label */
-            label?: string | null;
-            /** Detail */
-            detail?: string | null;
-            /** Phase */
-            phase?: string | null;
-            /** System Id */
-            system_id?: number | null;
-            /** Completed */
-            completed?: boolean | null;
-            /** Sort Order */
-            sort_order?: number | null;
-        };
-        /** ChecklistListResponse */
-        ChecklistListResponse: {
-            /** Items */
-            items: components["schemas"]["ChecklistItemResponse"][];
-            /**
-             * Total
-             * @default 0
-             */
-            total: number;
-            /**
-             * Completed Count
-             * @default 0
-             */
-            completed_count: number;
-            /**
-             * Phases
-             * @default {}
-             */
-            phases: Record<string, never>;
-            /**
-             * Systems
-             * @default {}
-             */
-            systems: Record<string, never>;
+            done: boolean;
         };
         /** ClawHubInstallRequest */
         ClawHubInstallRequest: {
@@ -16016,16 +14605,6 @@ export interface components {
             source_type: string;
             /** Video Url */
             video_url?: string | null;
-        };
-        /**
-         * CommentCreate
-         * @description 创建评论请求
-         */
-        CommentCreate: {
-            /** Content */
-            content: string;
-            /** Parent Id */
-            parent_id?: number | null;
         };
         /** ConsultationItemCreate */
         ConsultationItemCreate: {
@@ -16310,65 +14889,6 @@ export interface components {
              */
             current_medications: components["schemas"]["MedicationItem"][];
         };
-        /** DMConversationItem */
-        DMConversationItem: {
-            /** Friend Id */
-            friend_id: number;
-            /** Friend Name */
-            friend_name: string;
-            /** Friend Avatar */
-            friend_avatar?: string | null;
-            /** Last Message */
-            last_message: string;
-            /**
-             * Last Message Time
-             * Format: date-time
-             */
-            last_message_time: string;
-            /** Unread Count */
-            unread_count: number;
-        };
-        /** DMHistoryResponse */
-        DMHistoryResponse: {
-            /** Messages */
-            messages: components["schemas"]["DMResponse"][];
-            /** Has More */
-            has_more: boolean;
-        };
-        /** DMResponse */
-        DMResponse: {
-            /** Id */
-            id: number;
-            /** Sender Id */
-            sender_id: number;
-            /** Receiver Id */
-            receiver_id: number;
-            /** Content */
-            content: string;
-            /** Is Read */
-            is_read: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Sender Name */
-            sender_name?: string | null;
-            /** Sender Avatar */
-            sender_avatar?: string | null;
-        };
-        /** DMSendRequest */
-        DMSendRequest: {
-            /** Receiver Id */
-            receiver_id: number;
-            /** Content */
-            content: string;
-        };
-        /** DMUnreadCountResponse */
-        DMUnreadCountResponse: {
-            /** Total Unread */
-            total_unread: number;
-        };
         /**
          * DailyDietSummary
          * @description 每日饮食汇总
@@ -16601,21 +15121,6 @@ export interface components {
             zones?: {
                 [key: string]: number;
             } | null;
-        };
-        /**
-         * DailyPointsResponse
-         * @description 每日积分汇总
-         */
-        DailyPointsResponse: {
-            /**
-             * Date
-             * Format: date
-             */
-            date: string;
-            /** Total Points */
-            total_points: number;
-            /** Items */
-            items: components["schemas"]["PointItem"][];
         };
         /**
          * DailyReviewResponse
@@ -16930,58 +15435,6 @@ export interface components {
              */
             records: components["schemas"]["WaterRecordResponse"][];
         };
-        /** DashboardResponse */
-        DashboardResponse: {
-            /**
-             * Red Lines
-             * @default []
-             */
-            red_lines: components["schemas"]["RedLineResponse"][];
-            /**
-             * First Layer Total
-             * @default 0
-             */
-            first_layer_total: number;
-            /**
-             * Second Layer Total
-             * @default 0
-             */
-            second_layer_total: number;
-            /** Second Layer Share */
-            second_layer_share?: number | null;
-            /**
-             * Basket Total
-             * @default 0
-             */
-            basket_total: number;
-            /**
-             * Baskets
-             * @default []
-             */
-            baskets: components["schemas"]["BasketResponse"][];
-            /**
-             * Cash Layers
-             * @default []
-             */
-            cash_layers: components["schemas"]["CashLayerResponse"][];
-            /** Cash Runway Months */
-            cash_runway_months?: number | null;
-            /**
-             * Checklist Total
-             * @default 0
-             */
-            checklist_total: number;
-            /**
-             * Checklist Completed
-             * @default 0
-             */
-            checklist_completed: number;
-            /**
-             * Monthly Expense
-             * @default 0
-             */
-            monthly_expense: number;
-        };
         /**
          * DeleteBySourceInput
          * @description 按来源删除
@@ -17188,6 +15641,30 @@ export interface components {
              */
             days_recorded: number;
         };
+        /** DirectiveCreate */
+        DirectiveCreate: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "medication_change" | "target_override" | "lifestyle" | "watch_metric" | "skip_recommendation";
+            /** Instruction */
+            instruction: string;
+            /** Metric Key */
+            metric_key?: string | null;
+            /** Target Value */
+            target_value?: string | null;
+            /** Medication Name */
+            medication_name?: string | null;
+            /**
+             * Severity
+             * @default strong
+             * @enum {string}
+             */
+            severity: "advisory" | "strong" | "mandatory";
+            /** Expires Days */
+            expires_days?: number | null;
+        };
         /**
          * DiseaseRecordCreate
          * @description 创建疾病记录
@@ -17327,6 +15804,22 @@ export interface components {
             distance: number;
             /** Elevation */
             elevation: number;
+        };
+        /** EntityCreate */
+        EntityCreate: {
+            /** Type */
+            type: string;
+            /** Canonical Name */
+            canonical_name: string;
+            /** Aliases */
+            aliases?: string[];
+            /** Attributes */
+            attributes?: Record<string, never>;
+            /**
+             * Confidence
+             * @default 0.7
+             */
+            confidence: number;
         };
         /** EventOut */
         EventOut: {
@@ -17687,6 +16180,46 @@ export interface components {
             /** Cached */
             cached: boolean;
         };
+        /** FactCreate */
+        FactCreate: {
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "working" | "episodic" | "semantic" | "procedural";
+            /** Subject */
+            subject: string;
+            /** Predicate */
+            predicate: string;
+            /** Object Value */
+            object_value: string;
+            /** Object Unit */
+            object_unit?: string | null;
+            /**
+             * Confidence
+             * @default 0.5
+             */
+            confidence: number;
+            /** Tags */
+            tags?: string[];
+            /**
+             * Is Sensitive
+             * @default false
+             */
+            is_sensitive: boolean;
+        };
+        /** FactReinforce */
+        FactReinforce: {
+            /** Source Type */
+            source_type: string;
+            /** Source Id */
+            source_id?: string | null;
+            /**
+             * Weight
+             * @default 0.5
+             */
+            weight: number;
+        };
         /** FamilyGroupCreate */
         FamilyGroupCreate: {
             /**
@@ -17840,57 +16373,15 @@ export interface components {
             /** Error */
             error?: string | null;
         };
-        /**
-         * FriendInfo
-         * @description 好友信息
-         */
-        FriendInfo: {
-            /** User Id */
-            user_id: number;
-            /** Name */
-            name: string;
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /** Friendship Id */
-            friendship_id: number;
+        /** FreeTextParseRequest */
+        FreeTextParseRequest: {
+            /** Text */
+            text: string;
             /**
-             * Since
-             * Format: date-time
+             * Source
+             * @default manual
              */
-            since: string;
-        };
-        /** FriendRequestCreate */
-        FriendRequestCreate: {
-            /** Friend Id */
-            friend_id: number;
-            /** Message */
-            message?: string | null;
-        };
-        /** FriendRequestResponse */
-        FriendRequestResponse: {
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Friend Id */
-            friend_id: number;
-            /** Status */
-            status: string;
-            /** Message */
-            message?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** User Name */
-            user_name?: string | null;
-            /** User Avatar */
-            user_avatar?: string | null;
-            /** Friend Name */
-            friend_name?: string | null;
-            /** Friend Avatar */
-            friend_avatar?: string | null;
+            source: string;
         };
         /**
          * GarminCredentialCreate
@@ -18574,86 +17065,6 @@ export interface components {
          * @enum {string}
          */
         GoalType: "diet" | "exercise" | "sleep" | "water" | "supplement" | "outdoor" | "weight" | "other";
-        /** GroupAddMemberRequest */
-        GroupAddMemberRequest: {
-            /** User Id */
-            user_id: number;
-        };
-        /** GroupCreateRequest */
-        GroupCreateRequest: {
-            /** Name */
-            name: string;
-            /** Member Ids */
-            member_ids: number[];
-        };
-        /** GroupDetail */
-        GroupDetail: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /** Creator Id */
-            creator_id: number;
-            /** Members */
-            members: components["schemas"]["MemberInfo"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /** GroupListItem */
-        GroupListItem: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /** Member Count */
-            member_count: number;
-            /** Last Message */
-            last_message?: string | null;
-            /** Last Message At */
-            last_message_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /** GroupMsgResponse */
-        GroupMsgResponse: {
-            /** Id */
-            id: number;
-            /** Group Id */
-            group_id: number;
-            /** Sender Id */
-            sender_id: number;
-            /** Sender Name */
-            sender_name: string;
-            /** Sender Avatar */
-            sender_avatar?: string | null;
-            /** Content */
-            content: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /** GroupMsgSendRequest */
-        GroupMsgSendRequest: {
-            /** Content */
-            content: string;
-        };
-        /** GroupUpdateRequest */
-        GroupUpdateRequest: {
-            /** Name */
-            name: string;
-        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -19535,222 +17946,6 @@ export interface components {
             /** Remaining Uses */
             remaining_uses?: number | null;
         };
-        /** KidsPetActionRequest */
-        KidsPetActionRequest: {
-            /**
-             * Action
-             * @enum {string}
-             */
-            action: "buy_food" | "feed" | "feed_full" | "buy_house" | "buy_garden" | "return_house" | "return_garden" | "return_dog";
-        };
-        /** KidsPetAdoptRequest */
-        KidsPetAdoptRequest: {
-            /** Breed Id */
-            breed_id: string;
-            /** Breed Name */
-            breed_name: string;
-            /** Breed Cost */
-            breed_cost: number;
-            /** Breed Image */
-            breed_image?: string | null;
-            /** Dog Name */
-            dog_name: string;
-        };
-        /** KidsPetResponse */
-        KidsPetResponse: {
-            /** Has Pet */
-            has_pet: boolean;
-            /** Kids Points */
-            kids_points: number;
-            pet?: components["schemas"]["KidsPetState"] | null;
-            /** Message */
-            message?: string | null;
-        };
-        /** KidsPetState */
-        KidsPetState: {
-            /** Breed Id */
-            breed_id: string;
-            /** Breed Name */
-            breed_name: string;
-            /** Breed Image */
-            breed_image?: string | null;
-            /**
-             * Breed Cost
-             * @default 0
-             */
-            breed_cost: number;
-            /** Dog Name */
-            dog_name: string;
-            /** Hunger */
-            hunger: number;
-            /** Happiness */
-            happiness: number;
-            /** Level */
-            level: number;
-            /** Xp */
-            xp: number;
-            /** Food Bags */
-            food_bags: number;
-            /** Has House */
-            has_house: boolean;
-            /** Has Garden */
-            has_garden: boolean;
-            /** Last Decay At */
-            last_decay_at?: string | null;
-            /** Last Interaction At */
-            last_interaction_at?: string | null;
-        };
-        /** KidsPlanCopyRequest */
-        KidsPlanCopyRequest: {
-            /**
-             * From Date
-             * Format: date
-             */
-            from_date: string;
-            /**
-             * To Date
-             * Format: date
-             */
-            to_date: string;
-        };
-        /**
-         * KidsPlanDaySummary
-         * @description 每天摘要
-         */
-        KidsPlanDaySummary: {
-            /**
-             * Plan Date
-             * Format: date
-             */
-            plan_date: string;
-            /** Total Items */
-            total_items: number;
-            /** Done Count */
-            done_count: number;
-            /** Completion Rate */
-            completion_rate: number;
-            /**
-             * Awarded Tier
-             * @default 0
-             */
-            awarded_tier: number;
-        };
-        /**
-         * KidsPlanHistoryResponse
-         * @description 历史统计响应
-         */
-        KidsPlanHistoryResponse: {
-            /** Range */
-            range: string;
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             */
-            end_date: string;
-            /** Days */
-            days: components["schemas"]["KidsPlanDaySummary"][];
-            /** Total Plan Days */
-            total_plan_days: number;
-            /** Total Items */
-            total_items: number;
-            /** Total Done */
-            total_done: number;
-            /** Avg Completion Rate */
-            avg_completion_rate: number;
-            /** Current Streak */
-            current_streak: number;
-            /** Best Streak */
-            best_streak: number;
-            /** Top Activities */
-            top_activities: Record<string, never>[];
-        };
-        /** KidsPlanResponse */
-        KidsPlanResponse: {
-            /**
-             * Plan Date
-             * Format: date
-             */
-            plan_date: string;
-            /** Items */
-            items: components["schemas"]["PlanItemSchema"][];
-            /**
-             * Awarded Tier
-             * @default 0
-             */
-            awarded_tier: number;
-            /**
-             * Points Awarded
-             * @default 0
-             */
-            points_awarded: number;
-            /**
-             * Total Kids Points
-             * @default 0
-             */
-            total_kids_points: number;
-        };
-        /**
-         * KidsPlanReviewRequest
-         * @description AI 复盘请求
-         */
-        KidsPlanReviewRequest: {
-            /**
-             * Range
-             * @default week
-             */
-            range: string;
-        };
-        /**
-         * KidsPlanReviewResponse
-         * @description AI 复盘响应
-         */
-        KidsPlanReviewResponse: {
-            /** Range */
-            range: string;
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             */
-            end_date: string;
-            /** Review Text */
-            review_text: string;
-            /** Stats Summary */
-            stats_summary: Record<string, never>;
-        };
-        /** KidsPlanSaveRequest */
-        KidsPlanSaveRequest: {
-            /** Items */
-            items: components["schemas"]["PlanItemSchema"][];
-        };
-        /**
-         * KidsPointsResponse
-         * @description 儿童模式积分响应
-         */
-        KidsPointsResponse: {
-            /** Kids Points */
-            kids_points: number;
-        };
-        /**
-         * KidsPointsUpdate
-         * @description 儿童模式积分更新
-         */
-        KidsPointsUpdate: {
-            /**
-             * Kids Points
-             * @description 儿童模式积分（总值）
-             */
-            kids_points: number;
-        };
         /**
          * LapData
          * @description 计圈/分段数据
@@ -19780,6 +17975,15 @@ export interface components {
             avg_cadence?: number | null;
             /** Avg Power */
             avg_power?: number | null;
+        };
+        /** LatestAssessmentInput */
+        LatestAssessmentInput: {
+            /** Score */
+            score?: number | null;
+            /** Summary */
+            summary: string;
+            /** Evidence */
+            evidence?: string[];
         };
         /** LogSymptomsRequest */
         LogSymptomsRequest: {
@@ -19859,145 +18063,6 @@ export interface components {
              * @description 手工输入的国家
              */
             country?: string | null;
-        };
-        /** MassageRecordCreate */
-        MassageRecordCreate: {
-            /**
-             * Record Date
-             * Format: date
-             */
-            record_date: string;
-            /** Start Time */
-            start_time?: string | null;
-            /** Duration Minutes */
-            duration_minutes?: number | null;
-            /** Location Name */
-            location_name?: string | null;
-            /** Location Address */
-            location_address?: string | null;
-            /**
-             * Massage Type
-             * @default 推拿
-             */
-            massage_type: string;
-            /** Therapist */
-            therapist?: string | null;
-            /** Body Parts */
-            body_parts?: string | null;
-            /** Price */
-            price?: number | null;
-            /** Issues Before */
-            issues_before?: string | null;
-            /** Treatment Notes */
-            treatment_notes?: string | null;
-            /** Feeling After */
-            feeling_after?: string | null;
-            /** Rating */
-            rating?: number | null;
-            /** Notes */
-            notes?: string | null;
-        };
-        /** MassageRecordResponse */
-        MassageRecordResponse: {
-            /**
-             * Record Date
-             * Format: date
-             */
-            record_date: string;
-            /** Start Time */
-            start_time?: string | null;
-            /** Duration Minutes */
-            duration_minutes?: number | null;
-            /** Location Name */
-            location_name?: string | null;
-            /** Location Address */
-            location_address?: string | null;
-            /**
-             * Massage Type
-             * @default 推拿
-             */
-            massage_type: string;
-            /** Therapist */
-            therapist?: string | null;
-            /** Body Parts */
-            body_parts?: string | null;
-            /** Price */
-            price?: number | null;
-            /** Issues Before */
-            issues_before?: string | null;
-            /** Treatment Notes */
-            treatment_notes?: string | null;
-            /** Feeling After */
-            feeling_after?: string | null;
-            /** Rating */
-            rating?: number | null;
-            /** Notes */
-            notes?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /** MassageRecordUpdate */
-        MassageRecordUpdate: {
-            /** Record Date */
-            record_date?: string | null;
-            /** Start Time */
-            start_time?: string | null;
-            /** Duration Minutes */
-            duration_minutes?: number | null;
-            /** Location Name */
-            location_name?: string | null;
-            /** Location Address */
-            location_address?: string | null;
-            /** Massage Type */
-            massage_type?: string | null;
-            /** Therapist */
-            therapist?: string | null;
-            /** Body Parts */
-            body_parts?: string | null;
-            /** Price */
-            price?: number | null;
-            /** Issues Before */
-            issues_before?: string | null;
-            /** Treatment Notes */
-            treatment_notes?: string | null;
-            /** Feeling After */
-            feeling_after?: string | null;
-            /** Rating */
-            rating?: number | null;
-            /** Notes */
-            notes?: string | null;
-        };
-        /** MassageStats */
-        MassageStats: {
-            /**
-             * Total Sessions
-             * @default 0
-             */
-            total_sessions: number;
-            /**
-             * Total Duration Minutes
-             * @default 0
-             */
-            total_duration_minutes: number;
-            /**
-             * Total Cost
-             * @default 0
-             */
-            total_cost: number;
-            /** Avg Rating */
-            avg_rating?: number | null;
-            /** Favorite Location */
-            favorite_location?: string | null;
-            /** Favorite Therapist */
-            favorite_therapist?: string | null;
-            /** Last Session Date */
-            last_session_date?: string | null;
         };
         /**
          * MealType
@@ -20249,22 +18314,6 @@ export interface components {
             purpose?: string | null;
             /** Notes */
             notes?: string | null;
-        };
-        /** MemberInfo */
-        MemberInfo: {
-            /** User Id */
-            user_id: number;
-            /** Name */
-            name: string;
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /** Role */
-            role: string;
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
         };
         /**
          * MergeCandidatesResponse
@@ -20807,6 +18856,19 @@ export interface components {
             /** File Name */
             file_name?: string | null;
         };
+        /** OpenLoopFeedback */
+        OpenLoopFeedback: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "opened" | "dismissed" | "not_interested" | "snooze_7d" | "done";
+            /**
+             * Snooze Days
+             * @description snooze_7d 时可覆盖 (默认 7), 范围 1-30
+             */
+            snooze_days?: number | null;
+        };
         /** OptimizationLogResponse */
         OptimizationLogResponse: {
             /** Id */
@@ -20884,149 +18946,6 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
-        /** PKChallengeCreate */
-        PKChallengeCreate: {
-            /** Title */
-            title: string;
-            /** Challenge Type */
-            challenge_type: string;
-            /** Checkin Template Id */
-            checkin_template_id?: number | null;
-            /** Activity Category */
-            activity_category?: string | null;
-            /**
-             * Metric
-             * @default total_minutes
-             */
-            metric: string;
-            /**
-             * Duration Days
-             * @default 7
-             */
-            duration_days: number;
-            /**
-             * Duration Minutes
-             * @description PK时长（分钟），优先于duration_days
-             */
-            duration_minutes?: number | null;
-            /** Friend Ids */
-            friend_ids?: number[];
-        };
-        /**
-         * PKChallengeDetail
-         * @description 挑战详情，包含排行榜
-         */
-        PKChallengeDetail: {
-            /** Id */
-            id: number;
-            /** Creator Id */
-            creator_id: number;
-            /** Creator Name */
-            creator_name?: string | null;
-            /** Title */
-            title: string;
-            /** Challenge Type */
-            challenge_type: string;
-            /** Checkin Template Id */
-            checkin_template_id?: number | null;
-            /** Checkin Template Name */
-            checkin_template_name?: string | null;
-            /** Activity Category */
-            activity_category?: string | null;
-            /** Metric */
-            metric: string;
-            /** Duration Days */
-            duration_days: number;
-            /**
-             * Start Date
-             * Format: date-time
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date-time
-             */
-            end_date: string;
-            /** Status */
-            status: string;
-            /** Participants */
-            participants?: components["schemas"]["ParticipantInfo"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Leaderboard */
-            leaderboard?: components["schemas"]["ParticipantInfo"][];
-        };
-        /** PKChallengeResponse */
-        PKChallengeResponse: {
-            /** Id */
-            id: number;
-            /** Creator Id */
-            creator_id: number;
-            /** Creator Name */
-            creator_name?: string | null;
-            /** Title */
-            title: string;
-            /** Challenge Type */
-            challenge_type: string;
-            /** Checkin Template Id */
-            checkin_template_id?: number | null;
-            /** Checkin Template Name */
-            checkin_template_name?: string | null;
-            /** Activity Category */
-            activity_category?: string | null;
-            /** Metric */
-            metric: string;
-            /** Duration Days */
-            duration_days: number;
-            /**
-             * Start Date
-             * Format: date-time
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date-time
-             */
-            end_date: string;
-            /** Status */
-            status: string;
-            /** Participants */
-            participants?: components["schemas"]["ParticipantInfo"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /**
-         * PKStatsResponse
-         * @description PK统计
-         */
-        PKStatsResponse: {
-            /**
-             * Total Challenges
-             * @default 0
-             */
-            total_challenges: number;
-            /**
-             * Wins
-             * @default 0
-             */
-            wins: number;
-            /**
-             * Active Challenges
-             * @default 0
-             */
-            active_challenges: number;
-            /**
-             * Total Points
-             * @default 0
-             */
-            total_points: number;
-        };
         /**
          * PacePoint
          * @description 配速数据点
@@ -21044,32 +18963,6 @@ export interface components {
              * @description 待解析的医疗文本（如'血压150/95'）
              */
             text: string;
-        };
-        /** ParticipantInfo */
-        ParticipantInfo: {
-            /** User Id */
-            user_id: number;
-            /** User Name */
-            user_name: string;
-            /** User Avatar */
-            user_avatar?: string | null;
-            /**
-             * Score
-             * @default 0
-             */
-            score: number;
-            /** Rank */
-            rank?: number | null;
-            /**
-             * Points
-             * @default 0
-             */
-            points: number;
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
         };
         /**
          * PasswordChange
@@ -21464,24 +19357,6 @@ export interface components {
              */
             sort_order: number;
         };
-        /** PlanItemSchema */
-        PlanItemSchema: {
-            /** Id */
-            id: string;
-            /** Emoji */
-            emoji: string;
-            /** Text */
-            text: string;
-            /**
-             * Done
-             * @default false
-             */
-            done: boolean;
-            /** Starttime */
-            startTime?: string | null;
-            /** Endtime */
-            endTime?: string | null;
-        };
         /** PlanItemUpdate */
         PlanItemUpdate: {
             /** Is Completed */
@@ -21493,47 +19368,6 @@ export interface components {
          * @enum {string}
          */
         PlatformType: "mini_program" | "web" | "h5" | "app";
-        /**
-         * PointItem
-         * @description 单项积分
-         */
-        PointItem: {
-            /** Category */
-            category: string;
-            /** Name */
-            name: string;
-            /** Points */
-            points: number;
-            /** Max Points */
-            max_points: number;
-            /** Detail */
-            detail: string;
-        };
-        /** PointsHistoryItem */
-        PointsHistoryItem: {
-            /**
-             * Date
-             * Format: date
-             */
-            date: string;
-            /** Total Points */
-            total_points: number;
-        };
-        /**
-         * PointsSummaryResponse
-         * @description 积分总览
-         */
-        PointsSummaryResponse: {
-            /** Today Points */
-            today_points: number;
-            /** Week Points */
-            week_points: number;
-            /** Month Points */
-            month_points: number;
-            /** Streak Days */
-            streak_days: number;
-            today_detail: components["schemas"]["DailyPointsResponse"];
-        };
         /**
          * PrivacySettings
          * @description 隐私设置 - 控制哪些字段对外部API可见
@@ -21575,43 +19409,6 @@ export interface components {
              * @default true
              */
             location: boolean;
-        };
-        /**
-         * ProductMatchResult
-         * @description 匹配结果 — 产品 + 匹配分数 + 基因匹配标记
-         */
-        ProductMatchResult: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Brand */
-            brand?: string | null;
-            /** Image Url */
-            image_url?: string | null;
-            /** Platform */
-            platform: string;
-            /** Affiliate Url */
-            affiliate_url: string;
-            /** Price Display */
-            price_display?: string | null;
-            /**
-             * Currency
-             * @default CNY
-             */
-            currency: string;
-            /**
-             * Gene Match
-             * @default false
-             */
-            gene_match: boolean;
-            /** Gene Description */
-            gene_description?: string | null;
-            /**
-             * Match Score
-             * @default 0
-             */
-            match_score: number;
         };
         /** ProfileCreateRequest */
         ProfileCreateRequest: {
@@ -21670,155 +19467,6 @@ export interface components {
              * @default 30
              */
             target_exercise_minutes: number;
-        };
-        /** ProfileResponse */
-        ProfileResponse: {
-            /**
-             * Monthly Expense
-             * @default 0
-             */
-            monthly_expense: number | null;
-            /**
-             * Risk Tolerance
-             * @default balanced
-             */
-            risk_tolerance: string | null;
-            /**
-             * Max Drawdown Percent
-             * @default 30
-             */
-            max_drawdown_percent: number | null;
-            /**
-             * Has Kids Education
-             * @default false
-             */
-            has_kids_education: boolean | null;
-            /**
-             * Has Elderly Medical
-             * @default false
-             */
-            has_elderly_medical: boolean | null;
-            /**
-             * Has Investment Property
-             * @default false
-             */
-            has_investment_property: boolean | null;
-            /** Property Net Asset Ratio */
-            property_net_asset_ratio?: number | null;
-            /** Total Debt Ratio */
-            total_debt_ratio?: number | null;
-            /** Notes */
-            notes?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /** ProfileUpdate */
-        ProfileUpdate: {
-            /**
-             * Monthly Expense
-             * @default 0
-             */
-            monthly_expense: number | null;
-            /**
-             * Risk Tolerance
-             * @default balanced
-             */
-            risk_tolerance: string | null;
-            /**
-             * Max Drawdown Percent
-             * @default 30
-             */
-            max_drawdown_percent: number | null;
-            /**
-             * Has Kids Education
-             * @default false
-             */
-            has_kids_education: boolean | null;
-            /**
-             * Has Elderly Medical
-             * @default false
-             */
-            has_elderly_medical: boolean | null;
-            /**
-             * Has Investment Property
-             * @default false
-             */
-            has_investment_property: boolean | null;
-            /** Property Net Asset Ratio */
-            property_net_asset_ratio?: number | null;
-            /** Total Debt Ratio */
-            total_debt_ratio?: number | null;
-            /** Notes */
-            notes?: string | null;
-        };
-        /** PropertyCreate */
-        PropertyCreate: {
-            /**
-             * Type
-             * @description 自住核心区 / 投资非核心 / 西部避险
-             */
-            type: string;
-            /** Address */
-            address: string;
-            /**
-             * Valuation
-             * @default 0
-             */
-            valuation: number;
-            /**
-             * Plan To Dispose
-             * @default false
-             */
-            plan_to_dispose: boolean;
-            /** Note */
-            note?: string | null;
-        };
-        /** PropertyResponse */
-        PropertyResponse: {
-            /**
-             * Type
-             * @description 自住核心区 / 投资非核心 / 西部避险
-             */
-            type: string;
-            /** Address */
-            address: string;
-            /**
-             * Valuation
-             * @default 0
-             */
-            valuation: number;
-            /**
-             * Plan To Dispose
-             * @default false
-             */
-            plan_to_dispose: boolean;
-            /** Note */
-            note?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Created At */
-            created_at?: string | null;
-        };
-        /** PropertyUpdate */
-        PropertyUpdate: {
-            /** Type */
-            type?: string | null;
-            /** Address */
-            address?: string | null;
-            /** Valuation */
-            valuation?: number | null;
-            /** Plan To Dispose */
-            plan_to_dispose?: boolean | null;
-            /** Note */
-            note?: string | null;
         };
         /** QuickRecordRequest */
         QuickRecordRequest: {
@@ -21922,49 +19570,21 @@ export interface components {
              */
             remaining: number;
         };
-        /**
-         * RecommendationCreate
-         * @description 创建外部建议请求
-         */
-        RecommendationCreate: {
-            /** Category */
-            category: string;
-            /** Title */
-            title: string;
-            /** Content */
-            content: string;
-            /** Source Name */
-            source_name: string;
-            /** Recommendation Date */
-            recommendation_date?: string | null;
-        };
-        /** RedLineResponse */
-        RedLineResponse: {
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Line Id */
-            line_id: number;
+        /** RelationCreate */
+        RelationCreate: {
+            /** Subject Id */
+            subject_id: number;
+            /** Predicate */
+            predicate: string;
+            /** Object Id */
+            object_id: number;
             /**
-             * Status
-             * @default unmet
+             * Confidence
+             * @default 0.5
              */
-            status: string;
-            /** Value Json */
-            value_json?: string | null;
-            /** Checked At */
-            checked_at?: string | null;
-        };
-        /** RedLineUpdate */
-        RedLineUpdate: {
-            /**
-             * Status
-             * @description met / unmet / partial
-             */
-            status: string;
-            /** Value Json */
-            value_json?: string | null;
+            confidence: number;
+            /** Notes */
+            notes?: string | null;
         };
         /**
          * ReminderCreate
@@ -23419,347 +21039,6 @@ export interface components {
             /** Text */
             text: string;
         };
-        /**
-         * TripCreate
-         * @description 创建行程（可携带明细）
-         */
-        TripCreate: {
-            /**
-             * Trip Name
-             * @description 行程名称
-             */
-            trip_name: string;
-            /**
-             * Start Date
-             * Format: date
-             * @description 开始日期
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             * @description 结束日期
-             */
-            end_date: string;
-            /**
-             * Destination
-             * @description 主要目的地
-             */
-            destination?: string | null;
-            /**
-             * Notes
-             * @description 备注
-             */
-            notes?: string | null;
-            /**
-             * Items
-             * @description 行程明细列表
-             */
-            items?: components["schemas"]["TripItemCreate"][] | null;
-        };
-        /**
-         * TripItemCreate
-         * @description 创建行程明细
-         */
-        TripItemCreate: {
-            /**
-             * Item Date
-             * Format: date
-             * @description 日期
-             */
-            item_date: string;
-            /**
-             * Item Order
-             * @description 当日排序
-             * @default 0
-             */
-            item_order: number;
-            /**
-             * Item Type
-             * @description 类型: flight/train/bus/taxi/hotel/activity/other
-             */
-            item_type: string;
-            /**
-             * Title
-             * @description 标题
-             */
-            title: string;
-            /**
-             * Origin
-             * @description 出发地
-             */
-            origin?: string | null;
-            /**
-             * Destination
-             * @description 目的地
-             */
-            destination?: string | null;
-            /**
-             * Departure Time
-             * @description 出发时间，如09:30
-             */
-            departure_time?: string | null;
-            /**
-             * Arrival Time
-             * @description 到达时间，如12:40
-             */
-            arrival_time?: string | null;
-            /**
-             * Transport Number
-             * @description 航班号/车次
-             */
-            transport_number?: string | null;
-            /**
-             * Carrier
-             * @description 承运方
-             */
-            carrier?: string | null;
-            /**
-             * Departure Terminal
-             * @description 出发航站楼
-             */
-            departure_terminal?: string | null;
-            /**
-             * Arrival Terminal
-             * @description 到达航站楼
-             */
-            arrival_terminal?: string | null;
-            /**
-             * Location
-             * @description 地点
-             */
-            location?: string | null;
-            /**
-             * Description
-             * @description 描述
-             */
-            description?: string | null;
-        };
-        /**
-         * TripItemResponse
-         * @description 行程明细响应
-         */
-        TripItemResponse: {
-            /**
-             * Item Date
-             * Format: date
-             * @description 日期
-             */
-            item_date: string;
-            /**
-             * Item Order
-             * @description 当日排序
-             * @default 0
-             */
-            item_order: number;
-            /**
-             * Item Type
-             * @description 类型: flight/train/bus/taxi/hotel/activity/other
-             */
-            item_type: string;
-            /**
-             * Title
-             * @description 标题
-             */
-            title: string;
-            /**
-             * Origin
-             * @description 出发地
-             */
-            origin?: string | null;
-            /**
-             * Destination
-             * @description 目的地
-             */
-            destination?: string | null;
-            /**
-             * Departure Time
-             * @description 出发时间，如09:30
-             */
-            departure_time?: string | null;
-            /**
-             * Arrival Time
-             * @description 到达时间，如12:40
-             */
-            arrival_time?: string | null;
-            /**
-             * Transport Number
-             * @description 航班号/车次
-             */
-            transport_number?: string | null;
-            /**
-             * Carrier
-             * @description 承运方
-             */
-            carrier?: string | null;
-            /**
-             * Departure Terminal
-             * @description 出发航站楼
-             */
-            departure_terminal?: string | null;
-            /**
-             * Arrival Terminal
-             * @description 到达航站楼
-             */
-            arrival_terminal?: string | null;
-            /**
-             * Location
-             * @description 地点
-             */
-            location?: string | null;
-            /**
-             * Description
-             * @description 描述
-             */
-            description?: string | null;
-            /** Id */
-            id: number;
-            /** Trip Id */
-            trip_id: number;
-            /** User Id */
-            user_id: number;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /**
-         * TripItemUpdate
-         * @description 更新行程明细
-         */
-        TripItemUpdate: {
-            /** Item Date */
-            item_date?: string | null;
-            /** Item Order */
-            item_order?: number | null;
-            /** Item Type */
-            item_type?: string | null;
-            /** Title */
-            title?: string | null;
-            /** Origin */
-            origin?: string | null;
-            /** Destination */
-            destination?: string | null;
-            /** Departure Time */
-            departure_time?: string | null;
-            /** Arrival Time */
-            arrival_time?: string | null;
-            /** Transport Number */
-            transport_number?: string | null;
-            /** Carrier */
-            carrier?: string | null;
-            /** Departure Terminal */
-            departure_terminal?: string | null;
-            /** Arrival Terminal */
-            arrival_terminal?: string | null;
-            /** Location */
-            location?: string | null;
-            /** Description */
-            description?: string | null;
-        };
-        /**
-         * TripListResponse
-         * @description 行程列表响应（不含明细）
-         */
-        TripListResponse: {
-            /**
-             * Trip Name
-             * @description 行程名称
-             */
-            trip_name: string;
-            /**
-             * Start Date
-             * Format: date
-             * @description 开始日期
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             * @description 结束日期
-             */
-            end_date: string;
-            /**
-             * Destination
-             * @description 主要目的地
-             */
-            destination?: string | null;
-            /**
-             * Notes
-             * @description 备注
-             */
-            notes?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /**
-         * TripResponse
-         * @description 行程详情响应（含明细）
-         */
-        TripResponse: {
-            /**
-             * Trip Name
-             * @description 行程名称
-             */
-            trip_name: string;
-            /**
-             * Start Date
-             * Format: date
-             * @description 开始日期
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             * @description 结束日期
-             */
-            end_date: string;
-            /**
-             * Destination
-             * @description 主要目的地
-             */
-            destination?: string | null;
-            /**
-             * Notes
-             * @description 备注
-             */
-            notes?: string | null;
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /**
-             * Items
-             * @default []
-             */
-            items: components["schemas"]["TripItemResponse"][];
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /**
-         * TripUpdate
-         * @description 更新行程
-         */
-        TripUpdate: {
-            /** Trip Name */
-            trip_name?: string | null;
-            /** Start Date */
-            start_date?: string | null;
-            /** End Date */
-            end_date?: string | null;
-            /** Destination */
-            destination?: string | null;
-            /** Notes */
-            notes?: string | null;
-        };
         /** UpdateMetricRequest */
         UpdateMetricRequest: {
             /** Current Value */
@@ -23888,36 +21167,6 @@ export interface components {
             reviewed_at: string | null;
             /** Reviewer Name */
             reviewer_name: string | null;
-        };
-        /**
-         * UserArticlePush
-         * @description 用户推送 LLM 分析结果到资讯
-         */
-        UserArticlePush: {
-            /** Source Batch Id */
-            source_batch_id: string;
-            /** Title */
-            title: string;
-            /** Content */
-            content: string;
-            /** Summary */
-            summary?: string | null;
-            /**
-             * Source Type
-             * @default custom_prompt
-             */
-            source_type: string;
-            /** Tags */
-            tags?: string[] | null;
-            /** Llm Models */
-            llm_models?: string[] | null;
-            /** Aggregator Model */
-            aggregator_model?: string | null;
-            /**
-             * Visibility
-             * @default public
-             */
-            visibility: string;
         };
         /**
          * UserCreate
@@ -24292,28 +21541,6 @@ export interface components {
             gender?: string | null;
         };
         /**
-         * UserSearchResult
-         * @description 用户搜索结果
-         */
-        UserSearchResult: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /**
-             * Is Friend
-             * @default false
-             */
-            is_friend: boolean;
-            /**
-             * Request Pending
-             * @default false
-             */
-            request_pending: boolean;
-        };
-        /**
          * UserUpdate
          * @description 用户信息更新
          */
@@ -24447,72 +21674,6 @@ export interface components {
             interventions: string[];
             /** Notes */
             notes?: string | null;
-        };
-        /** VocabularyListResponse */
-        VocabularyListResponse: {
-            /** Total */
-            total: number;
-            /** Words */
-            words: components["schemas"]["VocabularyWordResponse"][];
-        };
-        /** VocabularyReviewRequest */
-        VocabularyReviewRequest: {
-            /** Word Id */
-            word_id: number;
-            /**
-             * Is Correct
-             * @description 是否回答正确
-             */
-            is_correct: boolean;
-        };
-        /** VocabularyWordResponse */
-        VocabularyWordResponse: {
-            /** Id */
-            id: number;
-            /** Word */
-            word: string;
-            /** Phonetic Us */
-            phonetic_us?: string | null;
-            /** Phonetic Uk */
-            phonetic_uk?: string | null;
-            /** Meanings */
-            meanings?: string | null;
-            /** Example Sentences */
-            example_sentences?: string | null;
-            /** Synonyms */
-            synonyms?: string | null;
-            /** Antonyms */
-            antonyms?: string | null;
-            /** Word Roots */
-            word_roots?: string | null;
-            /** Notes */
-            notes?: string | null;
-            /**
-             * Review Count
-             * @default 0
-             */
-            review_count: number;
-            /**
-             * Correct Count
-             * @default 0
-             */
-            correct_count: number;
-            /**
-             * Mastery Level
-             * @default 0
-             */
-            mastery_level: number;
-            /** Last Reviewed At */
-            last_reviewed_at?: string | null;
-            /** Next Review Date */
-            next_review_date?: string | null;
-            /**
-             * Is Mastered
-             * @default false
-             */
-            is_mastered: boolean;
-            /** Created At */
-            created_at?: string | null;
         };
         /**
          * WaterIntakeCreate
@@ -25281,37 +22442,6 @@ export interface components {
             epoch_ms?: number | null;
         };
         /**
-         * ApiKeyCreate
-         * @description 创建 API Key 请求
-         */
-        app__api__news__ApiKeyCreate: {
-            /** Name */
-            name: string;
-        };
-        /**
-         * ApiKeyResponse
-         * @description API Key 响应
-         */
-        app__api__user_api_key__ApiKeyResponse: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Api Key */
-            api_key?: string | null;
-            /** Scopes */
-            scopes: string;
-            /** Is Active */
-            is_active: boolean;
-            /** Last Used At */
-            last_used_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /**
          * UserResponse
          * @description 用户响应
          */
@@ -25352,11 +22482,6 @@ export interface components {
             has_garmin_credentials: boolean;
             /** Avatar Url */
             avatar_url?: string | null;
-            /**
-             * Kids Points
-             * @default 0
-             */
-            kids_points: number;
             /**
              * Onboarding Completed
              * @default false
@@ -25569,39 +22694,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["app__schemas__auth__UserResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_my_kids_points_api_v1_auth_me_kids_points_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KidsPointsUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPointsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -28209,7 +25301,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__api__user_api_key__ApiKeyResponse"][];
+                    "application/json": components["schemas"]["ApiKeyResponse"][];
                 };
             };
         };
@@ -28233,7 +25325,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__api__user_api_key__ApiKeyResponse"];
+                    "application/json": components["schemas"]["ApiKeyResponse"];
                 };
             };
             /** @description Validation Error */
@@ -28289,131 +25381,6 @@ export interface operations {
                 "X-API-Key": string;
             };
             path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_external_recommendation_api_v1_external_recommendations_post: {
-        parameters: {
-            query?: never;
-            header: {
-                "X-API-Key": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RecommendationCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_external_recommendations_api_v1_external_recommendations_get: {
-        parameters: {
-            query?: {
-                date?: string | null;
-                /** @description 开始日期（包含），用于日期范围筛选 */
-                start_date?: string | null;
-                /** @description 结束日期（包含），用于日期范围筛选 */
-                end_date?: string | null;
-                category?: string | null;
-                page?: number;
-                page_size?: number;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_today_external_recommendations_api_v1_external_recommendations_today_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    delete_external_recommendation_api_v1_external_recommendations__recommendation_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recommendation_id: number;
-            };
             cookie?: never;
         };
         requestBody?: never;
@@ -38588,6 +35555,76 @@ export interface operations {
             };
         };
     };
+    set_card_adherence_api_v1_action_cards__card_id__adherence_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionCardAdherence"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_card_api_v1_action_cards__card_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionCardReview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     quick_record_api_v1_quick_record_post: {
         parameters: {
             query?: never;
@@ -41141,6 +38178,942 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    usage_summary_api_v1_llm_usage_summary_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    specialist_hit_rate_api_v1_specialists_hit_rate_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_recent_graded_cards_api_v1_specialists_me_recent_cards_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_api_v1_open_loop_history_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_feedback_api_v1_open_loop__history_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                history_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenLoopFeedback"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_v1_open_loop_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_cases_api_v1_clinical_journal_cases_get: {
+        parameters: {
+            query?: {
+                /** @description active / monitoring / resolved */
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    case_detail_api_v1_clinical_journal_cases__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_entries_api_v1_clinical_journal_entries_recent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mine_api_v1_user_directives_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_api_v1_user_directives_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectiveCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_text_api_v1_user_directives_parse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreeTextParseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_api_v1_user_directives__directive_id__delete: {
+        parameters: {
+            query?: {
+                reason?: string | null;
+            };
+            header?: never;
+            path: {
+                directive_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telegram_webhook_api_v1_telegram_webhook_post: {
+        parameters: {
+            query?: {
+                secret?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    webhook_status_api_v1_telegram_webhook_status_get: {
+        parameters: {
+            query?: {
+                secret?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mine_api_v1_memory_facts_me_get: {
+        parameters: {
+            query?: {
+                tier?: ("working" | "episodic" | "semantic" | "procedural") | null;
+                predicate?: string | null;
+                tag?: string | null;
+                subject_contains?: string | null;
+                min_confidence?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_fact_api_v1_memory_facts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FactCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reinforce_api_v1_memory_facts__fact_id__reinforce_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FactReinforce"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    supersede_api_v1_memory_facts__old_id__supersede__new_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                old_id: number;
+                new_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_contradictions_api_v1_memory_facts_contradictions_check_get: {
+        parameters: {
+            query: {
+                subject: string;
+                predicate: string;
+                object_value: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_api_v1_memory_facts_stats_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_entities_api_v1_health_kg_entities_me_get: {
+        parameters: {
+            query?: {
+                type?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_entity_api_v1_health_kg_entities_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntityCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_entity_api_v1_health_kg_entities__entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entity_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    neighborhood_api_v1_health_kg_entities__entity_id__neighborhood_get: {
+        parameters: {
+            query?: {
+                hops?: number;
+                max_per_hop?: number;
+            };
+            header?: never;
+            path: {
+                entity_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    match_api_v1_health_kg_match_get: {
+        parameters: {
+            query: {
+                mention: string;
+                type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rel_api_v1_health_kg_relations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RelationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_relations_api_v1_health_kg_relations_me_get: {
+        parameters: {
+            query?: {
+                subject_id?: number | null;
+                object_id?: number | null;
+                predicate?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_api_v1_health_kg_extract_get: {
+        parameters: {
+            query: {
+                text: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_hybrid_api_v1_hybrid_search_me_get: {
+        parameters: {
+            query: {
+                /** @description 查询文本 */
+                q: string;
+                top_k?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -43979,1033 +41952,6 @@ export interface operations {
             };
         };
     };
-    list_records_api_v1_massage_records_get: {
-        parameters: {
-            query?: {
-                start_date?: string | null;
-                end_date?: string | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MassageRecordResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_record_api_v1_massage_records_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MassageRecordCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MassageRecordResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_record_api_v1_massage_records__record_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                record_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MassageRecordResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_record_api_v1_massage_records__record_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                record_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MassageRecordUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MassageRecordResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_record_api_v1_massage_records__record_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                record_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_stats_api_v1_massage_stats_get: {
-        parameters: {
-            query?: {
-                /** @description 统计天数 */
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MassageStats"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_friend_request_api_v1_friends_request_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FriendRequestCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FriendRequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    accept_request_api_v1_friends_request__request_id__accept_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                request_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FriendRequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reject_request_api_v1_friends_request__request_id__reject_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                request_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FriendRequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_friends_api_v1_friends_list_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FriendInfo"][];
-                };
-            };
-        };
-    };
-    pending_requests_api_v1_friends_requests_pending_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FriendRequestResponse"][];
-                };
-            };
-        };
-    };
-    remove_friend_api_v1_friends__friendship_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                friendship_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    search_users_api_v1_friends_search_get: {
-        parameters: {
-            query: {
-                q: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserSearchResult"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_challenges_api_v1_pk_challenges_get: {
-        parameters: {
-            query?: {
-                status?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PKChallengeResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_challenge_api_v1_pk_challenges_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PKChallengeCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PKChallengeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    my_stats_api_v1_pk_challenges_stats_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PKStatsResponse"];
-                };
-            };
-        };
-    };
-    get_challenge_api_v1_pk_challenges__challenge_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PKChallengeDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cancel_challenge_api_v1_pk_challenges__challenge_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    refresh_scores_api_v1_pk_challenges__challenge_id__refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PKChallengeDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_conversations_api_v1_dm_conversations_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DMConversationItem"][];
-                };
-            };
-        };
-    };
-    get_messages_api_v1_dm_messages__friend_id__get: {
-        parameters: {
-            query?: {
-                /** @description 分页: 获取此ID之前的消息 */
-                before_id?: number;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                friend_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DMHistoryResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_message_api_v1_dm_send_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DMSendRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DMResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mark_read_api_v1_dm_read__friend_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                friend_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_unread_count_api_v1_dm_unread_count_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DMUnreadCountResponse"];
-                };
-            };
-        };
-    };
-    list_groups_api_v1_groups_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GroupListItem"][];
-                };
-            };
-        };
-    };
-    create_group_api_v1_groups_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GroupCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GroupDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_group_api_v1_groups__group_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GroupDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_group_api_v1_groups__group_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GroupUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GroupDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dissolve_group_api_v1_groups__group_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_messages_api_v1_groups__group_id__messages_get: {
-        parameters: {
-            query?: {
-                /** @description 分页游标，返回此 ID 之前的消息 */
-                before_id?: number | null;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_message_api_v1_groups__group_id__messages_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GroupMsgSendRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GroupMsgResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_member_api_v1_groups__group_id__members_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GroupAddMemberRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_member_api_v1_groups__group_id__members__user_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    leave_group_api_v1_groups__group_id__leave_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_my_groups_api_v1_family_groups_get: {
         parameters: {
             query?: never;
@@ -45733,840 +42679,6 @@ export interface operations {
             };
         };
     };
-    get_my_pet_api_v1_kids_pet_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPetResponse"];
-                };
-            };
-        };
-    };
-    adopt_pet_api_v1_kids_pet_adopt_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KidsPetAdoptRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPetResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    pet_action_api_v1_kids_pet_action_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KidsPetActionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPetResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_plan_history_api_v1_kids_plan_history_get: {
-        parameters: {
-            query?: {
-                range?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPlanHistoryResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    generate_plan_review_api_v1_kids_plan_review_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KidsPlanReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPlanReviewResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_plan_api_v1_kids_plan__plan_date__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                plan_date: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPlanResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    save_plan_api_v1_kids_plan__plan_date__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                plan_date: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KidsPlanSaveRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPlanResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    copy_plan_api_v1_kids_plan_copy_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KidsPlanCopyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KidsPlanResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_today_points_api_v1_points_today_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DailyPointsResponse"];
-                };
-            };
-        };
-    };
-    get_date_points_api_v1_points_date__target_date__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                target_date: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DailyPointsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_points_summary_api_v1_points_summary_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PointsSummaryResponse"];
-                };
-            };
-        };
-    };
-    get_points_history_api_v1_points_history_get: {
-        parameters: {
-            query?: {
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PointsHistoryItem"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_definitions_api_v1_achievements_definitions_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_my_achievements_api_v1_achievements_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    check_achievements_api_v1_achievements_check_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    list_words_api_v1_vocabulary_words_get: {
-        parameters: {
-            query?: {
-                /** @description 筛选已掌握/未掌握 */
-                mastered?: boolean | null;
-                page?: number;
-                page_size?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VocabularyListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_word_api_v1_vocabulary_words__word_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                word_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VocabularyWordResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_word_api_v1_vocabulary_words__word_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                word_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_review_words_api_v1_vocabulary_review_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VocabularyListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    submit_review_api_v1_vocabulary_review_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VocabularyReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_trips_api_v1_trip_trips_get: {
-        parameters: {
-            query?: {
-                /** @description 查询最近N天内的行程 */
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripListResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_trip_api_v1_trip_trips_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TripCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_trip_api_v1_trip_trips__trip_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                trip_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_trip_api_v1_trip_trips__trip_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                trip_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TripUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_trip_api_v1_trip_trips__trip_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                trip_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_trip_item_api_v1_trip_trips__trip_id__items_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                trip_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TripItemCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripItemResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_trip_item_api_v1_trip_items__item_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TripItemUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripItemResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_trip_item_api_v1_trip_items__item_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     siri_say_api_v1_siri_say_post: {
         parameters: {
             query?: never;
@@ -46655,1179 +42767,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    list_articles_api_v1_news_articles_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                page_size?: number;
-                source_type?: string | null;
-                feed?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArticleListItem"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_article_api_v1_news_articles__article_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                article_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArticleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_article_api_v1_news_articles__article_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                article_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    push_article_api_v1_news_articles_push_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserArticlePush"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArticleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_article_visibility_api_v1_news_articles__article_id__visibility_patch: {
-        parameters: {
-            query: {
-                visibility: string;
-            };
-            header?: never;
-            path: {
-                article_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_public_user_feed_api_v1_news_public_feed__user_id__get: {
-        parameters: {
-            query?: {
-                page?: number;
-                page_size?: number;
-            };
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_article_external_api_v1_news_external_articles_post: {
-        parameters: {
-            query?: never;
-            header: {
-                "X-API-Key": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ArticleCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArticleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_api_keys_api_v1_news_admin_api_keys_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiKeyResponse"][];
-                };
-            };
-        };
-    };
-    create_api_key_api_v1_news_admin_api_keys_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["app__api__news__ApiKeyCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiKeyResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_api_key_api_v1_news_admin_api_keys__key_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_article_admin_api_v1_news_admin_articles__article_id__patch: {
-        parameters: {
-            query?: {
-                is_published?: boolean | null;
-                is_pinned?: boolean | null;
-            };
-            header?: never;
-            path: {
-                article_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_article_comments_api_v1_news_articles__article_id__comments_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                article_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_comment_api_v1_news_articles__article_id__comments_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                article_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommentCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_comment_api_v1_news_comments__comment_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                comment_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_profile_api_v1_security_life_profile_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProfileResponse"];
-                };
-            };
-        };
-    };
-    update_profile_api_v1_security_life_profile_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProfileUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProfileResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_assets_api_v1_security_life_assets_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AssetResponse"];
-                };
-            };
-        };
-    };
-    update_assets_api_v1_security_life_assets_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssetUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AssetResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_property_api_v1_security_life_properties_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PropertyCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PropertyResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_property_api_v1_security_life_properties__prop_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                prop_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PropertyUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PropertyResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_property_api_v1_security_life_properties__prop_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                prop_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_baskets_api_v1_security_life_baskets_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BasketListResponse"];
-                };
-            };
-        };
-    };
-    update_basket_api_v1_security_life_baskets__basket_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                basket_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BasketUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BasketResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_cash_layers_api_v1_security_life_cash_layers_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CashLayerResponse"][];
-                };
-            };
-        };
-    };
-    update_cash_layers_api_v1_security_life_cash_layers_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CashLayerUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CashLayerResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    init_checklist_api_v1_security_life_checklist_init_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChecklistListResponse"];
-                };
-            };
-        };
-    };
-    get_checklist_api_v1_security_life_checklist_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChecklistListResponse"];
-                };
-            };
-        };
-    };
-    add_checklist_item_api_v1_security_life_checklist_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChecklistItemCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChecklistItemResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_checklist_item_api_v1_security_life_checklist__item_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChecklistItemUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChecklistItemResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_checklist_item_api_v1_security_life_checklist__item_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    toggle_checklist_item_api_v1_security_life_checklist__item_id__toggle_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChecklistItemResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_red_lines_api_v1_security_life_red_lines_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RedLineResponse"][];
-                };
-            };
-        };
-    };
-    update_red_line_api_v1_security_life_red_lines__line_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                line_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RedLineUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RedLineResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_dashboard_api_v1_security_life_dashboard_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DashboardResponse"];
-                };
-            };
-        };
-    };
-    match_products_api_v1_affiliate_products_match_get: {
-        parameters: {
-            query: {
-                /** @description 补剂名称 */
-                supplement_name: string;
-                /** @description 补剂分类 */
-                category?: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProductMatchResult"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_products_api_v1_affiliate_products_get: {
-        parameters: {
-            query?: {
-                platform?: string | null;
-                category?: string | null;
-                active_only?: boolean;
-                skip?: number;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AffiliateProductResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_product_api_v1_affiliate_products_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AffiliateProductCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AffiliateProductResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_product_api_v1_affiliate_products__product_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                product_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AffiliateProductUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AffiliateProductResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_product_api_v1_affiliate_products__product_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                product_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

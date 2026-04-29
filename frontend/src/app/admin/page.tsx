@@ -8,7 +8,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import UserManagementTab from './components/UserManagementTab';
 import GarminSyncTab from './components/GarminSyncTab';
 import InvitationTab from './components/InvitationTab';
-import ApiKeyTab from './components/ApiKeyTab';
 import AdminModals from './components/AdminModals';
 
 interface AdminUser {
@@ -25,15 +24,6 @@ interface AdminUser {
   has_garmin: boolean;
   health_records_count: number;
   medical_exams_count: number;
-}
-
-interface NewsApiKey {
-  id: number;
-  name: string;
-  api_key: string | null;
-  is_active: boolean;
-  last_used_at: string | null;
-  created_at: string;
 }
 
 interface AdminStats {
@@ -149,7 +139,7 @@ export default function AdminPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'apikeys' | 'performance'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'performance'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -175,13 +165,6 @@ export default function AdminPage() {
   const [newCodeMaxUses, setNewCodeMaxUses] = useState(10);
   const [newCodeExpiresDays, setNewCodeExpiresDays] = useState<number | null>(null);
   const [invitationLoading, setInvitationLoading] = useState(false);
-
-  // API Key state
-  const [apiKeys, setApiKeys] = useState<NewsApiKey[]>([]);
-  const [apiKeysLoading, setApiKeysLoading] = useState(false);
-  const [showCreateApiKey, setShowCreateApiKey] = useState(false);
-  const [newApiKeyName, setNewApiKeyName] = useState('');
-  const [newApiKey, setNewApiKey] = useState<string | null>(null);
 
   // Auth check
   useEffect(() => {
@@ -361,32 +344,6 @@ export default function AdminPage() {
 
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text); alert('已复制到剪贴板'); };
 
-  // API Key handlers
-  const fetchApiKeys = useCallback(async () => {
-    setApiKeysLoading(true);
-    try { const res = await api.get('/news/admin/api-keys'); setApiKeys(res.data); }
-    catch (error) { console.error('Failed to fetch API keys:', error); }
-    finally { setApiKeysLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'apikeys' && isAuthenticated && user?.is_admin) { fetchApiKeys(); }
-  }, [activeTab, isAuthenticated, user, fetchApiKeys]);
-
-  const handleCreateApiKey = async () => {
-    if (!newApiKeyName.trim()) { alert('请输入 API Key 名称'); return; }
-    try {
-      const res = await api.post('/news/admin/api-keys', { name: newApiKeyName });
-      setNewApiKey(res.data.api_key); setNewApiKeyName(''); fetchApiKeys();
-    } catch (error) { console.error('Failed to create API key:', error); alert('创建 API Key 失败'); }
-  };
-
-  const handleDeleteApiKey = async (keyId: number) => {
-    if (!confirm('确定要删除此 API Key 吗？删除后将无法恢复。')) return;
-    try { await api.delete(`/news/admin/api-keys/${keyId}`); fetchApiKeys(); }
-    catch (error) { console.error('Failed to delete API key:', error); alert('删除 API Key 失败'); }
-  };
-
   // Loading state
   if (authLoading || !isAuthenticated || !user?.is_admin) {
     return (
@@ -425,9 +382,6 @@ export default function AdminPage() {
           </button>
           <button onClick={() => setActiveTab('invitation')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'invitation' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
             🎫 邀请码管理
-          </button>
-          <button onClick={() => setActiveTab('apikeys')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'apikeys' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
-            🔑 API Key
           </button>
           <button onClick={() => router.push('/admin/performance')} className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20">
             📈 性能监控
@@ -493,23 +447,6 @@ export default function AdminPage() {
             setShowCreateCode={setShowCreateCode}
             setSelectedApp={setSelectedApp}
             handleDisableCode={handleDisableCode}
-            copyToClipboard={copyToClipboard}
-            formatDate={formatDate}
-          />
-        )}
-
-        {activeTab === 'apikeys' && (
-          <ApiKeyTab
-            apiKeys={apiKeys}
-            apiKeysLoading={apiKeysLoading}
-            showCreateApiKey={showCreateApiKey}
-            setShowCreateApiKey={setShowCreateApiKey}
-            newApiKeyName={newApiKeyName}
-            setNewApiKeyName={setNewApiKeyName}
-            newApiKey={newApiKey}
-            setNewApiKey={setNewApiKey}
-            handleCreateApiKey={handleCreateApiKey}
-            handleDeleteApiKey={handleDeleteApiKey}
             copyToClipboard={copyToClipboard}
             formatDate={formatDate}
           />

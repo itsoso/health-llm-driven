@@ -18,53 +18,10 @@ router = APIRouter()
 
 
 def _resolve_user_city(db: Session, user_id: int) -> Optional[str]:
-    """按优先级推断用户今天所在城市：行程 > 手动设置 > IP检测 > profile城市"""
-    import re
+    """按优先级推断用户所在城市：手动设置 > IP检测 > profile城市"""
     from app.models.user_profile import UserProfile
-    from app.models.trip import Trip, TripItem
 
-    today = date.today()
-
-    def extract_city(location: str) -> str:
-        if not location:
-            return location
-        loc = re.sub(r'T\d+$', '', location).strip()
-        airport_codes = ['首都', '双流', '天府', '萧山', '浦东', '虹桥', '白云', '天河',
-                         '禄口', '江北', '长水', '太平', '咸阳', '遥墙', '宝安', '流亭']
-        station_suffixes = ['东站', '西站', '南站', '北站', '高铁站', '火车站']
-        for suffix in airport_codes + station_suffixes:
-            if loc.endswith(suffix) and len(loc) > len(suffix):
-                loc = loc[:-len(suffix)]
-                break
-        return loc.strip() or location
-
-    # 1. 行程：今天是否在旅途中
-    try:
-        ongoing_trip = db.query(Trip).filter(
-            Trip.user_id == user_id,
-            Trip.start_date <= today,
-            Trip.end_date >= today,
-        ).first()
-        if ongoing_trip:
-            today_items = db.query(TripItem).filter(
-                TripItem.trip_id == ongoing_trip.id,
-                TripItem.item_date == today,
-            ).order_by(TripItem.item_order).all()
-            # 今天最后一个到达的交通目的地
-            for item in reversed(today_items):
-                if item.item_type in ('flight', 'train', 'bus') and item.destination:
-                    return extract_city(item.destination)
-            # 活动 / 酒店地点
-            for item in today_items:
-                if item.item_type in ('activity', 'hotel', 'other') and item.location:
-                    return extract_city(item.location)
-            # 行程目的地兜底
-            if ongoing_trip.destination:
-                return ongoing_trip.destination
-    except Exception:
-        pass
-
-    # 2. 用户画像：手动 > IP检测 > city字段
+    # 用户画像：手动 > IP检测 > city字段
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
     if profile:
         if profile.use_manual_location and profile.manual_city:

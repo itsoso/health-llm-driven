@@ -24,9 +24,6 @@ export default {
     'pages/water/index',         // 饮水记录
     'pages/weight/index',        // 体重记录
     'pages/privacy/index',       // 隐私保护指引
-    'pages/news/index',          // 资讯列表（VIP/管理员）
-    'pages/news-detail/index',   // 资讯详情
-    'pages/external-advice/index', // 外部健康建议
     'pages/chat/index',            // AI 对话（OpenClaw）
     'pages/ai-insights/index',     // AI 健康洞察（测试）
     'pages/mood/index',             // 情绪追踪
@@ -35,7 +32,6 @@ export default {
     'pages/health-score/index',     // 健康评分
     'pages/medication/index',       // 用药管理
     'pages/womens-health/index',    // 女性健康
-    'pages/trip/index',              // 行程记录
     'pages/illness/index',           // 当前病症追踪
     'pages/llm-analysis/index',      // 多模型分析
     'pages/llm-detail/index',        // 分析详情

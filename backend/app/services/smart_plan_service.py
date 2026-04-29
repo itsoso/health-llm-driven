@@ -279,37 +279,8 @@ class SmartPlanService:
             return {"available": False, "reason": str(e)}
 
     def _get_trips_context(self, user_id: int, week_start: date) -> list:
-        """获取目标周内的行程信息"""
-        from app.models.trip import Trip
-        week_end = week_start + timedelta(days=6)
-
-        trips = self.db.query(Trip).filter(
-            Trip.user_id == user_id,
-            Trip.start_date <= week_end,
-            Trip.end_date >= week_start,
-        ).all()
-
-        result = []
-        for trip in trips:
-            trip_data = {
-                "name": trip.trip_name,
-                "destination": trip.destination,
-                "start_date": trip.start_date.isoformat(),
-                "end_date": trip.end_date.isoformat(),
-                "days": [],
-            }
-            for item in trip.items:
-                if week_start <= item.item_date <= week_end:
-                    day_idx = (item.item_date - week_start).days
-                    day_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-                    trip_data["days"].append({
-                        "day_name": day_names[day_idx] if day_idx < 7 else "",
-                        "date": item.item_date.isoformat(),
-                        "title": item.title,
-                        "type": item.item_type,
-                    })
-            result.append(trip_data)
-        return result
+        """行程上下文 — Trip 模型已移除, 返回空."""
+        return []
 
     def _get_goals_summary(self, user_id: int) -> list:
         """获取活跃目标摘要"""

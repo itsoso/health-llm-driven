@@ -40,19 +40,6 @@ interface SupplementRecommendation {
     timing: string
     priority: string
     icon: string
-    products?: Array<{
-      id: number
-      name: string
-      brand?: string
-      image_url?: string
-      platform: string
-      affiliate_url: string
-      price_display?: string
-      currency?: string
-      gene_match?: boolean
-      gene_description?: string
-      match_score?: number
-    }>
   }>
   timing_suggestions: {
     morning?: string[]
@@ -300,40 +287,6 @@ function SupplementRecommendationContent() {
                     <span>{rec.timing}</span>
                   </div>
                 </div>
-                {/* 推荐产品 */}
-                {rec.products && rec.products.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="text-xs font-semibold text-gray-500 mb-2">🛒 推荐产品</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {rec.products.map(p => (
-                        <a
-                          key={p.id}
-                          href={p.affiliate_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-teal-400 hover:shadow-sm"
-                        >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-lg">
-                            {p.platform === 'iherb' ? '🌿' : p.platform === 'jd' ? '🔴' : '🛒'}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium text-gray-900 truncate">{p.name}</div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              {p.price_display && <span className="text-sm font-bold text-teal-600">{p.price_display}</span>}
-                              <span className="text-[10px] text-gray-400 uppercase">{p.platform}</span>
-                              {p.gene_match && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                                  🧬 适合您的基因型
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <span className="text-gray-400 text-sm shrink-0">→</span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
               ))}
             </div>

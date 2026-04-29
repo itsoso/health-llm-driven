@@ -64,4 +64,13 @@ class ActionCard(Base):
     graded_at = Column(DateTime(timezone=True))  # 评分时间
     grading_notes = Column(Text)            # 评分解释
 
+    # 依从度信号 (Adherence) — 没有依从度的评分是噪声. 评分公式会 accuracy × adherence_confidence.
+    # adherence_kind:
+    #   'self_reported' — 用户 checklist 勾完成, 最弱信号 (默认置信度 0.5)
+    #   'device'        — 设备数据证实 (睡眠时间提前 / 训练心率 / 步数达标等), 最强信号 (0.9)
+    #   'proxy'         — 间接信号 (早餐打卡频率暗示起床规律等), 中等 (0.7)
+    #   None            — 未评估依从度, 按 1.0 处理 (兼容历史卡)
+    adherence_kind = Column(String(30))
+    adherence_confidence = Column(Integer)  # 0-100 整数便于过滤查询 (0=完全没做, 100=完全做到)
+
     user = relationship("User", backref="action_cards")

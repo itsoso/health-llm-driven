@@ -52,14 +52,6 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" "${HEALTH_API_URL}/profil
 
 ---
 
-## 产品推荐
-
-推荐补剂时，查询匹配的可购买产品并附上购买链接：
-```bash
-curl -s -H "Authorization: Bearer $HEALTH_API_TOKEN" "$HEALTH_API_URL/affiliate-products/match?supplement_name=活性叶酸&category=basic"
-```
-返回匹配产品列表（含购买链接、价格、基因适配说明）。向用户展示推荐时，附上产品购买链接方便直接购买。
-
 ## When To Use / When NOT To Use
 
 **使用场景：**

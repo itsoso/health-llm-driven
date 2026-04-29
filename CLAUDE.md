@@ -62,7 +62,7 @@ source venv/bin/activate
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 pytest                                                # all tests
-pytest tests/test_achievement.py -v                   # single file
+pytest tests/test_twin_builder.py -v                  # single file
 pytest tests/test_users.py::test_create_user -v -s    # single test
 pytest --cov=app --cov-report=term-missing            # coverage
 ```
@@ -126,14 +126,14 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 
 #### Feature parity status
 
-`frontend/src/app/` has ~60 top-level route directories; `mobile/app/` has ~15 routes. **Mobile is not at feature parity with Web and is unlikely to reach it.** Use this rough map when deciding where a feature lives:
+`frontend/src/app/` has ~45 top-level route directories; `mobile/app/` has ~15 routes. **Mobile is not at feature parity with Web and is unlikely to reach it.** Use this rough map when deciding where a feature lives:
 
 | Category | In mobile? | Strategy |
 |---|---|---|
 | Daily use (Home, AI Chat, Safety Alerts, Quick Record, Diet, Sleep, Goals, Workouts, Reminders, Notifications, Settings) | ✅ Yes | New features **must** land in RN first |
 | Deep analytics (Digital Twin, Health Trends, Personal Outcome, Health Report, Longitudinal analysis) | ⚠️ Partial (`indicator-history`, `sleep-spo2-analysis`) | Add RN if it's a daily-driver metric; leave on Web otherwise |
-| Admin / Ops / Content authoring (admin, skills, news, kids, achievements, review, onboarding, register) | ❌ No | **Stay on Web** — don't port |
-| Low-frequency references (medical-exams, supplement-audits, supplement-products, knowledge browsing, family, friends, points, shared, external-advice, trip) | ❌ No | Evaluate per-user-request before adding |
+| Admin / Ops / Content authoring (admin, skills, review, onboarding, register) | ❌ No | **Stay on Web** — don't port |
+| Low-frequency references (medical-exams, supplement-audits, supplement-products, knowledge browsing, family, shared) | ❌ No | Evaluate per-user-request before adding |
 
 When porting a Web page to RN, update this table in the same PR.
 
@@ -414,7 +414,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
   - `backend/app/services/data_collection/garmin_connect.py`（~2800 行）
   - `backend/app/tasks/notifications.py`（~1500 行）
   - `backend/app/api/genetic_data.py`、`services/workout_sync.py`、`services/daily_recommendation.py`、`api/knowledge.py`、`api/workout.py`、`services/health_analysis.py`、`api/family_health.py` 等（~1000–1300 行）
-  - `frontend/src/app/news/[id]/ClientPage.tsx`、`app/goals/page.tsx`、`app/dashboard/page.tsx`、`app/settings/components/GarminSection.tsx` 等（~800–950 行）
+  - `frontend/src/app/goals/page.tsx`、`app/dashboard/page.tsx`、`app/settings/components/GarminSection.tsx` 等（~800–950 行）
 - **操作原则**：修复不是目标，但"下次碰这个文件的时候顺手拆"是默认姿势。新加功能禁止往 1000+ 行的文件继续堆。
 
 ### Router organization

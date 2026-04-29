@@ -144,3 +144,264 @@ class TestGradeFlow:
         db.refresh(card)
         assert card.graded_at is None
         assert card.check_back_date > original_check_back
+
+
+class TestP0Fixes:
+    """P0 bugs: timezone / stale data floor / BP dual-value."""
+
+    def test_stale_weight_not_used(self, db):
+        """体重超过 14 天 max_age → 视为缺失, 不应拿来评分."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        # 30 天前的唯一一条数据
+        db.add(WeightRecord(
+            user_id=11, record_date=date.today() - timedelta(days=30), weight=82.0,
+        ))
+
+        card = ActionCard(
+            user_id=11, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        result = _grade_loop(db, now)
+        assert result["skipped_no_data"] >= 1
+
+        db.refresh(card)
+        assert card.graded_at is None, "陈旧数据不应被评分"
+        assert "weight 无 14 天内" in (card.grading_notes or "")
+
+    def test_fresh_weight_used(self, db):
+        """14 天内有数据 → 正常评分."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(
+            user_id=12, record_date=date.today() - timedelta(days=5), weight=80.0,
+        ))
+
+        card = ActionCard(
+            user_id=12, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        result = _grade_loop(db, now)
+        assert result["graded"] >= 1
+
+        db.refresh(card)
+        assert card.graded_at is not None
+        assert card.actual_value == "80"
+
+    def test_bp_dual_grading_takes_worse(self, db):
+        """BP 评分: systolic 好、diastolic 反向 → 取较差那个 → 低分."""
+        from app.models.action_card import ActionCard
+        from app.models.basic_health import BasicHealthData
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(BasicHealthData(
+            user_id=13, record_date=date.today() - timedelta(days=2),
+            systolic_bp=120, diastolic_bp=100,  # systolic 达标, diastolic 反向涨
+        ))
+
+        card = ActionCard(
+            user_id=13, title="降压", content="...", card_type="plan",
+            metric_key="bp",
+            baseline_value="140/90",  # dual baseline
+            target_value="120/80",    # dual target
+            creator_specialist="hypertension_specialist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        result = _grade_loop(db, now)
+        assert result["graded"] >= 1
+
+        db.refresh(card)
+        # systolic 完全达成 (140→120), 但 diastolic 反向 (90→100), 应取较差
+        assert card.accuracy_score is not None
+        assert card.accuracy_score < 50, f"BP 双指标应取较差, 当前 {card.accuracy_score}"
+        assert "diastolic" in (card.grading_notes or "").lower() or "反向" in (card.grading_notes or "")
+
+    def test_bp_single_value_fallback(self, db):
+        """BP target 只写单值 (如 '<130') → 按 systolic 单指标评."""
+        from app.models.action_card import ActionCard
+        from app.models.basic_health import BasicHealthData
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(BasicHealthData(
+            user_id=14, record_date=date.today() - timedelta(days=1),
+            systolic_bp=125, diastolic_bp=82,
+        ))
+
+        card = ActionCard(
+            user_id=14, title="降压", content="...", card_type="plan",
+            metric_key="systolic_bp",  # 显式收缩压
+            baseline_value="140",
+            target_value="<130",
+            creator_specialist="hypertension_specialist",
+            check_back_date=now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        result = _grade_loop(db, now)
+        assert result["graded"] >= 1
+
+        db.refresh(card)
+        # 140→125, target<130: 达成
+        assert card.accuracy_score is not None
+        assert card.accuracy_score >= 70
+
+    def test_timezone_shanghai_date_used(self, db):
+        """边界: UTC 23:30 (= Shanghai 07:30 次日).
+        今天早上 Shanghai 07:00 记的体重, UTC 日期还停在昨天. 应能被找到."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+        from zoneinfo import ZoneInfo
+
+        # Shanghai 07:30 = UTC 23:30 of previous day
+        shanghai_now = datetime(2026, 4, 28, 7, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+        utc_now = shanghai_now.astimezone(timezone.utc)
+        shanghai_today = shanghai_now.date()
+
+        db.add(WeightRecord(user_id=15, record_date=shanghai_today, weight=80.0))
+
+        card = ActionCard(
+            user_id=15, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=utc_now - timedelta(hours=1),
+        )
+        db.add(card)
+        db.commit()
+
+        # 用 UTC 的 utc_now 跑 grader, 应能命中 Shanghai 今天的数据
+        result = _grade_loop(db, utc_now)
+        assert result["graded"] >= 1
+
+        db.refresh(card)
+        assert card.actual_value == "80"
+
+
+class TestAdherence:
+    """Adherence 信号接入 final score 公式."""
+
+    def test_default_no_adherence_no_score_change(self, db):
+        """历史卡 adherence_confidence=None → raw_score 不改."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=21, record_date=date.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=21, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            # 不设 adherence
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+        # 完全达成, raw=100, 无 adherence 调整, final=100
+        assert card.accuracy_score == 100
+
+    def test_low_adherence_cuts_score(self, db):
+        """用户没做, confidence=20 → 100 × 0.2 = 20 分."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=22, record_date=date.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=22, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            adherence_kind="self_reported",
+            adherence_confidence=20,
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+        # raw=100, adh=20% → 20
+        assert card.accuracy_score == 20
+        assert "adherence=self_reported 20%" in (card.grading_notes or "")
+
+    def test_checklist_fallback_half_done(self, db):
+        """没显式 adherence 但 checklist 勾了 50% → self_reported 25 (50% × 50 上限)."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=23, record_date=date.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=23, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            checklist=[
+                {"item": "a", "done": True},
+                {"item": "b", "done": False},
+            ],
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+        # raw=100, checklist 50% → confidence=25, final=25
+        assert card.accuracy_score == 25
+        assert "self_reported" in (card.grading_notes or "")
+
+    def test_device_adherence_high_confidence(self, db):
+        """设备证实的 adherence (90%) 应接近 raw score."""
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=24, record_date=date.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=24, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            adherence_kind="device",
+            adherence_confidence=90,
+        )
+        db.add(card)
+        db.commit()
+
+        _grade_loop(db, now)
+        db.refresh(card)
+        # raw=100, adh=90 → 90
+        assert card.accuracy_score == 90
+        assert "adherence=device 90%" in (card.grading_notes or "")

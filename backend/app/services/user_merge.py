@@ -12,8 +12,6 @@ UNIQUE_USER_TABLES = {
     "garmin_credentials",
     "user_profiles",
     "user_notification_settings",
-    "kids_pets",
-    "kids_pet_profiles",
 }
 
 # user_id 参与复合唯一约束的表: {表名: [额外唯一字段]}
@@ -21,14 +19,9 @@ COMPOSITE_UNIQUE_TABLES = {
     "garmin_data": ["record_date"],
     "weight_records": ["record_date"],
     "daily_recommendations": ["recommendation_date"],
-    "vocabulary_words": ["word"],
-    "vocabularies": ["word"],
-    "friendships": ["friend_id"],
-    "challenge_participants": ["challenge_id"],
     "checkin_records": ["template_id", "checkin_date"],
     "health_analysis_cache": ["analysis_date", "cache_type"],
     "habit_records": ["habit_id", "record_date"],
-    "kids_daily_plans": ["plan_date"],
 }
 
 
@@ -193,16 +186,6 @@ class UserMergeService:
                 if count > 0:
                     merge_stats[table_name] = count
 
-            # 1b. 迁移 direct_messages 表（sender_id / receiver_id）
-            for col in ("sender_id", "receiver_id"):
-                result = db.execute(
-                    text(f'UPDATE direct_messages SET {col} = :tid WHERE {col} = :sid'),
-                    {"tid": target_user_id, "sid": source_user_id}
-                )
-                if result.rowcount > 0:
-                    merge_stats[f"direct_messages.{col}"] = result.rowcount
-                    logger.info(f"  direct_messages.{col}: 迁移 {result.rowcount} 条")
-
             # 2. 合并用户基础信息（保留更完整的信息）
             if not target_user.email and source_user.email:
                 target_user.email = source_user.email
@@ -231,12 +214,6 @@ class UserMergeService:
             # 合并密码
             if not target_user.hashed_password and source_user.hashed_password:
                 target_user.hashed_password = source_user.hashed_password
-
-            # 合并积分（取较大值）
-            target_user.kids_points = max(
-                target_user.kids_points or 0,
-                source_user.kids_points or 0
-            )
 
             # 确保合并后用户是已审批已激活
             if source_user.is_approved:

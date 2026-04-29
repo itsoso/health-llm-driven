@@ -497,18 +497,6 @@ async def get_supplement_recommendation(
             "precautions": recommendation.get('precautions', [])
         }
 
-        # 为每个推荐项附加匹配的联盟产品
-        try:
-            from app.services.product_matching import find_products, get_user_gene_tags
-            gene_tags = get_user_gene_tags(db, current_user.id)
-            for rec in transformed_response.get("recommendations", []):
-                rec_name = rec.get("name", "")
-                rec_category = rec.get("category", "")
-                if rec_name:
-                    rec["products"] = find_products(db, rec_name, rec_category, gene_tags, limit=3)
-        except Exception as e:
-            logger.warning(f"[补剂推荐] 产品匹配失败: {e}")
-
         if debug:
             transformed_response["debug_info"] = recommendation.get('debug')
 
