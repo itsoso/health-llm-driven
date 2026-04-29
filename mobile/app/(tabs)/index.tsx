@@ -211,7 +211,8 @@ export default function HomeScreen() {
         onOpenItem={handleAgendaItem}
       />
 
-      {criticalAlerts.length > 0 && (
+      {/* 告警 banner: 只在 TodayCoach 不是 risk 态时显示 (避免和上面 TodayCoach 重复同一条 alert) */}
+      {criticalAlerts.length > 0 && todayCoach.data?.status !== 'risk' && (
         <View style={styles.alertBanner} accessibilityRole="alert">
           <Ionicons name="warning" size={16} color="#FF453A" />
           <Text style={txt.alertText} numberOfLines={2}>{criticalAlerts[0].title}: {criticalAlerts[0].message}</Text>

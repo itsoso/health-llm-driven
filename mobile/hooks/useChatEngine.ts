@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { AppState } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '../services/chat';
@@ -41,6 +42,45 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   useEffect(() => {
     return () => { abortRef.current?.abort(); };
   }, []);
+
+  // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
+  // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 stream 到 OpenClaw 后端
+  // 会持续跑并把最终 message 写 conversation. 这里 active 时重新拉服务端最新消息
+  // 把断掉的 AI 回复补齐.
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const prev = appStateRef.current;
+      appStateRef.current = next;
+      // 从 background/inactive 回到 active, 且有当前对话 → 重新拉消息
+      if ((prev === 'background' || prev === 'inactive') && next === 'active' && conversationId) {
+        reloadCurrentFromServer();
+      }
+    });
+    return () => sub.remove();
+  }, [conversationId]);
+
+  const reloadCurrentFromServer = useCallback(async () => {
+    if (!conversationId) return;
+    try {
+      const { messages: msgs, total_messages } = await getConversationMessages(
+        conversationId, { days: windowDays || DEFAULT_WINDOW_DAYS }
+      );
+      setHasMoreHistory(total_messages > msgs.length);
+      if (msgs.length === 0) return;
+      const restored: UIMessage[] = msgs.map((m: any, i: number) => ({
+        id: `hist-${m.id || i}`,
+        role: m.role,
+        content: m.content,
+        createdAt: m.created_at,
+        imageUris: m.image_url ? JSON.parse(m.image_url).map((u: string) => `${IMAGE_HOST}${u}`) : undefined,
+      }));
+      setMessages(restored);
+      setIsStreaming(false);  // 清掉 streaming 残留态
+    } catch {
+      // 网络失败不影响现有 UI
+    }
+  }, [conversationId, windowDays]);
 
   const loadLatestConversation = useCallback(async () => {
     try {

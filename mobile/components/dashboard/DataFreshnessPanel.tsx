@@ -11,8 +11,9 @@
  * - Agent 建议前先自己说明知识边界 → 产品"谦虚感"
  * - 复用 Twin.freshness 分区, 零额外后端工作
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -64,6 +65,7 @@ function ageLabel(ageDays: number | null): string {
 
 export default function DataFreshnessPanel() {
   const router = useRouter();
+  const [collapsed, setCollapsed] = useState(true);  // 默认收起 (meta 信息, 不常看)
   const { data: twin } = useQuery({
     queryKey: queryKeys.twin,
     queryFn: () => getMyTwin(),
@@ -95,17 +97,33 @@ export default function DataFreshnessPanel() {
 
   const fresh = items.filter(i => i.freshness === 'fresh');
   const needAttention = items.filter(i => i.freshness !== 'fresh').slice(0, 3);
+  const toggle = () => { Haptics.selectionAsync(); setCollapsed(v => !v); };
+
+  // Collapsed 态: 单行 "Agent 已知 N 项 · 待补 M 项" + chevron, 点任意处展开
+  if (collapsed) {
+    return (
+      <Pressable style={styles.collapsedBar} onPress={toggle} hitSlop={6} accessibilityRole="button" accessibilityLabel="展开数据状态">
+        <Ionicons name="pulse" size={13} color={colors.brand} />
+        <Text style={styles.collapsedText} numberOfLines={1}>
+          Agent 数据 · 已知 {fresh.length} 项
+          {needAttention.length > 0 ? ` · 待补 ${needAttention.length}` : ''}
+        </Text>
+        <Ionicons name="chevron-down" size={14} color={colors.labelTertiary} />
+      </Pressable>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <View style={styles.row}>
+      <Pressable style={styles.headerRow} onPress={toggle} hitSlop={6}>
         <Text style={styles.knowLabel}>Agent 已知</Text>
         <Text style={styles.knowValue} numberOfLines={1}>
           {fresh.length > 0
             ? fresh.map(i => i.label).join(' · ')
             : '数据 尚未同步'}
         </Text>
-      </View>
+        <Ionicons name="chevron-up" size={14} color={colors.labelTertiary} />
+      </Pressable>
       {needAttention.length > 0 && (
         <View style={styles.row}>
           <Text style={styles.gapLabel}>需补全</Text>
@@ -139,6 +157,22 @@ export default function DataFreshnessPanel() {
 }
 
 const styles = StyleSheet.create({
+  collapsedBar: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  collapsedText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.labelSecondary,
+  },
   container: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
@@ -147,6 +181,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgCard,
     borderRadius: radii.md,
     gap: 6,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   row: {
     flexDirection: 'row',
