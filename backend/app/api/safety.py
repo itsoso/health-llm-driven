@@ -47,28 +47,34 @@ class ExplainResponse(BaseModel):
 
 @router.get("/me")
 def get_my_safety_report(
-    severity_min: int = Query(0, ge=0, le=4, description="只返回 >= 此严重度的告警"),
+    severity_min: int = Query(2, ge=0, le=4, description="只返回 >= 此严重度的告警 (默认 2=MEDIUM, 过滤 INFO/LOW 噪声)"),
+    limit: int = Query(8, ge=1, le=50, description="最多返回 N 条告警 (按 severity 降序). 剩余进 summary.truncated_count"),
+    dedup_by_rule: bool = Query(True, description="同 rule_id 只保留最高 severity 那条 (防 DDI 多药对刷屏)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_required),
 ):
     """
     当前用户的安全告警报告。
 
+    **默认降噪**: severity >= MEDIUM, 最多 8 条, 同规则去重. 前端如需全量可传
+    `?severity_min=0&limit=50&dedup_by_rule=false`.
+
     返回结构：
       {
         user_id, generated_at,
         alerts: [{rule_id, category, severity, title, message, action, ...}],
-        summary: {total, critical, high, medium, rules_evaluated},
+        summary: {total, critical, high, medium, rules_evaluated,
+                  truncated_count, dedup_count},
         timing: {twin_build_ms, evaluate_ms}
       }
     """
     # Safety report 缓存（5min，Twin 更新时会 invalidate）
-    import hashlib as _hl
-    _safety_cache_key = f"safety:v1:{current_user.id}"
+    # 缓存 key 含参数, 避免不同过滤条件错缓存
+    _safety_cache_key = f"safety:v2:{current_user.id}:s{severity_min}:l{limit}:d{int(dedup_by_rule)}"
     try:
         from app.utils.redis_cache import RedisCache
         _cached_safety = RedisCache.get(_safety_cache_key)
-        if _cached_safety and not severity_min:
+        if _cached_safety:
             _cached_safety["_cached"] = True
             return _cached_safety
     except Exception:
@@ -110,19 +116,39 @@ def get_my_safety_report(
         dismissed_ids = set()
         dismissed_alerts = []
 
+    # Severity 门槛
     if severity_min > 0:
         report.alerts = [a for a in report.alerts if int(a.severity) >= severity_min]
 
+    # Dedup by rule_id (同规则触发多次保留最高 severity)
+    dedup_count = 0
+    if dedup_by_rule and report.alerts:
+        by_rule: Dict[str, Any] = {}
+        for a in report.alerts:
+            existing = by_rule.get(a.rule_id)
+            if existing is None or int(a.severity) > int(existing.severity):
+                by_rule[a.rule_id] = a
+        dedup_count = len(report.alerts) - len(by_rule)
+        # 按 severity 降序 + 生成时间降序
+        report.alerts = sorted(by_rule.values(), key=lambda a: (-int(a.severity), -a.generated_at.timestamp()))
+
+    # Top N 限制
+    total_after_filter = len(report.alerts)
+    truncated_count = max(0, total_after_filter - limit)
+    if truncated_count > 0:
+        report.alerts = report.alerts[:limit]
+
     result = report.model_dump_for_api()
     result["dismissed_count"] = len(dismissed_ids)
+    result["summary"]["truncated_count"] = truncated_count
+    result["summary"]["dedup_count"] = dedup_count
 
-    # 写缓存（5min TTL，和 Twin 缓存对齐）
-    if not severity_min:
-        try:
-            from app.utils.redis_cache import RedisCache
-            RedisCache.set(_safety_cache_key, result, ttl=300)
-        except Exception:
-            pass
+    # 写缓存（5min TTL, 和 Twin 缓存对齐）
+    try:
+        from app.utils.redis_cache import RedisCache
+        RedisCache.set(_safety_cache_key, result, ttl=300)
+    except Exception:
+        pass
 
     return result
 

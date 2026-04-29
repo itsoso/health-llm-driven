@@ -454,7 +454,14 @@ class AnomalyDetectionService:
         return None
 
     async def send_alerts(self, user_id: int, alerts: List[AnomalyAlert]):
-        """发送预警推送通知"""
+        """发送预警推送通知.
+
+        降噪策略 (P3 告警风暴修复):
+          1. info 级别不推 APNs (battery_low 等运营性告警)
+          2. 连续 3 天同类告警 → 标 is_suppressed, 不推 (避免告警疲劳)
+             新告警仍写 DB, 用户主动进 App 能看
+          3. critical 级别不受疲劳规则影响, 一定推
+        """
         if not alerts:
             return
 
@@ -467,8 +474,29 @@ class AnomalyDetectionService:
             if alert.notification_sent:
                 continue
 
+            severity = (alert.severity or "").lower()
+
+            # 规则 1: info 级别不推 APNs
+            if severity == "info":
+                alert.notification_sent = True
+                alert.is_suppressed = True
+                logger.info(
+                    f"[anomaly] suppress info alert type={alert.alert_type} user={user_id}"
+                )
+                continue
+
+            # 规则 2: 连续 N 天同类疲劳 (critical 除外)
+            if severity != "critical" and self._is_fatigued(user_id, alert.alert_type, alert.detection_date):
+                alert.notification_sent = True
+                alert.is_suppressed = True
+                logger.info(
+                    f"[anomaly] suppress fatigued alert type={alert.alert_type} user={user_id} "
+                    f"(连续 3+ 天同类告警)"
+                )
+                continue
+
             # critical 级别绕过静默时段
-            respect_quiet = alert.severity != "critical"
+            respect_quiet = severity != "critical"
 
             try:
                 result = await push_service.send_notification(
@@ -485,3 +513,22 @@ class AnomalyDetectionService:
                 logger.warning(f"发送预警通知失败 alert={alert.id}: {e}")
 
         self.db.commit()
+
+    def _is_fatigued(self, user_id: int, alert_type: str, check_date: date) -> bool:
+        """最近 3 天 (不含今天) 每天都有同类告警推送过 → 疲劳, 今天静默.
+
+        评估: 2 天冷却期推送, 第 3 天开始冷却; 直到同类告警连续中断 1 天才重新允许推送.
+        """
+        recent_sent = (
+            self.db.query(AnomalyAlert)
+            .filter(
+                AnomalyAlert.user_id == user_id,
+                AnomalyAlert.alert_type == alert_type,
+                AnomalyAlert.detection_date >= check_date - timedelta(days=3),
+                AnomalyAlert.detection_date < check_date,
+                AnomalyAlert.notification_sent.is_(True),
+                AnomalyAlert.is_suppressed.is_(False),  # 只数真推过的
+            )
+            .count()
+        )
+        return recent_sent >= 2
