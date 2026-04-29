@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, shadows, spacing } from '../../constants/theme';
 import type { TodayCoachFocus } from '../../services/todayCoach';
@@ -18,6 +19,8 @@ const STATUS_META: Record<TodayCoachFocus['status'], { icon: keyof typeof Ionico
 };
 
 export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
+  const [collapsed, setCollapsed] = useState(false);
+
   if (isLoading && !focus) {
     return (
       <View style={styles.panel}>
@@ -30,10 +33,14 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
   if (!focus) return null;
 
   const meta = STATUS_META[focus.status];
+  const toggle = () => {
+    Haptics.selectionAsync();
+    setCollapsed(v => !v);
+  };
 
   return (
     <View style={styles.panel}>
-      <View style={styles.topRow}>
+      <Pressable onPress={toggle} style={styles.topRow} accessibilityRole="button" accessibilityLabel={collapsed ? '展开今日重点' : '收起今日重点'}>
         <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
           <Ionicons name={meta.icon} size={18} color={meta.color} />
         </View>
@@ -42,37 +49,47 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
             <Text style={[txt.kicker, { color: meta.color }]}>{meta.label}</Text>
             {focus.verifyBy ? <Text style={txt.verify}>验证 {focus.verifyBy.slice(0, 10)}</Text> : null}
           </View>
-          <Text style={txt.title} numberOfLines={2}>{focus.title}</Text>
+          <Text style={txt.title} numberOfLines={collapsed ? 1 : 2}>{focus.title}</Text>
         </View>
-      </View>
-
-      <Text style={txt.reason} numberOfLines={3}>{focus.reason}</Text>
-
-      {focus.evidence.length > 0 ? (
-        <View style={styles.evidenceRow}>
-          {focus.evidence.slice(0, 3).map(item => (
-            <View key={`${item.label}-${item.value}`} style={styles.evidencePill}>
-              <Text style={txt.evidenceLabel}>{item.label}</Text>
-              <Text style={[
-                txt.evidenceValue,
-                item.tone === 'bad' && { color: '#FF453A' },
-                item.tone === 'warn' && { color: '#FF9F0A' },
-                item.tone === 'good' && { color: '#0A8F8F' },
-              ]}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      <Pressable
-        style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-        onPress={() => onAction(focus)}
-        accessibilityRole="button"
-        accessibilityLabel={focus.actionLabel}
-      >
-        <Text style={txt.action}>{focus.actionLabel}</Text>
-        <Ionicons name="arrow-forward" size={15} color="#fff" />
+        <Ionicons
+          name={collapsed ? 'chevron-down' : 'chevron-up'}
+          size={18}
+          color={colors.labelTertiary}
+          style={{ marginLeft: 4 }}
+        />
       </Pressable>
+
+      {!collapsed && (
+        <>
+          <Text style={txt.reason} numberOfLines={3}>{focus.reason}</Text>
+
+          {focus.evidence.length > 0 ? (
+            <View style={styles.evidenceRow}>
+              {focus.evidence.slice(0, 3).map(item => (
+                <View key={`${item.label}-${item.value}`} style={styles.evidencePill}>
+                  <Text style={txt.evidenceLabel}>{item.label}</Text>
+                  <Text style={[
+                    txt.evidenceValue,
+                    item.tone === 'bad' && { color: '#FF453A' },
+                    item.tone === 'warn' && { color: '#FF9F0A' },
+                    item.tone === 'good' && { color: '#0A8F8F' },
+                  ]}>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+            onPress={() => onAction(focus)}
+            accessibilityRole="button"
+            accessibilityLabel={focus.actionLabel}
+          >
+            <Text style={txt.action} numberOfLines={2}>{focus.actionLabel}</Text>
+            <Ionicons name="arrow-forward" size={15} color="#fff" />
+          </Pressable>
+        </>
+      )}
     </View>
   );
 }
@@ -109,6 +126,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
   },
   actionBtnPressed: { opacity: 0.82 },
 });
@@ -121,5 +140,5 @@ const txt = {
   reason: { fontSize: 13, color: colors.labelSecondary, lineHeight: 19, marginTop: 10 } as TextStyle,
   evidenceLabel: { fontSize: 10, color: colors.labelTertiary, marginBottom: 2 } as TextStyle,
   evidenceValue: { fontSize: 13, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  action: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
+  action: { fontSize: 14, fontWeight: '700', color: '#fff', flexShrink: 1, textAlign: 'center' } as TextStyle,
 };

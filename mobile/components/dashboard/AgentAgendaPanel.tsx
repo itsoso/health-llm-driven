@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, shadows, spacing } from '../../constants/theme';
 import type { AgentAgenda, AgentAgendaItem, AgentAgendaSection } from '../../services/agentAgenda';
@@ -16,19 +17,37 @@ const SECTION_META: Record<AgentAgendaSection['key'], { icon: keyof typeof Ionic
 };
 
 export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
+  const [collapsed, setCollapsed] = useState(false);
+
   if (!agenda || agenda.sections.length === 0) return null;
+
+  const toggle = () => {
+    Haptics.selectionAsync();
+    setCollapsed(v => !v);
+  };
+
+  // 计算总条数供 collapsed 态展示
+  const totalItems = agenda.sections.reduce((sum, s) => sum + (s.items?.length || 0), 0);
 
   return (
     <View style={styles.panel}>
-      <View style={styles.header}>
+      <Pressable onPress={toggle} style={styles.header} accessibilityRole="button" accessibilityLabel={collapsed ? '展开 Agent 议程' : '收起 Agent 议程'}>
         <View style={styles.headerLeft}>
           <Ionicons name="pulse-outline" size={15} color={colors.brand} />
           <Text style={txt.header}>Agent 议程</Text>
+          {collapsed && <Text style={txt.countBadge}>{totalItems}</Text>}
         </View>
-        <Text style={txt.date}>{agenda.date.slice(5)}</Text>
-      </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={txt.date}>{agenda.date.slice(5)}</Text>
+          <Ionicons
+            name={collapsed ? 'chevron-down' : 'chevron-up'}
+            size={16}
+            color={colors.labelTertiary}
+          />
+        </View>
+      </Pressable>
 
-      {agenda.sections.slice(0, 3).map(section => {
+      {!collapsed && agenda.sections.slice(0, 3).map(section => {
         const meta = SECTION_META[section.key];
         return (
           <View key={section.key} style={styles.section}>
@@ -102,4 +121,9 @@ const txt = {
   sectionTitle: { fontSize: 11, fontWeight: '800' } as TextStyle,
   itemTitle: { fontSize: 13, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
   itemSubtitle: { fontSize: 11, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
+  countBadge: {
+    fontSize: 10, fontWeight: '700', color: colors.labelSecondary,
+    backgroundColor: colors.fill, paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 8, overflow: 'hidden',
+  } as TextStyle,
 };
