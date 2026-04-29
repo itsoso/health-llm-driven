@@ -82,7 +82,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
 - supplement_group: {"timing": "morning|noon|evening|bedtime"}
 - weight: {"weight": 72.2, "record_date": "2026-04-16"}
 - blood_pressure: {"systolic": 120, "diastolic": 80, "record_date": "2026-04-16"}
-- exercise: {"exercise_type": "running", "duration": 30, "distance": 5.0}
+- exercise: {"exercise_type": "running", "duration": 30, "distance": 5.0}  或计次项目: {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
 - rhinitis: {"sneezing": 2, "congestion": 1, "runny_nose": 0}
 - mood: {"score": 7, "notes": "心情不错"}
 - medication: {"medication_name": "布洛芬", "taken_time": "08:00"}

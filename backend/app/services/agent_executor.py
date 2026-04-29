@@ -645,6 +645,21 @@ class AgentExecutor:
         if rtype == "blood_pressure":
             data.setdefault("record_date", today)
 
+        # 补全 exercise 必填字段 + LLM 常见字段别名映射
+        if rtype == "exercise":
+            data.setdefault("record_date", today)
+            # LLM 可能用 count/次数/repetitions 代替 reps
+            for src in ("count", "repetitions", "次数"):
+                if src in data and "reps" not in data:
+                    data["reps"] = data.pop(src)
+            # LLM 可能用 duration_minutes / minutes 代替 duration
+            for src in ("duration_minutes", "minutes", "分钟"):
+                if src in data and "duration" not in data:
+                    data["duration"] = data.pop(src)
+            # exercise_type 必填, 若缺失从 type / name 回退
+            if not data.get("exercise_type"):
+                data["exercise_type"] = data.get("type") or data.get("name") or "其他"
+
         # supplement_group: 按时段批量打卡
         if rtype == "supplement_group":
             timing = data.get("timing", "morning")
@@ -705,7 +720,7 @@ class AgentExecutor:
             }),
             "weight": ("/weight/records", "POST", data),
             "blood_pressure": ("/blood-pressure/records", "POST", data),
-            "exercise": ("/exercise/records", "POST", data),
+            "exercise": ("/daily-health/exercise", "POST", data),
             "diet": ("/diet/records", "POST", data),
             "supplement": ("/supplements/records", "POST", data),
             "rhinitis": ("/health-checkin/me/rhinitis", "POST", data),
