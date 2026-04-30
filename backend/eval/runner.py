@@ -18,6 +18,7 @@ import yaml
 
 from eval.models import CaseResult, GoldenCase, SuiteReport
 from eval.scorers.exact_match import score_rule_set
+from eval.scorers.grounding import score_grounding
 from eval.scorers.keywords import score_keywords
 from eval.scorers.llm_judge import score_llm_judge
 
@@ -97,6 +98,37 @@ def _score_orchestrator(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, D
     return results
 
 
+# ============= insight suite =============
+
+@_register_runner("insight")
+def _run_insight_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """纯 grounding 逻辑测试 — 不调 LLM, 不需 DB.
+
+    case 直接给 candidate dict (相当于 mock LLM 已经返回的结果),
+    runner 只是把 candidate 透传给 scorer.
+    """
+    return {
+        "candidate": case_inputs.get("candidate", {}),
+        "available": case_inputs.get("available", {}),
+    }
+
+
+@_register_scorer("insight")
+def _score_insight(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    grounding_result = score_grounding(
+        actual=output["candidate"],
+        expected=case.expected,
+        available=output["available"],
+    )
+    expected_grounded = bool(case.expected.get("expect_grounded", True))
+    case_passed = grounding_result["passed"] == expected_grounded
+    # 把 case_passed 注回到 result, 让 run_case 的 all() 判定生效
+    grounding_result["case_passed"] = case_passed
+    grounding_result["expected_grounded"] = expected_grounded
+    grounding_result["passed"] = case_passed  # 覆盖, 让 run_case 看到 case 级判定
+    return {"grounding": grounding_result}
+
+
 # ============= 通用流程 =============
 
 def load_suite(suite: str) -> List[GoldenCase]:
@@ -105,13 +137,10 @@ def load_suite(suite: str) -> List[GoldenCase]:
         raise FileNotFoundError(f"Suite '{suite}' 数据集不存在: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     cases = []
+    _RESERVED = {"id", "description", "expected", "tags"}
     for c in raw.get("cases", []):
-        # safety: case 里只有 twin; orchestrator: case 里有 twin/findings/query
-        inputs = {
-            "twin": c.get("twin", {}),
-            "findings": c.get("findings", []),
-            "query": c.get("query", ""),
-        }
+        # 把所有非 reserved 字段都装进 inputs, 各 suite 的 runner 自取
+        inputs = {k: v for k, v in c.items() if k not in _RESERVED}
         cases.append(GoldenCase(
             id=c["id"],
             description=c.get("description", ""),
@@ -180,7 +209,7 @@ def run_suite(suite: str, baseline: Optional[str] = None) -> SuiteReport:
     )
 
     if baseline:
-        baseline_path = _BASELINES_DIR / f"{baseline}.json"
+        baseline_path = _BASELINES_DIR / f"{suite}_{baseline}.json"
         report.baseline_path = str(baseline_path)
         if baseline_path.exists():
             base = json.loads(baseline_path.read_text(encoding="utf-8"))
@@ -193,6 +222,6 @@ def run_suite(suite: str, baseline: Optional[str] = None) -> SuiteReport:
 
 def write_baseline(report: SuiteReport, name: str) -> Path:
     _BASELINES_DIR.mkdir(parents=True, exist_ok=True)
-    path = _BASELINES_DIR / f"{name}.json"
+    path = _BASELINES_DIR / f"{report.suite}_{name}.json"
     path.write_text(report.model_dump_json(indent=2, exclude={"started_at"}), encoding="utf-8")
     return path

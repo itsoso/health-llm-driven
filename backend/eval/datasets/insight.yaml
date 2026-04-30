@@ -1,0 +1,102 @@
+suite: insight
+description: |
+  Insight grounding 回归. 每条 case 提供 (available pool) + (candidate),
+  scorer 验证 evidence_refs 是否真的来自 pool, confidence 是否在 [0.3, 0.85] 内.
+  expect_grounded: true → 期望 candidate 通过; false → 期望被拒绝.
+
+  纯逻辑 scorer, 不调 LLM, 不需 DB.
+cases:
+
+  - id: all_refs_valid_high_confidence
+    description: 全部 ref 命中 + confidence 在范围内 → 应通过
+    available:
+      fact_ids: [101, 102, 103]
+      garmin_dates: ["2026-04-25", "2026-04-26"]
+      diet_dates: []
+    candidate:
+      evidence_refs:
+        - {type: fact, id: 101}
+        - {type: garmin_date, date: "2026-04-25"}
+      confidence: 0.7
+    expected:
+      expect_grounded: true
+      min_valid_refs: 2
+
+  - id: hallucinated_fact_ids_rejected
+    description: LLM 引用不存在的 fact_id → 应被拒绝
+    available:
+      fact_ids: [101]
+    candidate:
+      evidence_refs:
+        - {type: fact, id: 999}
+        - {type: fact, id: 888}
+      confidence: 0.7
+    expected:
+      expect_grounded: false
+      min_valid_refs: 2
+
+  - id: mixed_some_valid_some_hallucinated
+    description: 一半真一半假, 有效数 < 阈值 → 应被拒绝
+    available:
+      fact_ids: [101]
+    candidate:
+      evidence_refs:
+        - {type: fact, id: 101}
+        - {type: fact, id: 999}
+      confidence: 0.6
+    expected:
+      expect_grounded: false
+      min_valid_refs: 2
+
+  - id: confidence_too_high_rejected
+    description: confidence 0.95 超过 0.85 上限 → 应被拒绝
+    available:
+      fact_ids: [101, 102]
+    candidate:
+      evidence_refs:
+        - {type: fact, id: 101}
+        - {type: fact, id: 102}
+      confidence: 0.95
+    expected:
+      expect_grounded: false
+      min_valid_refs: 2
+
+  - id: missing_confidence_rejected
+    description: 没填 confidence → 应被拒绝
+    available:
+      fact_ids: [101, 102]
+    candidate:
+      evidence_refs:
+        - {type: fact, id: 101}
+        - {type: fact, id: 102}
+    expected:
+      expect_grounded: false
+      min_valid_refs: 2
+
+  - id: garmin_diet_mixed_valid
+    description: 跨类型 ref 都有效 → 应通过
+    available:
+      garmin_dates: ["2026-04-20"]
+      diet_dates: ["2026-04-21"]
+    candidate:
+      evidence_refs:
+        - {type: garmin_date, date: "2026-04-20"}
+        - {type: diet_date, date: "2026-04-21"}
+      confidence: 0.8
+    expected:
+      expect_grounded: true
+      min_valid_refs: 2
+
+  - id: malformed_ref_ignored
+    description: 字符串/未知 type 算 invalid, 仅 1 valid 不够 → 应被拒绝
+    available:
+      fact_ids: [101]
+    candidate:
+      evidence_refs:
+        - "字符串而不是字典"
+        - {type: unknown, id: 1}
+        - {type: fact, id: 101}
+      confidence: 0.5
+    expected:
+      expect_grounded: false
+      min_valid_refs: 2

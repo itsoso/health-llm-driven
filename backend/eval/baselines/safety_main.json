@@ -5,7 +5,7 @@
   "failed": 0,
   "errored": 0,
   "avg_score": 1.0,
-  "avg_latency_ms": 76,
+  "avg_latency_ms": 24,
   "cases": [
     {
       "case_id": "bp_normal_120_80",
@@ -13,19 +13,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": []
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
-      "latency_ms": 610
+      "latency_ms": 198
     },
     {
       "case_id": "bp_crisis_185_115",
@@ -33,19 +35,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": [
             "vitals.bp_hypertensive_crisis"
           ]
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [
-            "vitals.bp_hypertensive_crisis"
-          ],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [
+              "vitals.bp_hypertensive_crisis"
+            ],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
@@ -57,19 +61,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": [
             "vitals.bp_stage_2_hypertension"
           ]
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [
-            "vitals.bp_stage_2_hypertension"
-          ],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [
+              "vitals.bp_stage_2_hypertension"
+            ],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
@@ -81,19 +87,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": [
             "vitals.bp_hypotension"
           ]
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [
-            "vitals.bp_hypotension"
-          ],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [
+              "vitals.bp_hypotension"
+            ],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
@@ -105,19 +113,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": [
             "vitals.bp_hypertensive_crisis"
           ]
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [
-            "vitals.bp_hypertensive_crisis"
-          ],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [
+              "vitals.bp_hypertensive_crisis"
+            ],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
@@ -129,15 +139,17 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": []
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
@@ -149,19 +161,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": [
             "vitals.bp_stage_2_hypertension"
           ]
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [
-            "vitals.bp_stage_2_hypertension"
-          ],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [
+              "vitals.bp_stage_2_hypertension"
+            ],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,
@@ -173,19 +187,21 @@
       "passed": true,
       "score": 1.0,
       "details": {
-        "actual": {
+        "output": {
           "rule_ids": [
             "vitals.bp_stage_2_hypertension"
           ]
         },
-        "scoring": {
-          "passed": true,
-          "score": 1.0,
-          "matched": [
-            "vitals.bp_stage_2_hypertension"
-          ],
-          "missing": [],
-          "unexpected": []
+        "scorers": {
+          "rule_set": {
+            "passed": true,
+            "score": 1.0,
+            "matched": [
+              "vitals.bp_stage_2_hypertension"
+            ],
+            "missing": [],
+            "unexpected": []
+          }
         }
       },
       "error": null,

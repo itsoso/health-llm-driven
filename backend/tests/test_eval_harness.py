@@ -7,6 +7,7 @@ import pytest
 from eval.models import GoldenCase, SuiteReport, CaseResult
 from eval.runner import run_case, run_suite, write_baseline, load_suite, _BASELINES_DIR
 from eval.scorers.exact_match import score_rule_set
+from eval.scorers.grounding import score_grounding
 from eval.scorers.keywords import score_keywords
 from eval.scorers.llm_judge import score_llm_judge
 
@@ -109,7 +110,7 @@ class TestRegression:
                 {"case_id": "extra_only_in_baseline", "passed": True},
             ],
         }
-        (tmp_path / "fake.json").write_text(json.dumps(fake_baseline), encoding="utf-8")
+        (tmp_path / "safety_fake.json").write_text(json.dumps(fake_baseline), encoding="utf-8")
 
         # 跑当前 suite — bp_normal_120_80 应该 pass, 所以无 regression 来自它
         # extra_only_in_baseline 当前 suite 没有这个 case, 也不算 regression (现在没跑过, 不在失败集里)
@@ -123,7 +124,7 @@ class TestRegression:
             "suite": "safety",
             "cases": [{"case_id": "bp_normal_120_80", "passed": True}],
         }
-        (tmp_path / "fake.json").write_text(json.dumps(fake_baseline), encoding="utf-8")
+        (tmp_path / "safety_fake.json").write_text(json.dumps(fake_baseline), encoding="utf-8")
 
         # 让 _run_safety_case 对该 case 故意返回错的 rule_ids → fail
         from eval import runner as runner_mod
@@ -250,3 +251,72 @@ class TestOrchestratorRunner:
         result = run_case(protein_case)
         assert not result.passed
         assert not result.details["scorers"]["keywords"]["passed"]
+
+
+# ============= grounding scorer =============
+
+class TestGroundingScorer:
+    def test_all_refs_valid(self):
+        r = score_grounding(
+            actual={"evidence_refs": [{"type": "fact", "id": 1}, {"type": "fact", "id": 2}],
+                    "confidence": 0.7},
+            expected={"min_valid_refs": 2},
+            available={"fact_ids": [1, 2, 3]},
+        )
+        assert r["passed"] and r["valid_count"] == 2
+
+    def test_hallucinated_refs_fail(self):
+        r = score_grounding(
+            actual={"evidence_refs": [{"type": "fact", "id": 999}], "confidence": 0.7},
+            expected={"min_valid_refs": 2},
+            available={"fact_ids": [1]},
+        )
+        assert not r["passed"]
+        assert r["valid_count"] == 0
+
+    def test_confidence_out_of_range_fails(self):
+        r = score_grounding(
+            actual={"evidence_refs": [{"type": "fact", "id": 1}, {"type": "fact", "id": 2}],
+                    "confidence": 0.95},
+            expected={"min_valid_refs": 2},
+            available={"fact_ids": [1, 2]},
+        )
+        assert not r["passed"]
+        assert r["confidence_ok"] is False
+
+    def test_mixed_types_valid(self):
+        r = score_grounding(
+            actual={"evidence_refs": [
+                {"type": "garmin_date", "date": "2026-04-25"},
+                {"type": "diet_date", "date": "2026-04-26"},
+            ], "confidence": 0.6},
+            expected={"min_valid_refs": 2},
+            available={
+                "garmin_dates": ["2026-04-25"],
+                "diet_dates": ["2026-04-26"],
+            },
+        )
+        assert r["passed"]
+
+    def test_malformed_refs_filtered(self):
+        r = score_grounding(
+            actual={"evidence_refs": ["string", {"type": "unknown", "id": 1},
+                                     {"type": "fact", "id": 1}],
+                    "confidence": 0.5},
+            expected={"min_valid_refs": 2},
+            available={"fact_ids": [1]},
+        )
+        assert not r["passed"]
+        assert r["valid_count"] == 1
+        assert len(r["invalid_refs"]) == 2
+
+
+# ============= insight suite end-to-end =============
+
+class TestInsightSuite:
+    def test_insight_suite_all_cases_pass_expectation(self):
+        """所有 7 case 的 expect_grounded 与 scorer 实际结果一致 → 全 case_passed."""
+        report = run_suite("insight")
+        assert report.failed == 0, [c.case_id for c in report.cases if not c.passed]
+        assert report.errored == 0
+        assert report.passed == report.total_cases == 7

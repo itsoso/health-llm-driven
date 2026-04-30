@@ -1,0 +1,392 @@
+{
+  "suite": "insight",
+  "total_cases": 7,
+  "passed": 7,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 0.548,
+  "avg_latency_ms": 0,
+  "cases": [
+    {
+      "case_id": "all_refs_valid_high_confidence",
+      "suite": "insight",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "garmin_date",
+                "date": "2026-04-25"
+              }
+            ],
+            "confidence": 0.7
+          },
+          "available": {
+            "fact_ids": [
+              101,
+              102,
+              103
+            ],
+            "garmin_dates": [
+              "2026-04-25",
+              "2026-04-26"
+            ],
+            "diet_dates": []
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 1.0,
+            "valid_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "garmin_date",
+                "date": "2026-04-25"
+              }
+            ],
+            "invalid_refs": [],
+            "valid_count": 2,
+            "min_required": 2,
+            "confidence_ok": true,
+            "case_passed": true,
+            "expected_grounded": true
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "hallucinated_fact_ids_rejected",
+      "suite": "insight",
+      "passed": true,
+      "score": 0.0,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              {
+                "type": "fact",
+                "id": 999
+              },
+              {
+                "type": "fact",
+                "id": 888
+              }
+            ],
+            "confidence": 0.7
+          },
+          "available": {
+            "fact_ids": [
+              101
+            ]
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 0.0,
+            "valid_refs": [],
+            "invalid_refs": [
+              {
+                "type": "fact",
+                "id": 999
+              },
+              {
+                "type": "fact",
+                "id": 888
+              }
+            ],
+            "valid_count": 0,
+            "min_required": 2,
+            "confidence_ok": true,
+            "case_passed": true,
+            "expected_grounded": false
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "mixed_some_valid_some_hallucinated",
+      "suite": "insight",
+      "passed": true,
+      "score": 0.5,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "fact",
+                "id": 999
+              }
+            ],
+            "confidence": 0.6
+          },
+          "available": {
+            "fact_ids": [
+              101
+            ]
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 0.5,
+            "valid_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              }
+            ],
+            "invalid_refs": [
+              {
+                "type": "fact",
+                "id": 999
+              }
+            ],
+            "valid_count": 1,
+            "min_required": 2,
+            "confidence_ok": true,
+            "case_passed": true,
+            "expected_grounded": false
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "confidence_too_high_rejected",
+      "suite": "insight",
+      "passed": true,
+      "score": 0.5,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "fact",
+                "id": 102
+              }
+            ],
+            "confidence": 0.95
+          },
+          "available": {
+            "fact_ids": [
+              101,
+              102
+            ]
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 0.5,
+            "valid_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "fact",
+                "id": 102
+              }
+            ],
+            "invalid_refs": [],
+            "valid_count": 2,
+            "min_required": 2,
+            "confidence_ok": false,
+            "case_passed": true,
+            "expected_grounded": false
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "missing_confidence_rejected",
+      "suite": "insight",
+      "passed": true,
+      "score": 0.5,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "fact",
+                "id": 102
+              }
+            ]
+          },
+          "available": {
+            "fact_ids": [
+              101,
+              102
+            ]
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 0.5,
+            "valid_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              },
+              {
+                "type": "fact",
+                "id": 102
+              }
+            ],
+            "invalid_refs": [],
+            "valid_count": 2,
+            "min_required": 2,
+            "confidence_ok": false,
+            "case_passed": true,
+            "expected_grounded": false
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "garmin_diet_mixed_valid",
+      "suite": "insight",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              {
+                "type": "garmin_date",
+                "date": "2026-04-20"
+              },
+              {
+                "type": "diet_date",
+                "date": "2026-04-21"
+              }
+            ],
+            "confidence": 0.8
+          },
+          "available": {
+            "garmin_dates": [
+              "2026-04-20"
+            ],
+            "diet_dates": [
+              "2026-04-21"
+            ]
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 1.0,
+            "valid_refs": [
+              {
+                "type": "garmin_date",
+                "date": "2026-04-20"
+              },
+              {
+                "type": "diet_date",
+                "date": "2026-04-21"
+              }
+            ],
+            "invalid_refs": [],
+            "valid_count": 2,
+            "min_required": 2,
+            "confidence_ok": true,
+            "case_passed": true,
+            "expected_grounded": true
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "malformed_ref_ignored",
+      "suite": "insight",
+      "passed": true,
+      "score": 0.333,
+      "details": {
+        "output": {
+          "candidate": {
+            "evidence_refs": [
+              "字符串而不是字典",
+              {
+                "type": "unknown",
+                "id": 1
+              },
+              {
+                "type": "fact",
+                "id": 101
+              }
+            ],
+            "confidence": 0.5
+          },
+          "available": {
+            "fact_ids": [
+              101
+            ]
+          }
+        },
+        "scorers": {
+          "grounding": {
+            "passed": true,
+            "score": 0.333,
+            "valid_refs": [
+              {
+                "type": "fact",
+                "id": 101
+              }
+            ],
+            "invalid_refs": [
+              "字符串而不是字典",
+              {
+                "type": "unknown",
+                "id": 1
+              }
+            ],
+            "valid_count": 1,
+            "min_required": 2,
+            "confidence_ok": true,
+            "case_passed": true,
+            "expected_grounded": false
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}
