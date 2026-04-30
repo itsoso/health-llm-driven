@@ -57,6 +57,15 @@ export default function ActionsScreen() {
         <View style={{ flex: 1 }} />
         <TouchableOpacity
           style={styles.journalBtn}
+          onPress={() => router.push('/trace')}
+          accessibilityLabel="查看推理回放"
+          accessibilityRole="button"
+        >
+          <Ionicons name="git-network-outline" size={16} color={colors.brand} />
+          <Text style={styles.journalBtnText}>回放</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.journalBtn}
           onPress={() => router.push('/journal')}
           accessibilityLabel="查看案例时间线"
           accessibilityRole="button"
