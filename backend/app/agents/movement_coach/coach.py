@@ -237,6 +237,42 @@ class MovementCoachSpecialist:
             if adj:
                 findings.append({"type": "week_adjustment", "text": adj})
 
+            # 近 7 天训练细节 (HR zones / 主观疲劳 / 训练效果)
+            if b.recent_workouts:
+                recent = b.recent_workouts[:5]
+                findings.append({
+                    "type": "recent_workout_detail",
+                    "count": len(b.recent_workouts),
+                    "workouts": [
+                        {
+                            "date": w.workout_date,
+                            "type": w.workout_type,
+                            "duration_min": w.duration_min,
+                            "distance_km": w.distance_km,
+                            "avg_hr": w.avg_hr,
+                            "max_hr": w.max_hr,
+                            "hr_zone_dominant": w.hr_zone_dominant,
+                            "training_effect_aerobic": w.training_effect_aerobic,
+                            "training_effect_anaerobic": w.training_effect_anaerobic,
+                            "perceived_exertion": w.perceived_exertion,
+                            "feeling": w.feeling,
+                        }
+                        for w in recent
+                    ],
+                    # 聚合: 近 7 天主观疲劳均值, 累计 HR Z4+Z5 分钟
+                    "avg_perceived_exertion": (
+                        round(sum(w.perceived_exertion for w in b.recent_workouts
+                                   if w.perceived_exertion) /
+                              max(1, sum(1 for w in b.recent_workouts if w.perceived_exertion)), 1)
+                        if any(w.perceived_exertion for w in b.recent_workouts) else None
+                    ),
+                    "high_intensity_minutes_7d": round(sum(
+                        (w.hr_zone_minutes or {}).get("z4", 0) +
+                        (w.hr_zone_minutes or {}).get("z5", 0)
+                        for w in b.recent_workouts
+                    ), 1),
+                })
+
             # 概括
             status_zh = {
                 "optimal": "负荷最佳区",

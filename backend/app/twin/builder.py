@@ -363,6 +363,60 @@ def _fill_training_load(db: Session, user_id: int, twin: HealthTwin, sources: Se
     except Exception as e:
         logger.warning(f"[twin] training_load 失败: {e}")
 
+    # 7 天 WorkoutRecord 摘要 (供 movement_coach / fuel_strategist 读细粒度)
+    try:
+        from datetime import timedelta as _td
+        from app.models.daily_health import WorkoutRecord
+        from app.twin.schema import WorkoutSummary as _WS
+
+        cutoff = date.today() - _td(days=7)
+        wrs = (
+            db.query(WorkoutRecord)
+            .filter(
+                WorkoutRecord.user_id == user_id,
+                WorkoutRecord.workout_date >= cutoff,
+            )
+            .order_by(WorkoutRecord.workout_date.desc())
+            .limit(20)
+            .all()
+        )
+        summaries = []
+        for w in wrs:
+            # hr_zone 分布: 秒 → 分钟, 取最长
+            zones = {}
+            for i in range(1, 6):
+                sec = getattr(w, f"hr_zone_{i}_seconds", None)
+                if sec and sec > 0:
+                    zones[f"z{i}"] = round(sec / 60.0, 1)
+            dominant = None
+            if zones:
+                dominant = int(max(zones.items(), key=lambda kv: kv[1])[0][1:])  # "z3" → 3
+
+            summaries.append(_WS(
+                workout_date=w.workout_date.isoformat() if w.workout_date else None,
+                workout_type=w.workout_type,
+                duration_min=round(w.duration_seconds / 60.0, 1) if w.duration_seconds else None,
+                distance_km=round(w.distance_meters / 1000.0, 2) if w.distance_meters else None,
+                calories=w.calories,
+                avg_hr=w.avg_heart_rate,
+                max_hr=w.max_heart_rate,
+                hr_zone_dominant=dominant,
+                hr_zone_minutes=zones or None,
+                training_effect_aerobic=w.training_effect_aerobic,
+                training_effect_anaerobic=w.training_effect_anaerobic,
+                training_load=w.training_load,
+                perceived_exertion=w.perceived_exertion,
+                feeling=w.feeling,
+                avg_cadence=w.avg_cadence,
+                avg_power_watts=w.avg_power_watts,
+                elevation_gain_m=w.elevation_gain_meters,
+            ))
+        if summaries:
+            twin.behavioral.recent_workouts = summaries
+            sources.add("workout")
+    except Exception as e:
+        logger.warning(f"[twin] workout_summary 填充失败: {e}")
+
 
 # ─────────────────────────── 7. 饮食今日 ──────────────────────────────
 

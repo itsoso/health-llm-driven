@@ -194,15 +194,51 @@ class BehavioralState(BaseModel):
     water_goal_ml: int = 2000
     water_progress_pct: float = 0.0
 
-    # 训练
+    # 训练 (聚合)
     workouts_this_week: int = 0
     training_load_7d: Optional[float] = None
     acute_chronic_ratio: Optional[float] = None
     acwr_zone: Optional[str] = None  # under / optimal / risky
 
+    # 训练 (细粒度, 近 7 天 — 每条 = 一次 WorkoutRecord 摘要)
+    # 用于 movement_coach / fuel_strategist 基于真实训练细节判断
+    recent_workouts: List["WorkoutSummary"] = Field(default_factory=list)
+
     # 鼻炎打卡
     nasal_wash_count_today: int = 0
     sneeze_count_today: int = 0
+
+
+class WorkoutSummary(BaseModel):
+    """单次 WorkoutRecord 的 LLM-friendly 摘要 (近 7 天填充).
+
+    剔除原 WorkoutRecord 的 GPS / AI analysis 等大字段, 保留训练科学关键指标.
+    """
+    workout_date: Optional[str] = None     # ISO date
+    workout_type: Optional[str] = None     # running / swimming / cycling / hiit / strength / ...
+    duration_min: Optional[float] = None
+    distance_km: Optional[float] = None
+    calories: Optional[int] = None
+
+    # 心率 & 区间
+    avg_hr: Optional[int] = None
+    max_hr: Optional[int] = None
+    hr_zone_dominant: Optional[int] = None  # 1-5, 哪个 zone 停留最长
+    hr_zone_minutes: Optional[Dict[str, float]] = None  # {"z1": 5.2, "z2": 12.8, ...}
+
+    # 训练效果
+    training_effect_aerobic: Optional[float] = None   # 0-5
+    training_effect_anaerobic: Optional[float] = None  # 0-5
+    training_load: Optional[int] = None
+
+    # 主观
+    perceived_exertion: Optional[int] = None  # 1-10
+    feeling: Optional[str] = None              # great / good / normal / tired / exhausted
+
+    # 跑/走/骑
+    avg_cadence: Optional[int] = None
+    avg_power_watts: Optional[int] = None
+    elevation_gain_m: Optional[float] = None
 
 
 # ─────────────────────────── Mental ────────────────────────────────────

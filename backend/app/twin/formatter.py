@@ -265,6 +265,26 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         age = _age_label(twin.freshness.diet, stale_days=2, dead_days=7)
         lines.append(f"今日行为{age}: " + ", ".join(beh_parts))
 
+    # ─── 近 7 天训练详情 (LLM 能看到 HR zones / 训练效果 / 主观疲劳)
+    if beh.recent_workouts:
+        lines.append(f"近 7 天训练 ({len(beh.recent_workouts)} 次):")
+        for w in beh.recent_workouts[:5]:  # 最多展 5 条避免 prompt 膨胀
+            segs = []
+            if w.workout_date: segs.append(w.workout_date)
+            if w.workout_type: segs.append(w.workout_type)
+            if w.duration_min: segs.append(f"{w.duration_min:.0f}min")
+            if w.distance_km: segs.append(f"{w.distance_km:.1f}km")
+            if w.avg_hr: segs.append(f"平均 HR {w.avg_hr}")
+            if w.hr_zone_dominant:
+                segs.append(f"主 Z{w.hr_zone_dominant}")
+            if w.training_effect_aerobic:
+                segs.append(f"有氧效果 {w.training_effect_aerobic:.1f}")
+            if w.perceived_exertion:
+                segs.append(f"主观 {w.perceived_exertion}/10")
+            if w.feeling:
+                segs.append(f"感受 {w.feeling}")
+            lines.append("  · " + " / ".join(segs))
+
     # ─── 鼻炎 / 慢病
     if beh.sneeze_count_today or beh.nasal_wash_count_today:
         lines.append(
