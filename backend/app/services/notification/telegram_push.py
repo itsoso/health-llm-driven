@@ -7,6 +7,12 @@ Agent Native 告警通道：当 iOS APNs 不可用时（App 未构建），
 配置：
   TELEGRAM_BOT_TOKEN — Bot 的 API token（从 @BotFather 获取）
   TELEGRAM_ALERT_CHAT_ID — 默认告警推送的 chat_id
+
+国内服务器连不到 api.telegram.org 时两选一 (都可选, 填一个就行):
+  TELEGRAM_API_BASE — 反代 URL, 如 https://bot.executor.life/telegram-api
+                      (默认 https://api.telegram.org)
+  TELEGRAM_PROXY_URL — HTTP/SOCKS5 代理, 如 http://127.0.0.1:7890 或
+                       socks5://user:pass@proxy.host:1080
 """
 
 import logging
@@ -18,8 +24,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-TELEGRAM_API = "https://api.telegram.org"
-
 
 class TelegramPushService:
     """Telegram Bot 推送"""
@@ -27,10 +31,30 @@ class TelegramPushService:
     def __init__(self):
         self.token = settings.telegram_bot_token
         self.default_chat_id = settings.telegram_alert_chat_id
+        # 支持反代 URL (国内出站不通时的轻量方案)
+        self.api_base = (
+            getattr(settings, "telegram_api_base", None)
+            or "https://api.telegram.org"
+        ).rstrip("/")
+        # HTTP/SOCKS5 代理 (和 api_base 二选一, 如果用户偏好走代理)
+        self.proxy_url = getattr(settings, "telegram_proxy_url", None) or None
 
     @property
     def configured(self) -> bool:
         return bool(self.token and self.default_chat_id)
+
+    def _client_kwargs(self) -> dict:
+        """构造 httpx.AsyncClient 的 kwargs, 按需附加 proxy."""
+        kwargs = {"timeout": 10}
+        if self.proxy_url:
+            # httpx 新版用 `proxy=` 旧版用 `proxies=`, 这里统一新版
+            try:
+                import httpx as _hx
+                # 检测 httpx >= 0.26 支持 proxy=
+                kwargs["proxy"] = self.proxy_url
+            except Exception:
+                kwargs["proxies"] = self.proxy_url
+        return kwargs
 
     async def send_message(
         self,
@@ -47,7 +71,7 @@ class TelegramPushService:
         if not target:
             return {"success": False, "reason": "no_chat_id"}
 
-        url = f"{TELEGRAM_API}/bot{self.token}/sendMessage"
+        url = f"{self.api_base}/bot{self.token}/sendMessage"
         payload = {
             "chat_id": target,
             "text": text,
@@ -55,10 +79,14 @@ class TelegramPushService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(**self._client_kwargs()) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
-                    logger.info(f"[telegram] 消息已发送到 chat_id={target}")
+                    logger.info(
+                        f"[telegram] 消息已发送 chat_id={target} "
+                        f"via={'proxy' if self.proxy_url else 'direct'} "
+                        f"base={self.api_base}"
+                    )
                     return {"success": True}
                 else:
                     body = resp.text[:200]

@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     # Telegram 推送配置（Agent Native 告警通道）
     telegram_bot_token: Optional[str] = None
     telegram_alert_chat_id: Optional[str] = None  # 默认告警推送的 chat_id
+    # 国内服务器连不到 api.telegram.org 时二选一填 (都不填则直连):
+    telegram_api_base: Optional[str] = None  # 反代 URL, 如 https://bot.executor.life/telegram-api
+    telegram_proxy_url: Optional[str] = None  # HTTP/SOCKS5 代理, 如 http://127.0.0.1:7890
 
     # SMTP 邮件推送 (Doctor Weekly 优先通道, 阿里云 DirectMail / Resend / 通用 SMTP)
     smtp_host: Optional[str] = None                  # smtpdm.aliyun.com
