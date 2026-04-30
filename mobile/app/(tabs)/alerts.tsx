@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '../../services/safety';
 import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '../../services/actionCards';
@@ -30,6 +31,7 @@ const SECTION_META: Record<string, { icon: keyof typeof Ionicons.glyphMap; color
 };
 
 export default function ActionsScreen() {
+  const router = useRouter();
   const { data: safetyData, refetch: refetchSafety, isRefetching: sr, isLoading: sl } = useQuery({ queryKey: queryKeys.safety, queryFn: getSafetyReport });
   const { data: cardsData, refetch: refetchCards, isRefetching: cr, isLoading: cl } = useQuery({ queryKey: queryKeys.actionCards, queryFn: getActiveCards });
 
@@ -52,6 +54,16 @@ export default function ActionsScreen() {
             <Text style={txt.countText}>{totalActions}</Text>
           </View>
         )}
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          style={styles.journalBtn}
+          onPress={() => router.push('/journal')}
+          accessibilityLabel="查看案例时间线"
+          accessibilityRole="button"
+        >
+          <Ionicons name="document-text-outline" size={16} color={colors.brand} />
+          <Text style={styles.journalBtnText}>时间线</Text>
+        </TouchableOpacity>
       </View>
 
       {(sl || cl) ? (
@@ -161,6 +173,14 @@ const styles = StyleSheet.create({
   countBadge: {
     backgroundColor: colors.brand, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2,
+  },
+  journalBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.brandLight, borderRadius: 16,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  journalBtnText: {
+    fontSize: 12, fontWeight: '600' as const, color: colors.brand,
   },
   list: { paddingHorizontal: spacing.lg, paddingBottom: 100 },
   sectionHeader: {
