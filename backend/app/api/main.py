@@ -105,6 +105,7 @@ from app.api import (
     health_kg,
     hybrid_search,
     reasoning_trace,
+    insights,
 )
 
 api_router = APIRouter()
@@ -214,6 +215,7 @@ api_router.include_router(memory_facts.router)
 api_router.include_router(health_kg.router)
 api_router.include_router(hybrid_search.router)
 api_router.include_router(reasoning_trace.router)
+api_router.include_router(insights.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])

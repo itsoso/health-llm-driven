@@ -16,6 +16,7 @@ import HomeHeader from '../../components/dashboard/HomeHeader';
 import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
 import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
 import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
+import InsightCard from '../../components/dashboard/InsightCard';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import BrandCircle from '../../components/chat/BrandCircle';
@@ -206,6 +207,8 @@ export default function HomeScreen() {
         isLoading={todayCoach.isLoading}
         onAction={handleTodayCoachAction}
       />
+
+      <InsightCard />
 
       <DataFreshnessPanel />
 

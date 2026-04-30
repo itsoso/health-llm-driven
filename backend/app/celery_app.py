@@ -32,6 +32,7 @@ celery_app = Celery(
         "app.tasks.outcome_grader",
         "app.tasks.open_loop_manager",
         "app.tasks.memory_lifecycle",
+        "app.tasks.insights",
     ]
 )
 
@@ -159,6 +160,12 @@ celery_app.conf.beat_schedule = {
     "daily-briefing-message": {
         "task": "app.tasks.notifications.generate_daily_briefing_message",
         "schedule": crontab(hour=1, minute=32),  # UTC 01:32 = 北京 09:32
+    },
+
+    # 每日 09:20 Insight 生成 (briefing 前跑, briefing 能读到最新 insight)
+    "daily-insight-generate": {
+        "task": "app.tasks.insights.generate_daily_insights_all_users",
+        "schedule": crontab(hour=1, minute=20),  # UTC 01:20 = 北京 09:20
     },
 
     # 每周一 09:05 周报（写入 AI 对话）
