@@ -706,11 +706,33 @@ def _get_or_create_briefing_conversation(db, user_id: int, target_date: date):
 def _write_briefing_message(db, user_id: int, content: str, target_date: date):
     """将日报内容作为 assistant 消息写入当日「每日健康简报」对话.
 
+    幂等: 同日已有 assistant message 则 UPDATE content (Garmin 2h sync 会多次重新生成;
+    不能每次 insert 否则用户一天看到 N 条重复日报). 不存在才 INSERT.
+
     返回 (conversation_id, message_id), 供上层写 Clinical Journal SOAP 溯源.
     """
     from app.models.openclaw import OpenClawMessage
 
     conv = _get_or_create_briefing_conversation(db, user_id, target_date)
+
+    # 同日 assistant message 已存在 → update
+    existing = (
+        db.query(OpenClawMessage)
+        .filter(
+            OpenClawMessage.conversation_id == conv.id,
+            OpenClawMessage.role == "assistant",
+        )
+        .order_by(OpenClawMessage.created_at.desc())
+        .first()
+    )
+    if existing:
+        existing.content = content
+        # 不动 created_at, App 里日期排序不变
+        conv.updated_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(existing)
+        return conv.id, existing.id
+
     msg = OpenClawMessage(
         conversation_id=conv.id,
         role="assistant",
