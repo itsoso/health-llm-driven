@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTraceDetail } from '../../hooks/useReasoningTrace';
 import type { TraceMemoryFact } from '../../services/reasoningTrace';
+import JudgmentFeedbackBar from '../../components/JudgmentFeedbackBar';
 import { colors, spacing, radii, typography } from '../../constants/theme';
 
 const SEV_COLOR: Record<string, string> = {
@@ -275,6 +276,16 @@ export default function TraceDetailScreen() {
             {'\n'}如果你不同意这个判断, 可以到"行动"页面忽略.
           </Text>
         </View>
+
+        {/* Trust Loop 反馈 */}
+        <View style={styles.feedbackWrap}>
+          <JudgmentFeedbackBar
+            targetType={t.decision_type === 'llm_arbitration' ? 'llm_arbitration' : 'anomaly_alert'}
+            targetId={parseInt(t.id.split('_')[1], 10)}
+            snapshot={`${t.title} — ${t.message}`.slice(0, 400)}
+            invalidateQueryKeys={[['reasoningTrace']]}
+          />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -372,4 +383,11 @@ const styles = StyleSheet.create({
   arbChipText: { fontSize: 11, color: colors.labelSecondary, fontFamily: 'monospace' },
   caveatRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   caveatText: { flex: 1, fontSize: 12, color: colors.labelPrimary, lineHeight: 16 },
+
+  feedbackWrap: {
+    marginTop: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+  },
 });

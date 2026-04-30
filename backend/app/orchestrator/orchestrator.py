@@ -247,6 +247,25 @@ def _build_synthesis_prompt(
     if db is not None and user_id is not None:
         credit_text = _build_specialist_credit_block(db, user_id, days=30)
 
+    # Trust Loop v2: 用户对过去判断的显式反馈 (not_helpful / irrelevant)
+    # 让 LLM 看到"用户否定过的判断", 避免重复类似错误
+    user_feedback_text = ""
+    if db is not None and user_id is not None:
+        try:
+            from app.api.judgment_feedback import get_recent_negative_feedback
+            neg = get_recent_negative_feedback(db, user_id, days=30, limit=5)
+            if neg:
+                lines = ["## ⚠️ 用户最近否定过的 AI 判断 (避免重复)"]
+                for n in neg:
+                    snap = (n.get("snapshot") or "(无摘要)")[:150]
+                    lines.append(
+                        f"- {n.get('target_type')}#{n.get('target_id')} "
+                        f"[{n.get('feedback')}]: {snap}"
+                    )
+                user_feedback_text = "\n".join(lines)
+        except Exception:  # noqa: BLE001
+            user_feedback_text = ""
+
     # Cross-Review: specialist 之间矛盾检测 + audit log
     # 如果 caller 已经预渲染了 (含 LLM 仲裁), 直接用; 否则 fallback 跑规则层
     conflicts_text = conflict_arb_block
@@ -291,6 +310,8 @@ def _build_synthesis_prompt(
         " 没有命中率数据的 specialist 视为中等可信.\n"
         "9. **冲突仲裁**: 如果下方'Specialist 矛盾'区域有内容, 你必须在回答里明示如何裁决,"
         " 不能两个矛盾建议并列输出. hard 矛盾按 resolution_hint 走, soft 矛盾说明权衡."
+        "\n10. **Trust Loop 避重**: 如果下方出现'用户最近否定过的 AI 判断', 不要重复同类判断,"
+        " 或在给出时明示 '上次你反馈过不对, 这次我给出更谨慎的表述'."
     )
 
     user_prompt_parts = [
@@ -299,6 +320,8 @@ def _build_synthesis_prompt(
     ]
     if credit_text:
         user_prompt_parts.append(f"【Specialist 历史命中率 (近 30 天)】\n{credit_text}")
+    if user_feedback_text:
+        user_prompt_parts.append(user_feedback_text)
     user_prompt_parts.append(f"【专家裁决】\n{findings_text}")
     if conflicts_text:
         # 冲突放在 specialist 输出之后, 醒目位置
