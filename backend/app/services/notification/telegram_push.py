@@ -60,9 +60,9 @@ class TelegramPushService:
         self,
         text: str,
         chat_id: Optional[str] = None,
-        parse_mode: str = "Markdown",
+        parse_mode: Optional[str] = "Markdown",
     ) -> dict:
-        """发送文本消息"""
+        """发送文本消息. parse_mode=None 则纯文本 (Telegram API 不接受 null 值, 不加字段)."""
         if not self.token:
             logger.debug("[telegram] 未配置 bot token，跳过")
             return {"success": False, "reason": "not_configured"}
@@ -72,11 +72,12 @@ class TelegramPushService:
             return {"success": False, "reason": "no_chat_id"}
 
         url = f"{self.api_base}/bot{self.token}/sendMessage"
-        payload = {
+        payload: dict = {
             "chat_id": target,
             "text": text,
-            "parse_mode": parse_mode,
         }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
 
         try:
             async with httpx.AsyncClient(**self._client_kwargs()) as client:
