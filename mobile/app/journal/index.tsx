@@ -88,7 +88,7 @@ export default function JournalListScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <Stack.Screen options={{ title: '案例时间线', headerBackTitle: '' }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />

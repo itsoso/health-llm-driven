@@ -269,32 +269,32 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 const styles = StyleSheet.create({
   /* ── 输入栏 ── */
   inputBar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    paddingHorizontal: spacing.md, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'flex-end', gap: 6,
+    paddingHorizontal: spacing.sm, paddingVertical: 8,
     backgroundColor: colors.bgPrimary,
   },
   plusBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.separator,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: colors.bgCard, borderRadius: 20,
+    backgroundColor: colors.bgCard, borderRadius: 18,
     borderWidth: 1, borderColor: colors.separator,
-    paddingHorizontal: 14, paddingVertical: 4,
+    paddingHorizontal: 12, paddingVertical: 4,
   },
   textInput: {
     flex: 1, fontSize: 15, maxHeight: 90, color: colors.labelPrimary,
     paddingTop: 6, paddingBottom: 6,
   },
   sendBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: colors.brand,
     alignItems: 'center', justifyContent: 'center',
   },
   modeBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
   },
 
