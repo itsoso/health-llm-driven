@@ -1,0 +1,105 @@
+suite: safety
+description: |
+  Safety Guardian 回归 case. 每条 case 给一个最小 HealthTwin (只填触发规则需要的字段),
+  跑 evaluate_safety, 校验应该触发哪些 rule_id, 以及哪些不应该触发.
+cases:
+
+  - id: bp_normal_120_80
+    description: 正常血压不应触发任何 BP 告警
+    twin:
+      labs:
+        blood_pressure_systolic: 120
+        blood_pressure_diastolic: 80
+    expected:
+      must_fire: []
+      must_not_fire:
+        - vitals.bp_hypertensive_crisis
+        - vitals.bp_stage_2_hypertension
+        - vitals.bp_hypotension
+
+  - id: bp_crisis_185_115
+    description: BP 185/115 必须触发 hypertensive_crisis, 抑制 stage_2
+    twin:
+      labs:
+        blood_pressure_systolic: 185
+        blood_pressure_diastolic: 115
+    expected:
+      must_fire:
+        - vitals.bp_hypertensive_crisis
+      must_not_fire:
+        - vitals.bp_stage_2_hypertension
+        - vitals.bp_hypotension
+
+  - id: bp_stage2_150_95
+    description: BP 150/95 触发 stage_2, 不触发 crisis
+    twin:
+      labs:
+        blood_pressure_systolic: 150
+        blood_pressure_diastolic: 95
+    expected:
+      must_fire:
+        - vitals.bp_stage_2_hypertension
+      must_not_fire:
+        - vitals.bp_hypertensive_crisis
+        - vitals.bp_hypotension
+
+  - id: bp_hypotension_85_55
+    description: BP 85/55 触发低血压告警
+    twin:
+      labs:
+        blood_pressure_systolic: 85
+        blood_pressure_diastolic: 55
+    expected:
+      must_fire:
+        - vitals.bp_hypotension
+      must_not_fire:
+        - vitals.bp_hypertensive_crisis
+        - vitals.bp_stage_2_hypertension
+
+  - id: bp_diastolic_only_125
+    description: 单舒张压 125 也应触发 crisis (而非 stage_2)
+    twin:
+      labs:
+        blood_pressure_systolic: 130
+        blood_pressure_diastolic: 125
+    expected:
+      must_fire:
+        - vitals.bp_hypertensive_crisis
+      must_not_fire:
+        - vitals.bp_stage_2_hypertension
+
+  - id: bp_missing_skips_all
+    description: 完全无 BP 数据时 BP 类规则全部不触发
+    twin:
+      labs: {}
+    expected:
+      must_fire: []
+      must_not_fire:
+        - vitals.bp_hypertensive_crisis
+        - vitals.bp_stage_2_hypertension
+        - vitals.bp_hypotension
+
+  - id: bp_borderline_140_90
+    description: BP 140/90 边界值, 命中 stage_2 (>=140 或 >=90)
+    twin:
+      labs:
+        blood_pressure_systolic: 140
+        blood_pressure_diastolic: 90
+    expected:
+      must_fire:
+        - vitals.bp_stage_2_hypertension
+      must_not_fire:
+        - vitals.bp_hypertensive_crisis
+        - vitals.bp_hypotension
+
+  - id: bp_just_below_180_systolic
+    description: BP 179/110 在 crisis 边界下方, 仍是 stage_2
+    twin:
+      labs:
+        blood_pressure_systolic: 179
+        blood_pressure_diastolic: 110
+    expected:
+      must_fire:
+        - vitals.bp_stage_2_hypertension
+      must_not_fire:
+        - vitals.bp_hypertensive_crisis

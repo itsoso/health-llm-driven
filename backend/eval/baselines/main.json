@@ -1,0 +1,197 @@
+{
+  "suite": "safety",
+  "total_cases": 8,
+  "passed": 8,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 1.0,
+  "avg_latency_ms": 76,
+  "cases": [
+    {
+      "case_id": "bp_normal_120_80",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": []
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 610
+    },
+    {
+      "case_id": "bp_crisis_185_115",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": [
+            "vitals.bp_hypertensive_crisis"
+          ]
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [
+            "vitals.bp_hypertensive_crisis"
+          ],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "bp_stage2_150_95",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": [
+            "vitals.bp_stage_2_hypertension"
+          ]
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [
+            "vitals.bp_stage_2_hypertension"
+          ],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "bp_hypotension_85_55",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": [
+            "vitals.bp_hypotension"
+          ]
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [
+            "vitals.bp_hypotension"
+          ],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "bp_diastolic_only_125",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": [
+            "vitals.bp_hypertensive_crisis"
+          ]
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [
+            "vitals.bp_hypertensive_crisis"
+          ],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "bp_missing_skips_all",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": []
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "bp_borderline_140_90",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": [
+            "vitals.bp_stage_2_hypertension"
+          ]
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [
+            "vitals.bp_stage_2_hypertension"
+          ],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "bp_just_below_180_systolic",
+      "suite": "safety",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "actual": {
+          "rule_ids": [
+            "vitals.bp_stage_2_hypertension"
+          ]
+        },
+        "scoring": {
+          "passed": true,
+          "score": 1.0,
+          "matched": [
+            "vitals.bp_stage_2_hypertension"
+          ],
+          "missing": [],
+          "unexpected": []
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}
