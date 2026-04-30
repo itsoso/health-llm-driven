@@ -1410,6 +1410,7 @@ def generate_doctor_weekly_report():
 
         telegram = TelegramPushService()
         telegram_ok_count = 0
+        email_ok_count = 0
         tg_skip_reason = None if telegram.configured else "telegram_not_configured"
 
         generated = 0
@@ -1540,7 +1541,38 @@ def generate_doctor_weekly_report():
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[医生周报] 用户 {user_id} 持久化失败: {e}")
 
-                # 2) 尝试 Telegram (出境不通时 fail-soft)
+                # 2) 尝试 Email → 发给 user.doctor_email (Concierge 主通道)
+                email_ok = False
+                try:
+                    if user and user.doctor_email:
+                        from app.services.notification.email_push import (
+                            EmailPushService, markdown_to_simple_html,
+                        )
+                        email_svc = EmailPushService()
+                        if email_svc.configured:
+                            subject = f"📊 {user_name} 周度数据摘要 ({week_ago} ~ {today})"
+                            email_result = email_svc.send(
+                                to=user.doctor_email,
+                                subject=subject,
+                                body_text=report,
+                                body_html=markdown_to_simple_html(report),
+                                from_name="HealthPilot",
+                            )
+                            email_ok = bool(email_result and email_result.get("success"))
+                            if email_ok:
+                                email_ok_count += 1
+                                logger.info(
+                                    f"[医生周报] 用户 {user_id} Email 发送成功 "
+                                    f"→ {user.doctor_email}"
+                                )
+                            else:
+                                logger.info(
+                                    f"[医生周报] 用户 {user_id} Email 失败: {email_result}"
+                                )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[医生周报] 用户 {user_id} Email 异常: {e}")
+
+                # 3) 尝试 Telegram (产品 owner 自己备份看)
                 tg_ok = False
                 if telegram.configured:
                     try:
@@ -1554,8 +1586,8 @@ def generate_doctor_weekly_report():
                     except Exception as e:  # noqa: BLE001
                         logger.info(f"[医生周报] 用户 {user_id} Telegram 异常: {e}")
 
-                # 3) Telegram 失败且有 iOS token → APNs 提示 "本周摘要已生成"
-                if not tg_ok and soap_id:
+                # 4) Email + Telegram 都失败且有 iOS token → APNs 提示 "本周摘要已生成"
+                if not tg_ok and not email_ok and soap_id:
                     try:
                         from app.models.notification import UserNotificationSetting
                         from app.services.notification.ios_push import IOSPushService
@@ -1579,8 +1611,12 @@ def generate_doctor_weekly_report():
             except Exception as e:
                 logger.warning(f"[医生周报] 用户 {user_id} 生成失败: {e}")
 
-    logger.info(f"[医生周报] 完成，Journal 写入 {generated} 份, Telegram 成功 {telegram_ok_count} 份")
-    return {"generated": generated, "telegram_sent": telegram_ok_count,
+    logger.info(
+        f"[医生周报] 完成，Journal 写入 {generated} 份, "
+        f"Email 成功 {email_ok_count} 份, Telegram 成功 {telegram_ok_count} 份"
+    )
+    return {"generated": generated, "email_sent": email_ok_count,
+            "telegram_sent": telegram_ok_count,
             "telegram_skip_reason": tg_skip_reason}
 
 

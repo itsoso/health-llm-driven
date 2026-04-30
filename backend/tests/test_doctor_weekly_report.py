@@ -198,6 +198,7 @@ class TestGenerateDoctorWeeklyReport:
             result = n.generate_doctor_weekly_report()
 
         assert result.get("telegram_sent") == 0
+        assert "email_sent" in result  # 新通道字段存在
         assert result.get("telegram_skip_reason") == "telegram_not_configured"
         # generated 字段反映 Journal 写入数 (至少 >= 0, 若有 Garmin 数据就 >= 1)
         assert "generated" in result

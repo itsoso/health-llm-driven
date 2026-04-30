@@ -119,6 +119,15 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_alert_chat_id: Optional[str] = None  # 默认告警推送的 chat_id
 
+    # SMTP 邮件推送 (Doctor Weekly 优先通道, 阿里云 DirectMail / Resend / 通用 SMTP)
+    smtp_host: Optional[str] = None                  # smtpdm.aliyun.com
+    smtp_port: int = 465
+    smtp_user: Optional[str] = None                  # noreply@executor.life
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None                  # 显示的发件人 (可省, 默认 smtp_user)
+    smtp_use_ssl: bool = True
+    smtp_timeout: int = 15
+
     # 外部指令通道 (Telegram) — 用户自己 / 家人 / 健康教练 在 chat 写硬性指令
     # 不涉及医生角色, 不主张医疗权威性. 系统只把指令存到 user_directives 表,
     # specialist 评估时按 source 区分严重度.

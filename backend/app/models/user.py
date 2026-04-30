@@ -33,6 +33,10 @@ class User(Base):
     phone = Column(String, nullable=True)  # 手机号
     onboarding_completed = Column(Boolean, default=False)  # 是否完成新手引导
 
+    # Concierge: 保健医生邮箱 (Doctor Weekly Report 接收人)
+    # 空时 fallback 到 Telegram / APNs
+    doctor_email = Column(String, nullable=True)
+
     # 家庭代管（shadow user，不需要登录凭据，由管理员代管）
     is_managed = Column(Boolean, default=False)
     managed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
