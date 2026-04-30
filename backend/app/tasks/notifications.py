@@ -1598,7 +1598,9 @@ def generate_doctor_weekly_report():
                 tg_ok = False
                 if telegram.configured:
                     try:
-                        tg_result = asyncio.run(telegram.send_message(report))
+                        # parse_mode=None 走纯文本: report 含表格/多层 * 会触发
+                        # Telegram legacy Markdown "can't parse entities" 400
+                        tg_result = asyncio.run(telegram.send_message(report, parse_mode=None))
                         tg_ok = bool(tg_result and tg_result.get("success"))
                         if tg_ok:
                             telegram_ok_count += 1
