@@ -7,6 +7,8 @@ import pytest
 from eval.models import GoldenCase, SuiteReport, CaseResult
 from eval.runner import run_case, run_suite, write_baseline, load_suite, _BASELINES_DIR
 from eval.scorers.exact_match import score_rule_set
+from eval.scorers.keywords import score_keywords
+from eval.scorers.llm_judge import score_llm_judge
 
 
 # ============= scorer 单元测试 =============
@@ -135,3 +137,116 @@ class TestRegression:
         assert "bp_normal_120_80" in report.regression
         # 恢复原 runner (monkeypatch 会自动还原, 但稳一手)
         runner_mod._RUNNERS["safety"] = original
+
+
+# ============= keywords scorer 单元测试 =============
+
+class TestKeywordsScorer:
+    def test_all_keywords_present(self):
+        r = score_keywords("readiness 32, 建议恢复", {"must_contain": ["readiness", "恢复"]})
+        assert r["passed"] and r["score"] == 1.0
+        assert r["missing"] == [] and r["leaked"] == []
+
+    def test_missing_keyword_fails(self):
+        r = score_keywords("readiness 32", {"must_contain": ["readiness", "恢复"]})
+        assert not r["passed"]
+        assert r["missing"] == ["恢复"]
+
+    def test_forbidden_keyword_fails(self):
+        r = score_keywords("我确诊高血压", {"must_not_contain": ["确诊", "诊断"]})
+        assert not r["passed"]
+        assert "确诊" in r["leaked"]
+
+    def test_case_insensitive(self):
+        r = score_keywords("READINESS is high", {"must_contain": ["readiness"]})
+        assert r["passed"]
+
+    def test_empty_actual_with_must_contain_fails(self):
+        r = score_keywords("", {"must_contain": ["x"]})
+        assert not r["passed"]
+
+
+# ============= llm_judge scorer 单元测试 (用 mock judge) =============
+
+class TestLlmJudgeScorer:
+    def test_high_score_passes(self):
+        async def fake_judge(q, a, model=None):
+            return {"score": 5, "reason": "great answer"}
+
+        r = score_llm_judge("Q?", "A.", {"llm_judge_min_score": 3}, judge_call=fake_judge)
+        assert r["passed"] and r["judge_score"] == 5
+        assert r["score"] == 1.0
+
+    def test_low_score_fails(self):
+        async def fake_judge(q, a, model=None):
+            return {"score": 2, "reason": "weak"}
+
+        r = score_llm_judge("Q?", "A.", {"llm_judge_min_score": 3}, judge_call=fake_judge)
+        assert not r["passed"] and r["judge_score"] == 2
+
+    def test_empty_actual_short_circuits(self):
+        async def fake_judge(q, a, model=None):
+            raise AssertionError("不应被调用")
+
+        r = score_llm_judge("Q?", "", {"llm_judge_min_score": 3}, judge_call=fake_judge)
+        assert not r["passed"] and r["judge_score"] == 0
+
+    def test_judge_call_failure_treated_as_fail(self):
+        async def boom(q, a, model=None):
+            raise RuntimeError("api down")
+
+        r = score_llm_judge("Q?", "A.", {"llm_judge_min_score": 3}, judge_call=boom)
+        assert not r["passed"]
+        assert "judge call 失败" in r["judge_reason"]
+
+    def test_score_clamped_to_1_5(self):
+        async def out_of_range(q, a, model=None):
+            return {"score": 99}
+        r = score_llm_judge("Q?", "A.", {"llm_judge_min_score": 3}, judge_call=out_of_range)
+        assert r["judge_score"] == 5  # clamped
+
+
+# ============= orchestrator runner (mock LLM) =============
+
+class TestOrchestratorRunner:
+    def test_orchestrator_case_runs_with_mocked_llm(self, monkeypatch):
+        """挂个假的 _call_llm, 验证 runner 能跑通 _build_synthesis_prompt + 评分."""
+        async def fake_call_llm(system_prompt, user_prompt):
+            # 验证 prompt 真的包含了 query 和 finding summary
+            assert "蛋白" in user_prompt or "蛋白" in system_prompt
+            return "建议蛋白摄入约 112g/d, 早午晚分配, 训练日加 20%."
+
+        async def fake_judge(q, a, model=None):
+            return {"score": 4, "reason": "ok"}
+
+        from app.orchestrator import orchestrator as orc
+        from eval.scorers import llm_judge as lj_mod
+        monkeypatch.setattr(orc, "_call_llm", fake_call_llm)
+        monkeypatch.setattr(lj_mod, "_call_judge", fake_judge)
+
+        cases = load_suite("orchestrator")
+        protein_case = next(c for c in cases if c.id == "nutrition_protein_query")
+        result = run_case(protein_case)
+        assert result.error is None
+        assert result.passed
+        scorers = result.details["scorers"]
+        assert scorers["keywords"]["passed"]
+        assert scorers["llm_judge"]["passed"]
+
+    def test_orchestrator_keyword_fail_marks_case_failed(self, monkeypatch):
+        async def empty_llm(system_prompt, user_prompt):
+            return "嗯。"  # 不含 must_contain 关键词
+
+        async def fake_judge(q, a, model=None):
+            return {"score": 5}
+
+        from app.orchestrator import orchestrator as orc
+        from eval.scorers import llm_judge as lj_mod
+        monkeypatch.setattr(orc, "_call_llm", empty_llm)
+        monkeypatch.setattr(lj_mod, "_call_judge", fake_judge)
+
+        cases = load_suite("orchestrator")
+        protein_case = next(c for c in cases if c.id == "nutrition_protein_query")
+        result = run_case(protein_case)
+        assert not result.passed
+        assert not result.details["scorers"]["keywords"]["passed"]

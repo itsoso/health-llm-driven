@@ -1,6 +1,10 @@
 """Eval Runner — 加载 suite, 跑 case, 输出 SuiteReport.
 
-v1 只支持 safety suite (Safety Guardian 规则集); orchestrator/insight 后续扩.
+每个 suite 注册:
+  _RUNNERS[suite]: case.inputs → output dict (raw 业务输出)
+  _SCORERS[suite]: (case, output) → dict {scorer_name: scorer_result}
+
+run_case 汇总 — 全部 scorer 都 pass 才算 case pass.
 """
 from __future__ import annotations
 
@@ -8,20 +12,22 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
 from eval.models import CaseResult, GoldenCase, SuiteReport
 from eval.scorers.exact_match import score_rule_set
+from eval.scorers.keywords import score_keywords
+from eval.scorers.llm_judge import score_llm_judge
 
 
 _DATASETS_DIR = Path(__file__).parent / "datasets"
 _BASELINES_DIR = Path(__file__).parent / "baselines"
 
 
-# 每个 suite 的 case 跑法 — 从 inputs 跑到 actual rule_ids
-_RUNNERS = {}
+_RUNNERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
+_SCORERS: Dict[str, Callable[[GoldenCase, Dict[str, Any]], Dict[str, Dict[str, Any]]]] = {}
 
 
 def _register_runner(suite: str):
@@ -31,21 +37,67 @@ def _register_runner(suite: str):
     return deco
 
 
+def _register_scorer(suite: str):
+    def deco(fn):
+        _SCORERS[suite] = fn
+        return fn
+    return deco
+
+
+# ============= safety suite =============
+
 @_register_runner("safety")
 def _run_safety_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """从 case.twin (dict) 构造 HealthTwin, 跑 evaluate_safety, 返回 rule_id 集合."""
     from datetime import datetime as _dt
     from app.agents.safety_guardian import evaluate_safety
-    from app.twin.schema import HealthTwin, TwinMeta
+    from app.twin.schema import HealthTwin
 
     twin_data = dict(case_inputs.get("twin", {}))
-    # 必填 meta — 用 user_id=0 标识 fixture twin
     twin_data.setdefault("meta", {"user_id": 0, "generated_at": _dt.now(timezone.utc)})
     twin = HealthTwin(**twin_data)
-
     report = evaluate_safety(twin)
     return {"rule_ids": [a.rule_id for a in report.alerts]}
 
+
+@_register_scorer("safety")
+def _score_safety(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {"rule_set": score_rule_set(output.get("rule_ids", []), case.expected)}
+
+
+# ============= orchestrator suite =============
+
+@_register_runner("orchestrator")
+def _run_orchestrator_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """跑真实 _build_synthesis_prompt + _call_llm. 不依赖 DB."""
+    import asyncio
+    from datetime import datetime as _dt
+    from app.orchestrator.orchestrator import _build_synthesis_prompt, _call_llm
+    from app.orchestrator.schema import SpecialistFinding
+    from app.twin.schema import HealthTwin
+
+    twin_data = dict(case_inputs.get("twin", {}))
+    twin_data.setdefault("meta", {"user_id": 0, "generated_at": _dt.now(timezone.utc)})
+    twin = HealthTwin(**twin_data)
+
+    findings = [SpecialistFinding(**f) for f in case_inputs.get("findings", [])]
+    query = case_inputs.get("query", "")
+
+    system_prompt, user_prompt = _build_synthesis_prompt(query, twin, findings)
+    synthesis = asyncio.run(_call_llm(system_prompt, user_prompt))
+    return {"synthesis": synthesis, "query": query}
+
+
+@_register_scorer("orchestrator")
+def _score_orchestrator(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    text = output.get("synthesis", "")
+    query = output.get("query", "")
+    results = {"keywords": score_keywords(text, case.expected)}
+    if "llm_judge_min_score" in case.expected:
+        results["llm_judge"] = score_llm_judge(query, text, case.expected)
+    return results
+
+
+# ============= 通用流程 =============
 
 def load_suite(suite: str) -> List[GoldenCase]:
     path = _DATASETS_DIR / f"{suite}.yaml"
@@ -54,11 +106,17 @@ def load_suite(suite: str) -> List[GoldenCase]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     cases = []
     for c in raw.get("cases", []):
+        # safety: case 里只有 twin; orchestrator: case 里有 twin/findings/query
+        inputs = {
+            "twin": c.get("twin", {}),
+            "findings": c.get("findings", []),
+            "query": c.get("query", ""),
+        }
         cases.append(GoldenCase(
             id=c["id"],
             description=c.get("description", ""),
             suite=suite,
-            inputs={"twin": c.get("twin", {})},
+            inputs=inputs,
             expected=c.get("expected", {}),
             tags=c.get("tags", []),
         ))
@@ -67,15 +125,16 @@ def load_suite(suite: str) -> List[GoldenCase]:
 
 def run_case(case: GoldenCase) -> CaseResult:
     runner = _RUNNERS.get(case.suite)
-    if runner is None:
+    scorer = _SCORERS.get(case.suite)
+    if runner is None or scorer is None:
         return CaseResult(
             case_id=case.id, suite=case.suite, passed=False,
-            error=f"无 runner: {case.suite}",
+            error=f"无 runner/scorer: {case.suite}",
         )
 
     t0 = time.monotonic()
     try:
-        actual = runner(case.inputs)
+        output = runner(case.inputs)
     except Exception as e:
         return CaseResult(
             case_id=case.id, suite=case.suite, passed=False,
@@ -84,13 +143,17 @@ def run_case(case: GoldenCase) -> CaseResult:
         )
 
     latency_ms = int((time.monotonic() - t0) * 1000)
-    score = score_rule_set(actual.get("rule_ids", []), case.expected)
+    scorer_results = scorer(case, output)
+    passed = all(s.get("passed", False) for s in scorer_results.values())
+    scores = [s.get("score", 0.0) for s in scorer_results.values()]
+    avg_score = sum(scores) / len(scores) if scores else 0.0
+
     return CaseResult(
         case_id=case.id,
         suite=case.suite,
-        passed=score["passed"],
-        score=score["score"],
-        details={"actual": actual, "scoring": score},
+        passed=passed,
+        score=round(avg_score, 3),
+        details={"output": output, "scorers": scorer_results},
         latency_ms=latency_ms,
     )
 
