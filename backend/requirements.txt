@@ -22,9 +22,12 @@ python-multipart==0.0.6
 Pillow==10.1.0
 # 用户认证
 passlib[bcrypt]==1.7.4
-python-jose[cryptography]==3.3.0
+# 2026-04-30: 升级修复 CVE PYSEC-2024-232/233 (auth bypass)
+python-jose[cryptography]==3.4.0
 bcrypt==4.0.1
-cryptography==41.0.0
+# 2026-04-30: 升级修复多个 CVE (CVE-2023-50782, CVE-2024-0727, GHSA-h4gh-qq45-vh27,
+# CVE-2026-26007, CVE-2026-34073 等). 跨 5 个大版本, 跑全量回归确认 Garmin/JWT 无破坏
+cryptography==46.0.6
 email-validator==2.0.0
 PyJWT==2.8.0
 # 请求频率限制
