@@ -99,11 +99,18 @@ def record_usage(
         completion_tokens = _estimate_tokens(completion_text, model)
         cost = _price_usd(model, prompt_tokens, completion_tokens)
 
+        resolved_caller = caller or _caller_ctx.get() or "unknown"
+        if resolved_caller == "unknown":
+            import traceback
+            stack = "".join(traceback.format_stack(limit=8))
+            logger.warning(f"[LLM Usage] caller=unknown, model={model}, "
+                           f"tokens={prompt_tokens}+{completion_tokens}\nstack:\n{stack}")
+
         with SessionLocal() as db:
             row = LlmUsageLog(
                 provider=provider,
                 model=model,
-                caller=caller or _caller_ctx.get() or "unknown",
+                caller=resolved_caller,
                 user_id=user_id if user_id is not None else _user_id_ctx.get(),
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
@@ -148,7 +155,12 @@ def wrap_provider(provider):
             raise
         finally:
             latency_ms = int((time.monotonic() - start) * 1000)
-            actual_model = model or getattr(provider, "default_model", "unknown")
+            actual_model = (
+                model
+                or getattr(provider, "model", None)
+                or getattr(provider, "default_model", None)
+                or "unknown"
+            )
             prompt_text = _messages_to_text(messages)
             # result 可能是 str 或 dict (tool_calls), 后者只记 0 completion tokens
             completion_text = result if isinstance(result, str) else ""
