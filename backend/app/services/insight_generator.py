@@ -380,6 +380,221 @@ def _gen_profile_summary(db: Session, user_id: int) -> Optional[InsightCandidate
     )
 
 
+# ─────────────────────── Tier 3: LLM Pattern Mining ───────────────────────
+
+
+def _gen_llm_pattern_mining(db: Session, user_id: int) -> Optional[InsightCandidate]:
+    """Tier 3: 让 LLM 分析 30 天数据挖跨事件 pattern.
+
+    触发门槛 (成本控制):
+      - 至少 10 条 MemoryFact (不然 LLM 没素材)
+      - 至少 7 天 GarminData (不然相关性不显著)
+
+    Grounding:
+      - Prompt 要求 LLM 返回 JSON 含 evidence_refs (fact_id / metric_date)
+      - 后端验证 evidence_refs 存在性, 无效 ref 直接丢弃候选
+      - 如所有 ref 都假 → 返回 None (不写库)
+
+    Cost:
+      - 最多 1 次 LLM call / user / day (generate_daily_insight 幂等保证)
+      - gpt-4o-mini 或 openclaw, max_tokens=600
+    """
+    from app.models.memory_fact import MemoryFact
+    from app.models.daily_health import GarminData, DietRecord
+    from app.models.anomaly_alert import AnomalyAlert
+
+    facts = db.query(MemoryFact).filter(
+        MemoryFact.user_id == user_id,
+        MemoryFact.superseded_at.is_(None),
+    ).order_by(MemoryFact.confidence.desc()).limit(50).all()
+    if len(facts) < 10:
+        return None  # 数据不足, 走确定性 fallback
+
+    from datetime import date as _date, timedelta as _td
+    since_gar = _date.today() - _td(days=14)
+    garmin = (
+        db.query(GarminData)
+        .filter(GarminData.user_id == user_id, GarminData.record_date >= since_gar)
+        .order_by(GarminData.record_date.desc())
+        .all()
+    )
+    if len(garmin) < 7:
+        return None
+
+    # 30 天 diet / anomaly 关联
+    since_30 = _date.today() - _td(days=30)
+    diets = (
+        db.query(DietRecord)
+        .filter(DietRecord.user_id == user_id, DietRecord.record_date >= since_30)
+        .order_by(DietRecord.record_date.desc())
+        .limit(60)
+        .all()
+    )
+    anomalies = (
+        db.query(AnomalyAlert)
+        .filter(AnomalyAlert.user_id == user_id, AnomalyAlert.detection_date >= since_30)
+        .limit(20)
+        .all()
+    )
+
+    # 构造 prompt
+    facts_block = "\n".join(
+        f"- [fact#{f.id}] {f.subject} {f.predicate} {f.object_value}"
+        f"{f' ' + f.object_unit if f.object_unit else ''} (conf={f.confidence:.2f}, tier={f.tier})"
+        for f in facts[:30]
+    )
+    garmin_block = "\n".join(
+        f"- {g.record_date.isoformat()}: HRV={g.hrv or '-'} RHR={g.resting_heart_rate or '-'} "
+        f"Sleep={g.sleep_score or '-'} Stress={g.stress_level or '-'}"
+        for g in garmin[:14]
+    )
+    diet_block = "\n".join(
+        f"- {d.record_date.isoformat()} {d.meal_type or ''}: {(d.food_name or '')[:60]}"
+        for d in diets[:20]
+    ) if diets else "(无饮食记录)"
+    anomaly_block = "\n".join(
+        f"- {a.detection_date.isoformat()} {a.alert_type} {a.severity}: {(a.message or '')[:80]}"
+        for a in anomalies[:10]
+    ) if anomalies else "(无告警)"
+
+    system = (
+        "你是健康数据模式分析员. 任务: 从用户近 30 天 Memory Facts + 14 天 Garmin + "
+        "30 天 Diet + 30 天 Anomaly 挖**跨事件 pattern** — 比如某类饮食后第二天的 "
+        "HRV 下降, 或 HRV 最低的日子有共同的生理/行为特征.\n\n"
+        "严格要求:\n"
+        "1. 只能引用给你的真实数据, **不能编造** 值或日期\n"
+        "2. 返回 JSON, **无其他文字**:\n"
+        "   {\n"
+        "     \"found_pattern\": true|false,\n"
+        "     \"title\": \"一句话 pattern 标题 (≤30 字)\",\n"
+        "     \"body\": \"详细说明 + 建议 (2-3 段, 500 字内)\",\n"
+        "     \"evidence_refs\": [\n"
+        "       {\"type\": \"fact\", \"id\": 数字},\n"
+        "       {\"type\": \"garmin_date\", \"date\": \"YYYY-MM-DD\"},\n"
+        "       {\"type\": \"diet_date\", \"date\": \"YYYY-MM-DD\"}\n"
+        "     ],\n"
+        "     \"confidence\": 0.0-1.0\n"
+        "   }\n"
+        "3. 至少 2 条 evidence_refs, 否则 found_pattern=false\n"
+        "4. confidence 反映样本量: 3+ 次重复 conf>0.6, 2 次 conf<0.5, 1 次不算 pattern\n"
+        "5. 合规: 不得出具医嘱, body 用\"可以关注\"\"建议记录\"等观察性措辞"
+    )
+    user_prompt = (
+        "## Memory Facts (top 30 by confidence)\n"
+        f"{facts_block}\n\n"
+        "## Garmin 近 14 天\n"
+        f"{garmin_block}\n\n"
+        "## Diet 近 30 天\n"
+        f"{diet_block}\n\n"
+        "## Anomaly 近 30 天\n"
+        f"{anomaly_block}\n\n"
+        "请找一条跨事件 pattern 返回 JSON."
+    )
+
+    try:
+        from app.services.llm import get_llm_provider
+        from app.services.llm.usage_tracker import set_caller
+        from app.utils.async_helpers import run_async
+        set_caller("insight.llm_pattern_mining")
+        provider = get_llm_provider()
+        result_text = run_async(provider.chat(
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user_prompt}],
+            temperature=0.3,
+            max_tokens=700,
+        ))
+        if isinstance(result_text, dict):
+            result_text = (result_text.get("content") or "").strip()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[insight.llm] LLM 调用失败 user={user_id}: {e}")
+        return None
+
+    if not result_text:
+        return None
+
+    # 解析 JSON
+    import json
+    import re
+    try:
+        obj = json.loads(result_text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{[\s\S]*\}", result_text)
+        if not m:
+            logger.warning(f"[insight.llm] 响应无 JSON: {result_text[:150]}")
+            return None
+        try:
+            obj = json.loads(m.group(0))
+        except json.JSONDecodeError as e:
+            logger.warning(f"[insight.llm] JSON parse 失败: {e}")
+            return None
+
+    if not obj.get("found_pattern"):
+        return None
+
+    title = str(obj.get("title", ""))[:200].strip()
+    body = str(obj.get("body", "")).strip()
+    if not title or not body:
+        return None
+
+    # Grounding verification: evidence_refs 是否真实存在
+    refs_raw = obj.get("evidence_refs") or []
+    if not isinstance(refs_raw, list) or len(refs_raw) < 2:
+        logger.info(f"[insight.llm] evidence_refs 太少 user={user_id}, 丢弃")
+        return None
+
+    valid_refs = []
+    fact_ids = {f.id for f in facts}
+    garmin_dates = {g.record_date.isoformat() for g in garmin}
+    diet_dates = {d.record_date.isoformat() for d in diets}
+    for r in refs_raw:
+        if not isinstance(r, dict):
+            continue
+        rtype = r.get("type")
+        if rtype == "fact":
+            fid = r.get("id")
+            if isinstance(fid, int) and fid in fact_ids:
+                valid_refs.append({"type": "fact", "id": fid})
+        elif rtype == "garmin_date":
+            d = r.get("date")
+            if isinstance(d, str) and d in garmin_dates:
+                valid_refs.append({"type": "garmin_date", "date": d})
+        elif rtype == "diet_date":
+            d = r.get("date")
+            if isinstance(d, str) and d in diet_dates:
+                valid_refs.append({"type": "diet_date", "date": d})
+        # 其他 type 忽略
+
+    if len(valid_refs) < 2:
+        logger.info(
+            f"[insight.llm] grounding 验证失败 user={user_id}: "
+            f"原 {len(refs_raw)} refs, 有效 {len(valid_refs)}"
+        )
+        return None
+
+    try:
+        conf = float(obj.get("confidence", 0.6))
+    except (TypeError, ValueError):
+        conf = 0.6
+    conf = max(0.3, min(0.85, conf))  # clamp: LLM 不比 deterministic 高
+
+    return InsightCandidate(
+        kind="llm_pattern",
+        rule_id="llm_pattern_mining_v1",
+        title=title,
+        body=body,
+        evidence={
+            "evidence_refs": valid_refs,
+            "refs_valid_count": len(valid_refs),
+            "refs_raw_count": len(refs_raw),
+            "cite": f"基于 {len(facts)} 条记忆 + {len(garmin)} 天 Garmin + "
+                    f"{len(diets)} 条饮食 LLM 分析",
+            "llm_model": "default",
+        },
+        confidence=conf,
+        severity="low",  # LLM 产出 → low, 让高 severity 的确定性 rule 优先
+    )
+
+
 # ─────────────────────── 主入口 ───────────────────────
 
 
@@ -387,6 +602,7 @@ _GENERATORS: List[Callable[[Session, int], Optional[InsightCandidate]]] = [
     _gen_pgx_medication_caution,
     _gen_abnormal_lab_trend,
     _gen_hrv_stressor_pattern,
+    _gen_llm_pattern_mining,  # Tier 3: 放在 fallback 前, 评分靠 severity*confidence 自动竞争
     _gen_profile_summary,  # fallback 最后
 ]
 

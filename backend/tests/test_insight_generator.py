@@ -219,3 +219,142 @@ class TestGenerateDailyInsight:
         # 应该选 PGx (score 0.85*1.0=0.85) 而不是 profile_summary (0.5*0.5=0.25)
         assert row.kind == "gene_pgx"
         assert row.rule_id == "pgx_caution_cyp2d6"
+
+
+# ─────────────────── LLM Pattern Mining (v2) ───────────────────
+
+class TestLLMPatternMining:
+    def _seed_data(self, db):
+        """建足够触发 LLM 的数据: 10+ fact + 7+ Garmin."""
+        from app.models.memory_fact import MemoryFact
+        from app.models.daily_health import GarminData
+        u = _mk_user(db)
+        # 12 条 fact
+        for i in range(12):
+            db.add(MemoryFact(
+                user_id=u.id, tier="semantic",
+                subject=f"指标{i}", predicate="is_value",
+                object_value=str(100 + i), decay_rate=0.01, confidence=0.7,
+            ))
+        # 10 天 Garmin
+        for i in range(10):
+            db.add(GarminData(
+                user_id=u.id, record_date=date.today() - timedelta(days=i),
+                hrv=50 - i, sleep_score=80 - i, resting_heart_rate=65,
+            ))
+        db.commit()
+        return u
+
+    def test_insufficient_facts_returns_none(self, db, monkeypatch):
+        """<10 fact → 直接返回 None (不调 LLM)."""
+        from app.services.insight_generator import _gen_llm_pattern_mining
+        from app.models.memory_fact import MemoryFact
+        from app.models.daily_health import GarminData
+        u = _mk_user(db)
+        for i in range(5):  # 只 5 条
+            db.add(MemoryFact(
+                user_id=u.id, tier="semantic",
+                subject=f"x{i}", predicate="is_value", object_value="1",
+                decay_rate=0.01, confidence=0.7,
+            ))
+        for i in range(10):
+            db.add(GarminData(user_id=u.id, record_date=date.today() - timedelta(days=i), hrv=50))
+        db.commit()
+
+        called = {"n": 0}
+        def fake_run_async(*a, **kw): called["n"] += 1; return "{}"
+        monkeypatch.setattr("app.utils.async_helpers.run_async", fake_run_async)
+        assert _gen_llm_pattern_mining(db, u.id) is None
+        assert called["n"] == 0  # 没调 LLM
+
+    def test_llm_valid_response_returns_candidate(self, db, monkeypatch):
+        """LLM 返回有效 JSON + evidence_refs 都真实 → 产出 InsightCandidate."""
+        from app.services.insight_generator import _gen_llm_pattern_mining
+        from app.models.memory_fact import MemoryFact
+        u = self._seed_data(db)
+        fact_id = db.query(MemoryFact).filter_by(user_id=u.id).first().id
+        garmin_date = date.today().isoformat()
+
+        # Mock LLM 返回合法 JSON
+        fake_json = (
+            '{"found_pattern": true, '
+            '"title": "HRV 连日下降", '
+            '"body": "过去 10 天 HRV 逐日下降, 可能睡眠质量下滑. 可以关注晚间咖啡摄入.", '
+            f'"evidence_refs": [{{"type": "fact", "id": {fact_id}}}, '
+            f'{{"type": "garmin_date", "date": "{garmin_date}"}}], '
+            '"confidence": 0.7}'
+        )
+        class FakeProvider:
+            async def chat(self, **kwargs):
+                return {"content": fake_json}
+
+        monkeypatch.setattr(
+            "app.services.llm.get_llm_provider",
+            lambda *a, **kw: FakeProvider(),
+        )
+
+        result = _gen_llm_pattern_mining(db, u.id)
+        assert result is not None
+        assert result.kind == "llm_pattern"
+        assert result.rule_id == "llm_pattern_mining_v1"
+        assert "HRV 连日下降" in result.title
+        assert len(result.evidence["evidence_refs"]) == 2
+        assert result.confidence == 0.7
+
+    def test_llm_fake_evidence_rejected(self, db, monkeypatch):
+        """LLM 编造 evidence_refs (fact_id 不存在) → grounding 拒绝."""
+        from app.services.insight_generator import _gen_llm_pattern_mining
+        u = self._seed_data(db)
+
+        fake_json = (
+            '{"found_pattern": true, "title": "编造的 pattern", '
+            '"body": "说有 pattern 但 evidence 都是假的.", '
+            '"evidence_refs": [{"type": "fact", "id": 99999}, '
+            '{"type": "garmin_date", "date": "2099-01-01"}], '
+            '"confidence": 0.9}'
+        )
+        class FakeProvider:
+            async def chat(self, **kwargs):
+                return {"content": fake_json}
+        monkeypatch.setattr(
+            "app.services.llm.get_llm_provider",
+            lambda *a, **kw: FakeProvider(),
+        )
+        assert _gen_llm_pattern_mining(db, u.id) is None  # 全假, 拒绝
+
+    def test_llm_found_pattern_false_returns_none(self, db, monkeypatch):
+        """LLM 明确说没 pattern → None."""
+        from app.services.insight_generator import _gen_llm_pattern_mining
+        u = self._seed_data(db)
+        class FakeProvider:
+            async def chat(self, **kwargs):
+                return {"content": '{"found_pattern": false}'}
+        monkeypatch.setattr(
+            "app.services.llm.get_llm_provider",
+            lambda *a, **kw: FakeProvider(),
+        )
+        assert _gen_llm_pattern_mining(db, u.id) is None
+
+    def test_llm_invalid_json_returns_none(self, db, monkeypatch):
+        from app.services.insight_generator import _gen_llm_pattern_mining
+        u = self._seed_data(db)
+        class FakeProvider:
+            async def chat(self, **kwargs):
+                return {"content": "LLM 乱说一通 no JSON here"}
+        monkeypatch.setattr(
+            "app.services.llm.get_llm_provider",
+            lambda *a, **kw: FakeProvider(),
+        )
+        assert _gen_llm_pattern_mining(db, u.id) is None
+
+    def test_llm_exception_returns_none(self, db, monkeypatch):
+        from app.services.insight_generator import _gen_llm_pattern_mining
+        u = self._seed_data(db)
+        class FakeProvider:
+            async def chat(self, **kwargs):
+                raise RuntimeError("network down")
+        monkeypatch.setattr(
+            "app.services.llm.get_llm_provider",
+            lambda *a, **kw: FakeProvider(),
+        )
+        assert _gen_llm_pattern_mining(db, u.id) is None
