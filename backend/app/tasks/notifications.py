@@ -752,13 +752,9 @@ def _write_weekly_report_message(db, user_id: int, content: str):
 
 
 def _status_emoji(value, good_threshold, bad_threshold, higher_is_better=True):
-    """根据阈值返回状态 emoji"""
-    if value is None:
-        return "❓"
-    if higher_is_better:
-        return "✅" if value >= good_threshold else ("⚠️" if value >= bad_threshold else "🔴")
-    else:
-        return "✅" if value <= good_threshold else ("⚠️" if value <= bad_threshold else "🔴")
+    """Delegate: 已拆到 notification_helpers.briefing.status_emoji (弱点 F)."""
+    from app.tasks.notification_helpers.briefing import status_emoji
+    return status_emoji(value, good_threshold, bad_threshold, higher_is_better)
 
 
 # ---------------------------------------------------------------------------
@@ -1167,60 +1163,9 @@ def generate_weekly_report_message():
 
 
 def _build_hit_rate_block(db, user_id: int, days: int = 30) -> str:
-    """生成 specialist 信用面板 markdown — 周报顶部, 让用户看到 agent 准不准."""
-    from app.models.action_card import ActionCard
-    from sqlalchemy import func, Integer
-    from datetime import datetime, timezone, timedelta as _td
-
-    since = datetime.now(timezone.utc) - _td(days=days)
-
-    rows = db.query(
-        ActionCard.creator_specialist,
-        func.count(ActionCard.id).label("total"),
-        func.avg(ActionCard.accuracy_score).label("avg_score"),
-        func.sum((ActionCard.accuracy_score >= 70).cast(Integer)).label("hits"),
-    ).filter(
-        ActionCard.user_id == user_id,
-        ActionCard.graded_at.isnot(None),
-        ActionCard.graded_at >= since,
-        ActionCard.creator_specialist.isnot(None),
-    ).group_by(ActionCard.creator_specialist).all()
-
-    pending = db.query(func.count(ActionCard.id)).filter(
-        ActionCard.user_id == user_id,
-        ActionCard.check_back_date.isnot(None),
-        ActionCard.graded_at.is_(None),
-    ).scalar() or 0
-
-    if not rows and pending == 0:
-        return ""  # 还没产生过 ActionCard, 不展示
-
-    lines = [f"### 🎯 Specialist 信用 (最近 {days} 天)"]
-
-    if rows:
-        # 排序: hit_rate 降序
-        ranked = sorted(
-            [(r.creator_specialist, int(r.total),
-              int(r.hits or 0), float(r.avg_score or 0))
-             for r in rows],
-            key=lambda x: (x[2] / x[1] if x[1] else 0),
-            reverse=True,
-        )
-        best = ranked[0]
-        lines.append(f"**本期最该信的 specialist**: `{best[0]}` "
-                     f"(命中 {best[2]}/{best[1]}, 平均分 {best[3]:.0f})")
-        lines.append("")
-        lines.append("| Specialist | 已评 | 命中 (≥70) | 平均分 |")
-        lines.append("|---|---|---|---|")
-        for name, total, hits, avg in ranked:
-            rate = (hits / total * 100) if total else 0
-            lines.append(f"| {name} | {total} | {hits} ({rate:.0f}%) | {avg:.0f} |")
-
-    if pending > 0:
-        lines.append("")
-        lines.append(f"⏳ **{pending} 张卡片待复查**（到期会自动评分）")
-
-    return "\n".join(lines)
+    """Delegate: 已拆到 notification_helpers.briefing.build_hit_rate_block (弱点 F)."""
+    from app.tasks.notification_helpers.briefing import build_hit_rate_block
+    return build_hit_rate_block(db, user_id, days)
 
 
 def _generate_weekly_report_for_user(user_id: int, today: date):
@@ -1426,96 +1371,14 @@ def check_action_card_followups():
 
 # ─────────────────── Agent Native: 保健医生周报 ───────────────────
 
+# helpers moved to app/tasks/notification_helpers/doctor_weekly.py (弱点 F 拆分)
+from app.tasks.notification_helpers.doctor_weekly import (
+    build_medication_adherence_block as _build_doctor_medication_adherence_block,
+    build_journal_summary_block as _build_doctor_journal_summary_block,
+)
+
 
 @celery_app.task(time_limit=300)
-def _build_doctor_medication_adherence_block(db, user_id: int, since_date: date) -> str:
-    """医生周报: 过去 7 天用药依从率 (daily frequency 的 medicine 模板).
-
-    依从率 < 70% 标 ⚠️ 提示. 返回空串若用户无 medicine 模板.
-    """
-    from sqlalchemy import func
-    from app.models.checkin import CheckinTemplate, CheckinRecord
-
-    templates = db.query(CheckinTemplate).filter(
-        CheckinTemplate.user_id == user_id,
-        CheckinTemplate.is_active == True,  # noqa: E712
-        CheckinTemplate.is_archived == False,  # noqa: E712
-        CheckinTemplate.category == "medicine",
-        CheckinTemplate.frequency == "daily",
-    ).all()
-
-    if not templates:
-        return ""
-
-    tmpl_ids = [t.id for t in templates]
-    counts = dict(
-        db.query(
-            CheckinRecord.template_id,
-            func.count(CheckinRecord.id),
-        ).filter(
-            CheckinRecord.template_id.in_(tmpl_ids),
-            CheckinRecord.user_id == user_id,
-            CheckinRecord.checkin_date >= since_date,
-        ).group_by(CheckinRecord.template_id).all()
-    )
-
-    lines = ["\n💊 *用药依从率 (7 天)*"]
-    for t in templates:
-        actual = counts.get(t.id, 0)
-        rate = round(100 * actual / 7)
-        mark = " ⚠️" if rate < 70 else ""
-        lines.append(f"  • {t.name}: {actual}/7 ({rate}%){mark}")
-    return "\n".join(lines)
-
-
-def _build_doctor_journal_summary_block(db, user_id: int, since_date: date) -> str:
-    """医生周报: 过去 7 天 Clinical Journal SOAP 条目分主题计数 + 最重一条.
-
-    返回空串若无 entries. 最重标准: assessment 包含 ⚠️ 或 related_action_card_ids 非空.
-    """
-    from sqlalchemy import func
-    from app.models.clinical_journal import ClinicalJournalEntry, CaseThread
-
-    since_dt = datetime.combine(since_date, datetime.min.time()).replace(tzinfo=UTC)
-
-    theme_counts = dict(
-        db.query(
-            CaseThread.theme,
-            func.count(ClinicalJournalEntry.id),
-        ).join(
-            ClinicalJournalEntry, ClinicalJournalEntry.case_thread_id == CaseThread.id,
-        ).filter(
-            ClinicalJournalEntry.user_id == user_id,
-            ClinicalJournalEntry.generated_at >= since_dt,
-        ).group_by(CaseThread.theme).all()
-    )
-
-    if not theme_counts:
-        return ""
-
-    total = sum(theme_counts.values())
-    theme_zh = {
-        "rhinitis": "鼻炎", "sleep_osahs": "睡眠呼吸", "sleep_quality": "睡眠",
-        "liver": "肝功能", "lipid": "血脂", "metabolic": "代谢",
-        "weight_loss": "体重", "hypertension": "血压", "recovery": "恢复",
-        "daily_briefing": "日报", "general": "综合",
-    }
-    parts = [f"{theme_zh.get(k, k)}×{v}" for k, v in sorted(
-        theme_counts.items(), key=lambda x: -x[1])]
-    lines = [f"\n📓 *AI 记录 {total} 条*: " + " / ".join(parts)]
-
-    # 取最重一条: assessment 含 ⚠️ 优先, 否则取最新
-    priority_entry = db.query(ClinicalJournalEntry).filter(
-        ClinicalJournalEntry.user_id == user_id,
-        ClinicalJournalEntry.generated_at >= since_dt,
-        ClinicalJournalEntry.assessment.like("%⚠️%"),
-    ).order_by(ClinicalJournalEntry.generated_at.desc()).first()
-    if priority_entry and priority_entry.assessment:
-        first_line = priority_entry.assessment.split("\n")[0][:120]
-        lines.append(f"  最需关注: {first_line}")
-    return "\n".join(lines)
-
-
 def generate_doctor_weekly_report():
     """
     生成保健医生周报 — 每周一自动运行。
