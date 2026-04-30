@@ -71,22 +71,20 @@ def _build_anomaly_trace(db: Session, alert: AnomalyAlert) -> Dict[str, Any]:
         .first()
     )
 
-    # Related memory: 按 metric_name 模糊匹配 (最近 14 天)
+    # Related memory: 按 metric_name 模糊匹配 (最近 14 天, 排除已 supersede 的)
     since = datetime.now(timezone.utc) - timedelta(days=14)
     related_facts_q = (
         db.query(MemoryFact)
         .filter(
             MemoryFact.user_id == alert.user_id,
-            MemoryFact.is_active.is_(True),
+            MemoryFact.superseded_at.is_(None),  # is_active 是 @property, 用底层字段
             MemoryFact.created_at >= since,
         )
     )
     if alert.metric_name:
-        # metric_name='hrv' → subject contains 'HRV'/'hrv' / object 含该 metric
-        like = f"%{alert.metric_name.lower()}%"
-        related_facts_q = related_facts_q.filter(
-            (MemoryFact.subject.ilike(like)) | (MemoryFact.tags.cast(str).ilike(like))
-        )
+        # metric_name='hrv' → subject 含 'HRV'/'hrv'
+        like = f"%{alert.metric_name}%"
+        related_facts_q = related_facts_q.filter(MemoryFact.subject.ilike(like))
     related_facts = related_facts_q.limit(5).all()
 
     severity = (alert.severity or "info").lower()
@@ -234,7 +232,7 @@ def trace_detail(
             db.query(MemoryFact)
             .filter(
                 MemoryFact.user_id == current_user.id,
-                MemoryFact.is_active.is_(True),
+                MemoryFact.superseded_at.is_(None),
                 MemoryFact.created_at >= since,
             )
         )
