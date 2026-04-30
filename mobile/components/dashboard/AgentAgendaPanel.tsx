@@ -17,7 +17,7 @@ const SECTION_META: Record<AgentAgendaSection['key'], { icon: keyof typeof Ionic
 };
 
 export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);  // 默认收起 (减少首页占位, 用户展开才看细节)
 
   if (!agenda || agenda.sections.length === 0) return null;
 
