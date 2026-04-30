@@ -46,10 +46,17 @@ function TraceRow({ t, onPress }: { t: ReasoningTrace; onPress: () => void }) {
   const sevColor = SEV_COLOR[t.severity] ?? colors.labelTertiary;
   const hasOutcome = !!t.outcome;
   const hasMemory = t.related_memory.length > 0;
+  const isArbitration = t.decision_type === 'llm_arbitration';
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} accessibilityLabel={`${t.title}, ${t.message}`}>
       <View style={styles.rowHeader}>
-        <View style={[styles.sevDot, { backgroundColor: sevColor }]} />
+        {isArbitration ? (
+          <View style={[styles.typeBadge, { backgroundColor: `${colors.orange}18` }]}>
+            <Ionicons name="people" size={12} color={colors.orange} />
+          </View>
+        ) : (
+          <View style={[styles.sevDot, { backgroundColor: sevColor }]} />
+        )}
         <Text style={styles.rowTitle} numberOfLines={1}>{t.title}</Text>
         <View style={[styles.sevChip, { backgroundColor: `${sevColor}18` }]}>
           <Text style={[styles.sevText, { color: sevColor }]}>{SEV_LABEL[t.severity] ?? t.severity}</Text>
@@ -231,6 +238,10 @@ const styles = StyleSheet.create({
   },
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   sevDot: { width: 8, height: 8, borderRadius: 4 },
+  typeBadge: {
+    width: 20, height: 20, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center',
+  },
   rowTitle: { flex: 1, fontSize: 15, fontWeight: '600' as const, color: colors.labelPrimary },
   sevChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   sevText: { fontSize: 11, fontWeight: '600' as const },

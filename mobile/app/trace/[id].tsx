@@ -218,6 +218,43 @@ export default function TraceDetailScreen() {
           </Section>
         )}
 
+        {/* Arbitration extra: specialists + caveats */}
+        {t.decision_type === 'llm_arbitration' && t.arbitration_extra && (
+          <Section icon="people-outline" title="冲突仲裁详情" color={colors.orange}>
+            <View style={styles.arbRow}>
+              <Text style={styles.arbLabel}>裁决</Text>
+              <Text style={styles.arbValue}>{t.arbitration_extra.winning_side}</Text>
+            </View>
+            <View style={styles.arbRow}>
+              <Text style={styles.arbLabel}>处理冲突</Text>
+              <Text style={styles.arbValue}>{t.arbitration_extra.conflicts_addressed} 个</Text>
+            </View>
+            {t.arbitration_extra.specialists_involved.length > 0 && (
+              <View style={styles.arbSpecialists}>
+                <Text style={styles.arbLabel}>涉及 specialist</Text>
+                <View style={styles.arbChipRow}>
+                  {t.arbitration_extra.specialists_involved.map((s) => (
+                    <View key={s} style={styles.arbChip}>
+                      <Text style={styles.arbChipText}>{s}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            {t.arbitration_extra.caveats.length > 0 && (
+              <View style={{ marginTop: spacing.sm, gap: 6 }}>
+                <Text style={styles.arbLabel}>注意事项</Text>
+                {t.arbitration_extra.caveats.map((c, i) => (
+                  <View key={i} style={styles.caveatRow}>
+                    <Ionicons name="alert-circle-outline" size={14} color={colors.orange} />
+                    <Text style={styles.caveatText}>{c}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Section>
+        )}
+
         {/* 4. 关联记忆 - Memory Facts (Sprint 5 KG) */}
         {t.related_memory.length > 0 && (
           <Section icon="git-branch-outline" title={`关联记忆 · ${t.related_memory.length} 条`} color={colors.purple}>
@@ -325,4 +362,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.fill, borderRadius: 8,
   },
   footerHintText: { flex: 1, fontSize: 11, color: colors.labelSecondary, lineHeight: 16 },
+
+  arbRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  arbLabel: { fontSize: 12, color: colors.labelSecondary },
+  arbValue: { fontSize: 13, fontWeight: '600' as const, color: colors.labelPrimary },
+  arbSpecialists: { gap: 4 },
+  arbChipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' as const },
+  arbChip: { backgroundColor: colors.fill, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  arbChipText: { fontSize: 11, color: colors.labelSecondary, fontFamily: 'monospace' },
+  caveatRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
+  caveatText: { flex: 1, fontSize: 12, color: colors.labelPrimary, lineHeight: 16 },
 });

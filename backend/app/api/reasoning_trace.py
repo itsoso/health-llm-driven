@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.action_card import ActionCard
+from app.models.agent_audit_log import AgentAuditLog
 from app.models.anomaly_alert import AnomalyAlert
 from app.models.memory_fact import MemoryFact
 from app.models.user import User
@@ -145,13 +146,17 @@ def _build_anomaly_trace(db: Session, alert: AnomalyAlert) -> Dict[str, Any]:
 def recent_traces(
     days: int = Query(7, ge=1, le=90),
     limit: int = Query(20, ge=1, le=100),
-    decision_type: Optional[str] = Query(None, description="过滤: anomaly_rule"),
+    decision_type: Optional[str] = Query(None, description="过滤: anomaly_rule | llm_arbitration"),
     include_suppressed: bool = Query(False, description="是否包含已 suppress 的 (info/疲劳)"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """
     返回用户过去 N 天所有可解释的决策 trace, 按时间降序.
+
+    聚合两类:
+      1. AnomalyAlert (anomaly_rule) — 确定性规则决策
+      2. agent_audit_logs(agent_type=llm_arbitrator) — specialist 冲突的 LLM 仲裁
 
     Response:
       {
@@ -161,22 +166,41 @@ def recent_traces(
       }
     """
     since = datetime.now(timezone.utc) - timedelta(days=days)
+    traces: List[Dict[str, Any]] = []
 
-    q = (
-        db.query(AnomalyAlert)
-        .filter(
-            AnomalyAlert.user_id == current_user.id,
-            AnomalyAlert.detection_date >= since.date(),
+    # --- 1. AnomalyAlert → anomaly_rule trace ---
+    if decision_type in (None, "anomaly_rule"):
+        q = (
+            db.query(AnomalyAlert)
+            .filter(
+                AnomalyAlert.user_id == current_user.id,
+                AnomalyAlert.detection_date >= since.date(),
+            )
+            .order_by(AnomalyAlert.detection_date.desc(), AnomalyAlert.id.desc())
         )
-        .order_by(AnomalyAlert.detection_date.desc(), AnomalyAlert.id.desc())
-    )
-    if not include_suppressed:
-        q = q.filter(AnomalyAlert.is_suppressed.is_(False))
-    alerts = q.limit(limit).all()
+        if not include_suppressed:
+            q = q.filter(AnomalyAlert.is_suppressed.is_(False))
+        alerts = q.limit(limit).all()
+        traces.extend(_build_anomaly_trace(db, a) for a in alerts)
 
-    traces = [_build_anomaly_trace(db, a) for a in alerts]
-    if decision_type:
-        traces = [t for t in traces if t["decision_type"] == decision_type]
+    # --- 2. agent_audit_logs(llm_arbitrator) → llm_arbitration trace ---
+    if decision_type in (None, "llm_arbitration"):
+        arb_logs = (
+            db.query(AgentAuditLog)
+            .filter(
+                AgentAuditLog.user_id == current_user.id,
+                AgentAuditLog.agent_type == "llm_arbitrator",
+                AgentAuditLog.created_at >= since,
+            )
+            .order_by(AgentAuditLog.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        traces.extend(_build_arbitration_trace(log) for log in arb_logs)
+
+    # 全局按时间降序 + truncate 到 limit
+    traces.sort(key=lambda t: t.get("timestamp") or "", reverse=True)
+    traces = traces[:limit]
 
     # summary
     by_type: Dict[str, int] = {}
@@ -192,6 +216,90 @@ def recent_traces(
             "by_type": by_type,
             "by_severity": by_severity,
             "window_days": days,
+        },
+    }
+
+
+def _build_arbitration_trace(log: AgentAuditLog) -> Dict[str, Any]:
+    """AgentAuditLog(agent_type=llm_arbitrator) → 决策 trace."""
+    detail = log.result_detail or {}
+    arb = detail.get("arbitration") or {}
+    conflicts = detail.get("conflicts") or []
+
+    winning = arb.get("winning_side", "?")
+    winning_label = {
+        "specialist_a": "采纳 A 方",
+        "specialist_b": "采纳 B 方",
+        "both": "两方兼顾",
+        "neither": "升级人工",
+    }.get(winning, winning)
+
+    # Severity: 按 winning_side 和 conflicts hard 数量估算
+    hard_count = sum(1 for c in conflicts if c.get("severity") == "hard")
+    if winning == "neither" or hard_count >= 2:
+        sev = "critical"
+    elif hard_count >= 1:
+        sev = "warning"
+    else:
+        sev = "info"
+
+    # 冲突双方列表
+    specialists = set()
+    for c in conflicts:
+        if c.get("specialist_a"): specialists.add(c["specialist_a"])
+        if c.get("specialist_b"): specialists.add(c["specialist_b"])
+
+    return {
+        "id": f"arb_{log.id}",
+        "timestamp": log.created_at.isoformat() if log.created_at else None,
+        "decision_type": "llm_arbitration",
+        "severity": sev,
+        "title": f"LLM 仲裁: {winning_label}",
+        "message": arb.get("rationale", "")[:500] or log.result_summary or "",
+        "rule": {
+            "id": "llm_arbitrator",
+            "engine": "orchestrator_arbitration",
+            "category": "multi_agent",
+        },
+        "evidence": {
+            "metric": None,
+            "current": None,
+            "baseline": None,
+            "threshold": None,
+            "deviation_pct": None,
+        },
+        "confidence": float(arb.get("confidence", 0.7)),
+        "is_suppressed": False,
+        "notification_sent": False,
+        "outcome": (
+            {
+                "kind": "recommendation",
+                "id": 0,
+                "title": arb.get("final_recommendation", "") or "(无具体建议)",
+                "status": "issued",
+                "check_back_date": None,
+                "metric_key": None,
+            }
+            if arb.get("final_recommendation") else None
+        ),
+        # 关联信息: 仲裁涉及的 specialist + caveats
+        "related_memory": [
+            {
+                "id": -1,  # 虚拟 id (不对应 MemoryFact)
+                "tier": "semantic",
+                "subject": "conflict",
+                "predicate": f"{c.get('specialist_a')} vs {c.get('specialist_b')}",
+                "object_value": c.get("description", "")[:200],
+                "object_unit": None,
+                "confidence": 0.9 if c.get("severity") == "hard" else 0.6,
+            }
+            for c in conflicts[:5]
+        ],
+        "arbitration_extra": {
+            "winning_side": winning,
+            "caveats": arb.get("caveats") or [],
+            "conflicts_addressed": arb.get("conflicts_addressed", len(conflicts)),
+            "specialists_involved": sorted(specialists),
         },
     }
 
@@ -250,5 +358,19 @@ def trace_detail(
             for f in wider_facts
         ]
         return trace
+
+    if kind == "arb":
+        log = (
+            db.query(AgentAuditLog)
+            .filter(
+                AgentAuditLog.id == db_id,
+                AgentAuditLog.user_id == current_user.id,
+                AgentAuditLog.agent_type == "llm_arbitrator",
+            )
+            .first()
+        )
+        if not log:
+            raise HTTPException(404, "arbitration log 不存在")
+        return _build_arbitration_trace(log)
 
     raise HTTPException(400, f"未知 decision_type: {kind}")

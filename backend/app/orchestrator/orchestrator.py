@@ -218,8 +218,13 @@ def _build_specialist_credit_block(db: Session, user_id: int, days: int = 30) ->
 def _build_synthesis_prompt(
     query: str, twin: HealthTwin, findings: List[SpecialistFinding],
     db: Optional[Session] = None, user_id: Optional[int] = None,
+    conflict_arb_block: str = "",
 ) -> tuple[str, str]:
-    """返回 (system_prompt, user_prompt)。"""
+    """返回 (system_prompt, user_prompt).
+
+    conflict_arb_block: 由调用方预先渲染的 cross_review + LLM 仲裁 markdown.
+    如果为空, 保留向下兼容: 内部跑一次 cross_review (无 LLM 仲裁).
+    """
 
     twin_blob = twin_to_prompt_blob(twin)
 
@@ -243,31 +248,32 @@ def _build_synthesis_prompt(
         credit_text = _build_specialist_credit_block(db, user_id, days=30)
 
     # Cross-Review: specialist 之间矛盾检测 + audit log
-    conflicts_text = ""
-    try:
-        from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
-        conflicts = detect_conflicts(findings, twin, db=db)
-        if conflicts:
-            conflicts_text = render_conflicts_for_prompt(conflicts)
-            logger.info(f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突")
-            # Audit log (旁路, 失败不影响主流程)
-            try:
-                from app.agents.audit import log_cross_review_conflicts
-                log_cross_review_conflicts(
-                    db, user_id=user_id or twin.meta.user_id,
-                    conflicts=[{
-                        "specialist_a": c.specialist_a,
-                        "specialist_b": c.specialist_b,
-                        "severity": c.severity,
-                        "description": c.description,
-                        "resolution_hint": c.resolution_hint,
-                    } for c in conflicts],
-                    used_specialists=[f.specialist_name for f in findings],
-                )
-            except Exception as e_audit:  # noqa: BLE001
-                logger.debug(f"[orchestrator] cross_review audit 失败: {e_audit}")
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[orchestrator] cross_review 跳过: {e}")
+    # 如果 caller 已经预渲染了 (含 LLM 仲裁), 直接用; 否则 fallback 跑规则层
+    conflicts_text = conflict_arb_block
+    if not conflicts_text:
+        try:
+            from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
+            conflicts = detect_conflicts(findings, twin, db=db)
+            if conflicts:
+                conflicts_text = render_conflicts_for_prompt(conflicts)
+                logger.info(f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突 (fallback)")
+                try:
+                    from app.agents.audit import log_cross_review_conflicts
+                    log_cross_review_conflicts(
+                        db, user_id=user_id or twin.meta.user_id,
+                        conflicts=[{
+                            "specialist_a": c.specialist_a,
+                            "specialist_b": c.specialist_b,
+                            "severity": c.severity,
+                            "description": c.description,
+                            "resolution_hint": c.resolution_hint,
+                        } for c in conflicts],
+                        used_specialists=[f.specialist_name for f in findings],
+                    )
+                except Exception as e_audit:  # noqa: BLE001
+                    logger.debug(f"[orchestrator] cross_review audit 失败: {e_audit}")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[orchestrator] cross_review 跳过: {e}")
 
     system_prompt = (
         "你是健康助理的首席分析师。下游 specialist agent 已经对用户的 Digital Health Twin 做了结构化裁决，"
@@ -391,6 +397,73 @@ async def _call_llm(system_prompt: str, user_prompt: str) -> str:
     return text or ""
 
 
+async def _run_cross_review_and_arbitration(
+    findings: List[SpecialistFinding],
+    twin: HealthTwin,
+    db: Optional[Session],
+    user_id: Optional[int],
+) -> str:
+    """检测 cross_review 冲突 → 达到门槛就 LLM 仲裁. 返回要注入 synthesis prompt 的渲染文本.
+
+    - 有冲突 + 达到 LLM 触发门槛 (hard 或 >=2): await arbitrate_conflicts; 写 audit
+    - 有冲突但未到门槛: 仅渲染 cross_review (规则层), 写 cross_review audit
+    - 无冲突: 返回空串
+    """
+    try:
+        from app.orchestrator.cross_review import detect_conflicts, render_conflicts_for_prompt
+        conflicts = detect_conflicts(findings, twin, db=db)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] cross_review 跳过: {e}")
+        return ""
+
+    if not conflicts:
+        return ""
+
+    # 1) 规则层 audit (无论是否触发 LLM 都记)
+    uid = user_id or twin.meta.user_id
+    conflict_snapshot = [{
+        "specialist_a": c.specialist_a, "specialist_b": c.specialist_b,
+        "severity": c.severity, "description": c.description,
+        "resolution_hint": c.resolution_hint,
+    } for c in conflicts]
+    try:
+        from app.agents.audit import log_cross_review_conflicts
+        log_cross_review_conflicts(
+            db, user_id=uid,
+            conflicts=conflict_snapshot,
+            used_specialists=[f.specialist_name for f in findings],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] cross_review audit 失败: {e}")
+    logger.info(f"[orchestrator] cross_review 检测到 {len(conflicts)} 个 specialist 冲突")
+
+    # 2) LLM 仲裁 (仅 hard 或 >=2 conflicts)
+    try:
+        from app.orchestrator.arbitration import (
+            arbitrate_conflicts, render_arbitration_for_prompt, _should_arbitrate,
+        )
+        if _should_arbitrate(conflicts):
+            arb = await arbitrate_conflicts(conflicts, findings, twin, _call_llm)
+            if arb is not None:
+                # Audit arbitration (旁路)
+                try:
+                    from app.agents.audit import log_llm_arbitration
+                    log_llm_arbitration(
+                        db, user_id=uid,
+                        arbitration=arb.to_dict(),
+                        conflicts_snapshot=conflict_snapshot,
+                    )
+                except Exception as e_audit:  # noqa: BLE001
+                    logger.debug(f"[orchestrator] arbitration audit 失败: {e_audit}")
+                logger.info(f"[orchestrator] LLM 仲裁: winning={arb.winning_side} conf={arb.confidence:.2f}")
+                return render_arbitration_for_prompt(arb)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] arbitration 跳过: {e}")
+
+    # 3) 回退: 仅规则层渲染
+    return render_conflicts_for_prompt(conflicts)
+
+
 async def _stream_llm(
     system_prompt: str, user_prompt: str
 ) -> AsyncIterator[str]:
@@ -466,7 +539,13 @@ async def run_orchestrator(
         twin, specialists, {"query": req.query, "db": db, "recent_cases": recent_cases}
     )
 
-    system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
+    # Cross-review + (可选) LLM 仲裁, 结果注入 synthesis prompt
+    conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
+
+    system_prompt, user_prompt = _build_synthesis_prompt(
+        req.query, twin, findings, db=db, user_id=user_id,
+        conflict_arb_block=conflict_arb_block,
+    )
 
     # 注入对话记忆（用户历史偏好/医嘱/过敏等）
     user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
@@ -579,7 +658,13 @@ async def stream_orchestrator(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
 
-        system_prompt, user_prompt = _build_synthesis_prompt(req.query, twin, findings, db=db, user_id=user_id)
+        # Cross-review + (可选) LLM 仲裁 (流式路径也走同样逻辑)
+        conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
+
+        system_prompt, user_prompt = _build_synthesis_prompt(
+            req.query, twin, findings, db=db, user_id=user_id,
+            conflict_arb_block=conflict_arb_block,
+        )
         user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
 
         # 流式 LLM

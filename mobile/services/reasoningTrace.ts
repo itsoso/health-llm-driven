@@ -48,6 +48,13 @@ export interface ReasoningTrace {
   notification_sent: boolean;
   outcome: TraceOutcome | null;
   related_memory: TraceMemoryFact[];
+  // Only for decision_type === 'llm_arbitration'
+  arbitration_extra?: {
+    winning_side: string;
+    caveats: string[];
+    conflicts_addressed: number;
+    specialists_involved: string[];
+  };
 }
 
 export interface TraceListResponse {

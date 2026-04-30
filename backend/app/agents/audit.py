@@ -96,6 +96,39 @@ def log_cross_review_conflicts(
     )
 
 
+def log_llm_arbitration(
+    db: Session,
+    user_id: int,
+    arbitration: Dict[str, Any],
+    conflicts_snapshot: List[Dict[str, Any]],
+) -> None:
+    """LLM 仲裁裁决 audit. arbitration = ArbitrationResult.to_dict().
+
+    agent_type='llm_arbitrator' — Reasoning Trace UI 会聚合这类 trace.
+    """
+    try:
+        winning = arbitration.get("winning_side", "?")
+        conf = arbitration.get("confidence", 0)
+        summary = (
+            f"LLM 仲裁: {winning} (conf={conf:.2f}), "
+            f"处理 {arbitration.get('conflicts_addressed', 0)} 个冲突"
+        )
+        _write(
+            db,
+            user_id=user_id,
+            agent_type="llm_arbitrator",
+            action="arbitrate",
+            result_summary=summary,
+            findings_count=arbitration.get("conflicts_addressed", 0),
+            result_detail={
+                "arbitration": arbitration,
+                "conflicts": conflicts_snapshot,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_llm_arbitration 失败 (跳过): {e}")
+
+
 def _write(
     db: Session,
     user_id: int,
