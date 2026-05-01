@@ -30,12 +30,39 @@ const ITEM_TYPE_COLOR: Record<string, { bg: string; fg: string; accent: string }
   note: { bg: '#F3F4F6', fg: '#4B5563', accent: '#6B7280' },
 };
 
-const STATUS_NEXT: Record<string, string> = {
-  pending: 'in_progress',
-  in_progress: 'completed',
-  active: 'completed',
-  monitoring: 'completed',
+// 后端 ALLOWED_STATUS_BY_TYPE 按 item_type 限制状态机, 这里必须按 type 决策
+// 否则 hypothesis/prediction 上点 "标记为 in_progress" 会被后端 400 拒.
+const STATUS_LABEL_CN: Record<string, string> = {
+  in_progress: '执行中',
+  completed: '已完成',
+  confirmed: '已确认',
+  refuted: '已排除',
+  resolved: '已解决',
+  met: '达标',
+  not_met: '未达标',
+  triggered: '触发',
 };
+
+function getNextStatus(itemType: string, current: string): string | null {
+  if (itemType === 'action') {
+    if (current === 'pending') return 'in_progress';
+    if (current === 'in_progress') return 'completed';
+    return null;
+  }
+  if (itemType === 'hypothesis') {
+    return current === 'pending' ? 'confirmed' : null;
+  }
+  if (itemType === 'prediction') {
+    return current === 'pending' ? 'met' : null;
+  }
+  if (itemType === 'red_flag') {
+    return current === 'watching' ? 'resolved' : null;
+  }
+  if (itemType === 'note') {
+    return current === 'pending' ? 'resolved' : null;
+  }
+  return null;
+}
 
 function StatusPill({ status }: { status: string }) {
   const bg =
@@ -67,7 +94,7 @@ function ItemCard({
   onConfirmVerification: () => void;
 }) {
   const c = ITEM_TYPE_COLOR[item.item_type] || ITEM_TYPE_COLOR.note;
-  const canAdvance = STATUS_NEXT[item.status];
+  const canAdvance = getNextStatus(item.item_type, item.status);
   return (
     <View style={[styles.itemCard, { borderLeftColor: c.accent }]}>
       <View style={styles.itemHeader}>
@@ -114,7 +141,7 @@ function ItemCard({
         <TouchableOpacity style={styles.advanceBtn} onPress={onAdvance} activeOpacity={0.75}>
           <Ionicons name="checkmark-circle-outline" size={14} color={c.accent} />
           <Text style={[txt.advanceText, { color: c.accent }]}>
-            标记为 {canAdvance}
+            标记为 {STATUS_LABEL_CN[canAdvance] ?? canAdvance}
           </Text>
         </TouchableOpacity>
       ) : null}
@@ -139,7 +166,7 @@ export default function ConsultationDetailScreen() {
 
   const advanceMut = useMutation({
     mutationFn: async (item: ConsultationItem) => {
-      const next = STATUS_NEXT[item.status];
+      const next = getNextStatus(item.item_type, item.status);
       if (!next) return null;
       return updateConsultationItem(item.id, { status: next });
     },
@@ -148,8 +175,11 @@ export default function ConsultationDetailScreen() {
       qc.invalidateQueries({ queryKey: ['consultation', consultationId] });
       qc.invalidateQueries({ queryKey: ['consultations', 'list'] });
     },
-    onError: () => {
-      Alert.alert('更新失败', '请检查网络后重试');
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail
+        ?? err?.message
+        ?? '请检查网络后重试';
+      Alert.alert('更新失败', String(detail));
     },
   });
 
