@@ -227,6 +227,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.memory_lifecycle.run_memory_lifecycle",
         "schedule": crontab(hour=4, minute=0),
     },
+
+    # 周度 Eval Golden Set: 跑 orchestrator suite (调真实 LLM, ~$0.005/次),
+    # 监测 LLM 合成质量回归. 失败/regression Telegram 告警.
+    "eval-orchestrator-weekly": {
+        "task": "app.tasks.eval_runner.run_orchestrator_eval_weekly",
+        "schedule": crontab(hour=3, minute=27, day_of_week=0),  # 周日凌晨 03:27
+    },
 }
 
 logger.info("Celery 配置加载完成")
