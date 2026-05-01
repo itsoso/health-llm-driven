@@ -2,12 +2,11 @@
   "expo": {
     "name": "HealthPilot",
     "slug": "health-pilot",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -33,7 +32,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "life.executor.health"
     },
@@ -60,7 +58,11 @@
           "color": "#0A8F8F"
         }
       ],
-      "./plugins/withIntentsExtension"
+      "./plugins/withIntentsExtension",
+      "@sentry/react-native",
+      "expo-font",
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
