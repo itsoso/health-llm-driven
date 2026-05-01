@@ -148,9 +148,18 @@ export default function SleepSpo2AnalysisScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title}>夜间血氧分析</Text>
-        <TouchableOpacity onPress={onRefresh} style={styles.btn} disabled={reanalyzeM.isPending}>
-          <Ionicons name="refresh" size={22} color={reanalyzeM.isPending ? colors.labelTertiary : colors.labelPrimary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity
+            onPress={() => router.push('/sleep-spo2-longitudinal' as any)}
+            style={styles.btn}
+            accessibilityLabel="查看 30 天趋势"
+          >
+            <Ionicons name="stats-chart-outline" size={20} color={colors.labelPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onRefresh} style={styles.btn} disabled={reanalyzeM.isPending}>
+            <Ionicons name="refresh" size={22} color={reanalyzeM.isPending ? colors.labelTertiary : colors.labelPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 日期选择 */}

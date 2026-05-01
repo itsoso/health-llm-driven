@@ -371,6 +371,21 @@ def reanalyze_night(
     return get_night_analysis(night_date=night_date, current_user=current_user, db=db)
 
 
+@router.get("/longitudinal", summary="近 N 天 SpO2 longitudinal + OSAHS pattern")
+def get_longitudinal(
+    days: int = Query(30, ge=7, le=180),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """汇总近 N 天夜间 SpO2 事件与 OSAHS 模式指标.
+
+    不诊断 OSAHS, 仅做趋势呈现. 数据来自 nocturnal_spo2_events 表 + GarminData
+    睡眠时长 (ODI 分母). 不重跑分析, 读已落盘结果.
+    """
+    from app.services.sleep.nocturnal_spo2_longitudinal import build_longitudinal
+    return build_longitudinal(db, current_user.id, days=days)
+
+
 @router.post("/confirm-no-alcohol")
 def confirm_no_alcohol(
     night_date: date = Query(..., description="确认哪夜未饮酒 YYYY-MM-DD"),

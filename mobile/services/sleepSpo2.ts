@@ -137,3 +137,88 @@ export async function getNightlyTimeseries(
   );
   return data;
 }
+
+// ---------------------------------------------------------------------------
+// Longitudinal (H2-6): 近 N 天夜间 SpO2 事件聚合 + OSAHS pattern
+// ---------------------------------------------------------------------------
+
+export type NightSeverity = 'normal' | 'mild' | 'moderate' | 'severe' | 'unknown';
+
+export interface NightSummary {
+  night_date: string;
+  events_count: number;
+  odi: number | null;
+  min_spo2: number | null;
+  avg_drop_magnitude: number | null;
+  total_sleep_minutes: number | null;
+  events_rem_pct: number | null;
+  severity: NightSeverity;
+}
+
+export type PatternFlag =
+  | 'frequent_desaturation'
+  | 'notable_hypoxia'
+  | 'rem_predominant'
+  | 'severe_nights_present';
+
+export interface LongitudinalPattern {
+  covered_nights: number;
+  nights_with_odi: number;
+  avg_odi: number | null;
+  median_min_spo2: number | null;
+  pct_nights_odi_ge_5: number | null;
+  pct_nights_min_spo2_below_90: number | null;
+  pct_events_in_rem: number | null;
+  mild_nights: number;
+  moderate_nights: number;
+  severe_nights: number;
+  pattern_flags: PatternFlag[];
+}
+
+export interface LongitudinalResponse {
+  window: { start: string; end: string; days: number };
+  nights: NightSummary[];
+  pattern: LongitudinalPattern;
+}
+
+export async function getSpo2Longitudinal(days = 30): Promise<LongitudinalResponse> {
+  const { data } = await api.get<LongitudinalResponse>(
+    '/sleep/spo2/longitudinal', { params: { days } },
+  );
+  return data;
+}
+
+export const SEVERITY_LABEL: Record<NightSeverity, string> = {
+  normal: '正常',
+  mild: '轻度',
+  moderate: '中度',
+  severe: '重度',
+  unknown: '—',
+};
+
+export const SEVERITY_COLOR: Record<NightSeverity, string> = {
+  normal: '#34C759',
+  mild: '#FFCC00',
+  moderate: '#FF9500',
+  severe: '#FF3B30',
+  unknown: '#8E8E93',
+};
+
+export const FLAG_LABEL: Record<PatternFlag, { label: string; hint: string }> = {
+  frequent_desaturation: {
+    label: '频繁氧降',
+    hint: '近半数夜 ODI ≥ 5，建议医生进一步评估',
+  },
+  notable_hypoxia: {
+    label: '显著低氧',
+    hint: '≥ 25% 夜最低 SpO2 低于 90%',
+  },
+  rem_predominant: {
+    label: 'REM 期为主',
+    hint: '事件集中在 REM 睡眠，是典型 OSAHS 模式',
+  },
+  severe_nights_present: {
+    label: '存在重度夜',
+    hint: '已出现 ≥3 夜 ODI ≥ 30',
+  },
+};
