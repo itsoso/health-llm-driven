@@ -129,6 +129,43 @@ def log_llm_arbitration(
         logger.debug(f"[audit] log_llm_arbitration 失败 (跳过): {e}")
 
 
+def log_specialist_findings(
+    db: Session,
+    user_id: int,
+    findings: List[Dict[str, Any]],
+    orchestrator_run_id: Optional[int] = None,
+) -> Optional[int]:
+    """记录一批 specialist 产出的 findings, 支持 /reasoning-trace/specialist/{audit_id} 反查.
+
+    旁路, 失败不抛. Returns: 新写入的 audit_log.id, 方便调用方回写关联.
+    """
+    try:
+        from app.models.agent_audit_log import AgentAuditLog
+
+        row = AgentAuditLog(
+            user_id=user_id,
+            agent_type="specialist_batch",
+            action="run",
+            result_summary=f"产出 {len(findings)} 条 findings",
+            findings_count=len(findings),
+            result_detail={
+                "findings": findings,
+                "orchestrator_run_id": orchestrator_run_id,
+            },
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row.id
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_specialist_findings 失败 (跳过): {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,

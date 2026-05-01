@@ -675,6 +675,24 @@ async def run_orchestrator(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] memory extract 失败 (旁路): {e}")
 
+    # 旁路审计: 支持 /reasoning-trace/specialist/{audit_id} 反查单 finding
+    try:
+        from app.agents.audit import log_specialist_findings
+        findings_snapshot = [
+            {
+                "specialist": f.specialist_name,
+                "kind": f.category,
+                "summary": f.summary,
+                "data": f.raw,
+                "findings": f.findings,
+                "proposed_cards": [c.model_dump() for c in (f.proposed_cards or [])],
+            }
+            for f in findings
+        ]
+        log_specialist_findings(db, user_id=user_id, findings=findings_snapshot)
+    except Exception:
+        pass
+
     return OrchestratorResponse(
         query=req.query,
         intent=intent,
@@ -758,6 +776,24 @@ async def stream_orchestrator(
                 extract_from_specialist_finding(db, user_id, f, f.specialist_name)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
+
+        # 旁路审计: 支持 /reasoning-trace/specialist/{audit_id} 反查单 finding
+        try:
+            from app.agents.audit import log_specialist_findings
+            findings_snapshot = [
+                {
+                    "specialist": f.specialist_name,
+                    "kind": f.category,
+                    "summary": f.summary,
+                    "data": f.raw,
+                    "findings": f.findings,
+                    "proposed_cards": [c.model_dump() for c in (f.proposed_cards or [])],
+                }
+                for f in findings
+            ]
+            log_specialist_findings(db, user_id=user_id, findings=findings_snapshot)
+        except Exception:
+            pass
 
         # Cross-review + (可选) LLM 仲裁 (流式路径也走同样逻辑)
         conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
