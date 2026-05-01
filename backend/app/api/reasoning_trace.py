@@ -374,3 +374,37 @@ def trace_detail(
         return _build_arbitration_trace(log)
 
     raise HTTPException(400, f"未知 decision_type: {kind}")
+
+
+# ------------------------------------------------------------
+# Explain endpoints — Task 2.2: Mobile ExplainSheet 数据源
+# ------------------------------------------------------------
+
+from app.services.reasoning_explainer import (  # noqa: E402
+    explain_safety_alert,
+    explain_specialist_finding,
+)
+
+
+@router.get("/safety/{audit_id}", summary="Safety 告警推理链 (按 rule_id 反查)")
+def explain_safety(
+    audit_id: int,
+    rule_id: str = Query(..., description="alert 的 rule_id"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    return explain_safety_alert(
+        db, audit_id=audit_id, rule_id=rule_id, user_id=current_user.id,
+    )
+
+
+@router.get("/specialist/{audit_id}", summary="Specialist finding 推理链")
+def explain_specialist(
+    audit_id: int,
+    specialist: str = Query(..., description="specialist 名字, 如 recovery_coach"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    return explain_specialist_finding(
+        db, audit_id=audit_id, specialist=specialist, user_id=current_user.id,
+    )
