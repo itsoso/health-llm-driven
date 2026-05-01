@@ -1,24 +1,23 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Platform, useColorScheme } from 'react-native';
-import { colors, darkColors } from '../../constants/theme';
+import { StyleSheet, Platform } from 'react-native';
+import { colors } from '../../constants/theme';
 
+// App body 当前未做完整 dark mode (HomeHeader/卡片都用 light tokens),
+// 强制 tab bar 也走 light, 否则 dark mode 下 body 是浅色 + tab bar 是深色 → 视觉割裂.
 export default function TabLayout() {
-  const scheme = useColorScheme();
-  const c = scheme === 'dark' ? darkColors : colors;
-
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: c.brand,
-        tabBarInactiveTintColor: c.labelTertiary,
+        tabBarActiveTintColor: colors.brand,
+        tabBarInactiveTintColor: colors.labelTertiary,
         tabBarLabelStyle: styles.tabLabel,
         tabBarStyle: {
           ...styles.tabBar,
-          backgroundColor: scheme === 'dark' ? 'rgba(28,28,30,0.95)' : 'rgba(255,255,255,0.95)',
-          borderTopColor: c.separator,
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          borderTopColor: colors.separator,
         },
       }}
     >
