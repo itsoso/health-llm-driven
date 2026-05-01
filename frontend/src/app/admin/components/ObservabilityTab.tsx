@@ -141,24 +141,31 @@ function Section({ title, badge, children }: { title: string; badge?: string; ch
 export default function ObservabilityTab() {
   const [days, setDays] = useState<WindowDays>(7);
   const [userIdInput, setUserIdInput] = useState<string>('');
+  const [bypassCacheOnce, setBypassCacheOnce] = useState(false);
+
   const trimmed = userIdInput.trim();
   const parsedUid = trimmed ? Number(trimmed) : NaN;
   const userId = !Number.isNaN(parsedUid) && parsedUid > 0 ? parsedUid : undefined;
   const userIdInvalid = trimmed !== '' && userId === undefined;
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<DashboardResponse>({
-    queryKey: ['admin-observability', days, userId],
-    queryFn: async ({ queryKey: _k, signal: _s, meta }) => {
+  const { data, isLoading, isError, error, isFetching } = useQuery<DashboardResponse>({
+    queryKey: ['admin-observability', days, userId, bypassCacheOnce],
+    queryFn: async () => {
       const params = new URLSearchParams({ days: String(days) });
       if (userId) params.append('user_id', String(userId));
-      if (meta?.forceRefresh) params.append('refresh', 'true');
+      if (bypassCacheOnce) params.append('refresh', 'true');
       const res = await api.get(`/admin/observability/dashboard?${params}`);
+      // reset bypass flag so subsequent polls use cache again
+      if (bypassCacheOnce) setBypassCacheOnce(false);
       return res.data;
     },
     refetchOnWindowFocus: false,
   });
 
-  const forceRefresh = () => refetch({ meta: { forceRefresh: true } } as never);
+  const forceRefresh = () => {
+    setBypassCacheOnce(true);
+    // queryKey change triggers refetch; no manual refetch() call needed
+  };
 
   return (
     <div className="space-y-6">
@@ -186,19 +193,26 @@ export default function ObservabilityTab() {
             placeholder="留空=全量"
             value={userIdInput}
             onChange={(e) => setUserIdInput(e.target.value)}
-            className="bg-white/10 border border-white/20 rounded px-2 py-1 text-sm text-white w-28 placeholder:text-purple-200/40"
+            className={`bg-white/10 border rounded px-2 py-1 text-sm text-white w-28 placeholder:text-purple-200/40 ${
+              userIdInvalid ? 'border-red-400/60' : 'border-white/20'
+            }`}
           />
+          {userIdInvalid && (
+            <span className="text-xs text-red-300">需正整数</span>
+          )}
         </div>
         <button
-          onClick={() => refetch()}
+          onClick={forceRefresh}
           disabled={isFetching}
+          title="强制跳过 Redis 缓存 (180s TTL)"
           className="ml-auto px-3 py-1 rounded text-sm bg-purple-500/30 text-purple-100 hover:bg-purple-500/40 disabled:opacity-40"
         >
-          {isFetching ? '刷新中…' : '🔄 刷新'}
+          {isFetching ? '刷新中…' : '🔄 强制刷新'}
         </button>
         {data && (
           <span className="text-xs text-purple-200/70">
             生成于 {fmtTime(data.generated_at)}
+            {data.cached && <span className="ml-2 text-emerald-300">· 缓存命中</span>}
           </span>
         )}
       </div>
