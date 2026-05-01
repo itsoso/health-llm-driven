@@ -103,6 +103,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/ai-profile' as any)} />
           <SettingRow icon="calendar-outline" label="月度复盘"
             onPress={() => router.push('/monthly-reports' as any)} />
+          <SettingRow icon="medical-outline" label="医生回路"
+            onPress={() => router.push('/doctor-loop' as any)} />
         </View>
 
         {/* Notifications & Siri & Security */}
