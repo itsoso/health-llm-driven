@@ -93,7 +93,7 @@ def get_notification_settings(
             "health_alert_enabled": True,
             "ai_advice_enabled": True,
             "quiet_hours_start": "22:00",
-            "quiet_hours_end": "07:00",
+            "quiet_hours_end": "08:30",
             "wechat_enabled": True,
             "wechat_bound": False,
             "ios_push_enabled": True,

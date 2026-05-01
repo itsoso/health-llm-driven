@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Switch, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextStyle, Switch, Alert, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ export default function NotificationSettingsScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const [testing, setTesting] = useState(false);
+  const [editing, setEditing] = useState<null | 'start' | 'end'>(null);
 
   const { data: settings, isLoading } = useQuery<NotificationSettings>({
     queryKey: ['notificationSettings'],
@@ -27,6 +28,12 @@ export default function NotificationSettingsScreen() {
   const toggle = (key: keyof NotificationSettingsUpdate, value: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     mutation.mutate({ [key]: value });
+  };
+
+  const setQuietTime = (key: 'quiet_hours_start' | 'quiet_hours_end', value: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    mutation.mutate({ [key]: value });
+    setEditing(null);
   };
 
   const handleTestPush = async () => {
@@ -79,9 +86,12 @@ export default function NotificationSettingsScreen() {
         </View>
 
         <Text style={txt.section}>安静时段</Text>
+        <Text style={txt.hintSmall}>此时段内非紧急推送会被抑制，只有危及生命的严重告警才会送达。</Text>
         <View style={styles.card}>
-          <InfoRow label="开始" value={settings?.quiet_hours_start || '22:00'} />
-          <InfoRow label="结束" value={settings?.quiet_hours_end || '07:00'} />
+          <TimeRow label="开始" value={settings?.quiet_hours_start || '22:00'}
+            onPress={() => setEditing('start')} />
+          <TimeRow label="结束" value={settings?.quiet_hours_end || '08:30'}
+            onPress={() => setEditing('end')} />
         </View>
 
         <Text style={txt.section}>管理</Text>
@@ -102,7 +112,75 @@ export default function NotificationSettingsScreen() {
           设备状态：{settings?.ios_bound ? '已绑定' : '未绑定'}
         </Text>
       </ScrollView>
+
+      <TimePickerModal
+        visible={editing !== null}
+        title={editing === 'start' ? '选择开始时间' : '选择结束时间'}
+        options={editing === 'start' ? START_PRESETS : END_PRESETS}
+        current={editing === 'start'
+          ? (settings?.quiet_hours_start || '22:00')
+          : (settings?.quiet_hours_end || '08:30')}
+        onPick={(v) => setQuietTime(
+          editing === 'start' ? 'quiet_hours_start' : 'quiet_hours_end',
+          v,
+        )}
+        onClose={() => setEditing(null)}
+      />
     </SafeAreaView>
+  );
+}
+
+const START_PRESETS = ['21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '00:00'];
+const END_PRESETS = ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00'];
+
+function TimePickerModal({
+  visible, title, options, current, onPick, onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: string[];
+  current: string;
+  onPick: (value: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose}>
+        <View style={styles.modalCard}>
+          <Text style={txt.modalTitle}>{title}</Text>
+          <View style={styles.chipGrid}>
+            {options.map((opt) => {
+              const selected = opt === current;
+              return (
+                <TouchableOpacity
+                  key={opt}
+                  style={[styles.chip, selected && styles.chipSelected]}
+                  onPress={() => onPick(opt)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[txt.chipText, selected && txt.chipTextSelected]}>
+                    {opt}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+            <Text style={txt.modalCloseText}>取消</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function TimeRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.6}>
+      <Text style={txt.rowLabel}>{label}</Text>
+      <Text style={txt.rowValue}>{value}</Text>
+      <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
+    </TouchableOpacity>
   );
 }
 
@@ -114,15 +192,6 @@ function ToggleRow({ label, icon, value, onToggle }: { label: string; icon?: any
       <Switch value={value} onValueChange={onToggle}
         trackColor={{ false: colors.fill, true: colors.brand }}
         thumbColor="#fff" />
-    </View>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={txt.rowLabel}>{label}</Text>
-      <Text style={txt.rowValue}>{value}</Text>
     </View>
   );
 }
@@ -153,6 +222,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand, borderRadius: radii.lg,
     paddingVertical: 14, alignItems: 'center', marginTop: spacing.xl,
   },
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center', alignItems: 'center', padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.bgCard, borderRadius: radii.lg,
+    padding: spacing.lg, width: '100%', maxWidth: 360,
+  },
+  chipGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10,
+    marginTop: spacing.md, marginBottom: spacing.md,
+  },
+  chip: {
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: radii.md, backgroundColor: colors.fill,
+  },
+  chipSelected: {
+    backgroundColor: colors.brand,
+  },
+  modalClose: {
+    alignItems: 'center', paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
+  },
 });
 
 const txt = {
@@ -162,4 +254,9 @@ const txt = {
   rowValue: { fontSize: 14, color: colors.labelTertiary } as TextStyle,
   testBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' } as TextStyle,
   hint: { fontSize: 12, color: colors.labelTertiary, textAlign: 'center', marginTop: spacing.md } as TextStyle,
+  hintSmall: { fontSize: 11, color: colors.labelTertiary, marginLeft: spacing.xs, marginBottom: spacing.xs, lineHeight: 16 } as TextStyle,
+  modalTitle: { fontSize: 16, fontWeight: '600', color: colors.labelPrimary, textAlign: 'center' } as TextStyle,
+  chipText: { fontSize: 15, color: colors.labelPrimary } as TextStyle,
+  chipTextSelected: { color: '#fff', fontWeight: '600' } as TextStyle,
+  modalCloseText: { fontSize: 15, color: colors.labelSecondary } as TextStyle,
 };

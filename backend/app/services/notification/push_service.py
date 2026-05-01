@@ -83,7 +83,7 @@ class PushService:
             return new_settings
 
     def is_quiet_hours(self, user_id: int) -> bool:
-        """检查当前是否在免打扰时段"""
+        """检查当前是否在免打扰时段。默认 22:00–08:30（跨午夜）。"""
         settings = self.get_user_settings(user_id)
         if not settings:
             return False
@@ -92,11 +92,11 @@ class PushService:
         current_time = now.strftime("%H:%M")
 
         start = settings.quiet_hours_start or "22:00"
-        end = settings.quiet_hours_end or "07:00"
+        end = settings.quiet_hours_end or "08:30"
 
         # 处理跨越午夜的情况
         if start > end:
-            # 例如 22:00 - 07:00
+            # 例如 22:00 - 08:30
             return current_time >= start or current_time < end
         else:
             # 例如 01:00 - 06:00
@@ -106,18 +106,26 @@ class PushService:
         self,
         user_id: int,
         notification_type: str,
-        respect_quiet_hours: bool = True
+        respect_quiet_hours: bool = True,
+        severity: str = "info",
     ) -> bool:
-        """检查是否可以发送通知"""
+        """
+        检查是否可以发送通知。
+
+        只有 severity == "critical"（危及生命的急性事件）才会穿透免打扰时段；
+        HIGH/MEDIUM/LOW/INFO 一律在 quiet_hours 内被抑制，避免非紧急推送影响睡眠。
+        """
         settings = self.get_user_settings(user_id)
 
         if not settings or not settings.enabled:
             return False
 
-        # 检查免打扰时段（健康预警除外）
-        if respect_quiet_hours and notification_type != NotificationType.HEALTH_ALERT.value:
+        # 免打扰时段：只有 critical 级别放行
+        if respect_quiet_hours and severity != "critical":
             if self.is_quiet_hours(user_id):
-                logger.info(f"用户 {user_id} 当前在免打扰时段，跳过推送")
+                logger.info(
+                    f"用户 {user_id} 当前在免打扰时段，severity={severity} 跳过推送"
+                )
                 return False
 
         # 检查具体类型开关
@@ -138,7 +146,9 @@ class PushService:
         content: str,
         data: Optional[Dict[str, Any]] = None,
         channels: Optional[List[str]] = None,
-        respect_quiet_hours: bool = True
+        respect_quiet_hours: bool = True,
+        severity: str = "info",
+        dedup_window_hours: int = 6,
     ) -> Dict[str, Any]:
         """
         发送推送通知
@@ -151,16 +161,40 @@ class PushService:
             data: 额外数据
             channels: 指定渠道，None 表示使用用户设置的渠道
             respect_quiet_hours: 是否遵守免打扰时段
+            severity: 严重程度 ("info"|"low"|"medium"|"high"|"critical")；
+                      只有 "critical" 在免打扰时段放行
+            dedup_window_hours: 去重窗口（小时）。相同 (user_id, notification_type, title)
+                                在窗口内若已有 status=sent 记录，跳过本次推送。
+                                传 0 或负数则禁用去重。
 
         Returns:
             发送结果 {"success": bool, "channels": {...}}
         """
         # 检查是否可以发送
-        if not self.can_send_notification(user_id, notification_type, respect_quiet_hours):
+        if not self.can_send_notification(
+            user_id, notification_type, respect_quiet_hours, severity=severity
+        ):
             return {
                 "success": False,
-                "reason": "通知已禁用或在免打扰时段"
+                "reason": "通知已禁用或在免打扰时段",
             }
+
+        # 去重检查：同 (user_id, notification_type, title) 窗口内已发就跳过
+        if dedup_window_hours and dedup_window_hours > 0:
+            window_start = get_china_now() - timedelta(hours=dedup_window_hours)
+            existing = self.db.query(NotificationLog).filter(
+                NotificationLog.user_id == user_id,
+                NotificationLog.notification_type == notification_type,
+                NotificationLog.title == title,
+                NotificationLog.status == NotificationStatus.SENT.value,
+                NotificationLog.sent_at >= window_start,
+            ).first()
+            if existing:
+                logger.info(
+                    f"用户 {user_id} 相同推送 {notification_type}/{title!r} "
+                    f"在 {dedup_window_hours}h 窗口内已发送过 (log_id={existing.id})，跳过"
+                )
+                return {"success": False, "reason": "dedup"}
 
         settings = self.get_user_settings(user_id)
         results = {"success": False, "channels": {}}

@@ -500,6 +500,7 @@ def daily_anomaly_check():
                                         title=f"⚠️ {alert.title}",
                                         content=alert.message[:120],
                                         data={"screen": "alerts"},
+                                        severity=alert.severity.label,
                                     ))
                             logger.info(f"[Safety Guardian] 用户 {user_id} 已推送告警")
                         except Exception as e:
@@ -863,6 +864,7 @@ def evaluate_and_push_safety(user_id: int):
                                 "deep_link": deep_link,
                                 "rule_id": alert.rule_id,
                             },
+                            severity=alert.severity.label,
                         ))
                     except Exception as e:
                         logger.warning(f"[实时安全评估] 推送失败 user={user_id}: {e}")
