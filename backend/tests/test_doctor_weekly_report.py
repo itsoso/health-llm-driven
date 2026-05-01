@@ -211,9 +211,9 @@ class TestGenerateDoctorWeeklyReport:
 
         sent_messages = []
 
-        async def fake_send(text):
+        async def fake_send(text, **kwargs):
             sent_messages.append(text)
-            return True
+            return {"success": True}
 
         with patch("app.services.notification.telegram_push.TelegramPushService") as MockSvc:
             MockSvc.return_value.configured = True
