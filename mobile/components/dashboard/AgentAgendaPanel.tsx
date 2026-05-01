@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radii, shadows, spacing } from '../../constants/theme';
+import { colors, radii, spacing } from '../../constants/theme';
 import type { AgentAgenda, AgentAgendaItem, AgentAgendaSection } from '../../services/agentAgenda';
+import DashboardCard, { CardCountBadge } from './DashboardCard';
 
 interface Props {
   agenda?: AgentAgenda;
@@ -16,51 +16,32 @@ const SECTION_META: Record<AgentAgendaSection['key'], { icon: keyof typeof Ionic
   missing_data: { icon: 'cloud-upload-outline', color: '#FF453A' },
 };
 
-export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
-  const [collapsed, setCollapsed] = useState(true);  // 默认收起 (减少首页占位, 用户展开才看细节)
+function toneColor(tone: AgentAgendaItem['tone']): string {
+  if (tone === 'good') return '#0A8F8F';
+  if (tone === 'bad')  return '#FF453A';
+  if (tone === 'warn') return '#FF9F0A';
+  return colors.labelTertiary;
+}
 
+export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
   if (!agenda || agenda.sections.length === 0) return null;
 
-  const toggle = () => {
-    Haptics.selectionAsync();
-    setCollapsed(v => !v);
-  };
-
-  // 计算总条数供 collapsed 态展示
   const totalItems = agenda.sections.reduce((sum, s) => sum + (s.items?.length || 0), 0);
 
-  const CardWrapper: any = collapsed ? Pressable : View;
-  const wrapperProps = collapsed
-    ? { onPress: toggle, accessibilityRole: 'button' as const, accessibilityLabel: '展开 Agent 议程' }
-    : {};
-
   return (
-    <CardWrapper style={styles.panel} {...wrapperProps}>
-      <Pressable
-        onPress={toggle}
-        style={({ pressed }) => [styles.header, pressed && styles.headerPressed]}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={collapsed ? '展开 Agent 议程' : '收起 Agent 议程'}
-      >
-        <View style={styles.headerLeft}>
-          <Ionicons name="pulse-outline" size={15} color={colors.brand} />
-          <Text style={txt.header}>Agent 议程</Text>
-          {collapsed && <Text style={txt.countBadge}>{totalItems}</Text>}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={txt.date}>{agenda.date.slice(5)}</Text>
-          <View style={styles.chevronBtn}>
-            <Ionicons
-              name={collapsed ? 'chevron-down' : 'chevron-up'}
-              size={18}
-              color={colors.brand}
-            />
-          </View>
-        </View>
-      </Pressable>
-
-      {!collapsed && agenda.sections.slice(0, 3).map(section => {
+    <DashboardCard
+      icon="pulse-outline"
+      iconTint={colors.brandLight}
+      iconColor={colors.brand}
+      kicker={agenda.date.slice(5)}
+      kickerColor={colors.labelTertiary}
+      title="Agent 议程"
+      collapsible
+      defaultCollapsed
+      trailing={<CardCountBadge value={totalItems} />}
+      accessibilityLabel="Agent 议程"
+    >
+      {agenda.sections.slice(0, 3).map(section => {
         const meta = SECTION_META[section.key];
         return (
           <View key={section.key} style={styles.section}>
@@ -88,36 +69,12 @@ export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
           </View>
         );
       })}
-    </CardWrapper>
+    </DashboardCard>
   );
 }
 
-function toneColor(tone: AgentAgendaItem['tone']): string {
-  if (tone === 'good') return '#0A8F8F';
-  if (tone === 'bad') return '#FF453A';
-  if (tone === 'warn') return '#FF9F0A';
-  return colors.labelTertiary;
-}
-
 const styles = StyleSheet.create({
-  panel: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: 10,
-    ...shadows.subtle,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 36 },
-  headerPressed: { opacity: 0.6 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  chevronBtn: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: 'rgba(10, 143, 143, 0.1)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  section: { gap: 5 },
+  section: { gap: 6 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   row: {
     minHeight: 42,
@@ -135,14 +92,7 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  header: { fontSize: 14, fontWeight: '800', color: colors.labelPrimary } as TextStyle,
-  date: { fontSize: 11, color: colors.labelTertiary, fontWeight: '600' } as TextStyle,
   sectionTitle: { fontSize: 11, fontWeight: '800' } as TextStyle,
   itemTitle: { fontSize: 13, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
   itemSubtitle: { fontSize: 11, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
-  countBadge: {
-    fontSize: 10, fontWeight: '700', color: colors.labelSecondary,
-    backgroundColor: colors.fill, paddingHorizontal: 6, paddingVertical: 2,
-    borderRadius: 8, overflow: 'hidden',
-  } as TextStyle,
 };

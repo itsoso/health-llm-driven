@@ -1,25 +1,18 @@
 /**
  * DataFreshnessPanel — Agent 今天知道什么 / 不知道什么.
  *
- * 产品作用: 在首页顶部告诉用户 Agent 的数据视野:
- *   ✓ 已有: Garmin 1h ago / 今日体重 30 min ago
- *   ⚠ 陈旧: 血压 11 天前 / 化验 6 个月前
- *   ✗ 缺失: 基因数据
- *
- * 好处:
- * - 用户主动补数据 → grader 不再在陈旧数据上盲评
- * - Agent 建议前先自己说明知识边界 → 产品"谦虚感"
- * - 复用 Twin.freshness 分区, 零额外后端工作
+ * 复用 DashboardCard 壳, 改用 flat variant (无 shadow + 边框) 以视觉次要化:
+ * 主信息卡 (TodayCoach/Insight/Agenda) 用 default, 这种 meta 状态卡用 flat.
  */
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { colors, spacing, radii } from '../../constants/theme';
+import { colors } from '../../constants/theme';
 import { getMyTwin, freshnessAgeDays } from '../../services/twin';
 import { queryKeys } from '../../applib/queryKeys';
+import DashboardCard, { CardCountBadge } from './DashboardCard';
 
 type Freshness = 'fresh' | 'stale' | 'missing';
 
@@ -30,22 +23,21 @@ interface DataStatusItem {
   freshness: Freshness;
   hint: string;
   route?: string;
-  severity: number;  // 0-9, 越大越显眼
+  severity: number;
 }
 
-// 每类数据的阈值配置 — 超过 stale_days 就提醒补录
 const DATA_CONFIG: Array<{
   key: 'garmin' | 'weight' | 'labs' | 'diet' | 'medication';
   label: string;
-  staleDays: number;     // 多少天前变 stale
-  missingSeverity: number;  // 缺失时的显眼度
+  staleDays: number;
+  missingSeverity: number;
   route?: string;
 }> = [
-  { key: 'garmin',     label: 'Garmin',    staleDays: 2,  missingSeverity: 7, route: '/settings' },
-  { key: 'weight',     label: '体重',       staleDays: 7,  missingSeverity: 3, route: '/(tabs)/record' },
+  { key: 'garmin',     label: 'Garmin',    staleDays: 2,   missingSeverity: 7, route: '/settings' },
+  { key: 'weight',     label: '体重',       staleDays: 7,   missingSeverity: 3, route: '/(tabs)/record' },
   { key: 'labs',       label: '化验',       staleDays: 180, missingSeverity: 4, route: '/indicator-history' },
-  { key: 'diet',       label: '饮食',       staleDays: 1,  missingSeverity: 2, route: '/diet' },
-  { key: 'medication', label: '用药',       staleDays: 2,  missingSeverity: 5 },
+  { key: 'diet',       label: '饮食',       staleDays: 1,   missingSeverity: 2, route: '/diet' },
+  { key: 'medication', label: '用药',       staleDays: 2,   missingSeverity: 5 },
 ];
 
 function classify(ageDays: number | null, staleDays: number): Freshness {
@@ -65,11 +57,10 @@ function ageLabel(ageDays: number | null): string {
 
 export default function DataFreshnessPanel() {
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(true);  // 默认收起 (meta 信息, 不常看)
   const { data: twin } = useQuery({
     queryKey: queryKeys.twin,
     queryFn: () => getMyTwin(),
-    staleTime: 60 * 1000,  // 1min client cache, 后端已 5min
+    staleTime: 60 * 1000,
   });
 
   const items = useMemo<DataStatusItem[]>(() => {
@@ -78,17 +69,14 @@ export default function DataFreshnessPanel() {
       const raw = twin.freshness[cfg.key];
       const ageDays = freshnessAgeDays(raw);
       const freshness = classify(ageDays, cfg.staleDays);
-      const severity = freshness === 'missing' ? cfg.missingSeverity :
-                       freshness === 'stale'   ? Math.min(cfg.missingSeverity, Math.floor((ageDays! / cfg.staleDays) * 5)) :
-                       0;
+      const severity = freshness === 'missing'
+        ? cfg.missingSeverity
+        : freshness === 'stale'
+          ? Math.min(cfg.missingSeverity, Math.floor((ageDays! / cfg.staleDays) * 5))
+          : 0;
       return {
-        key: cfg.key,
-        label: cfg.label,
-        ageDays,
-        freshness,
-        hint: ageLabel(ageDays),
-        route: cfg.route,
-        severity,
+        key: cfg.key, label: cfg.label, ageDays, freshness,
+        hint: ageLabel(ageDays), route: cfg.route, severity,
       };
     }).sort((a, b) => b.severity - a.severity);
   }, [twin]);
@@ -97,36 +85,37 @@ export default function DataFreshnessPanel() {
 
   const fresh = items.filter(i => i.freshness === 'fresh');
   const needAttention = items.filter(i => i.freshness !== 'fresh').slice(0, 3);
-  const toggle = () => { Haptics.selectionAsync(); setCollapsed(v => !v); };
 
-  // Collapsed 态: 单行 "Agent 已知 N 项 · 待补 M 项" + chevron, 点任意处展开
-  if (collapsed) {
-    return (
-      <Pressable style={styles.collapsedBar} onPress={toggle} hitSlop={6} accessibilityRole="button" accessibilityLabel="展开数据状态">
-        <Ionicons name="pulse" size={13} color={colors.brand} />
-        <Text style={styles.collapsedText} numberOfLines={1}>
-          Agent 数据 · 已知 {fresh.length} 项
-          {needAttention.length > 0 ? ` · 待补 ${needAttention.length}` : ''}
-        </Text>
-        <Ionicons name="chevron-down" size={14} color={colors.labelTertiary} />
-      </Pressable>
-    );
-  }
+  // Title 描述当前数据视野: "已知 N 项 · 待补 M 项"
+  const title = needAttention.length > 0
+    ? `已知 ${fresh.length} 项 · 待补 ${needAttention.length} 项`
+    : `数据齐全 · 已知 ${fresh.length} 项`;
 
   return (
-    <View style={styles.container}>
-      <Pressable style={styles.headerRow} onPress={toggle} hitSlop={6}>
-        <Text style={styles.knowLabel}>Agent 已知</Text>
-        <Text style={styles.knowValue} numberOfLines={1}>
-          {fresh.length > 0
-            ? fresh.map(i => i.label).join(' · ')
-            : '数据 尚未同步'}
-        </Text>
-        <Ionicons name="chevron-up" size={14} color={colors.labelTertiary} />
-      </Pressable>
+    <DashboardCard
+      icon="pulse-outline"
+      iconTint={colors.bgPrimary}
+      iconColor={colors.brand}
+      kicker="Agent 数据视野"
+      kickerColor={colors.labelTertiary}
+      title={title}
+      collapsible
+      defaultCollapsed
+      variant="flat"
+      trailing={needAttention.length > 0 ? <CardCountBadge value={needAttention.length} /> : undefined}
+      accessibilityLabel="Agent 数据状态"
+    >
+      {fresh.length > 0 && (
+        <View style={styles.row}>
+          <Text style={txt.rowLabel}>已知</Text>
+          <Text style={txt.rowValue} numberOfLines={2}>
+            {fresh.map(i => i.label).join(' · ')}
+          </Text>
+        </View>
+      )}
       {needAttention.length > 0 && (
         <View style={styles.row}>
-          <Text style={styles.gapLabel}>需补全</Text>
+          <Text style={txt.rowLabel}>需补全</Text>
           <View style={styles.gapPills}>
             {needAttention.map(item => (
               <Pressable
@@ -144,7 +133,7 @@ export default function DataFreshnessPanel() {
                   size={12}
                   color={item.freshness === 'missing' ? '#FF453A' : '#FF9F0A'}
                 />
-                <Text style={styles.gapPillText}>
+                <Text style={txt.gapPill}>
                   {item.label} · {item.hint}
                 </Text>
               </Pressable>
@@ -152,84 +141,24 @@ export default function DataFreshnessPanel() {
           </View>
         </View>
       )}
-    </View>
+    </DashboardCard>
   );
 }
 
 const styles = StyleSheet.create({
-  collapsedBar: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  collapsedText: {
-    flex: 1,
-    fontSize: 12,
-    color: colors.labelSecondary,
-  },
-  container: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.md,
-    gap: 6,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  knowLabel: {
-    fontSize: 11,
-    color: colors.labelTertiary,
-    width: 56,
-  },
-  knowValue: {
-    flex: 1,
-    fontSize: 12,
-    color: colors.labelSecondary,
-  },
-  gapLabel: {
-    fontSize: 11,
-    color: colors.labelTertiary,
-    width: 56,
-  },
-  gapPills: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  gapPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   gapPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
     backgroundColor: colors.fill,
   },
-  gapPillMissing: {
-    backgroundColor: 'rgba(255, 69, 58, 0.12)',
-  },
-  gapPillStale: {
-    backgroundColor: 'rgba(255, 159, 10, 0.12)',
-  },
-  gapPillText: {
-    fontSize: 11,
-    color: colors.labelSecondary,
-  },
+  gapPillMissing: { backgroundColor: 'rgba(255, 69, 58, 0.12)' },
+  gapPillStale:   { backgroundColor: 'rgba(255, 159, 10, 0.12)' },
 });
+
+const txt = {
+  rowLabel: { width: 56, fontSize: 11, color: colors.labelTertiary, paddingTop: 3 } as TextStyle,
+  rowValue: { flex: 1, fontSize: 13, color: colors.labelPrimary, lineHeight: 19 } as TextStyle,
+  gapPill: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
+};

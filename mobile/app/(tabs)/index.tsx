@@ -181,8 +181,9 @@ export default function HomeScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+  // ── Dashboard 头部: 全部放到 FlatList ListHeaderComponent, 与聊天一起滚 ──
+  const dashboardHeader = useMemo(() => (
+    <View>
       <HomeHeader
         score={score} city={city}
         temperature={weather?.temperature} weatherDesc={weather?.weather}
@@ -196,41 +197,47 @@ export default function HomeScreen() {
         isLoading={scoreLoading || garminLoading}
         onSettings={() => router.push('/settings' as any)}
         onNewChat={chat.newChat}
-        onHistory={() => {
-          setShowHistory(true);
-          loadHistory();
-        }}
+        onHistory={() => { setShowHistory(true); loadHistory(); }}
       />
-
       <TodayCoachPanel
         focus={todayCoach.data}
         isLoading={todayCoach.isLoading}
         onAction={handleTodayCoachAction}
       />
-
       <InsightCard />
-
+      <AgentAgendaPanel agenda={agentAgenda.data} onOpenItem={handleAgendaItem} />
       <DataFreshnessPanel />
-
-      <AgentAgendaPanel
-        agenda={agentAgenda.data}
-        onOpenItem={handleAgendaItem}
-      />
-
-      {/* 告警 banner: 只在 TodayCoach 不是 risk 态时显示 (避免和上面 TodayCoach 重复同一条 alert) */}
       {criticalAlerts.length > 0 && todayCoach.data?.status !== 'risk' && (
         <View style={styles.alertBanner} accessibilityRole="alert">
           <Ionicons name="warning" size={16} color="#FF453A" />
           <Text style={txt.alertText} numberOfLines={2}>{criticalAlerts[0].title}: {criticalAlerts[0].message}</Text>
         </View>
       )}
+      {chat.messages.length > 0 && (
+        <View style={styles.chatDivider}>
+          <View style={styles.chatDividerLine} />
+          <Text style={txt.chatDividerText}>对话</Text>
+          <View style={styles.chatDividerLine} />
+        </View>
+      )}
+    </View>
+  ), [
+    score, city, weather, aqiData, tomorrowFc, sleepH, garmin, steps, hrVal, batteryVal,
+    batteryCurrent, batteryPeak, scoreLoading, garminLoading,
+    todayCoach.data, todayCoach.isLoading, agentAgenda.data, criticalAlerts,
+    chat.messages.length, handleTodayCoachAction, handleAgendaItem,
+    chat.newChat, loadHistory, router,
+  ]);
 
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={kbOffset}>
         <FlatList
           ref={flatListRef}
           data={itemsWithDateDividers}
           keyExtractor={item => item.id}
           renderItem={renderMessage}
+          ListHeaderComponent={dashboardHeader}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           refreshControl={
@@ -321,7 +328,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF0F0', borderRadius: radii.md,
     padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: '#FF453A',
   },
-  msgList: { padding: spacing.md, paddingBottom: 4 },
+  msgList: { paddingTop: spacing.sm, paddingBottom: 4, paddingHorizontal: spacing.md },
+  chatDivider: {
+    flexDirection: 'row', alignItems: 'center',
+    marginTop: spacing.lg, marginBottom: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  chatDividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.separator },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',
@@ -361,4 +374,5 @@ const txt = {
   briefingBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
   dateText: { fontSize: 11, color: colors.labelTertiary, paddingHorizontal: 10, fontWeight: '500' } as TextStyle,
   loadMoreText: { fontSize: 12, color: colors.brand, fontWeight: '500' } as TextStyle,
+  chatDividerText: { fontSize: 11, color: colors.labelTertiary, paddingHorizontal: 10, fontWeight: '600' } as TextStyle,
 };
