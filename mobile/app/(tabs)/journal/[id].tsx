@@ -12,9 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useCaseDetail } from '../../hooks/useClinicalJournal';
-import type { JournalEntry } from '../../services/clinicalJournal';
-import { colors, spacing, radii, typography } from '../../constants/theme';
+import { useCaseDetail } from '../../../hooks/useClinicalJournal';
+import type { JournalEntry } from '../../../services/clinicalJournal';
+import { colors, spacing, radii, typography } from '../../../constants/theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);

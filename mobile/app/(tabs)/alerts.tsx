@@ -185,6 +185,15 @@ function AlertRow({ alert }: { alert: SafetyAlert }) {
               <Ionicons name="chatbubble-ellipses-outline" size={13} color={colors.brand} />
               <Text style={txt.aiText}>问 AI</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.aiBtn}
+              accessibilityLabel="查看推理 — 这条告警背后的数据与规则"
+              accessibilityRole="link"
+              onPress={() => router.push('/trace')}
+            >
+              <Ionicons name="git-network-outline" size={13} color={colors.brand} />
+              <Text style={txt.aiText}>查看推理</Text>
+            </TouchableOpacity>
           </View>
           {explanation && (
             <View style={styles.aiResult}>

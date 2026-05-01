@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import UserManagementTab from './components/UserManagementTab';
 import GarminSyncTab from './components/GarminSyncTab';
 import InvitationTab from './components/InvitationTab';
+import ObservabilityTab from './components/ObservabilityTab';
 import AdminModals from './components/AdminModals';
 
 interface AdminUser {
@@ -139,7 +140,7 @@ export default function AdminPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'performance'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'garmin' | 'invitation' | 'observability' | 'performance'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -383,6 +384,9 @@ export default function AdminPage() {
           <button onClick={() => setActiveTab('invitation')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'invitation' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
             🎫 邀请码管理
           </button>
+          <button onClick={() => setActiveTab('observability')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'observability' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
+            📊 观察期看板
+          </button>
           <button onClick={() => router.push('/admin/performance')} className="px-6 py-2 rounded-lg font-medium transition-colors bg-white/10 text-purple-200 hover:bg-white/20">
             📈 性能监控
           </button>
@@ -435,6 +439,8 @@ export default function AdminPage() {
             formatDate={formatDate}
           />
         )}
+
+        {activeTab === 'observability' && <ObservabilityTab />}
 
         {activeTab === 'invitation' && (
           <InvitationTab

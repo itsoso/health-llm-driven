@@ -52,6 +52,16 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="journal"
+        options={{
+          title: '记忆',
+          tabBarAccessibilityLabel: '记忆，AI 案例时间线与 SOAP 记录',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'book' : 'book-outline'} size={22} color={color} />
+          ),
+        }}
+      />
       {/* chat.tsx kept as hidden route — accessible programmatically but not in tab bar */}
       <Tabs.Screen name="chat" options={{ href: null }} />
     </Tabs>

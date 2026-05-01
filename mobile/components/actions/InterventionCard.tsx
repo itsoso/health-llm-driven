@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { LayoutAnimation, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import {
   getActionCardProgress,
   getActionCardVerificationLabel,
@@ -29,6 +30,7 @@ const CARD_TYPE: Record<string, { color: string; bg: string; icon: keyof typeof 
 };
 
 export default function InterventionCard({ card, onComplete, onReview }: Props) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
@@ -36,6 +38,11 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
   const verification = getActionCardVerificationLabel(card);
   const assessment = card.latest_assessment;
   const reviewDraft = verification ? buildActionCardOutcomeDraft(card) : null;
+  // 反查推理 trace: anomaly_alert 类源 source_id 与后端 trace id 一一对应
+  const traceHref =
+    card.source_type === 'anomaly_alert' && card.source_id
+      ? `/trace/anomaly_${card.source_id}`
+      : '/trace';
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -109,6 +116,20 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
           <View style={styles.markdownWrap}>
             <Markdown style={mdStyles}>{card.content || ''}</Markdown>
           </View>
+
+          <Pressable
+            style={({ pressed }) => [styles.traceLink, pressed && styles.traceLinkPressed]}
+            onPress={event => {
+              event?.stopPropagation?.();
+              router.push(traceHref as any);
+            }}
+            accessibilityRole="link"
+            accessibilityLabel="查看 AI 决策推理"
+          >
+            <Ionicons name="git-network-outline" size={13} color={colors.brand} />
+            <Text style={txt.traceLinkText}>查看推理</Text>
+            <Ionicons name="chevron-forward" size={12} color={colors.brand} />
+          </Pressable>
 
           {reviewDraft ? (
             <Pressable
@@ -244,6 +265,17 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   completeBtnPressed: { opacity: 0.82 },
+  traceLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.brandLight,
+    borderRadius: 12,
+  },
+  traceLinkPressed: { opacity: 0.7 },
 });
 
 const txt = {
@@ -259,6 +291,7 @@ const txt = {
   checkText: { flex: 1, fontSize: 13, color: colors.labelSecondary } as TextStyle,
   checkDone: { color: colors.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
   completeBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
+  traceLinkText: { fontSize: 12, fontWeight: '600', color: colors.brand } as TextStyle,
 };
 
 const mdStyles = StyleSheet.create({

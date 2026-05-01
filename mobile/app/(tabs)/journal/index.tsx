@@ -12,9 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
-import { useCaseList } from '../../hooks/useClinicalJournal';
-import type { CaseSummary } from '../../services/clinicalJournal';
-import { colors, spacing, radii, typography } from '../../constants/theme';
+import { useCaseList } from '../../../hooks/useClinicalJournal';
+import type { CaseSummary } from '../../../services/clinicalJournal';
+import { colors, spacing, radii, typography } from '../../../constants/theme';
 
 const STATUS_COLOR: Record<string, string> = {
   active: colors.amber,
@@ -90,11 +90,7 @@ export default function JournalListScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>案例时间线</Text>
-        <View style={{ width: 32 }} />
       </View>
 
       {isLoading ? (
@@ -133,12 +129,10 @@ export default function JournalListScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
   header: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
   },
-  backBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'flex-start' },
   headerTitle: {
-    flex: 1, textAlign: 'center',
     fontSize: typography.titleSmall.fontSize, fontWeight: '600' as const,
     color: colors.labelPrimary,
   },
