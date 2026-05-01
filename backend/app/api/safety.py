@@ -84,8 +84,24 @@ def get_my_safety_report(
     report = evaluate_safety(twin)
 
     # 审计日志（旁路，失败不影响响应）
+    # result_detail 存入本次所有 alerts 的结构化快照, 让后续
+    # /reasoning-trace/safety/{audit_id}?rule_id=... 可以反查单条 alert 详情.
     try:
         from app.agents.audit import log_safety_evaluation
+
+        alerts_snapshot = [
+            {
+                "rule_id": a.rule_id,
+                "category": a.category,
+                "severity": int(a.severity),
+                "title": a.title,
+                "message": a.message,
+                "action": a.action,
+                "data_citation": a.data_citation,
+                "generated_at": a.generated_at.isoformat(),
+            }
+            for a in report.alerts
+        ]
 
         log_safety_evaluation(
             db=db,
@@ -95,6 +111,7 @@ def get_my_safety_report(
             twin_build_ms=report.twin_build_ms,
             evaluate_ms=report.evaluate_ms,
             twin_sources=twin.meta.data_sources,
+            result_detail={"alerts": alerts_snapshot},
         )
     except Exception:
         pass
