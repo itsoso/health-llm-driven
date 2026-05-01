@@ -195,6 +195,37 @@ def supersede_fact(
         return False
 
 
+def dismiss_fact(db: Session, fact_id: int, reason: str = "user_dismissed") -> bool:
+    """用户标记'这条不对' — 纯 soft-delete, 不挂 new_id.
+
+    设置 superseded_at=now 就能从 get_active_facts / hybrid_retrieve 里消失,
+    同时保留审计痕迹 (sources 里追加一条 dismissal 记录).
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        fact = db.query(MemoryFact).filter(MemoryFact.id == fact_id).first()
+        if not fact or fact.superseded_at is not None:
+            return False
+        fact.superseded_at = now
+        # sources 追加 dismissal 记录 (不覆盖, 供后续 offline eval 学习 "AI 推错了什么")
+        sources = list(fact.sources or [])
+        sources.append({
+            "type": "user_dismissal",
+            "reason": reason,
+            "at": now.isoformat(),
+            "weight": 0.0,
+        })
+        fact.sources = sources
+        db.commit()
+        logger.info(f"[memory] dismiss: #{fact_id} reason={reason}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[memory] dismiss 失败: {e}")
+        return False
+
+
+
 def get_active_facts(
     db: Session,
     user_id: int,

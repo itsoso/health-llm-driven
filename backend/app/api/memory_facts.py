@@ -12,7 +12,7 @@ from app.models.memory_fact import MemoryFact
 from app.models.user import User
 from app.services.memory_service import (
     write_fact, reinforce_fact, supersede_fact, get_active_facts,
-    detect_contradictions,
+    detect_contradictions, dismiss_fact,
 )
 
 router = APIRouter(prefix="/memory-facts", tags=["memory-facts"])
@@ -142,6 +142,26 @@ def supersede(
     if not supersede_fact(db, old_id, new_id):
         raise HTTPException(500, "supersede 失败")
     return {"old_id": old_id, "new_id": new_id, "ok": True}
+
+
+@router.post("/{fact_id}/dismiss", summary="用户标记'这条不对' (soft-delete)")
+def dismiss(
+    fact_id: int,
+    reason: str = Query("user_dismissed", max_length=100),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    fact = db.query(MemoryFact).filter(
+        MemoryFact.id == fact_id,
+        MemoryFact.user_id == current_user.id,
+    ).first()
+    if not fact:
+        raise HTTPException(404, "fact 不存在或不属于当前用户")
+    if fact.superseded_at is not None:
+        raise HTTPException(409, "fact 已经归档")
+    if not dismiss_fact(db, fact_id, reason=reason):
+        raise HTTPException(500, "dismiss 失败")
+    return {"id": fact_id, "dismissed": True, "reason": reason}
 
 
 @router.get("/contradictions/check", summary="检测新事实与现有的矛盾")

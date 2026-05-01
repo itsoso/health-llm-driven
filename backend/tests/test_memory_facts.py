@@ -7,6 +7,7 @@ from app.models.memory_fact import MemoryFact
 from app.services.memory_service import (
     write_fact, reinforce_fact, supersede_fact, get_active_facts,
     decay_all_facts, detect_contradictions, render_facts_for_prompt,
+    dismiss_fact,
 )
 
 
