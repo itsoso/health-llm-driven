@@ -683,15 +683,16 @@ async def run_orchestrator(
                 "specialist": f.specialist_name,
                 "kind": f.category,
                 "summary": f.summary,
-                "data": f.raw,
-                "findings": f.findings,
-                "proposed_cards": [c.model_dump() for c in (f.proposed_cards or [])],
+                # f.model_dump(mode="json") coerces datetime/Decimal/UUID/Path to str, PG JSONB safe.
+                # 只存 'raw' 作为结构化 data; 不重复存 'findings' (和 raw 重叠 80%).
+                "data": f.model_dump(mode="json").get("raw"),
+                "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
             }
             for f in findings
         ]
         log_specialist_findings(db, user_id=user_id, findings=findings_snapshot)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[orchestrator] specialist_findings audit bypass 失败: {e}")
 
     return OrchestratorResponse(
         query=req.query,
@@ -777,7 +778,10 @@ async def stream_orchestrator(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator.stream] memory extract 失败: {e}")
 
-        # 旁路审计: 支持 /reasoning-trace/specialist/{audit_id} 反查单 finding
+        # Cross-review + (可选) LLM 仲裁 (流式路径也走同样逻辑)
+        conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
+
+        # 旁路审计: 与 run_orchestrator 对齐, 在 cross-review 后, 保证两条路径存同样状态的 findings
         try:
             from app.agents.audit import log_specialist_findings
             findings_snapshot = [
@@ -785,18 +789,16 @@ async def stream_orchestrator(
                     "specialist": f.specialist_name,
                     "kind": f.category,
                     "summary": f.summary,
-                    "data": f.raw,
-                    "findings": f.findings,
-                    "proposed_cards": [c.model_dump() for c in (f.proposed_cards or [])],
+                    # f.model_dump(mode="json") coerces datetime/Decimal/UUID/Path to str, PG JSONB safe.
+                    # 只存 'raw' 作为结构化 data; 不重复存 'findings' (和 raw 重叠 80%).
+                    "data": f.model_dump(mode="json").get("raw"),
+                    "proposed_cards": [c.model_dump(mode="json") for c in (f.proposed_cards or [])],
                 }
                 for f in findings
             ]
             log_specialist_findings(db, user_id=user_id, findings=findings_snapshot)
-        except Exception:
-            pass
-
-        # Cross-review + (可选) LLM 仲裁 (流式路径也走同样逻辑)
-        conflict_arb_block = await _run_cross_review_and_arbitration(findings, twin, db, user_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[orchestrator.stream] specialist_findings audit bypass 失败: {e}")
 
         system_prompt, user_prompt = _build_synthesis_prompt(
             req.query, twin, findings, db=db, user_id=user_id,

@@ -52,3 +52,51 @@ def test_log_specialist_findings_failure_is_silent(db, monkeypatch):
     # 不应抛, 返回 None
     result = log_specialist_findings(db=db, user_id=1, findings=[])
     assert result is None
+
+
+def test_specialist_finding_model_dump_mode_json_coerces_datetime():
+    """保证 SpecialistFinding.model_dump(mode='json') 把 datetime 转 str.
+
+    Orchestrator 的 audit snapshot 依赖这一点防 PG JSONB 崩.
+    SQLite 测试路径会 json.dumps(default=str) 静默 coerce, 所以单测必须直接
+    验证 mode='json' 的输出, 而不是往 DB 里灌.
+    """
+    from datetime import datetime, timezone
+    import json
+
+    from app.orchestrator.schema import SpecialistFinding
+
+    f = SpecialistFinding(
+        specialist_name="longitudinal_analyst",
+        category="trend",
+        summary="test",
+        findings=[],
+        raw={"at": datetime(2026, 5, 1, tzinfo=timezone.utc), "delta": 1.5},
+        proposed_cards=[],
+    )
+    d = f.model_dump(mode="json")
+    # JSON-safe: json.dumps 不该抛
+    json.dumps(d)
+    assert isinstance(d["raw"]["at"], str)
+    assert "2026-05-01" in d["raw"]["at"]
+
+
+def test_orchestrator_audit_handles_datetime_in_raw(db):
+    """Regression: 模拟 orchestrator bypass 把 model_dump(mode='json') 后的
+    snapshot 喂给 log_specialist_findings, 确认 datetime 已经是 str, 不会崩.
+    """
+    from datetime import datetime, timezone
+
+    findings_snapshot = [{
+        "specialist": "longitudinal_analyst",
+        "kind": "trend",
+        "summary": "3-month HRV trend",
+        "data": {
+            # 模拟 orchestrator 已经 model_dump(mode='json') 后的值
+            "start_date": datetime(2026, 2, 1, tzinfo=timezone.utc).isoformat(),
+            "delta_pct": -12.5,
+        },
+        "proposed_cards": [],
+    }]
+    audit_id = log_specialist_findings(db=db, user_id=1, findings=findings_snapshot)
+    assert audit_id is not None

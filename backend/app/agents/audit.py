@@ -158,7 +158,7 @@ def log_specialist_findings(
         db.refresh(row)
         return row.id
     except Exception as e:  # noqa: BLE001
-        logger.debug(f"[audit] log_specialist_findings 失败 (跳过): {e}")
+        logger.warning(f"[audit] log_specialist_findings 失败 (跳过): {e}")
         try:
             db.rollback()
         except Exception:
