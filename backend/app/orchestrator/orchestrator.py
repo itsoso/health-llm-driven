@@ -215,6 +215,74 @@ def _build_specialist_credit_block(db: Session, user_id: int, days: int = 30) ->
         return ""
 
 
+def _build_per_specialist_track_block(
+    db: Session,
+    user_id: int,
+    active_specialists: List[str],
+    days: int = 90,
+    top_n: int = 2,
+) -> str:
+    """每个 active specialist 近 90 天的 top 高分 / 低分 ActionCard 摘要.
+
+    与 credit_block 的聚合命中率互补:
+      - credit_block 告诉 LLM "这个 specialist 整体可信度如何" (信任权重)
+      - 本块告诉 LLM "具体哪条建议命中/没命中" (避免重复烂建议, 参考已验证有效建议)
+
+    空结果 (冷启动/无评分) 返回 "", 不浪费 token.
+    """
+    if not active_specialists:
+        return ""
+    try:
+        from datetime import datetime, timezone, timedelta as _td
+        from app.models.action_card import ActionCard
+
+        since = datetime.now(timezone.utc) - _td(days=days)
+        now = datetime.now(timezone.utc)
+
+        def _weeks_ago(dt) -> int:
+            if dt is None:
+                return 0
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return max(0, int((now - dt).total_seconds() / 86400 / 7))
+
+        def _fmt(card: "ActionCard") -> str:
+            title = (card.title or "")[:40]
+            metric = card.metric_key or "?"
+            score = int(card.accuracy_score or 0)
+            w = _weeks_ago(card.graded_at)
+            return f'"{title} → {metric}" ({score}分, {w}周前)'
+
+        sections: List[str] = []
+        for sp in active_specialists:
+            base_q = db.query(ActionCard).filter(
+                ActionCard.user_id == user_id,
+                ActionCard.creator_specialist == sp,
+                ActionCard.graded_at.isnot(None),
+                ActionCard.graded_at >= since,
+                ActionCard.accuracy_score.isnot(None),
+            )
+            highs = base_q.filter(ActionCard.accuracy_score >= 70)\
+                .order_by(ActionCard.accuracy_score.desc()).limit(top_n).all()
+            lows = base_q.filter(ActionCard.accuracy_score <= 30)\
+                .order_by(ActionCard.accuracy_score.asc()).limit(top_n).all()
+            if not highs and not lows:
+                continue
+            lines = [f"- {sp}:"]
+            for c in highs:
+                lines.append(f"  ✅ 高命中: {_fmt(c)}")
+            for c in lows:
+                lines.append(f"  ❌ 低命中: {_fmt(c)}")
+            sections.append("\n".join(lines))
+
+        if not sections:
+            return ""
+        return "\n".join(sections)
+    except Exception as e:
+        logger.warning(f"[orchestrator] per-specialist track block 失败 (旁路): {e}")
+        return ""
+
+
 def _build_synthesis_prompt(
     query: str, twin: HealthTwin, findings: List[SpecialistFinding],
     db: Optional[Session] = None, user_id: Optional[int] = None,
@@ -244,8 +312,14 @@ def _build_synthesis_prompt(
 
     # 信任循环反馈: 把过去 30 天的 specialist 命中率注入 prompt
     credit_text = ""
+    track_text = ""
     if db is not None and user_id is not None:
         credit_text = _build_specialist_credit_block(db, user_id, days=30)
+        # 本次 run 的 specialist 名单, 只拉它们的历史 — 避免 prompt 膨胀
+        active_sp_names = [f.specialist_name for f in findings if f.specialist_name]
+        track_text = _build_per_specialist_track_block(
+            db, user_id, active_sp_names, days=90, top_n=2,
+        )
 
     # Trust Loop v2: 用户对过去判断的显式反馈 (not_helpful / irrelevant)
     # 让 LLM 看到"用户否定过的判断", 避免重复类似错误
@@ -307,7 +381,9 @@ def _build_synthesis_prompt(
         "8. **信任校准**: 你下方会看到过去 30 天各 specialist 的预测命中率."
         " 命中率 ≥ 70% 的 specialist 建议优先采纳;"
         " 命中率 < 40% 的 specialist 建议表达时加 '仅供参考' 或要求用户复测;"
-        " 没有命中率数据的 specialist 视为中等可信.\n"
+        " 没有命中率数据的 specialist 视为中等可信."
+        " 如果有'具体建议追踪'块, 参考高命中建议的风格/剂量,"
+        " 避免重复低命中的同质建议 (换角度/换剂量/换时段).\n"
         "9. **冲突仲裁**: 如果下方'Specialist 矛盾'区域有内容, 你必须在回答里明示如何裁决,"
         " 不能两个矛盾建议并列输出. hard 矛盾按 resolution_hint 走, soft 矛盾说明权衡."
         "\n10. **Trust Loop 避重**: 如果下方出现'用户最近否定过的 AI 判断', 不要重复同类判断,"
@@ -320,6 +396,8 @@ def _build_synthesis_prompt(
     ]
     if credit_text:
         user_prompt_parts.append(f"【Specialist 历史命中率 (近 30 天)】\n{credit_text}")
+    if track_text:
+        user_prompt_parts.append(f"【各 Specialist 具体建议追踪 (近 90 天)】\n{track_text}")
     if user_feedback_text:
         user_prompt_parts.append(user_feedback_text)
     user_prompt_parts.append(f"【专家裁决】\n{findings_text}")

@@ -132,33 +132,42 @@ def extract_from_action_card_outcome(
 ) -> Optional[int]:
     """评分后的 ActionCard → procedural memory fact.
 
-    '干预 X (减重 protocol) 在 14 天后 accuracy=85, 用户对其响应良好' →
-    procedural memory, 下次类似情况 specialist 可参考.
+    三段式:
+      score >= 70 → responds_to        (干预有效, 下次同类优先)
+      30 < score < 70 → partially_responds_to  (勉强, 可调剂量/方式再试)
+      score <= 30 → does_not_respond_to (无效, 下次避开或显著改变)
+
+    subject/object 组织:
+      subject    = "用户"  (固定, 便于 BM25 "用户" 查询时命中)
+      object     = "{title} → {metric_key}"  (保留具体干预 + 指标, 不同指标同建议不相互覆盖)
+      tags       = [specialist, metric_key]  (per-specialist 检索用)
     """
     if card.accuracy_score is None:
         return None
     from app.services.memory_service import write_fact
 
     score = card.accuracy_score
-    metric = card.metric_key
+    metric = card.metric_key or "unknown"
     specialist = card.creator_specialist or "unknown"
+    title = (card.title or "")[:60]
 
     if score >= 70:
         predicate = "responds_to"
-        obj = f"{specialist} 的 {metric} 干预 ({card.title[:50]})"
-        # accuracy 越高, confidence 越高, 但因为是单次样本所以不超 0.8
         confidence = min(0.8, 0.5 + score / 200)
-        decay = 0.005  # 长记忆, 慢衰减
-    else:
+    elif score <= 30:
         predicate = "does_not_respond_to"
-        obj = f"{specialist} 的 {metric} 干预 ({card.title[:50]})"
         confidence = min(0.8, 0.5 + (100 - score) / 200)
-        decay = 0.005
+    else:
+        predicate = "partially_responds_to"
+        # 中间段信心低: 单次样本且方向不明确
+        confidence = 0.4
+
+    obj = f"{title} → {metric}" if title else metric
 
     f = _safe_call(
         write_fact, db,
         user_id=card.user_id, tier="procedural",
-        subject=f"用户对 {metric}",
+        subject="用户",
         predicate=predicate,
         object_value=obj,
         confidence=confidence,
@@ -167,8 +176,8 @@ def extract_from_action_card_outcome(
             "id": card.id,
             "weight": 0.7,
         },
-        tags=[metric, specialist] if metric else [specialist],
-        decay_rate=decay,
+        tags=[specialist, metric] if metric != "unknown" else [specialist],
+        decay_rate=0.005,  # 长记忆, 慢衰减
     )
     return f.id if f else None
 
