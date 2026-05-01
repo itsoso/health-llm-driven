@@ -33,6 +33,7 @@ celery_app = Celery(
         "app.tasks.open_loop_manager",
         "app.tasks.memory_lifecycle",
         "app.tasks.insights",
+        "app.tasks.monthly_report",
     ]
 )
 
@@ -233,6 +234,12 @@ celery_app.conf.beat_schedule = {
     "eval-orchestrator-weekly": {
         "task": "app.tasks.eval_runner.run_orchestrator_eval_weekly",
         "schedule": crontab(hour=3, minute=27, day_of_week=0),  # 周日凌晨 03:27
+    },
+
+    # 月度复盘报告: 每月 1 日 08:10 生成上月报告
+    "monthly-report-generate": {
+        "task": "app.tasks.monthly_report.generate_previous_month_reports",
+        "schedule": crontab(hour=8, minute=10, day_of_month=1),
     },
 }
 

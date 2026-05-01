@@ -91,6 +91,7 @@ from app.api import (
     orchestrator,
     cgm,
     personal_outcome,
+    monthly_report,
     action_card,
     exercise_coaching,
     rhinitis_trend,
@@ -202,6 +203,7 @@ api_router.include_router(sleep_analysis.router)
 api_router.include_router(chronic_risk.router)
 api_router.include_router(multi_source_integration.router)
 api_router.include_router(personal_outcome.router, tags=["personal-outcome"])
+api_router.include_router(monthly_report.router, tags=["monthly-report"])
 api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])
 api_router.include_router(cgm.router, tags=["cgm"])
 api_router.include_router(body_composition.router)
