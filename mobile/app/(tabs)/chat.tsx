@@ -7,6 +7,7 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, router } from 'expo-router';
 import { deleteConversation } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
@@ -27,6 +28,24 @@ export default function ChatScreen() {
   const isNearBottom = useRef(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+
+  // Context from alert / push deep-link. Read ONCE on first mount, then cleared so
+  // subsequent navigations to this tab don't keep re-prefilling the input.
+  const params = useLocalSearchParams<{ prompt?: string; badge?: string }>();
+  const [contextBadge, setContextBadge] = useState<string | null>(null);
+  const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
+  const contextConsumed = useRef(false);
+
+  useEffect(() => {
+    if (contextConsumed.current) return;
+    if (params.prompt || params.badge) {
+      contextConsumed.current = true;
+      if (params.prompt) setInitialInput(params.prompt);
+      if (params.badge) setContextBadge(params.badge);
+      // Clear the URL params so refresh / re-focus don't repopulate
+      try { router.setParams({ prompt: undefined, badge: undefined } as any); } catch {}
+    }
+  }, [params.prompt, params.badge]);
 
   useEffect(() => { chat.loadLatestConversation(); }, []);
 
@@ -106,7 +125,19 @@ export default function ChatScreen() {
           }
         />
 
-        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} />
+        {contextBadge && (
+          <View style={styles.contextBanner}>
+            <Ionicons name="link-outline" size={13} color={colors.brand} />
+            <Text style={txt.contextBanner} numberOfLines={1}>
+              基于 {contextBadge}
+            </Text>
+            <TouchableOpacity onPress={() => setContextBadge(null)} hitSlop={8}>
+              <Ionicons name="close" size={14} color={colors.labelTertiary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <ChatInputBar onSend={handleSend} isStreaming={chat.isStreaming} initialText={initialInput} />
         {!keyboardVisible && <View style={{ height: 83 }} />}
       </KeyboardAvoidingView>
 
@@ -139,6 +170,12 @@ const styles = StyleSheet.create({
     width: '47%', backgroundColor: colors.bgCard, borderRadius: radii.md,
     padding: spacing.md, gap: 6, ...shadows.subtle,
   },
+  contextBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginHorizontal: spacing.lg, marginBottom: 4,
+    paddingHorizontal: spacing.md, paddingVertical: 6,
+    backgroundColor: colors.brandLight, borderRadius: radii.md,
+  },
 });
 
 const txt = {
@@ -146,4 +183,5 @@ const txt = {
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
   welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
   sugText: { fontSize: 13, color: colors.labelPrimary, lineHeight: 18 } as TextStyle,
+  contextBanner: { fontSize: 12, color: colors.brand, flex: 1, fontWeight: '500' } as TextStyle,
 };

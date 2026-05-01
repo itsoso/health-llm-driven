@@ -30,10 +30,12 @@ function PulsingRing() {
 interface Props {
   onSend: (text: string, images?: PendingImage[] | null) => void;
   isStreaming: boolean;
+  /** Populated once on first mount; subsequent changes are ignored. */
+  initialText?: string;
 }
 
-export default function ChatInputBar({ onSend, isStreaming }: Props) {
-  const [input, setInput] = useState('');
+export default function ChatInputBar({ onSend, isStreaming, initialText }: Props) {
+  const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);

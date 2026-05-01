@@ -846,6 +846,7 @@ def evaluate_and_push_safety(user_id: int):
                     try:
                         # 根据规则类型决定 deep_link
                         # SpO2 / 呼吸相关 → 跳夜间血氧分析页
+                        # pgx/ddi/dsi (个性化、需对话解读) → 跳 AI 对话并预填上下文
                         # 其他 → 默认跳 /alerts
                         rule_id = alert.rule_id or ""
                         deep_link = "/(tabs)/alerts"
@@ -853,6 +854,18 @@ def evaluate_and_push_safety(user_id: int):
                             from app.utils.timezone import get_china_now
                             night_date = get_china_now().date().isoformat()
                             deep_link = f"/sleep-spo2-analysis?night_date={night_date}"
+                        elif rule_id.startswith(("pgx.", "ddi.", "dsi.")):
+                            # H2-5: specialist 上下文 — 打开 AI chat 预填追问
+                            from urllib.parse import quote
+                            prompt = (
+                                f"我刚看到这条告警：「{alert.title}」。"
+                                f"{alert.message} "
+                                "请结合我的基因/用药/补剂数据详细分析。"
+                            )
+                            deep_link = (
+                                f"/(tabs)/chat?prompt={quote(prompt)}"
+                                f"&badge={quote(alert.title)}"
+                            )
 
                         run_async(push_service.send_notification(
                             user_id=user_id,

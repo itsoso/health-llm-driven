@@ -126,7 +126,15 @@ export default function ActionsScreen() {
   );
 }
 
+function buildAskPrompt(title: string, message: string, action?: string): string {
+  const parts = [`我刚看到这条告警：「${title}」。`, message];
+  if (action) parts.push(`建议：${action}。`);
+  parts.push('请结合我的身体数据，详细分析原因、风险和下一步建议。');
+  return parts.join('\n');
+}
+
 function AlertRow({ alert }: { alert: SafetyAlert }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
@@ -150,17 +158,34 @@ function AlertRow({ alert }: { alert: SafetyAlert }) {
         <View style={styles.expandedContent}>
           <Text style={txt.alertMsg}>{alert.message}</Text>
           {alert.action && <Text style={txt.alertAction}>→ {alert.action}</Text>}
-          {!explanation && (
-            <TouchableOpacity style={styles.aiBtn} accessibilityLabel="让 AI 解读这条告警" accessibilityRole="button" onPress={async () => {
-              setExplaining(true);
-              try { const r = await explainAlert(alert.rule_id, alert.message); setExplanation(r.explanation); } catch { setExplanation('无法获取解读'); } finally { setExplaining(false); }
-            }}>
-              {explaining ? <ActivityIndicator size="small" color={colors.brand} /> : <>
-                <Ionicons name="sparkles" size={13} color={colors.brand} />
-                <Text style={txt.aiText}>AI 解读</Text>
-              </>}
+          <View style={styles.actionRow}>
+            {!explanation && (
+              <TouchableOpacity style={styles.aiBtn} accessibilityLabel="让 AI 解读这条告警" accessibilityRole="button" onPress={async () => {
+                setExplaining(true);
+                try { const r = await explainAlert(alert.rule_id, alert.message); setExplanation(r.explanation); } catch { setExplanation('无法获取解读'); } finally { setExplaining(false); }
+              }}>
+                {explaining ? <ActivityIndicator size="small" color={colors.brand} /> : <>
+                  <Ionicons name="sparkles" size={13} color={colors.brand} />
+                  <Text style={txt.aiText}>AI 解读</Text>
+                </>}
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.aiBtn}
+              accessibilityLabel="问 AI 详细分析"
+              accessibilityRole="button"
+              onPress={() => {
+                const prompt = buildAskPrompt(alert.title, alert.message, alert.action);
+                router.push({
+                  pathname: '/(tabs)/chat',
+                  params: { prompt, badge: alert.title },
+                } as any);
+              }}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={13} color={colors.brand} />
+              <Text style={txt.aiText}>问 AI</Text>
             </TouchableOpacity>
-          )}
+          </View>
           {explanation && (
             <View style={styles.aiResult}>
               <Ionicons name="sparkles" size={12} color={colors.brand} />
@@ -213,6 +238,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator, marginTop: -2,
   },
   aiBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 },
+  actionRow: { flexDirection: 'row', gap: 16 },
   aiResult: {
     flexDirection: 'row', gap: 6, marginTop: 10,
     backgroundColor: colors.bgPrimary, borderRadius: radii.md, padding: 12,
