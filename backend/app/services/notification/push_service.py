@@ -18,6 +18,21 @@ from app.utils.timezone import get_china_now
 logger = logging.getLogger(__name__)
 
 
+# H1-B: severity 排序 (低 → 高). 其他字面量默认 0.
+_SEVERITY_ORDER = {
+    "info": 0,
+    "low": 1,
+    "warning": 2,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def _severity_rank(s: Optional[str]) -> int:
+    return _SEVERITY_ORDER.get((s or "info").lower(), 0)
+
+
 class PushService:
     """
     推送服务主类
@@ -108,17 +123,40 @@ class PushService:
         notification_type: str,
         respect_quiet_hours: bool = True,
         severity: str = "info",
+        rule_id: Optional[str] = None,
     ) -> bool:
         """
         检查是否可以发送通知。
 
-        只有 severity == "critical"（危及生命的急性事件）才会穿透免打扰时段；
-        HIGH/MEDIUM/LOW/INFO 一律在 quiet_hours 内被抑制，避免非紧急推送影响睡眠。
+        H1-B 增强 (按影响顺序):
+          1. 总开关 / 类型开关
+          2. (仅 health_alert) rule_id 在用户的 alert_rule_opt_outs 里 → 不推
+          3. (仅 health_alert) severity < alert_severity_threshold → 不推
+          4. 免打扰时段 (critical 穿透)
         """
         settings = self.get_user_settings(user_id)
 
         if not settings or not settings.enabled:
             return False
+
+        # H1-B: health_alert 的 rule 级 opt-out
+        if (
+            notification_type == NotificationType.HEALTH_ALERT.value
+            and rule_id
+        ):
+            opt_outs = settings.alert_rule_opt_outs or []
+            if rule_id in opt_outs:
+                logger.info(f"[push] 用户 {user_id} 已 mute rule_id={rule_id}, 跳过")
+                return False
+
+        # H1-B: health_alert 的 severity 阈值
+        if notification_type == NotificationType.HEALTH_ALERT.value:
+            threshold = (settings.alert_severity_threshold or "warning").lower()
+            if _severity_rank(severity) < _severity_rank(threshold):
+                logger.info(
+                    f"[push] 用户 {user_id} severity={severity} < threshold={threshold}, 跳过"
+                )
+                return False
 
         # 免打扰时段：只有 critical 级别放行
         if respect_quiet_hours and severity != "critical":
@@ -158,40 +196,60 @@ class PushService:
             notification_type: 通知类型
             title: 标题
             content: 内容
-            data: 额外数据
+            data: 额外数据. data["rule_id"] 若存在 → 参与 rule 级 opt-out 检查, 并成为 dedup key
             channels: 指定渠道，None 表示使用用户设置的渠道
             respect_quiet_hours: 是否遵守免打扰时段
-            severity: 严重程度 ("info"|"low"|"medium"|"high"|"critical")；
-                      只有 "critical" 在免打扰时段放行
-            dedup_window_hours: 去重窗口（小时）。相同 (user_id, notification_type, title)
-                                在窗口内若已有 status=sent 记录，跳过本次推送。
+            severity: 严重程度 ("info"|"low"|"warning"|"medium"|"high"|"critical")；
+                      只有 "critical" 在免打扰时段放行.
+                      < 用户 alert_severity_threshold 的 health_alert 也会被过滤 (H1-B).
+            dedup_window_hours: 去重窗口（小时）。
+                                有 rule_id 时按 (user_id, notification_type, rule_id) 去重;
+                                否则按 (user_id, notification_type, title) 去重.
                                 传 0 或负数则禁用去重。
 
         Returns:
             发送结果 {"success": bool, "channels": {...}}
         """
+        rule_id = (data or {}).get("rule_id") if data else None
+
         # 检查是否可以发送
         if not self.can_send_notification(
-            user_id, notification_type, respect_quiet_hours, severity=severity
+            user_id, notification_type, respect_quiet_hours,
+            severity=severity, rule_id=rule_id,
         ):
             return {
                 "success": False,
-                "reason": "通知已禁用或在免打扰时段",
+                "reason": "通知已禁用/在免打扰/低于阈值/规则已静音",
             }
 
-        # 去重检查：同 (user_id, notification_type, title) 窗口内已发就跳过
+        # 去重检查: 有 rule_id 时按 rule_id 去重 (同一规则窗口内只推一次),
+        # 否则退化到按 title 去重 (老路径).
         if dedup_window_hours and dedup_window_hours > 0:
             window_start = get_china_now() - timedelta(hours=dedup_window_hours)
-            existing = self.db.query(NotificationLog).filter(
+            dedup_q = self.db.query(NotificationLog).filter(
                 NotificationLog.user_id == user_id,
                 NotificationLog.notification_type == notification_type,
-                NotificationLog.title == title,
                 NotificationLog.status == NotificationStatus.SENT.value,
                 NotificationLog.sent_at >= window_start,
-            ).first()
+            )
+            if rule_id:
+                # PG JSONB ->> 提取 rule_id; SQLite 用字符串 LIKE 作为降级
+                from sqlalchemy import text
+                try:
+                    existing = dedup_q.filter(
+                        text("data::jsonb ->> 'rule_id' = :rid").bindparams(rid=rule_id)
+                    ).first()
+                except Exception:
+                    # SQLite fallback
+                    existing = dedup_q.filter(
+                        NotificationLog.data.like(f'%"rule_id": "{rule_id}"%')
+                    ).first()
+            else:
+                existing = dedup_q.filter(NotificationLog.title == title).first()
             if existing:
+                key = f"rule_id={rule_id}" if rule_id else f"title={title!r}"
                 logger.info(
-                    f"用户 {user_id} 相同推送 {notification_type}/{title!r} "
+                    f"用户 {user_id} 相同推送 {notification_type}/{key} "
                     f"在 {dedup_window_hours}h 窗口内已发送过 (log_id={existing.id})，跳过"
                 )
                 return {"success": False, "reason": "dedup"}

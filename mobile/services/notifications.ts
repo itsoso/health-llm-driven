@@ -13,6 +13,8 @@ export interface NotificationSettings {
   wechat_bound: boolean;
   ios_push_enabled: boolean;
   ios_bound: boolean;
+  alert_severity_threshold: 'info' | 'warning' | 'critical';
+  alert_rule_opt_outs: string[];
 }
 
 export interface NotificationSettingsUpdate {
@@ -25,6 +27,8 @@ export interface NotificationSettingsUpdate {
   quiet_hours_start?: string;
   quiet_hours_end?: string;
   ios_push_enabled?: boolean;
+  alert_severity_threshold?: 'info' | 'warning' | 'critical';
+  alert_rule_opt_outs?: string[];
 }
 
 export interface Reminder {

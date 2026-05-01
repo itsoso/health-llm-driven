@@ -94,6 +94,41 @@ export default function NotificationSettingsScreen() {
             onPress={() => setEditing('end')} />
         </View>
 
+        <Text style={txt.section}>告警严重度</Text>
+        <Text style={txt.hintSmall}>低于此级别的健康告警不推送。critical 级永远推送，不受此设置限制。</Text>
+        <View style={styles.card}>
+          <SeverityPicker
+            current={settings?.alert_severity_threshold || 'warning'}
+            onPick={(v) => toggle('alert_severity_threshold' as any, v as any)}
+          />
+        </View>
+
+        {(settings?.alert_rule_opt_outs?.length ?? 0) > 0 && (
+          <>
+            <Text style={txt.section}>已静音的规则</Text>
+            <Text style={txt.hintSmall}>这些规则命中时不会推送。点击"取消静音"恢复。</Text>
+            <View style={styles.card}>
+              {(settings?.alert_rule_opt_outs || []).map((rid) => (
+                <View key={rid} style={styles.row}>
+                  <Ionicons name="volume-mute-outline" size={18} color={colors.labelSecondary} />
+                  <Text style={[txt.rowLabel, { fontSize: 13 }]} numberOfLines={1}>
+                    {rid}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const next = (settings?.alert_rule_opt_outs || []).filter(r => r !== rid);
+                      mutation.mutate({ alert_rule_opt_outs: next });
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                  >
+                    <Text style={{ color: colors.brand, fontSize: 13 }}>取消静音</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
         <Text style={txt.section}>管理</Text>
         <View style={styles.card}>
           <NavRow label="提醒管理" icon="alarm-outline" onPress={() => router.push('/reminders' as any)} />
@@ -203,6 +238,50 @@ function NavRow({ label, icon, onPress }: { label: string; icon: any; onPress: (
       <Text style={txt.rowLabel}>{label}</Text>
       <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
     </TouchableOpacity>
+  );
+}
+
+function SeverityPicker({ current, onPick }: {
+  current: 'info' | 'warning' | 'critical';
+  onPick: (v: 'info' | 'warning' | 'critical') => void;
+}) {
+  const options: Array<{
+    v: 'info' | 'warning' | 'critical';
+    label: string;
+    hint: string;
+    color: string;
+  }> = [
+    { v: 'info', label: '全部', hint: '所有告警都推送 (含轻微信息)', color: '#8E8E93' },
+    { v: 'warning', label: '中度及以上', hint: '推荐: 过滤 info 级噪音', color: '#FF9500' },
+    { v: 'critical', label: '仅危急', hint: '只推送 critical 级告警', color: '#FF3B30' },
+  ];
+  return (
+    <View>
+      {options.map(o => {
+        const active = current === o.v;
+        return (
+          <TouchableOpacity
+            key={o.v}
+            style={[styles.row, active && { backgroundColor: colors.fill + '55' }]}
+            onPress={() => onPick(o.v)}
+            activeOpacity={0.6}
+          >
+            <View style={{
+              width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+              borderColor: active ? o.color : colors.labelTertiary,
+              backgroundColor: active ? o.color : 'transparent',
+              justifyContent: 'center', alignItems: 'center',
+            }}>
+              {active && <Ionicons name="checkmark" size={12} color="#fff" />}
+            </View>
+            <View style={{ flex: 1, marginLeft: 4 }}>
+              <Text style={txt.rowLabel}>{o.label}</Text>
+              <Text style={[txt.hintSmall, { marginTop: 2 }]}>{o.hint}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 

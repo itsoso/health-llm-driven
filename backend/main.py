@@ -154,6 +154,11 @@ async def startup_event():
         _add_col("openclaw_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
         _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
         _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
+        # H1-B: 推送规则分级 + 用户偏好
+        _add_col("user_notification_settings", "alert_severity_threshold",
+                 "VARCHAR(20) DEFAULT 'warning'")
+        _add_col("user_notification_settings", "alert_rule_opt_outs",
+                 "JSONB DEFAULT '[]'::jsonb")
         db.commit()
         db.close()
         logger.info("数据库迁移检查完成")

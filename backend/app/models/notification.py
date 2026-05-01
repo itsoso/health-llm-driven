@@ -53,6 +53,14 @@ class UserNotificationSetting(Base):
     quiet_hours_start = Column(String(5), default="22:00")  # 免打扰开始
     quiet_hours_end = Column(String(5), default="08:30")  # 免打扰结束
 
+    # 告警严重度阈值 (H1-B): info/warning/critical
+    # 低于此阈值的 health_alert 直接不推 (白天也不推). 默认 warning = 屏蔽 info 级噪音.
+    # critical 永远放行, 不受此阈值约束 (配合 critical 穿透 quiet_hours 的既有策略).
+    alert_severity_threshold = Column(String(20), default="warning")
+    # 已静音的规则 rule_id 列表, 例: ["vitals.sleep_short", "ddi.warfarin_nsaid"]
+    # 命中这些 rule_id 的 health_alert 不推. 非 health_alert 不受影响.
+    alert_rule_opt_outs = Column(JSON, default=list)
+
     # 渠道设置
     wechat_enabled = Column(Boolean, default=True)
     ios_push_enabled = Column(Boolean, default=True)

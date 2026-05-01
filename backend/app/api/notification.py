@@ -34,6 +34,11 @@ class NotificationSettingsUpdate(BaseModel):
     quiet_hours_end: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     wechat_enabled: Optional[bool] = None
     ios_push_enabled: Optional[bool] = None
+    # H1-B: 告警阈值 + rule opt-out
+    alert_severity_threshold: Optional[str] = Field(
+        None, pattern=r"^(info|warning|critical)$",
+    )
+    alert_rule_opt_outs: Optional[List[str]] = None
 
 
 class WeChatBindRequest(BaseModel):
@@ -97,7 +102,9 @@ def get_notification_settings(
             "wechat_enabled": True,
             "wechat_bound": False,
             "ios_push_enabled": True,
-            "ios_bound": False
+            "ios_bound": False,
+            "alert_severity_threshold": "warning",
+            "alert_rule_opt_outs": [],
         }
 
     return {
@@ -112,7 +119,9 @@ def get_notification_settings(
         "wechat_enabled": settings.wechat_enabled,
         "wechat_bound": bool(settings.wechat_openid),
         "ios_push_enabled": settings.ios_push_enabled,
-        "ios_bound": bool(settings.ios_device_token)
+        "ios_bound": bool(settings.ios_device_token),
+        "alert_severity_threshold": settings.alert_severity_threshold or "warning",
+        "alert_rule_opt_outs": settings.alert_rule_opt_outs or [],
     }
 
 
