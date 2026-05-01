@@ -84,6 +84,15 @@ class TestRunner:
         assert report.passed == report.total_cases >= 5
         assert report.avg_score == pytest.approx(1.0)
 
+    def test_run_recovery_suite_all_pass(self):
+        """Recovery Coach specialist + golden set 应该全过."""
+        report = run_suite("recovery")
+        assert report.failed == 0, \
+            f"failures: {[c.case_id for c in report.cases if not c.passed]}"
+        assert report.errored == 0, \
+            f"errors: {[c.error for c in report.cases if c.error]}"
+        assert report.passed == report.total_cases >= 4
+
 
 # ============= regression detection =============
 

@@ -65,6 +65,81 @@ def _score_safety(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[st
     return {"rule_set": score_rule_set(output.get("rule_ids", []), case.expected)}
 
 
+# ============= recovery suite (H3-8) =============
+
+
+@_register_runner("recovery")
+def _run_recovery_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """确定性 specialist, 不调 LLM."""
+    from datetime import datetime as _dt
+    # 通过 registry 拿 specialist, 避免 recovery_coach / orchestrator 循环 import
+    from app.orchestrator.specialists import get_specialist
+    from app.twin.schema import HealthTwin
+
+    twin_data = dict(case_inputs.get("twin", {}))
+    twin_data.setdefault("meta", {"user_id": 0, "generated_at": _dt.now(timezone.utc)})
+    twin = HealthTwin(**twin_data)
+
+    specialist = get_specialist("recovery_coach")
+    if specialist is None:
+        return {"zone": None, "score": None, "actions": [], "summary": "specialist not found"}
+    finding = specialist.run(twin, context={})
+    raw = finding.raw or {}
+    # 把 actions 扁平化: 从 findings 里抓 type=action 的 text
+    actions = [f.get("text", "") for f in finding.findings if f.get("type") == "action"]
+    return {
+        "zone": raw.get("zone"),
+        "score": raw.get("score"),
+        "actions": actions,
+        "summary": finding.summary,
+    }
+
+
+@_register_scorer("recovery")
+def _score_recovery(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """校验 zone / score 区间 / actions 关键词, 逐项 pass/fail."""
+    expected = case.expected or {}
+    zone = output.get("zone")
+    score = output.get("score")
+
+    details: List[str] = []
+    passed = True
+
+    # zone 精确匹配或集合内
+    exp_zone = expected.get("zone")
+    exp_zone_in = expected.get("zone_in")
+    if exp_zone is not None and zone != exp_zone:
+        passed = False
+        details.append(f"zone={zone}, 期望 {exp_zone}")
+    if exp_zone_in is not None and zone not in exp_zone_in:
+        passed = False
+        details.append(f"zone={zone}, 期望 in {exp_zone_in}")
+
+    # score 区间
+    if "min_score" in expected and (score is None or score < expected["min_score"]):
+        passed = False
+        details.append(f"score={score} < min_score={expected['min_score']}")
+    if "max_score" in expected and (score is None or score > expected["max_score"]):
+        passed = False
+        details.append(f"score={score} > max_score={expected['max_score']}")
+
+    # actions 关键词 (any)
+    kw_any = expected.get("actions_any_keyword") or []
+    if kw_any:
+        blob = " ".join(output.get("actions") or [])
+        if not any(k in blob for k in kw_any):
+            passed = False
+            details.append(f"actions 没命中任一关键词: {kw_any}")
+
+    return {
+        "recovery_check": {
+            "passed": passed,
+            "score": 1.0 if passed else 0.0,
+            "details": "; ".join(details) if details else "ok",
+        }
+    }
+
+
 # ============= orchestrator suite =============
 
 @_register_runner("orchestrator")

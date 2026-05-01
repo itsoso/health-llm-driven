@@ -1,0 +1,67 @@
+suite: recovery
+description: |
+  Recovery Coach (readiness 评分) 回归 case. 每条 case 给一个最小 HealthTwin
+  (只填 hrv / sleep_score / body_battery / stress 等评分输入), 跑 RecoveryCoach,
+  校验 zone + score 区间, 可选校验 actions 含特定关键词.
+cases:
+
+  - id: recovery_unknown_no_data
+    description: 什么数据都没有 → unknown, 不抛异常
+    twin: {}
+    expected:
+      zone: unknown
+
+  - id: recovery_excellent_high_hrv_good_sleep
+    description: HRV 高 + 睡眠分高 + 电量充 → hard/moderate 区间
+    twin:
+      physiological:
+        hrv_latest: 75
+        hrv_7d_avg: 60
+        sleep_score_latest: 90
+        body_battery_high_today: 95
+        stress_latest: 15
+        resting_heart_rate_latest: 55
+    expected:
+      zone_in: [hard, moderate]
+      min_score: 70
+
+  - id: recovery_poor_low_hrv_bad_sleep
+    description: HRV 远低于 7d 基线 + 睡眠很差 → rest/light
+    twin:
+      physiological:
+        hrv_latest: 25
+        hrv_7d_avg: 55
+        sleep_score_latest: 45
+        body_battery_high_today: 40
+        stress_latest: 65
+        resting_heart_rate_latest: 70
+    expected:
+      zone_in: [rest, light]
+      max_score: 55
+
+  - id: recovery_moderate_mid_metrics
+    description: HRV 持平 + 睡眠中等 → moderate/light
+    twin:
+      physiological:
+        hrv_latest: 50
+        hrv_7d_avg: 52
+        sleep_score_latest: 75
+        body_battery_high_today: 70
+        stress_latest: 35
+        resting_heart_rate_latest: 60
+    expected:
+      zone_in: [moderate, light, hard]
+      min_score: 50
+
+  - id: recovery_critical_hrv_crash
+    description: HRV 断崖下降 50% → 必然进 rest
+    twin:
+      physiological:
+        hrv_latest: 22
+        hrv_7d_avg: 55
+        sleep_score_latest: 70
+        body_battery_high_today: 55
+        stress_latest: 45
+        resting_heart_rate_latest: 62
+    expected:
+      zone_in: [rest, light]

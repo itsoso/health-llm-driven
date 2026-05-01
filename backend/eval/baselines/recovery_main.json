@@ -1,0 +1,141 @@
+{
+  "suite": "recovery",
+  "total_cases": 5,
+  "passed": 5,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 1.0,
+  "avg_latency_ms": 1485,
+  "cases": [
+    {
+      "case_id": "recovery_unknown_no_data",
+      "suite": "recovery",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "zone": "unknown",
+          "score": 0,
+          "actions": [
+            "数据不足以评估恢复状态，建议先同步 Garmin 数据再判断。"
+          ],
+          "summary": "恢复状态未知（数据不足）"
+        },
+        "scorers": {
+          "recovery_check": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 7424
+    },
+    {
+      "case_id": "recovery_excellent_high_hrv_good_sleep",
+      "suite": "recovery",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "zone": "hard",
+          "score": 96,
+          "actions": [
+            "今天身体状态很好，可以进行高强度训练（阈值跑/间歇/力量大重量）。"
+          ],
+          "summary": "Readiness 96/100 — 状态极佳，可高强度训练"
+        },
+        "scorers": {
+          "recovery_check": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "recovery_poor_low_hrv_bad_sleep",
+      "suite": "recovery",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "zone": "rest",
+          "score": 21,
+          "actions": [
+            "今天身体恢复不足，建议完全休息或仅做 15-20 分钟拉伸/散步。",
+            "睡眠质量偏低，今天避免下午后饮用咖啡因，晚餐提前至睡前 3h 以前。",
+            "HRV 明显低于基线，说明自主神经偏交感亢进。建议做 5 分钟 4-7-8 呼吸或正念。"
+          ],
+          "summary": "Readiness 21/100 — 恢复不足，建议休息"
+        },
+        "scorers": {
+          "recovery_check": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 1
+    },
+    {
+      "case_id": "recovery_moderate_mid_metrics",
+      "suite": "recovery",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "zone": "moderate",
+          "score": 77,
+          "actions": [
+            "今天适合中等强度有氧（Z2 慢跑 30-50 分钟）或中重量力量训练。"
+          ],
+          "summary": "Readiness 77/100 — 状态良好，适合中等训练"
+        },
+        "scorers": {
+          "recovery_check": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "recovery_critical_hrv_crash",
+      "suite": "recovery",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "zone": "rest",
+          "score": 29,
+          "actions": [
+            "今天身体恢复不足，建议完全休息或仅做 15-20 分钟拉伸/散步。",
+            "HRV 明显低于基线，说明自主神经偏交感亢进。建议做 5 分钟 4-7-8 呼吸或正念。"
+          ],
+          "summary": "Readiness 29/100 — 恢复不足，建议休息"
+        },
+        "scorers": {
+          "recovery_check": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}
