@@ -26,22 +26,33 @@ _CATEGORY_TO_PARTITION = {
     "cgm": "cgm",
 }
 
+# SpecialistFinding.category (存为 finding["kind"]) → HealthTwin partition 名
+# 实际 self.category 值见各 specialist: recovery / fuel / movement / mental / chronic / knowledge / longitudinal
+_SPECIALIST_KIND_TO_PARTITION = {
+    "recovery": "physiological",
+    "fuel": "body_composition",
+    "movement": "behavioral",
+    "mental": "mental",
+    "chronic": "chronic",
+    "knowledge": "physiological",        # fallback: 知识/纵向缺专属分区
+    "longitudinal": "physiological",
+    "safety": "physiological",
+}
+
 
 def _load_audit(db: Session, audit_id: int, expected_agent: str, user_id: int) -> AgentAuditLog:
     row = db.query(AgentAuditLog).filter(AgentAuditLog.id == audit_id).first()
-    if row is None or row.agent_type != expected_agent:
+    # 合并 403/404 防枚举: audit_id / agent_type / user_id 任一不匹配都一视同仁
+    if row is None or row.agent_type != expected_agent or row.user_id != user_id:
         raise HTTPException(status_code=404, detail="audit 记录不存在或已过期")
-    if row.user_id != user_id:
-        raise HTTPException(status_code=403, detail="无权访问该 audit 记录")
     return row
 
 
-def _twin_evidence_for_category(db: Session, user_id: int, category: str) -> List[Dict[str, Any]]:
-    """从 Twin 当前快照抽 category 对应分区的几条关键字段."""
+def _twin_evidence_for_partition(db: Session, user_id: int, partition_name: str) -> List[Dict[str, Any]]:
+    """从 Twin 当前快照抽 partition 的前 4 个 primitive 字段."""
     try:
         from app.twin.builder import build_twin
         twin = build_twin(db, user_id, use_cache=True)
-        partition_name = _CATEGORY_TO_PARTITION.get(category, "physiological")
         partition = getattr(twin, partition_name, None)
         if partition is None:
             return []
@@ -57,7 +68,7 @@ def _twin_evidence_for_category(db: Session, user_id: int, category: str) -> Lis
                 })
         return out
     except Exception as e:  # noqa: BLE001
-        logger.debug(f"[explainer] twin evidence 失败: {e}")
+        logger.warning(f"[explainer] twin evidence 失败: {e}")
         return []
 
 
@@ -65,8 +76,8 @@ def _related_facts(db: Session, user_id: int, query: str, k: int = 3) -> List[Di
     try:
         # Reference through the module-level name so tests can monkeypatch it.
         hits = hybrid_retrieve(db, user_id, query, top_k=k)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"[explainer] hybrid_retrieve 失败, related_facts=[]: {e}")
+    except (TimeoutError, ConnectionError, RuntimeError) as e:
+        logger.warning(f"[explainer] hybrid_retrieve 失败 (transient), related_facts=[]: {e}")
         return []
     out = []
     for h in hits:
@@ -100,7 +111,8 @@ def explain_safety_alert(
         raise HTTPException(status_code=404, detail=f"未找到 rule_id={rule_id} 的 alert")
 
     category = alert.get("category") or "vitals"
-    twin_evidence = _twin_evidence_for_category(db, user_id, category)
+    partition_name = _CATEGORY_TO_PARTITION.get(category, "physiological")
+    twin_evidence = _twin_evidence_for_partition(db, user_id, partition_name)
     query_text = f"{rule_id} {category} {alert.get('title', '')}"
     related = _related_facts(db, user_id, query_text)
 
@@ -116,6 +128,10 @@ def explain_safety_alert(
         "twin_evidence": twin_evidence,
         "related_facts": related,
         "confidence_note": _confidence_note(twin_evidence, related),
+        "confidence": {
+            "twin_field_count": len(twin_evidence),
+            "memory_fact_count": len(related),
+        },
         "generated_at": alert.get("generated_at"),
     }
 
@@ -129,8 +145,10 @@ def explain_specialist_finding(
     if finding is None:
         raise HTTPException(status_code=404, detail=f"未找到 specialist={specialist} 的 finding")
 
-    twin_evidence = _twin_evidence_for_category(db, user_id, category="vitals")
-    related = _related_facts(db, user_id, f"{specialist} {finding.get('kind', '')}")
+    kind = finding.get("kind") or ""
+    partition_name = _SPECIALIST_KIND_TO_PARTITION.get(kind, "physiological")
+    twin_evidence = _twin_evidence_for_partition(db, user_id, partition_name)
+    related = _related_facts(db, user_id, f"{specialist} {kind}")
 
     return {
         "source": "specialist",
@@ -141,5 +159,9 @@ def explain_specialist_finding(
         "twin_evidence": twin_evidence,
         "related_facts": related,
         "confidence_note": _confidence_note(twin_evidence, related),
+        "confidence": {
+            "twin_field_count": len(twin_evidence),
+            "memory_fact_count": len(related),
+        },
         "proposed_cards_count": len(finding.get("proposed_cards") or []),
     }
