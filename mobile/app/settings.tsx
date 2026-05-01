@@ -99,6 +99,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/goals' as any)} />
           <SettingRow icon="document-text-outline" label="硬性指令"
             onPress={() => router.push('/directives' as any)} />
+          <SettingRow icon="sparkles-outline" label="AI 对我的画像"
+            onPress={() => router.push('/ai-profile' as any)} />
         </View>
 
         {/* Notifications & Siri & Security */}
