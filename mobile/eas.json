@@ -23,7 +23,10 @@
       "ios": {
         "autoIncrement": true
       },
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+      }
     }
   },
   "submit": {
