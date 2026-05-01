@@ -92,6 +92,7 @@ def _validate_numeric(rtype: str, data: Dict[str, Any], warnings: list) -> None:
             msg = f"[tool_validator] {rtype}.{field}={v!r} 非数值, 移除"
             warnings.append(msg)
             logger.warning(msg)
+            _metric(rtype, field, "non_numeric", action="rejected")
             data.pop(field, None)
             continue
         if num < low or num > high:
@@ -100,6 +101,7 @@ def _validate_numeric(rtype: str, data: Dict[str, Any], warnings: list) -> None:
                    f"移除 — LLM 可能幻觉")
             warnings.append(msg)
             logger.warning(msg)
+            _metric(rtype, field, "out_of_range", action="rejected")
             data.pop(field, None)
 
 
@@ -169,6 +171,7 @@ def _validate_reference_id(
                        f"移除 — 防越权 / LLM 编造 ID")
                 warnings.append(msg)
                 logger.warning(msg)
+                _metric(rtype, "medication_id", "ownership_mismatch", action="rejected")
                 data.pop("medication_id", None)
         except Exception as e:
             logger.warning(f"[tool_validator] medication_id 校验失败 (跳过): {e}")
@@ -186,6 +189,7 @@ def _validate_reference_id(
                 msg = (f"[tool_validator] profile_id={pid} 不存在或不属于 user={user_id}, 移除")
                 warnings.append(msg)
                 logger.warning(msg)
+                _metric(rtype, "profile_id", "ownership_mismatch", action="rejected")
                 data.pop("profile_id", None)
         except Exception as e:
             logger.warning(f"[tool_validator] profile_id 校验失败 (跳过): {e}")
@@ -277,10 +281,14 @@ _TARGET_WEEKS = {"current", "next"}
 _INDICATOR_ALLOWED_DIMS = {"medical_exam", "genetic"}
 
 
-def _metric(tool: str, field: str, reason: str) -> None:
-    """结构化 metric 日志 — Sentry 接入后可直接聚合 (STRATEGY 第七节项 2)."""
-    logger.info("metric: tool_validator_coerced tool=%s field=%s reason=%s",
-                tool, field, reason)
+def _metric(tool: str, field: str, reason: str, *, action: str = "coerced") -> None:
+    """结构化 metric 日志 — Sentry 接入后可直接聚合 (STRATEGY 第七节项 2).
+
+    action='coerced': 字段被纠正到合法值 (enum 替换 / 日期回写今天)
+    action='rejected': 字段被整个丢弃 (数值超界 / 非数值 / 越权 ID)
+    """
+    logger.info("metric: tool_validator_%s tool=%s field=%s reason=%s",
+                action, tool, field, reason)
 
 
 def _coerce_enum(

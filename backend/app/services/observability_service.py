@@ -13,7 +13,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 
@@ -28,31 +28,45 @@ def utc_now() -> datetime:
 def open_loop_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
     from app.models.open_loop_history import OpenLoopHistory
 
-    q = db.query(OpenLoopHistory).filter(OpenLoopHistory.sent_at >= since)
+    filters = [OpenLoopHistory.sent_at >= since]
     if user_id:
-        q = q.filter(OpenLoopHistory.user_id == user_id)
+        filters.append(OpenLoopHistory.user_id == user_id)
 
-    rows = q.all()
-    by_kind: dict[str, int] = {}
+    base = db.query(OpenLoopHistory).filter(*filters)
+
+    total_sent = base.with_entities(func.count(OpenLoopHistory.id)).scalar() or 0
+    if total_sent == 0:
+        return {
+            "total_sent": 0, "by_kind": {}, "by_action": {},
+            "delivery_fail": 0, "avg_score": None, "last_sent": None,
+        }
+
+    by_kind = dict(
+        base.with_entities(OpenLoopHistory.kind, func.count(OpenLoopHistory.id))
+        .group_by(OpenLoopHistory.kind).all()
+    )
+
+    # user_action NULL → "未操作"
+    raw_actions = base.with_entities(
+        OpenLoopHistory.user_action, func.count(OpenLoopHistory.id)
+    ).group_by(OpenLoopHistory.user_action).all()
     by_action: dict[str, int] = {}
-    delivery_fail = 0
-    scores: list[int] = []
-    for r in rows:
-        by_kind[r.kind] = by_kind.get(r.kind, 0) + 1
-        action = r.user_action or "未操作"
-        by_action[action] = by_action.get(action, 0) + 1
-        if not r.delivery_ok:
-            delivery_fail += 1
-        scores.append(r.score)
+    for action, cnt in raw_actions:
+        by_action[action or "未操作"] = by_action.get(action or "未操作", 0) + cnt
 
-    last_sent = db.query(func.max(OpenLoopHistory.sent_at)).scalar()
+    delivery_fail = base.with_entities(func.count(OpenLoopHistory.id)).filter(
+        OpenLoopHistory.delivery_ok == 0
+    ).scalar() or 0
+
+    avg_score = base.with_entities(func.avg(OpenLoopHistory.score)).scalar()
+    last_sent = base.with_entities(func.max(OpenLoopHistory.sent_at)).scalar()
 
     return {
-        "total_sent": len(rows),
+        "total_sent": int(total_sent),
         "by_kind": by_kind,
         "by_action": by_action,
-        "delivery_fail": delivery_fail,
-        "avg_score": round(sum(scores) / len(scores), 1) if scores else None,
+        "delivery_fail": int(delivery_fail),
+        "avg_score": round(float(avg_score), 1) if avg_score is not None else None,
         "last_sent": last_sent.isoformat() if last_sent else None,
     }
 
@@ -171,41 +185,30 @@ def memory_kg_stats(db: Session, since: datetime, user_id: Optional[int]) -> dic
 
 
 # ---------------------------------------------------------------
-# D. Doctor Weekly Report (NotificationLog)
+# D. Doctor Weekly Report
+#    真实数据源 = Clinical Journal 里 created_by='doctor_weekly_task' 的 entry.
+#    generate_doctor_weekly_report 推 Telegram / Email / APNs 都不写 NotificationLog,
+#    只 SOAP 永久化是可靠的观测点.
 # ---------------------------------------------------------------
 
 def doctor_report_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
-    from app.models.notification import NotificationLog
+    from app.models.clinical_journal import ClinicalJournalEntry
 
-    q = (
-        db.query(NotificationLog)
-        .filter(
-            NotificationLog.created_at >= since,
-            or_(
-                NotificationLog.notification_type.ilike("%doctor%"),
-                NotificationLog.notification_type.ilike("%advisor%"),
-                NotificationLog.notification_type.ilike("%weekly%"),
-            ),
-        )
+    q = db.query(ClinicalJournalEntry).filter(
+        ClinicalJournalEntry.generated_at >= since,
+        ClinicalJournalEntry.created_by == "doctor_weekly_task",
     )
     if user_id:
-        q = q.filter(NotificationLog.user_id == user_id)
+        q = q.filter(ClinicalJournalEntry.user_id == user_id)
 
-    rows = q.all()
-    by_status: dict[str, int] = {}
-    for r in rows:
-        s = (r.status.value if hasattr(r.status, "value") else str(r.status)) if r.status else "unknown"
-        by_status[s] = by_status.get(s, 0) + 1
-
-    last_sent = None
-    if rows:
-        last = max(rows, key=lambda r: r.created_at or datetime.min.replace(tzinfo=timezone.utc))
-        last_sent = last.created_at.isoformat() if last.created_at else None
+    total = q.count()
+    unique_users = q.with_entities(ClinicalJournalEntry.user_id).distinct().count()
+    last_generated = q.with_entities(func.max(ClinicalJournalEntry.generated_at)).scalar()
 
     return {
-        "total_attempts": len(rows),
-        "by_status": by_status,
-        "last_attempt": last_sent,
+        "total_attempts": total,
+        "unique_users": unique_users,
+        "last_attempt": last_generated.isoformat() if last_generated else None,
     }
 
 
@@ -359,11 +362,7 @@ def actionable_suggestions(report: dict) -> list[str]:
 
     dr = report["doctor_report"]
     if dr["total_attempts"] == 0:
-        out.append("🔴 Doctor Weekly 窗口内零推送 — celery beat doctor-weekly-report 可能没加载")
-    else:
-        failed = dr["by_status"].get("failed", 0) + dr["by_status"].get("error", 0)
-        if failed == dr["total_attempts"]:
-            out.append(f"🔴 Doctor Weekly {dr['total_attempts']} 次尝试全部 failed — Telegram 配置错了?")
+        out.append("🔴 Doctor Weekly 窗口内零 SOAP 落盘 — celery beat doctor-weekly-report 可能没加载")
 
     ac = report["action_card"]
     if ac["created_in_window"] == 0:

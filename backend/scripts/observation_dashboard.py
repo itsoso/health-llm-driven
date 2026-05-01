@@ -119,11 +119,9 @@ def render_text(report: dict, days: int, user_id: int | None):
 
     _p("D. Doctor Weekly Report")
     dr = report["doctor_report"]
-    _kv("推送尝试次数", dr["total_attempts"])
-    _kv("最近尝试", dr["last_attempt"] or "—")
-    if dr["by_status"]:
-        print("  按状态:")
-        _section_dict(dr["by_status"], indent=4)
+    _kv("周报 SOAP 落盘", dr["total_attempts"])
+    _kv("覆盖用户数", dr["unique_users"])
+    _kv("最近一次", dr["last_attempt"] or "—")
 
     _p("E. ActionCard 信用循环")
     ac = report["action_card"]

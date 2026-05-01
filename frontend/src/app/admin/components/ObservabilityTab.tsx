@@ -38,7 +38,7 @@ interface MemoryKgStats {
 
 interface DoctorReportStats {
   total_attempts: number;
-  by_status: Record<string, number>;
+  unique_users: number;
   last_attempt: string | null;
 }
 
@@ -315,13 +315,10 @@ export default function ObservabilityTab() {
 
           {/* D. Doctor Weekly */}
           <Section title="D. Doctor Weekly Report" badge="阶段 4">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-              <StatCard title="推送尝试" value={data.report.doctor_report.total_attempts} />
-              <StatCard title="最近尝试" value={fmtTime(data.report.doctor_report.last_attempt)} />
-            </div>
-            <div>
-              <div className="text-xs text-purple-200/70 mb-2">按状态</div>
-              <KvList data={data.report.doctor_report.by_status} />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <StatCard title="周报 SOAP 落盘" value={data.report.doctor_report.total_attempts} />
+              <StatCard title="覆盖用户数" value={data.report.doctor_report.unique_users} />
+              <StatCard title="最近一次" value={fmtTime(data.report.doctor_report.last_attempt)} />
             </div>
           </Section>
 
