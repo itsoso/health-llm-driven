@@ -27,7 +27,8 @@ import { useAgentAgenda } from '../../hooks/useAgentAgenda';
 import type { TodayCoachFocus } from '../../services/todayCoach';
 import type { AgentAgendaItem } from '../../services/agentAgenda';
 import { invalidateHealthSnapshot, queryKeys } from '../../applib/queryKeys';
-import { colors, spacing, radii } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 function today(): string {
   const d = new Date();
@@ -37,6 +38,9 @@ function today(): string {
 export default function HomeScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -144,7 +148,7 @@ export default function HomeScreen() {
     if ((item as any).type === 'load-more') {
       return (
         <TouchableOpacity style={styles.loadMoreBtn} onPress={chat.loadMoreHistory} activeOpacity={0.7}>
-          <Ionicons name="chevron-up" size={14} color={colors.brand} />
+          <Ionicons name="chevron-up" size={14} color={c.brand} />
           <Text style={txt.loadMoreText}>查看更早</Text>
         </TouchableOpacity>
       );
@@ -251,7 +255,7 @@ export default function HomeScreen() {
                 qc.invalidateQueries({ queryKey: queryKeys.forecast }),
               ]);
               setRefreshing(false);
-            }} tintColor={colors.brand} />
+            }} tintColor={c.brand} />
           }
           contentContainerStyle={styles.msgList}
           onContentSizeChange={() => { if (isNearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }}
@@ -265,7 +269,7 @@ export default function HomeScreen() {
               <Text style={txt.welcomeTitle}>健康助理</Text>
               <Text style={txt.welcomeSub}>说点什么，或试试这些</Text>
               <TouchableOpacity style={styles.briefingBtn} onPress={() => handleSend('今天健康如何？给我一份简报', null)} activeOpacity={0.7} accessibilityLabel="生成今日健康简报">
-                <Ionicons name="sparkles-outline" size={16} color={colors.brand} />
+                <Ionicons name="sparkles-outline" size={16} color={c.brand} />
                 <Text style={txt.briefingBtnText}>生成今日健康简报</Text>
               </TouchableOpacity>
               <View style={styles.sugRow}>
@@ -320,59 +324,63 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  alertBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: spacing.lg, marginBottom: 6,
-    backgroundColor: '#FFF0F0', borderRadius: radii.md,
-    padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: '#FF453A',
-  },
-  msgList: { paddingTop: spacing.sm, paddingBottom: 4, paddingHorizontal: spacing.md },
-  chatDivider: {
-    flexDirection: 'row', alignItems: 'center',
-    marginTop: spacing.lg, marginBottom: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  chatDividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.separator },
-  imageViewerOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  imageViewerClose: {
-    position: 'absolute', top: 60, right: 20,
-  },
-  welcome: { alignItems: 'center', paddingTop: 80 },
-  briefingBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.brandLight, borderRadius: radii.full,
-    paddingHorizontal: 18, paddingVertical: 10, marginTop: 16, marginBottom: 8,
-  },
-  sugRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20, justifyContent: 'center', paddingHorizontal: spacing.xl },
-  sugChip: {
-    backgroundColor: colors.bgCard, borderRadius: radii.full,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderWidth: 1, borderColor: colors.separator,
-  },
-  dateDivider: {
-    flexDirection: 'row', alignItems: 'center',
-    marginVertical: 12, paddingHorizontal: spacing.md,
-  },
-  dateLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.separator },
-  loadMoreBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14,
-    marginBottom: 8, backgroundColor: colors.brandLight, borderRadius: radii.full,
-  },
-});
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.bgPrimary },
+    alertBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      marginHorizontal: spacing.lg, marginBottom: 6,
+      backgroundColor: c.tintRed, borderRadius: radii.md,
+      padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: c.red,
+    },
+    msgList: { paddingTop: spacing.sm, paddingBottom: 4, paddingHorizontal: spacing.md },
+    chatDivider: {
+      flexDirection: 'row', alignItems: 'center',
+      marginTop: spacing.lg, marginBottom: spacing.sm,
+      paddingHorizontal: spacing.lg,
+    },
+    chatDividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: c.separator },
+    imageViewerOverlay: {
+      flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
+      justifyContent: 'center', alignItems: 'center',
+    },
+    imageViewerClose: {
+      position: 'absolute', top: 60, right: 20,
+    },
+    welcome: { alignItems: 'center', paddingTop: 80 },
+    briefingBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: c.brandLight, borderRadius: radii.full,
+      paddingHorizontal: 18, paddingVertical: 10, marginTop: 16, marginBottom: 8,
+    },
+    sugRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20, justifyContent: 'center', paddingHorizontal: spacing.xl },
+    sugChip: {
+      backgroundColor: c.bgCard, borderRadius: radii.full,
+      paddingHorizontal: 14, paddingVertical: 8,
+      borderWidth: 1, borderColor: c.separator,
+    },
+    dateDivider: {
+      flexDirection: 'row', alignItems: 'center',
+      marginVertical: 12, paddingHorizontal: spacing.md,
+    },
+    dateLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: c.separator },
+    loadMoreBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14,
+      marginBottom: 8, backgroundColor: c.brandLight, borderRadius: radii.full,
+    },
+  });
+}
 
-const txt = {
-  alertText: { fontSize: 13, color: '#FF453A', flex: 1, lineHeight: 18 } as TextStyle,
-  welcomeTitle: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4 } as TextStyle,
-  sugText: { fontSize: 13, color: colors.brand } as TextStyle,
-  briefingBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
-  dateText: { fontSize: 11, color: colors.labelTertiary, paddingHorizontal: 10, fontWeight: '500' } as TextStyle,
-  loadMoreText: { fontSize: 12, color: colors.brand, fontWeight: '500' } as TextStyle,
-  chatDividerText: { fontSize: 11, color: colors.labelTertiary, paddingHorizontal: 10, fontWeight: '600' } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    alertText: { fontSize: 13, color: c.red, flex: 1, lineHeight: 18 } as TextStyle,
+    welcomeTitle: { fontSize: 20, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+    welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4 } as TextStyle,
+    sugText: { fontSize: 13, color: c.brand } as TextStyle,
+    briefingBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
+    dateText: { fontSize: 11, color: c.labelTertiary, paddingHorizontal: 10, fontWeight: '500' } as TextStyle,
+    loadMoreText: { fontSize: 12, color: c.brand, fontWeight: '500' } as TextStyle,
+    chatDividerText: { fontSize: 11, color: c.labelTertiary, paddingHorizontal: 10, fontWeight: '600' } as TextStyle,
+  };
+}

@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getConversations, deleteConversation } from '../../services/chat';
-import { colors, spacing, radii } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface Props {
   visible: boolean;
@@ -25,6 +26,8 @@ export default function ConversationSheet({
   currentConversationId, onSelectConversation, onDeleteConversation,
   loading, error, onRetry,
 }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const { height: screenH, width: screenW } = useWindowDimensions();
   const isTablet = screenW >= 768;
   // iPhone: 列表占屏幕 70%; iPad: 占 75% 但封顶 800
@@ -61,13 +64,13 @@ export default function ConversationSheet({
           <Text style={styles.title}>对话历史</Text>
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color={colors.brand} />
+              <ActivityIndicator size="small" color={c.brand} />
               <Text style={styles.loadingText}>加载中...</Text>
             </View>
           ) : error ? (
             <View style={styles.loadingWrap}>
-              <Ionicons name="alert-circle-outline" size={28} color={colors.red} />
-              <Text style={[styles.loadingText, { color: colors.red }]}>{error}</Text>
+              <Ionicons name="alert-circle-outline" size={28} color={c.red} />
+              <Text style={[styles.loadingText, { color: c.red }]}>{error}</Text>
               {onRetry && (
                 <TouchableOpacity onPress={onRetry} style={styles.retryBtn} activeOpacity={0.7}>
                   <Text style={styles.retryBtnText}>重试</Text>
@@ -76,7 +79,7 @@ export default function ConversationSheet({
             </View>
           ) : conversations.length === 0 ? (
             <View style={styles.loadingWrap}>
-              <Ionicons name="chatbubbles-outline" size={28} color={colors.labelTertiary} />
+              <Ionicons name="chatbubbles-outline" size={28} color={c.labelTertiary} />
               <Text style={styles.loadingText}>还没有历史对话</Text>
             </View>
           ) : (
@@ -109,7 +112,7 @@ export default function ConversationSheet({
                     accessibilityRole="button"
                     accessibilityLabel="删除对话"
                   >
-                    <Ionicons name="trash-outline" size={16} color={colors.red} />
+                    <Ionicons name="trash-outline" size={16} color={c.red} />
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))}
@@ -121,32 +124,34 @@ export default function ConversationSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  overlayTablet: { justifyContent: 'center', alignItems: 'center' },
-  sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
-  },
-  sheetTablet: {
-    borderRadius: 20, paddingBottom: spacing.xl,
-  },
-  handle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: colors.labelQuaternary,
-    alignSelf: 'center', marginBottom: spacing.lg,
-  },
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, marginBottom: 12 },
-  loadingWrap: { alignItems: 'center', paddingVertical: 20, gap: 8 },
-  loadingText: { fontSize: 14, color: colors.labelTertiary },
-  row: {
-    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator, flexDirection: 'row', alignItems: 'center',
-  },
-  rowTitle: { fontSize: 15, color: colors.labelPrimary },
-  rowDate: { fontSize: 12, color: colors.labelTertiary, marginTop: 2 },
-  retryBtn: {
-    marginTop: 8, paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: radii.md, backgroundColor: colors.brand,
-  },
-  retryBtnText: { fontSize: 14, color: '#fff', fontWeight: '500' },
-});
+function createStyles(c: ColorPalette, _isDark: boolean) {
+  return StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
+    overlayTablet: { justifyContent: 'center', alignItems: 'center' },
+    sheet: {
+      backgroundColor: c.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+      paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
+    },
+    sheetTablet: {
+      borderRadius: 20, paddingBottom: spacing.xl,
+    },
+    handle: {
+      width: 36, height: 4, borderRadius: 2, backgroundColor: c.labelQuaternary,
+      alignSelf: 'center', marginBottom: spacing.lg,
+    },
+    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, marginBottom: 12 },
+    loadingWrap: { alignItems: 'center', paddingVertical: 20, gap: 8 },
+    loadingText: { fontSize: 14, color: c.labelTertiary },
+    row: {
+      paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.separator, flexDirection: 'row', alignItems: 'center',
+    },
+    rowTitle: { fontSize: 15, color: c.labelPrimary },
+    rowDate: { fontSize: 12, color: c.labelTertiary, marginTop: 2 },
+    retryBtn: {
+      marginTop: 8, paddingHorizontal: 16, paddingVertical: 8,
+      borderRadius: radii.md, backgroundColor: c.brand,
+    },
+    retryBtnText: { fontSize: 14, color: '#fff', fontWeight: '500' },
+  });
+}

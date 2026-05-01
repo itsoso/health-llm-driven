@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { colors } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Props {
   size: number;
@@ -9,10 +9,11 @@ interface Props {
 }
 
 export default function BrandCircle({ size, children, style }: Props) {
+  const { c } = useTheme();
   return (
     <View style={[{
       width: size, height: size, borderRadius: size / 2,
-      backgroundColor: colors.brand,
+      backgroundColor: c.brand,
       alignItems: 'center', justifyContent: 'center',
     }, style]}>
       {children}

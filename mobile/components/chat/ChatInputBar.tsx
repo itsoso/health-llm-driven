@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView, Dimensions,
@@ -10,12 +10,15 @@ import * as DocumentPicker from 'expo-document-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSpring } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
-import { colors, spacing } from '../../constants/theme';
+import { spacing } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CANCEL_THRESHOLD = 80;
 
 function PulsingRing() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const scale = useSharedValue(1);
   React.useEffect(() => {
     scale.value = withRepeat(withTiming(1.4, { duration: 800 }), -1, true);
@@ -35,6 +38,8 @@ interface Props {
 }
 
 export default function ChatInputBar({ onSend, isStreaming, initialText }: Props) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
@@ -122,13 +127,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <View key={img.uri} style={styles.previewItem}>
               <Image source={{ uri: img.uri }} style={styles.previewImg} />
               <TouchableOpacity style={styles.previewRemove} onPress={() => removeImage(i)} hitSlop={6}>
-                <Ionicons name="close-circle" size={18} color={colors.red} />
+                <Ionicons name="close-circle" size={18} color={c.red} />
               </TouchableOpacity>
             </View>
           ))}
           {pendingImages.length < 9 && (
             <TouchableOpacity style={styles.previewAddBtn} onPress={pickImage}>
-              <Ionicons name="add" size={20} color={colors.labelSecondary} />
+              <Ionicons name="add" size={20} color={c.labelSecondary} />
             </TouchableOpacity>
           )}
           <Text style={styles.previewCount}>{pendingImages.length}/9</Text>
@@ -162,7 +167,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
       {/* 识别中提示 */}
       {voice.isTranscribing && (
         <View style={styles.transcribingBar}>
-          <ActivityIndicator size="small" color={colors.brand} />
+          <ActivityIndicator size="small" color={c.brand} />
           <Text style={styles.transcribingText}>语音识别中...</Text>
         </View>
       )}
@@ -170,7 +175,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
       {/* 输入栏 */}
       <View style={styles.inputBar}>
         <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
-          <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={colors.labelPrimary} />
+          <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={c.labelPrimary} />
         </TouchableOpacity>
 
         {voiceMode && !canSend ? (
@@ -189,7 +194,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <Ionicons
               name="mic"
               size={18}
-              color={voice.isRecording ? '#FF453A' : colors.labelSecondary}
+              color={voice.isRecording ? '#FF453A' : c.labelSecondary}
               style={{ marginRight: 4 }}
             />
             <Text style={[
@@ -206,7 +211,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
               ref={textInputRef}
               style={styles.textInput}
               placeholder="有问题，尽管问"
-              placeholderTextColor={colors.labelTertiary}
+              placeholderTextColor={c.labelTertiary}
               value={input}
               onChangeText={setInput}
               onSubmitEditing={() => handleSend()}
@@ -233,7 +238,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <Ionicons
               name={voiceMode ? 'keypad-outline' : 'mic-outline'}
               size={22}
-              color={colors.labelSecondary}
+              color={c.labelSecondary}
             />
           </TouchableOpacity>
         )}
@@ -255,10 +260,12 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
 }
 
 function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={label}>
       <View style={styles.menuIconWrap}>
-        <Ionicons name={icon} size={20} color={colors.labelPrimary} />
+        <Ionicons name={icon} size={20} color={c.labelPrimary} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.menuLabel}>{label}</Text>
@@ -268,31 +275,32 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
   /* ── 输入栏 ── */
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 6,
     paddingHorizontal: spacing.sm, paddingVertical: 8,
-    backgroundColor: colors.bgPrimary,
+    backgroundColor: c.bgPrimary,
   },
   plusBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.separator,
+    backgroundColor: c.bgCard, borderWidth: 1, borderColor: c.separator,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: colors.bgCard, borderRadius: 18,
-    borderWidth: 1, borderColor: colors.separator,
+    backgroundColor: c.bgCard, borderRadius: 18,
+    borderWidth: 1, borderColor: c.separator,
     paddingHorizontal: 12, paddingVertical: 4,
   },
   textInput: {
-    flex: 1, fontSize: 15, maxHeight: 90, color: colors.labelPrimary,
+    flex: 1, fontSize: 15, maxHeight: 90, color: c.labelPrimary,
     paddingTop: 6, paddingBottom: 6,
   },
   sendBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: colors.brand,
+    backgroundColor: c.brand,
     alignItems: 'center', justifyContent: 'center',
   },
   modeBtn: {
@@ -303,8 +311,8 @@ const styles = StyleSheet.create({
   /* ── 按住说话按钮（微信风格） ── */
   holdToTalkBtn: {
     flex: 1, height: 36, borderRadius: 20,
-    backgroundColor: colors.bgCard,
-    borderWidth: 1, borderColor: colors.separator,
+    backgroundColor: c.bgCard,
+    borderWidth: 1, borderColor: c.separator,
     flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',
   },
@@ -317,7 +325,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFD0D0',
   },
   holdToTalkText: {
-    fontSize: 15, fontWeight: '500', color: colors.labelSecondary,
+    fontSize: 15, fontWeight: '500', color: c.labelSecondary,
   } as TextStyle,
   holdToTalkTextRecording: {
     color: '#FF453A',
@@ -365,16 +373,16 @@ const styles = StyleSheet.create({
   transcribingBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: spacing.lg, paddingVertical: 10,
-    backgroundColor: colors.bgCard,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
+    backgroundColor: c.bgCard,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
   },
-  transcribingText: { fontSize: 14, color: colors.brand } as TextStyle,
+  transcribingText: { fontSize: 14, color: c.brand } as TextStyle,
 
   /* ── 图片预览 ── */
   previewBar: {
     maxHeight: 72,
-    backgroundColor: colors.bgCard,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
+    backgroundColor: c.bgCard,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
   },
   previewContent: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -385,10 +393,10 @@ const styles = StyleSheet.create({
   previewRemove: { position: 'absolute', top: -6, right: -6 },
   previewAddBtn: {
     width: 52, height: 52, borderRadius: 8,
-    borderWidth: 1.5, borderColor: colors.separator, borderStyle: 'dashed',
+    borderWidth: 1.5, borderColor: c.separator, borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
   },
-  previewCount: { fontSize: 12, color: colors.labelTertiary, marginLeft: 4 } as TextStyle,
+  previewCount: { fontSize: 12, color: c.labelTertiary, marginLeft: 4 } as TextStyle,
 
   /* ── 附件菜单 ── */
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
@@ -397,17 +405,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
   },
   menuHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: colors.labelQuaternary,
+    width: 36, height: 4, borderRadius: 2, backgroundColor: c.labelQuaternary,
     alignSelf: 'center', marginBottom: spacing.lg,
   },
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
   menuIconWrap: {
-    width: 38, height: 38, borderRadius: 12, backgroundColor: colors.bgPrimary,
+    width: 38, height: 38, borderRadius: 12, backgroundColor: c.bgPrimary,
     alignItems: 'center', justifyContent: 'center',
   },
-  menuLabel: { fontSize: 16, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  menuDesc: { fontSize: 12, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
-});
+  menuLabel: { fontSize: 16, fontWeight: '500', color: c.labelPrimary } as TextStyle,
+  menuDesc: { fontSize: 12, color: c.labelSecondary, marginTop: 1 } as TextStyle,
+  });
+}

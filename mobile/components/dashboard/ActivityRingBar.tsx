@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface RingProps {
   value: number;
@@ -14,12 +15,16 @@ interface RingProps {
 }
 
 function ActivityRing({ value, target, color, icon, label, displayValue }: RingProps) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c, false), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+
   const size = 64;
   const sw = 5;
   const r = (size - sw) / 2;
-  const c = 2 * Math.PI * r;
+  const circ = 2 * Math.PI * r;
   const progress = Math.min(value / target, 1);
-  const off = c * (1 - progress);
+  const off = circ * (1 - progress);
 
   return (
     <View style={styles.ringItem}>
@@ -28,7 +33,7 @@ function ActivityRing({ value, target, color, icon, label, displayValue }: RingP
           <Circle cx={size / 2} cy={size / 2} r={r} stroke={`${color}20`} strokeWidth={sw} fill="none" />
           <Circle cx={size / 2} cy={size / 2} r={r}
             stroke={color} strokeWidth={sw} fill="none"
-            strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off}
+            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off}
             transform={`rotate(-90 ${size / 2} ${size / 2})`} />
         </Svg>
         <Ionicons name={icon} size={18} color={color} style={{ position: 'absolute' }} />
@@ -54,35 +59,44 @@ export default function ActivityRingBar({
   activeMin = 0, activeTarget = 30,
   calories = 0, caloriesTarget = 500,
 }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+
   return (
     <View style={styles.card}>
-      <ActivityRing value={steps} target={stepsTarget} color="#FF6723" icon="footsteps-outline" label="步数" displayValue={steps.toLocaleString()} />
+      <ActivityRing value={steps} target={stepsTarget} color={c.orange} icon="footsteps-outline" label="步数" displayValue={steps.toLocaleString()} />
       <View style={styles.divider} />
-      <ActivityRing value={activeMin} target={activeTarget} color="#FF375F" icon="flame-outline" label="活动" displayValue={`${activeMin}min`} />
+      <ActivityRing value={activeMin} target={activeTarget} color={c.pink} icon="flame-outline" label="活动" displayValue={`${activeMin}min`} />
       <View style={styles.divider} />
-      <ActivityRing value={calories} target={caloriesTarget} color="#FF453A" icon="flash-outline" label="卡路里" displayValue={`${calories}`} />
+      <ActivityRing value={calories} target={caloriesTarget} color={c.red} icon="flash-outline" label="卡路里" displayValue={`${calories}`} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.xl,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    ...shadows.subtle,
-  },
-  ringItem: { alignItems: 'center' },
-  divider: { width: StyleSheet.hairlineWidth, height: 60, backgroundColor: colors.separator },
-});
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    card: {
+      flexDirection: 'row',
+      backgroundColor: c.bgCard,
+      borderRadius: radii.xl,
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.lg,
+      justifyContent: 'space-around',
+      alignItems: 'center',
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
+    },
+    ringItem: { alignItems: 'center' },
+    divider: { width: StyleSheet.hairlineWidth, height: 60, backgroundColor: c.separator },
+  });
+}
 
-const txt = {
-  value: { fontSize: 16, fontWeight: '700', color: colors.labelPrimary, marginTop: 6, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  label: { fontSize: 11, fontWeight: '500', color: colors.labelSecondary, marginTop: 2 } as TextStyle,
-  target: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    value: { fontSize: 16, fontWeight: '700', color: c.labelPrimary, marginTop: 6, fontVariant: ['tabular-nums'] as const } as TextStyle,
+    label: { fontSize: 11, fontWeight: '500', color: c.labelSecondary, marginTop: 2 } as TextStyle,
+    target: { fontSize: 10, color: c.labelTertiary } as TextStyle,
+  };
+}

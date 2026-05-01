@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { supplementApi } from '../../services/records';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
 const timingOrder = ['morning', 'noon', 'evening', 'bedtime'];
@@ -14,6 +15,10 @@ interface Props {
 }
 
 export default function SupplementCheckin({ supplements, onToggle }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+  const txt = useMemo(() => createTxt(c), [c]);
+
   const [expanded, setExpanded] = useState(false);
   const [localState, setLocalState] = useState<Record<number, boolean>>({});
 
@@ -70,8 +75,8 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.iconCircle, { backgroundColor: '#F5E6FF' }]}>
-          <Ionicons name="medical" size={14} color="#AF52DE" />
+        <View style={[styles.iconCircle, { backgroundColor: c.tintPurple }]}>
+          <Ionicons name="medical" size={14} color={c.purple} />
         </View>
         <Text style={txt.title}>补剂打卡</Text>
         <View style={styles.badge}>
@@ -109,55 +114,61 @@ export default function SupplementCheckin({ supplements, onToggle }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    ...shadows.subtle,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: spacing.md,
-  },
-  iconCircle: {
-    width: 28, height: 28, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  badge: {
-    backgroundColor: '#F5E6FF',
-    paddingHorizontal: 8, paddingVertical: 2,
-    borderRadius: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-  },
-  checkbox: {
-    width: 22, height: 22, borderRadius: 11,
-    borderWidth: 2, borderColor: colors.labelQuaternary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  checkboxChecked: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  expandBtn: {
-    alignItems: 'center',
-    paddingTop: spacing.sm,
-  },
-});
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.lg,
+      padding: spacing.lg,
+      marginBottom: spacing.md,
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: spacing.md,
+    },
+    iconCircle: {
+      width: 28, height: 28, borderRadius: 8,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    badge: {
+      backgroundColor: c.tintPurple,
+      paddingHorizontal: 8, paddingVertical: 2,
+      borderRadius: 10,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 6,
+    },
+    checkbox: {
+      width: 22, height: 22, borderRadius: 11,
+      borderWidth: 2, borderColor: c.labelQuaternary,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    checkboxChecked: {
+      backgroundColor: c.brand,
+      borderColor: c.brand,
+    },
+    expandBtn: {
+      alignItems: 'center',
+      paddingTop: spacing.sm,
+    },
+  });
+}
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1 } as TextStyle,
-  badge: { fontSize: 12, fontWeight: '600', color: '#AF52DE' } as TextStyle,
-  timingLabel: { fontSize: 11, fontWeight: '600', color: colors.labelTertiary, marginTop: 8, marginBottom: 4 } as TextStyle,
-  name: { fontSize: 15, color: colors.labelPrimary, flex: 1 } as TextStyle,
-  nameChecked: { color: colors.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
-  expand: { fontSize: 13, color: colors.brand, fontWeight: '500' } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1 } as TextStyle,
+    badge: { fontSize: 12, fontWeight: '600', color: c.purple } as TextStyle,
+    timingLabel: { fontSize: 11, fontWeight: '600', color: c.labelTertiary, marginTop: 8, marginBottom: 4 } as TextStyle,
+    name: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
+    nameChecked: { color: c.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
+    expand: { fontSize: 13, color: c.brand, fontWeight: '500' } as TextStyle,
+  };
+}

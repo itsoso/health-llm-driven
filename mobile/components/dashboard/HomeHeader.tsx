@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TextStyle, TouchableOpacity, LayoutAnimation, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-function Shimmer({ width, height = 12 }: { width: number; height?: number }) {
+function Shimmer({ width, height = 12, c }: { width: number; height?: number; c: ColorPalette }) {
   const opacity = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
     const anim = Animated.loop(
@@ -17,7 +18,7 @@ function Shimmer({ width, height = 12 }: { width: number; height?: number }) {
     anim.start();
     return () => anim.stop();
   }, []);
-  return <Animated.View style={{ width, height, borderRadius: height / 2, backgroundColor: colors.separator, opacity }} />;
+  return <Animated.View style={{ width, height, borderRadius: height / 2, backgroundColor: c.separator, opacity }} />;
 }
 
 interface Props {
@@ -42,17 +43,17 @@ interface Props {
   onHistory?: () => void;
 }
 
-function getAqiColor(v?: number | null): string {
-  if (!v) return colors.labelTertiary;
-  if (v <= 50) return '#30D158';
-  if (v <= 100) return '#FF9F0A';
-  return '#FF453A';
+function getAqiColor(v: number | null | undefined, c: ColorPalette): string {
+  if (!v) return c.labelTertiary;
+  if (v <= 50) return c.green;
+  if (v <= 100) return c.amber;
+  return c.red;
 }
 
-function sc(score: number): string {
-  if (score >= 80) return '#30D158';
-  if (score >= 60) return '#FF9F0A';
-  return '#FF453A';
+function sc(score: number, c: ColorPalette): string {
+  if (score >= 80) return c.green;
+  if (score >= 60) return c.amber;
+  return c.red;
 }
 
 export default function HomeHeader({
@@ -61,6 +62,8 @@ export default function HomeHeader({
   batteryCurrent, batteryPeak, isLoading,
   onSettings, onNewChat, onHistory,
 }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const [collapsed, setCollapsed] = useState(false);
   const hour = new Date().getHours();
   const greeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
@@ -73,233 +76,206 @@ export default function HomeHeader({
   const ringSize = collapsed ? 28 : 52;
   const sw = collapsed ? 3 : 4;
   const r = (ringSize - sw) / 2;
-  const c = 2 * Math.PI * r;
-  const off = c * (1 - Math.min(score / 100, 1));
+  const cc = 2 * Math.PI * r;
+  const off = cc * (1 - Math.min(score / 100, 1));
 
-  // ── Collapsed: one-line mini bar ──
+  // Collapsed mini bar
   if (collapsed) {
     return (
       <View style={styles.miniBar}>
         <TouchableOpacity onPress={toggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }} activeOpacity={0.7}>
           <View style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center' }}>
-          <Svg width={ringSize} height={ringSize}>
-            <Defs><LinearGradient id="miniG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#0A8F8F" /><Stop offset="1" stopColor="#30D158" /></LinearGradient></Defs>
-            <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="#F2F2F7" strokeWidth={sw} fill="none" />
-            <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="url(#miniG)" strokeWidth={sw} fill="none" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
-          </Svg>
-          <Text style={{ position: 'absolute', fontSize: 9, fontWeight: '800', color: sc(score) }}>{score}</Text>
-        </View>
-        <Text style={txt.miniWeather} numberOfLines={1}>{city} {temperature != null ? `${Math.round(temperature)}°` : ''} {weatherDesc || ''}</Text>
-        <MiniVital color="#BF5AF2" value={sleep || '--'} />
-        <MiniVital color="#FF375F" value={hr || '--'} />
-        <MiniVital color="#30D158" value={battery || '--'} />
+            <Svg width={ringSize} height={ringSize}>
+              <Defs><LinearGradient id="miniG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor={c.brand} /><Stop offset="1" stopColor={c.green} /></LinearGradient></Defs>
+              <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke={c.bgPrimary} strokeWidth={sw} fill="none" />
+              <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="url(#miniG)" strokeWidth={sw} fill="none" strokeLinecap="round" strokeDasharray={cc} strokeDashoffset={off} transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
+            </Svg>
+            <Text style={{ position: 'absolute', fontSize: 9, fontWeight: '800', color: sc(score, c) }}>{score}</Text>
+          </View>
+          <Text style={styles.miniWeather} numberOfLines={1}>{city} {temperature != null ? `${Math.round(temperature)}°` : ''} {weatherDesc || ''}</Text>
+          <MiniVital color={c.purple} value={sleep || '--'} />
+          <MiniVital color={c.pink} value={hr || '--'} />
+          <MiniVital color={c.green} value={battery || '--'} />
         </TouchableOpacity>
         {onHistory && (
-          <TouchableOpacity
-            onPress={(e) => {
-              e.stopPropagation();
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onHistory();
-            }}
-            style={styles.miniAction}
-            hitSlop={10}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="chatbubbles-outline" size={15} color={colors.labelTertiary} />
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onHistory(); }} style={styles.miniAction} hitSlop={10} activeOpacity={0.6}>
+            <Ionicons name="chatbubbles-outline" size={15} color={c.labelTertiary} />
           </TouchableOpacity>
         )}
         {onNewChat && (
-          <TouchableOpacity
-            onPress={(e) => {
-              e.stopPropagation();
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onNewChat();
-            }}
-            style={styles.miniAction}
-            hitSlop={10}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="create-outline" size={15} color={colors.labelTertiary} />
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onNewChat(); }} style={styles.miniAction} hitSlop={10} activeOpacity={0.6}>
+            <Ionicons name="create-outline" size={15} color={c.labelTertiary} />
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={toggle} style={styles.miniAction} hitSlop={8} activeOpacity={0.6}>
-          <Ionicons name="chevron-down" size={14} color={colors.labelTertiary} />
+          <Ionicons name="chevron-down" size={14} color={c.labelTertiary} />
         </TouchableOpacity>
       </View>
     );
   }
 
-  // ── Expanded: full card ──
+  // Expanded card
   return (
     <View style={styles.card}>
-      {/* Top: greeting + actions + score ring */}
       <View style={styles.topRow}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={[txt.greeting, { flex: 1 }]}>{greeting}</Text>
+            <Text style={[styles.greeting, { flex: 1 }]}>{greeting}</Text>
             {onHistory && (
-              <TouchableOpacity
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onHistory();
-                }}
-                style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}
-              >
-                <Ionicons name="chatbubbles-outline" size={18} color={colors.labelTertiary} />
+              <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onHistory(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
+                <Ionicons name="chatbubbles-outline" size={18} color={c.labelTertiary} />
               </TouchableOpacity>
             )}
             {onNewChat && (
-              <TouchableOpacity
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onNewChat();
-                }}
-                style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}
-              >
-                <Ionicons name="create-outline" size={18} color={colors.labelTertiary} />
+              <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onNewChat(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
+                <Ionicons name="create-outline" size={18} color={c.labelTertiary} />
               </TouchableOpacity>
             )}
             {onSettings && (
               <TouchableOpacity onPress={onSettings} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
-                <Ionicons name="settings-outline" size={18} color={colors.labelTertiary} />
+                <Ionicons name="settings-outline" size={18} color={c.labelTertiary} />
               </TouchableOpacity>
             )}
           </View>
-          {/* Weather line */}
           <View style={styles.weatherRow}>
-            <Ionicons name="location-outline" size={12} color={colors.brand} />
-            <Text style={txt.weatherMain}>
+            <Ionicons name="location-outline" size={12} color={c.brand} />
+            <Text style={styles.weatherMain}>
               {city || '--'} {temperature != null ? `${Math.round(temperature)}°C` : ''} {weatherDesc || ''}
             </Text>
           </View>
-          {/* AQI + tomorrow */}
           <View style={styles.subRow}>
             {aqiValue != null && (
               <View style={styles.aqiTag}>
-                <View style={[styles.aqiDot, { backgroundColor: getAqiColor(aqiValue) }]} />
-                <Text style={[txt.aqiText, { color: getAqiColor(aqiValue) }]}>AQI {aqiValue}</Text>
-                {pm25 != null && <Text style={txt.pm25}>PM2.5 {Math.round(pm25)}</Text>}
+                <View style={[styles.aqiDot, { backgroundColor: getAqiColor(aqiValue, c) }]} />
+                <Text style={[styles.aqiText, { color: getAqiColor(aqiValue, c) }]}>AQI {aqiValue}</Text>
+                {pm25 != null && <Text style={styles.pm25}>PM2.5 {Math.round(pm25)}</Text>}
               </View>
             )}
             {tomorrowWeather && (
-              <Text style={txt.tomorrow}>明天 {tomorrowWeather} {tomorrowTempRange}</Text>
+              <Text style={styles.tomorrow}>明天 {tomorrowWeather} {tomorrowTempRange}</Text>
             )}
           </View>
         </View>
 
-        {/* Score ring */}
         <View style={styles.ringWrap}>
           <Svg width={ringSize} height={ringSize}>
-            <Defs><LinearGradient id="hdrG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#0A8F8F" /><Stop offset="1" stopColor="#30D158" /></LinearGradient></Defs>
-            <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="#F2F2F7" strokeWidth={sw} fill="none" />
-            <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="url(#hdrG)" strokeWidth={sw} fill="none" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
+            <Defs><LinearGradient id="hdrG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor={c.brand} /><Stop offset="1" stopColor={c.green} /></LinearGradient></Defs>
+            <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke={c.bgPrimary} strokeWidth={sw} fill="none" />
+            <Circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="url(#hdrG)" strokeWidth={sw} fill="none" strokeLinecap="round" strokeDasharray={cc} strokeDashoffset={off} transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
           </Svg>
           <View style={styles.ringCenter}>
-            <Text style={[txt.scoreNum, { color: sc(score) }]}>{score}</Text>
-            <Text style={txt.scoreLabel}>健康</Text>
+            <Text style={[styles.scoreNum, { color: sc(score, c) }]}>{score}</Text>
+            <Text style={styles.scoreLabel}>健康</Text>
           </View>
         </View>
       </View>
 
-      {/* Vitals strip */}
       <View style={styles.vitalsRow}>
         {isLoading ? (
           <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 4 }}>
-            <Shimmer width={40} height={14} />
-            <Shimmer width={40} height={14} />
-            <Shimmer width={40} height={14} />
-            <Shimmer width={40} height={14} />
+            <Shimmer width={40} height={14} c={c} />
+            <Shimmer width={40} height={14} c={c} />
+            <Shimmer width={40} height={14} c={c} />
+            <Shimmer width={40} height={14} c={c} />
           </View>
         ) : (<>
-          <Vital icon="moon-outline" color="#BF5AF2" label={sleepScore ? `睡眠 ${sleepScore}分` : '睡眠'} value={sleep || '--'} />
+          <Vital icon="moon-outline" color={c.purple} label={sleepScore ? `睡眠 ${sleepScore}分` : '睡眠'} value={sleep || '--'} c={c} />
           <View style={styles.vDivider} />
-          <Vital icon="footsteps-outline" color="#FF6723" label="步数" value={steps || '--'} />
+          <Vital icon="footsteps-outline" color={c.orange} label="步数" value={steps || '--'} c={c} />
           <View style={styles.vDivider} />
-          <Vital icon="heart-outline" color="#FF375F" label="心率" value={hr || '--'} />
+          <Vital icon="heart-outline" color={c.pink} label="心率" value={hr || '--'} c={c} />
           <View style={styles.vDivider} />
-          <Vital icon="battery-charging-outline" color="#30D158"
+          <Vital icon="battery-charging-outline" color={c.green}
             label={batteryPeak != null ? `峰值 ${batteryPeak}` : '电量'}
-            value={batteryCurrent != null ? `${batteryCurrent}` : (battery || '--')} />
+            value={batteryCurrent != null ? `${batteryCurrent}` : (battery || '--')}
+            c={c} />
         </>)}
       </View>
 
-      {/* Collapse button */}
       <TouchableOpacity style={styles.collapseBtn} onPress={toggle} activeOpacity={0.6}>
-        <Ionicons name="chevron-up" size={16} color={colors.labelTertiary} />
+        <Ionicons name="chevron-up" size={16} color={c.labelTertiary} />
       </TouchableOpacity>
     </View>
   );
 }
 
-function Vital({ icon, color, label, value }: { icon: any; color: string; label: string; value: string }) {
+function Vital({ icon, color, label, value, c }: { icon: any; color: string; label: string; value: string; c: ColorPalette }) {
   return (
-    <View style={styles.vitalItem}>
+    <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
       <Ionicons name={icon} size={14} color={color} />
-      <Text style={[txt.vitalVal, { color }]}>{value}</Text>
-      <Text style={txt.vitalLabel}>{label}</Text>
+      <Text style={{ fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'], color }}>{value}</Text>
+      <Text style={{ fontSize: 10, color: c.labelTertiary }}>{label}</Text>
     </View>
   );
 }
 
 function MiniVital({ color, value }: { color: string; value: string }) {
-  return <Text style={[txt.miniVital, { color }]}>{value}</Text>;
+  return <Text style={{ fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'], color }}>{value}</Text>;
 }
 
-const styles = StyleSheet.create({
-  // Expanded card
-  card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-    ...shadows.medium,
-  },
-  topRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  weatherRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 },
-  subRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-  aqiTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  aqiDot: { width: 6, height: 6, borderRadius: 3 },
-  ringWrap: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
-  ringCenter: { position: 'absolute', alignItems: 'center' },
-  vitalsRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingTop: spacing.md, marginTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.separator,
-  },
-  vitalItem: { flex: 1, alignItems: 'center', gap: 2 },
-  vDivider: { width: StyleSheet.hairlineWidth, height: 28, backgroundColor: colors.separator },
-  actionBtn: { padding: 8, minWidth: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
-  collapseBtn: { alignItems: 'center', paddingTop: 6 },
-
-  // Collapsed mini bar
-  miniBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.full,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    ...shadows.subtle,
-  },
-  miniAction: { padding: 4 },
-});
-
-const txt = {
-  greeting: { fontSize: 22, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  weatherMain: { fontSize: 13, color: colors.labelPrimary } as TextStyle,
-  aqiText: { fontSize: 11, fontWeight: '600' } as TextStyle,
-  pm25: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  tomorrow: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  scoreNum: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  scoreLabel: { fontSize: 8, fontWeight: '500', color: colors.labelTertiary, marginTop: -2 } as TextStyle,
-  vitalVal: { fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  vitalLabel: { fontSize: 10, color: colors.labelTertiary } as TextStyle,
-  miniWeather: { fontSize: 12, color: colors.labelSecondary, flex: 1 } as TextStyle,
-  miniVital: { fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-};
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.xl,
+      padding: spacing.lg,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.sm,
+      marginBottom: spacing.sm,
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            elevation: 2,
+          }),
+    },
+    miniBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: c.bgCard,
+      borderRadius: radii.full,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.sm,
+      marginBottom: spacing.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06,
+            shadowRadius: 3,
+            elevation: 1,
+          }),
+    },
+    miniAction: { padding: 4 },
+    topRow: { flexDirection: 'row', alignItems: 'flex-start' },
+    weatherRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 },
+    subRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+    aqiTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    aqiDot: { width: 6, height: 6, borderRadius: 3 },
+    ringWrap: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
+    ringCenter: { position: 'absolute', alignItems: 'center' },
+    vitalsRow: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingTop: spacing.md, marginTop: spacing.md,
+      borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
+    },
+    vDivider: { width: StyleSheet.hairlineWidth, height: 28, backgroundColor: c.separator },
+    actionBtn: { padding: 8, minWidth: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
+    collapseBtn: { alignItems: 'center', paddingTop: 6 },
+    greeting: { fontSize: 22, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+    weatherMain: { fontSize: 13, color: c.labelPrimary } as TextStyle,
+    aqiText: { fontSize: 11, fontWeight: '600' } as TextStyle,
+    pm25: { fontSize: 10, color: c.labelSecondary } as TextStyle,
+    tomorrow: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+    scoreNum: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+    scoreLabel: { fontSize: 8, fontWeight: '500', color: c.labelTertiary, marginTop: -2 } as TextStyle,
+    miniWeather: { fontSize: 12, color: c.labelSecondary, flex: 1 } as TextStyle,
+  });
+}

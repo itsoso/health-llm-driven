@@ -120,8 +120,8 @@ function RootLayout() {
       <RootErrorBoundary>
         <AuthProvider>
           <ToastProvider>
-            {/* App body 始终是浅色 (bgPrimary=#F2F2F7), 强制深色 icon, 否则 dark mode 下系统状态栏图标会用白色 → 全白底上不可见 */}
-            <StatusBar style="dark" />
+            {/* dark mode 下卡片用 darkColors, 状态栏 auto 让系统按背景选 icon 颜色 */}
+            <StatusBar style="auto" />
             <AppContent />
           </ToastProvider>
         </AuthProvider>

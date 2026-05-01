@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
   Alert, ActivityIndicator, ScrollView, Pressable,
@@ -17,7 +17,8 @@ import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
-import { colors, radii, shadows } from '../../constants/theme';
+import { radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface Props {
   item: UIMessage;
@@ -26,6 +27,9 @@ interface Props {
 
 function ChatBubbleInner({ item, onViewImage }: Props) {
   const qc = useQueryClient();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const isUser = item.role === 'user';
   const [draft, setDraft] = useState<InterventionDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -126,11 +130,11 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="加入健康行动"
               >
-                <Ionicons name="add-circle-outline" size={14} color={colors.brand} />
+                <Ionicons name="add-circle-outline" size={14} color={c.brand} />
                 <Text style={txt.actionBtn}>加入行动</Text>
               </Pressable>
             ) : null}
-            {item.streaming && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 4 }} />}
+            {item.streaming && <ActivityIndicator size="small" color={c.brand} style={{ marginTop: 4 }} />}
           </TouchableOpacity>
         )}
       </View>
@@ -157,32 +161,44 @@ function inferActionTitle(text: string): string {
 const ChatBubble = React.memo(ChatBubbleInner);
 export default ChatBubble;
 
-const styles = StyleSheet.create({
-  msgRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end' },
-  msgRowUser: { justifyContent: 'flex-end' },
-  msgRowAI: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  bubbleUser: { backgroundColor: colors.brand, borderBottomRightRadius: 4 },
-  bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 4, ...shadows.subtle },
-  bubbleAIWide: { maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
-  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
-  msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
-  msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
-  actionBtn: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 8,
-    borderRadius: radii.full,
-    backgroundColor: colors.brandLight,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  actionBtnPressed: { opacity: 0.82 },
-});
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    msgRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end' },
+    msgRowUser: { justifyContent: 'flex-end' },
+    msgRowAI: { justifyContent: 'flex-start' },
+    bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+    bubbleUser: { backgroundColor: c.brand, borderBottomRightRadius: 4 },
+    bubbleAI: {
+      backgroundColor: c.bgCard, borderBottomLeftRadius: 4,
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : {
+            shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
+          }),
+    },
+    bubbleAIWide: { maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
+    imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
+    msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
+    msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
+    actionBtn: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginTop: 8,
+      borderRadius: radii.full,
+      backgroundColor: c.brandLight,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    actionBtnPressed: { opacity: 0.82 },
+  });
+}
 
-const txt = {
-  bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
-  actionBtn: { fontSize: 12, fontWeight: '700', color: colors.brand } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
+    actionBtn: { fontSize: 12, fontWeight: '700', color: c.brand } as TextStyle,
+  };
+}

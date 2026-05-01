@@ -1,31 +1,21 @@
 /**
  * DashboardCard — Home tab 卡片统一外壳
  *
- * 设计规范 (所有 dashboard 卡片必走):
- *   - 圆角 16, 白底, padding 14, marginH 16, marginV 6, shadow.subtle
- *   - 头部: [iconBox 36×36 r10] [kicker (可选) + title] [trailing (count badge / chevron)]
- *   - 触摸: minHeight 48, 整头部可点折叠
- *   - chevron: 平 18px tertiary, 不带 pill 背景 (旧设计留下的视觉噪声)
- *
- * 用法:
- *   <DashboardCard
- *     icon="alert-circle" iconTint={tintRed} iconColor={red}
- *     kicker="优先处理" kickerColor={red}
- *     title="夜间血氧过低"
- *     count={3}                    // 可选 badge
- *     collapsible defaultCollapsed
- *   >
- *     <Text>...body content...</Text>
- *   </DashboardCard>
+ * 设计规范:
+ *   - 圆角 16, padding 14×12, marginH 16, marginV 6, shadow.subtle
+ *   - 头部: [iconBox 36×36 r10] [kicker (可选) + title] [trailing] [chevron]
+ *   - 触摸: minHeight 36, 整头部可点折叠
+ *   - dark mode: 颜色全部走 useTheme(), shadow 在 dark 下变弱 (本就难看见)
  */
-import React, { ReactNode, useState } from 'react';
+import React, { ReactNode, useMemo, useState } from 'react';
 import {
   LayoutAnimation, Platform, Pressable, StyleSheet, Text, TextStyle,
-  TouchableOpacity, UIManager, View,
+  UIManager, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radii, shadows, spacing } from '../../constants/theme';
+import { radii, spacing } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,32 +23,38 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 interface Props {
   icon: keyof typeof Ionicons.glyphMap;
-  iconTint?: string;          // 图标背景色 (e.g. tintRed)
-  iconColor?: string;          // 图标本体色 (e.g. red)
-  kicker?: string;             // 头部小标签 ("优先处理" / "今日洞察 · HRV 模式")
-  kickerColor?: string;        // kicker 文本色, 默认 labelTertiary
+  iconTint?: string;
+  iconColor?: string;
+  kicker?: string;
+  kickerColor?: string;
   title: string;
-  trailing?: ReactNode;         // 自定义右侧 (count badge / 时间戳 等), chevron 自动加在最右
+  trailing?: ReactNode;
   collapsible?: boolean;
   defaultCollapsed?: boolean;
-  controlledCollapsed?: boolean;     // 如果父组件想自己管 collapsed 状态
+  controlledCollapsed?: boolean;
   onToggle?: (collapsed: boolean) => void;
   accessibilityLabel?: string;
-  children?: ReactNode;        // body — collapsed 态隐藏
-  variant?: 'default' | 'flat'; // flat = 无 shadow, 用于辅助 meta 卡片
+  children?: ReactNode;
+  variant?: 'default' | 'flat';
   testID?: string;
 }
 
 export default function DashboardCard({
-  icon, iconTint = colors.brandLight, iconColor = colors.brand,
-  kicker, kickerColor = colors.labelTertiary,
+  icon, iconTint, iconColor,
+  kicker, kickerColor,
   title, trailing,
   collapsible = false, defaultCollapsed = false, controlledCollapsed,
   onToggle, accessibilityLabel,
   children, variant = 'default', testID,
 }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const [internal, setInternal] = useState(defaultCollapsed);
   const collapsed = controlledCollapsed ?? internal;
+
+  const _iconTint = iconTint ?? c.brandLight;
+  const _iconColor = iconColor ?? c.brand;
+  const _kickerColor = kickerColor ?? c.labelTertiary;
 
   const toggle = () => {
     if (!collapsible) return;
@@ -83,21 +79,21 @@ export default function DashboardCard({
   return (
     <View style={[styles.card, variant === 'flat' && styles.cardFlat]} testID={testID}>
       <HeaderWrapper style={styles.header} {...headerProps}>
-        <View style={[styles.iconBox, { backgroundColor: iconTint }]}>
-          <Ionicons name={icon} size={18} color={iconColor} />
+        <View style={[styles.iconBox, { backgroundColor: _iconTint }]}>
+          <Ionicons name={icon} size={18} color={_iconColor} />
         </View>
         <View style={styles.titleBlock}>
           {kicker ? (
-            <Text style={[txt.kicker, { color: kickerColor }]} numberOfLines={1}>{kicker}</Text>
+            <Text style={[styles.kicker, { color: _kickerColor }]} numberOfLines={1}>{kicker}</Text>
           ) : null}
-          <Text style={txt.title} numberOfLines={collapsed ? 1 : 2}>{title}</Text>
+          <Text style={styles.title} numberOfLines={collapsed ? 1 : 2}>{title}</Text>
         </View>
         {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
         {collapsible ? (
           <Ionicons
             name={collapsed ? 'chevron-down' : 'chevron-up'}
             size={18}
-            color={colors.labelTertiary}
+            color={c.labelTertiary}
             style={styles.chevron}
           />
         ) : null}
@@ -108,67 +104,66 @@ export default function DashboardCard({
   );
 }
 
-// 通用 count badge — 卡片右侧用
 export function CardCountBadge({ value }: { value: number | string }) {
+  const { c } = useTheme();
   return (
-    <View style={badgeStyles.bg}>
-      <Text style={badgeStyles.text}>{value}</Text>
+    <View style={{
+      backgroundColor: c.fill,
+      paddingHorizontal: 7, paddingVertical: 1,
+      borderRadius: 8, minWidth: 20, alignItems: 'center',
+    }}>
+      <Text style={{ fontSize: 11, fontWeight: '700', color: c.labelSecondary }}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    marginHorizontal: spacing.lg,
-    marginVertical: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    ...shadows.subtle,
-  },
-  cardFlat: {
-    shadowOpacity: 0,
-    elevation: 0,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.separator,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    minHeight: 36,
-  },
-  iconBox: {
-    width: 36, height: 36,
-    borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  titleBlock: { flex: 1, gap: 2 },
-  trailing: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  chevron: { marginLeft: 4 },
-  body: { marginTop: 12, gap: 10 },
-});
-
-const txt = {
-  kicker: {
-    fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.2,
-  } as TextStyle,
-  title: {
-    fontSize: 16, fontWeight: '700' as const,
-    color: colors.labelPrimary, lineHeight: 21,
-  } as TextStyle,
-};
-
-const badgeStyles = StyleSheet.create({
-  bg: {
-    backgroundColor: colors.fill,
-    paddingHorizontal: 7, paddingVertical: 1,
-    borderRadius: 8,
-    minWidth: 20, alignItems: 'center',
-  },
-  text: {
-    fontSize: 11, fontWeight: '700',
-    color: colors.labelSecondary,
-  },
-});
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.lg,
+      marginHorizontal: spacing.lg,
+      marginVertical: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      // dark mode: shadow 在黑底上几乎不可见, 用细边框替代视觉分隔
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06,
+            shadowRadius: 3,
+            elevation: 1,
+          }),
+    },
+    cardFlat: {
+      shadowOpacity: 0,
+      elevation: 0,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.separator,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      minHeight: 36,
+    },
+    iconBox: {
+      width: 36, height: 36,
+      borderRadius: 10,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    titleBlock: { flex: 1, gap: 2 },
+    trailing: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    chevron: { marginLeft: 4 },
+    body: { marginTop: 12, gap: 10 },
+    kicker: {
+      fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.2,
+    } as TextStyle,
+    title: {
+      fontSize: 16, fontWeight: '700' as const,
+      color: c.labelPrimary, lineHeight: 21,
+    } as TextStyle,
+  });
+}

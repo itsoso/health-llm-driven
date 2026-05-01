@@ -1,15 +1,13 @@
 /**
  * DataFreshnessPanel — Agent 今天知道什么 / 不知道什么.
- *
- * 复用 DashboardCard 壳, 改用 flat variant (无 shadow + 边框) 以视觉次要化:
- * 主信息卡 (TodayCoach/Insight/Agenda) 用 default, 这种 meta 状态卡用 flat.
+ * 用 DashboardCard 的 flat variant (无 shadow + 边框) 视觉次要化.
  */
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { colors } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { getMyTwin, freshnessAgeDays } from '../../services/twin';
 import { queryKeys } from '../../applib/queryKeys';
 import DashboardCard, { CardCountBadge } from './DashboardCard';
@@ -19,7 +17,7 @@ type Freshness = 'fresh' | 'stale' | 'missing';
 interface DataStatusItem {
   key: string;
   label: string;
-  ageDays: number | null;  // null = 缺失
+  ageDays: number | null;
   freshness: Freshness;
   hint: string;
   route?: string;
@@ -57,6 +55,9 @@ function ageLabel(ageDays: number | null): string {
 
 export default function DataFreshnessPanel() {
   const router = useRouter();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+
   const { data: twin } = useQuery({
     queryKey: queryKeys.twin,
     queryFn: () => getMyTwin(),
@@ -86,7 +87,6 @@ export default function DataFreshnessPanel() {
   const fresh = items.filter(i => i.freshness === 'fresh');
   const needAttention = items.filter(i => i.freshness !== 'fresh').slice(0, 3);
 
-  // Title 描述当前数据视野: "已知 N 项 · 待补 M 项"
   const title = needAttention.length > 0
     ? `已知 ${fresh.length} 项 · 待补 ${needAttention.length} 项`
     : `数据齐全 · 已知 ${fresh.length} 项`;
@@ -94,10 +94,9 @@ export default function DataFreshnessPanel() {
   return (
     <DashboardCard
       icon="pulse-outline"
-      iconTint={colors.bgPrimary}
-      iconColor={colors.brand}
+      iconTint={c.bgPrimary}
+      iconColor={c.brand}
       kicker="Agent 数据视野"
-      kickerColor={colors.labelTertiary}
       title={title}
       collapsible
       defaultCollapsed
@@ -107,23 +106,23 @@ export default function DataFreshnessPanel() {
     >
       {fresh.length > 0 && (
         <View style={styles.row}>
-          <Text style={txt.rowLabel}>已知</Text>
-          <Text style={txt.rowValue} numberOfLines={2}>
+          <Text style={styles.rowLabel}>已知</Text>
+          <Text style={styles.rowValue} numberOfLines={2}>
             {fresh.map(i => i.label).join(' · ')}
           </Text>
         </View>
       )}
       {needAttention.length > 0 && (
         <View style={styles.row}>
-          <Text style={txt.rowLabel}>需补全</Text>
+          <Text style={styles.rowLabel}>需补全</Text>
           <View style={styles.gapPills}>
             {needAttention.map(item => (
               <Pressable
                 key={item.key}
                 style={[
                   styles.gapPill,
-                  item.freshness === 'missing' && styles.gapPillMissing,
-                  item.freshness === 'stale'   && styles.gapPillStale,
+                  item.freshness === 'missing' && { backgroundColor: c.tintRed },
+                  item.freshness === 'stale'   && { backgroundColor: c.tintAmber },
                 ]}
                 onPress={() => item.route && router.push(item.route as any)}
                 accessibilityLabel={`${item.label} ${item.hint}`}
@@ -131,9 +130,9 @@ export default function DataFreshnessPanel() {
                 <Ionicons
                   name={item.freshness === 'missing' ? 'alert-circle-outline' : 'time-outline'}
                   size={12}
-                  color={item.freshness === 'missing' ? '#FF453A' : '#FF9F0A'}
+                  color={item.freshness === 'missing' ? c.red : c.amber}
                 />
-                <Text style={txt.gapPill}>
+                <Text style={styles.gapPillText}>
                   {item.label} · {item.hint}
                 </Text>
               </Pressable>
@@ -145,20 +144,17 @@ export default function DataFreshnessPanel() {
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  gapPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  gapPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
-    backgroundColor: colors.fill,
-  },
-  gapPillMissing: { backgroundColor: 'rgba(255, 69, 58, 0.12)' },
-  gapPillStale:   { backgroundColor: 'rgba(255, 159, 10, 0.12)' },
-});
-
-const txt = {
-  rowLabel: { width: 56, fontSize: 11, color: colors.labelTertiary, paddingTop: 3 } as TextStyle,
-  rowValue: { flex: 1, fontSize: 13, color: colors.labelPrimary, lineHeight: 19 } as TextStyle,
-  gapPill: { fontSize: 11, color: colors.labelSecondary } as TextStyle,
-};
+function createStyles(c: ColorPalette, _isDark: boolean) {
+  return StyleSheet.create({
+    row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    gapPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    gapPill: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+      backgroundColor: c.fill,
+    },
+    rowLabel: { width: 56, fontSize: 11, color: c.labelTertiary, paddingTop: 3 } as TextStyle,
+    rowValue: { flex: 1, fontSize: 13, color: c.labelPrimary, lineHeight: 19 } as TextStyle,
+    gapPillText: { fontSize: 11, color: c.labelSecondary } as TextStyle,
+  });
+}

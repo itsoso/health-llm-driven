@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   KeyboardAvoidingView, Platform, TextStyle,
@@ -13,7 +13,8 @@ import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const SUGGESTIONS = [
   { icon: 'pulse-outline' as const, text: '今天的健康状况如何？' },
@@ -23,6 +24,9 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const chat = useChatEngine();
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
@@ -73,11 +77,11 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Ionicons name="sparkles" size={18} color={colors.brand} />
+        <Ionicons name="sparkles" size={18} color={c.brand} />
         <Text style={txt.headerTitle}>AI 健康助理</Text>
         <View style={{ flex: 1 }} />
         <TouchableOpacity onPress={chat.newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
-          <Ionicons name="create-outline" size={20} color={colors.labelSecondary} />
+          <Ionicons name="create-outline" size={20} color={c.labelSecondary} />
         </TouchableOpacity>
         {chat.conversationId && chat.messages.length > 0 && (
           <TouchableOpacity onPress={() => {
@@ -89,7 +93,7 @@ export default function ChatScreen() {
               }},
             ]);
           }} hitSlop={8} style={{ marginLeft: 12 }} accessibilityLabel="删除当前对话" accessibilityRole="button">
-            <Ionicons name="trash-outline" size={18} color={colors.red} />
+            <Ionicons name="trash-outline" size={18} color={c.red} />
           </TouchableOpacity>
         )}
       </View>
@@ -116,7 +120,7 @@ export default function ChatScreen() {
               <View style={styles.sugGrid}>
                 {SUGGESTIONS.map(s => (
                   <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => handleSend(s.text, null)} activeOpacity={0.7}>
-                    <Ionicons name={s.icon} size={18} color={colors.brand} />
+                    <Ionicons name={s.icon} size={18} color={c.brand} />
                     <Text style={txt.sugText}>{s.text}</Text>
                   </TouchableOpacity>
                 ))}
@@ -127,12 +131,12 @@ export default function ChatScreen() {
 
         {contextBadge && (
           <View style={styles.contextBanner}>
-            <Ionicons name="link-outline" size={13} color={colors.brand} />
+            <Ionicons name="link-outline" size={13} color={c.brand} />
             <Text style={txt.contextBanner} numberOfLines={1}>
               基于 {contextBadge}
             </Text>
             <TouchableOpacity onPress={() => setContextBadge(null)} hitSlop={8}>
-              <Ionicons name="close" size={14} color={colors.labelTertiary} />
+              <Ionicons name="close" size={14} color={c.labelTertiary} />
             </TouchableOpacity>
           </View>
         )}
@@ -155,8 +159,9 @@ export default function ChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   messageList: { padding: spacing.lg, paddingBottom: 8 },
   imageViewerOverlay: {
@@ -167,21 +172,24 @@ const styles = StyleSheet.create({
   welcome: { alignItems: 'center', paddingTop: 60 },
   sugGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xxl, paddingHorizontal: spacing.lg },
   sugCard: {
-    width: '47%', backgroundColor: colors.bgCard, borderRadius: radii.md,
+    width: '47%', backgroundColor: c.bgCard, borderRadius: radii.md,
     padding: spacing.md, gap: 6, ...shadows.subtle,
   },
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginHorizontal: spacing.lg, marginBottom: 4,
     paddingHorizontal: spacing.md, paddingVertical: 6,
-    backgroundColor: colors.brandLight, borderRadius: radii.md,
+    backgroundColor: c.brandLight, borderRadius: radii.md,
   },
-});
+  });
+}
 
-const txt = {
-  headerTitle: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  welcomeTitle: { fontSize: 22, fontWeight: '700', color: colors.labelPrimary } as TextStyle,
-  welcomeSub: { fontSize: 14, color: colors.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
-  sugText: { fontSize: 13, color: colors.labelPrimary, lineHeight: 18 } as TextStyle,
-  contextBanner: { fontSize: 12, color: colors.brand, flex: 1, fontWeight: '500' } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+  headerTitle: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  welcomeTitle: { fontSize: 22, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+  welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4, textAlign: 'center' } as TextStyle,
+  sugText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
+  contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
+  };
+}

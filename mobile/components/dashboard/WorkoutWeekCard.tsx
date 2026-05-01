@@ -1,25 +1,29 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getWorkouts, type WorkoutSummary } from '../../services/workouts';
 import HealthCard from '../design-system/HealthCard';
-import { colors, spacing, radii } from '../../constants/theme';
+import { spacing } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
-const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
-  running: { icon: 'walk', color: '#FF375F' },
-  walking: { icon: 'footsteps', color: '#FF9F0A' },
-  cycling: { icon: 'bicycle', color: '#30D158' },
-  swimming: { icon: 'water', color: '#64D2FF' },
-  strength: { icon: 'barbell', color: '#BF5AF2' },
-  yoga: { icon: 'body', color: '#5AC8FA' },
-  hiking: { icon: 'trail-sign', color: '#FF6723' },
-};
+function buildTypeIcons(c: ColorPalette): Record<string, { icon: string; color: string }> {
+  return {
+    running: { icon: 'walk', color: c.pink },
+    walking: { icon: 'footsteps', color: c.amber },
+    cycling: { icon: 'bicycle', color: c.green },
+    swimming: { icon: 'water', color: c.blue },
+    strength: { icon: 'barbell', color: c.purple },
+    yoga: { icon: 'body', color: c.teal },
+    hiking: { icon: 'trail-sign', color: c.orange },
+  };
+}
 
-function getTypeInfo(type: string) {
+function getTypeInfo(type: string, c: ColorPalette) {
+  const map = buildTypeIcons(c);
   const key = type.toLowerCase().replace(/[_ ]/g, '');
-  return TYPE_ICONS[key] ?? { icon: 'fitness', color: colors.pink };
+  return map[key] ?? { icon: 'fitness', color: c.pink };
 }
 
 function formatDuration(seconds: number | null): string {
@@ -36,6 +40,10 @@ function formatDistance(meters: number | null): string {
 const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
 export default function WorkoutWeekCard() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+  const txt = useMemo(() => createTxt(c), [c]);
+
   const router = useRouter();
   const { data: workouts } = useQuery({
     queryKey: ['workouts-week'],
@@ -60,15 +68,24 @@ export default function WorkoutWeekCard() {
   const weekCal = days.reduce((s, d) => s + d.workouts.reduce((ss, w) => ss + (w.calories ?? 0), 0), 0);
   const weekMin = days.reduce((s, d) => s + d.workouts.reduce((ss, w) => ss + Math.round((w.duration_seconds ?? 0) / 60), 0), 0);
 
+  function Stat({ value, unit }: { value: string; unit: string }) {
+    return (
+      <View style={styles.statCol}>
+        <Text style={txt.statVal}>{value}</Text>
+        <Text style={txt.statUnit}>{unit}</Text>
+      </View>
+    );
+  }
+
   return (
     <HealthCard
       title="运动"
       icon="barbell-outline"
-      iconColor={colors.pink}
-      iconBg={colors.tintPink}
+      iconColor={c.pink}
+      iconBg={c.tintPink}
       rightAccessory={
         <TouchableOpacity onPress={() => router.push('/workout-list' as any)} hitSlop={8}>
-          <Ionicons name="chevron-forward" size={16} color={colors.labelTertiary} />
+          <Ionicons name="chevron-forward" size={16} color={c.labelTertiary} />
         </TouchableOpacity>
       }
     >
@@ -85,14 +102,14 @@ export default function WorkoutWeekCard() {
       <View style={styles.dayRow}>
         {days.map((d) => {
           const has = d.workouts.length > 0;
-          const typeInfo = has ? getTypeInfo(d.workouts[0].workout_type) : null;
+          const typeInfo = has ? getTypeInfo(d.workouts[0].workout_type, c) : null;
           return (
             <View key={d.date} style={styles.dayCol}>
               <View style={[
                 styles.dayDot,
                 has
                   ? { backgroundColor: `${typeInfo!.color}20` }
-                  : { backgroundColor: colors.fill },
+                  : { backgroundColor: c.fill },
               ]}>
                 {has ? (
                   <Ionicons name={typeInfo!.icon as any} size={14} color={typeInfo!.color} />
@@ -108,7 +125,7 @@ export default function WorkoutWeekCard() {
 
       {/* Recent workouts (last 3) */}
       {(workouts ?? []).slice(0, 3).map((w) => {
-        const info = getTypeInfo(w.workout_type);
+        const info = getTypeInfo(w.workout_type, c);
         return (
           <TouchableOpacity
             key={w.id}
@@ -142,69 +159,64 @@ export default function WorkoutWeekCard() {
   );
 }
 
-function Stat({ value, unit }: { value: string; unit: string }) {
-  return (
-    <View style={styles.statCol}>
-      <Text style={txt.statVal}>{value}</Text>
-      <Text style={txt.statUnit}>{unit}</Text>
-    </View>
-  );
+function createStyles(c: ColorPalette, _isDark: boolean) {
+  return StyleSheet.create({
+    summaryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.lg,
+      marginBottom: spacing.md,
+    },
+    statCol: { alignItems: 'center' },
+    divider: { width: 1, height: 24, backgroundColor: c.separator },
+    dayRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: spacing.md,
+      paddingHorizontal: spacing.xs,
+    },
+    dayCol: { alignItems: 'center', gap: 4 },
+    dayDot: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emptyDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: c.labelQuaternary,
+    },
+    workoutRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.separator,
+    },
+    typeIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
 }
 
-const styles = StyleSheet.create({
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  statCol: { alignItems: 'center' },
-  divider: { width: 1, height: 24, backgroundColor: colors.separator },
-  dayRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
-  },
-  dayCol: { alignItems: 'center', gap: 4 },
-  dayDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.labelQuaternary,
-  },
-  workoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.separator,
-  },
-  typeIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
-const txt = {
-  statVal: { fontSize: 20, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  statUnit: { fontSize: 11, color: colors.labelTertiary, marginTop: 1 } as TextStyle,
-  dayLabel: { fontSize: 11, color: colors.labelTertiary } as TextStyle,
-  dayToday: { color: colors.brand, fontWeight: '600' } as TextStyle,
-  workoutName: { fontSize: 14, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  workoutMeta: { fontSize: 12, color: colors.labelTertiary, marginTop: 1 } as TextStyle,
-  workoutCal: { fontSize: 13, fontWeight: '600', color: colors.pink, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  empty: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    statVal: { fontSize: 20, fontWeight: '700', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+    statUnit: { fontSize: 11, color: c.labelTertiary, marginTop: 1 } as TextStyle,
+    dayLabel: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+    dayToday: { color: c.brand, fontWeight: '600' } as TextStyle,
+    workoutName: { fontSize: 14, fontWeight: '500', color: c.labelPrimary } as TextStyle,
+    workoutMeta: { fontSize: 12, color: c.labelTertiary, marginTop: 1 } as TextStyle,
+    workoutCal: { fontSize: 13, fontWeight: '600', color: c.pink, fontVariant: ['tabular-nums'] as const } as TextStyle,
+    empty: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
+  };
+}

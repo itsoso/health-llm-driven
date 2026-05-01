@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Svg, { Polyline, Rect } from 'react-native-svg';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 interface ChartData {
   label: string;
@@ -17,6 +18,9 @@ interface Props {
 }
 
 function MiniChart({ title, data, color, type = 'bar', unit = '' }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+
   const chartW = 200;
   const chartH = 60;
   const pad = 4;
@@ -89,6 +93,9 @@ interface TrendProps {
 }
 
 export default function TrendMiniCharts({ garminDays }: TrendProps) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+
   if (!garminDays || garminDays.length < 2) return null;
 
   const days = garminDays.slice(0, 7).reverse(); // oldest first for chart
@@ -103,44 +110,48 @@ export default function TrendMiniCharts({ garminDays }: TrendProps) {
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>本周趋势</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <MiniChart title="睡眠" data={sleepData} color="#BF5AF2" type="bar" unit="h" />
-        <MiniChart title="心率" data={hrData} color="#FF375F" type="line" unit="bpm" />
-        <MiniChart title="步数" data={stepsData} color="#FF6723" type="bar" />
-        <MiniChart title="HRV" data={hrvData} color="#5AC8FA" type="line" unit="ms" />
+        <MiniChart title="睡眠" data={sleepData} color={c.purple} type="bar" unit="h" />
+        <MiniChart title="心率" data={hrData} color={c.pink} type="line" unit="bpm" />
+        <MiniChart title="步数" data={stepsData} color={c.orange} type="bar" />
+        <MiniChart title="HRV" data={hrvData} color={c.teal} type="line" unit="ms" />
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { marginBottom: spacing.md },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.labelPrimary,
-    marginBottom: spacing.md,
-    paddingHorizontal: 2,
-  },
-  scrollContent: { gap: spacing.md, paddingRight: spacing.xl },
-  chartCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    width: 220,
-    ...shadows.subtle,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  chartTitle: { fontSize: 13, fontWeight: '600', color: colors.labelSecondary },
-  chartValue: { fontSize: 17, fontWeight: '700' },
-  chartLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  chartLabel: { fontSize: 10, color: colors.labelTertiary },
-});
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    container: { marginBottom: spacing.md },
+    sectionTitle: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: c.labelPrimary,
+      marginBottom: spacing.md,
+      paddingHorizontal: 2,
+    },
+    scrollContent: { gap: spacing.md, paddingRight: spacing.xl },
+    chartCard: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.lg,
+      padding: spacing.md,
+      width: 220,
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
+    },
+    chartHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.sm,
+    },
+    chartTitle: { fontSize: 13, fontWeight: '600', color: c.labelSecondary },
+    chartValue: { fontSize: 17, fontWeight: '700' },
+    chartLabels: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 4,
+    },
+    chartLabel: { fontSize: 10, color: c.labelTertiary },
+  });
+}

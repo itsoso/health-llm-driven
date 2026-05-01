@@ -4,7 +4,7 @@
  * 按时间倒序展示一个 case_thread 下的所有 SOAP entries.
  * 每条 entry 可展开查看 subjective / objective / assessment / plan 四字段.
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   ActivityIndicator, RefreshControl, LayoutAnimation, Platform, UIManager,
@@ -14,17 +14,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useCaseDetail } from '../../../hooks/useClinicalJournal';
 import type { JournalEntry } from '../../../services/clinicalJournal';
-import { colors, spacing, radii, typography } from '../../../constants/theme';
+import { spacing, radii, typography } from '../../../constants/theme';
+import { ColorPalette, useTheme } from '../../../hooks/useTheme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  active: colors.amber,
-  monitoring: colors.blue,
-  resolved: colors.green,
-};
+function statusColor(status: string, c: ColorPalette): string {
+  switch (status) {
+    case 'active': return c.amber;
+    case 'monitoring': return c.blue;
+    case 'resolved': return c.green;
+    default: return c.labelTertiary;
+  }
+}
 const STATUS_LABEL: Record<string, string> = {
   active: '跟进中',
   monitoring: '观察中',
@@ -52,6 +56,8 @@ function fmtDate(iso: string | null): string {
 }
 
 function SoapField({ label, value, color }: { label: string; value: string | null; color: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   if (!value) return null;
   return (
     <View style={styles.soapField}>
@@ -64,6 +70,8 @@ function SoapField({ label, value, color }: { label: string; value: string | nul
 }
 
 function EntryCard({ entry }: { entry: JournalEntry }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const [expanded, setExpanded] = useState(false);
   const createdByLabel = CREATED_BY_LABEL[entry.created_by ?? ''] ?? entry.created_by ?? '';
 
@@ -92,13 +100,13 @@ function EntryCard({ entry }: { entry: JournalEntry }) {
       >
         {expanded ? (
           <View style={styles.soapBody}>
-            <SoapField label="S 主诉" value={entry.subjective} color={colors.blue} />
-            <SoapField label="O 数据" value={entry.objective} color={colors.teal} />
-            <SoapField label="A 评估" value={entry.assessment} color={colors.amber} />
-            <SoapField label="P 计划" value={entry.plan} color={colors.green} />
+            <SoapField label="S 主诉" value={entry.subjective} color={c.blue} />
+            <SoapField label="O 数据" value={entry.objective} color={c.teal} />
+            <SoapField label="A 评估" value={entry.assessment} color={c.amber} />
+            <SoapField label="P 计划" value={entry.plan} color={c.green} />
             {entry.used_specialists.length > 0 && (
               <View style={styles.metaRow}>
-                <Ionicons name="people-outline" size={12} color={colors.labelTertiary} />
+                <Ionicons name="people-outline" size={12} color={c.labelTertiary} />
                 <Text style={styles.metaText}>
                   由 {entry.used_specialists.join(' / ')} 生成
                 </Text>
@@ -106,7 +114,7 @@ function EntryCard({ entry }: { entry: JournalEntry }) {
             )}
             {entry.related_action_card_ids.length > 0 && (
               <View style={styles.metaRow}>
-                <Ionicons name="bookmark-outline" size={12} color={colors.labelTertiary} />
+                <Ionicons name="bookmark-outline" size={12} color={c.labelTertiary} />
                 <Text style={styles.metaText}>关联行动卡: {entry.related_action_card_ids.length} 张</Text>
               </View>
             )}
@@ -115,13 +123,13 @@ function EntryCard({ entry }: { entry: JournalEntry }) {
           <View style={styles.collapsedBody}>
             {!!assessmentPreview && (
               <Text style={styles.collapsedLine} numberOfLines={2}>
-                <Text style={{ color: colors.amber, fontWeight: '600' as const }}>评估 </Text>
+                <Text style={{ color: c.amber, fontWeight: '600' as const }}>评估 </Text>
                 {assessmentPreview}
               </Text>
             )}
             {!!planPreview && (
               <Text style={styles.collapsedLine} numberOfLines={1}>
-                <Text style={{ color: colors.green, fontWeight: '600' as const }}>计划 </Text>
+                <Text style={{ color: c.green, fontWeight: '600' as const }}>计划 </Text>
                 {planPreview}
               </Text>
             )}
@@ -136,6 +144,8 @@ function EntryCard({ entry }: { entry: JournalEntry }) {
 export default function CaseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const caseId = id ? parseInt(id, 10) : null;
   const { data: caseData, isLoading, isRefetching, refetch } = useCaseDetail(caseId);
 
@@ -144,7 +154,7 @@ export default function CaseDetailScreen() {
       <SafeAreaView style={styles.safe}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.brand} />
+          <ActivityIndicator size="large" color={c.brand} />
         </View>
       </SafeAreaView>
     );
@@ -164,14 +174,14 @@ export default function CaseDetailScreen() {
     );
   }
 
-  const statusColor = STATUS_COLOR[caseData.status] ?? colors.labelTertiary;
+  const sc = statusColor(caseData.status, c);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="返回">
-          <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{caseData.title ?? caseData.theme}</Text>
         <View style={{ width: 32 }} />
@@ -180,12 +190,12 @@ export default function CaseDetailScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
       >
         <View style={styles.hero}>
-          <View style={[styles.statusChipLarge, { backgroundColor: `${statusColor}18` }]}>
-            <Ionicons name="ellipse" size={8} color={statusColor} />
-            <Text style={[styles.statusTextLarge, { color: statusColor }]}>
+          <View style={[styles.statusChipLarge, { backgroundColor: `${sc}18` }]}>
+            <Ionicons name="ellipse" size={8} color={sc} />
+            <Text style={[styles.statusTextLarge, { color: sc }]}>
               {STATUS_LABEL[caseData.status] ?? caseData.status}
             </Text>
           </View>
@@ -193,7 +203,7 @@ export default function CaseDetailScreen() {
             <Text style={styles.summary}>{caseData.summary}</Text>
           )}
           <View style={styles.heroMeta}>
-            <Ionicons name="time-outline" size={13} color={colors.labelTertiary} />
+            <Ionicons name="time-outline" size={13} color={c.labelTertiary} />
             <Text style={styles.heroMetaText}>
               开案 {caseData.opened_at ? new Date(caseData.opened_at).toLocaleDateString('zh-CN') : '-'}
               · 共 {caseData.entries.length} 条记录
@@ -217,8 +227,9 @@ export default function CaseDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
@@ -227,18 +238,18 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1, textAlign: 'center',
     fontSize: typography.titleSmall.fontSize, fontWeight: '600' as const,
-    color: colors.labelPrimary,
+    color: c.labelPrimary,
   },
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 120 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
-  emptyTitle: { fontSize: 16, color: colors.labelSecondary },
-  emptySub: { fontSize: 14, color: colors.labelTertiary },
+  emptyTitle: { fontSize: 16, color: c.labelSecondary },
+  emptySub: { fontSize: 14, color: c.labelTertiary },
   backLink: { marginTop: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  backLinkText: { fontSize: 15, color: colors.brand, fontWeight: '500' as const },
+  backLinkText: { fontSize: 15, color: c.brand, fontWeight: '500' as const },
 
   hero: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.md,
     marginBottom: spacing.md,
@@ -250,14 +261,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
   },
   statusTextLarge: { fontSize: 12, fontWeight: '600' as const },
-  summary: { fontSize: 14, color: colors.labelPrimary, lineHeight: 20 },
+  summary: { fontSize: 14, color: c.labelPrimary, lineHeight: 20 },
   heroMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  heroMetaText: { fontSize: 12, color: colors.labelTertiary },
+  heroMetaText: { fontSize: 12, color: c.labelTertiary },
 
   timeline: { gap: spacing.sm },
   emptyEntries: { padding: spacing.lg, alignItems: 'center' },
   entryCard: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: c.bgCard,
     borderRadius: radii.md,
     padding: spacing.md,
     gap: spacing.sm,
@@ -266,21 +277,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
   },
   entryDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: c.brand,
   },
   entryDate: {
-    fontSize: 13, fontWeight: '600' as const, color: colors.labelPrimary,
+    fontSize: 13, fontWeight: '600' as const, color: c.labelPrimary,
   },
   sourceChip: {
     marginLeft: 'auto',
-    backgroundColor: colors.fill,
+    backgroundColor: c.fill,
     paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
   },
-  sourceText: { fontSize: 11, color: colors.labelSecondary },
+  sourceText: { fontSize: 11, color: c.labelSecondary },
 
   collapsedBody: { gap: 4 },
-  collapsedLine: { fontSize: 13, color: colors.labelSecondary, lineHeight: 18 },
-  expandHint: { fontSize: 11, color: colors.labelTertiary, marginTop: 4 },
+  collapsedLine: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 },
+  expandHint: { fontSize: 11, color: c.labelTertiary, marginTop: 4 },
 
   soapBody: { gap: spacing.sm },
   soapField: { gap: 4 },
@@ -289,7 +300,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6,
   },
   soapLabel: { fontSize: 11, fontWeight: '600' as const },
-  soapValue: { fontSize: 13, color: colors.labelPrimary, lineHeight: 20 },
+  soapValue: { fontSize: 13, color: c.labelPrimary, lineHeight: 20 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  metaText: { fontSize: 11, color: colors.labelTertiary },
-});
+  metaText: { fontSize: 11, color: c.labelTertiary },
+  });
+}

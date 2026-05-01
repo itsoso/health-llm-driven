@@ -20,13 +20,17 @@ import StrengthCard from '../../components/dashboard/StrengthCard';
 import WorkoutWeekCard from '../../components/dashboard/WorkoutWeekCard';
 import TrendMiniCharts from '../../components/dashboard/TrendMiniCharts';
 import HealthCard from '../../components/design-system/HealthCard';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii, shadows } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 const mealTypeMap: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
 export default function RecordScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   const { data, refetch, isRefetching } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboardData, staleTime: 60_000 });
   const dataHealth = useDataHealth();
   const garmin = useLatestGarmin(data);
@@ -74,7 +78,7 @@ export default function RecordScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />} showsVerticalScrollIndicator={false}>
         <Text style={txt.title}>健康记录</Text>
 
         {visibleDataPrompts.length > 0 && (
@@ -92,10 +96,10 @@ export default function RecordScreen() {
 
         {/* Quick navigation */}
         <View style={styles.quickNav}>
-          <QuickNavBtn icon="moon-outline" label="睡眠" color={colors.purple} onPress={() => router.push('/sleep' as any)} />
-          <QuickNavBtn icon="barbell-outline" label="运动" color={colors.pink} onPress={() => router.push('/workout-list' as any)} />
-          <QuickNavBtn icon="nutrition-outline" label="饮食" color={colors.orange} onPress={() => router.push('/diet' as any)} />
-          <QuickNavBtn icon="flag-outline" label="目标" color={colors.green} onPress={() => router.push('/goals' as any)} />
+          <QuickNavBtn icon="moon-outline" label="睡眠" color={c.purple} onPress={() => router.push('/sleep' as any)} />
+          <QuickNavBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
+          <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
+          <QuickNavBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
         </View>
 
         {/* 1. Vitals */}
@@ -182,7 +186,7 @@ export default function RecordScreen() {
               )}
               {/* Quick record */}
               <View style={styles.quickInputRow}>
-                <TextInput style={styles.quickInput} placeholder="体重 kg" placeholderTextColor={colors.labelTertiary}
+                <TextInput style={styles.quickInput} placeholder="体重 kg" placeholderTextColor={c.labelTertiary}
                   keyboardType="decimal-pad" value={weightInput} onChangeText={setWeightInput} />
                 <TouchableOpacity style={styles.quickSaveBtn} onPress={async () => {
                   const w = parseFloat(weightInput);
@@ -195,10 +199,10 @@ export default function RecordScreen() {
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
               </View>
               <View style={styles.quickInputRow}>
-                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="收缩压" placeholderTextColor={colors.labelTertiary}
+                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="收缩压" placeholderTextColor={c.labelTertiary}
                   keyboardType="number-pad" value={bpSysInput} onChangeText={setBpSysInput} />
                 <Text style={txt.bpSlash}>/</Text>
-                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="舒张压" placeholderTextColor={colors.labelTertiary}
+                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="舒张压" placeholderTextColor={c.labelTertiary}
                   keyboardType="number-pad" value={bpDiaInput} onChangeText={setBpDiaInput} />
                 <TouchableOpacity style={styles.quickSaveBtn} onPress={async () => {
                   const sys = parseInt(bpSysInput), dia = parseInt(bpDiaInput);
@@ -216,7 +220,7 @@ export default function RecordScreen() {
 
         {/* 8. Medication */}
         {Array.isArray(medications) && medications.length > 0 && (
-          <HealthCard title="用药状态" icon="medical-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
+          <HealthCard title="用药状态" icon="medical-outline" iconColor={c.brand} iconBg={c.brandLight}>
             <View style={styles.medList}>
               {medications.map((m: any) => {
                 const lastToday: string | undefined = m.last_taken_time;
@@ -246,7 +250,7 @@ export default function RecordScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.medLeft}>
-                      <Ionicons name={done ? 'checkmark-circle' : 'medical'} size={18} color={done ? '#30D158' : colors.brand} />
+                      <Ionicons name={done ? 'checkmark-circle' : 'medical'} size={18} color={done ? '#30D158' : c.brand} />
                       <View style={{ flex: 1 }}>
                         <Text style={txt.medItemName} numberOfLines={1}>{m.name}</Text>
                         <Text style={txt.medItemMeta}>
@@ -256,7 +260,7 @@ export default function RecordScreen() {
                         </Text>
                       </View>
                     </View>
-                    <Ionicons name="add-circle" size={22} color={colors.brand} />
+                    <Ionicons name="add-circle" size={22} color={c.brand} />
                   </TouchableOpacity>
                 );
               })}
@@ -295,6 +299,9 @@ export default function RecordScreen() {
 }
 
 function QuickNavBtn({ icon, label, color, onPress }: { icon: any; label: string; color: string; onPress: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={label}>
       <View style={[styles.quickNavIcon, { backgroundColor: `${color}18` }]}>
@@ -306,6 +313,9 @@ function QuickNavBtn({ icon, label, color, onPress }: { icon: any; label: string
 }
 
 function NutritionCircle({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.nutriItem}>
       <View style={[styles.nutriDot, { backgroundColor: `${color}20` }]}>
@@ -317,26 +327,27 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: c.bgPrimary },
   content: { padding: spacing.lg },
   promptStack: { marginBottom: spacing.md },
 
   // Quick navigation
   quickNav: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  quickNavBtn: { flex: 1, alignItems: 'center', gap: 6, backgroundColor: colors.bgCard, borderRadius: radii.md, paddingVertical: 12, ...shadows.subtle },
+  quickNavBtn: { flex: 1, alignItems: 'center', gap: 6, backgroundColor: c.bgCard, borderRadius: radii.md, paddingVertical: 12, ...shadows.subtle },
   quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
 
   // Tabbed card (body + diet)
   tabCard: {
-    backgroundColor: colors.bgCard, borderRadius: radii.xl,
+    backgroundColor: c.bgCard, borderRadius: radii.xl,
     marginBottom: spacing.md, overflow: 'hidden', ...shadows.subtle,
   },
   tabHeader: {
-    flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+    flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
   tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: colors.brand },
+  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: c.brand },
   tabContent: { padding: spacing.lg },
 
   // Nutrition
@@ -347,31 +358,31 @@ const styles = StyleSheet.create({
   // Meals
   mealRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
   },
-  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.brand },
+  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.brand },
 
   // Body grid
   bodyGrid: { flexDirection: 'row', gap: spacing.md, justifyContent: 'center' },
-  bodyCell: { alignItems: 'center', flex: 1, backgroundColor: colors.bgPrimary, borderRadius: radii.md, padding: spacing.md },
+  bodyCell: { alignItems: 'center', flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md, padding: spacing.md },
 
   // Medication
   medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  medChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.full, backgroundColor: colors.bgPrimary },
+  medChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.full, backgroundColor: c.bgPrimary },
   medList: { gap: 6 },
   medItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: colors.bgPrimary, borderRadius: radii.md,
+    backgroundColor: c.bgPrimary, borderRadius: radii.md,
   },
   medLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
 
   // Water
   waterBtnRow: { flexDirection: 'row', gap: spacing.sm },
-  waterBtn: { flex: 1, backgroundColor: colors.bgPrimary, borderRadius: radii.md, paddingVertical: 10, alignItems: 'center' },
+  waterBtn: { flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingVertical: 10, alignItems: 'center' },
   quickInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md },
-  quickInput: { flex: 2, backgroundColor: colors.bgPrimary, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: colors.labelPrimary },
-  quickSaveBtn: { backgroundColor: colors.brand, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 8 },
+  quickInput: { flex: 2, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: c.labelPrimary },
+  quickSaveBtn: { backgroundColor: c.brand, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 8 },
 
   // Undo
   undoBar: {
@@ -380,30 +391,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 10, ...shadows.heavy,
   },
-});
+  });
+}
 
-const txt = {
-  title: { fontSize: 28, fontWeight: '700', color: colors.labelPrimary, marginBottom: spacing.md } as TextStyle,
-  quickNavLabel: { fontSize: 11, fontWeight: '500', color: colors.labelSecondary } as TextStyle,
-  tabText: { fontSize: 14, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
-  tabTextActive: { color: colors.brand, fontWeight: '600' } as TextStyle,
+function createTxt(c: ColorPalette) {
+  return {
+  title: { fontSize: 28, fontWeight: '700', color: c.labelPrimary, marginBottom: spacing.md } as TextStyle,
+  quickNavLabel: { fontSize: 11, fontWeight: '500', color: c.labelSecondary } as TextStyle,
+  tabText: { fontSize: 14, fontWeight: '500', color: c.labelTertiary } as TextStyle,
+  tabTextActive: { color: c.brand, fontWeight: '600' } as TextStyle,
   nutriVal: { fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  nutriUnit: { fontSize: 10, color: colors.labelSecondary } as TextStyle,
-  nutriLabel: { fontSize: 11, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
-  mealType: { fontSize: 12, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
-  mealFood: { fontSize: 13, color: colors.labelSecondary, marginTop: 1 } as TextStyle,
+  nutriUnit: { fontSize: 10, color: c.labelSecondary } as TextStyle,
+  nutriLabel: { fontSize: 11, fontWeight: '500', color: c.labelTertiary } as TextStyle,
+  mealType: { fontSize: 12, fontWeight: '600', color: c.labelPrimary } as TextStyle,
+  mealFood: { fontSize: 13, color: c.labelSecondary, marginTop: 1 } as TextStyle,
   mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bodyVal: { fontSize: 22, fontWeight: '800', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bodyUnit: { fontSize: 11, color: colors.labelSecondary, marginTop: 2 } as TextStyle,
+  bodyVal: { fontSize: 22, fontWeight: '800', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bodyUnit: { fontSize: 11, color: c.labelSecondary, marginTop: 2 } as TextStyle,
   bodyChange: { fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
-  medName: { fontSize: 13, color: colors.labelPrimary, maxWidth: 80 } as TextStyle,
-  medItemName: { fontSize: 14, fontWeight: '500', color: colors.labelPrimary } as TextStyle,
-  medItemMeta: { fontSize: 11, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
+  medName: { fontSize: 13, color: c.labelPrimary, maxWidth: 80 } as TextStyle,
+  medItemName: { fontSize: 14, fontWeight: '500', color: c.labelPrimary } as TextStyle,
+  medItemMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
   waterTotal: { fontSize: 14, fontWeight: '700', color: '#64D2FF' } as TextStyle,
-  waterBtnText: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
+  waterBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
   quickSaveTxt: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-  bpSlash: { fontSize: 16, color: colors.labelTertiary } as TextStyle,
-  empty: { fontSize: 13, color: colors.labelTertiary, textAlign: 'center', paddingVertical: 16 } as TextStyle,
+  bpSlash: { fontSize: 16, color: c.labelTertiary } as TextStyle,
+  empty: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 16 } as TextStyle,
   undoText: { fontSize: 14, color: '#fff' } as TextStyle,
-  undoBtn: { fontSize: 14, fontWeight: '600', color: colors.brand } as TextStyle,
-};
+  undoBtn: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
+  };
+}

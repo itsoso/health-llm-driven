@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import api from '../../services/api';
-import { colors, spacing, radii, shadows } from '../../constants/theme';
+import { spacing, radii } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
 function today(): string {
   const d = new Date();
@@ -20,17 +21,21 @@ interface ExerciseConfig {
   dailyTarget: number;
 }
 
-const EXERCISES: ExerciseConfig[] = [
-  { type: '俯卧撑', label: '俯卧撑', icon: 'body-outline', color: '#FF6723', bg: '#FFF0E6', quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
-  { type: '深蹲', label: '深蹲', icon: 'barbell-outline', color: '#BF5AF2', bg: '#F5E6FF', quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
-];
-
 interface Props {
   exerciseToday: any[];
   onUpdate?: () => void;
 }
 
 export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
+  const txt = useMemo(() => createTxt(c), [c]);
+
+  const EXERCISES: ExerciseConfig[] = useMemo(() => [
+    { type: '俯卧撑', label: '俯卧撑', icon: 'body-outline', color: c.orange, bg: c.tintOrange, quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
+    { type: '深蹲', label: '深蹲', icon: 'barbell-outline', color: c.purple, bg: c.tintPurple, quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
+  ], [c]);
+
   const [localCounts, setLocalCounts] = useState<Record<string, number>>({});
   const [recording, setRecording] = useState<string | null>(null);
 
@@ -64,8 +69,8 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.iconWrap, { backgroundColor: '#FFF0E6' }]}>
-          <Ionicons name="fitness-outline" size={16} color="#FF6723" />
+        <View style={[styles.iconWrap, { backgroundColor: c.tintOrange }]}>
+          <Ionicons name="fitness-outline" size={16} color={c.orange} />
         </View>
         <Text style={txt.title}>力量训练</Text>
         <Text style={txt.date}>今日</Text>
@@ -112,30 +117,37 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.bgCard, borderRadius: radii.xl,
-    padding: spacing.lg, marginBottom: spacing.md, ...shadows.subtle,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.lg },
-  iconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#FFF0E6', alignItems: 'center', justifyContent: 'center' },
-  exerciseSection: { marginBottom: spacing.md },
-  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  exIconDot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  progressBg: { height: 6, backgroundColor: colors.bgPrimary, borderRadius: 3, marginBottom: spacing.sm, overflow: 'hidden' },
-  progressFill: { height: 6, borderRadius: 3 },
-  quickRow: { flexDirection: 'row', gap: spacing.sm },
-  quickBtn: {
-    flex: 1, borderWidth: 1, borderRadius: radii.md,
-    paddingVertical: 8, alignItems: 'center',
-  },
-});
+function createStyles(c: ColorPalette, isDark: boolean) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.bgCard, borderRadius: radii.xl,
+      padding: spacing.lg, marginBottom: spacing.md,
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
+    },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.lg },
+    iconWrap: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    exerciseSection: { marginBottom: spacing.md },
+    exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+    exIconDot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    progressBg: { height: 6, backgroundColor: c.bgPrimary, borderRadius: 3, marginBottom: spacing.sm, overflow: 'hidden' },
+    progressFill: { height: 6, borderRadius: 3 },
+    quickRow: { flexDirection: 'row', gap: spacing.sm },
+    quickBtn: {
+      flex: 1, borderWidth: 1, borderRadius: radii.md,
+      paddingVertical: 8, alignItems: 'center',
+    },
+  });
+}
 
-const txt = {
-  title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1 } as TextStyle,
-  date: { fontSize: 12, color: colors.labelTertiary } as TextStyle,
-  exerciseName: { fontSize: 15, fontWeight: '500', color: colors.labelPrimary, flex: 1 } as TextStyle,
-  exerciseCount: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  exerciseTarget: { fontSize: 13, color: colors.labelTertiary } as TextStyle,
-  quickBtnText: { fontSize: 14, fontWeight: '600' } as TextStyle,
-};
+function createTxt(c: ColorPalette) {
+  return {
+    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1 } as TextStyle,
+    date: { fontSize: 12, color: c.labelTertiary } as TextStyle,
+    exerciseName: { fontSize: 15, fontWeight: '500', color: c.labelPrimary, flex: 1 } as TextStyle,
+    exerciseCount: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+    exerciseTarget: { fontSize: 13, color: c.labelTertiary } as TextStyle,
+    quickBtnText: { fontSize: 14, fontWeight: '600' } as TextStyle,
+  };
+}
