@@ -23,10 +23,18 @@ import { invalidateQueryKeys, queryKeys } from '../applib/queryKeys';
 import { colors, spacing } from '../constants/theme';
 import { styles, txt } from './sleep-spo2-analysis.styles';
 
-function yesterdayISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+// 北京时区 (UTC+8) 的 YYYY-MM-DD. 用 toISOString 会被转成 UTC, 早上 8 点前会偏一天.
+function todayISOInBeijing(): string {
+  const now = new Date();
+  const beijingMs = now.getTime() + 8 * 60 * 60 * 1000;
+  return new Date(beijingMs).toISOString().slice(0, 10);
+}
+
+function shiftISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
 }
 
 const SEVERITY_COLORS: Record<string, { bg: string; border: string; icon: string }> = {
@@ -54,7 +62,7 @@ export default function SleepSpo2AnalysisScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const params = useLocalSearchParams<{ night_date?: string }>();
-  const [selectedDate, setSelectedDate] = useState(params.night_date || yesterdayISO());
+  const [selectedDate, setSelectedDate] = useState(params.night_date || todayISOInBeijing());
   const [overlay, setOverlay] = useState<'hr' | 'respiration' | 'none'>('none');
   const [experimentStates, setExperimentStates] = useState<Record<string, 'queued' | 'done' | 'skipped'>>({});
   const [savingExperiment, setSavingExperiment] = useState<string | null>(null);
@@ -72,10 +80,8 @@ export default function SleepSpo2AnalysisScreen() {
 
   // 日期翻页
   const shift = (days: number) => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + days);
     Haptics.selectionAsync();
-    setSelectedDate(d.toISOString().slice(0, 10));
+    setSelectedDate(shiftISO(selectedDate, days));
   };
 
   const onRefresh = () => {
@@ -156,12 +162,12 @@ export default function SleepSpo2AnalysisScreen() {
         <TouchableOpacity
           onPress={() => shift(1)}
           style={styles.dateBtn}
-          disabled={selectedDate >= yesterdayISO()}
+          disabled={selectedDate >= todayISOInBeijing()}
         >
           <Ionicons
             name="chevron-forward"
             size={18}
-            color={selectedDate >= yesterdayISO() ? colors.labelTertiary : colors.brand}
+            color={selectedDate >= todayISOInBeijing() ? colors.labelTertiary : colors.brand}
           />
         </TouchableOpacity>
       </View>
