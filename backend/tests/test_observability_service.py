@@ -1,0 +1,198 @@
+"""Smoke tests for observability_service — 保证 dashboard schema 不破."""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.services.observability_service import (
+    action_card_stats,
+    actionable_suggestions,
+    clinical_journal_stats,
+    collect_dashboard,
+    doctor_report_stats,
+    memory_kg_stats,
+    open_loop_stats,
+    safety_audit_stats,
+)
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _since(days=7):
+    return _now() - timedelta(days=days)
+
+
+# ----------------------------------------------------------------
+# 空库: 每个 stats 函数都该返回完整 schema (keys 齐全, 不抛异常)
+# ----------------------------------------------------------------
+
+def test_open_loop_stats_empty_db(db):
+    r = open_loop_stats(db, _since(), user_id=None)
+    assert r == {
+        "total_sent": 0, "by_kind": {}, "by_action": {},
+        "delivery_fail": 0, "avg_score": None, "last_sent": None,
+    }
+
+
+def test_clinical_journal_stats_empty_db(db):
+    r = clinical_journal_stats(db, _since(), user_id=None)
+    assert r["total_entries"] == 0
+    assert r["by_creator"] == {}
+    assert r["by_theme"] == {}
+    assert r["active_case_threads"] == 0
+    assert r["complete_soap_pct"] is None
+    assert r["last_entry"] is None
+
+
+def test_memory_kg_stats_empty_db(db):
+    r = memory_kg_stats(db, _since(), user_id=None)
+    for k in ("facts_total", "facts_new", "entities_total",
+              "entities_new", "relations_total", "relations_new"):
+        assert r[k] == 0, k
+    assert r["facts_by_tier"] == {}
+    assert r["entities_by_type"] == {}
+    assert r["relations_top_predicates"] == {}
+
+
+def test_doctor_report_stats_empty_db(db):
+    r = doctor_report_stats(db, _since(), user_id=None)
+    assert r == {"total_attempts": 0, "unique_users": 0, "last_attempt": None}
+
+
+def test_action_card_stats_empty_db(db):
+    r = action_card_stats(db, _since(), user_id=None)
+    assert r == {
+        "created_in_window": 0, "graded_in_window": 0,
+        "avg_accuracy": None, "by_specialist": {},
+    }
+
+
+def test_safety_audit_stats_empty_db(db):
+    r = safety_audit_stats(db, _since(), user_id=None)
+    assert r == {"evaluations": 0, "total_alerts_raised": 0}
+
+
+def test_collect_dashboard_schema(db):
+    """collect_dashboard 返回的 top-level keys 固化 — admin 前端的 TS 类型靠它."""
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    assert set(report.keys()) == {
+        "open_loop", "clinical_journal", "memory_kg",
+        "doctor_report", "action_card", "safety_guardian",
+    }
+
+
+def test_actionable_suggestions_shape_on_empty(db):
+    """空库全是红灯, 但 suggestions 必须是非空 list[str]."""
+    report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
+    lines = actionable_suggestions(report)
+    assert isinstance(lines, list)
+    assert len(lines) > 0
+    assert all(isinstance(s, str) for s in lines)
+
+
+# ----------------------------------------------------------------
+# 有数据: 聚合 SQL 必须和朴素 Python 逻辑等价
+# ----------------------------------------------------------------
+
+@pytest.fixture
+def seed_open_loop(db):
+    from app.models.open_loop_history import OpenLoopHistory
+    now = _now()
+    rows = [
+        OpenLoopHistory(user_id=1, kind="lab_overdue", signal_key="LDL",
+                        score=80, title="t", body="b",
+                        sent_at=now - timedelta(hours=1),
+                        delivery_ok=1, user_action="opened"),
+        OpenLoopHistory(user_id=1, kind="lab_overdue", signal_key="HbA1c",
+                        score=60, title="t", body="b",
+                        sent_at=now - timedelta(hours=2),
+                        delivery_ok=1, user_action="dismissed"),
+        OpenLoopHistory(user_id=1, kind="sync_stale", signal_key="",
+                        score=40, title="t", body="b",
+                        sent_at=now - timedelta(hours=3),
+                        delivery_ok=0, user_action=None,
+                        delivery_error="timeout"),
+        OpenLoopHistory(user_id=2, kind="lab_overdue", signal_key="LDL",
+                        score=50, title="t", body="b",
+                        sent_at=now - timedelta(hours=4),
+                        delivery_ok=1, user_action=None),
+    ]
+    for r in rows:
+        db.add(r)
+    db.commit()
+
+
+def test_open_loop_stats_aggregates_correctly(db, seed_open_loop):
+    r = open_loop_stats(db, _since(), user_id=None)
+    assert r["total_sent"] == 4
+    assert r["by_kind"] == {"lab_overdue": 3, "sync_stale": 1}
+    # delivery_fail only counts delivery_ok=0
+    assert r["delivery_fail"] == 1
+    # (80 + 60 + 40 + 50) / 4 = 57.5
+    assert r["avg_score"] == 57.5
+    # null user_action → "未操作"
+    assert r["by_action"].get("未操作") == 2
+    assert r["by_action"].get("opened") == 1
+    assert r["by_action"].get("dismissed") == 1
+    assert r["last_sent"] is not None
+
+
+def test_open_loop_stats_user_filter(db, seed_open_loop):
+    r = open_loop_stats(db, _since(), user_id=1)
+    assert r["total_sent"] == 3
+    assert sum(r["by_kind"].values()) == 3
+
+
+def test_action_card_stats_aggregates(db):
+    from app.models.action_card import ActionCard
+    now = _now()
+    db.add_all([
+        ActionCard(user_id=1, title="t1", content="c", creator_specialist="recovery_coach",
+                   created_at=now - timedelta(days=1)),
+        ActionCard(user_id=1, title="t2", content="c", creator_specialist="recovery_coach",
+                   created_at=now - timedelta(days=2),
+                   graded_at=now - timedelta(days=1), accuracy_score=80),
+        ActionCard(user_id=2, title="t3", content="c", creator_specialist="fuel_strategist",
+                   created_at=now - timedelta(hours=3),
+                   graded_at=now - timedelta(hours=2), accuracy_score=60),
+        ActionCard(user_id=3, title="t4", content="c", creator_specialist=None,  # unknown
+                   created_at=now - timedelta(hours=1)),
+    ])
+    db.commit()
+
+    r = action_card_stats(db, _since(), user_id=None)
+    assert r["created_in_window"] == 4
+    assert r["graded_in_window"] == 2
+    assert r["avg_accuracy"] == 70.0  # (80 + 60) / 2
+    assert r["by_specialist"] == {
+        "recovery_coach": 2, "fuel_strategist": 1, "unknown": 1,
+    }
+
+
+def test_doctor_report_stats_counts_clinical_journal_entries(db):
+    """Fix regression: 之前用 NotificationLog ilike('%weekly%') — 错的.
+    真实数据源是 ClinicalJournalEntry.created_by='doctor_weekly_task'."""
+    from app.models.clinical_journal import ClinicalJournalEntry
+    now = _now()
+    db.add_all([
+        # 命中: doctor_weekly_task
+        ClinicalJournalEntry(user_id=1, created_by="doctor_weekly_task",
+                             generated_at=now - timedelta(days=1),
+                             subjective="s", objective="o", assessment="a", plan="p"),
+        ClinicalJournalEntry(user_id=2, created_by="doctor_weekly_task",
+                             generated_at=now - timedelta(days=3),
+                             subjective="s", objective="o", assessment="a", plan="p"),
+        # 不命中: 其他来源
+        ClinicalJournalEntry(user_id=1, created_by="briefing_task",
+                             generated_at=now - timedelta(hours=1),
+                             subjective="s", objective="o", assessment="a", plan="p"),
+    ])
+    db.commit()
+
+    r = doctor_report_stats(db, _since(), user_id=None)
+    assert r["total_attempts"] == 2
+    assert r["unique_users"] == 2
+    assert r["last_attempt"] is not None
