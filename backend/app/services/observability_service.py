@@ -103,7 +103,7 @@ def clinical_journal_stats(db: Session, since: datetime, user_id: Optional[int])
         tq = tq.filter(CaseThread.user_id == user_id)
     active_cases = tq.count()
 
-    last_entry = db.query(func.max(ClinicalJournalEntry.generated_at)).scalar()
+    last_entry = q.with_entities(func.max(ClinicalJournalEntry.generated_at)).scalar()
 
     complete = sum(
         1 for e in entries
@@ -219,33 +219,32 @@ def doctor_report_stats(db: Session, since: datetime, user_id: Optional[int]) ->
 def action_card_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
     from app.models.action_card import ActionCard
 
-    q = db.query(ActionCard).filter(ActionCard.created_at >= since)
+    filters = [ActionCard.created_at >= since]
     if user_id:
-        q = q.filter(ActionCard.user_id == user_id)
-    created = q.count()
+        filters.append(ActionCard.user_id == user_id)
+    created_q = db.query(ActionCard).filter(*filters)
 
-    gq = db.query(ActionCard).filter(
-        ActionCard.graded_at.isnot(None),
-        ActionCard.graded_at >= since,
-    )
-    if user_id:
-        gq = gq.filter(ActionCard.user_id == user_id)
-    graded_rows = gq.all()
-    graded = len(graded_rows)
-    avg_acc = (
-        round(sum(r.accuracy_score for r in graded_rows if r.accuracy_score is not None) / graded, 1)
-        if graded else None
+    created = created_q.with_entities(func.count(ActionCard.id)).scalar() or 0
+
+    by_specialist = dict(
+        created_q.with_entities(
+            func.coalesce(ActionCard.creator_specialist, "unknown"),
+            func.count(ActionCard.id),
+        ).group_by(ActionCard.creator_specialist).all()
     )
 
-    by_specialist: dict[str, int] = {}
-    for r in q.all():
-        s = r.creator_specialist or "unknown"
-        by_specialist[s] = by_specialist.get(s, 0) + 1
+    graded_filters = [ActionCard.graded_at.isnot(None), ActionCard.graded_at >= since]
+    if user_id:
+        graded_filters.append(ActionCard.user_id == user_id)
+    graded_q = db.query(ActionCard).filter(*graded_filters)
+
+    graded = graded_q.with_entities(func.count(ActionCard.id)).scalar() or 0
+    avg_acc_raw = graded_q.with_entities(func.avg(ActionCard.accuracy_score)).scalar()
 
     return {
-        "created_in_window": created,
-        "graded_in_window": graded,
-        "avg_accuracy": avg_acc,
+        "created_in_window": int(created),
+        "graded_in_window": int(graded),
+        "avg_accuracy": round(float(avg_acc_raw), 1) if avg_acc_raw is not None else None,
         "by_specialist": by_specialist,
     }
 

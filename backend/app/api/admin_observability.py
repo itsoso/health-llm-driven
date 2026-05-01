@@ -7,6 +7,7 @@ CLI 与本 API 共享 `app/services/observability_service.py`.
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -20,8 +21,18 @@ from app.services.observability_service import (
     collect_dashboard,
     utc_now,
 )
+from app.utils.redis_cache import RedisCache
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# 单次聚合跑 6 个 SQL 聚合 + 可选 journalctl, 线上 5-10 秒. admin 反复刷不重算.
+_CACHE_TTL_SECONDS = 180
+
+
+def _cache_key(days: int, user_id: Optional[int], include_journalctl: bool) -> str:
+    uid = user_id if user_id else "all"
+    return f"observability:dashboard:d={days}:u={uid}:j={int(include_journalctl)}"
 
 
 @router.get("/dashboard", summary="观察期看板 — 7 模块聚合")
@@ -29,27 +40,35 @@ async def get_observation_dashboard(
     days: int = Query(7, ge=1, le=90),
     user_id: Optional[int] = Query(None, description="限定单用户; 不传 = 全量"),
     include_journalctl: bool = Query(False, description="跑 journalctl 扫 tool_validator (仅生产机有效)"),
+    refresh: bool = Query(False, description="强制跳过 Redis 缓存"),
     admin: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
     """聚合 6-7 个观察期信号给 admin 前端展示.
 
-    7 个 section:
-      - open_loop: APNs 推送总数 / 反馈分布 / 投递失败
-      - clinical_journal: SOAP 条数 / 完整率 / 主题分布
-      - memory_kg: Fact / Entity / Relation 总量与窗口内增量
-      - doctor_report: NotificationLog 里 doctor/weekly/advisor 类型的状态
-      - action_card: 信任循环 (新建/已评分/平均 accuracy)
-      - safety_guardian: 评估次数 / 告警累计
-      - tool_validator: journalctl 扫 (本地 host 没 systemd 时 skipped)
+    Redis 缓存 180s: admin 反复刷不重跑 SQL. 用 ?refresh=true 穿透.
     """
+    key = _cache_key(days, user_id, include_journalctl)
+
+    if not refresh:
+        cached = RedisCache.get(key)
+        if cached is not None:
+            cached["cached"] = True
+            return cached
+
     report = collect_dashboard(
         db, days=days, user_id=user_id, include_journalctl=include_journalctl,
     )
-    return {
+    payload = {
         "generated_at": utc_now().isoformat(),
         "window_days": days,
         "user_id": user_id,
         "report": report,
         "suggestions": actionable_suggestions(report),
+        "cached": False,
     }
+    try:
+        RedisCache.set(key, payload, ttl=_CACHE_TTL_SECONDS)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[observability] cache set failed (bypass): {e}")
+    return payload

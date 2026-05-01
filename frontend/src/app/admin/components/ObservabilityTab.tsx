@@ -78,6 +78,7 @@ interface DashboardResponse {
   user_id: number | null;
   report: DashboardReport;
   suggestions: string[];
+  cached?: boolean;
 }
 
 const WINDOW_OPTIONS: WindowDays[] = [1, 7, 14, 30];
@@ -140,18 +141,24 @@ function Section({ title, badge, children }: { title: string; badge?: string; ch
 export default function ObservabilityTab() {
   const [days, setDays] = useState<WindowDays>(7);
   const [userIdInput, setUserIdInput] = useState<string>('');
-  const userId = userIdInput.trim() ? Number(userIdInput.trim()) : undefined;
+  const trimmed = userIdInput.trim();
+  const parsedUid = trimmed ? Number(trimmed) : NaN;
+  const userId = !Number.isNaN(parsedUid) && parsedUid > 0 ? parsedUid : undefined;
+  const userIdInvalid = trimmed !== '' && userId === undefined;
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<DashboardResponse>({
     queryKey: ['admin-observability', days, userId],
-    queryFn: async () => {
+    queryFn: async ({ queryKey: _k, signal: _s, meta }) => {
       const params = new URLSearchParams({ days: String(days) });
       if (userId) params.append('user_id', String(userId));
+      if (meta?.forceRefresh) params.append('refresh', 'true');
       const res = await api.get(`/admin/observability/dashboard?${params}`);
       return res.data;
     },
     refetchOnWindowFocus: false,
   });
+
+  const forceRefresh = () => refetch({ meta: { forceRefresh: true } } as never);
 
   return (
     <div className="space-y-6">
