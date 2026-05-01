@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { Audio } from 'expo-av';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  setAudioModeAsync,
+  requestRecordingPermissionsAsync,
+} from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { transcribeAudio } from '../services/transcribe';
 
@@ -17,7 +22,7 @@ export function useVoiceRecording(opts?: {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
   const readyRef = useRef(false);
@@ -33,38 +38,28 @@ export function useVoiceRecording(opts?: {
   useEffect(() => {
     return () => {
       clearTimer();
-      if (recordingRef.current) {
-        try { recordingRef.current.stopAndUnloadAsync(); } catch {}
-        recordingRef.current = null;
-      }
+      try { recorder.stop(); } catch {}
     };
-  }, [clearTimer]);
+  }, [clearTimer, recorder]);
 
   const startRecording = useCallback(async () => {
     try {
       readyRef.current = false;
 
-      // 清理残留的录音对象
-      if (recordingRef.current) {
-        try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
-        recordingRef.current = null;
-      }
-
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('需要麦克风权限', '请在 iPhone 设置 → HealthPilot → 麦克风 中开启权限');
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-      recordingRef.current = recording;
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+
       cancelledRef.current = false;
       readyRef.current = true;
       setIsRecording(true);
@@ -77,31 +72,28 @@ export function useVoiceRecording(opts?: {
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (err: any) {
-      // 如果仍然冲突，强制重置音频系统
-      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
+      try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
       setIsRecording(false);
       clearTimer();
       const msg = err?.message || String(err);
       Alert.alert('录音启动失败', msg);
     }
-  }, [clearTimer]);
+  }, [clearTimer, recorder]);
 
   const stopAndTranscribe = useCallback(async () => {
-    if (!recordingRef.current || !readyRef.current) return;
+    if (!readyRef.current) return;
     clearTimer();
     setIsRecording(false);
 
     if (cancelledRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
-      recordingRef.current = null;
+      try { await recorder.stop(); } catch {}
       return;
     }
 
     setIsTranscribing(true);
     try {
-      const uri = recordingRef.current.getURI();
-      await recordingRef.current.stopAndUnloadAsync();
-      recordingRef.current = null;
+      await recorder.stop();
+      const uri = recorder.uri;
 
       if (!uri) {
         setIsTranscribing(false);
@@ -121,18 +113,15 @@ export function useVoiceRecording(opts?: {
     } finally {
       setIsTranscribing(false);
     }
-  }, [opts, clearTimer]);
+  }, [opts, clearTimer, recorder]);
 
   const cancelRecording = useCallback(async () => {
     cancelledRef.current = true;
     clearTimer();
     setIsRecording(false);
-    if (recordingRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
-      recordingRef.current = null;
-    }
+    try { await recorder.stop(); } catch {}
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [clearTimer]);
+  }, [clearTimer, recorder]);
 
   return {
     isRecording,
