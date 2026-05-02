@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
+import CeleryHealthBlock from './CeleryHealthBlock';
 
 type WindowDays = 1 | 7 | 14 | 30;
 
@@ -72,12 +73,26 @@ interface DashboardReport {
   tool_validator?: ToolValidatorStats;
 }
 
+interface CeleryHealth {
+  tasks: Array<{
+    task: string;
+    expected_per_day: number | null;
+    expected_per_week: number | null;
+    window_hours: number;
+    observed: number;
+    last_run: string | null;
+    status: 'ok' | 'stale' | 'no_data' | 'observing';
+  }>;
+  note?: string;
+}
+
 interface DashboardResponse {
   generated_at: string;
   window_days: number;
   user_id: number | null;
   report: DashboardReport;
   suggestions: string[];
+  celery_health?: CeleryHealth;
   cached?: boolean;
 }
 
@@ -391,6 +406,14 @@ export default function ObservabilityTab() {
               </div>
             )}
           </Section>
+
+          {/* H. Celery Beat 健康 */}
+          {data.celery_health && (
+            <CeleryHealthBlock
+              tasks={data.celery_health.tasks}
+              note={data.celery_health.note}
+            />
+          )}
         </>
       )}
     </div>
