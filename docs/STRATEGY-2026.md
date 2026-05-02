@@ -181,8 +181,11 @@ specialist hit-rate 注入下次 LLM prompt
 
 STRATEGY 重排决定 — 阶段 5-6 之前必须先把阶段 4 的商业化和记忆 UI 补上.
 
-- [ ] **Clinical Journal 前端 case timeline UI** (3-5 天) — 让 Sprint 5 的记忆层变可见
-- [ ] **Reasoning Trace UI v1** (3 天) — 复用 Sprint 5 KG 几乎免费, trace 到 (data + rule + evidence)
+- [x] **Clinical Journal 前端 case timeline UI** (2026-05-01, Mobile Journal tab 改为 thread 分组 + 无主题 bucket) — 让 Sprint 5 的记忆层变可见
+- [x] **Reasoning Trace UI v1** (2026-05-01, Mobile `ExplainSheet` 抽屉 + 后端 `/reasoning-trace/safety|specialist/{audit_id}`) — 复用 Sprint 5 KG, trace 到 (rule + twin 证据 + related MemoryFact)
+- [x] **Specialist Scorecard 详情页** (2026-05-01, Mobile `/specialist/[name]` + Home chip row) — 信任循环对用户可见
+- [x] **Celery Beat 健康区块** (2026-05-01, Admin 看板基于 DB 副作用反推 5 任务健康度, broker 故障免疫)
+- [x] **客户端行为埋点 + 看板率指标** (2026-05-01, `client_events` 表 + 3 条 suggestion: reasoning 点击率/Journal 进入/scorecard 进入)
 - [ ] **LLM 仲裁层** (3 天) — specialist cross-review 遇矛盾时升级
 - [ ] **Concierge 商业化包月** (1-2 天 + 商务合作)
 
@@ -199,7 +202,7 @@ STRATEGY 重排决定 — 阶段 5-6 之前必须先把阶段 4 的商业化和�
 - [x] Memory Facts 四层 + 10 类 entity + 16 predicate (2026-04-28, Sprint 5 A-E)
 - [x] Hybrid Search (BM25 + Graph + RRF)
 - [x] Decay + Crystallization cron
-- [ ] **Reasoning Trace UI** — 由阶段 4.5 前置完成
+- [x] **Reasoning Trace UI** (2026-05-01, Mobile ExplainSheet ship)
 - [ ] **B 端审计日志 API** — 给保险/医院的可查询接口
 - [ ] **挑战-回放机制** — 用户对建议提异议 → 系统回放推理链
 - [ ] **第一个 B 端客户** — 慢病管理 / 健康险增值 / 企业员工健康
@@ -271,3 +274,12 @@ STRATEGY 重排决定 — 阶段 5-6 之前必须先把阶段 4 的商业化和�
   到 §一 现状盘点 + §五 阶段 6 前置进度.
   新增 §五 阶段 4.5 补阶段 4 未完 + 记忆展示 UI, 推迟 Household Twin 到 5 阶段触发信号.
   §七 优先级按演进路径重排: Clinical Journal UI + Reasoning Trace + LLM 仲裁 + Concierge.
+- 2026-05-01: **阶段 4.5 记忆/推理可见化 v1 ship** (10 task, 约 2 周压缩到 1 个 session 执行完).
+  - Mobile: `ExplainSheet` 抽屉 (Safety 卡 + Specialist 卡) + Journal tab 改为 case-thread timeline (含无主题 bucket)
+    + `/specialist/[name]` 详情页 + Home `SpecialistChipRow` 入口 + 3 处埋点
+  - Backend: audit log 扩 alerts/findings snapshot + `reasoning_explainer` service + `/reasoning-trace/safety|specialist/{audit_id}`
+    + `/clinical-journal/timeline` + `/specialists/{name}/scorecard` + `celery_health_snapshot` + `/client-events`
+  - Admin: 看板加 Celery Beat Health 区块 + 3 条客户端行为率 suggestion
+  - 设计: `docs/plans/2026-05-01-memory-reasoning-visibility-design.md`
+  - 实施: `docs/plans/2026-05-01-memory-reasoning-visibility-impl.md`
+  - Follow-up polish: `docs/plans/2026-05-01-follow-up-polish.md`
