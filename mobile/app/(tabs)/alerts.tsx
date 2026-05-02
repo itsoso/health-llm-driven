@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '../../services/safety';
 import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '../../services/actionCards';
 import InterventionCard from '../../components/actions/InterventionCard';
+import { ExplainButton } from '../../components/reasoning/ExplainButton';
 import { queryKeys } from '../../applib/queryKeys';
 import { spacing, radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
@@ -121,7 +122,7 @@ export default function ActionsScreen() {
           )}
           renderItem={({ item }) =>
             item.type === 'alert'
-              ? <AlertRow alert={item.item} />
+              ? <AlertRow alert={item.item} auditId={safetyData?.audit_id ?? null} />
               : <InterventionCard
                   card={item.item}
                   onComplete={async () => { await completeCard(item.item.id); refetchCards(); }}
@@ -142,7 +143,7 @@ function buildAskPrompt(title: string, message: string, action?: string): string
   return parts.join('\n');
 }
 
-function AlertRow({ alert }: { alert: SafetyAlert }) {
+function AlertRow({ alert, auditId }: { alert: SafetyAlert; auditId: number | null }) {
   const router = useRouter();
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
@@ -207,6 +208,11 @@ function AlertRow({ alert }: { alert: SafetyAlert }) {
               <Ionicons name="git-network-outline" size={13} color={c.brand} />
               <Text style={txt.aiText}>查看推理</Text>
             </TouchableOpacity>
+            {auditId !== null && (
+              <View style={{ marginTop: 10, justifyContent: 'center' }}>
+                <ExplainButton source="safety" auditId={auditId} ruleId={alert.rule_id} />
+              </View>
+            )}
           </View>
           {explanation && (
             <View style={styles.aiResult}>
