@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
 import CeleryHealthBlock from './CeleryHealthBlock';
+import GarminSyncHealthBlock from './GarminSyncHealthBlock';
 
 type WindowDays = 1 | 7 | 14 | 30;
 
@@ -86,6 +87,17 @@ interface CeleryHealth {
   note?: string;
 }
 
+interface GarminSyncHealth {
+  last_sync_at: string | null;
+  last_sync_age_hours: number | null;
+  active_users: number;
+  invalid_cred_users: number;
+  distinct_users_24h: number;
+  stale_users_7d: number;
+  status: 'ok' | 'stale' | 'no_data' | 'observing';
+  note?: string;
+}
+
 interface DashboardResponse {
   generated_at: string;
   window_days: number;
@@ -93,6 +105,7 @@ interface DashboardResponse {
   report: DashboardReport;
   suggestions: string[];
   celery_health?: CeleryHealth;
+  garmin_sync_health?: GarminSyncHealth;
   cached?: boolean;
 }
 
@@ -413,6 +426,11 @@ export default function ObservabilityTab() {
               tasks={data.celery_health.tasks}
               note={data.celery_health.note}
             />
+          )}
+
+          {/* I. Garmin 同步健康 */}
+          {data.garmin_sync_health && (
+            <GarminSyncHealthBlock data={data.garmin_sync_health} />
           )}
         </>
       )}
