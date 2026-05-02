@@ -1,8 +1,8 @@
 /**
- * Clinical Journal - Case List
+ * Clinical Journal - Timeline (Task 5)
  *
- * 阶段 4.5 (1): 让 Sprint 5 的记忆层对用户可见.
- * 列出所有 case_threads (按最近活跃排序), 点进去看时间线.
+ * 基于 /clinical-journal/timeline API: 按 case_thread 分组的 SOAP timeline,
+ * 无主題 bucket (thread_id=null) 展示周度简报等没挂 thread 的 entry.
  */
 import React, { useMemo } from 'react';
 import {
@@ -12,8 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
-import { useCaseList } from '../../../hooks/useClinicalJournal';
-import type { CaseSummary } from '../../../services/clinicalJournal';
+import { useJournalTimeline } from '../../../hooks/useJournalTimeline';
+import type { TimelineThread, TimelineEntry } from '../../../services/clinicalJournal';
 import { spacing, radii, typography } from '../../../constants/theme';
 import { ColorPalette, useTheme } from '../../../hooks/useTheme';
 
@@ -36,7 +36,13 @@ const THEME_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   mental: 'chatbubbles-outline',
 };
 
-function statusColor(status: string, c: ColorPalette): string {
+const CREATED_BY_LABEL: Record<string, string> = {
+  briefing_task: '每日简报',
+  doctor_weekly_task: '医生周报',
+  orchestrator: 'AI 对话',
+};
+
+function statusColor(status: string | null, c: ColorPalette): string {
   switch (status) {
     case 'active': return c.amber;
     case 'monitoring': return c.blue;
@@ -58,75 +64,130 @@ function fmtRelative(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN');
 }
 
-function CaseRow({ item, onPress }: { item: CaseSummary; onPress: () => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const icon = THEME_ICON[item.theme] ?? 'document-text-outline';
-  const sc = statusColor(item.status, c);
+function EntryPreviewRow({ entry, c }: { entry: TimelineEntry; c: ColorPalette }) {
+  const styles = useMemo(() => createPreviewStyles(c), [c]);
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} accessibilityLabel={`${item.title ?? item.theme}, ${item.entry_count} 条记录`}>
-      <View style={[styles.iconBox, { backgroundColor: `${sc}18` }]}>
-        <Ionicons name={icon} size={20} color={sc} />
-      </View>
-      <View style={styles.rowMain}>
-        <View style={styles.rowTop}>
-          <Text style={styles.title} numberOfLines={1}>{item.title ?? item.theme}</Text>
-          <View style={[styles.statusChip, { backgroundColor: `${sc}18` }]}>
-            <Text style={[styles.statusText, { color: sc }]}>{STATUS_LABEL[item.status] ?? item.status}</Text>
-          </View>
-        </View>
-        {!!item.summary && (
-          <Text style={styles.summary} numberOfLines={2}>{item.summary}</Text>
+    <View style={styles.preview}>
+      <Text style={styles.previewSubj} numberOfLines={2}>
+        {entry.subjective_short || '(空主诉)'}
+      </Text>
+      <View style={styles.previewMeta}>
+        {entry.created_by && (
+          <Text style={styles.previewSource}>
+            {CREATED_BY_LABEL[entry.created_by] ?? entry.created_by}
+          </Text>
         )}
-        <View style={styles.rowMeta}>
-          <Text style={styles.meta}>{item.entry_count} 条记录</Text>
-          <Text style={styles.meta}>·</Text>
-          <Text style={styles.meta}>{fmtRelative(item.last_updated_at)}</Text>
-        </View>
+        <Text style={styles.previewDate}>{fmtRelative(entry.generated_at)}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-    </TouchableOpacity>
+    </View>
   );
 }
 
-export default function JournalListScreen() {
+function ThreadCard({ thread, onPress }: { thread: TimelineThread; onPress?: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const icon = THEME_ICON[thread.theme] ?? 'document-text-outline';
+  const sc = statusColor(thread.status, c);
+  const previewEntries = thread.entries.slice(0, 3);
+  const remaining = thread.entry_count - previewEntries.length;
+
+  const content = (
+    <>
+      <View style={styles.header}>
+        <View style={[styles.iconBox, { backgroundColor: `${sc}18` }]}>
+          <Ionicons name={icon} size={20} color={sc} />
+        </View>
+        <View style={styles.headerMain}>
+          <View style={styles.headerTop}>
+            <Text style={styles.title} numberOfLines={1}>
+              {thread.title ?? thread.theme}
+            </Text>
+            {thread.status && (
+              <View style={[styles.statusChip, { backgroundColor: `${sc}18` }]}>
+                <Text style={[styles.statusText, { color: sc }]}>
+                  {STATUS_LABEL[thread.status] ?? thread.status}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.meta}>{fmtRelative(thread.last_updated)}</Text>
+        </View>
+        {onPress && <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />}
+      </View>
+
+      <View style={styles.divider} />
+
+      {previewEntries.map((e) => (
+        <EntryPreviewRow key={e.id} entry={e} c={c} />
+      ))}
+
+      {remaining > 0 && (
+        <Text style={styles.moreHint}>+ {remaining} 条更多...</Text>
+      )}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityLabel={`${thread.title ?? thread.theme}, ${thread.entry_count} 条记录`}
+      >
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return <View style={styles.card}>{content}</View>;
+}
+
+export default function JournalTimelineScreen() {
   const router = useRouter();
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-  const { data: cases, isLoading, isRefetching, refetch } = useCaseList();
+  const { data, isLoading, isRefetching, refetch } = useJournalTimeline(30);
+  const threads = data?.threads ?? [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>案例时间线</Text>
+      <View style={styles.topbar}>
+        <Text style={styles.topbarTitle}>案例时间线</Text>
       </View>
 
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={c.brand} />
         </View>
-      ) : !cases || cases.length === 0 ? (
+      ) : threads.length === 0 ? (
         <View style={styles.center}>
           <View style={styles.emptyCircle}>
             <Ionicons name="document-text-outline" size={40} color={c.labelTertiary} />
           </View>
           <Text style={styles.emptyTitle}>暂无案例记录</Text>
           <Text style={styles.emptySub}>
-            每次 AI 分析、每日简报、医生周报都会在这里自动记录 SOAP 笔记.{'\n'}
-            系统会按主题 (睡眠 / HRV / 鼻炎 等) 自动归类.
+            每次 AI 分析 / 每日简报 / 医生周报都会自动记为 SOAP 笔记.{'\n'}
+            去 AI 对话聊一聊症状或目标, 系统会自动归类生成 case.
           </Text>
         </View>
       ) : (
         <FlatList
-          data={cases}
-          keyExtractor={(item) => String(item.id)}
+          data={threads}
+          keyExtractor={(t) => String(t.thread_id ?? `other-${t.last_updated}`)}
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />
           }
           renderItem={({ item }) => (
-            <CaseRow item={item} onPress={() => router.push(`/journal/${item.id}`)} />
+            <ThreadCard
+              thread={item}
+              onPress={
+                item.thread_id !== null
+                  ? () => router.push(`/journal/${item.thread_id}`)
+                  : undefined
+              }
+            />
           )}
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         />
@@ -138,39 +199,60 @@ export default function JournalListScreen() {
 function createStyles(c: ColorPalette) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: c.bgPrimary },
-    header: {
+    topbar: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
       paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
     },
-    headerTitle: {
+    topbarTitle: {
       fontSize: typography.titleSmall.fontSize, fontWeight: '600' as const,
       color: c.labelPrimary,
     },
     list: { padding: spacing.md, paddingBottom: 100 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.lg },
     emptyCircle: {
-      width: 80, height: 80, borderRadius: 40,
-      backgroundColor: c.fill, justifyContent: 'center', alignItems: 'center',
-      marginBottom: spacing.md,
+      width: 72, height: 72, borderRadius: 36, backgroundColor: c.fill,
+      justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md,
     },
-    emptyTitle: { fontSize: 18, fontWeight: '600' as const, color: c.labelPrimary, marginBottom: spacing.xs },
-    emptySub: { fontSize: 14, color: c.labelSecondary, textAlign: 'center', lineHeight: 20 },
-    row: {
-      flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    emptyTitle: {
+      fontSize: typography.bodyLarge.fontSize, fontWeight: '600' as const,
+      color: c.labelPrimary, marginBottom: spacing.xs,
+    },
+    emptySub: {
+      fontSize: typography.bodySmall.fontSize, color: c.labelSecondary,
+      textAlign: 'center', lineHeight: 18,
+    },
+    card: {
       backgroundColor: c.bgCard, borderRadius: radii.md,
       padding: spacing.md,
     },
+    header: { flexDirection: 'row', alignItems: 'center' },
     iconBox: {
-      width: 40, height: 40, borderRadius: 20,
-      justifyContent: 'center', alignItems: 'center',
+      width: 36, height: 36, borderRadius: 18,
+      justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm,
     },
-    rowMain: { flex: 1, gap: 4 },
-    rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    title: { flex: 1, fontSize: 15, fontWeight: '600' as const, color: c.labelPrimary },
-    summary: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 },
-    rowMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-    meta: { fontSize: 11, color: c.labelTertiary },
-    statusChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-    statusText: { fontSize: 11, fontWeight: '600' as const },
+    headerMain: { flex: 1 },
+    headerTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    title: {
+      flex: 1, fontSize: typography.bodyMedium.fontSize, fontWeight: '600' as const,
+      color: c.labelPrimary,
+    },
+    statusChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+    statusText: { fontSize: 11, fontWeight: '500' as const },
+    meta: { fontSize: typography.caption.fontSize, color: c.labelTertiary, marginTop: 2 },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.separator, marginVertical: spacing.sm },
+    moreHint: {
+      fontSize: typography.caption.fontSize, color: c.labelTertiary,
+      marginTop: spacing.xs,
+    },
+  });
+}
+
+function createPreviewStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    preview: { marginTop: spacing.xs },
+    previewSubj: { fontSize: typography.bodySmall.fontSize, color: c.labelPrimary, lineHeight: 18 },
+    previewMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+    previewSource: { fontSize: 11, color: c.brand },
+    previewDate: { fontSize: 11, color: c.labelTertiary },
   });
 }

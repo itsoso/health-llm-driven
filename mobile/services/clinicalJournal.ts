@@ -57,3 +57,33 @@ export async function recentEntries(days: number = 14): Promise<RecentEntry[]> {
   });
   return data;
 }
+
+// ------------------------------------------------------------
+// Task 4/5: timeline API — threads 分组 + 无主題 bucket
+// ------------------------------------------------------------
+
+export interface TimelineEntry {
+  id: number;
+  generated_at: string;
+  created_by: string | null;
+  subjective_short: string;
+  has_soap: boolean;
+}
+
+export interface TimelineThread {
+  thread_id: number | null; // null = 无主題 bucket
+  theme: string;
+  status: string | null;
+  title: string | null;
+  entry_count: number;
+  last_updated: string;
+  entries: TimelineEntry[];
+}
+
+export async function fetchJournalTimeline(days = 30): Promise<{ threads: TimelineThread[] }> {
+  const { data } = await api.get<{ threads: TimelineThread[] }>(
+    '/clinical-journal/timeline',
+    { params: { days } },
+  );
+  return data;
+}
