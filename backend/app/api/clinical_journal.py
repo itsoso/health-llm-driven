@@ -1,4 +1,5 @@
 """Clinical Journal API — case timeline + SOAP entries."""
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -103,3 +104,82 @@ def recent_entries(
         "plan_first_line": (e.plan or "").split("\n")[0],
         "generated_at": e.generated_at.isoformat() if e.generated_at else None,
     } for e in entries]
+
+
+@router.get("/timeline", summary="按 case thread 分组的 SOAP timeline")
+def journal_timeline(
+    days: int = Query(30, ge=1, le=365, description="窗口天数"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """返回用户近 N 天的 SOAP entries 按 case_thread 分组. 无 thread 的 entry 归入'其他'bucket."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    entries = (
+        db.query(ClinicalJournalEntry)
+        .filter(
+            ClinicalJournalEntry.user_id == current_user.id,
+            ClinicalJournalEntry.generated_at >= since,
+        )
+        .order_by(ClinicalJournalEntry.generated_at.desc())
+        .all()
+    )
+
+    if not entries:
+        return {"threads": []}
+
+    # 批量取 thread 元数据 (避免 N+1)
+    thread_ids = {e.case_thread_id for e in entries if e.case_thread_id}
+    thread_map: dict[int, CaseThread] = {}
+    if thread_ids:
+        for t in db.query(CaseThread).filter(CaseThread.id.in_(thread_ids)).all():
+            thread_map[t.id] = t
+
+    # 按 case_thread_id 分组 (None = 无主题 bucket)
+    bucket: dict[Optional[int], list] = defaultdict(list)
+    for e in entries:
+        bucket[e.case_thread_id].append(e)
+
+    def _short(s: Optional[str]) -> str:
+        s = (s or "").strip().replace("\n", " ")
+        return s[:60]
+
+    def _entry_dict(e: ClinicalJournalEntry) -> dict:
+        return {
+            "id": e.id,
+            "generated_at": e.generated_at.isoformat(),
+            "created_by": e.created_by,
+            "subjective_short": _short(e.subjective),
+            "has_soap": bool(
+                (e.subjective or "").strip()
+                and (e.plan or "").strip()
+            ),
+        }
+
+    threads_out: list[dict] = []
+    for tid, group in bucket.items():
+        if tid is not None and tid in thread_map:
+            t = thread_map[tid]
+            threads_out.append({
+                "thread_id": t.id,
+                "theme": t.theme,
+                "status": t.status,
+                "title": t.title,
+                "entry_count": len(group),
+                "last_updated": group[0].generated_at.isoformat(),
+                "entries": [_entry_dict(e) for e in group],
+            })
+        else:
+            # 无 thread 或 thread 已删除
+            threads_out.append({
+                "thread_id": None,
+                "theme": "其他 / 周度摘要",
+                "status": None,
+                "title": None,
+                "entry_count": len(group),
+                "last_updated": group[0].generated_at.isoformat(),
+                "entries": [_entry_dict(e) for e in group],
+            })
+
+    threads_out.sort(key=lambda t: t["last_updated"], reverse=True)
+    return {"threads": threads_out}
