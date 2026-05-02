@@ -5,7 +5,7 @@
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Integer, func, or_
 from sqlalchemy.orm import Session
 
@@ -106,3 +106,89 @@ def my_recent_graded_cards(
         "adherence_kind": c.adherence_kind,
         "adherence_confidence": c.adherence_confidence,
     } for c in cards]
+
+
+# 合法 specialist names (和 backend/app/orchestrator/ 下注册的保持一致)
+_LEGAL_SPECIALISTS = frozenset({
+    "recovery_coach",
+    "fuel_strategist",
+    "movement_coach",
+    "mental_health_companion",
+    "safety_guardian",
+    "hypertension_specialist",
+    "metabolic_specialist",
+    "rhinitis_specialist",
+    "knowledge_librarian",
+    "longitudinal_analyst",
+})
+
+
+@router.get("/{name}/scorecard", summary="单 specialist 近 N 天 ActionCard + 评分详情")
+def specialist_scorecard(
+    name: str,
+    days: int = Query(30, ge=1, le=365, description="窗口天数"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """返回该 specialist 近 N 天产的所有 ActionCard (不过滤依从度): 评分详情 + 实际 vs 目标对比.
+
+    和 /hit-rate 不同: 那个给总览多 specialist 命中率 (过滤低依从); 这个给**详情页展示**,
+    所有卡都要列, 评没评分都要列, 过不过滤依从度都要列 (UI 决定怎么呈现).
+    """
+    if name not in _LEGAL_SPECIALISTS:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": f"未知 specialist: {name}",
+                "legal_specialists": sorted(_LEGAL_SPECIALISTS),
+            },
+        )
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    cards = (
+        db.query(ActionCard)
+        .filter(
+            ActionCard.user_id == current_user.id,
+            ActionCard.creator_specialist == name,
+            ActionCard.created_at >= since,
+        )
+        .order_by(ActionCard.created_at.desc())
+        .all()
+    )
+
+    graded = [c for c in cards if c.accuracy_score is not None]
+    proposed_count = len(cards)
+    graded_count = len(graded)
+
+    avg_acc = (
+        sum(c.accuracy_score for c in graded) / graded_count
+        if graded_count else None
+    )
+    # hit_rate: graded / proposed (给 UI 展示"多少建议最后拿到了评分")
+    hit_rate = round(graded_count / proposed_count, 2) if proposed_count else 0.0
+
+    return {
+        "specialist": name,
+        "window_days": days,
+        "proposed_count": proposed_count,
+        "graded_count": graded_count,
+        "hit_rate": hit_rate,
+        "avg_accuracy": round(avg_acc, 1) if avg_acc is not None else None,
+        "cards": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "graded_at": c.graded_at.isoformat() if c.graded_at else None,
+                "metric_key": c.metric_key,
+                "target_value": c.target_value,
+                "actual_value": c.actual_value,
+                "accuracy_score": c.accuracy_score,
+                "adherence_kind": c.adherence_kind,
+                "adherence_confidence": c.adherence_confidence,
+                "why_short": (c.grading_notes or "")[:120] or None,
+            }
+            for c in cards
+        ],
+    }
