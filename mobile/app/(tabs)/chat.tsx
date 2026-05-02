@@ -33,9 +33,9 @@ export default function ChatScreen() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
 
-  // Context from alert / push deep-link. Read ONCE on first mount, then cleared so
-  // subsequent navigations to this tab don't keep re-prefilling the input.
-  const params = useLocalSearchParams<{ prompt?: string; badge?: string }>();
+  // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
+  // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
+  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const contextConsumed = useRef(false);
@@ -44,12 +44,17 @@ export default function ChatScreen() {
     if (contextConsumed.current) return;
     if (params.prompt || params.badge) {
       contextConsumed.current = true;
-      if (params.prompt) setInitialInput(params.prompt);
       if (params.badge) setContextBadge(params.badge);
-      // Clear the URL params so refresh / re-focus don't repopulate
-      try { router.setParams({ prompt: undefined, badge: undefined } as any); } catch {}
+      if (params.prompt) {
+        if (params.autoSend === '1') {
+          chat.sendMessage(params.prompt, null, { fromSiri: true });
+        } else {
+          setInitialInput(params.prompt);
+        }
+      }
+      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined } as any); } catch {}
     }
-  }, [params.prompt, params.badge]);
+  }, [params.prompt, params.badge, params.autoSend]);
 
   useEffect(() => { chat.loadLatestConversation(); }, []);
 

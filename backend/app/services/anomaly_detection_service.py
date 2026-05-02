@@ -510,7 +510,12 @@ class AnomalyDetectionService:
                     notification_type=NotificationType.HEALTH_ALERT.value,
                     title=f"健康预警：{alert.metric_name}",
                     content=alert.message,
-                    data={"alert_id": alert.id, "severity": alert.severity, "type": alert.alert_type},
+                    data={
+                        "alert_id": alert.id,
+                        "severity": alert.severity,
+                        "type": alert.alert_type,
+                        "deep_link": f"/trace/anomaly_{alert.id}",
+                    },
                     respect_quiet_hours=respect_quiet,
                 )
                 if result.get("success"):

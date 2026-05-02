@@ -810,8 +810,28 @@ async def stream_orchestrator(
         async for chunk in _stream_llm(system_prompt, user_prompt):
             yield _sse("chunk", chunk)
 
+        total_ms = int((time.monotonic() - t_start) * 1000)
+
+        # 旁路审计: stream 路径也记录一次 orchestrator.run, 与非流式对齐.
+        # 同时带上 source tag (siri/chat/widget/None), 后续分析入口分布.
+        try:
+            from app.agents.audit import log_orchestrator_run
+            log_orchestrator_run(
+                db=db,
+                user_id=user_id,
+                query=req.query,
+                intent_categories=intent.categories,
+                used_specialists=[s.name for s in specialists],
+                findings_count=sum(len(f.findings) for f in findings),
+                twin_build_ms=twin.meta.build_ms,
+                total_ms=total_ms,
+                source=req.source,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[orchestrator.stream] orchestrator_run audit bypass 失败: {e}")
+
         yield _sse("done", {
-            "total_ms": int((time.monotonic() - t_start) * 1000),
+            "total_ms": total_ms,
             "persisted_card_ids": persisted_ids,
         })
     except Exception as e:  # noqa: BLE001

@@ -101,7 +101,7 @@ npm run android      # expo run:android
 
 The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tanstack/react-query` for data, and `expo-secure-store` for tokens. React 19.1 with New Architecture enabled.
 
-- **App identity**: "HealthPilot", bundle ID `life.executor.health`, scheme `mobile`.
+- **App identity**: 显示名 "健康助理"（Home Screen / Siri / 通知），内部 bundle name 保留 "HealthPilot"；bundle ID `life.executor.health`，scheme `mobile`。
 - **Architecture**: `services/` (API clients) → `hooks/` (React Query wrappers) → `components/` (domain-split UI) → `app/(tabs)/` (Home, AI Chat, Quick Record, Safety Alerts, Health Cards).
 - **Native deps worth knowing**: `react-native-maps`, `@react-native-voice/voice`, `expo-haptics`, `expo-notifications`, `expo-local-authentication` (Face ID), `react-native-reanimated`, `expo-image-picker`, `react-native-markdown-display`.
 - **API URL**: `services/api.ts` reads `EXPO_PUBLIC_API_URL` (defaults to `https://health.executor.life/api`). For local backend dev, export `EXPO_PUBLIC_API_URL=http://<your-lan-ip>:8000/api/v1` before `npm run start`.

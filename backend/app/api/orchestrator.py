@@ -92,6 +92,7 @@ async def chat(
             findings_count=sum(len(f.findings) for f in response.findings),
             twin_build_ms=response.twin_build_ms,
             total_ms=response.total_ms,
+            source=req.source,
         )
     except Exception:
         pass

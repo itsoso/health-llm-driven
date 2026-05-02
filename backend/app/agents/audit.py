@@ -53,8 +53,15 @@ def log_orchestrator_run(
     twin_build_ms: int,
     total_ms: int,
     result_summary: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> None:
-    """记录一次 Orchestrator 综合调度。"""
+    """记录一次 Orchestrator 综合调度。
+
+    source: 'siri' | 'chat' | 'widget' | None — 调用入口, 用来分析不同入口的使用率.
+    """
+    detail = {"used_specialists": used_specialists}
+    if source:
+        detail["source"] = source
     _write(
         db,
         user_id=user_id,
@@ -67,7 +74,7 @@ def log_orchestrator_run(
         total_ms=total_ms,
         twin_sources=None,
         intent_categories=intent_categories,
-        result_detail={"used_specialists": used_specialists},
+        result_detail=detail,
     )
 
 

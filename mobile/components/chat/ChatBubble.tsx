@@ -91,8 +91,13 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
             activeOpacity={0.8}
             onLongPress={handleCopy}
             accessibilityRole="text"
-            accessibilityLabel={`你: ${item.content}`}
+            accessibilityLabel={`你: ${item.content}${item.fromSiri ? ' (来自 Siri)' : ''}`}
           >
+            {item.fromSiri && (
+              <View style={styles.siriBadge} accessibilityLabel="来自 Siri">
+                <Ionicons name="sparkles" size={11} color="#fff" />
+              </View>
+            )}
             {images && images.length > 0 && (
               <View style={styles.imageGrid}>
                 {images.map((uri, i) => (
@@ -168,6 +173,15 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     msgRowAI: { justifyContent: 'flex-start' },
     bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
     bubbleUser: { backgroundColor: c.brand, borderBottomRightRadius: 4 },
+    siriBadge: {
+      position: 'absolute',
+      top: -6, right: -6,
+      width: 18, height: 18, borderRadius: 9,
+      backgroundColor: c.brand,
+      borderWidth: 1.5, borderColor: c.bgPrimary,
+      alignItems: 'center', justifyContent: 'center',
+      zIndex: 2,
+    },
     bubbleAI: {
       backgroundColor: c.bgCard, borderBottomLeftRadius: 4,
       ...(isDark

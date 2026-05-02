@@ -15,6 +15,10 @@ class OrchestratorRequest(BaseModel):
         description="可选：强制指定调用哪些 specialist（例如 ['safety_guardian']）。None=自动路由。",
     )
     stream: bool = Field(True, description="是否流式返回 LLM 合并结果")
+    source: Optional[str] = Field(
+        None,
+        description="请求来源 (用于 audit): 'siri' | 'chat' | 'widget' | None. 仅埋点用, 不影响路由/合成.",
+    )
     # 未来字段：conversation_id、user_mood、priority_level 等
 
 
