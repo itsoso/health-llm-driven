@@ -136,7 +136,7 @@ import Foundation
 
 struct HealthCommandIntent: AppIntent {
     static let title: LocalizedStringResource = "记录健康数据"
-    static let description = IntentDescription("通过 Siri 语音快速记录饮食、饮水、运动等健康数据")
+    static let description = IntentDescription("语音快速记录饮食、饮水、运动等健康数据")
     static let openAppWhenRun = false
 
     @Parameter(title: "内容")
@@ -144,7 +144,7 @@ struct HealthCommandIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
-            return .result(dialog: "请先打开 HealthPilot App 登录")
+            return .result(dialog: "请先打开健康助理 App 登录")
         }
 
         guard let url = URL(string: "https://health-api.executor.life/api/v1/agent/stream") else {
@@ -166,7 +166,7 @@ struct HealthCommandIntent: AppIntent {
                 return .result(dialog: "网络请求失败")
             }
             if httpResponse.statusCode == 401 {
-                return .result(dialog: "登录已过期，请打开 HealthPilot 重新登录")
+                return .result(dialog: "登录已过期，请打开健康助理 重新登录")
             }
             if httpResponse.statusCode >= 400 {
                 return .result(dialog: "服务暂时不可用，请稍后再试")
@@ -203,7 +203,7 @@ import Foundation
 
 struct HealthAnalysisIntent: AppIntent {
     static let title: LocalizedStringResource = "健康综合分析"
-    static let description = IntentDescription("不打开 App，通过 Siri 直接发起多专家综合分析并语音播报结论")
+    static let description = IntentDescription("不打开 App，直接语音发起多专家综合分析并播报结论")
     static let openAppWhenRun = false
 
     @Parameter(title: "问题", description: "要分析什么？如: 我最近的睡眠怎么样")
@@ -211,7 +211,7 @@ struct HealthAnalysisIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
-            return .result(dialog: "请先打开 HealthPilot App 登录")
+            return .result(dialog: "请先打开健康助理 App 登录")
         }
 
         guard let url = URL(string: "https://health-api.executor.life/api/v1/orchestrator/chat/stream") else {
@@ -234,7 +234,7 @@ struct HealthAnalysisIntent: AppIntent {
                 return .result(dialog: "网络请求失败")
             }
             if httpResponse.statusCode == 401 {
-                return .result(dialog: "登录已过期，请打开 HealthPilot 重新登录")
+                return .result(dialog: "登录已过期，请打开健康助理 重新登录")
             }
             if httpResponse.statusCode >= 400 {
                 return .result(dialog: "分析服务暂时不可用，请稍后再试")
@@ -273,7 +273,7 @@ struct HealthAnalysisIntent: AppIntent {
             if trimmed.isEmpty {
                 return .result(dialog: "暂无分析结论，请稍后再试")
             }
-            // Siri 语音播报上限约 600 字；取前 300 字足够一段简短结论
+            // 语音播报上限约 600 字；取前 300 字足够一段简短结论
             let display = trimmed.count > 300 ? String(trimmed.prefix(300)) + "…" : trimmed
             return .result(dialog: "\\(display)")
         } catch {
@@ -290,8 +290,8 @@ import Foundation
 import UIKit
 
 struct HealthAnalysisOpenIntent: AppIntent {
-    static let title: LocalizedStringResource = "打开 HealthPilot 并分析"
-    static let description = IntentDescription("打开 HealthPilot 的 AI 健康助理，自动把问题发送给多专家分析")
+    static let title: LocalizedStringResource = "打开健康助理 并分析"
+    static let description = IntentDescription("打开 App 进入 AI 健康助理，自动把问题发送给多专家分析")
     static let openAppWhenRun = true
 
     @Parameter(title: "问题", description: "要分析什么？如: 我最近的睡眠怎么样")
