@@ -4,7 +4,7 @@
  * 基于 /clinical-journal/timeline API: 按 case_thread 分组的 SOAP timeline,
  * 无主題 bucket (thread_id=null) 展示周度简报等没挂 thread 的 entry.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, RefreshControl,
@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
 import { useJournalTimeline } from '../../../hooks/useJournalTimeline';
 import type { TimelineThread, TimelineEntry } from '../../../services/clinicalJournal';
+import { emitClientEvent } from '../../../services/clientEvents';
 import { spacing, radii, typography } from '../../../constants/theme';
 import { ColorPalette, useTheme } from '../../../hooks/useTheme';
 
@@ -148,6 +149,11 @@ export default function JournalTimelineScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const { data, isLoading, isRefetching, refetch } = useJournalTimeline(30);
   const threads = data?.threads ?? [];
+
+  // Task 9: 埋点 — tab mount 发 journal_timeline_entered, 观察期看板算进入率
+  useEffect(() => {
+    emitClientEvent('journal_timeline_entered');
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

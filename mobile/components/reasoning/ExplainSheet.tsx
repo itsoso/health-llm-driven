@@ -6,7 +6,7 @@
  *
  * 可见时才发起请求 (enabled=visible), 关闭后 React Query 按 staleTime 缓存.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Modal,
   Pressable,
@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useReasoningExplain } from '../../hooks/useReasoningExplain';
 import type { ExplainResponse } from '../../services/reasoningTrace';
+import { emitClientEvent } from '../../services/clientEvents';
 
 type Props =
   | { visible: boolean; onClose: () => void; source: 'safety'; auditId: number; ruleId: string }
@@ -39,6 +40,22 @@ export function ExplainSheet(props: Props) {
           enabled: props.visible,
         },
   );
+
+  // Task 9: 抽屉每次打开发一条 client event, 观察期看板算点击率
+  useEffect(() => {
+    if (props.visible) {
+      emitClientEvent('reasoning_sheet_opened', {
+        source: props.source,
+        audit_id: props.auditId,
+        ref: props.source === 'safety' ? props.ruleId : props.specialist,
+      });
+    }
+  }, [
+    props.visible,
+    props.source,
+    props.auditId,
+    props.source === 'safety' ? props.ruleId : props.specialist,
+  ]);
 
   return (
     <Modal

@@ -4,7 +4,7 @@
  * Task 7: 近 30 天某 specialist 的所有 ActionCard + 评分详情.
  * 从 Home SpecialistChipRow 点击进入.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSpecialistScorecard } from '../../hooks/useSpecialistScorecard';
 import { specialistLabel } from '../../services/personalOutcome';
 import type { ScorecardCard } from '../../services/specialistScorecard';
+import { emitClientEvent } from '../../services/clientEvents';
 import { spacing, radii, typography } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -65,6 +66,13 @@ export default function SpecialistScorecardScreen() {
 
   const { data, isLoading, isRefetching, refetch } = useSpecialistScorecard(name, 30);
   const label = specialistLabel((name as string) || null);
+
+  // Task 9: 埋点 — 每次 mount 发 specialist_scorecard_entered, 看板算进入率
+  useEffect(() => {
+    if (name) {
+      emitClientEvent('specialist_scorecard_entered', { specialist: name });
+    }
+  }, [name]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
