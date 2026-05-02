@@ -17,6 +17,7 @@ import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
 import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
 import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
 import InsightCard from '../../components/dashboard/InsightCard';
+import SpecialistChipRow from '../../components/home/SpecialistChipRow';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import BrandCircle from '../../components/chat/BrandCircle';
@@ -203,6 +204,7 @@ export default function HomeScreen() {
         onNewChat={chat.newChat}
         onHistory={() => { setShowHistory(true); loadHistory(); }}
       />
+      <SpecialistChipRow />
       <TodayCoachPanel
         focus={todayCoach.data}
         isLoading={todayCoach.isLoading}

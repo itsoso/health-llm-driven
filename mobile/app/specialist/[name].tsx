@@ -1,0 +1,207 @@
+/**
+ * Specialist Scorecard Detail
+ *
+ * Task 7: 近 30 天某 specialist 的所有 ActionCard + 评分详情.
+ * 从 Home SpecialistChipRow 点击进入.
+ */
+import React, { useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { useSpecialistScorecard } from '../../hooks/useSpecialistScorecard';
+import { specialistLabel } from '../../services/personalOutcome';
+import type { ScorecardCard } from '../../services/specialistScorecard';
+import { spacing, radii, typography } from '../../constants/theme';
+import { ColorPalette, useTheme } from '../../hooks/useTheme';
+
+function scoreColor(score: number, c: ColorPalette): string {
+  if (score >= 70) return c.green;
+  if (score >= 40) return c.amber;
+  return c.red;
+}
+
+function CardRow({ card, c }: { card: ScorecardCard; c: ColorPalette }) {
+  const styles = useMemo(() => createCardStyles(c), [c]);
+  const graded = card.accuracy_score !== null;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.title} numberOfLines={2}>
+        {card.title}
+      </Text>
+
+      {graded ? (
+        <View style={styles.metricsRow}>
+          {card.target_value && (
+            <Text style={styles.metric}>目标 {card.target_value}</Text>
+          )}
+          {card.actual_value && (
+            <Text style={styles.metric}>实际 {card.actual_value}</Text>
+          )}
+          <Text style={[styles.score, { color: scoreColor(card.accuracy_score!, c) }]}>
+            {card.accuracy_score}/100
+          </Text>
+        </View>
+      ) : (
+        <Text style={styles.pending}>等待评分</Text>
+      )}
+
+      {card.why_short && <Text style={styles.why}>{card.why_short}</Text>}
+    </View>
+  );
+}
+
+export default function SpecialistScorecardScreen() {
+  const { name } = useLocalSearchParams<{ name: string }>();
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+
+  const { data, isLoading, isRefetching, refetch } = useSpecialistScorecard(name, 30);
+  const label = specialistLabel((name as string) || null);
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <Stack.Screen options={{ title: `${label} 成绩单`, headerBackTitle: '返回' }} />
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor={c.brand}
+          />
+        }
+      >
+        {isLoading && (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={c.brand} />
+          </View>
+        )}
+
+        {data && (
+          <>
+            <View style={styles.summary}>
+              <Text style={styles.h1}>{label}</Text>
+              <Text style={styles.stat}>
+                近 {data.window_days} 天: {data.proposed_count} 条建议 · {data.graded_count} 条评分
+              </Text>
+              {data.avg_accuracy !== null && (
+                <Text style={styles.stat}>
+                  平均命中度{' '}
+                  <Text style={[styles.avgScore, { color: scoreColor(data.avg_accuracy, c) }]}>
+                    {data.avg_accuracy}
+                  </Text>{' '}
+                  / 100
+                </Text>
+              )}
+            </View>
+
+            {data.cards.length === 0 ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyTitle}>还没有评分数据</Text>
+                <Text style={styles.emptyHint}>
+                  评分由 outcome_grader 在建议的 check_back_date 自动生成.
+                  {'\n'}
+                  新产的建议需等到检查日 (通常 3-14 天) 后才会出现结果.
+                </Text>
+              </View>
+            ) : (
+              data.cards.map((card) => <CardRow key={card.id} card={card} c={c} />)
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function createStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.bgPrimary },
+    scroll: { padding: spacing.md, paddingBottom: 80 },
+    center: { paddingVertical: 40, alignItems: 'center' },
+    summary: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+    },
+    h1: {
+      fontSize: typography.titleMedium.fontSize,
+      fontWeight: '700' as const,
+      color: c.labelPrimary,
+    },
+    stat: {
+      marginTop: 4,
+      fontSize: typography.bodyMedium.fontSize,
+      color: c.labelSecondary,
+    },
+    avgScore: { fontWeight: '700' as const },
+    empty: { padding: spacing.xl, alignItems: 'center' },
+    emptyTitle: {
+      fontSize: typography.bodyMedium.fontSize,
+      fontWeight: '600' as const,
+      color: c.labelPrimary,
+      marginBottom: spacing.xs,
+    },
+    emptyHint: {
+      fontSize: typography.bodySmall.fontSize,
+      color: c.labelSecondary,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+  });
+}
+
+function createCardStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.bgCard,
+      padding: spacing.md,
+      borderRadius: radii.md,
+      marginBottom: spacing.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.separator,
+    },
+    title: {
+      fontSize: typography.bodyMedium.fontSize,
+      fontWeight: '600' as const,
+      color: c.labelPrimary,
+      marginBottom: 6,
+    },
+    metricsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 12,
+    },
+    metric: {
+      fontSize: typography.bodySmall.fontSize,
+      color: c.labelSecondary,
+    },
+    score: {
+      fontWeight: '700' as const,
+      fontSize: typography.bodyMedium.fontSize,
+    },
+    pending: {
+      fontSize: typography.bodySmall.fontSize,
+      color: c.labelTertiary,
+      fontStyle: 'italic',
+    },
+    why: {
+      marginTop: 6,
+      fontSize: typography.bodySmall.fontSize,
+      color: c.labelSecondary,
+      lineHeight: 18,
+    },
+  });
+}
