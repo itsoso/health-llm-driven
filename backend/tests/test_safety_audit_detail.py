@@ -36,6 +36,49 @@ def test_log_safety_evaluation_persists_alerts_snapshot(db):
     assert row.result_detail["alerts"][0]["data_citation"] == {"hrv": 28}
 
 
+def test_safety_me_response_includes_audit_id(client, auth_user_and_headers, db):
+    """Task 3: /safety/me 响应体必须包含 top-level audit_id 字段.
+
+    Mobile ExplainSheet 依赖这个 id 调 /reasoning-trace/safety/{audit_id}.
+    """
+    user, headers = auth_user_and_headers
+
+    # 清缓存, 确保真的走 evaluate + audit 分支
+    try:
+        from app.utils.redis_cache import RedisCache
+        for sev in (0, 2):
+            for lim in (8, 50):
+                for dedup in (0, 1):
+                    RedisCache.delete(f"safety:v2:{user.id}:s{sev}:l{lim}:d{dedup}")
+    except Exception:
+        pass
+
+    resp = client.get("/api/v1/safety/me", headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "audit_id" in body, (
+        "response 必须有 audit_id top-level 字段 (Mobile ExplainSheet 用)"
+    )
+    # audit 写入成功时是 int, 旁路失败时是 None
+    assert body["audit_id"] is None or isinstance(body["audit_id"], int)
+
+    # 有 audit_id 时, /reasoning-trace/safety/{id} 必须能反查到
+    if body["audit_id"] is not None and body["alerts"]:
+        first_rule = body["alerts"][0]["rule_id"]
+        r2 = client.get(
+            f"/api/v1/reasoning-trace/safety/{body['audit_id']}",
+            headers=headers,
+            params={"rule_id": first_rule},
+        )
+        assert r2.status_code == 200, r2.text
+        trace = r2.json()
+        assert trace["source"] == "safety"
+        assert "twin_evidence" in trace
+        assert "related_facts" in trace
+        assert "confidence" in trace
+        assert "confidence_note" in trace
+
+
 def test_safety_me_endpoint_persists_alerts_snapshot(client, auth_user_and_headers, db):
     """端到端: GET /api/v1/safety/me 的 audit row 必须有 result_detail.alerts."""
     user, headers = auth_user_and_headers

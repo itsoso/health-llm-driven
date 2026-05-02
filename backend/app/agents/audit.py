@@ -22,9 +22,14 @@ def log_safety_evaluation(
     evaluate_ms: int,
     twin_sources: List[str],
     result_detail: Optional[Dict[str, Any]] = None,
-) -> None:
-    """记录一次 Safety Guardian 评估。"""
-    _write(
+) -> Optional[int]:
+    """记录一次 Safety Guardian 评估。
+
+    Returns:
+        新写入 audit_log 行的 id (旁路写入失败时为 None).
+        Mobile ExplainSheet 需要这个 id 反查 /reasoning-trace/safety/{id}.
+    """
+    return _write(
         db,
         user_id=user_id,
         agent_type="safety_guardian",
@@ -181,8 +186,8 @@ def _write(
     twin_sources: Optional[List[str]] = None,
     intent_categories: Optional[List[str]] = None,
     result_detail: Optional[Dict[str, Any]] = None,
-) -> None:
-    """底层写入。失败静默。"""
+) -> Optional[int]:
+    """底层写入。失败静默。返回新行 id (失败时 None)。"""
     try:
         from app.models.agent_audit_log import AgentAuditLog
 
@@ -203,9 +208,12 @@ def _write(
         )
         db.add(log)
         db.commit()
+        db.refresh(log)
+        return log.id
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[audit] 写入失败（降级）: {e}")
         try:
             db.rollback()
         except Exception:
             pass
+        return None

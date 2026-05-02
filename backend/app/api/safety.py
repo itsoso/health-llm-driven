@@ -86,6 +86,7 @@ def get_my_safety_report(
     # 审计日志（旁路，失败不影响响应）
     # result_detail 存入本次所有 alerts 的结构化快照, 让后续
     # /reasoning-trace/safety/{audit_id}?rule_id=... 可以反查单条 alert 详情.
+    audit_id: Optional[int] = None
     try:
         from app.agents.audit import log_safety_evaluation
 
@@ -103,7 +104,7 @@ def get_my_safety_report(
             for a in report.alerts
         ]
 
-        log_safety_evaluation(
+        audit_id = log_safety_evaluation(
             db=db,
             user_id=current_user.id,
             alerts_count=len(report.alerts),
@@ -159,6 +160,9 @@ def get_my_safety_report(
     result["dismissed_count"] = len(dismissed_ids)
     result["summary"]["truncated_count"] = truncated_count
     result["summary"]["dedup_count"] = dedup_count
+    # Task 3: 回传 audit_id, Mobile ExplainSheet 用它反查 reasoning-trace.
+    # 旁路 audit 写失败时为 None, 客户端需容忍.
+    result["audit_id"] = audit_id
 
     # 写缓存（5min TTL, 和 Twin 缓存对齐）
     try:
