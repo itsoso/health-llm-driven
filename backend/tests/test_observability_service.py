@@ -81,6 +81,7 @@ def test_collect_dashboard_schema(db):
     assert set(report.keys()) == {
         "open_loop", "clinical_journal", "memory_kg",
         "doctor_report", "action_card", "safety_guardian",
+        "client_events",
     }
 
 

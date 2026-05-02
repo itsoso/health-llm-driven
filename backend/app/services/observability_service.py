@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import subprocess
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Dict, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -282,6 +282,32 @@ def safety_audit_stats(db: Session, since: datetime, user_id: Optional[int]) -> 
 
 
 # ---------------------------------------------------------------
+# H. Client Events (Task 9) — Mobile 埋点聚合
+#    reasoning_sheet_opened / journal_timeline_entered / specialist_scorecard_entered
+# ---------------------------------------------------------------
+
+def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
+    from app.models.client_event import ClientEvent
+
+    q = db.query(ClientEvent).filter(ClientEvent.created_at >= since)
+    if user_id:
+        q = q.filter(ClientEvent.user_id == user_id)
+
+    by_event: Dict[str, int] = {}
+    for row in (
+        q.with_entities(ClientEvent.event_name, func.count(ClientEvent.id))
+        .group_by(ClientEvent.event_name)
+        .all()
+    ):
+        by_event[row[0]] = int(row[1])
+
+    return {
+        "total": sum(by_event.values()),
+        "by_event": by_event,
+    }
+
+
+# ---------------------------------------------------------------
 # G. tool_validator (journalctl, 仅线上)
 # ---------------------------------------------------------------
 
@@ -386,6 +412,45 @@ def actionable_suggestions(report: dict) -> list[str]:
         if tv.get("coerced", 0) == 0 and tv.get("rejected", 0) == 0:
             out.append("🟡 tool_validator 窗口内零命中 — 验证下 validator 是否挂在主路径上")
 
+    # Task 9: client-event 行为率 — 判断 feature 是否真被用户看见 / 点击
+    ce = report.get("client_events", {})
+    by_ev = (ce or {}).get("by_event", {})
+
+    # reasoning 抽屉: 点击次数 / Safety 告警累计 (每条告警都显示"为什么?" 按钮)
+    sg_total = report.get("safety_guardian", {}).get("total_alerts_raised", 0)
+    reasoning_opens = by_ev.get("reasoning_sheet_opened", 0)
+    if sg_total >= 3:  # 样本 <3 不评, 噪声太大
+        rate = reasoning_opens / sg_total
+        if rate < 0.05:
+            out.append(
+                f"🔴 Reasoning 抽屉点击率 {reasoning_opens}/{sg_total} ({rate * 100:.0f}%) "
+                "— 用户没觉得'为什么'值得看"
+            )
+        elif rate < 0.2:
+            out.append(
+                f"🟡 Reasoning 抽屉点击率 {reasoning_opens}/{sg_total} ({rate * 100:.0f}%) — 未达 20% 目标"
+            )
+        else:
+            out.append(
+                f"🟢 Reasoning 抽屉点击率 {rate * 100:.0f}% — 达标 (目标 >=20%)"
+            )
+
+    # journal tab 进入: 当窗口有 SOAP 数据时必须有人看
+    journal_entered = by_ev.get("journal_timeline_entered", 0)
+    journal_total = report.get("clinical_journal", {}).get("total_entries", 0)
+    if journal_total >= 3 and journal_entered == 0:
+        out.append(
+            f"🔴 Journal tab 零进入 ({journal_total} 条 SOAP 可看) — tab 入口不够直观?"
+        )
+
+    # specialist 详情页进入: 有 ActionCard 却没人看 chip
+    sc_entered = by_ev.get("specialist_scorecard_entered", 0)
+    ac_created = report.get("action_card", {}).get("created_in_window", 0)
+    if ac_created >= 5 and sc_entered == 0:
+        out.append(
+            f"🔴 Specialist 详情页零进入 ({ac_created} 条 ActionCard 可看) — Hero chip row 不够显眼?"
+        )
+
     if not out:
         out.append("✅ 所有链路看起来在跑, 无明显异常.")
 
@@ -411,6 +476,7 @@ def collect_dashboard(
         "doctor_report": doctor_report_stats(db, since, user_id),
         "action_card": action_card_stats(db, since, user_id),
         "safety_guardian": safety_audit_stats(db, since, user_id),
+        "client_events": client_events_stats(db, since, user_id),
     }
     if include_journalctl:
         report["tool_validator"] = tool_validator_stats_remote(days)
