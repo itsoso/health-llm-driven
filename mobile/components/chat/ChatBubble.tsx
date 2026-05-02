@@ -12,7 +12,7 @@ import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { renderCard } from './cards';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
-import { mdStylesChat } from '../../constants/markdownStyles';
+import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
@@ -30,6 +30,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
+  const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
   const isUser = item.role === 'user';
   const [draft, setDraft] = useState<InterventionDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -123,10 +124,10 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
           >
             {hasTable ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: '100%' }}>
-                <Markdown style={mdStylesChat}>{item.content || ' '}</Markdown>
+                <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
               </ScrollView>
             ) : (
-              <Markdown style={mdStylesChat}>{item.content || ' '}</Markdown>
+              <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
             )}
             {displayText ? (
               <Pressable

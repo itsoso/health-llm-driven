@@ -12,10 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import Markdown from 'react-native-markdown-display';
 import { useCaseDetail } from '../../../hooks/useClinicalJournal';
 import type { JournalEntry } from '../../../services/clinicalJournal';
 import { spacing, radii, typography } from '../../../constants/theme';
 import { ColorPalette, useTheme } from '../../../hooks/useTheme';
+import { createMdStylesCompact } from '../../../constants/markdownStyles';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -58,13 +60,16 @@ function fmtDate(iso: string | null): string {
 function SoapField({ label, value, color }: { label: string; value: string | null; color: string }) {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
+  const mdStyles = useMemo(() => createMdStylesCompact(c), [c]);
   if (!value) return null;
   return (
     <View style={styles.soapField}>
       <View style={[styles.soapLabelWrap, { backgroundColor: `${color}18` }]}>
         <Text style={[styles.soapLabel, { color }]}>{label}</Text>
       </View>
-      <Text style={styles.soapValue}>{value}</Text>
+      <View style={styles.soapValueWrap}>
+        <Markdown style={mdStyles}>{value}</Markdown>
+      </View>
     </View>
   );
 }
@@ -241,7 +246,7 @@ function createStyles(c: ColorPalette) {
     color: c.labelPrimary,
   },
   scroll: { flex: 1 },
-  scrollContent: { padding: spacing.md, paddingBottom: 120 },
+  scrollContent: { padding: spacing.md, paddingBottom: 160 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
   emptyTitle: { fontSize: 16, color: c.labelSecondary },
   emptySub: { fontSize: 14, color: c.labelTertiary },
@@ -301,6 +306,7 @@ function createStyles(c: ColorPalette) {
   },
   soapLabel: { fontSize: 11, fontWeight: '600' as const },
   soapValue: { fontSize: 13, color: c.labelPrimary, lineHeight: 20 },
+  soapValueWrap: { marginTop: 2 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   metaText: { fontSize: 11, color: c.labelTertiary },
   });
