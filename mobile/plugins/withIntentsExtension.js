@@ -126,8 +126,15 @@ struct SharedKeychain {
     static let service = "life.executor.health.shared"
     static let appGroup = "${APP_GROUP}"
     static let tokenKey = "siri_auth_token"
+    static let markerKey = "siri_debug_marker"
 
     static func loadToken() -> String? {
+        if let defaults = UserDefaults(suiteName: appGroup),
+           let token = defaults.string(forKey: tokenKey),
+           !token.isEmpty {
+            return token
+        }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -140,6 +147,35 @@ struct SharedKeychain {
         guard status == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    /// 诊断: token 读不到时返回详细状态, Siri 会读出这句话。
+    /// 包含: UD suite 是否开/是否有 marker/keychain status / token bytes.
+    static func loadTokenDiagnostic() -> String {
+        var parts: [String] = []
+
+        if let defaults = UserDefaults(suiteName: appGroup) {
+            let hasMarker = defaults.string(forKey: markerKey)
+            parts.append("UD open")
+            parts.append("marker=\\(hasMarker ?? "nil")")
+            let tok = defaults.string(forKey: tokenKey)
+            parts.append("token=\\(tok?.isEmpty == false ? "\\(tok!.count)ch" : "nil")")
+        } else {
+            parts.append("UD nil")
+        }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: tokenKey,
+            kSecAttrAccessGroup as String: appGroup,
+            kSecReturnData as String: true,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        parts.append("KC=\\(status)")
+
+        return parts.joined(separator: ", ")
+    }
 }
 `;
 
@@ -151,12 +187,16 @@ struct HealthCommandIntent: AppIntent {
     static let description = IntentDescription("语音快速记录饮食、饮水、运动等健康数据")
     static let openAppWhenRun = false
 
-    @Parameter(title: "内容")
+    @Parameter(
+        title: "内容",
+        description: "要记录的饮食/饮水/运动等",
+        requestValueDialog: "要记录什么？例如:我做了20个俯卧撑"
+    )
     var content: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
-            return .result(dialog: "请先打开健康助理 App 登录")
+            return .result(dialog: "诊断: \\(SharedKeychain.loadTokenDiagnostic())")
         }
 
         guard let url = URL(string: "https://health.executor.life/api/v1/agent/stream") else {
@@ -218,12 +258,16 @@ struct HealthAnalysisIntent: AppIntent {
     static let description = IntentDescription("不打开 App，直接语音发起多专家综合分析并播报结论")
     static let openAppWhenRun = false
 
-    @Parameter(title: "问题", description: "要分析什么？如: 我最近的睡眠怎么样")
+    @Parameter(
+        title: "问题",
+        description: "要分析什么？如:我最近的睡眠怎么样",
+        requestValueDialog: "要分析什么？比如我最近的睡眠或运动表现"
+    )
     var query: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
-            return .result(dialog: "请先打开健康助理 App 登录")
+            return .result(dialog: "诊断: \\(SharedKeychain.loadTokenDiagnostic())")
         }
 
         guard let url = URL(string: "https://health.executor.life/api/v1/orchestrator/chat/stream") else {
@@ -306,7 +350,11 @@ struct HealthAnalysisOpenIntent: AppIntent {
     static let description = IntentDescription("打开 App 进入 AI 健康助理，自动把问题发送给多专家分析")
     static let openAppWhenRun = true
 
-    @Parameter(title: "问题", description: "要分析什么？如: 我最近的睡眠怎么样")
+    @Parameter(
+        title: "问题",
+        description: "要分析什么？如:我最近的睡眠怎么样",
+        requestValueDialog: "要分析什么？比如我最近的睡眠或运动表现"
+    )
     var query: String
 
     @MainActor
@@ -323,13 +371,21 @@ struct HealthAnalysisOpenIntent: AppIntent {
 const HEALTH_PILOT_SHORTCUTS_SWIFT = `import AppIntents
 
 struct HealthPilotShortcuts: AppShortcutsProvider {
+    // iOS AppIntents 限制: phrase 里的 parameter 占位符 \\(\\.$xxx) 只支持
+    // AppEntity / AppEnum 类型。我们的 content/query 是 String,所以 phrase
+    // 不带占位符; Siri 识别 phrase 后, 通过 @Parameter 的 requestValueDialog
+    // 追问用户 "要记录什么?" → 用户说一句完整内容 → 作为参数传入。
+    // 两步交互, 但可靠。
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: HealthCommandIntent(),
             phrases: [
-                "用\\(.applicationName)记录健康数据",
+                "用\\(.applicationName)记录",
+                "用\\(.applicationName)帮我记录",
+                "使用\\(.applicationName)记录",
                 "\\(.applicationName)记一下",
                 "告诉\\(.applicationName)",
+                "让\\(.applicationName)记下",
             ],
             shortTitle: "记录健康数据",
             systemImageName: "heart.text.square"
@@ -338,8 +394,9 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
             intent: HealthAnalysisIntent(),
             phrases: [
                 "用\\(.applicationName)分析",
+                "使用\\(.applicationName)分析",
                 "\\(.applicationName)综合分析",
-                "让\\(.applicationName)分析一下",
+                "让\\(.applicationName)分析",
                 "问\\(.applicationName)",
             ],
             shortTitle: "综合分析",
