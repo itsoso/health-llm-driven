@@ -215,11 +215,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=0),
     },
 
-    # 每天 7:00 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
+    # 每天 08:45 (北京) 主动循环管理 — 扫所有用户的开放健康循环, 推 top 2 条 APNs
     # vertical health agent 的灵魂: AI 主动盯, 不再被动等问.
+    # 时间点: 默认 quiet_hours 结束是 08:30, 留 15min 缓冲避免边界用户被打扰.
     "open-loop-manager": {
         "task": "app.tasks.open_loop_manager.run_open_loop_check",
-        "schedule": crontab(hour=7, minute=0),
+        "schedule": crontab(hour=8, minute=45),
     },
 
     # 每天 4:00 LLM Wiki v2 lifecycle: decay + crystallization

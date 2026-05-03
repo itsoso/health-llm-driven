@@ -288,6 +288,22 @@ def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
 DEDUP_WINDOW_DAYS = 7  # 同一 (user, kind, signal_key) 在 7 天内不重复推
 
 
+def _is_in_quiet_hours_now(setting) -> bool:
+    """检查当前北京时间是否在该用户的 quiet_hours 窗口内.
+
+    和 push_service.PushService.is_quiet_hours 同语义, 但不依赖 PushService 初始化
+    (open_loop 的 push 链路一直走 ios_push 直连, 不经 push_service).
+
+    跨午夜情况: start > end 时 (如 22:00 - 08:30), 当前时间 >= start 或 < end 都算静默.
+    """
+    start = (setting.quiet_hours_start or "22:00").strip()
+    end = (setting.quiet_hours_end or "08:30").strip()
+    now_cn = datetime.now(CHINA_TIMEZONE).strftime("%H:%M")
+    if start > end:  # 跨午夜: 22:00 ~ 08:30
+        return now_cn >= start or now_cn < end
+    return start <= now_cn < end
+
+
 def _is_recently_pushed_or_snoozed(db, user_id: int, loop: OpenLoop) -> bool:
     """该信号在 dedup 窗口内已推过 OR 用户主动 snooze 了 → 跳过."""
     from app.models.open_loop_history import OpenLoopHistory
@@ -408,6 +424,17 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
             return False
         if not setting.health_alert_enabled:
             return False
+
+        # Defense-in-depth: quiet hours 守门 — cron 已移到 08:45 避开默认 22:00-08:30,
+        # 但用户若把 quiet_hours 往后调 (例如 10:00) 或把结束设得更晚, 仍要尊重.
+        # score>=85 视为 critical, 穿透 quiet_hours (重要化验过期很久等).
+        if loop.score < 85 and _is_in_quiet_hours_now(setting):
+            logger.info(
+                f"[open_loop] user={user_id} 在 quiet_hours 窗口内且 score={loop.score}<85, "
+                f"跳过 (不触 dedup, 下次 cron 会重试)"
+            )
+            return False
+
         has_ios = bool(setting.ios_push_enabled and setting.ios_device_token)
 
         # 1) 预写 history (delivery_ok=0), 拿 id 给 APNs data
