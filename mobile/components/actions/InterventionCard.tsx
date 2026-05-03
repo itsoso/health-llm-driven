@@ -65,6 +65,7 @@ function cardTypeMeta(c: ColorPalette): Record<string, { color: string; bg: stri
     plan:           { color: '#0A84FF', bg: c.tintBlue,  icon: 'calendar-outline',         label: '计划' },
     recommendation: { color: c.green,   bg: c.tintGreen, icon: 'bulb-outline',             label: '建议' },
     reminder:       { color: c.amber,   bg: c.tintAmber, icon: 'alarm-outline',            label: '提醒' },
+    forecast:       { color: c.teal,    bg: c.tintTeal,  icon: 'sparkles-outline',         label: 'AI 预测' },
     insight:        { color: '#5856D6', bg: c.tintPurple,icon: 'analytics-outline',        label: '洞察' },
     note:           { color: c.labelTertiary, bg: c.bgPrimary, icon: 'document-text-outline', label: '笔记' },
   };

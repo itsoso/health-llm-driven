@@ -329,6 +329,7 @@ def _build_proposed_cards(breakdown: ReadinessBreakdown, twin: HealthTwin) -> Li
     """根据 readiness 状态产出最多 1 张可验证假设卡片.
 
     触发条件:
+      - readiness >= 70 且 HRV 稳定 → forecast: "未来 3 天 HRV 保持稳定" (pure prediction, 不需用户做事)
       - readiness < 60 且 HRV 在 baseline 之下 → "增加睡眠 7 天验证 HRV 回升"
       - readiness < 50 且 sleep < 6h → "保证 7+ 小时睡眠 5 天"
     """
@@ -337,11 +338,34 @@ def _build_proposed_cards(breakdown: ReadinessBreakdown, twin: HealthTwin) -> Li
     score = breakdown.score
     zone = breakdown.zone
 
-    if zone in {"unknown", "hard"} or score >= 70:
-        return cards  # 状态好，不生成 card
+    if zone == "unknown":
+        return cards  # 数据不全, 没法押任何注
 
     hrv_latest = getattr(p, "hrv_latest", None)
     hrv_baseline = getattr(p, "hrv_7d_avg", None)
+
+    # 高分稳定态 (zone='hard' / 'moderate' / score>=70): 押 forecast — 纯预测, 不要求用户做事
+    if score >= 70:
+        if hrv_latest is not None and hrv_baseline is not None and hrv_latest >= hrv_baseline * 0.9:
+            # 设 floor target = max(baseline*0.9, hrv_latest - 5)
+            floor = max(int(hrv_baseline * 0.9), int(hrv_latest) - 5)
+            cards.append(ProposedCard(
+                title=f"AI 预测: 未来 3 天 HRV 保持 ≥ {floor}",
+                content=(
+                    f"## AI 预测\n\n"
+                    f"**当前**: HRV {hrv_latest:.0f}ms（7 日均值 {hrv_baseline:.0f}ms）, readiness={score}\n"
+                    f"**预测**: 3 天后 HRV ≥ {floor}ms\n\n"
+                    f"这是一条 *纯预测* — 不需要你做任何事, AI 押注当前轨迹将延续.\n"
+                    f"3 天后系统自动评分. 命中率会写到 Specialist scorecard.\n"
+                ),
+                metric_key="hrv",
+                baseline_value=f"{hrv_latest:.0f}",
+                target_value=f">{floor}",
+                verification_days=3,
+                card_type="forecast",
+                priority=8,  # 比 plan 低 — 状态好的时候不该挤掉真问题
+            ))
+        return cards  # 状态好, 只有可能的 forecast, 不生成 plan
 
     # 主卡: HRV 回升 (最常见场景)
     if hrv_latest is not None and hrv_baseline is not None and hrv_latest < hrv_baseline:

@@ -23,6 +23,9 @@ export function getExecuteCapability(card: ActionCard): ExecuteCapability {
   // 已完成 / 已归档的卡不该再"执行"
   if (card.status === 'completed' || card.status === 'archived') return null;
 
+  // forecast = 纯预测, 用户什么都不做 — 不渲染 [执行] 按钮
+  if (card.card_type === 'forecast') return null;
+
   if (card.card_type === 'reminder') return 'reminder';
 
   // recommendation / guide / plan 凡有 metric_key 都可路由到对应录入页

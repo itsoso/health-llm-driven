@@ -140,6 +140,61 @@ class TestRecoveryCoach:
         assert any(f.get("type") == "action" for f in finding.findings)
         assert finding.raw.get("zone") is not None
 
+    def test_high_readiness_emits_forecast_not_plan(self):
+        """高分稳定 (readiness >= 70 + HRV 接近 baseline) → 应发 forecast 卡, 不发 plan."""
+        from app.agents.recovery_coach.coach import _build_proposed_cards, compute_readiness
+        # 构造 readiness ≥ 70 的高分态
+        t = _empty_twin()
+        t.physiological = PhysiologicalState(
+            hrv_latest=58.0,           # ≥ baseline*0.9 = 52.2
+            hrv_7d_avg=58.0,
+            sleep_score_latest=85,
+            sleep_duration_h_latest=8.0,
+            body_battery_current=80,
+            stress_level_current=20,
+            resting_hr=50,
+        )
+        b = compute_readiness(t)
+        assert b.score >= 70, f"前置条件不成立, score={b.score}"
+
+        cards = _build_proposed_cards(b, t)
+        forecast_cards = [c for c in cards if c.card_type == "forecast"]
+        plan_cards = [c for c in cards if c.card_type == "plan"]
+
+        assert len(forecast_cards) == 1
+        assert len(plan_cards) == 0
+        forecast = forecast_cards[0]
+        assert forecast.metric_key == "hrv"
+        assert forecast.verification_days == 3
+        assert forecast.target_value.startswith(">"), f"forecast target 应是数值阈值: {forecast.target_value}"
+        assert "纯预测" in forecast.content or "预测" in forecast.title
+
+    def test_low_readiness_emits_plan_not_forecast(self):
+        """低分态 (readiness < 60 + HRV 在 baseline 之下) 仍出 plan, 不出 forecast."""
+        from app.agents.recovery_coach.coach import _build_proposed_cards, compute_readiness
+        t = _empty_twin()
+        t.physiological = PhysiologicalState(
+            hrv_latest=35.0,           # 远低于 baseline
+            hrv_7d_avg=55.0,
+            sleep_score_latest=50,
+            sleep_duration_h_latest=5.5,
+            body_battery_current=30,
+            stress_level_current=70,
+            resting_hr=68,
+        )
+        b = compute_readiness(t)
+        assert b.score < 60
+
+        cards = _build_proposed_cards(b, t)
+        forecast_cards = [c for c in cards if c.card_type == "forecast"]
+        plan_cards = [c for c in cards if c.card_type == "plan"]
+
+        assert len(forecast_cards) == 0
+        assert len(plan_cards) == 1
+        plan = plan_cards[0]
+        assert plan.metric_key == "hrv"
+        assert plan.verification_days == 7
+
 
 # ───────────────────── Fuel Strategist ────────────────
 

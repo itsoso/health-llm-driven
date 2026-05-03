@@ -55,6 +55,11 @@ describe('getExecuteCapability', () => {
     expect(getExecuteCapability(makeCard({ card_type: 'note', metric_key: 'weight' }))).toBeNull();
   });
 
+  it('forecast 永远不渲染 [执行] (纯预测, 用户不做事)', () => {
+    expect(getExecuteCapability(makeCard({ card_type: 'forecast', metric_key: 'hrv' }))).toBeNull();
+    expect(getExecuteCapability(makeCard({ card_type: 'forecast' }))).toBeNull();
+  });
+
   it('completed cards not executable even if reminder', () => {
     expect(getExecuteCapability(makeCard({ card_type: 'reminder', status: 'completed' }))).toBeNull();
   });
