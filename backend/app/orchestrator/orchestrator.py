@@ -287,11 +287,15 @@ def _build_synthesis_prompt(
     query: str, twin: HealthTwin, findings: List[SpecialistFinding],
     db: Optional[Session] = None, user_id: Optional[int] = None,
     conflict_arb_block: str = "",
+    source: Optional[str] = None,
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt).
 
     conflict_arb_block: 由调用方预先渲染的 cross_review + LLM 仲裁 markdown.
     如果为空, 保留向下兼容: 内部跑一次 cross_review (无 LLM 仲裁).
+
+    source: 'siri' → 走语音播报口语化 prompt (短句/无 markdown/数字口语化/250 字上限),
+           其它值 (chat/widget/None) → 走常规详细 prompt.
     """
 
     twin_blob = twin_to_prompt_blob(twin)
@@ -368,27 +372,45 @@ def _build_synthesis_prompt(
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[orchestrator] cross_review 跳过: {e}")
 
-    system_prompt = (
-        "你是健康助理的首席分析师。下游 specialist agent 已经对用户的 Digital Health Twin 做了结构化裁决，"
-        "你的任务是：\n"
-        "1. 理解用户的原始问题\n"
-        "2. 把各个 specialist 的发现合成一个中文自然语言回答\n"
-        "3. 严重度高的优先说，轻的收尾\n"
-        "4. 数字和规则名不要凭空捏造，只用 specialist 给你的事实\n"
-        "5. 给出 2-4 个具体的下一步行动（时间/频率/剂量要具体）\n"
-        "6. 涉及药物/剂量调整时，明确说需要和医生确认\n"
-        "7. 不超过 500 字，简洁有力，避免废话\n"
-        "8. **信任校准**: 你下方会看到过去 30 天各 specialist 的预测命中率."
-        " 命中率 ≥ 70% 的 specialist 建议优先采纳;"
-        " 命中率 < 40% 的 specialist 建议表达时加 '仅供参考' 或要求用户复测;"
-        " 没有命中率数据的 specialist 视为中等可信."
-        " 如果有'具体建议追踪'块, 参考高命中建议的风格/剂量,"
-        " 避免重复低命中的同质建议 (换角度/换剂量/换时段).\n"
-        "9. **冲突仲裁**: 如果下方'Specialist 矛盾'区域有内容, 你必须在回答里明示如何裁决,"
-        " 不能两个矛盾建议并列输出. hard 矛盾按 resolution_hint 走, soft 矛盾说明权衡."
-        "\n10. **Trust Loop 避重**: 如果下方出现'用户最近否定过的 AI 判断', 不要重复同类判断,"
-        " 或在给出时明示 '上次你反馈过不对, 这次我给出更谨慎的表述'."
-    )
+    if source == "siri":
+        system_prompt = (
+            "你是健康助理的 Siri 语音播报员. 用户通过 Siri 问了你一个健康问题,"
+            "你的回答会被 iOS 直接念出来给用户听, 必须是**说话的口吻**, 不是写作的口吻.\n\n"
+            "硬性规则:\n"
+            "1. **不要用任何 markdown** — 没有星号/井号/竖线/破折号列表/表格. 纯文本.\n"
+            "2. **数字口语化** — 58 毫秒说'五十八毫秒', 92% 说'百分之九十二', 8.2 小时说'八小时十二分钟'. 保留 HRV/BP 等缩写字母发音.\n"
+            "3. **短句短段** — 每句不超过 20 字, 全文不超过 200 字 (Siri 念完 1 分钟以内).\n"
+            "4. **结论先行** — 第一句给答案, 后面最多两个支撑点.\n"
+            "5. **最多一个行动** — 只说一条具体行动, 说清做什么、多少、什么时候.\n"
+            "6. **不用术语** — 'ACWR'、'readiness zone'、'specialist'、'cross-review' 统统不说, 翻成人话.\n"
+            "7. **不编数字** — 只用下方 specialist 给你的事实. 没数据就直说'暂时没有相关数据'.\n"
+            "8. **不要'首先、其次、第三'结构词** — 说话人不这么说话.\n"
+            "9. **严重度高优先说** — 红色告警放第一句; 常规建议在后.\n\n"
+            "好的例子: '你最近睡得不错, 八小时多, 恢复度九十二分. 但心率变异偏低, 五十五毫秒, 比平均低一成. 今天训练量减半, 早点休息.'\n\n"
+            "不好的例子: '**睡眠**: 8.2h | HRV: 55.0ms ↓10%. 建议: ACWR 调整.'"
+        )
+    else:
+        system_prompt = (
+            "你是健康助理的首席分析师。下游 specialist agent 已经对用户的 Digital Health Twin 做了结构化裁决，"
+            "你的任务是：\n"
+            "1. 理解用户的原始问题\n"
+            "2. 把各个 specialist 的发现合成一个中文自然语言回答\n"
+            "3. 严重度高的优先说，轻的收尾\n"
+            "4. 数字和规则名不要凭空捏造，只用 specialist 给你的事实\n"
+            "5. 给出 2-4 个具体的下一步行动（时间/频率/剂量要具体）\n"
+            "6. 涉及药物/剂量调整时，明确说需要和医生确认\n"
+            "7. 不超过 500 字，简洁有力，避免废话\n"
+            "8. **信任校准**: 你下方会看到过去 30 天各 specialist 的预测命中率."
+            " 命中率 ≥ 70% 的 specialist 建议优先采纳;"
+            " 命中率 < 40% 的 specialist 建议表达时加 '仅供参考' 或要求用户复测;"
+            " 没有命中率数据的 specialist 视为中等可信."
+            " 如果有'具体建议追踪'块, 参考高命中建议的风格/剂量,"
+            " 避免重复低命中的同质建议 (换角度/换剂量/换时段).\n"
+            "9. **冲突仲裁**: 如果下方'Specialist 矛盾'区域有内容, 你必须在回答里明示如何裁决,"
+            " 不能两个矛盾建议并列输出. hard 矛盾按 resolution_hint 走, soft 矛盾说明权衡."
+            "\n10. **Trust Loop 避重**: 如果下方出现'用户最近否定过的 AI 判断', 不要重复同类判断,"
+            " 或在给出时明示 '上次你反馈过不对, 这次我给出更谨慎的表述'."
+        )
 
     user_prompt_parts = [
         f"【用户原始问题】\n{query}",
@@ -646,6 +668,7 @@ async def run_orchestrator(
     system_prompt, user_prompt = _build_synthesis_prompt(
         req.query, twin, findings, db=db, user_id=user_id,
         conflict_arb_block=conflict_arb_block,
+        source=req.source,
     )
 
     # 注入对话记忆（用户历史偏好/医嘱/过敏等）
@@ -803,6 +826,7 @@ async def stream_orchestrator(
         system_prompt, user_prompt = _build_synthesis_prompt(
             req.query, twin, findings, db=db, user_id=user_id,
             conflict_arb_block=conflict_arb_block,
+            source=req.source,
         )
         user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
 
