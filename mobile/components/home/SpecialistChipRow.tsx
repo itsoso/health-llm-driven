@@ -1,29 +1,30 @@
 /**
  * SpecialistChipRow — Home 入口 (信任循环可见化)
  *
- * 顶行: TrustHeroChip — 永远显示, 即使无数据 (引导用户认识到 AI 在押注)
- *   - 有评分: "AI 押 12 中 8 (30天)"   → 进 best specialist 详情
- *   - 仅待评分: "AI 押注中 12 张 ⏳"  → 进 best 或 fallback
- *   - 全空: "AI 还没开始押注 — 多用 App, 让它学会你"  → 不可点
+ * 顶卡: TrustHeroCard — 永远显示且永远可点.
+ *   有评分:   "[icon] AI 押注  12 中 8  ›   近 30 天"   → best specialist 详情
+ *   仅待评分: "[icon] AI 押注  4 张押注中  ›   等评分"  → /alerts (查看 pending)
+ *   全空:     "[icon] AI 准备就绪  ›   多用 App 学习你"  → /alerts
  *
  * 第二行 (条件): per-specialist chip 横滚, 仅 is_significant (≥3 样本) 才出.
  *
- * Task 7 → Task 11 (2026-05-04): 把 hero chip 加上, 配合 outcome_grader 的
- * APNs hit push, 形成完整信任反馈环.
+ * 上一版 bug 修复: HeroWrapper=View 时函数式 style 不生效, 整个 chrome 没渲染.
+ * 改成永远 Pressable + 静态 style.
  */
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { StyleSheet, Text, ScrollView, Pressable, View, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSpecialistHitRate } from '../../hooks/useSpecialistScorecard';
 import { specialistLabel } from '../../services/personalOutcome';
 import { spacing, radii, typography } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { buildHero } from './specialistChipHero';
 
 export default function SpecialistChipRow() {
   const router = useRouter();
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const { data } = useSpecialistHitRate(30);
 
   const allRows = data?.by_specialist ?? [];
@@ -31,52 +32,31 @@ export default function SpecialistChipRow() {
   const totalGraded = allRows.reduce((s, r) => s + r.total_graded, 0);
   const totalHits = allRows.reduce((s, r) => s + r.hits, 0);
   const pending = data?.pending_grading ?? 0;
-  const best = data?.best_specialist;
+  const best = data?.best_specialist ?? null;
+  const firstSig = significant[0]?.specialist ?? null;
 
-  // hero target: 优先去 best specialist, 其次首个 significant, 都没就不可点
-  const heroTarget: string | null = best ?? significant[0]?.specialist ?? null;
-  const heroPressable = Boolean(heroTarget);
-
-  const heroText = (() => {
-    if (totalGraded > 0) {
-      return `AI 押 ${totalGraded} 中 ${totalHits} · 近 30 天`;
-    }
-    if (pending > 0) {
-      return `AI 押注中 ${pending} 张 ⏳`;
-    }
-    return 'AI 还没开始押注 — 多用 App 让它学会你';
-  })();
-
-  const HeroWrapper: any = heroPressable ? Pressable : View;
-  const heroProps = heroPressable
-    ? {
-        onPress: () => router.push(`/specialist/${heroTarget}` as any),
-        accessibilityRole: 'button' as const,
-        accessibilityLabel: `查看 ${heroTarget} 详情, 30 天 ${totalHits}/${totalGraded} 命中`,
-      }
-    : {};
+  const hero = useMemo(
+    () => buildHero(c, totalGraded, totalHits, pending, best, firstSig),
+    [c, totalGraded, totalHits, pending, best, firstSig],
+  );
 
   return (
     <View style={styles.wrap}>
-      <HeroWrapper
-        style={({ pressed }: { pressed?: boolean }) => [
-          styles.hero,
-          pressed && heroPressable && styles.heroPressed,
-        ]}
-        {...heroProps}
+      <Pressable
+        style={({ pressed }) => [styles.hero, pressed && styles.heroPressed]}
+        onPress={() => router.push(hero.navTarget as any)}
+        accessibilityRole="button"
+        accessibilityLabel={hero.a11yLabel}
       >
-        <Ionicons
-          name={totalGraded > 0 ? 'trending-up' : 'hourglass-outline'}
-          size={14}
-          color={totalGraded > 0 ? c.brand : c.labelTertiary}
-        />
-        <Text style={styles.heroText} numberOfLines={1}>
-          {heroText}
-        </Text>
-        {heroPressable && (
-          <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
-        )}
-      </HeroWrapper>
+        <View style={[styles.heroIconWrap, { backgroundColor: hero.iconBg }]}>
+          <Ionicons name={hero.iconName} size={16} color={hero.iconTint} />
+        </View>
+        <View style={styles.heroTextWrap}>
+          <Text style={styles.heroPrimary} numberOfLines={1}>{hero.primary}</Text>
+          <Text style={styles.heroSecondary} numberOfLines={1}>{hero.secondary}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={c.labelTertiary} />
+      </Pressable>
 
       {significant.length > 0 && (
         <ScrollView
@@ -104,29 +84,39 @@ export default function SpecialistChipRow() {
   );
 }
 
-function createStyles(c: ColorPalette) {
+function createStyles(c: ColorPalette, isDark: boolean) {
   return StyleSheet.create({
-    wrap: { marginBottom: spacing.md, gap: spacing.xs },
+    wrap: { marginBottom: spacing.md, gap: spacing.sm },
     hero: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      marginHorizontal: spacing.md,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: radii.md,
-      backgroundColor: c.brandLight,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.separator,
+      gap: 12,
+      marginHorizontal: spacing.lg,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderRadius: radii.lg,
+      backgroundColor: c.bgCard,
+      // dark 用 hairline 边框替代 shadow (与 DashboardCard / HealthCard 一致)
+      ...(isDark
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
+        : {
+            shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
+          }),
     },
-    heroPressed: { opacity: 0.6 },
-    heroText: {
-      flex: 1,
-      fontSize: typography.bodySmall.fontSize,
-      color: c.labelPrimary,
-      fontWeight: '600' as const,
+    heroPressed: { opacity: 0.7 },
+    heroIconWrap: {
+      width: 32, height: 32, borderRadius: 10,
+      alignItems: 'center', justifyContent: 'center',
     },
-    scroll: { paddingHorizontal: spacing.md, gap: 8 },
+    heroTextWrap: { flex: 1, gap: 2 },
+    heroPrimary: {
+      fontSize: 15, fontWeight: '700' as const, color: c.labelPrimary,
+    } as TextStyle,
+    heroSecondary: {
+      fontSize: 11, color: c.labelTertiary,
+    } as TextStyle,
+    scroll: { paddingHorizontal: spacing.lg, gap: 8 },
     chip: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -143,10 +133,13 @@ function createStyles(c: ColorPalette) {
       fontSize: typography.bodySmall.fontSize,
       color: c.labelPrimary,
       fontWeight: '500' as const,
-    },
+    } as TextStyle,
     chipArrow: {
       fontSize: typography.bodySmall.fontSize,
       color: c.brand,
-    },
+    } as TextStyle,
   });
 }
+
+// helpers exported for test (从 ./specialistChipHero re-export 供老 import 路径)
+export { buildHero } from './specialistChipHero';
