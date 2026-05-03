@@ -317,6 +317,31 @@ class FuelStrategistSpecialist:
                     card_type="plan",
                     priority=14,
                 ))
+            elif cur_weight and (
+                # 没有减重目标 / 已经在目标 ±0.5kg 内 → 押 forecast: "7 天体重稳定"
+                target_weight is None or abs(cur_weight - target_weight) <= 0.5
+            ):
+                # forecast: 7 天体重不会突涨 (>0.5kg). target=cur+0.5 表示
+                # "实际 < cur+0.5" 才算命中. 这要求 grader direction='<'.
+                # cur_weight 和 floor 都用 1 位小数, 避免 "70.4kg" → "70" 截断歧义
+                floor_w = round(cur_weight + 0.5, 1)
+                proposed_cards.append(ProposedCard(
+                    title=f"AI 预测: 7 天体重保持 ≤ {floor_w}kg",
+                    content=(
+                        f"## AI 预测\n\n"
+                        f"**当前**: 体重 {cur_weight}kg"
+                        f"{f' (距目标 {target_weight}kg 仅 {abs(cur_weight - target_weight):.1f}kg)' if target_weight else ''}\n"
+                        f"**预测**: 7 天后体重 ≤ {floor_w}kg (即不超 +0.5kg)\n\n"
+                        f"这是一条 *纯预测* — 你按当前饮食节奏即可, AI 押注体重不会突涨.\n"
+                        f"7 天后系统自动用最新体重数据评分.\n"
+                    ),
+                    metric_key="weight",
+                    baseline_value=str(cur_weight),
+                    target_value=f"<{floor_w}",
+                    verification_days=7,
+                    card_type="forecast",
+                    priority=7,  # 低于 plan, 状态稳时不抢真问题位置
+                ))
 
             return SpecialistFinding(
                 specialist_name=self.name,

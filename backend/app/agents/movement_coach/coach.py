@@ -336,6 +336,9 @@ class MovementCoachSpecialist:
                     card_type="plan",
                     priority=20,  # overload 高优先级
                 ))
+            # Movement forecast 暂未发出: outcome_grader._fetch_metric 不支持 ACWR /
+            # workouts_this_week, 押了也评不出. 等 _fetch_metric 加 movement metric
+            # 支持后, 再恢复 status=='optimal' 时的 forecast 推送.
 
             return SpecialistFinding(
                 specialist_name=self.name,

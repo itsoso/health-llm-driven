@@ -249,6 +249,32 @@ class TestFuelStrategist:
         nudges = _gene_nudges(t)
         assert any(n["gene"] == "MTHFR" for n in nudges)
 
+    def test_stable_weight_emits_forecast(self):
+        """没有减重诉求 + 体重存在 → 应发 forecast '7 天体重保持稳定'."""
+        s = FuelStrategistSpecialist()
+        t = _rich_twin()
+        # rich_twin 默认 weight=72, 没设 goals → forecast 触发
+        finding = s.run(t, {})
+        forecasts = [c for c in finding.proposed_cards if c.card_type == "forecast"]
+        plans = [c for c in finding.proposed_cards if c.card_type == "plan"]
+
+        assert len(forecasts) == 1
+        assert len(plans) == 0
+        f = forecasts[0]
+        assert f.metric_key == "weight"
+        assert f.verification_days == 7
+        assert f.target_value.startswith("<"), f"应是上限 target: {f.target_value}"
+        assert "纯预测" in f.content
+
+    def test_no_weight_no_forecast(self):
+        """缺体重数据 → 不发 forecast (no metric to forecast)."""
+        s = FuelStrategistSpecialist()
+        t = _rich_twin()
+        t.body_composition.weight_kg = None  # type: ignore[assignment]
+        finding = s.run(t, {})
+        forecasts = [c for c in finding.proposed_cards if c.card_type == "forecast"]
+        assert len(forecasts) == 0
+
 
 # ───────────────────── Movement Coach ────────────────
 
