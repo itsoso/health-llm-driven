@@ -55,5 +55,35 @@ public class SharedKeychainModule: Module {
             ]
             SecItemDelete(query as CFDictionary)
         }
+
+        /// 诊断: 主 App 读回自己写到 App Group UserDefaults 的 marker 和 token。
+        /// 如果这里读不到, 说明 UserDefaults(suiteName:) 在主 App 进程里就降级了,
+        /// 根本没写到真正的 shared container —— Siri 自然也读不到。
+        AsyncFunction("readDiagnostic") { () -> String in
+            var parts: [String] = []
+
+            if let defaults = UserDefaults(suiteName: SharedKeychainModule.appGroup) {
+                let marker = defaults.string(forKey: SharedKeychainModule.markerKey)
+                let token = defaults.string(forKey: SharedKeychainModule.tokenKey)
+                parts.append("UD open")
+                parts.append("marker=\(marker ?? "nil")")
+                parts.append("token=\(token?.count != nil ? "\(token!.count)ch" : "nil")")
+            } else {
+                parts.append("UD nil")
+            }
+
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: SharedKeychainModule.service,
+                kSecAttrAccount as String: SharedKeychainModule.tokenKey,
+                kSecAttrAccessGroup as String: SharedKeychainModule.appGroup,
+                kSecReturnData as String: true,
+            ]
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            parts.append("KC=\(status)")
+
+            return parts.joined(separator: ", ")
+        }
     }
 }

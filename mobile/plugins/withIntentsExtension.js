@@ -60,6 +60,7 @@ function withIntentsExtension(config) {
 
     const files = {
       'SharedKeychain.swift': SHARED_KEYCHAIN_SWIFT,
+      'FreeTextEntity.swift': FREE_TEXT_ENTITY_SWIFT,
       'HealthCommandIntent.swift': HEALTH_COMMAND_INTENT_SWIFT,
       'HealthAnalysisIntent.swift': HEALTH_ANALYSIS_INTENT_SWIFT,
       'HealthAnalysisOpenIntent.swift': HEALTH_ANALYSIS_OPEN_INTENT_SWIFT,
@@ -179,6 +180,51 @@ struct SharedKeychain {
 }
 `;
 
+// FreeTextEntity: 包装用户任意语音输入作为 AppEntity, 这样 AppShortcut 的 phrase
+// 里才能带 parameter 占位符 \\(\\.$xxx) —— iOS AppIntents 规定 phrase 占位符
+// 只能是 AppEntity/AppEnum 类型, 不能是 String。EntityStringQuery 让 Siri 能把
+// 识别到的任意语音字符串直接构造成 entity。
+//
+// 用户说 "使用健康助理记录我做了20个俯卧撑":
+//   1. Siri 匹配 phrase "使用\\(.applicationName)记录\\(\\.$content)"
+//   2. 提取 "我做了20个俯卧撑" 作为 content
+//   3. 调 FreeTextEntityQuery.entities(matching: "我做了20个俯卧撑")
+//   4. 返回 FreeTextEntity(text: "我做了20个俯卧撑")
+//   5. intent 的 content.text 就是完整用户说的话
+const FREE_TEXT_ENTITY_SWIFT = `import AppIntents
+import Foundation
+
+struct FreeTextEntity: AppEntity {
+    var id: String { text }
+    let text: String
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "文本")
+    }
+
+    static var defaultQuery = FreeTextEntityQuery()
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\\(text)")
+    }
+}
+
+struct FreeTextEntityQuery: EntityQuery, EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [FreeTextEntity] {
+        identifiers.map { FreeTextEntity(text: $0) }
+    }
+
+    func suggestedEntities() async throws -> [FreeTextEntity] {
+        []
+    }
+
+    /// Siri 识别到的语音字符串走这里, 允许任意自由文本。
+    func entities(matching string: String) async throws -> [FreeTextEntity] {
+        [FreeTextEntity(text: string)]
+    }
+}
+`;
+
 const HEALTH_COMMAND_INTENT_SWIFT = `import AppIntents
 import Foundation
 
@@ -192,11 +238,11 @@ struct HealthCommandIntent: AppIntent {
         description: "要记录的饮食/饮水/运动等",
         requestValueDialog: "要记录什么？例如:我做了20个俯卧撑"
     )
-    var content: String
+    var content: FreeTextEntity
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
-            return .result(dialog: "诊断: \\(SharedKeychain.loadTokenDiagnostic())")
+            return .result(dialog: "请先打开健康助理 App 登录")
         }
 
         guard let url = URL(string: "https://health.executor.life/api/v1/agent/stream") else {
@@ -209,7 +255,7 @@ struct HealthCommandIntent: AppIntent {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
-        let body: [String: Any] = ["message": content, "stream": false]
+        let body: [String: Any] = ["message": content.text, "stream": false]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
@@ -263,11 +309,11 @@ struct HealthAnalysisIntent: AppIntent {
         description: "要分析什么？如:我最近的睡眠怎么样",
         requestValueDialog: "要分析什么？比如我最近的睡眠或运动表现"
     )
-    var query: String
+    var query: FreeTextEntity
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let token = SharedKeychain.loadToken(), !token.isEmpty else {
-            return .result(dialog: "诊断: \\(SharedKeychain.loadTokenDiagnostic())")
+            return .result(dialog: "请先打开健康助理 App 登录")
         }
 
         guard let url = URL(string: "https://health.executor.life/api/v1/orchestrator/chat/stream") else {
@@ -281,7 +327,7 @@ struct HealthAnalysisIntent: AppIntent {
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 60  // 多专家合成可能较慢
 
-        let body: [String: Any] = ["query": query, "stream": true, "source": "siri"]
+        let body: [String: Any] = ["query": query.text, "stream": true, "source": "siri"]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
@@ -355,11 +401,11 @@ struct HealthAnalysisOpenIntent: AppIntent {
         description: "要分析什么？如:我最近的睡眠怎么样",
         requestValueDialog: "要分析什么？比如我最近的睡眠或运动表现"
     )
-    var query: String
+    var query: FreeTextEntity
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let encoded = query.text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "mobile://chat?prompt=\\(encoded)&autoSend=1") {
             await UIApplication.shared.open(url)
         }
@@ -371,21 +417,23 @@ struct HealthAnalysisOpenIntent: AppIntent {
 const HEALTH_PILOT_SHORTCUTS_SWIFT = `import AppIntents
 
 struct HealthPilotShortcuts: AppShortcutsProvider {
-    // iOS AppIntents 限制: phrase 里的 parameter 占位符 \\(\\.$xxx) 只支持
-    // AppEntity / AppEnum 类型。我们的 content/query 是 String,所以 phrase
-    // 不带占位符; Siri 识别 phrase 后, 通过 @Parameter 的 requestValueDialog
-    // 追问用户 "要记录什么?" → 用户说一句完整内容 → 作为参数传入。
-    // 两步交互, 但可靠。
+    // phrase 里 \\(\\.$content) / \\(\\.$query) 是 KeyPath literal,
+    // 允许用户把参数值直接说在一句话里, content/query 类型必须是 AppEntity/AppEnum
+    // (我们用 FreeTextEntity 包装任意字符串)。
+    //
+    // 同一个 AppShortcut 的所有 phrase 必须保持一致的 parameter 结构:
+    // 要么全带同样的占位符, 要么全不带。下面全带。
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: HealthCommandIntent(),
             phrases: [
-                "用\\(.applicationName)记录",
-                "用\\(.applicationName)帮我记录",
-                "使用\\(.applicationName)记录",
-                "\\(.applicationName)记一下",
-                "告诉\\(.applicationName)",
-                "让\\(.applicationName)记下",
+                "使用\\(.applicationName)记录\\(\\.$content)",
+                "使用\\(.applicationName)帮我记录\\(\\.$content)",
+                "用\\(.applicationName)记录\\(\\.$content)",
+                "用\\(.applicationName)帮我记\\(\\.$content)",
+                "让\\(.applicationName)记下\\(\\.$content)",
+                "\\(.applicationName)记一下\\(\\.$content)",
+                "告诉\\(.applicationName)\\(\\.$content)",
             ],
             shortTitle: "记录健康数据",
             systemImageName: "heart.text.square"
@@ -393,11 +441,12 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: HealthAnalysisIntent(),
             phrases: [
-                "用\\(.applicationName)分析",
-                "使用\\(.applicationName)分析",
-                "\\(.applicationName)综合分析",
-                "让\\(.applicationName)分析",
-                "问\\(.applicationName)",
+                "使用\\(.applicationName)分析\\(\\.$query)",
+                "使用\\(.applicationName)帮我分析\\(\\.$query)",
+                "用\\(.applicationName)分析\\(\\.$query)",
+                "让\\(.applicationName)分析\\(\\.$query)",
+                "问\\(.applicationName)\\(\\.$query)",
+                "\\(.applicationName)告诉我\\(\\.$query)",
             ],
             shortTitle: "综合分析",
             systemImageName: "sparkles"
@@ -405,9 +454,9 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: HealthAnalysisOpenIntent(),
             phrases: [
-                "打开\\(.applicationName)分析",
-                "用\\(.applicationName)打开分析",
-                "\\(.applicationName)打开并分析",
+                "打开\\(.applicationName)分析\\(\\.$query)",
+                "用\\(.applicationName)打开并分析\\(\\.$query)",
+                "\\(.applicationName)打开并分析\\(\\.$query)",
             ],
             shortTitle: "打开并分析",
             systemImageName: "arrow.up.forward.app"
