@@ -178,6 +178,52 @@ def log_specialist_findings(
         return None
 
 
+def log_memory_injection(
+    db: Session,
+    user_id: int,
+    trace: Dict[str, Any],
+) -> Optional[int]:
+    """记录一次 _inject_memory 的 stage-level 输出 (Memory 注入诊断).
+
+    trace 形如:
+      {
+        "stages": {
+          "conversation": {"ok": True,  "chars": 120, "count": 5, "error": None},
+          "case_timeline": {"ok": False, "chars": 0,   "count": 0, "error": None},  # no findings/metric
+          "directives":   {"ok": True,  "chars": 80,  "count": 2, "error": None},
+          "hybrid":       {"ok": False, "chars": 0,   "count": 0, "error": "redis down"},
+        },
+        "total_chars_added": 200,
+      }
+
+    agent_type='memory_injection' — observability dashboard 按此类聚合.
+    旁路, 失败不抛.
+    """
+    if user_id is None:
+        return None
+    try:
+        stages = trace.get("stages", {})
+        ok_count = sum(1 for s in stages.values() if s.get("ok"))
+        total_count = len(stages)
+        total_chars = trace.get("total_chars_added", 0)
+        summary = (
+            f"memory inject {ok_count}/{total_count} stage 命中, "
+            f"+{total_chars} chars"
+        )
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="memory_injection",
+            action="inject",
+            result_summary=summary,
+            findings_count=ok_count,
+            result_detail=trace,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_memory_injection 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,

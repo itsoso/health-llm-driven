@@ -433,20 +433,43 @@ def _build_synthesis_prompt(
 
 def _inject_memory(db: Session, user_id: int, user_prompt: str,
                     findings: Optional[List[SpecialistFinding]] = None) -> str:
-    """注入用户对话记忆 + Clinical Journal 相关 case timeline."""
+    """注入用户对话记忆 + Clinical Journal 相关 case timeline.
+
+    每个 stage 显式跟踪 ok / chars / count / error, 最后写到 audit_log
+    (agent_type='memory_injection') 给 observability dashboard 聚合.
+    这是 T1.1 Memory 注入诊断 — 让"AI 真的记得我吗"可量化.
+    """
     out = user_prompt
+    base_len = len(user_prompt)
+    trace = {
+        "stages": {},
+        "total_chars_added": 0,
+    }
+
+    def _record(name: str, ok: bool, chars: int, count: int, error: Optional[str] = None) -> None:
+        trace["stages"][name] = {
+            "ok": ok,
+            "chars": chars,
+            "count": count,
+            "error": (error[:200] if error else None),
+        }
 
     # 1) 通用对话记忆 (过敏/医嘱/偏好)
     try:
         from app.services.conversation_memory_service import get_relevant_memories
         memories = get_relevant_memories(db, user_id, limit=5)
         if memories:
-            out += f"\n\n【用户历史偏好/记忆】\n{memories}\n"
-    except Exception:
-        pass
+            block = f"\n\n【用户历史偏好/记忆】\n{memories}\n"
+            out += block
+            _record("conversation", ok=True, chars=len(block),
+                    count=memories.count("\n") + 1)
+        else:
+            _record("conversation", ok=False, chars=0, count=0)
+    except Exception as e:  # noqa: BLE001
+        _record("conversation", ok=False, chars=0, count=0, error=str(e))
 
     # 2) Clinical Journal case timeline (本次 finding 相关的 metric 历史)
-    metric_key = None
+    metric_key: Optional[str] = None
     try:
         from app.services.clinical_journal_service import (
             get_recent_case_summary,
@@ -457,9 +480,21 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
             if metric_key:
                 history = get_recent_case_summary(db, user_id, metric_key, max_entries=3)
                 if history:
-                    out += (f"\n\n【相关 case 历史 — agent 应基于此连贯回应】\n"
-                           f"{history}\n")
+                    block = (f"\n\n【相关 case 历史 — agent 应基于此连贯回应】\n"
+                            f"{history}\n")
+                    out += block
+                    _record("case_timeline", ok=True, chars=len(block),
+                            count=history.count("\n") + 1)
+                else:
+                    _record("case_timeline", ok=False, chars=0, count=0)
+            else:
+                _record("case_timeline", ok=False, chars=0, count=0,
+                        error="no_metric_key_picked")
+        else:
+            _record("case_timeline", ok=False, chars=0, count=0,
+                    error="no_findings")
     except Exception as e:  # noqa: BLE001
+        _record("case_timeline", ok=False, chars=0, count=0, error=str(e))
         logger.debug(f"[orchestrator] case timeline 注入失败 (跳过): {e}")
 
     # 3) User Directives — 医生 / 用户硬性指令 (specialist 必须遵循)
@@ -467,21 +502,41 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
         from app.services.directive_parser import get_active_directives_for_prompt
         directives_md = get_active_directives_for_prompt(db, user_id, metric_key=metric_key)
         if directives_md:
-            out += f"\n\n{directives_md}\n"
+            block = f"\n\n{directives_md}\n"
+            out += block
+            _record("directives", ok=True, chars=len(block),
+                    count=directives_md.count("\n") + 1)
+        else:
+            _record("directives", ok=False, chars=0, count=0)
     except Exception as e:  # noqa: BLE001
+        _record("directives", ok=False, chars=0, count=0, error=str(e))
         logger.debug(f"[orchestrator] directive 注入失败 (跳过): {e}")
 
     # 4) Hybrid Retrieval (BM25 + Graph + RRF) — LLM Wiki v2 阶段 C
     # 一路替换原来的 facts + KG 双路注入. 检索结果按 RRF 融合排序.
     try:
         from app.services.hybrid_search import hybrid_retrieve, render_hits_for_prompt
-        # query seed: 取 user_prompt 前 300 字 (含 query + twin_blob 开头)
         query_seed = (user_prompt or "")[:300]
         hits = hybrid_retrieve(db, user_id, query_seed, top_k=10)
         if hits:
-            out += f"\n\n{render_hits_for_prompt(hits, max_lines=10)}\n"
+            rendered = render_hits_for_prompt(hits, max_lines=10)
+            block = f"\n\n{rendered}\n"
+            out += block
+            _record("hybrid", ok=True, chars=len(block), count=len(hits))
+        else:
+            _record("hybrid", ok=False, chars=0, count=0)
     except Exception as e:  # noqa: BLE001
+        _record("hybrid", ok=False, chars=0, count=0, error=str(e))
         logger.debug(f"[orchestrator] hybrid retrieval 注入失败 (跳过): {e}")
+
+    trace["total_chars_added"] = len(out) - base_len
+
+    # 旁路写 audit (失败不影响主流程)
+    try:
+        from app.agents.audit import log_memory_injection
+        log_memory_injection(db, user_id, trace)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator] memory_injection audit 写入失败 (跳过): {e}")
 
     return out
 

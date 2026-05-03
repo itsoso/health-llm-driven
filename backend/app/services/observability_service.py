@@ -282,6 +282,85 @@ def safety_audit_stats(db: Session, since: datetime, user_id: Optional[int]) -> 
 
 
 # ---------------------------------------------------------------
+# G. Memory Injection (T1.1) — _inject_memory 4 stage 命中率
+#    诊断"AI 真的记得我吗" — Memory KG / case timeline 注入是否在主链路生效
+# ---------------------------------------------------------------
+
+def memory_injection_stats(db: Session, since: datetime, user_id: Optional[int]) -> dict:
+    """聚合最近 N 天 _inject_memory 的 stage 级命中率.
+
+    每次 orchestrator 调用都写一行 agent_type='memory_injection' audit, 含
+    result_detail.stages = {conversation/case_timeline/directives/hybrid: {ok, chars, count, error}}
+    这里按 stage 聚合 ok 率 + 平均 chars/count + 错误数.
+    """
+    from app.models.agent_audit_log import AgentAuditLog
+
+    q = db.query(AgentAuditLog).filter(
+        AgentAuditLog.created_at >= since,
+        AgentAuditLog.agent_type == "memory_injection",
+    )
+    if user_id:
+        q = q.filter(AgentAuditLog.user_id == user_id)
+
+    rows = q.all()
+    total = len(rows)
+
+    if total == 0:
+        return {
+            "total_invocations": 0,
+            "by_stage": {},
+            "avg_chars_added": 0,
+        }
+
+    # 4 stage 名固定
+    stages = ["conversation", "case_timeline", "directives", "hybrid"]
+    by_stage: dict[str, dict] = {
+        s: {"ok": 0, "fail": 0, "error": 0, "avg_chars": 0, "avg_count": 0}
+        for s in stages
+    }
+
+    chars_sum = 0
+    char_buckets: dict[str, int] = {s: 0 for s in stages}
+    count_buckets: dict[str, int] = {s: 0 for s in stages}
+    ok_buckets: dict[str, int] = {s: 0 for s in stages}
+
+    for r in rows:
+        detail = r.result_detail or {}
+        if isinstance(detail, str):
+            try:
+                import json
+                detail = json.loads(detail)
+            except Exception:
+                detail = {}
+        chars_sum += int(detail.get("total_chars_added") or 0)
+        for s in stages:
+            sd = (detail.get("stages") or {}).get(s) or {}
+            ok = bool(sd.get("ok"))
+            err = sd.get("error")
+            if ok:
+                by_stage[s]["ok"] += 1
+                ok_buckets[s] += 1
+                char_buckets[s] += int(sd.get("chars") or 0)
+                count_buckets[s] += int(sd.get("count") or 0)
+            else:
+                by_stage[s]["fail"] += 1
+                if err:
+                    by_stage[s]["error"] += 1
+
+    for s in stages:
+        ok_n = ok_buckets[s] or 1
+        by_stage[s]["avg_chars"] = round(char_buckets[s] / ok_n, 1) if ok_buckets[s] else 0
+        by_stage[s]["avg_count"] = round(count_buckets[s] / ok_n, 2) if ok_buckets[s] else 0
+        by_stage[s]["ok_rate"] = round(by_stage[s]["ok"] / total, 2)
+
+    return {
+        "total_invocations": total,
+        "by_stage": by_stage,
+        "avg_chars_added": round(chars_sum / total, 1) if total else 0,
+    }
+
+
+# ---------------------------------------------------------------
 # H. Client Events (Task 9) — Mobile 埋点聚合
 #    reasoning_sheet_opened / journal_timeline_entered / specialist_scorecard_entered
 # ---------------------------------------------------------------
@@ -476,6 +555,7 @@ def collect_dashboard(
         "doctor_report": doctor_report_stats(db, since, user_id),
         "action_card": action_card_stats(db, since, user_id),
         "safety_guardian": safety_audit_stats(db, since, user_id),
+        "memory_injection": memory_injection_stats(db, since, user_id),
         "client_events": client_events_stats(db, since, user_id),
     }
     if include_journalctl:

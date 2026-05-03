@@ -64,6 +64,21 @@ interface ToolValidatorStats {
   log_lines?: number;
 }
 
+interface MemoryInjectionStageRow {
+  ok: number;
+  fail: number;
+  error: number;
+  ok_rate: number;
+  avg_chars: number;
+  avg_count: number;
+}
+
+interface MemoryInjectionStats {
+  total_invocations: number;
+  by_stage: Record<string, MemoryInjectionStageRow>;
+  avg_chars_added: number;
+}
+
 interface DashboardReport {
   open_loop: OpenLoopStats;
   clinical_journal: ClinicalJournalStats;
@@ -71,6 +86,7 @@ interface DashboardReport {
   doctor_report: DoctorReportStats;
   action_card: ActionCardStats;
   safety_guardian: SafetyStats;
+  memory_injection?: MemoryInjectionStats;
   tool_validator?: ToolValidatorStats;
 }
 
@@ -403,8 +419,57 @@ export default function ObservabilityTab() {
             </div>
           </Section>
 
-          {/* G. tool_validator */}
-          <Section title="G. tool_validator" badge="弱点 B">
+          {/* G. Memory 注入 (T1.1) */}
+          {data.report.memory_injection && (
+            <Section title="G. Memory 注入诊断" badge="T1.1">
+              {data.report.memory_injection.total_invocations === 0 ? (
+                <div className="text-sm text-purple-200/70">
+                  窗口内无 orchestrator 调用 — 用户没用 AI 对话, 或 _inject_memory 没在主链路触发
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                    <StatCard
+                      title="orchestrator 调用次数"
+                      value={data.report.memory_injection.total_invocations}
+                    />
+                    <StatCard
+                      title="平均注入字符数"
+                      value={data.report.memory_injection.avg_chars_added}
+                      hint="prompt 增量"
+                    />
+                  </div>
+                  <div className="text-xs text-purple-200/70 mb-2">每个 stage 命中率</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {(['conversation', 'case_timeline', 'directives', 'hybrid'] as const).map((s) => {
+                      const row = data.report.memory_injection!.by_stage[s];
+                      if (!row) return null;
+                      const pct = Math.round(row.ok_rate * 100);
+                      const tone = pct >= 60 ? 'text-emerald-300' : pct >= 30 ? 'text-amber-300' : 'text-red-300';
+                      return (
+                        <div key={s} className="bg-white/5 border border-white/10 rounded p-3">
+                          <div className="flex justify-between items-baseline mb-1">
+                            <span className="text-sm font-medium text-white">{s}</span>
+                            <span className={`text-base font-mono font-semibold ${tone}`}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div className="text-xs text-purple-200/60">
+                            ok {row.ok} / fail {row.fail}
+                            {row.error > 0 ? ` · ${row.error} 真错` : ''}
+                            {row.ok > 0 ? ` · 均 ${row.avg_chars} 字 / ${row.avg_count} 项` : ''}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </Section>
+          )}
+
+          {/* H. tool_validator */}
+          <Section title="H. tool_validator" badge="弱点 B">
             {data.report.tool_validator?.skipped !== false ? (
               <div className="text-sm text-purple-200/70">
                 {data.report.tool_validator?.skipped

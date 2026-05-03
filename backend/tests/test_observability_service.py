@@ -11,6 +11,7 @@ from app.services.observability_service import (
     clinical_journal_stats,
     collect_dashboard,
     doctor_report_stats,
+    memory_injection_stats,
     memory_kg_stats,
     open_loop_stats,
     safety_audit_stats,
@@ -75,14 +76,104 @@ def test_safety_audit_stats_empty_db(db):
     assert r == {"evaluations": 0, "total_alerts_raised": 0}
 
 
+def test_memory_injection_stats_empty_db(db):
+    r = memory_injection_stats(db, _since(), user_id=None)
+    assert r == {"total_invocations": 0, "by_stage": {}, "avg_chars_added": 0}
+
+
 def test_collect_dashboard_schema(db):
     """collect_dashboard 返回的 top-level keys 固化 — admin 前端的 TS 类型靠它."""
     report = collect_dashboard(db, days=7, user_id=None, include_journalctl=False)
     assert set(report.keys()) == {
         "open_loop", "clinical_journal", "memory_kg",
         "doctor_report", "action_card", "safety_guardian",
-        "client_events",
+        "memory_injection", "client_events",
     }
+
+
+# ----------------------------------------------------------------
+# Memory injection: 写入 + 聚合
+# ----------------------------------------------------------------
+
+def test_memory_injection_aggregates(db):
+    """写 3 条 audit row, 聚合应返回正确的 ok_rate / avg_chars / error 计数."""
+    from app.agents.audit import log_memory_injection
+
+    # 第 1 次: conversation + hybrid 命中, case_timeline 因 no_findings 失败
+    log_memory_injection(db, user_id=42, trace={
+        "stages": {
+            "conversation":  {"ok": True,  "chars": 120, "count": 5, "error": None},
+            "case_timeline": {"ok": False, "chars": 0,   "count": 0, "error": "no_findings"},
+            "directives":    {"ok": False, "chars": 0,   "count": 0, "error": None},
+            "hybrid":        {"ok": True,  "chars": 200, "count": 8, "error": None},
+        },
+        "total_chars_added": 320,
+    })
+    # 第 2 次: hybrid throws
+    log_memory_injection(db, user_id=42, trace={
+        "stages": {
+            "conversation":  {"ok": True,  "chars": 80, "count": 3, "error": None},
+            "case_timeline": {"ok": True,  "chars": 150, "count": 4, "error": None},
+            "directives":    {"ok": False, "chars": 0,   "count": 0, "error": None},
+            "hybrid":        {"ok": False, "chars": 0,   "count": 0, "error": "redis down"},
+        },
+        "total_chars_added": 230,
+    })
+    # 第 3 次: 全空 (新用户)
+    log_memory_injection(db, user_id=42, trace={
+        "stages": {
+            "conversation":  {"ok": False, "chars": 0, "count": 0, "error": None},
+            "case_timeline": {"ok": False, "chars": 0, "count": 0, "error": "no_findings"},
+            "directives":    {"ok": False, "chars": 0, "count": 0, "error": None},
+            "hybrid":        {"ok": False, "chars": 0, "count": 0, "error": None},
+        },
+        "total_chars_added": 0,
+    })
+
+    r = memory_injection_stats(db, _since(), user_id=42)
+    assert r["total_invocations"] == 3
+    # 平均 chars: (320+230+0) / 3 = 183.3
+    assert abs(r["avg_chars_added"] - 183.3) < 0.5
+
+    by = r["by_stage"]
+    # conversation: 2 ok / 3 = 0.67
+    assert by["conversation"]["ok"] == 2
+    assert by["conversation"]["fail"] == 1
+    assert by["conversation"]["ok_rate"] == 0.67
+    # avg chars per OK call: (120+80)/2 = 100
+    assert by["conversation"]["avg_chars"] == 100.0
+
+    # case_timeline: 1 ok / 3 = 0.33; 2 errors (no_findings)
+    assert by["case_timeline"]["ok"] == 1
+    assert by["case_timeline"]["error"] == 2
+
+    # hybrid: 1 ok / 3 = 0.33; 1 真错 (redis down)
+    assert by["hybrid"]["ok"] == 1
+    assert by["hybrid"]["error"] == 1
+
+
+def test_memory_injection_stats_user_filter(db):
+    """user_id 过滤应只算指定用户."""
+    from app.agents.audit import log_memory_injection
+
+    log_memory_injection(db, user_id=1, trace={
+        "stages": {"conversation": {"ok": True, "chars": 50, "count": 2, "error": None}},
+        "total_chars_added": 50,
+    })
+    log_memory_injection(db, user_id=2, trace={
+        "stages": {"conversation": {"ok": True, "chars": 200, "count": 10, "error": None}},
+        "total_chars_added": 200,
+    })
+
+    r1 = memory_injection_stats(db, _since(), user_id=1)
+    r2 = memory_injection_stats(db, _since(), user_id=2)
+    rall = memory_injection_stats(db, _since(), user_id=None)
+
+    assert r1["total_invocations"] == 1
+    assert r2["total_invocations"] == 1
+    assert rall["total_invocations"] == 2
+    assert r1["avg_chars_added"] == 50
+    assert r2["avg_chars_added"] == 200
 
 
 def test_actionable_suggestions_shape_on_empty(db):
@@ -197,3 +288,35 @@ def test_doctor_report_stats_counts_clinical_journal_entries(db):
     assert r["total_attempts"] == 2
     assert r["unique_users"] == 2
     assert r["last_attempt"] is not None
+
+
+# ----------------------------------------------------------------
+# _inject_memory 端到端: 调一次 → 应写出 audit_log 行 → 聚合可见
+# ----------------------------------------------------------------
+
+def test_inject_memory_writes_audit_row(db):
+    """orchestrator._inject_memory 跑一次, 应该在 audit_log 写一行 memory_injection."""
+    from app.orchestrator.orchestrator import _inject_memory
+    from app.models.agent_audit_log import AgentAuditLog
+
+    # 不传 findings, 没有 KG 数据 — 4 stage 全 fail 是正常路径
+    out_prompt = _inject_memory(db, user_id=999, user_prompt="hello", findings=None)
+
+    assert isinstance(out_prompt, str)
+    # 即使全 fail, audit row 也必须写
+    audits = db.query(AgentAuditLog).filter(
+        AgentAuditLog.agent_type == "memory_injection",
+        AgentAuditLog.user_id == 999,
+    ).all()
+    assert len(audits) == 1
+    detail = audits[0].result_detail or {}
+    if isinstance(detail, str):
+        import json
+        detail = json.loads(detail)
+    assert "stages" in detail
+    # 4 stage 都该有记录, 即使 ok=False
+    assert set(detail["stages"].keys()) == {
+        "conversation", "case_timeline", "directives", "hybrid"
+    }
+    # case_timeline 应该是 no_findings (因为 findings=None)
+    assert detail["stages"]["case_timeline"]["error"] == "no_findings"
