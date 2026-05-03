@@ -22,7 +22,7 @@ jest.mock('../api', () => ({
 }));
 
 jest.mock('../../modules/shared-keychain', () => ({
-  saveTokenToSharedKeychain: jest.fn().mockResolvedValue(true),
+  saveTokenToSharedKeychain: jest.fn().mockResolvedValue(0),
   deleteTokenFromSharedKeychain: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -41,7 +41,7 @@ const mockedDelete = deleteTokenFromSharedKeychain as jest.MockedFunction<typeof
 describe('services/auth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedSave.mockResolvedValue(true);
+    mockedSave.mockResolvedValue(0);
     mockedDelete.mockResolvedValue(undefined);
   });
 

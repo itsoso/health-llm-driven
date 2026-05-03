@@ -6,6 +6,7 @@ import React, {
   useCallback,
   type ReactNode,
 } from 'react';
+import { Alert } from 'react-native';
 import {
   login as loginApi,
   logout as logoutApi,
@@ -14,6 +15,7 @@ import {
   type User,
 } from '../services/auth';
 import { setOnUnauthorized } from '../services/api';
+import { saveTokenToSharedKeychain } from '../modules/shared-keychain';
 
 interface AuthState {
   user: User | null;
@@ -53,6 +55,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const saved = await getToken();
         if (saved && mounted) {
           setToken(saved);
+          // Backfill shared keychain on every cold start —— 老用户升级到带 Siri 的
+          // build 后, 共享区原本是空的; 这里无条件回灌一次, 让 Siri extension 读得到。
+          // Returns OSStatus: 0 = success, 非 0 = 错误码 (如 -34018 entitlement 缺失)。
+          // 非 0 时立刻 Alert 暴露出来, 方便诊断 TestFlight 上的 Siri 问题。
+          saveTokenToSharedKeychain(saved)
+            .then((status) => {
+              if (status !== 0) {
+                Alert.alert(
+                  'Siri 共享 keychain 写入失败',
+                  `OSStatus=${status}\n\n-34018 = entitlement 缺失\n其他 = 见 Apple OSStatus 文档\n\n（此 Alert 仅用于诊断, 修好后下个版本会移除）`,
+                );
+              }
+            })
+            .catch((e) => {
+              Alert.alert('Siri keychain 异常', String(e));
+            });
           const me = await fetchCurrentUser();
           if (mounted) setUser(me);
         }

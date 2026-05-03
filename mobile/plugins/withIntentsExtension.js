@@ -20,10 +20,22 @@ const fs = require('fs');
 const APP_GROUP = 'group.life.executor.health';
 
 function withIntentsExtension(config) {
-  // 1. Add Siri entitlement + App Groups to main app
+  // 1. Add Siri entitlement + App Groups + Keychain Sharing to main app
+  //
+  // ⚠️ keychain-access-groups 和 application-groups 是两个独立 entitlement。
+  // 即便 value 用同一个 ID, 两个都得声明, 否则 SecItemAdd 会静默返回
+  // errSecMissingEntitlement —— Siri extension 读不到 token, 报"请先登录"。
+  //
+  // value 必须带 $(AppIdentifierPrefix) 前缀: EAS 管理的 provisioning profile
+  // 里的 keychain-access-groups 值是 "<TeamID>.group.life.executor.health",
+  // fastlane 做字面对比, 短名会报 "doesn't match" 导致 build 失败。
+  // Xcode 构建时展开 $(AppIdentifierPrefix) 为 Team ID 前缀。
   config = withEntitlementsPlist(config, (mod) => {
     mod.modResults['com.apple.developer.siri'] = true;
     mod.modResults['com.apple.security.application-groups'] = [APP_GROUP];
+    mod.modResults['keychain-access-groups'] = [
+      `$(AppIdentifierPrefix)${APP_GROUP}`,
+    ];
     return mod;
   });
 
@@ -147,7 +159,7 @@ struct HealthCommandIntent: AppIntent {
             return .result(dialog: "请先打开健康助理 App 登录")
         }
 
-        guard let url = URL(string: "https://health-api.executor.life/api/v1/agent/stream") else {
+        guard let url = URL(string: "https://health.executor.life/api/v1/agent/stream") else {
             return .result(dialog: "服务地址配置错误")
         }
 
@@ -214,7 +226,7 @@ struct HealthAnalysisIntent: AppIntent {
             return .result(dialog: "请先打开健康助理 App 登录")
         }
 
-        guard let url = URL(string: "https://health-api.executor.life/api/v1/orchestrator/chat/stream") else {
+        guard let url = URL(string: "https://health.executor.life/api/v1/orchestrator/chat/stream") else {
             return .result(dialog: "服务地址配置错误")
         }
 

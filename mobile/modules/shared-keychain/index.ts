@@ -6,7 +6,7 @@ import { Platform } from 'expo-modules-core';
 // screen widget) will degrade. When Android is a real release target, mirror
 // the iOS SharedKeychainModule with EncryptedSharedPreferences.
 const noop = {
-  saveToken: async (_token: string) => false,
+  saveToken: async (_token: string) => 0,
   deleteToken: async () => {},
 };
 
@@ -20,7 +20,12 @@ if (Platform.OS === 'ios') {
   }
 }
 
-export async function saveTokenToSharedKeychain(token: string): Promise<boolean> {
+// Returns OSStatus. 0 = success. Non-zero = error code.
+// Notable codes:
+//   -34018 errSecMissingEntitlement — keychain-access-groups entitlement 缺失或未生效
+//   -25300 errSecItemNotFound        — 删除不存在的条目（delete 前 add 场景忽略即可）
+//   -25299 errSecDuplicateItem       — 同名条目已存在（delete-then-add 流程已规避）
+export async function saveTokenToSharedKeychain(token: string): Promise<number> {
   return SharedKeychain.saveToken(token);
 }
 

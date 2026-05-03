@@ -174,7 +174,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const sendMessage = useCallback(async (
     text: string,
     pendingImages?: { uri: string; base64?: string; type?: string }[] | null,
-    opts?: { fromSiri?: boolean },
+    sendOpts?: { fromSiri?: boolean },
   ) => {
     const msg = text.trim();
     const hasImages = pendingImages && pendingImages.length > 0;
@@ -184,7 +184,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const net = await NetInfo.fetch();
     if (!net.isConnected) {
       const errMsg: UIMessage = { id: nextId(), role: 'assistant', content: '⚠️ 网络不可用，请检查网络连接后重试' };
-      setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined, fromSiri: opts?.fromSiri }, errMsg]);
+      setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined, fromSiri: sendOpts?.fromSiri }, errMsg]);
       return;
     }
 
@@ -192,7 +192,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
-    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: opts?.fromSiri };
+    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
     const aId = nextId();
     const aiMsg: UIMessage = { id: aId, role: 'assistant', content: '', streaming: true };
 
@@ -235,7 +235,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             }
           }
         } else if (evt.type === 'error') {
-          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + `\n❌ ${evt.content}` } : m));
+          const errMsg = (evt.content || '').trim() || '请求出错，请稍后再试';
+          setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: m.content + `\n❌ ${errMsg}` } : m));
         }
       }
     } catch (err: any) {

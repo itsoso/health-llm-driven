@@ -9,7 +9,10 @@ public class SharedKeychainModule: Module {
     public func definition() -> ModuleDefinition {
         Name("SharedKeychain")
 
-        AsyncFunction("saveToken") { (token: String) -> Bool in
+        // Returns OSStatus as Int. 0 = success. Negative = SecItem error code,
+        // e.g. -34018 errSecMissingEntitlement. Never throws —— Swift errors
+        // from keychain are returned as OSStatus so JS can surface them in UI.
+        AsyncFunction("saveToken") { (token: String) -> Int in
             let data = Data(token.utf8)
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
@@ -21,7 +24,8 @@ public class SharedKeychainModule: Module {
             var add = query
             add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+            let status = SecItemAdd(add as CFDictionary, nil)
+            return Int(status)
         }
 
         AsyncFunction("deleteToken") {
