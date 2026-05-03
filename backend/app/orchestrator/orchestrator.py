@@ -698,7 +698,14 @@ async def _stream_llm(
 async def run_orchestrator(
     db: Session, user_id: int, req: OrchestratorRequest
 ) -> OrchestratorResponse:
-    """非流式主入口。"""
+    """非流式主入口。
+
+    source=siri 走 fast 路径: 只跑 Twin + 口语化 LLM, 跳过所有 specialist /
+    cross-review / arbitration / journal / card 持久化, 目标 3-5 秒内返回,
+    避免 Siri extension 60 秒硬超时。"""
+    if req.source == "siri":
+        return await _run_orchestrator_fast(db, user_id, req)
+
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.synthesis", user_id=user_id)
     t_start = time.monotonic()
@@ -781,6 +788,69 @@ async def run_orchestrator(
         twin_build_ms=twin.meta.build_ms,
         total_ms=int((time.monotonic() - t_start) * 1000),
         persisted_card_ids=persisted_card_ids,
+    )
+
+
+async def _run_orchestrator_fast(
+    db: Session, user_id: int, req: OrchestratorRequest
+) -> OrchestratorResponse:
+    """Siri 专用极简路径: Twin + 口语化 LLM, 跳过 specialist/arbitration/journal.
+
+    设计取舍:
+    - Twin 构建 (Redis 缓存 5min, 命中时毫秒级; miss 1-3 秒) → 保留, 因为 LLM
+      需要基本数据快照, 否则回答是空话.
+    - Specialists 单次 30-60 秒 (10 个专家串并行) → 跳过. Siri 场景承担不起.
+    - Cross-review + LLM 仲裁 → 跳过. 没有 specialist 输出, 无事可做.
+    - ClinicalJournal SOAP 写入 → 跳过. 语音场景不生成长期记录.
+    - ActionCard 持久化 → 跳过. 语音不产出 card.
+    - Intent 分类保留 (几乎免费, 后端审计要用).
+
+    审计仍然写, source='siri' 能在分析看板看到这条入口数据.
+    """
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("orchestrator.synthesis.siri_fast", user_id=user_id)
+    t_start = time.monotonic()
+
+    twin = build_twin(db, user_id)
+    intent = classify_intent(req.query)
+
+    # 直接走口语化 synthesis, findings 传空 list —— prompt builder 会退化为
+    # "基于 twin 快照 + 用户原始问题" 的极简回答.
+    system_prompt, user_prompt = _build_synthesis_prompt(
+        req.query, twin, findings=[], db=db, user_id=user_id,
+        conflict_arb_block="", source="siri",
+    )
+
+    # 注入 conversation memory (用户历史偏好/医嘱/过敏), 保留连续对话感.
+    user_prompt = _inject_memory(db, user_id, user_prompt, findings=[])
+
+    synthesis = await _call_llm(system_prompt, user_prompt)
+
+    # 审计 (旁路, 失败不阻塞返回)
+    try:
+        from app.agents.audit import log_orchestrator_run
+        log_orchestrator_run(
+            db=db, user_id=user_id,
+            query=req.query,
+            intent_categories=intent.categories,
+            used_specialists=[],
+            findings_count=0,
+            twin_build_ms=twin.meta.build_ms,
+            total_ms=int((time.monotonic() - t_start) * 1000),
+            result_summary=synthesis[:200],
+            source=req.source,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[orchestrator.siri_fast] audit 失败: {e}")
+
+    return OrchestratorResponse(
+        query=req.query,
+        intent=intent,
+        findings=[],
+        synthesis=synthesis,
+        used_specialists=[],
+        twin_build_ms=twin.meta.build_ms,
+        total_ms=int((time.monotonic() - t_start) * 1000),
     )
 
 
