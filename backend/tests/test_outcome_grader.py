@@ -405,3 +405,149 @@ class TestAdherence:
         # raw=100, adh=90 → 90
         assert card.accuracy_score == 90
         assert "adherence=device 90%" in (card.grading_notes or "")
+
+
+
+# ============================================================
+# Prediction hit push (Agent Native: AI 主动汇报命中)
+# ============================================================
+
+class TestHitPush:
+    """评分到 hit (>=70) 时, outcome_grader 应主动推 APNs."""
+
+    def test_hit_triggers_push(self, db):
+        """命中卡 (score 100) 应调 PushService.send_notification 一次."""
+        from datetime import date as date_type
+        from unittest.mock import AsyncMock, patch
+
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=101, record_date=date_type.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=101, title="减重 4kg", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            adherence_kind="device", adherence_confidence=90,  # 避免 self_reported 拉低
+        )
+        db.add(card)
+        db.commit()
+
+        with patch("app.services.notification.push_service.PushService") as MockPush:
+            instance = MockPush.return_value
+            instance.send_notification = AsyncMock(return_value={"success": True})
+
+            result = _grade_loop(db, now)
+
+            assert result["graded"] >= 1
+            assert result.get("pushed", 0) >= 1
+            instance.send_notification.assert_called_once()
+            kw = instance.send_notification.call_args.kwargs
+            assert kw["notification_type"] == "prediction_verified"
+            assert "命中" in kw["title"]
+            assert kw["data"]["specialist"] == "fuel_strategist"
+            assert kw["data"]["kind"] == "prediction_verified"
+            assert kw["data"]["accuracy_score"] >= 70
+            assert kw["data"]["deep_link"] == "/specialist/fuel_strategist"
+
+    def test_miss_no_push(self, db):
+        """未命中 (score < 70) 不应推送, 避免负面噪声."""
+        from datetime import date as date_type
+        from unittest.mock import AsyncMock, patch
+
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        # 反向: 想减到 78 但实际涨到 84 → 反向, score < 30
+        db.add(WeightRecord(user_id=102, record_date=date_type.today(), weight=84.0))
+
+        card = ActionCard(
+            user_id=102, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            adherence_kind="device", adherence_confidence=90,
+        )
+        db.add(card)
+        db.commit()
+
+        with patch("app.services.notification.push_service.PushService") as MockPush:
+            instance = MockPush.return_value
+            instance.send_notification = AsyncMock(return_value={"success": True})
+
+            result = _grade_loop(db, now)
+
+            assert result["graded"] >= 1
+            assert result.get("pushed", 0) == 0
+            instance.send_notification.assert_not_called()
+
+    def test_no_specialist_no_push(self, db):
+        """无 creator_specialist 的卡命中也不推 (没法 deep link)."""
+        from datetime import date as date_type
+        from unittest.mock import AsyncMock, patch
+
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=103, record_date=date_type.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=103, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist=None,  # ← 无归属
+            check_back_date=now - timedelta(hours=1),
+            adherence_kind="device", adherence_confidence=90,
+        )
+        db.add(card)
+        db.commit()
+
+        with patch("app.services.notification.push_service.PushService") as MockPush:
+            instance = MockPush.return_value
+            instance.send_notification = AsyncMock(return_value={"success": True})
+
+            _grade_loop(db, now)
+
+            instance.send_notification.assert_not_called()
+
+    def test_push_failure_does_not_break_grading(self, db):
+        """PushService 抛异常不应影响评分主路径."""
+        from datetime import date as date_type
+        from unittest.mock import AsyncMock, patch
+
+        from app.models.action_card import ActionCard
+        from app.models.weight import WeightRecord
+        from app.tasks.outcome_grader import _grade_loop
+
+        now = datetime.now(timezone.utc)
+        db.add(WeightRecord(user_id=104, record_date=date_type.today(), weight=78.0))
+
+        card = ActionCard(
+            user_id=104, title="减重", content="...", card_type="plan",
+            metric_key="weight", baseline_value="82", target_value="78",
+            creator_specialist="fuel_strategist",
+            check_back_date=now - timedelta(hours=1),
+            adherence_kind="device", adherence_confidence=90,
+        )
+        db.add(card)
+        db.commit()
+
+        with patch("app.services.notification.push_service.PushService") as MockPush:
+            instance = MockPush.return_value
+            instance.send_notification = AsyncMock(side_effect=RuntimeError("apns down"))
+
+            result = _grade_loop(db, now)
+
+            assert result["graded"] >= 1
+            assert result.get("pushed", 0) == 0  # 推失败计 0
+
+        db.refresh(card)
+        assert card.accuracy_score is not None  # 评分不受影响
+        assert card.graded_at is not None

@@ -303,10 +303,68 @@ def _apply_adherence(raw_score: int, card: ActionCard) -> Tuple[int, str]:
     return final, note
 
 
+def _notify_prediction_hit(db, card: ActionCard) -> bool:
+    """评分命中 → 主动推 APNs, 让用户感知 AI 在押注 + 兑现.
+
+    仅在 accuracy_score >= 70 时推 (hit). 未命中暂不推 (避免负面噪声).
+    Severity='info' 因此 quiet hours 会拦, 这是设计上的折中:
+    用户睡觉时 AI 押中 HRV 不该吵醒.
+
+    Returns: True 推送成功 (或被 quiet/dedup 静默吞掉, 算正常路径); False 异常.
+    """
+    if card.accuracy_score is None or card.accuracy_score < 70:
+        return False
+    if not card.creator_specialist:
+        return False  # 没归属, 不推 (没法 deep link 到 scorecard)
+
+    try:
+        import asyncio
+
+        from app.services.notification.push_service import PushService
+
+        push = PushService(db)
+        title = "AI 上次预测命中 ✓"
+        # body 用最少必要信息: specialist + 指标 + 实测/目标
+        target = card.target_value or "?"
+        actual = card.actual_value or "?"
+        body = f"{card.creator_specialist}: {card.metric_key} 实测 {actual} (目标 {target})"
+
+        # data 字段给 Mobile 深链到 scorecard
+        data = {
+            "kind": "prediction_verified",
+            "card_id": card.id,
+            "specialist": card.creator_specialist,
+            "accuracy_score": card.accuracy_score,
+            "deep_link": f"/specialist/{card.creator_specialist}",
+        }
+
+        # 已有事件循环时 (Celery worker) 直接 run; 测试里不应跑真 push
+        result = asyncio.run(push.send_notification(
+            user_id=card.user_id,
+            notification_type="prediction_verified",
+            title=title,
+            content=body,
+            data=data,
+            severity="info",
+            dedup_window_hours=24,  # 同一卡 24h 内只推一次, 防 grader 重跑
+            respect_quiet_hours=True,
+        ))
+        ok = bool(result.get("success"))
+        logger.info(
+            f"[OutcomeGrader] hit push card #{card.id} ({card.creator_specialist}): "
+            f"ok={ok} reason={result.get('reason') or '-'}"
+        )
+        return ok
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[OutcomeGrader] hit push 异常 (跳过, 不影响评分): {e}")
+        return False
+
+
 def _grade_loop(db, now: datetime) -> dict:
     """核心循环, 与 Celery / 测试 都可复用."""
     graded = 0
     skipped_no_data = 0
+    pushed = 0
 
     cards = db.query(ActionCard).filter(
         ActionCard.check_back_date.isnot(None),
@@ -339,6 +397,9 @@ def _grade_loop(db, now: datetime) -> dict:
                 f"[OutcomeGrader] card #{card.id} ({card.creator_specialist or 'unknown'}, "
                 f"metric=bp-dual): score={final_score} (raw {score}) — {note}{adh_note}"
             )
+            # 命中推送 (>=70 分) — Agent Native: AI 主动汇报命中
+            if _notify_prediction_hit(db, card):
+                pushed += 1
             continue
 
         actual = _fetch_metric(db, card.user_id, card.metric_key, now)
@@ -375,9 +436,15 @@ def _grade_loop(db, now: datetime) -> dict:
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[OutcomeGrader] memory extract 失败 (跳过): {e}")
 
+        # 命中推送 (>=70 分) — Agent Native: AI 主动汇报命中
+        if _notify_prediction_hit(db, card):
+            pushed += 1
+
     db.commit()
-    logger.info(f"[OutcomeGrader] 完成: graded={graded}, skipped_no_data={skipped_no_data}")
-    return {"graded": graded, "skipped_no_data": skipped_no_data}
+    logger.info(
+        f"[OutcomeGrader] 完成: graded={graded}, skipped_no_data={skipped_no_data}, pushed={pushed}"
+    )
+    return {"graded": graded, "skipped_no_data": skipped_no_data, "pushed": pushed}
 
 
 @celery_app.task(time_limit=300, name="app.tasks.outcome_grader.grade_due_action_cards")
