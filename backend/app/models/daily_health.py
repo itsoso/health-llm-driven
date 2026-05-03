@@ -120,7 +120,8 @@ class ExerciseRecord(Base):
 
     record_date = Column(Date, nullable=False, index=True)
     exercise_type = Column(String, nullable=False)  # 运动类型
-    duration = Column(Integer)  # 持续时间 (分钟)
+    duration = Column(Integer)  # 持续时间 (分钟) — 跑步/瑜伽 等粗粒度场景
+    duration_seconds = Column(Integer)  # 持续时间 (秒) — 倒立/平板支撑 等需要亚分钟精度的场景
     intensity = Column(String)  # 强度（低/中/高）
     calories_burned = Column(Integer)  # 消耗卡路里
     reps = Column(Integer)  # 次数（如俯卧撑30个）

@@ -151,7 +151,8 @@ class ExerciseRecordCreate(BaseModel):
     """创建锻炼记录"""
     record_date: date
     exercise_type: str
-    duration: Optional[int] = None
+    duration: Optional[int] = None              # 分钟
+    duration_seconds: Optional[int] = None      # 秒 (倒立等亚分钟精度场景)
     intensity: Optional[str] = None
     calories_burned: Optional[int] = None
     reps: Optional[int] = None
@@ -167,6 +168,7 @@ class ExerciseRecordResponse(BaseModel):
     record_date: date
     exercise_type: str
     duration: Optional[int] = None
+    duration_seconds: Optional[int] = None
     intensity: Optional[str] = None
     calories_burned: Optional[int] = None
     reps: Optional[int] = None

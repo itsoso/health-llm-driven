@@ -21,6 +21,7 @@ import InlineResponse from '@/components/assistant/InlineResponse';
 import ExerciseCard from '@/components/assistant/ExerciseCard';
 import SupplementGuideCard from '@/components/assistant/SupplementGuideCard';
 import StrengthCard from '@/components/assistant/StrengthCard';
+import HandstandCard from '@/components/assistant/HandstandCard';
 import WorkoutCard from '@/components/assistant/WorkoutCard';
 
 const QUICK_ASKS = [
@@ -155,6 +156,7 @@ export default function WelcomeDashboard({
             <StrengthCard exerciseType="深蹲" icon="🦵" dailyTarget={100} color="#8b5cf6"
               colorLight="bg-violet-50" colorText="text-violet-600" colorBorder="border-violet-200"
               colorBar="bg-violet-500" colorBarLight="bg-violet-200" />
+            <HandstandCard />
           </div>
         );
       case 'workout_supplement':

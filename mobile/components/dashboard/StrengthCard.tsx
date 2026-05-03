@@ -11,14 +11,24 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function fmtSeconds(total: number): string {
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return s === 0 ? `${m}m` : `${m}m${s}s`;
+}
+
+type ExerciseMode = 'reps' | 'duration_seconds';
+
 interface ExerciseConfig {
   type: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
   bg: string;
-  quickAmounts: number[];
-  dailyTarget: number;
+  mode: ExerciseMode;
+  quickAmounts: number[];      // reps: 个; duration: 秒
+  dailyTarget: number;         // reps: 个; duration: 秒
 }
 
 interface Props {
@@ -32,39 +42,55 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   const txt = useMemo(() => createTxt(c), [c]);
 
   const EXERCISES: ExerciseConfig[] = useMemo(() => [
-    { type: '俯卧撑', label: '俯卧撑', icon: 'body-outline', color: c.orange, bg: c.tintOrange, quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
-    { type: '深蹲', label: '深蹲', icon: 'barbell-outline', color: c.purple, bg: c.tintPurple, quickAmounts: [10, 15, 20, 30], dailyTarget: 100 },
+    { type: '俯卧撑', label: '俯卧撑', icon: 'body-outline',    color: c.orange, bg: c.tintOrange, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
+    { type: '深蹲',   label: '深蹲',   icon: 'barbell-outline', color: c.purple, bg: c.tintPurple, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
+    { type: '倒立',   label: '倒立',   icon: 'sync-outline',    color: c.teal,   bg: c.tintTeal,   mode: 'duration_seconds', quickAmounts: [30, 60, 90, 120],  dailyTarget: 300 },
   ], [c]);
 
-  const [localCounts, setLocalCounts] = useState<Record<string, number>>({});
+  // 本地乐观计数, 按 type 累加 (reps: 个数; duration: 秒数)
+  const [localAdd, setLocalAdd] = useState<Record<string, number>>({});
   const [recording, setRecording] = useState<string | null>(null);
 
-  const getCount = (type: string) => {
-    if (type in localCounts) return localCounts[type];
-    return (exerciseToday || [])
-      .filter((e: any) => e.exercise_type === type)
-      .reduce((s: number, e: any) => s + (e.reps || 0), 0);
+  const getCount = (cfg: ExerciseConfig): number => {
+    const rows = (exerciseToday || []).filter((e: any) => e.exercise_type === cfg.type);
+    const fromServer = rows.reduce((s: number, e: any) => {
+      if (cfg.mode === 'reps') return s + (e.reps || 0);
+      return s + (e.duration_seconds || 0);
+    }, 0);
+    return fromServer + (localAdd[cfg.type] || 0);
   };
 
-  const doRecord = useCallback(async (type: string, reps: number) => {
+  const doRecord = useCallback(async (cfg: ExerciseConfig, amount: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setRecording(type);
-    const prevCount = getCount(type);
-    setLocalCounts(prev => ({ ...prev, [type]: prevCount + reps }));
+    setRecording(cfg.type);
+    setLocalAdd(prev => ({ ...prev, [cfg.type]: (prev[cfg.type] || 0) + amount }));
     try {
-      await api.post('/daily-health/exercise', {
+      const payload: Record<string, unknown> = {
         record_date: today(),
-        exercise_type: type,
-        reps,
+        exercise_type: cfg.type,
         sets: 1,
         intensity: 'high',
-      });
+      };
+      if (cfg.mode === 'reps') {
+        payload.reps = amount;
+      } else {
+        payload.duration_seconds = amount;
+      }
+      await api.post('/daily-health/exercise', payload);
+      onUpdate?.();
     } catch {
-      setLocalCounts(prev => ({ ...prev, [type]: prevCount }));
+      // 回滚乐观更新
+      setLocalAdd(prev => ({ ...prev, [cfg.type]: (prev[cfg.type] || 0) - amount }));
     } finally {
       setRecording(null);
     }
-  }, [exerciseToday, localCounts]);
+  }, [onUpdate]);
+
+  const formatValue = (cfg: ExerciseConfig, v: number) =>
+    cfg.mode === 'reps' ? `${v}` : fmtSeconds(v);
+
+  const formatQuick = (cfg: ExerciseConfig, n: number) =>
+    cfg.mode === 'reps' ? `+${n}` : `+${n}s`;
 
   return (
     <View style={styles.card}>
@@ -77,7 +103,7 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
       </View>
 
       {EXERCISES.map(ex => {
-        const count = getCount(ex.type);
+        const count = getCount(ex);
         const pct = Math.min(count / ex.dailyTarget, 1);
 
         return (
@@ -87,8 +113,8 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
                 <Ionicons name={ex.icon} size={14} color={ex.color} />
               </View>
               <Text style={txt.exerciseName}>{ex.label}</Text>
-              <Text style={[txt.exerciseCount, { color: ex.color }]}>{count}</Text>
-              <Text style={txt.exerciseTarget}>/ {ex.dailyTarget}</Text>
+              <Text style={[txt.exerciseCount, { color: ex.color }]}>{formatValue(ex, count)}</Text>
+              <Text style={txt.exerciseTarget}>/ {formatValue(ex, ex.dailyTarget)}</Text>
             </View>
 
             {/* Progress bar */}
@@ -102,11 +128,12 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
                 <TouchableOpacity
                   key={amt}
                   style={[styles.quickBtn, { borderColor: `${ex.color}30` }]}
-                  onPress={() => doRecord(ex.type, amt)}
+                  onPress={() => doRecord(ex, amt)}
                   activeOpacity={0.7}
                   disabled={recording === ex.type}
+                  accessibilityLabel={`记录${ex.label} ${ex.mode === 'reps' ? `${amt} 个` : `${amt} 秒`}`}
                 >
-                  <Text style={[txt.quickBtnText, { color: ex.color }]}>+{amt}</Text>
+                  <Text style={[txt.quickBtnText, { color: ex.color }]}>{formatQuick(ex, amt)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
