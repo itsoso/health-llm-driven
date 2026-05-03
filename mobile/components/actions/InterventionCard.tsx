@@ -1,13 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { LayoutAnimation, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
+import { Alert, LayoutAnimation, Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import {
   getActionCardProgress,
   getActionCardVerificationLabel,
   type ActionCard,
 } from '../../services/actionCards';
+import {
+  defaultReminderTime,
+  executeReminderForCard,
+  getExecuteCapability,
+  getExecuteLabel,
+  getNavigationTarget,
+} from '../../services/actionExecution';
 import { buildActionCardOutcomeDraft } from '../../services/outcomeReview';
 import type { OutcomeReviewDraft } from '../../services/outcomeReview';
 import { radii, spacing } from '../../constants/theme';
@@ -41,11 +49,38 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
   const CARD_TYPE = useMemo(() => cardTypeMeta(c), [c]);
   const [expanded, setExpanded] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [executing, setExecuting] = useState(false);
   const cfg = CARD_TYPE[card.card_type] || CARD_TYPE.insight;
   const progress = getActionCardProgress(card);
   const verification = getActionCardVerificationLabel(card);
   const assessment = card.latest_assessment;
   const reviewDraft = verification ? buildActionCardOutcomeDraft(card) : null;
+  const executeCap = getExecuteCapability(card);
+
+  const handleExecute = async (event?: { stopPropagation?: () => void }) => {
+    event?.stopPropagation?.();
+    if (executing || !executeCap) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (executeCap === 'navigate') {
+      const target = getNavigationTarget(card);
+      router.push(target as any);
+      return;
+    }
+    if (executeCap === 'reminder') {
+      setExecuting(true);
+      try {
+        const time = defaultReminderTime();
+        await executeReminderForCard(card, { time });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('已设提醒', `每天 ${time} 提醒「${card.title}」。\n可在「设置 → 提醒」修改。`);
+      } catch (err: any) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('设提醒失败', err?.response?.data?.detail ?? err?.message ?? '请稍后重试');
+      } finally {
+        setExecuting(false);
+      }
+    }
+  };
   // 反查推理 trace: anomaly_alert 类源 source_id 与后端 trace id 一一对应
   const traceHref =
     card.source_type === 'anomaly_alert' && card.source_id
@@ -138,6 +173,29 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
             <Text style={txt.traceLinkText}>查看推理</Text>
             <Ionicons name="chevron-forward" size={12} color={c.brand} />
           </Pressable>
+
+          {executeCap && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.executeBtn,
+                { backgroundColor: cfg.color },
+                (pressed || executing) && styles.executeBtnPressed,
+              ]}
+              onPress={handleExecute}
+              disabled={executing}
+              accessibilityRole="button"
+              accessibilityLabel={getExecuteLabel(executeCap)}
+            >
+              <Ionicons
+                name={executeCap === 'reminder' ? 'alarm-outline' : 'arrow-forward-circle-outline'}
+                size={16}
+                color="#fff"
+              />
+              <Text style={txt.executeBtnText}>
+                {executing ? '处理中…' : getExecuteLabel(executeCap)}
+              </Text>
+            </Pressable>
+          )}
 
           {reviewDraft ? (
             <Pressable
@@ -263,6 +321,13 @@ function createStyles(c: ColorPalette, isDark: boolean) {
       gap: 6, marginTop: spacing.xs,
     },
     completeBtnPressed: { opacity: 0.82 },
+    executeBtn: {
+      minHeight: 40, borderRadius: radii.md,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      gap: 6, marginTop: spacing.xs,
+      paddingHorizontal: spacing.md,
+    },
+    executeBtnPressed: { opacity: 0.78 },
     traceLink: {
       flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
       gap: 4, paddingHorizontal: 10, paddingVertical: 6,
@@ -286,6 +351,7 @@ function createTxt(c: ColorPalette) {
     checkText: { flex: 1, fontSize: 13, color: c.labelSecondary } as TextStyle,
     checkDone: { color: c.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
     completeBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
+    executeBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' } as TextStyle,
     traceLinkText: { fontSize: 12, fontWeight: '600', color: c.brand } as TextStyle,
   };
 }
