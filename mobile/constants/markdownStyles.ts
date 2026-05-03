@@ -44,13 +44,14 @@ export function createMdStylesChat(c: ColorPalette) {
     hr: { backgroundColor: c.separator, height: StyleSheet.hairlineWidth, marginVertical: 8 },
     table: {
       borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
-      borderRadius: 6, marginVertical: 6, minWidth: 320,
+      borderRadius: 6, marginVertical: 6,
     },
     thead: { backgroundColor: c.fill },
     tbody: {},
     th: {
       paddingVertical: 6, paddingHorizontal: 8, fontWeight: '600',
-      fontSize: 13, color: c.labelPrimary, flex: 1, minWidth: 80,
+      fontSize: 13, color: c.labelPrimary,
+      flex: 1, flexShrink: 1, flexBasis: 0, minWidth: 0,
     },
     tr: {
       borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
@@ -58,7 +59,8 @@ export function createMdStylesChat(c: ColorPalette) {
     },
     td: {
       paddingVertical: 6, paddingHorizontal: 8, fontSize: 13,
-      color: c.labelPrimary, flex: 1, minWidth: 80,
+      color: c.labelPrimary,
+      flex: 1, flexShrink: 1, flexBasis: 0, minWidth: 0,
     },
   });
 }
@@ -93,13 +95,14 @@ export function createMdStylesCompact(c: ColorPalette) {
     hr: { backgroundColor: c.separator, height: StyleSheet.hairlineWidth, marginVertical: 8 },
     table: {
       borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
-      borderRadius: 6, marginVertical: 6, minWidth: 300,
+      borderRadius: 6, marginVertical: 6,
     },
     thead: { backgroundColor: c.fill },
     tbody: {},
     th: {
       paddingVertical: 5, paddingHorizontal: 6, fontWeight: '600',
-      fontSize: 12, color: c.labelPrimary, flex: 1, minWidth: 72,
+      fontSize: 12, color: c.labelPrimary,
+      flex: 1, flexShrink: 1, flexBasis: 0, minWidth: 0,
     },
     tr: {
       borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
@@ -107,7 +110,8 @@ export function createMdStylesCompact(c: ColorPalette) {
     },
     td: {
       paddingVertical: 5, paddingHorizontal: 6, fontSize: 12,
-      color: c.labelPrimary, flex: 1, minWidth: 72,
+      color: c.labelPrimary,
+      flex: 1, flexShrink: 1, flexBasis: 0, minWidth: 0,
     },
   });
 }

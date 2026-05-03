@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
-  Alert, ActivityIndicator, ScrollView, Pressable,
+  Alert, ActivityIndicator, Pressable,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,9 +40,9 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
     if (rendered) return <View style={[styles.msgRow, styles.msgRowAI]}><View style={{ width: 36 }} />{rendered}</View>;
   }
 
-  const displayText = item.content.replace(/\n?\[附图: [^\]]+\]/g, '').trim();
+  const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
   const images = item.imageUris;
-  const hasTable = !isUser && /\n\s*\|.+\|\s*\n\s*\|[\s|:\-]+\|/.test(displayText);
+  const hasTable = !isUser && /\n\s*\|.+\|\s*\n\s*\|[\s|:\-]+\|\s*\n\s*\|/.test(displayText);
 
   const handleCopy = () => {
     Clipboard.setStringAsync(item.content);
@@ -122,13 +122,11 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
             accessibilityRole="text"
             accessibilityLabel={`AI: ${item.content}`}
           >
-            {hasTable ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: '100%' }}>
-                <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
-              </ScrollView>
-            ) : (
-              <Markdown style={mdStyles}>{item.content || ' '}</Markdown>
-            )}
+            {displayText ? (
+              <Markdown style={mdStyles}>{displayText}</Markdown>
+            ) : !item.streaming ? (
+              <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
+            ) : null}
             {displayText ? (
               <Pressable
                 style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
@@ -164,6 +162,22 @@ function inferActionTitle(text: string): string {
   return firstLine.length > 18 ? firstLine.slice(0, 18) : firstLine;
 }
 
+/**
+ * 清理流式回复的常见破损形态:
+ * - 去掉 [附图: xxx] 内部标记
+ * - 去掉只有表头和分隔行、没有 body 的残缺 markdown 表格 (后端在 body 之前断流)
+ * - 去掉孤零的 ❌ 行 (error payload 为空时残留)
+ * - trim
+ */
+function sanitizeAiContent(raw: string): string {
+  let s = raw.replace(/\n?\[附图: [^\]]+\]/g, '');
+  // 残缺表格: "| a | b |\n|---|---|" 后面没有数据行 (下一行不以 | 开头或到末尾)
+  s = s.replace(/(^|\n)\|[^\n]*\|\n\|[\s|:\-]+\|(?=\n(?!\s*\|)|\n?$)/g, '');
+  // 孤零 ❌ 行: "\n❌" 或 "\n❌ " 行尾, 无实际错误信息
+  s = s.replace(/\n+❌\s*(?=\n|$)/g, '');
+  return s.trim();
+}
+
 const ChatBubble = React.memo(ChatBubbleInner);
 export default ChatBubble;
 
@@ -192,7 +206,7 @@ function createStyles(c: ColorPalette, isDark: boolean) {
             shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
           }),
     },
-    bubbleAIWide: { maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
+    bubbleAIWide: { flex: 1, maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
     imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
     msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
     msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
@@ -215,5 +229,6 @@ function createTxt(c: ColorPalette) {
   return {
     bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
     actionBtn: { fontSize: 12, fontWeight: '700', color: c.brand } as TextStyle,
+    fallback: { fontSize: 14, lineHeight: 20, color: c.labelSecondary, fontStyle: 'italic' } as TextStyle,
   };
 }
