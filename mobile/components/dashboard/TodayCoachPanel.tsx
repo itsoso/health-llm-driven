@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { radii, spacing } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import type { TodayCoachFocus } from '../../services/todayCoach';
+import DataBasisLine, { type FreshnessBucket } from '../common/DataBasisLine';
 import DashboardCard from './DashboardCard';
 
 interface Props {
@@ -47,6 +48,10 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
   const trailing = focus.verifyBy ? (
     <Text style={[styles.verify, { color: c.labelTertiary }]}>{focus.verifyBy.slice(5, 10)}</Text>
   ) : undefined;
+
+  // T1.3 数据可信度: 按 status 启发式选 bucket. 缺数据态去掉 (没有"基于"可言)
+  const dataBasisBucket: FreshnessBucket | null =
+    focus.status === 'missing_data' ? null : 'garmin';
 
   return (
     <DashboardCard
@@ -110,6 +115,8 @@ export default function TodayCoachPanel({ focus, isLoading, onAction }: Props) {
           </Pressable>
         </>
       ) : null}
+
+      {dataBasisBucket && <DataBasisLine bucket={dataBasisBucket} />}
     </DashboardCard>
   );
 }

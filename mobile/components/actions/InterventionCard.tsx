@@ -20,6 +20,7 @@ import { buildActionCardOutcomeDraft } from '../../services/outcomeReview';
 import type { OutcomeReviewDraft } from '../../services/outcomeReview';
 import { radii, spacing } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import DataBasisLine, { type FreshnessBucket } from '../common/DataBasisLine';
 import ActionEvidenceRow from './ActionEvidenceRow';
 import OutcomeVerificationSheet from './OutcomeVerificationSheet';
 
@@ -27,6 +28,35 @@ interface Props {
   card: ActionCard;
   onComplete: () => void;
   onReview?: (draft: OutcomeReviewDraft) => void | Promise<void>;
+}
+
+/**
+ * metric_key → freshness bucket. 用于 T1.3 数据可信度小标签.
+ * 老 metric_key 名 (如 'bp', 'hrv') 没法对应到 Twin freshness 的统一 bucket,
+ * 所以用启发式 mapping. 不识别就返回 'garmin' (大多数 specialist 主用 Garmin 数据).
+ */
+function inferBucketFromMetric(
+  m: string | null | undefined,
+): FreshnessBucket | null {
+  if (!m) return null;
+  if (m === 'weight' || m === 'bmi' || m === 'body_fat') return 'weight';
+  // 化验项一律走 labs bucket
+  if (
+    m === 'ldl' || m === 'hdl' || m === 'tc' || m === 'tg' ||
+    m === 'hba1c' || m === 'alt' || m === 'ast' || m === 'ggt' || m === 'alp' ||
+    m === 'creatinine' || m === 'uric_acid' || m === 'urea' ||
+    m === 'tsh' || m === 'ft3' || m === 'ft4' ||
+    m === 'vitamin_d' || m === 'b12' || m === 'ferritin' ||
+    m === 'crp' || m === 'esr' ||
+    m === 'wbc' || m === 'rbc' || m === 'hgb' || m === 'plt' ||
+    m === 'lp_a' || m === 'apo_b' ||
+    m === 'fasting_glucose' || m === 'blood_glucose'
+  ) {
+    return 'labs';
+  }
+  // bp / 睡眠 / hrv / spo2 / steps 都来自 Garmin (or basic_health 自录, 但 freshness
+  // bucket 没单独 'bp'/'sleep', 都归 garmin 桶)
+  return 'garmin';
 }
 
 function cardTypeMeta(c: ColorPalette): Record<string, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap; label: string }> {
@@ -56,6 +86,9 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
   const assessment = card.latest_assessment;
   const reviewDraft = verification ? buildActionCardOutcomeDraft(card) : null;
   const executeCap = getExecuteCapability(card);
+
+  // T1.3 数据可信度: metric_key → freshness bucket 推断, 让用户看到 AI 基于哪个数据
+  const dataBasisBucket = inferBucketFromMetric(card.metric_key);
 
   const handleExecute = async (event?: { stopPropagation?: () => void }) => {
     event?.stopPropagation?.();
@@ -159,6 +192,8 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
           <View style={styles.markdownWrap}>
             <Markdown style={mdStyles}>{card.content || ''}</Markdown>
           </View>
+
+          {dataBasisBucket && <DataBasisLine bucket={dataBasisBucket} />}
 
           <Pressable
             style={({ pressed }) => [styles.traceLink, pressed && styles.traceLinkPressed]}
