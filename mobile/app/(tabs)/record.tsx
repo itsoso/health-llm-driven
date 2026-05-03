@@ -229,7 +229,7 @@ export default function RecordScreen() {
                 const done = m.taken_count >= (m.total_count || 1);
                 return (
                   <TouchableOpacity key={m.medication_id}
-                    style={[styles.medItem, done && { backgroundColor: '#E8FAF0' }]}
+                    style={[styles.medItem, done && { backgroundColor: c.tintGreen }]}
                     onPress={async () => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const now = new Date();
@@ -272,7 +272,7 @@ export default function RecordScreen() {
         <TrendMiniCharts garminDays={Array.isArray(data?.garminDaily) ? data.garminDaily : []} />
 
         {/* 10. Water (low priority) */}
-        <HealthCard title="饮水" icon="water-outline" iconColor="#64D2FF" iconBg="#E6F5FF"
+        <HealthCard title="饮水" icon="water-outline" iconColor={c.blue} iconBg={c.tintBlue}
           rightAccessory={<Text style={txt.waterTotal}>{waterTotal}/{waterTarget}ml</Text>}>
           <View style={styles.waterBtnRow}>
             {[200, 300, 500].map(a => (
@@ -316,10 +316,22 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
+  // 数值显示压缩: ≥100 显示整数 (避免 "125.0" 在圆里换行)
+  const display = (() => {
+    const n = parseFloat(value);
+    if (Number.isFinite(n) && n >= 100) return String(Math.round(n));
+    // 尾零去掉: "75.0" → "75"
+    return value.replace(/\.0$/, '');
+  })();
   return (
     <View style={styles.nutriItem}>
       <View style={[styles.nutriDot, { backgroundColor: `${color}20` }]}>
-        <Text style={[txt.nutriVal, { color }]}>{value}</Text>
+        <Text
+          style={[txt.nutriVal, { color }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >{display}</Text>
       </View>
       <Text style={txt.nutriUnit}>{unit}</Text>
       <Text style={txt.nutriLabel}>{label}</Text>

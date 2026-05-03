@@ -67,7 +67,7 @@ function MiniChart({ title, data, color, type = 'bar', unit = '' }: Props) {
               points={points}
               fill="none"
               stroke={color}
-              strokeWidth={2}
+              strokeWidth={isDark ? 2.5 : 2}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
