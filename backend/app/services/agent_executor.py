@@ -411,12 +411,15 @@ class AgentExecutor:
 
         max_retries = 3
         deadline = time.time() + 90
-        client = self._http_client or httpx.AsyncClient(timeout=60.0)
+        client = self._http_client or httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0))
         for attempt in range(max_retries):
             if time.time() > deadline:
                 raise RuntimeError("AI 服务响应超时，请稍后再试")
+            t0 = time.time()
             try:
+                logger.info(f"[_call_llm_direct] attempt={attempt+1} POST start")
                 resp = await client.post(url, headers=headers, json=payload)
+                logger.info(f"[_call_llm_direct] attempt={attempt+1} POST done in {time.time()-t0:.1f}s status={resp.status_code}")
                 if resp.status_code == 429:
                     wait = min(2 * (2 ** attempt), 10)  # 2s, 4s, 8s
                     logger.warning(f"LLM API 429 限流，第{attempt+1}/{max_retries}次重试，等待{wait}s")
