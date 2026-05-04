@@ -87,6 +87,7 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
             if not sent:
                 continue
             if any(w in sent for w in ("强度过大", "强度偏大", "强度过高", "强度过小", "强度偏低",
+                                       "明显偏高", "明显偏低", "占比偏高", "占比偏低",
                                        "不合理", "分布合理", "比例较高", "占比较高", "表现不错",
                                        "过度疲劳", "有氧耐力", "恢复跑")):
                 evaluation = sent
@@ -100,19 +101,40 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
 
     action = ""
     if next_section:
+        candidates: list[str] = []
         for sent in re.split(r"[。！？\n]", next_section):
             sent = sent.strip().lstrip("-*•· ").replace("**", "")
             if not sent:
                 continue
             if sent.startswith(("建议", "下次", "可选择")) or ("建议" in sent and len(sent) < 30):
+                candidates.append(sent)
+
+        # list 形式常见是 "时间间隔: 建议..." or "强度: 以低强度有氧为主"
+        # 选第一条剥冒号 + 补'建议' 后语义完整 (>= 8 字, 含动词类) 的
+        verbs = ("跑", "走", "练", "保持", "休息", "进行", "做", "增加", "降低",
+                "拉伸", "训练", "下调", "加", "减", "维持", "稳", "控制", "选择", "改")
+        for raw in candidates:
+            sent = raw
+            if "：" in sent:
+                sent = sent.split("：", 1)[1].strip()
+            elif ":" in sent:
+                sent = sent.split(":", 1)[1].strip()
+            if sent and not sent.startswith(("建议", "下次", "可选择", "保持")):
+                sent = "建议" + sent
+            # 句子要带动词且足够具体, 否则跳到下一个
+            if len(sent) >= 8 and any(v in sent for v in verbs):
                 action = sent
                 break
-        if "：" in action:
-            action = action.split("：", 1)[1].strip()
-        elif ":" in action:
-            action = action.split(":", 1)[1].strip()
-        if action and not action.startswith(("建议", "下次", "可选择", "保持")):
-            action = "建议" + action
+        # 兜底: 如果还是没有合格的, 就用第一条
+        if not action and candidates:
+            sent = candidates[0]
+            if "：" in sent:
+                sent = sent.split("：", 1)[1].strip()
+            elif ":" in sent:
+                sent = sent.split(":", 1)[1].strip()
+            if sent and not sent.startswith(("建议", "下次", "可选择", "保持")):
+                sent = "建议" + sent
+            action = sent
 
     if evaluation and action:
         out = f"{evaluation}；{action}"
