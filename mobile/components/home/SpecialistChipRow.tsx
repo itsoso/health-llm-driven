@@ -20,6 +20,7 @@ import { specialistLabel } from '../../services/personalOutcome';
 import { spacing, radii, typography } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { buildHero } from './specialistChipHero';
+import { emitClientEvent } from '../../services/clientEvents';
 
 export default function SpecialistChipRow() {
   const router = useRouter();
@@ -44,7 +45,14 @@ export default function SpecialistChipRow() {
     <View style={styles.wrap}>
       <Pressable
         style={({ pressed }) => [styles.hero, pressed && styles.heroPressed]}
-        onPress={() => router.push(hero.navTarget as any)}
+        onPress={() => {
+          // Phase 0.4: 埋点 — TrustHero chip 点击
+          emitClientEvent('home_chip_clicked', {
+            chip: 'trust_hero',
+            target: hero.navTarget,
+          });
+          router.push(hero.navTarget as any);
+        }}
         accessibilityRole="button"
         accessibilityLabel={hero.a11yLabel}
       >
@@ -67,7 +75,14 @@ export default function SpecialistChipRow() {
           {significant.map((row) => (
             <Pressable
               key={row.specialist}
-              onPress={() => router.push(`/specialist/${row.specialist}` as any)}
+              onPress={() => {
+                // Phase 0.4: 埋点 — specialist chip 点击
+                emitClientEvent('home_chip_clicked', {
+                  chip: 'specialist',
+                  target: row.specialist,
+                });
+                router.push(`/specialist/${row.specialist}` as any);
+              }}
               style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
               accessibilityRole="button"
               accessibilityLabel={`${specialistLabel(row.specialist)}, 命中 ${row.hits} 条共 ${row.total_graded} 条`}

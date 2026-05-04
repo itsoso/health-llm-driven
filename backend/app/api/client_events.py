@@ -21,10 +21,19 @@ logger = logging.getLogger(__name__)
 
 
 # 白名单: 观察期看板需要跟踪的事件.
+# Phase 0.4 (2026-05-04): 加 5 种核心事件解除"客户端埋点几乎为空" 的观察盲区.
+# 同步 mobile/services/clientEvents.ts ClientEventName 类型定义.
 _ALLOWED_EVENTS = frozenset({
+    # 上一季 ship (2026-05-01)
     "reasoning_sheet_opened",
     "journal_timeline_entered",
     "specialist_scorecard_entered",
+    # Phase 0.4 — 让看板看得见用户操作
+    "home_chip_clicked",          # meta: { chip: 'trust_hero' | 'specialist', target? }
+    "action_card_executed",       # meta: { card_id, action: 'execute' | 'complete' | 'reminder' }
+    "push_notification_opened",   # meta: { kind, deep_link }
+    "chat_message_sent",          # meta: { source: 'chat'|'voice'|'siri', has_image }
+    "quick_record_logged",        # meta: { kind: 'bp'|'weight'|'water'|'medication'|... }
 })
 
 

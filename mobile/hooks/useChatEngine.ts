@@ -5,6 +5,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type StreamEvent } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import api, { BASE_URL } from '../services/api';
+import { emitClientEvent } from '../services/clientEvents';
 
 const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 
@@ -189,6 +190,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Phase 0.4: 埋点 — 用户实际发出的对话, 区分入口 (siri vs chat)
+    try {
+      emitClientEvent('chat_message_sent', {
+        source: sendOpts?.fromSiri ? 'siri' : 'chat',
+        has_image: !!hasImages,
+      });
+    } catch { /* noop */ }
 
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;

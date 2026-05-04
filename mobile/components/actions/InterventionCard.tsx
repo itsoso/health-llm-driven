@@ -18,6 +18,7 @@ import {
 } from '../../services/actionExecution';
 import { buildActionCardOutcomeDraft } from '../../services/outcomeReview';
 import type { OutcomeReviewDraft } from '../../services/outcomeReview';
+import { emitClientEvent } from '../../services/clientEvents';
 import { radii, spacing } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import DataBasisLine, { type FreshnessBucket } from '../common/DataBasisLine';
@@ -97,6 +98,8 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (executeCap === 'navigate') {
       const target = getNavigationTarget(card);
+      // Phase 0.4: 埋点
+      emitClientEvent('action_card_executed', { card_id: card.id, action: 'execute' });
       router.push(target as any);
       return;
     }
@@ -106,6 +109,8 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
         const time = defaultReminderTime();
         await executeReminderForCard(card, { time });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Phase 0.4: 埋点 — 提醒设置成功才记 (失败的不算)
+        emitClientEvent('action_card_executed', { card_id: card.id, action: 'reminder' });
         Alert.alert('已设提醒', `每天 ${time} 提醒「${card.title}」。\n可在「设置 → 提醒」修改。`);
       } catch (err: any) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -251,6 +256,8 @@ export default function InterventionCard({ card, onComplete, onReview }: Props) 
               style={({ pressed }) => [styles.completeBtn, pressed && styles.completeBtnPressed]}
               onPress={event => {
                 event?.stopPropagation?.();
+                // Phase 0.4: 埋点
+                emitClientEvent('action_card_executed', { card_id: card.id, action: 'complete' });
                 onComplete();
               }}
               accessibilityRole="button"

@@ -78,3 +78,54 @@ def test_client_events_stats_empty(db):
     since = datetime.now(timezone.utc) - timedelta(days=7)
     stats = client_events_stats(db, since, user_id=None)
     assert stats == {"total": 0, "by_event": {}}
+
+
+# ─────────────── Phase 0.4: 5 种新事件白名单 ───────────────
+
+import pytest
+
+
+@pytest.mark.parametrize("event_name,meta", [
+    ("home_chip_clicked", {"chip": "trust_hero", "target": "/specialist/recovery_coach"}),
+    ("home_chip_clicked", {"chip": "specialist", "target": "fuel_strategist"}),
+    ("action_card_executed", {"card_id": 12, "action": "execute"}),
+    ("action_card_executed", {"card_id": 12, "action": "complete"}),
+    ("action_card_executed", {"card_id": 12, "action": "reminder"}),
+    ("push_notification_opened", {"kind": "lab_overdue", "deep_link": "health://medical-exams/upload"}),
+    ("chat_message_sent", {"source": "chat", "has_image": False}),
+    ("chat_message_sent", {"source": "voice", "has_image": False}),
+    ("chat_message_sent", {"source": "siri", "has_image": False}),
+    ("quick_record_logged", {"kind": "weight"}),
+    ("quick_record_logged", {"kind": "bp"}),
+    ("quick_record_logged", {"kind": "medication"}),
+])
+def test_phase_0_4_new_events_accepted(client, db, auth_user_and_headers, event_name, meta):
+    """Phase 0.4 新增的 5 种事件名 + 各自 meta 应被白名单接受."""
+    _, headers = auth_user_and_headers
+    r = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+    assert r.status_code == 202, f"{event_name} 被拒, body={r.text}"
+    assert r.json()["ok"] is True
+
+
+def test_phase_0_4_all_5_events_in_allowed_list(client, auth_user_and_headers):
+    """反向: 故意发不在白名单的 fake 事件, 错误响应应该列出新 5 种作为合法选项."""
+    _, headers = auth_user_and_headers
+    r = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "_definitely_fake_"},
+    )
+    assert r.status_code == 400
+    allowed = r.json()["detail"]["allowed"]
+    for evt in [
+        "home_chip_clicked",
+        "action_card_executed",
+        "push_notification_opened",
+        "chat_message_sent",
+        "quick_record_logged",
+    ]:
+        assert evt in allowed, f"白名单缺 {evt}"

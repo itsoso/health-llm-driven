@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchDashboardData } from '../../services/dashboard';
 import api from '../../services/api';
 import { useRouter } from 'expo-router';
+import { emitClientEvent } from '../../services/clientEvents';
 import { useLatestGarmin } from '../../hooks/useDashboardData';
 import { useDataHealth } from '../../hooks/useDataHealth';
 import { recordWater, deleteWater } from '../../services/records';
@@ -194,6 +195,7 @@ export default function RecordScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
                     await api.post('/weight/records', { weight: w, record_date: new Date().toISOString().split('T')[0] });
+                    emitClientEvent('quick_record_logged', { kind: 'weight' }); // Phase 0.4
                     setWeightInput(''); await invalidateRecordMutation(qc);
                   } catch { Alert.alert('记录失败'); }
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
@@ -210,6 +212,7 @@ export default function RecordScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   try {
                     await api.post('/blood-pressure/records', { systolic: sys, diastolic: dia, record_date: new Date().toISOString().split('T')[0] });
+                    emitClientEvent('quick_record_logged', { kind: 'bp' }); // Phase 0.4
                     setBpSysInput(''); setBpDiaInput(''); await invalidateRecordMutation(qc);
                   } catch { Alert.alert('记录失败'); }
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
@@ -241,6 +244,7 @@ export default function RecordScreen() {
                           taken_time: `${hh}:${mm}`,
                           status: 'taken',
                         });
+                        emitClientEvent('quick_record_logged', { kind: 'medication' }); // Phase 0.4
                         await invalidateRecordMutation(qc);
                         showUndo(`已记录 ${m.name} ${hh}:${mm}`, async () => {
                           try { await api.delete(`/medication/logs/${res.data.id}`); await invalidateRecordMutation(qc); } catch {}

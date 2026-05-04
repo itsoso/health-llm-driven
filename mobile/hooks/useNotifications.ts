@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { router } from 'expo-router';
 import { bindIOSToken } from '../services/notifications';
+import { emitClientEvent } from '../services/clientEvents';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -116,6 +117,13 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     handleOpenLoopAction(actionId, data);
     return;
   }
+
+  // Phase 0.4: 用户从推送进 app (default tap action) — emit 看板能算 push CTR.
+  // Background actions 不算 (那是按钮回调, 没进 app).
+  emitClientEvent('push_notification_opened', {
+    kind: data?.kind ?? data?.type ?? 'unknown',
+    deep_link: data?.deep_link ?? data?.deeplink ?? null,
+  });
 
   // Handle tap-to-open routing
   // Priority: data.deep_link (arbitrary path + query) > data.screen (legacy predefined)
