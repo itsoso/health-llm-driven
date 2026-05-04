@@ -2,7 +2,7 @@
 import logging
 import re
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from typing import List, Dict, Any
 from app.config import settings
@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
+
+
+def _resolve_public_base(request: Request) -> str:
+    """解析 manifest / raw_url 的对外完整 URL.
+
+    优先 settings.site_base_url; 否则从请求 header 推断 (X-Forwarded-Proto/Host,
+    走 nginx 时必须). 始终带 /api/v1 后缀 — 外部 OpenClaw host 装 skill 时直接
+    拼 ${HEALTH_API_URL}/xxx 即为完整 URL.
+    """
+    base = (settings.site_base_url or "").rstrip("/")
+    if not base:
+        scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+        base = f"{scheme}://{host}"
+    return f"{base}/api/v1"
 
 
 def _parse_frontmatter(content: str) -> Dict[str, Any]:
@@ -66,11 +81,12 @@ def list_skills():
 
 
 @router.get("/manifest.json", summary="Skills 打包清单（一键安装/更新）")
-def get_skills_manifest():
+def get_skills_manifest(request: Request):
     """返回所有 Skills 的打包 JSON，供 OpenClaw 一键安装或更新"""
+    base_url = _resolve_public_base(request)
     skills = []
     if not SKILLS_DIR.exists():
-        return {"version": "1.0", "skills": skills}
+        return {"version": "1.0", "base_url": base_url, "auth_type": "Bearer Token", "skills": skills}
 
     for skill_dir in sorted(SKILLS_DIR.iterdir()):
         skill_file = skill_dir / "SKILL.md"
@@ -85,19 +101,19 @@ def get_skills_manifest():
             "description": fm.get("description", ""),
             "version": fm.get("version", "1.0.0"),
             "content": body.strip(),
-            "raw_url": f"/api/v1/skills/{skill_dir.name}/raw",
+            "raw_url": f"{base_url}/skills/{skill_dir.name}/raw",
         })
 
     return {
         "version": "1.0",
-        "base_url": f"{settings.site_base_url}/api",
+        "base_url": base_url,
         "auth_type": "Bearer Token",
         "skills": skills,
     }
 
 
 @router.get("/{skill_name}")
-def get_skill(skill_name: str):
+def get_skill(skill_name: str, request: Request):
     """获取 Skill 详情（结构化 JSON）"""
     skill_file = SKILLS_DIR / skill_name / "SKILL.md"
     if not skill_file.exists():
@@ -106,6 +122,7 @@ def get_skill(skill_name: str):
     content = skill_file.read_text(encoding="utf-8")
     fm = _parse_frontmatter(content)
     body = _get_body(content)
+    base_url = _resolve_public_base(request)
 
     return {
         "name": fm.get("name", skill_name),
@@ -113,7 +130,7 @@ def get_skill(skill_name: str):
         "version": fm.get("version", "1.0.0"),
         "slug": skill_name,
         "content": body.strip(),
-        "raw_url": f"/api/v1/skills/{skill_name}/raw",
+        "raw_url": f"{base_url}/skills/{skill_name}/raw",
     }
 
 
