@@ -99,6 +99,7 @@ from app.api import (
     rhinitis_trend,
     spo2,
     tts,
+    briefing,
     llm_usage,
     specialist_hit_rate,
     open_loop,
@@ -149,6 +150,7 @@ api_router.include_router(blood_pressure.router, prefix="/blood-pressure", tags=
 api_router.include_router(heart_rate.router, prefix="/heart-rate", tags=["heart-rate"])
 api_router.include_router(spo2.router, prefix="/spo2", tags=["spo2"])
 api_router.include_router(tts.router)
+api_router.include_router(briefing.router)
 api_router.include_router(sleep_record.router)
 api_router.include_router(excretion.router)
 api_router.include_router(mood.router)

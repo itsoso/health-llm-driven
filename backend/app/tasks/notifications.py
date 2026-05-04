@@ -608,15 +608,19 @@ def send_trend_morning_push():
 @celery_app.task
 def send_morning_health_summary():
     """
-    每日早安健康摘要推送（07:30执行）
-    综合昨日健康评分+预警，给用户一条晨间健康问候。
+    每日早安健康摘要推送（07:30执行）— 升级版.
+
+    输出:
+      - title: '🌅 早安'
+      - body : 60-90 字短稿 (build_voice_script, 锁屏可读)
+      - data : deep_link=/voice-chat?intent=briefing
+                → 点开进 voice-chat, 自动 TTS 播放同一份短稿
+                → 播完进 listening 接你接话 (问 follow-up)
     """
     from app.models.user import GarminCredential
-    from app.services.health_score_service import health_score_service
-    from app.models.anomaly_alert import AnomalyAlert
+    from app.services.briefing_voice_script import build_voice_script
 
     logger.info("[早安推送] 开始每日早安健康摘要")
-    yesterday = date.today() - timedelta(days=1)
 
     with SessionLocal() as db:
         credentials = db.query(GarminCredential).filter(
@@ -630,44 +634,26 @@ def send_morning_health_summary():
 
         for user_id in user_ids:
             try:
-                # 获取昨日健康评分
-                result = health_score_service.calculate_daily_score(db, user_id, target_date=yesterday)
-                score_part = ""
-                if result.get("status") == "ok":
-                    score_part = f"昨日健康评分 {result['total_score']}分({result['grade']})"
-
-                # 获取昨晚预警
-                alerts = db.query(AnomalyAlert).filter(
-                    AnomalyAlert.user_id == user_id,
-                    AnomalyAlert.detection_date == yesterday,
-                ).all()
-                alert_part = ""
-                critical = [a for a in alerts if a.severity == "critical"]
-                if critical:
-                    alert_part = f"⚠️ {critical[0].message}"
-                elif alerts:
-                    alert_part = f"有{len(alerts)}条健康提醒"
-
-                # 组合消息
-                parts = ["早安！"]
-                if score_part:
-                    parts.append(score_part)
-                if alert_part:
-                    parts.append(alert_part)
-                if not score_part and not alert_part:
-                    continue  # 无数据不推送
-
-                body = "，".join(parts) + "。"
+                script = build_voice_script(db, user_id)
+                if not script or len(script) < 10:
+                    continue  # 短稿生成失败/兜底无意义, 跳过
 
                 run_async(push_service.send_notification(
                     user_id=user_id,
-                    notification_type="morning_summary",
-                    title="🌅 早安健康",
-                    content=body[:200],
+                    notification_type="morning_briefing",
+                    title="🌅 早安",
+                    content=script[:200],
+                    data={
+                        # 点推送进 voice-chat, intent=briefing 触发自动 TTS 播
+                        "deep_link": "/voice-chat?intent=briefing",
+                        "kind": "morning_briefing",
+                    },
+                    # 同一日只推一次
+                    dedup_window_hours=20,
                 ))
                 sent_count += 1
             except Exception as e:
-                logger.error(f"[早安推送] 用户 {user_id} 推送失败: {e}")
+                logger.error(f"[早安推送] 用户 {user_id} 推送失败: {e}", exc_info=True)
 
     logger.info(f"[早安推送] 完成，推送 {sent_count} 条")
     return {"sent_count": sent_count}

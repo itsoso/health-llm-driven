@@ -339,6 +339,51 @@ export function useVoiceConversation() {
     setError(null);
   }, [stopCurrentSpeech]);
 
+  /**
+   * 直接喂一段文本走 TTS 播 (不走 LLM, 用于晨间简报 / 系统播报场景).
+   *
+   * 行为:
+   *   - 把 text 作为 assistant turn 加到 turns
+   *   - 按句切段入 TTS 队列, 串行播完
+   *   - opts.thenListen=true: 播完自动进 listening, 接用户接话 (Agent Native 闭环)
+   */
+  const speakDirect = useCallback(
+    async (text: string, opts?: { thenListen?: boolean }) => {
+      if (!text || !text.trim()) return;
+      await refreshVoiceStyle();
+      // 清当前播放队列, 防止冲撞
+      stopCurrentSpeech();
+      ttsQueueRef.current = [];
+
+      setState('speaking');
+      setTurns((prev) => [...prev, { role: 'assistant', text, at: Date.now() }]);
+
+      // 整段入队 (不流式, 已经是完整一段)
+      pendingTextRef.current = text;
+      flushTail();
+
+      // 等队列播完
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (ttsQueueRef.current.length === 0 && !isSpeakingRef.current) resolve();
+          else setTimeout(check, 200);
+        };
+        check();
+      });
+
+      if (opts?.thenListen) {
+        setState('idle');
+        // 等 200ms 让用户感知"该我说了"
+        setTimeout(() => {
+          startListening();
+        }, 200);
+      } else {
+        setState('idle');
+      }
+    },
+    [refreshVoiceStyle, stopCurrentSpeech, flushTail, startListening],
+  );
+
   return {
     state,
     transcript,
@@ -347,6 +392,7 @@ export function useVoiceConversation() {
     startListening,
     stopListening,
     reset,
+    speakDirect,
     isActive: state !== 'idle' && state !== 'error',
   };
 }

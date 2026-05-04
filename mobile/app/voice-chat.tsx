@@ -9,6 +9,7 @@ import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { createMdStylesChat } from '../constants/markdownStyles';
+import { fetchBriefingVoiceScript } from '../services/briefing';
 
 /**
  * 语音连续对话页. MVP 版:
@@ -19,14 +20,17 @@ import { createMdStylesChat } from '../constants/markdownStyles';
  * - 底部有对话历史文字滚动
  * - 右上角关闭退出
  *
- * Siri 触发: `mobile://voice?autoStart=1` 自动开始第一轮录音.
+ * 启动入口:
+ *   - Siri:           `?autoStart=1`        立即开始第一轮录音
+ *   - 晨间简报推送:    `?intent=briefing`    拉短稿 → TTS 播 → 自动进 listening 等接话
+ *   - 默认:                                  待用户主动点球
  */
 export default function VoiceChatScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
-  const params = useLocalSearchParams<{ autoStart?: string; prompt?: string }>();
+  const params = useLocalSearchParams<{ autoStart?: string; prompt?: string; intent?: string }>();
   const voice = useVoiceConversation();
   const scrollRef = React.useRef<ScrollView>(null);
 
@@ -52,6 +56,26 @@ export default function VoiceChatScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.autoStart]);
+
+  // intent=briefing: 拉今日短稿 → TTS 播 → 自动进 listening 等接话
+  // 用 ref 锁防止 hot-reload / re-render 重复触发
+  const briefingTriggeredRef = React.useRef(false);
+  useEffect(() => {
+    if (params.intent !== 'briefing' || briefingTriggeredRef.current) return;
+    briefingTriggeredRef.current = true;
+    (async () => {
+      try {
+        const { script } = await fetchBriefingVoiceScript();
+        if (script && script.trim()) {
+          await voice.speakDirect(script, { thenListen: true });
+        }
+      } catch (e) {
+        // 失败静默 — 用户可以点球手动开始
+        if (__DEV__) console.warn('[voice-chat] briefing fetch failed:', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.intent]);
 
   useEffect(() => {
     // Auto-scroll 到最新 turn
