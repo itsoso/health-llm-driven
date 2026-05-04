@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -7,7 +7,7 @@ import MapView, { Polyline as MapPolyline, Marker } from 'react-native-maps';
 import Markdown from 'react-native-markdown-display';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkoutDetail } from '../hooks/useWorkouts';
-import { analyzeWorkout, getPostWorkoutAnalysis, getWorkoutChart, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
+import { getPostWorkoutAnalysis, getWorkoutChart, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
 import HealthCard from '../components/design-system/HealthCard';
 import HeroMetrics from '../components/workout/HeroMetrics';
 import HrChart from '../components/workout/HrChart';
@@ -208,25 +208,6 @@ export default function WorkoutDetailScreen() {
     }
   }, [workout?.id]);
 
-  const handleAnalyze = useCallback(async () => {
-    if (!workoutId) return;
-    setAnalyzing(true);
-    try {
-      const res = await analyzeWorkout(workoutId);
-      setAnalysis(res);
-      setFromCache(false);
-    } catch {
-      setAnalysis({
-        workout_id: workoutId, overall_rating: '', intensity_assessment: '分析暂时不可用',
-        heart_rate_analysis: null, hr_zone_assessment: null, pace_analysis: null,
-        training_effect_summary: null, recovery_recommendation: '', next_workout_suggestion: '',
-        comparison_with_history: null, key_insights: [], improvement_tips: [],
-      });
-    } finally {
-      setAnalyzing(false);
-    }
-  }, [workoutId]);
-
   const handlePostAnalysis = useCallback(async (forceRegenerate = false) => {
     if (!workoutId) return;
     setPostAnalyzing(true);
@@ -235,8 +216,16 @@ export default function WorkoutDetailScreen() {
       if (res.success) {
         setPostAnalysis(res);
         setFromCache(!!res.from_cache);
+      } else {
+        // 后端返回 success:false 时也让用户知道
+        const msg = (res as any)?.message || (res as any)?.error || '分析生成失败，请稍后重试';
+        Alert.alert('分析失败', String(msg));
       }
-    } catch { } finally {
+    } catch (e: any) {
+      if (__DEV__) console.warn('[workout-detail] post-analysis error', e);
+      const msg = e?.response?.data?.detail || e?.message || '网络异常，请稍后重试';
+      Alert.alert('分析失败', String(msg));
+    } finally {
       setPostAnalyzing(false);
     }
   }, [workoutId]);
@@ -344,12 +333,16 @@ export default function WorkoutDetailScreen() {
 
         {/* Extra details */}
         <HealthCard title="详细指标" icon="analytics-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
-          <DetailRow label="卡路里" value={workout.calories != null ? `${workout.calories} kcal` : '--'} />
-          <DetailRow label="最大心率" value={workout.max_heart_rate != null ? `${workout.max_heart_rate} bpm` : '--'} />
-          <DetailRow label="有氧训练效果" value={workout.training_effect_aerobic?.toFixed(1) ?? '--'} />
-          <DetailRow label="无氧训练效果" value={workout.training_effect_anaerobic?.toFixed(1) ?? '--'} />
-          {workout.vo2max != null && <DetailRow label="VO2max" value={workout.vo2max.toFixed(1)} />}
-          {workout.steps != null && <DetailRow label="步数" value={String(workout.steps)} />}
+          {workout.calories != null ? <DetailRow label="卡路里" value={`${workout.calories} kcal`} /> : null}
+          {workout.max_heart_rate != null ? <DetailRow label="最大心率" value={`${workout.max_heart_rate} bpm`} /> : null}
+          {workout.avg_cadence != null ? <DetailRow label="平均步频" value={`${workout.avg_cadence} spm`} /> : null}
+          {workout.avg_stride_length_cm != null ? <DetailRow label="平均步幅" value={`${workout.avg_stride_length_cm.toFixed(0)} cm`} /> : null}
+          {workout.elevation_gain_meters != null ? <DetailRow label="累计爬升" value={`${workout.elevation_gain_meters.toFixed(1)} m`} /> : null}
+          {workout.training_effect_aerobic != null ? <DetailRow label="有氧训练效果" value={workout.training_effect_aerobic.toFixed(1)} /> : null}
+          {workout.training_effect_anaerobic != null ? <DetailRow label="无氧训练效果" value={workout.training_effect_anaerobic.toFixed(1)} /> : null}
+          {workout.vo2max != null ? <DetailRow label="VO2max" value={workout.vo2max.toFixed(1)} /> : null}
+          {workout.training_load != null ? <DetailRow label="训练负荷" value={String(workout.training_load)} /> : null}
+          {workout.steps != null ? <DetailRow label="步数" value={String(workout.steps)} /> : null}
         </HealthCard>
 
         {/* AI Analysis */}
@@ -365,7 +358,7 @@ export default function WorkoutDetailScreen() {
                 </View>
               )}
               {hasAnalysis && !analyzing && !postAnalyzing && (
-                <TouchableOpacity onPress={() => handleAnalyze()} activeOpacity={0.7}>
+                <TouchableOpacity onPress={() => handlePostAnalysis(true)} activeOpacity={0.7}>
                   <Text style={txt.reanalyzeBtn}>重新分析</Text>
                 </TouchableOpacity>
               )}

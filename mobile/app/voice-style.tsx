@@ -45,7 +45,7 @@ export default function VoiceStyleScreen() {
     setPreviewing(style);
     if (opt.provider === 'cloud') {
       try {
-        const voiceKey = opt.cloudVoiceKey ?? 'gentle_female';
+        const voiceKey = opt.cloudVoiceKey ?? 'soft_hk_female';
         const { localUri } = await cloudSynthesize({ text: PREVIEW_TEXT, voiceKey });
         const player = createAudioPlayer({ uri: localUri });
         const done = () => {

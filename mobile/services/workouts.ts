@@ -40,9 +40,17 @@ export interface WorkoutDetail {
   calories: number | null;
   steps: number | null;
   avg_speed_kmh: number | null;
+  max_speed_kmh: number | null;
+  avg_pace_seconds_per_km: number | null;
+  avg_cadence: number | null;
+  max_cadence: number | null;
+  avg_stride_length_cm: number | null;
+  elevation_gain_meters: number | null;
+  elevation_loss_meters: number | null;
   training_effect_aerobic: number | null;
   training_effect_anaerobic: number | null;
   vo2max: number | null;
+  training_load: number | null;
   ai_analysis: string | null;
   post_workout_analysis: string | null;
   route_data: string | null;

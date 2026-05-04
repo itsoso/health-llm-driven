@@ -14,7 +14,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import { BASE_URL } from './api';
 
-export type CloudVoiceKey = 'gentle_female' | 'warm_female' | 'bright_female' | 'calm_male';
+export type CloudVoiceKey = 'soft_hk_female' | 'warm_female' | 'gentle_cs_female' | 'knowing_female' | 'calm_male';
 
 export interface SynthesizeOpts {
   text: string;
