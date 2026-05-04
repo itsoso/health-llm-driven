@@ -18,6 +18,7 @@ from app.database import get_db
 from app.models.user import User
 from app.services.celery_health import celery_health_snapshot
 from app.services.garmin_sync_health import garmin_sync_health_snapshot
+from app.services.sentry_status import sentry_status_snapshot
 from app.services.observability_service import (
     actionable_suggestions,
     collect_dashboard,
@@ -69,6 +70,7 @@ async def get_observation_dashboard(
         "suggestions": actionable_suggestions(report),
         "celery_health": celery_health_snapshot(db),
         "garmin_sync_health": garmin_sync_health_snapshot(db),
+        "sentry_status": sentry_status_snapshot(),
         "cached": False,
     }
     try:
