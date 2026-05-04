@@ -347,6 +347,34 @@ def _is_in_quiet_hours_now(setting) -> bool:
     return start <= now_cn < end
 
 
+def _maybe_apply_snooze_renewal_prefix(db, user_id: int, loop: OpenLoop) -> None:
+    """
+    P8: 检测该 (kind, signal_key) 是否有 snoozed_until 在最近 24h 内过期的记录.
+    如有, 在 loop.body 前加"我们说先暂停的, 现在到期了 — " 让推送有续约感,
+    而不是再次"通知"用户.
+
+    Mutates loop.body in-place. 失败 silent (推送照常发).
+    """
+    try:
+        from app.models.open_loop_history import OpenLoopHistory
+
+        now_utc = datetime.now(timezone.utc)
+        cutoff = now_utc - timedelta(hours=24)
+        # 找有 snoozed_until 在过去 24h 内 (即"刚过期") 的同 signal 记录
+        recent_expired = db.query(OpenLoopHistory.id).filter(
+            OpenLoopHistory.user_id == user_id,
+            OpenLoopHistory.kind == loop.kind,
+            OpenLoopHistory.signal_key == (loop.signal_key or ""),
+            OpenLoopHistory.snoozed_until.isnot(None),
+            OpenLoopHistory.snoozed_until >= cutoff,
+            OpenLoopHistory.snoozed_until <= now_utc,
+        ).first()
+        if recent_expired:
+            loop.body = f"上次你说先暂停, 现在到期了 — {loop.body}"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[open_loop] snooze renewal prefix check failed (silent): {e}")
+
+
 def _is_recently_pushed_or_snoozed(db, user_id: int, loop: OpenLoop) -> bool:
     """该信号在 dedup 窗口内已推过 OR 用户主动 snooze 了 → 跳过."""
     from app.models.open_loop_history import OpenLoopHistory
@@ -452,6 +480,11 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
             f"signal_key={loop.signal_key} (7d 内已推 or snoozed)"
         )
         return False
+
+    # P8 (2026-05-04): snooze 到期续约 — 检测该 (kind, signal_key) 是否有
+    # snoozed_until 刚在最近 24h 内过期的记录. 如有, body 前加续约前缀,
+    # 让用户感受到"我们说先暂停的 X 现在到期了" 而不是普通推送.
+    _maybe_apply_snooze_renewal_prefix(db, user_id, loop)
 
     try:
         from app.models.notification import UserNotificationSetting

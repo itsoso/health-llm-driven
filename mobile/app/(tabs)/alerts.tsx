@@ -8,12 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getSafetyReport, explainAlert, type SafetyAlert } from '../../services/safety';
-import { buildActionCockpitSections, getActiveCards, completeCard, reviewActionCard } from '../../services/actionCards';
+import { buildActionCockpitSections, getActiveCards, completeCard, reactivateCard, reviewActionCard } from '../../services/actionCards';
 import InterventionCard from '../../components/actions/InterventionCard';
 import { ExplainButton } from '../../components/reasoning/ExplainButton';
 import { queryKeys } from '../../applib/queryKeys';
 import { spacing, radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { useToast } from '../../hooks/useToast';
 
 function getSeverityKey(s: any): string { return typeof s === 'string' ? s : s?.label ?? 'info'; }
 
@@ -42,8 +43,25 @@ export default function ActionsScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const SECTION_META = useMemo(() => sectionMeta(c), [c]);
+  const toast = useToast();
   const { data: safetyData, refetch: refetchSafety, isRefetching: sr, isLoading: sl } = useQuery({ queryKey: queryKeys.safety, queryFn: getSafetyReport });
   const { data: cardsData, refetch: refetchCards, isRefetching: cr, isLoading: cl } = useQuery({ queryKey: queryKeys.actionCards, queryFn: getActiveCards });
+
+  // P8 (2026-05-04): 标记完成后 5s 内可撤销 — 用户点错"已完成"不至于丢失
+  const handleCompleteWithUndo = async (cardId: number, cardTitle: string) => {
+    await completeCard(cardId);
+    refetchCards();
+    toast.showUndoable(
+      `已完成「${cardTitle.slice(0, 14)}」`,
+      async () => {
+        try {
+          await reactivateCard(cardId);
+          refetchCards();
+        } catch { /* 静默 */ }
+      },
+      5000,
+    );
+  };
 
   const alerts = safetyData?.alerts || [];
   const cards = cardsData || [];
@@ -125,7 +143,7 @@ export default function ActionsScreen() {
               ? <AlertRow alert={item.item} auditId={safetyData?.audit_id ?? null} />
               : <InterventionCard
                   card={item.item}
-                  onComplete={async () => { await completeCard(item.item.id); refetchCards(); }}
+                  onComplete={() => handleCompleteWithUndo(item.item.id, item.item.title || '')}
                   onReview={async draft => { await reviewActionCard(item.item.id, draft); refetchCards(); }}
                 />
           }

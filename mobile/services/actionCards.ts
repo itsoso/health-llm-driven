@@ -128,6 +128,17 @@ export async function completeCard(id: number): Promise<ActionCard> {
   return data;
 }
 
+/**
+ * P8 (2026-05-04): 撤销"标记完成" — status 改回 active, 后端会清 completed_at.
+ * 用于 toast undo 5s 内点击.
+ */
+export async function reactivateCard(id: number): Promise<ActionCard> {
+  const { data } = await api.patch<ActionCard>(`/action-cards/${id}`, {
+    status: 'active',
+  });
+  return data;
+}
+
 export async function createActionCard(input: ActionCardCreateInput): Promise<ActionCard> {
   const { data } = await api.post<ActionCard>('/action-cards', input);
   return data;

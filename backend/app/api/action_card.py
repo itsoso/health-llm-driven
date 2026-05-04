@@ -275,6 +275,10 @@ def update_card(
         card.status = body.status
         if body.status == "completed":
             card.completed_at = datetime.now(UTC)
+        elif body.status == "active":
+            # P8 (2026-05-04): 撤销完成 — 用户点"已完成" 后悔了, status 改回 active
+            # 必须清 completed_at, 否则 grader / outcome view 仍把它当 completed
+            card.completed_at = None
     if body.priority is not None:
         card.priority = body.priority
     if body.is_visible is not None:
