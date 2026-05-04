@@ -7,12 +7,15 @@ import MapView, { Polyline as MapPolyline, Marker } from 'react-native-maps';
 import Markdown from 'react-native-markdown-display';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkoutDetail } from '../hooks/useWorkouts';
-import { getPostWorkoutAnalysis, getWorkoutChart, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
+import { getPostWorkoutAnalysis, getWorkoutChart, getWorkoutVoiceCoach, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
 import HealthCard from '../components/design-system/HealthCard';
 import HeroMetrics from '../components/workout/HeroMetrics';
 import HrChart from '../components/workout/HrChart';
 import PaceBars from '../components/workout/PaceBars';
 import HrZoneBar from '../components/workout/HrZoneBar';
+import { synthesize as cloudSynthesize } from '../services/cloudTts';
+import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { colors, spacing, radii } from '../constants/theme';
 
 interface RoutePoint { lat: number; lng: number; time?: number }
@@ -230,6 +233,66 @@ export default function WorkoutDetailScreen() {
     }
   }, [workoutId]);
 
+  // '听一下'按钮 — 私享女声读 150-200 字教练短稿
+  const [speaking, setSpeaking] = useState(false);
+  const playerRef = React.useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+  const handleSpeakCoach = useCallback(async () => {
+    if (!workoutId || speaking) return;
+    setSpeaking(true);
+    try {
+      // 确保音频走外放 — 不是从 voice-chat 进来, session 可能还在 recording mode
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
+        interruptionMode: 'duckOthers',
+        allowsRecording: false,
+      }).catch(() => {});
+
+      const { script } = await getWorkoutVoiceCoach(workoutId);
+      if (!script || !script.trim()) {
+        Alert.alert('暂无可播报的内容', '等 AI 分析完成后再来听');
+        return;
+      }
+      const styleKey = await loadVoiceStyle();
+      const voiceKey = getVoiceStyle(styleKey).cloudVoiceKey ?? 'cloned_private_female';
+      const { localUri } = await cloudSynthesize({ text: script, voiceKey });
+      const player = createAudioPlayer({ uri: localUri });
+      playerRef.current = player;
+      await new Promise<void>((resolve) => {
+        let finished = false;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          try { player.remove(); } catch {}
+          playerRef.current = null;
+          resolve();
+        };
+        const sub = player.addListener('playbackStatusUpdate', (status: any) => {
+          if (status?.didJustFinish || status?.finished) {
+            sub?.remove?.();
+            finish();
+          }
+        });
+        // 兜底 30s 硬超时
+        setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, 30000);
+        player.play();
+      });
+    } catch (e: any) {
+      if (__DEV__) console.warn('[workout-detail] voice-coach error', e);
+      Alert.alert('播报失败', e?.message || '网络异常');
+    } finally {
+      setSpeaking(false);
+    }
+  }, [workoutId, speaking]);
+
+  // 退出页面确保停止播放, 避免后台继续念
+  useEffect(() => {
+    return () => {
+      try { playerRef.current?.pause(); playerRef.current?.remove(); } catch {}
+      playerRef.current = null;
+    };
+  }, []);
+
   const postContent = useMemo(() => {
     if (!postAnalysis) return null;
     const a = postAnalysis as Record<string, any>;
@@ -386,6 +449,18 @@ export default function WorkoutDetailScreen() {
                 <View style={[styles.cacheBadge, { backgroundColor: '#E8F0FE' }]}>
                   <Text style={[txt.cacheBadgeText, { color: colors.blue }]}>新生成</Text>
                 </View>
+              )}
+              {hasAnalysis && !analyzing && !postAnalyzing && (
+                <TouchableOpacity onPress={handleSpeakCoach} activeOpacity={0.7} disabled={speaking}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    {speaking ? (
+                      <ActivityIndicator size="small" color={colors.purple} />
+                    ) : (
+                      <Ionicons name="volume-high-outline" size={16} color={colors.purple} />
+                    )}
+                    <Text style={txt.reanalyzeBtn}>{speaking ? '播报中' : '听一下'}</Text>
+                  </View>
+                </TouchableOpacity>
               )}
               {hasAnalysis && !analyzing && !postAnalyzing && (
                 <TouchableOpacity onPress={() => handlePostAnalysis(true)} activeOpacity={0.7}>

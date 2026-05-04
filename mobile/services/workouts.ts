@@ -141,3 +141,20 @@ export async function getPostWorkoutAnalysis(
   );
   return data;
 }
+
+export interface WorkoutVoiceCoachResponse {
+  script: string;
+  char_count: number;
+  has_analysis: boolean;
+}
+
+/**
+ * 跑后'听一下'按钮拉 TTS 用短稿 (150-200 字).
+ * 后端从 WorkoutAnalysisResult.aggregation 蒸, 没分析会 fallback 到只说数据.
+ */
+export async function getWorkoutVoiceCoach(id: number): Promise<WorkoutVoiceCoachResponse> {
+  const { data } = await api.get<WorkoutVoiceCoachResponse>(
+    `/workout/me/${id}/voice-coach`,
+  );
+  return data;
+}

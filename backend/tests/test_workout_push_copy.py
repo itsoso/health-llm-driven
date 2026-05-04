@@ -4,6 +4,7 @@
 _first_paragraph / _coach_oneliner 是纯文本处理, 不依赖 DB, 可单元级测试.
 """
 from app.tasks.garmin_sync import _first_paragraph, _coach_oneliner
+from app.services.workout_coach_copy import workout_voice_script
 
 
 class TestFirstParagraph:
@@ -72,3 +73,50 @@ class TestCoachOneliner:
 建议多休息。"""
         out = _coach_oneliner(text, max_len=80)
         assert len(out) <= 80
+
+
+class TestWorkoutVoiceScript:
+    """跑后听一下按钮 — 带开场数据 + coach_oneliner + 结尾, 150-200 字."""
+
+    def test_full_shape(self):
+        text = """### 心率区间分析
+心率分布显示，本次训练中极限心率占比较高（59%），这表明训练强度过大，可能导致身体过度疲劳。
+
+### 下次训练建议
+- 建议时间间隔：至少休息1-2天"""
+        out = workout_voice_script(
+            activity="跑步",
+            distance_meters=2600.0,
+            duration_seconds=1080,
+            aggregation=text,
+        )
+        # 开场带数据
+        assert "跑步" in out
+        assert "2.6 公里" in out
+        assert "18 分钟" in out
+        # body 带教练点评
+        assert "强度过大" in out
+        assert "至少休息1-2天" in out
+        # 整体不爆长度
+        assert len(out) <= 200
+
+    def test_no_distance_no_duration(self):
+        out = workout_voice_script(
+            activity="瑜伽",
+            distance_meters=None,
+            duration_seconds=None,
+            aggregation="整体表现平稳。",
+        )
+        assert "瑜伽" in out
+        assert out.endswith("。") or out.endswith("…")
+
+    def test_empty_aggregation_has_fallback(self):
+        out = workout_voice_script(
+            activity="跑步",
+            distance_meters=5000,
+            duration_seconds=1800,
+            aggregation="",
+        )
+        assert "跑步" in out
+        assert "5.0 公里" in out
+        assert "保持" in out or "平稳" in out  # fallback 结尾

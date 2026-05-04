@@ -1,5 +1,6 @@
 """运动训练记录 API"""
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Header, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -221,6 +222,59 @@ def get_my_workout(
     response.headers["ETag"] = f'"{workout_id}-{updated_timestamp}"'
 
     return response
+
+
+class WorkoutVoiceCoachResponse(BaseModel):
+    script: str
+    char_count: int
+    has_analysis: bool
+
+
+@router.get("/me/{workout_id}/voice-coach", response_model=WorkoutVoiceCoachResponse)
+def get_workout_voice_coach(
+    workout_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    获取运动记录的语音教练短稿 (150-200 字, TTS 用).
+
+    mobile 'voice-coach 按钮' 流程:
+      GET 本 API → script → cloudTts.synthesize → expo-audio 播
+
+    fallback 优先级:
+      1. 有 WorkoutAnalysisResult.aggregation → workout_voice_script 蒸
+      2. 无分析但有 record → 只说"本次 X 公里 Y 分钟, 暂无分析"
+    """
+    from app.services.workout_coach_copy import workout_voice_script
+    from app.services.workout_analysis import WorkoutAnalysisService
+
+    record = db.query(WorkoutRecord).filter(
+        WorkoutRecord.id == workout_id,
+        WorkoutRecord.user_id == current_user.id,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="运动记录不存在")
+
+    analysis = db.query(WorkoutAnalysisResult).filter(
+        WorkoutAnalysisResult.workout_id == workout_id,
+    ).first()
+
+    activity = WorkoutAnalysisService()._get_workout_type_name(record.workout_type or "other")
+    has_analysis = bool(analysis and analysis.aggregation)
+    aggregation = (analysis.aggregation if has_analysis else "") or ""
+
+    script = workout_voice_script(
+        activity=activity,
+        distance_meters=record.distance_meters,
+        duration_seconds=record.duration_seconds,
+        aggregation=aggregation,
+    )
+    return WorkoutVoiceCoachResponse(
+        script=script,
+        char_count=len(script),
+        has_analysis=has_analysis,
+    )
 
 
 @router.get("/me/{workout_id}/chart", response_model=WorkoutChartData)
