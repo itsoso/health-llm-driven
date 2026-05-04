@@ -217,6 +217,7 @@ function MemoryTab(props: {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.tierChipScroll}
         contentContainerStyle={styles.tierChipRow}
       >
         <TierChip
@@ -436,7 +437,7 @@ const styles = StyleSheet.create({
   complianceText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.labelSecondary },
 
   tabBar: {
-    flexDirection: 'row', marginHorizontal: spacing.md,
+    flexDirection: 'row', marginHorizontal: spacing.md, marginBottom: spacing.xs,
     backgroundColor: colors.fill, borderRadius: radii.sm, padding: 3,
   },
   tabBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: radii.sm - 2 },
@@ -444,8 +445,13 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, color: colors.labelSecondary, fontWeight: '500' },
   tabTextActive: { color: colors.labelPrimary, fontWeight: '600' },
 
+  tierChipScroll: {
+    flexGrow: 0,  // 不让 horizontal ScrollView 在父 flex 里被挤扁 (iOS bug)
+    flexShrink: 0,
+  },
   tierChipRow: {
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: 8,
+    alignItems: 'center',
   },
   tierChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
