@@ -816,7 +816,12 @@ class AgentExecutor:
         path_map = {
             "weather": "/environment/weather",
             "air_quality": "/environment/air-quality",
-            "outdoor_suitability": "/environment/outdoor-advice",
+            # outdoor-advice 是历史 typo, 真实端点: exercise-suitability (单项) /
+            # advice (综合). 用 advice 信息更全, 含天气+AQI+UV+建议
+            "outdoor_suitability": "/environment/advice",
+            "exercise_suitability": "/environment/exercise-suitability",
+            "morning_briefing": "/environment/morning-briefing",
+            "forecast": "/environment/weather/forecast?days=3",
         }
         path = path_map.get(ctype, "/environment/weather")
         return await self._api_get(f"{base}{path}", headers)
