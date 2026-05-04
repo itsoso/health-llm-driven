@@ -84,6 +84,8 @@ function AppContent() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="memory" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="medical-exams" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="medical-exam-detail" options={{ headerShown: false }} />
         <Stack.Screen name="notification-settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="reminders" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="notification-history" options={{ headerShown: false, presentation: 'modal' }} />

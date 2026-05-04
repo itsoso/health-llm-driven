@@ -1,0 +1,179 @@
+jest.mock('../api', () => ({
+  __esModule: true,
+  default: { get: jest.fn() },
+}));
+
+import api from '../api';
+import {
+  listMedicalExams,
+  countAbnormal,
+  compareExams,
+  relativeExamDate,
+  type MedicalExam,
+} from '../medicalExams';
+
+const mockGet = api.get as jest.Mock;
+
+const makeExam = (overrides: Partial<MedicalExam> = {}): MedicalExam => ({
+  id: 1,
+  user_id: 1,
+  exam_date: '2026-04-01',
+  items: [],
+  ...overrides,
+});
+
+describe('listMedicalExams', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns array on success', async () => {
+    mockGet.mockResolvedValueOnce({ data: [makeExam(), makeExam({ id: 2 })] });
+    const out = await listMedicalExams();
+    expect(out).toHaveLength(2);
+    expect(mockGet).toHaveBeenCalledWith('/medical-exams/me?limit=50');
+  });
+
+  it('passes limit override', async () => {
+    mockGet.mockResolvedValueOnce({ data: [] });
+    await listMedicalExams(10);
+    expect(mockGet).toHaveBeenCalledWith('/medical-exams/me?limit=10');
+  });
+
+  it('returns empty on error (no throw)', async () => {
+    mockGet.mockRejectedValueOnce(new Error('500'));
+    expect(await listMedicalExams()).toEqual([]);
+  });
+
+  it('returns empty when shape is wrong', async () => {
+    mockGet.mockResolvedValueOnce({ data: { not: 'array' } });
+    expect(await listMedicalExams()).toEqual([]);
+  });
+});
+
+describe('countAbnormal', () => {
+  it('counts only non-normal items', () => {
+    const exam = makeExam({
+      items: [
+        { id: 1, exam_id: 1, item_name: 'LDL', value: 4.5, is_abnormal: 'high' },
+        { id: 2, exam_id: 1, item_name: 'HDL', value: 1.2, is_abnormal: 'normal' },
+        { id: 3, exam_id: 1, item_name: 'TC', value: 5.5, is_abnormal: 'abnormal' },
+        { id: 4, exam_id: 1, item_name: 'TG', value: 1.1, is_abnormal: null },
+        { id: 5, exam_id: 1, item_name: 'ALT', value: 25, is_abnormal: 'low' },
+      ],
+    });
+    expect(countAbnormal(exam)).toBe(3); // LDL high, TC abnormal, ALT low
+  });
+
+  it('returns 0 for empty items', () => {
+    expect(countAbnormal(makeExam())).toBe(0);
+  });
+
+  it('treats empty string is_abnormal as normal', () => {
+    const exam = makeExam({
+      items: [{ id: 1, exam_id: 1, item_name: 'X', value: 1, is_abnormal: '' }],
+    });
+    expect(countAbnormal(exam)).toBe(0);
+  });
+
+  it('case-insensitive normal check', () => {
+    const exam = makeExam({
+      items: [{ id: 1, exam_id: 1, item_name: 'X', value: 1, is_abnormal: 'NORMAL' }],
+    });
+    expect(countAbnormal(exam)).toBe(0);
+  });
+});
+
+describe('compareExams', () => {
+  it('returns delta + delta_pct for items in both exams', () => {
+    const prev = makeExam({
+      id: 1, exam_date: '2025-10-01',
+      items: [
+        { id: 1, exam_id: 1, item_name: 'LDL', item_code: 'LDL', value: 3.5, unit: 'mmol/L' },
+        { id: 2, exam_id: 1, item_name: 'HDL', item_code: 'HDL', value: 1.4, unit: 'mmol/L' },
+      ],
+    });
+    const cur = makeExam({
+      id: 2, exam_date: '2026-04-01',
+      items: [
+        { id: 3, exam_id: 2, item_name: 'LDL', item_code: 'LDL', value: 4.1, unit: 'mmol/L', is_abnormal: 'high' },
+        { id: 4, exam_id: 2, item_name: 'HDL', item_code: 'HDL', value: 1.3, unit: 'mmol/L' },
+      ],
+    });
+    const out = compareExams(cur, prev);
+    expect(out).toHaveLength(2);
+    // LDL 变化更大, 应排第一
+    expect(out[0].item_name).toBe('LDL');
+    expect(out[0].current_value).toBe(4.1);
+    expect(out[0].previous_value).toBe(3.5);
+    expect(out[0].delta).toBeCloseTo(0.6, 1);
+    expect(out[0].delta_pct).toBeCloseTo(17.14, 1);
+    expect(out[0].current_abnormal).toBe(true);
+    expect(out[0].previous_abnormal).toBe(false);
+  });
+
+  it('skips items missing in either exam', () => {
+    const prev = makeExam({
+      items: [{ id: 1, exam_id: 1, item_name: 'LDL', item_code: 'LDL', value: 3.5 }],
+    });
+    const cur = makeExam({
+      items: [
+        { id: 2, exam_id: 2, item_name: 'LDL', item_code: 'LDL', value: 4.1 },
+        { id: 3, exam_id: 2, item_name: 'HbA1c', item_code: 'HBA1C', value: 5.8 },
+      ],
+    });
+    const out = compareExams(cur, prev);
+    expect(out).toHaveLength(1);
+    expect(out[0].item_name).toBe('LDL');
+  });
+
+  it('handles 0 previous value safely (no /0 NaN)', () => {
+    const prev = makeExam({
+      items: [{ id: 1, exam_id: 1, item_name: 'X', item_code: 'X', value: 0 }],
+    });
+    const cur = makeExam({
+      items: [{ id: 2, exam_id: 2, item_name: 'X', item_code: 'X', value: 5 }],
+    });
+    const out = compareExams(cur, prev);
+    expect(out[0].delta).toBe(5);
+    expect(out[0].delta_pct).toBe(0); // explicit fallback, not NaN
+  });
+
+  it('returns empty for empty inputs', () => {
+    expect(compareExams(makeExam(), makeExam())).toEqual([]);
+  });
+
+  it('matches by item_name when item_code missing', () => {
+    const prev = makeExam({
+      items: [{ id: 1, exam_id: 1, item_name: 'LDL 胆固醇', value: 3.5 }],
+    });
+    const cur = makeExam({
+      items: [{ id: 2, exam_id: 2, item_name: 'LDL 胆固醇', value: 4.0 }],
+    });
+    const out = compareExams(cur, prev);
+    expect(out).toHaveLength(1);
+  });
+});
+
+describe('relativeExamDate', () => {
+  const NOW = new Date('2026-05-04');
+
+  it('formats < 7 days as "N 天前"', () => {
+    expect(relativeExamDate('2026-05-01', NOW)).toBe('3 天前');
+    expect(relativeExamDate('2026-05-04', NOW)).toBe('0 天前');
+  });
+
+  it('formats 7-29 days as "N 周前"', () => {
+    expect(relativeExamDate('2026-04-15', NOW)).toBe('2 周前');
+  });
+
+  it('formats < 1 year as "N 个月前"', () => {
+    expect(relativeExamDate('2025-10-01', NOW)).toBe('7 个月前');
+  });
+
+  it('formats >= 1 year as "N 年前"', () => {
+    expect(relativeExamDate('2024-01-01', NOW)).toBe('2 年前');
+  });
+
+  it('returns raw on invalid date', () => {
+    expect(relativeExamDate('not-a-date', NOW)).toBe('not-a-date');
+  });
+});

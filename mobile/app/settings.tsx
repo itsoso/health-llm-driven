@@ -103,6 +103,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/ai-profile' as any)} />
           <SettingRow icon="bookmark-outline" label="AI 关于你的笔记"
             onPress={() => router.push('/memory' as any)} />
+          <SettingRow icon="document-text-outline" label="化验记录"
+            onPress={() => router.push('/medical-exams' as any)} />
           <SettingRow icon="calendar-outline" label="月度复盘"
             onPress={() => router.push('/monthly-reports' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
