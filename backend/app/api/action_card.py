@@ -206,9 +206,24 @@ def create_from_message(
 
     前端传 AI 回答的完整 markdown 内容，后端自动：
     1. 提取标题（第一个 # 标题 / 加粗文本 / 首行）
-    2. 创建卡片
+    2. **best-effort LLM 抽取信任循环字段** (metric_key / target_value / verification_days)
+       — 抽到了卡片自动进 outcome_grader 队列, 抽不到退化为普通卡 (与历史行为一致).
+    3. 创建卡片
     """
     title = _extract_title(body.content)
+
+    # Trust loop: best-effort 抽取 metric_key / target / verification_days.
+    # 抽取失败 (LLM 挂 / JSON 错 / 没指标) → 全 None, 卡片仍创建, 只是不进 grader.
+    from app.services.action_card_extractor import extract_from_content
+    extracted = extract_from_content(
+        content=body.content, title=title, user_id=current_user.id
+    )
+
+    check_back = None
+    if extracted.metric_key:
+        days = extracted.verification_days or 7
+        check_back = datetime.now(UTC) + timedelta(days=days)
+
     card = ActionCard(
         user_id=current_user.id,
         title=title,
@@ -218,11 +233,24 @@ def create_from_message(
         source_id=body.source_id,
         priority=10,  # 从对话固化的默认优先级高
         creator_specialist=body.creator_specialist,
+        # Trust loop fields (None if 没抽到 — 行为与原版一致)
+        metric_key=extracted.metric_key,
+        baseline_value=extracted.baseline_value,
+        target_value=extracted.target_value,
+        verification_days=extracted.verification_days,
+        check_back_date=check_back,
     )
     db.add(card)
     db.commit()
     db.refresh(card)
-    logger.info(f"[ActionCard] 用户 {current_user.id} 从对话固化: {title}")
+    if extracted.metric_key:
+        logger.info(
+            f"[ActionCard] 用户 {current_user.id} 从对话固化 (信任循环): "
+            f"{title!r} metric={extracted.metric_key} target={extracted.target_value} "
+            f"check_back={check_back.date() if check_back else None}"
+        )
+    else:
+        logger.info(f"[ActionCard] 用户 {current_user.id} 从对话固化: {title}")
     return _card_to_dict(card)
 
 
