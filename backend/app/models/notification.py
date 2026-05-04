@@ -48,6 +48,7 @@ class UserNotificationSetting(Base):
     reminder_enabled = Column(Boolean, default=True)  # 定时提醒
     health_alert_enabled = Column(Boolean, default=True)  # 健康预警
     ai_advice_enabled = Column(Boolean, default=True)  # AI 建议
+    workout_analysis_enabled = Column(Boolean, default=True)  # 跑后教练推送 (W3)
 
     # 推送时间设置
     morning_briefing_time = Column(String(5), default="07:30")  # 早间简报时间 HH:MM

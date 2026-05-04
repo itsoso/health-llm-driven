@@ -7,6 +7,7 @@ export interface NotificationSettings {
   reminder_enabled: boolean;
   health_alert_enabled: boolean;
   ai_advice_enabled: boolean;
+  workout_analysis_enabled: boolean;
   quiet_hours_start: string;
   quiet_hours_end: string;
   wechat_enabled: boolean;
@@ -24,6 +25,7 @@ export interface NotificationSettingsUpdate {
   reminder_enabled?: boolean;
   health_alert_enabled?: boolean;
   ai_advice_enabled?: boolean;
+  workout_analysis_enabled?: boolean;
   quiet_hours_start?: string;
   quiet_hours_end?: string;
   ios_push_enabled?: boolean;

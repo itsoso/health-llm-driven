@@ -83,6 +83,8 @@ export default function NotificationSettingsScreen() {
             onToggle={(v) => toggle('reminder_enabled', v)} />
           <ToggleRow label="AI 建议" icon="sparkles-outline" value={settings?.ai_advice_enabled ?? true}
             onToggle={(v) => toggle('ai_advice_enabled', v)} />
+          <ToggleRow label="跑后教练" icon="fitness-outline" value={settings?.workout_analysis_enabled ?? true}
+            onToggle={(v) => toggle('workout_analysis_enabled', v)} />
         </View>
 
         <Text style={txt.section}>安静时段</Text>

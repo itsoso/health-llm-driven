@@ -29,6 +29,7 @@ class NotificationSettingsUpdate(BaseModel):
     reminder_enabled: Optional[bool] = None
     health_alert_enabled: Optional[bool] = None
     ai_advice_enabled: Optional[bool] = None
+    workout_analysis_enabled: Optional[bool] = None
     morning_briefing_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     quiet_hours_start: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     quiet_hours_end: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
@@ -97,6 +98,7 @@ def get_notification_settings(
             "reminder_enabled": True,
             "health_alert_enabled": True,
             "ai_advice_enabled": True,
+            "workout_analysis_enabled": True,
             "quiet_hours_start": "22:00",
             "quiet_hours_end": "08:30",
             "wechat_enabled": True,
@@ -114,6 +116,7 @@ def get_notification_settings(
         "reminder_enabled": settings.reminder_enabled,
         "health_alert_enabled": settings.health_alert_enabled,
         "ai_advice_enabled": settings.ai_advice_enabled,
+        "workout_analysis_enabled": getattr(settings, "workout_analysis_enabled", True),
         "quiet_hours_start": settings.quiet_hours_start,
         "quiet_hours_end": settings.quiet_hours_end,
         "wechat_enabled": settings.wechat_enabled,

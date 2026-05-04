@@ -305,7 +305,10 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
                 service._save_analysis_result(user_id, workout_id, prompt, result)
 
                 # 构造推送: 标题用运动类型 + 一行概况, 正文取 aggregation 的第一段 (跳过 markdown 标题行).
-                activity = workout.workout_type or "运动"
+                # 运动名走 WorkoutAnalysisService 的中文映射, 保持 push 和 app 内展示一致.
+                from app.services.workout_analysis import WorkoutAnalysisService
+                _wa = WorkoutAnalysisService()
+                activity = _wa._get_workout_type_name(workout.workout_type or "other")
                 summary_bits = []
                 if workout.distance_meters:
                     summary_bits.append(f"{workout.distance_meters / 1000:.1f}km")
