@@ -40,26 +40,34 @@ def _format_sleep(twin: HealthTwin) -> Optional[str]:
 def _format_hrv(twin: HealthTwin) -> Optional[str]:
     """HRV 状态片段, 用 status 而不是裸数字"""
     status = twin.physiological.hrv_status
-    if not status:
-        return None
-    if status == "良好":
-        return "HRV 不错"
-    if status == "偏低":
-        return "HRV 偏低，注意恢复"
+    if status:
+        if status == "良好":
+            return "HRV 不错"
+        if status == "偏低":
+            return "HRV 偏低，注意恢复"
+    # status 缺失时, 用 hrv_latest vs 7d_avg 简单判断
+    latest = twin.physiological.hrv_latest
+    avg = twin.physiological.hrv_7d_avg
+    if latest is not None and avg is not None and avg > 0:
+        delta_pct = (latest - avg) / avg * 100
+        if delta_pct >= 15:
+            return "HRV 比近期高，状态不错"
+        if delta_pct <= -15:
+            return "HRV 比近期低，注意恢复"
     return None
 
 
 def _format_battery_or_stress(twin: HealthTwin) -> Optional[str]:
-    """身体电量 / 压力其中一个"""
+    """身体电量 / 压力其中一个 — 偏向 actionable 信号"""
     bb = twin.physiological.body_battery_current
     if bb is not None:
         if bb >= 75:
-            return "身体电量充足"
-        if bb <= 25:
-            return "身体电量偏低"
+            return "身体电量充足，今天可以安排强度训练"
+        if bb <= 40:
+            return "身体电量偏低，今天以恢复为主"
     stress = twin.physiological.stress_level_current
     if stress is not None and stress >= 70:
-        return "压力水平偏高"
+        return "压力水平偏高，注意调节"
     return None
 
 
