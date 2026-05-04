@@ -17,6 +17,7 @@ import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
+import AttributionChips from './AttributionChips';
 import { radii } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -34,6 +35,7 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
   const isUser = item.role === 'user';
   const [draft, setDraft] = useState<InterventionDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [showActions, setShowActions] = useState(false);  // 长按显示操作
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard({ type: item.cardType, data: item.cardData });
@@ -50,7 +52,13 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
     Alert.alert('已复制');
   };
 
+  const handleLongPress = () => {
+    Haptics.selectionAsync();
+    setShowActions(prev => !prev);
+  };
+
   const openDraft = () => {
+    setShowActions(false);
     setDraft(buildInterventionDraft({
       title: inferActionTitle(displayText),
       advice: displayText,
@@ -117,8 +125,8 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
         ) : (
           <TouchableOpacity
             style={[styles.bubble, styles.bubbleAI, hasTable && styles.bubbleAIWide]}
-            activeOpacity={0.8}
-            onLongPress={handleCopy}
+            activeOpacity={0.95}
+            onLongPress={handleLongPress}
             accessibilityRole="text"
             accessibilityLabel={`AI: ${item.content}`}
           >
@@ -127,16 +135,32 @@ function ChatBubbleInner({ item, onViewImage }: Props) {
             ) : !item.streaming ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
-            {displayText ? (
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                onPress={openDraft}
-                accessibilityRole="button"
-                accessibilityLabel="加入健康行动"
-              >
-                <Ionicons name="add-circle-outline" size={14} color={c.brand} />
-                <Text style={txt.actionBtn}>加入行动</Text>
-              </Pressable>
+            {/* P4: 显式归因 chips — 仅当 LLM 在回答里加了"(基于你的 X)" 等 marker 才渲染.
+                 markdown 渲染完后, 流式结束才出 (避免提取不全的 marker 闪现) */}
+            {displayText && !item.streaming ? (
+              <AttributionChips text={displayText} />
+            ) : null}
+            {displayText && showActions ? (
+              <View style={styles.actionsRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+                  onPress={openDraft}
+                  accessibilityRole="button"
+                  accessibilityLabel="加入健康行动"
+                >
+                  <Ionicons name="add-circle-outline" size={14} color={c.brand} />
+                  <Text style={txt.actionBtn}>加入行动</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+                  onPress={handleCopy}
+                  accessibilityRole="button"
+                  accessibilityLabel="复制全文"
+                >
+                  <Ionicons name="copy-outline" size={14} color={c.brand} />
+                  <Text style={txt.actionBtn}>复制</Text>
+                </Pressable>
+              </View>
             ) : null}
             {item.streaming && <ActivityIndicator size="small" color={c.brand} style={{ marginTop: 4 }} />}
           </TouchableOpacity>
@@ -210,12 +234,17 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
     msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
     msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
+    actionsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 8,
+    },
     actionBtn: {
       alignSelf: 'flex-start',
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      marginTop: 8,
       borderRadius: radii.full,
       backgroundColor: c.brandLight,
       paddingHorizontal: 10,
