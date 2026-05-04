@@ -37,6 +37,102 @@ def _first_paragraph(text: str, max_len: int = 160) -> str:
     return text.strip()[:max_len]
 
 
+# 把 aggregation 压成一句教练点评 (20-60 字), 比 _first_paragraph 更像"推送通知"风格.
+#
+# 规则 (不调 LLM, 省 token + 快):
+#   1. 从文本里找 "心率区间分析" 段, 抓"强度过大/不合理/过快/过慢/合理/很好" 这类判断词
+#   2. 从 "下次训练建议" 段, 抓"降低强度/保持/休息 N 天" 这类 action
+#   3. 拼成 "评价 + 下次建议" 一句. 没抓到就 fallback 到 _first_paragraph 第一句
+def _coach_oneliner(aggregation: str, max_len: int = 80) -> str:
+    if not aggregation:
+        return ""
+
+    import re
+
+    # 按 markdown 标题切段. 标题形如 "### 2. 心率区间分析" / "## 心率" / "**心率区间分析**"
+    sections: dict[str, str] = {}
+    current_key = ""
+    buf: list[str] = []
+    for line in aggregation.splitlines():
+        stripped = line.strip()
+        # 匹配 markdown 标题 或 **粗体** 标题行
+        m = re.match(r"^#{1,6}\s*(?:\d+[.、]\s*)?(.+?)\s*$", stripped)
+        if not m:
+            m = re.match(r"^\*\*\s*(?:\d+[.、]\s*)?(.+?)\s*\*\*\s*$", stripped)
+        if m:
+            if current_key:
+                sections[current_key] = "\n".join(buf).strip()
+            current_key = m.group(1)
+            buf = []
+        else:
+            buf.append(line)
+    if current_key:
+        sections[current_key] = "\n".join(buf).strip()
+
+    def _find_section(*keywords: str) -> str:
+        for k, v in sections.items():
+            if any(kw in k for kw in keywords):
+                return v
+        return ""
+
+    hr_section = _find_section("心率区间", "心率分析")
+    next_section = _find_section("下次训练建议", "下次建议", "下一次")
+
+    # 评价: 优先从心率区间段抓关键判断句
+    evaluation = ""
+    if hr_section:
+        # 找含判断词的第一个完整句
+        for sent in re.split(r"[。！？\n]", hr_section):
+            sent = sent.strip().lstrip("-*•· ").replace("**", "")
+            if not sent:
+                continue
+            if any(w in sent for w in ("强度过大", "强度偏大", "强度过高", "强度过小", "强度偏低",
+                                       "不合理", "分布合理", "比例较高", "占比较高", "表现不错",
+                                       "过度疲劳", "有氧耐力", "恢复跑")):
+                evaluation = sent
+                break
+        # 去常见冗余前缀 ("心率分布显示，" / "数据来看，" / "从心率区间分布来看，")
+        for prefix in ("心率分布显示，", "心率分布显示,", "心率数据显示，", "数据显示，",
+                       "从心率区间分布来看，", "从数据来看，", "综合来看，", "整体来看，",
+                       "根据心率数据，"):
+            if evaluation.startswith(prefix):
+                evaluation = evaluation[len(prefix):]
+                break
+
+    # action: 下次建议, 取"建议..."开头的第一句
+    action = ""
+    if next_section:
+        for sent in re.split(r"[。！？\n]", next_section):
+            sent = sent.strip().lstrip("-*•· ").replace("**", "")
+            if not sent:
+                continue
+            # 粗粒度匹配 action 句
+            if sent.startswith(("建议", "下次", "可选择")) or ("建议" in sent and len(sent) < 30):
+                action = sent
+                break
+        # list 形式常见是 "建议时间间隔：至少休息1-2天" → 剥掉冒号前的小标题, 留后半句
+        if "：" in action:
+            action = action.split("：", 1)[1].strip()
+        elif ":" in action:
+            action = action.split(":", 1)[1].strip()
+        # 补"建议"前缀, 让短句也像建议
+        if action and not action.startswith(("建议", "下次", "可选择", "保持")):
+            action = "建议" + action
+
+    if evaluation and action:
+        out = f"{evaluation}；{action}"
+    elif evaluation:
+        out = evaluation
+    elif action:
+        out = action
+    else:
+        out = _first_paragraph(aggregation, max_len=max_len)
+
+    if len(out) > max_len:
+        out = out[: max_len - 1] + "…"
+    return out
+
+
 @celery_app.task(bind=True, max_retries=3)
 def sync_user_garmin_data(self, user_id: int, days: int = 1):
     """
@@ -317,7 +413,7 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
                 summary = " · ".join(summary_bits)
                 title = f"跑后教练: {activity}" + (f" ({summary})" if summary else "")
 
-                body = _first_paragraph(result.get("aggregation") or "")
+                body = _coach_oneliner(result.get("aggregation") or "")
                 if not body:
                     body = "你的运动数据已分析完成，点击查看详情"
 
