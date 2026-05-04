@@ -7,6 +7,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
+import { router } from 'expo-router';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSpring } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
@@ -95,6 +96,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
     if (cancelledRef.current) return;
     voice.stopAndTranscribe();
   }, [voice]);
+
+  // 麦克风按钮 → 跳语音对话页 (连续语音对话, 替代旧的 whisper-into-text 模式)。
+  // 旧 voiceMode 状态保留但不再被这个按钮触发 —— 防止意外破坏 useVoiceRecording 的 hooks 依赖。
+  const goToVoiceChat = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/voice-chat' as any);
+  }, []);
 
   const toggleVoiceMode = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -234,9 +242,9 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <Ionicons name="checkmark" size={20} color="#fff" />
           </View>
         ) : (
-          <TouchableOpacity onPress={toggleVoiceMode} style={styles.modeBtn} accessibilityLabel="切换语音/键盘">
+          <TouchableOpacity onPress={goToVoiceChat} style={styles.modeBtn} accessibilityLabel="进入语音对话" accessibilityHint="打开语音对话页面与健康助理连续聊天">
             <Ionicons
-              name={voiceMode ? 'keypad-outline' : 'mic-outline'}
+              name="mic-outline"
               size={22}
               color={c.labelSecondary}
             />

@@ -76,8 +76,9 @@ export default function HomeScreen() {
   const todayCoach = useTodayCoach();
   const agentAgenda = useAgentAgenda();
   const insets = useSafeAreaInsets();
-  // tab bar(49) + bottom safe area: iPhone home indicator=83, iPad=49, home button=49
-  const kbOffset = Platform.OS === 'ios' ? 49 + insets.bottom : 0;
+  // KeyboardAvoidingView 只需抵消被键盘遮盖的量. tabBar 是 absolute 定位,
+  // 键盘出现时会被挡住, 不需要额外 offset —— 设成 0 避免输入框和键盘之间出现空隙.
+  const kbOffset = 0;
 
   const contextData = useMemo(() => ({
     garmin: Array.isArray(garminData) && garminData.length > 0 ? garminData[0] : null,
@@ -270,10 +271,16 @@ export default function HomeScreen() {
               </BrandCircle>
               <Text style={txt.welcomeTitle}>健康助理</Text>
               <Text style={txt.welcomeSub}>说点什么，或试试这些</Text>
-              <TouchableOpacity style={styles.briefingBtn} onPress={() => handleSend('今天健康如何？给我一份简报', null)} activeOpacity={0.7} accessibilityLabel="生成今日健康简报">
-                <Ionicons name="sparkles-outline" size={16} color={c.brand} />
-                <Text style={txt.briefingBtnText}>生成今日健康简报</Text>
-              </TouchableOpacity>
+              <View style={styles.primaryBtnRow}>
+                <TouchableOpacity style={styles.briefingBtn} onPress={() => handleSend('今天健康如何？给我一份简报', null)} activeOpacity={0.7} accessibilityLabel="生成今日健康简报">
+                  <Ionicons name="sparkles-outline" size={16} color={c.brand} />
+                  <Text style={txt.briefingBtnText}>健康简报</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.voiceBtn} onPress={() => router.push('/voice-chat' as any)} activeOpacity={0.7} accessibilityLabel="进入语音对话">
+                  <Ionicons name="mic" size={16} color="#fff" />
+                  <Text style={txt.voiceBtnText}>语音对话</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.sugRow}>
                 {['记录喝了杯水', '分析睡眠质量', '吃了鱼油', '最近HRV趋势'].map(s => (
                   <TouchableOpacity key={s} style={styles.sugChip} onPress={() => handleSend(s, null)} accessibilityLabel={s}>
@@ -350,10 +357,19 @@ function createStyles(c: ColorPalette) {
       position: 'absolute', top: 60, right: 20,
     },
     welcome: { alignItems: 'center', paddingTop: 80 },
+    primaryBtnRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      marginTop: 16, marginBottom: 8,
+    },
     briefingBtn: {
       flexDirection: 'row', alignItems: 'center', gap: 6,
       backgroundColor: c.brandLight, borderRadius: radii.full,
-      paddingHorizontal: 18, paddingVertical: 10, marginTop: 16, marginBottom: 8,
+      paddingHorizontal: 18, paddingVertical: 10,
+    },
+    voiceBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: c.brand, borderRadius: radii.full,
+      paddingHorizontal: 18, paddingVertical: 10,
     },
     sugRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20, justifyContent: 'center', paddingHorizontal: spacing.xl },
     sugChip: {
@@ -381,6 +397,7 @@ function createTxt(c: ColorPalette) {
     welcomeSub: { fontSize: 14, color: c.labelSecondary, marginTop: 4 } as TextStyle,
     sugText: { fontSize: 13, color: c.brand } as TextStyle,
     briefingBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
+    voiceBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' } as TextStyle,
     dateText: { fontSize: 11, color: c.labelTertiary, paddingHorizontal: 10, fontWeight: '500' } as TextStyle,
     loadMoreText: { fontSize: 12, color: c.brand, fontWeight: '500' } as TextStyle,
     chatDividerText: { fontSize: 11, color: c.labelTertiary, paddingHorizontal: 10, fontWeight: '600' } as TextStyle,

@@ -854,6 +854,63 @@ async def _run_orchestrator_fast(
     )
 
 
+async def _stream_orchestrator_fast(
+    db: Session, user_id: int, req: OrchestratorRequest
+):
+    """Siri 专用流式快版本: yield SSE chunk 让 voice-chat 边收边念。
+
+    跳过和 _run_orchestrator_fast 相同的所有重负载, 只额外把 LLM 调用从
+    一次性 _call_llm 换成 _stream_llm, 让 client 第一个字 1-2s 内就能听到。
+    """
+    from app.services.llm.usage_tracker import set_caller
+    set_caller("orchestrator.stream.siri_fast", user_id=user_id)
+
+    t_start = time.monotonic()
+
+    def _sse(event: str, data) -> str:
+        payload = data if isinstance(data, str) else json.dumps(data, default=str, ensure_ascii=False)
+        return f"event: {event}\ndata: {payload}\n\n"
+
+    try:
+        twin = build_twin(db, user_id)
+        intent = classify_intent(req.query)
+
+        system_prompt, user_prompt = _build_synthesis_prompt(
+            req.query, twin, findings=[], db=db, user_id=user_id,
+            conflict_arb_block="", source="siri",
+        )
+        user_prompt = _inject_memory(db, user_id, user_prompt, findings=[])
+
+        full = ""
+        async for chunk in _stream_llm(system_prompt, user_prompt):
+            full += chunk
+            yield _sse("chunk", chunk)
+
+        yield _sse("done", {
+            "total_ms": int((time.monotonic() - t_start) * 1000),
+            "synthesis_len": len(full),
+        })
+
+        try:
+            from app.agents.audit import log_orchestrator_run
+            log_orchestrator_run(
+                db=db, user_id=user_id,
+                query=req.query,
+                intent_categories=intent.categories,
+                used_specialists=[],
+                findings_count=0,
+                twin_build_ms=twin.meta.build_ms,
+                total_ms=int((time.monotonic() - t_start) * 1000),
+                result_summary=full[:200],
+                source="siri",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[orchestrator.stream.siri_fast] audit 失败: {e}")
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"[orchestrator.stream.siri_fast] 失败: {e}")
+        yield _sse("error", {"message": "分析服务暂时不可用，请稍后再试"})
+
+
 async def stream_orchestrator(
     db: Session, user_id: int, req: OrchestratorRequest
 ) -> AsyncIterator[str]:
@@ -865,7 +922,16 @@ async def stream_orchestrator(
     - specialist:  每个专家的结构化输出
     - chunk:       LLM 合并结果的流式文本片段
     - done:        结束信号，带 total_ms
+
+    source=siri: 走 fast 流式路径 (Twin + 直接 LLM stream chunk),
+    跳过 specialist/cross-review/arbitration/journal/cards, 目标 1-2s 内
+    第一个 chunk 出来, 让 voice-chat 流式 TTS 立刻有内容念。
     """
+    if req.source == "siri":
+        async for chunk in _stream_orchestrator_fast(db, user_id, req):
+            yield chunk
+        return
+
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.stream", user_id=user_id)
 

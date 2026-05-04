@@ -98,6 +98,7 @@ function AppContent() {
         <Stack.Screen name="indicator-history" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="trace/index" options={{ headerShown: false }} />
         <Stack.Screen name="trace/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="voice-chat" options={{ headerShown: false, presentation: 'modal' }} />
       </Stack>
       <NotificationBanner />
       <NetworkBanner />

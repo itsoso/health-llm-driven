@@ -77,7 +77,7 @@ export default function ChatScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const kbOffset = Platform.OS === 'ios' ? 49 + insets.bottom : 0;
+  const kbOffset = 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -85,6 +85,15 @@ export default function ChatScreen() {
         <Ionicons name="sparkles" size={18} color={c.brand} />
         <Text style={txt.headerTitle}>AI 健康助理</Text>
         <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          onPress={() => router.push('/voice-chat' as any)}
+          hitSlop={8}
+          style={{ marginRight: 12 }}
+          accessibilityLabel="语音对话"
+          accessibilityRole="button"
+        >
+          <Ionicons name="mic-circle-outline" size={22} color={c.brand} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={chat.newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
           <Ionicons name="create-outline" size={20} color={c.labelSecondary} />
         </TouchableOpacity>

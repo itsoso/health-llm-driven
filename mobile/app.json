@@ -25,6 +25,7 @@
         "NSPhotoLibraryUsageDescription": "选择图片发送给 AI 助手分析",
         "NSCameraUsageDescription": "拍摄食物或健康数据进行分析",
         "NSMicrophoneUsageDescription": "使用语音输入",
+        "NSSpeechRecognitionUsageDescription": "识别你的语音,和健康助理连续对话",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
