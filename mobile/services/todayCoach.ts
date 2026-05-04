@@ -45,7 +45,8 @@ export async function getTodayCoachFocus(today: string): Promise<TodayCoachFocus
   if (highAlert) {
     return {
       status: 'risk',
-      title: highAlert.title,
+      // P3: title 升级为指令性 verdict — "今天注意：{事项}"
+      title: `今天注意：${highAlert.title}`,
       reason: highAlert.message,
       actionLabel: highAlert.action || '查看处理建议',
       actionRoute: '/(tabs)/alerts',
@@ -57,7 +58,8 @@ export async function getTodayCoachFocus(today: string): Promise<TodayCoachFocus
   if (firstCard) {
     return {
       status: 'attention',
-      title: firstCard.title,
+      // P3: 指令性 — "继续执行：{卡名}"
+      title: `继续执行：${firstCard.title}`,
       reason: '你有一个正在执行的健康行动。',
       actionLabel: '查看行动',
       actionRoute: '/(tabs)/alerts',
@@ -69,6 +71,7 @@ export async function getTodayCoachFocus(today: string): Promise<TodayCoachFocus
   if (dataHealth?.garmin?.status && dataHealth.garmin.status !== 'ok') {
     return {
       status: 'missing_data',
+      // P3: 指令性 — 已是命令式, 保持
       title: '先补齐 Garmin 数据',
       reason: dataHealth.garmin.message || '关键生理数据不完整，今日判断可信度会下降。',
       actionLabel: '去设置',
@@ -81,9 +84,18 @@ export async function getTodayCoachFocus(today: string): Promise<TodayCoachFocus
     };
   }
 
+  // P3: ok 状态按 score 分档, 给出更指令性的判断 (高分鼓励加量, 低分提示保守)
+  const totalScore = typeof score?.total_score === 'number' ? score.total_score : null;
+  let okTitle = '今天可以正常推进';
+  if (totalScore !== null) {
+    if (totalScore >= 80) okTitle = '今天恢复良好，可以加点强度';
+    else if (totalScore >= 60) okTitle = '今天保持节奏，无需特别动作';
+    else okTitle = '今天偏低，注意休息和补水';
+  }
+
   return {
     status: 'ok',
-    title: '今日状态稳定',
+    title: okTitle,
     reason: score?.suggestions?.[0] || '暂无高优先级风险，保持记录和执行。',
     actionLabel: '生成今日简报',
     evidence: [{ label: '健康评分', value: String(score?.total_score ?? '--') }],

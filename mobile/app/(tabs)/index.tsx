@@ -205,12 +205,15 @@ export default function HomeScreen() {
         onNewChat={chat.newChat}
         onHistory={() => { setShowHistory(true); loadHistory(); }}
       />
-      <SpecialistChipRow />
+      {/* P3 (2026-05-04): TodayCoach 提到 SpecialistChipRow 之前 — 一句话指令性
+          判断 ("今天注意 X" / "继续执行 Y" / "今天恢复良好...") 比 "AI 押注 4 张"
+          (用户不知道是什么意思) 更优先. 让 home 第一眼是决策, 不是 chrome. */}
       <TodayCoachPanel
         focus={todayCoach.data}
         isLoading={todayCoach.isLoading}
         onAction={handleTodayCoachAction}
       />
+      <SpecialistChipRow />
       <InsightCard />
       <AgentAgendaPanel agenda={agentAgenda.data} onOpenItem={handleAgendaItem} />
       <DataFreshnessPanel />

@@ -50,7 +50,8 @@ describe('getTodayCoachFocus', () => {
     const focus = await getTodayCoachFocus('2026-04-26');
 
     expect(focus.status).toBe('risk');
-    expect(focus.title).toBe('夜间血氧偏低');
+    // P3: title 升级为指令性 verdict
+    expect(focus.title).toBe('今天注意：夜间血氧偏低');
     expect(focus.actionLabel).toBe('查看夜间血氧分析');
     expect(focus.evidence[0]).toEqual({ label: '安全告警', value: '高优先', tone: 'bad' });
   });
@@ -61,7 +62,8 @@ describe('getTodayCoachFocus', () => {
     const focus = await getTodayCoachFocus('2026-04-26');
 
     expect(focus.status).toBe('attention');
-    expect(focus.title).toBe('连续 7 天记录晚餐时间');
+    // P3: 指令性
+    expect(focus.title).toBe('继续执行：连续 7 天记录晚餐时间');
     expect(focus.actionRoute).toBe('/(tabs)/alerts');
   });
 
@@ -89,8 +91,59 @@ describe('getTodayCoachFocus', () => {
     const focus = await getTodayCoachFocus('2026-04-26');
 
     expect(focus.status).toBe('ok');
-    expect(focus.title).toBe('今日状态稳定');
+    // P3: score=82 (≥80) → 鼓励加量的指令式 title
+    expect(focus.title).toBe('今天恢复良好，可以加点强度');
     expect(focus.reason).toBe('保持今天的恢复节奏');
     expect(focus.evidence).toEqual([{ label: '健康评分', value: '82' }]);
+  });
+
+  // ─────────────── P3: ok 状态按 score 分档 ───────────────
+
+  it('ok status with mid score (60-79) shows "保持节奏"', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith('/health-score/enhanced/me')) {
+        return Promise.resolve({ data: { total_score: 70, suggestions: ['继续保持'] } });
+      }
+      if (url === '/data-health/status') {
+        return Promise.resolve({ data: { garmin: { status: 'ok', message: 'ok' } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const focus = await getTodayCoachFocus('2026-04-26');
+    expect(focus.status).toBe('ok');
+    expect(focus.title).toBe('今天保持节奏，无需特别动作');
+  });
+
+  it('ok status with low score (<60) shows "今天偏低"', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith('/health-score/enhanced/me')) {
+        return Promise.resolve({ data: { total_score: 45, suggestions: ['注意休息'] } });
+      }
+      if (url === '/data-health/status') {
+        return Promise.resolve({ data: { garmin: { status: 'ok', message: 'ok' } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const focus = await getTodayCoachFocus('2026-04-26');
+    expect(focus.status).toBe('ok');
+    expect(focus.title).toBe('今天偏低，注意休息和补水');
+  });
+
+  it('ok status without score falls back to default verdict', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith('/health-score/enhanced/me')) {
+        return Promise.resolve({ data: {} });
+      }
+      if (url === '/data-health/status') {
+        return Promise.resolve({ data: { garmin: { status: 'ok', message: 'ok' } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const focus = await getTodayCoachFocus('2026-04-26');
+    expect(focus.status).toBe('ok');
+    expect(focus.title).toBe('今天可以正常推进');
   });
 });
