@@ -186,7 +186,7 @@ class PushService:
         channels: Optional[List[str]] = None,
         respect_quiet_hours: bool = True,
         severity: str = "info",
-        dedup_window_hours: int = 6,
+        dedup_window_hours: int = 24,
     ) -> Dict[str, Any]:
         """
         发送推送通知
@@ -224,13 +224,18 @@ class PushService:
 
         # 去重检查: 有 rule_id 时按 rule_id 去重 (同一规则窗口内只推一次),
         # 否则退化到按 title 去重 (老路径).
+        # 注: 同时认 SENT 和 FAILED — 窗口内尝试过就不重试. 避免同一 alert 因
+        # 多 channel (ios/telegram/wechat) 并发写 log, 每条都独立走 dedup 漏掉.
         if dedup_window_hours and dedup_window_hours > 0:
             window_start = get_china_now() - timedelta(hours=dedup_window_hours)
             dedup_q = self.db.query(NotificationLog).filter(
                 NotificationLog.user_id == user_id,
                 NotificationLog.notification_type == notification_type,
-                NotificationLog.status == NotificationStatus.SENT.value,
-                NotificationLog.sent_at >= window_start,
+                NotificationLog.status.in_([
+                    NotificationStatus.SENT.value,
+                    NotificationStatus.FAILED.value,
+                ]),
+                NotificationLog.created_at >= window_start,
             )
             if rule_id:
                 # PG JSONB ->> 提取 rule_id; SQLite 用字符串 LIKE 作为降级
