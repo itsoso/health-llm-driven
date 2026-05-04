@@ -24,12 +24,13 @@ export type VoiceStyle =
   | 'ios_gentle_tw'
   | 'ios_standard_cn'
   | 'ios_system'
-  // 阿里云 CosyVoice 云端 (真人级, 默认推荐)
-  | 'cloud_soft_hk_female'   // longjiayi — 港腔女声, 带柔软感
-  | 'cloud_warm_female'       // longyuan — 温暖
-  | 'cloud_gentle_cs_female'  // longyue — 温柔
-  | 'cloud_knowing_female'    // longxiaochun — 知性
-  | 'cloud_calm_male';        // longcheng — 沉稳
+  // 阿里云 CosyVoice v2 云端 (真人级)
+  | 'cloud_soft_hk_female'    // longjiayi_v2 — 港普女声, 柔软感
+  | 'cloud_warm_female'       // longwan_v2
+  | 'cloud_gentle_cs_female'  // longyue_v2
+  | 'cloud_knowing_female'    // longxiaochun_v2
+  | 'cloud_casual_female'     // longxiaobai_v2
+  | 'cloud_calm_male';        // longcheng_v2
 
 const STORAGE_KEY = 'tts_voice_style_v2';
 
@@ -44,7 +45,7 @@ export interface VoiceStyleOption {
   badge?: string;
   // iOS provider 用的 SpeechOptions; cloud provider 用 cloudVoiceKey (backend 理解的 voice_style)
   speechOptions?: Pick<Speech.SpeechOptions, 'voice' | 'language' | 'rate' | 'pitch'>;
-  cloudVoiceKey?: 'soft_hk_female' | 'warm_female' | 'gentle_cs_female' | 'knowing_female' | 'calm_male';
+  cloudVoiceKey?: 'soft_hk_female' | 'warm_female' | 'gentle_cs_female' | 'knowing_female' | 'casual_female' | 'calm_male';
 }
 
 export const VOICE_STYLES: VoiceStyleOption[] = [
@@ -52,7 +53,7 @@ export const VOICE_STYLES: VoiceStyleOption[] = [
     key: 'cloud_soft_hk_female',
     provider: 'cloud',
     label: '柔软女声',
-    description: '带轻微港腔, 温柔有亲和力 (需联网)',
+    description: '带港普口音, 温柔有亲和力 (需联网)',
     badge: '推荐',
     cloudVoiceKey: 'soft_hk_female',
   },
@@ -76,6 +77,13 @@ export const VOICE_STYLES: VoiceStyleOption[] = [
     label: '知性女声',
     description: '清晰知性, 沉稳',
     cloudVoiceKey: 'knowing_female',
+  },
+  {
+    key: 'cloud_casual_female',
+    provider: 'cloud',
+    label: '休闲女声',
+    description: '自然轻松, 真人感',
+    cloudVoiceKey: 'casual_female',
   },
   {
     key: 'cloud_calm_male',

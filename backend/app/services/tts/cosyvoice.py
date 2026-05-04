@@ -28,13 +28,14 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 VOICE_MAP = {
-    # 注: 当前账号未开通 cosyvoice-v2, 只能用 v1 音色.
-    # v1 不支持 longyuetw (台腔); longjiayi (港普女声) 是目前最接近"林志玲柔声"的合法选项.
-    "soft_hk_female": "longjiayi",     # 港普女声, 带轻微港腔, 柔软
-    "warm_female": "longyuan",          # 温暖女声
-    "gentle_cs_female": "longyue",      # 温柔女声, 标普
-    "knowing_female": "longxiaochun",   # 知性女声
-    "calm_male": "longcheng",           # 沉稳男声
+    # cosyvoice-v2 真人级音质. voice id 带 _v2 后缀.
+    # 当前账号未开 longyuetw (台腔), 用 longjiayi (港普) 作最接近"林志玲感"的合法选项.
+    "soft_hk_female": "longjiayi_v2",     # 港普女声, 柔软温暖, 默认推荐
+    "warm_female": "longwan_v2",           # 温暖女声
+    "gentle_cs_female": "longyue_v2",      # 温柔女声, 标普
+    "knowing_female": "longxiaochun_v2",   # 知性女声
+    "casual_female": "longxiaobai_v2",     # 休闲女声, 自然
+    "calm_male": "longcheng_v2",           # 沉稳男声
 }
 DEFAULT_VOICE_KEY = "soft_hk_female"
 
@@ -102,9 +103,10 @@ async def synthesize(
 
 def list_voices() -> list[dict]:
     return [
-        {"key": "soft_hk_female", "label": "柔软女声", "description": "带轻微港腔, 温柔有亲和力 (推荐)"},
+        {"key": "soft_hk_female", "label": "柔软女声", "description": "带港普口音, 温柔有亲和力 (推荐)"},
         {"key": "warm_female", "label": "温暖女声", "description": "温暖自然, 日常播报"},
         {"key": "gentle_cs_female", "label": "温柔女声", "description": "标准普通话, 柔和"},
         {"key": "knowing_female", "label": "知性女声", "description": "清晰知性, 沉稳"},
+        {"key": "casual_female", "label": "休闲女声", "description": "自然轻松, 真人感"},
         {"key": "calm_male", "label": "沉稳男声", "description": "低频稳重, 专业感"},
     ]
