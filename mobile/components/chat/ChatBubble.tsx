@@ -207,10 +207,10 @@ export default ChatBubble;
 
 function createStyles(c: ColorPalette, isDark: boolean) {
   return StyleSheet.create({
-    msgRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end' },
+    msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
     msgRowUser: { justifyContent: 'flex-end' },
     msgRowAI: { justifyContent: 'flex-start' },
-    bubble: { maxWidth: '80%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+    bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
     bubbleUser: { backgroundColor: c.brand, borderBottomRightRadius: 4 },
     siriBadge: {
       position: 'absolute',
@@ -237,11 +237,13 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     actionsRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 6,
-      marginTop: 8,
+      gap: 8,
+      marginTop: 10,
+      paddingTop: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.separator,
     },
     actionBtn: {
-      alignSelf: 'flex-start',
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,

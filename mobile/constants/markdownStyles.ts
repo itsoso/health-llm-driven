@@ -10,38 +10,45 @@ import { colors } from './theme';
  *   const md = useMemo(() => createMdStylesChat(c), [c]);
  *   <Markdown style={md}>{content}</Markdown>
  *
- * 为什么是 factory: `react-native-markdown-display` 的 style prop 是静态对象,
- * 而 dark mode 下表头背景 / 边框 / 代码块底色都要跟着主题切换. 把样式写死成
- * 模块级常量在 light mode OK, 暗色下会出白亮的表头/代码块.
+ * 视觉层次约定 (与 web 端 MarkdownRenderer 对齐):
+ *   - heading2 = 主章节, 加左竖线 brand 色, 字重 700
+ *   - heading3 = 次章节, 灰字小号 (用于 "睡眠时间" / "分析" 这种小标题)
+ *   - strong   = 关键 key (如 "平均血氧饱和度"), 加重色
+ *   - em       = 数字 / 强调, brand 色突出 (markdown 里 *94.7%*)
  */
 export function createMdStylesChat(c: ColorPalette) {
   return StyleSheet.create({
-    body: { fontSize: 15, lineHeight: 22, color: c.labelPrimary },
-    heading1: { fontSize: 18, fontWeight: '700', color: c.labelPrimary, marginTop: 8, marginBottom: 4 },
-    heading2: { fontSize: 16, fontWeight: '700', color: c.labelPrimary, marginTop: 6, marginBottom: 2 },
-    heading3: { fontSize: 15, fontWeight: '600', color: c.labelPrimary, marginTop: 4 },
+    body: { fontSize: 15, lineHeight: 23, color: c.labelPrimary },
+    heading1: { fontSize: 18, fontWeight: '700', color: c.labelPrimary, marginTop: 10, marginBottom: 6 },
+    heading2: {
+      fontSize: 15, fontWeight: '700', color: c.labelPrimary,
+      marginTop: 12, marginBottom: 6,
+      borderLeftWidth: 3, borderLeftColor: c.brand,
+      paddingLeft: 8,
+    },
+    heading3: { fontSize: 13, fontWeight: '600', color: c.labelSecondary, marginTop: 8, marginBottom: 2, letterSpacing: 0.5 },
     strong: { fontWeight: '600', color: c.labelPrimary },
-    em: { fontStyle: 'italic' },
-    bullet_list: { marginVertical: 2 },
-    ordered_list: { marginVertical: 2 },
-    list_item: { flexDirection: 'row', marginVertical: 1 },
-    bullet_list_icon: { color: c.labelSecondary, marginLeft: 4, marginRight: 6 },
+    em: { fontStyle: 'normal', fontWeight: '600', color: c.brand },
+    bullet_list: { marginVertical: 4 },
+    ordered_list: { marginVertical: 4 },
+    list_item: { flexDirection: 'row', marginVertical: 2 },
+    bullet_list_icon: { color: c.brand, marginLeft: 4, marginRight: 6 },
     ordered_list_icon: { color: c.labelSecondary, marginLeft: 4, marginRight: 6 },
     code_inline: {
-      backgroundColor: c.fill, borderRadius: 4, paddingHorizontal: 3,
+      backgroundColor: c.fill, borderRadius: 4, paddingHorizontal: 4,
       fontFamily: 'Menlo', fontSize: 13, color: c.brand,
     },
     fence: {
       backgroundColor: c.fill, borderRadius: 6, padding: 8,
       fontFamily: 'Menlo', fontSize: 12, marginVertical: 4, color: c.labelPrimary,
     },
-    paragraph: { marginVertical: 2, color: c.labelPrimary },
+    paragraph: { marginVertical: 3, color: c.labelPrimary },
     link: { color: c.brand },
     blockquote: {
       backgroundColor: c.fill, borderLeftWidth: 3, borderLeftColor: c.brand,
       paddingLeft: 10, paddingVertical: 4, marginVertical: 4,
     },
-    hr: { backgroundColor: c.separator, height: StyleSheet.hairlineWidth, marginVertical: 8 },
+    hr: { backgroundColor: c.separator, height: StyleSheet.hairlineWidth, marginVertical: 10 },
     table: {
       borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
       borderRadius: 6, marginVertical: 6,
