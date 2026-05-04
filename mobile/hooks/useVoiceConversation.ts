@@ -4,23 +4,20 @@ import Voice, {
   type SpeechErrorEvent,
 } from '@react-native-voice/voice';
 import * as Speech from 'expo-speech';
-import api from '../services/api';
+import { streamChat } from '../services/chat';
 
 /**
  * 语音连续对话状态机.
  *
- * 流程:
- *   idle → listening → thinking → speaking → listening (循环直到 exit)
+ * idle → listening → thinking → speaking → idle (等下一轮)
  *
- * 简化点 (MVP):
- * - tap-to-speak: 用户按一下开始说, 说完自动 onSpeechEnd 结束, 或点一下提前结束
- * - 完整响应收齐再 TTS 整段念 (不流式, 降低复杂度)
- * - TTS 期间点击 listening 能打断: 先 Speech.stop(), 再开始录音
+ * 走 /agent/stream (OpenClaw gateway): 后端按 needsSkill 自动分流到 skill
+ * (记录类写库) 或 orchestrator (分析类). 30s 超时变 120s, 并且流式边收边念.
  *
- * 后续迭代:
- * - 流式 TTS (边收 chunk 边念)
- * - VAD 自动静音检测
- * - 音频会话 category (后台播放 / duck 其他音频)
+ * TTS 用"句尾符号"(。！？.!?\n) 切段, 收到一整句就入队播, 降低首音等待.
+ * Speech.speak 并发会打架, 所以用 isSpeakingRef + pending 队列串行化.
+ *
+ * 打断: startListening 会 Speech.stop() + 清空 pending, 让用户随时能插话.
  */
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -30,6 +27,8 @@ export interface VoiceTurn {
   at: number;
 }
 
+const SENTENCE_END = /[。！？.!?\n]/;
+
 export function useVoiceConversation() {
   const [state, setState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
@@ -37,7 +36,127 @@ export function useVoiceConversation() {
   const [error, setError] = useState<string | null>(null);
 
   const latestPartialRef = useRef('');
-  const conversationIdRef = useRef<string | undefined>(undefined);
+  const conversationIdRef = useRef<number | undefined>(undefined);
+
+  // 流式累积 + TTS 队列
+  const pendingTextRef = useRef('');           // 未切成句的 tail
+  const assistantTextRef = useRef('');         // 本轮完整回复 (用于 UI)
+  const ttsQueueRef = useRef<string[]>([]);
+  const isSpeakingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const flushTTS = useCallback(() => {
+    if (isSpeakingRef.current) return;
+    const next = ttsQueueRef.current.shift();
+    if (!next) return;
+    isSpeakingRef.current = true;
+    Speech.speak(next, {
+      language: 'zh-CN', rate: 1.0, pitch: 1.0,
+      onDone: () => { isSpeakingRef.current = false; flushTTS(); },
+      onStopped: () => { isSpeakingRef.current = false; ttsQueueRef.current = []; },
+      onError: () => { isSpeakingRef.current = false; flushTTS(); },
+    });
+  }, []);
+
+  const enqueueSentences = useCallback((chunk: string) => {
+    pendingTextRef.current += chunk;
+    // 反复切出末尾句尾符号之前的部分
+    while (true) {
+      const m = pendingTextRef.current.match(SENTENCE_END);
+      if (!m || m.index === undefined) break;
+      const cut = m.index + 1;
+      const sentence = pendingTextRef.current.slice(0, cut).trim();
+      pendingTextRef.current = pendingTextRef.current.slice(cut);
+      if (sentence) ttsQueueRef.current.push(sentence);
+    }
+    flushTTS();
+  }, [flushTTS]);
+
+  const flushTail = useCallback(() => {
+    const tail = pendingTextRef.current.trim();
+    pendingTextRef.current = '';
+    if (tail) {
+      ttsQueueRef.current.push(tail);
+      flushTTS();
+    }
+  }, [flushTTS]);
+
+  const waitTTSDrain = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      const check = () => {
+        if (ttsQueueRef.current.length === 0 && !isSpeakingRef.current) {
+          resolve();
+        } else {
+          setTimeout(check, 200);
+        }
+      };
+      check();
+    });
+  }, []);
+
+  const submit = useCallback(async (userText: string) => {
+    setState('thinking');
+    setTurns((prev) => [...prev, { role: 'user', text: userText, at: Date.now() }]);
+
+    // 重置本轮状态
+    pendingTextRef.current = '';
+    assistantTextRef.current = '';
+    ttsQueueRef.current = [];
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    let replyStarted = false;
+
+    try {
+      for await (const evt of streamChat(userText, conversationIdRef.current, undefined, ac.signal)) {
+        if (evt.type === 'token' || evt.type === 'tool') {
+          const chunk = evt.content || '';
+          if (!chunk) continue;
+          if (!replyStarted) {
+            replyStarted = true;
+            setState('speaking');
+            setTurns((prev) => [...prev, { role: 'assistant', text: '', at: Date.now() }]);
+          }
+          assistantTextRef.current += chunk;
+          setTurns((prev) => {
+            const copy = prev.slice();
+            const last = copy[copy.length - 1];
+            if (last && last.role === 'assistant') {
+              copy[copy.length - 1] = { ...last, text: assistantTextRef.current };
+            }
+            return copy;
+          });
+          enqueueSentences(chunk);
+        } else if (evt.type === 'done') {
+          if (evt.conversationId && !conversationIdRef.current) {
+            conversationIdRef.current = evt.conversationId;
+          }
+          flushTail();
+        } else if (evt.type === 'error') {
+          throw new Error(evt.content || '请求出错');
+        }
+      }
+      if (!replyStarted) {
+        setState('idle');
+        return;
+      }
+      flushTail();
+      await waitTTSDrain();
+      setState('idle');
+    } catch (e: any) {
+      const msg = e?.message || '请求失败';
+      if (msg === 'aborted') {
+        setState('idle');
+        return;
+      }
+      setError(msg);
+      setTurns((prev) => [...prev, { role: 'assistant', text: `[错误] ${msg}`, at: Date.now() }]);
+      setState('error');
+    } finally {
+      abortRef.current = null;
+    }
+  }, [enqueueSentences, flushTail, waitTTSDrain]);
 
   // ── STT handlers ───────────────────────────────────────────────
   useEffect(() => {
@@ -52,13 +171,9 @@ export function useVoiceConversation() {
       setTranscript(val);
     };
     Voice.onSpeechEnd = () => {
-      // 用户说完, 自动提交
       const text = (latestPartialRef.current || '').trim();
-      if (text) {
-        submit(text);
-      } else {
-        setState('idle');
-      }
+      if (text) submit(text);
+      else setState('idle');
     };
     Voice.onSpeechError = (e: SpeechErrorEvent) => {
       const msg = e.error?.message || '语音识别失败';
@@ -68,14 +183,17 @@ export function useVoiceConversation() {
     return () => {
       Voice.destroy().then(() => Voice.removeAllListeners());
       Speech.stop();
+      abortRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [submit]);
 
-  // ── Actions ────────────────────────────────────────────────────
   const startListening = useCallback(async () => {
     try {
-      await Speech.stop(); // 打断 TTS
+      // 打断进行中的 TTS / 请求
+      Speech.stop();
+      ttsQueueRef.current = [];
+      isSpeakingRef.current = false;
+      abortRef.current?.abort();
       setError(null);
       setTranscript('');
       latestPartialRef.current = '';
@@ -88,60 +206,14 @@ export function useVoiceConversation() {
   }, []);
 
   const stopListening = useCallback(async () => {
-    try {
-      await Voice.stop();
-    } catch {
-      // ignore
-    }
+    try { await Voice.stop(); } catch {}
   }, []);
-
-  const speak = useCallback((text: string) => {
-    return new Promise<void>((resolve) => {
-      Speech.speak(text, {
-        language: 'zh-CN',
-        rate: 1.0,
-        pitch: 1.0,
-        onDone: () => resolve(),
-        onStopped: () => resolve(),
-        onError: () => resolve(),
-      });
-    });
-  }, []);
-
-  const submit = useCallback(async (userText: string) => {
-    setState('thinking');
-    setTurns((prev) => [...prev, { role: 'user', text: userText, at: Date.now() }]);
-
-    try {
-      // 调 orchestrator, 带 source=siri 让后端走口语化 prompt.
-      const { data } = await api.post('/orchestrator/chat', {
-        query: userText,
-        source: 'siri',
-        conversation_id: conversationIdRef.current,
-      });
-      if (data.conversation_id) {
-        conversationIdRef.current = data.conversation_id;
-      }
-      const reply = (data.synthesis || data.message || '').trim();
-      if (!reply) {
-        setState('idle');
-        return;
-      }
-      setTurns((prev) => [...prev, { role: 'assistant', text: reply, at: Date.now() }]);
-      setState('speaking');
-      await speak(reply);
-      // 念完自动回到 idle, 等用户点麦克风继续; 不自动开新录音避免误触发
-      setState('idle');
-    } catch (e: any) {
-      const msg = e?.response?.data?.detail || e?.message || '请求失败';
-      setError(msg);
-      setTurns((prev) => [...prev, { role: 'assistant', text: `[错误] ${msg}`, at: Date.now() }]);
-      setState('error');
-    }
-  }, [speak]);
 
   const reset = useCallback(() => {
     Speech.stop();
+    ttsQueueRef.current = [];
+    isSpeakingRef.current = false;
+    abortRef.current?.abort();
     Voice.stop().catch(() => {});
     setState('idle');
     setTranscript('');
