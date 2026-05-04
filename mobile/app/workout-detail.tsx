@@ -458,12 +458,49 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    // 顶部多垫一点, 让 status bar 时间和 back 按钮不挤在一起
+    paddingTop: Platform.OS === 'ios' ? 4 : spacing.sm,
+    backgroundColor: colors.bgPrimary,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg },
   detailRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
+  },
+  // 详细指标 2 列 grid
+  metricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  metricChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    // (100% - gap) / 2 — flex: '48%' 在 RN 上不稳, 直接 minWidth
+    flexBasis: '48%',
+    flexGrow: 1,
+    backgroundColor: colors.bgPrimary,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    minHeight: 52,
+  },
+  metricIcon: {
+    width: 32, height: 32, borderRadius: radii.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  emptyMetrics: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    gap: 6,
   },
   tipBox: { flexDirection: 'row', gap: 6, alignItems: 'flex-start', backgroundColor: colors.bgPrimary, borderRadius: radii.sm, padding: spacing.sm },
   cacheBadge: {
@@ -476,6 +513,8 @@ const txt = {
   title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
   detailLabel: { fontSize: 14, color: colors.labelSecondary } as TextStyle,
   detailValue: { fontSize: 14, fontWeight: '600', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  metricLabel: { fontSize: 11, color: colors.labelTertiary, marginBottom: 2 } as TextStyle,
+  metricValue: { fontSize: 14, fontWeight: '700', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
   analyzeBtn: { fontSize: 14, fontWeight: '600', color: colors.purple } as TextStyle,
   reanalyzeBtn: { fontSize: 13, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
   cacheBadgeText: { fontSize: 11, fontWeight: '500', color: colors.green } as TextStyle,

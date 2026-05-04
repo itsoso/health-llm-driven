@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TextStyle, TouchableOpacity, LayoutAnimation, Animated } from 'react-native';
+import { View, Text, StyleSheet, TextStyle, ViewStyle, TouchableOpacity, LayoutAnimation, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,8 +65,25 @@ export default function HomeHeader({
   const { c, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const [collapsed, setCollapsed] = useState(false);
-  const hour = new Date().getHours();
+  // 实时时钟: 每 30s 刷一次, 只存时间展示字符串, 不触发其他重渲
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    // 对齐整分钟边界: 算距离下一个整分钟的毫秒数, 之后再每 60s 更新
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const msToNextMin = (60 - new Date().getSeconds()) * 1000;
+    const firstTimer = setTimeout(() => {
+      setNow(new Date());
+      interval = setInterval(() => setNow(new Date()), 60_000);
+    }, msToNextMin);
+    return () => {
+      clearTimeout(firstTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, []);
+  const hour = now.getHours();
   const greeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+  const timeStr = `${String(hour).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const dateStr = `${now.getMonth() + 1}月${now.getDate()}日 ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()]}`;
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -92,6 +109,7 @@ export default function HomeHeader({
             </Svg>
             <Text style={{ position: 'absolute', fontSize: 9, fontWeight: '800', color: sc(score, c) }}>{score}</Text>
           </View>
+          <Text style={styles.miniTime}>{timeStr}</Text>
           <Text style={styles.miniWeather} numberOfLines={1}>{city} {temperature != null ? `${Math.round(temperature)}°` : ''} {weatherDesc || ''}</Text>
           <MiniVital color={c.purple} value={sleep || '--'} />
           <MiniVital color={c.pink} value={hr || '--'} />
@@ -120,7 +138,13 @@ export default function HomeHeader({
       <View style={styles.topRow}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={[styles.greeting, { flex: 1 }]}>{greeting}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greeting}>{greeting}</Text>
+              <View style={styles.timeLine}>
+                <Text style={styles.timeText}>{timeStr}</Text>
+                <Text style={styles.dateText}>  {dateStr}</Text>
+              </View>
+            </View>
             {onHistory && (
               <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onHistory(); }} style={styles.actionBtn} hitSlop={8} activeOpacity={0.6}>
                 <Ionicons name="chatbubbles-outline" size={18} color={c.labelTertiary} />
@@ -270,6 +294,9 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     actionBtn: { padding: 8, minWidth: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
     collapseBtn: { alignItems: 'center', paddingTop: 6 },
     greeting: { fontSize: 22, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+    timeLine: { marginTop: 2, flexDirection: 'row', alignItems: 'baseline' } as ViewStyle,
+    timeText: { fontSize: 14, fontWeight: '700', color: c.brand, fontVariant: ['tabular-nums'] as const } as TextStyle,
+    dateText: { fontSize: 12, color: c.labelTertiary } as TextStyle,
     weatherMain: { fontSize: 13, color: c.labelPrimary } as TextStyle,
     aqiText: { fontSize: 11, fontWeight: '600' } as TextStyle,
     pm25: { fontSize: 10, color: c.labelSecondary } as TextStyle,
@@ -277,5 +304,6 @@ function createStyles(c: ColorPalette, isDark: boolean) {
     scoreNum: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
     scoreLabel: { fontSize: 8, fontWeight: '500', color: c.labelTertiary, marginTop: -2 } as TextStyle,
     miniWeather: { fontSize: 12, color: c.labelSecondary, flex: 1 } as TextStyle,
+    miniTime: { fontSize: 13, fontWeight: '700', color: c.brand, fontVariant: ['tabular-nums'] as const } as TextStyle,
   });
 }

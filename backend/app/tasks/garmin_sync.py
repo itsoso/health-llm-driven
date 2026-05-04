@@ -14,6 +14,29 @@ from app.models.daily_health import WorkoutRecord, WorkoutAnalysisResult
 logger = logging.getLogger(__name__)
 
 
+# 用于跑后教练推送 — aggregation 里第一段自然语言作为 push body.
+# 跳过 markdown 标题行 (1-6 个 #), 取第一段非空正文; 截断到 APNs 合理长度 (~160 char).
+def _first_paragraph(text: str, max_len: int = 160) -> str:
+    if not text:
+        return ""
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    for p in paragraphs:
+        # 去掉纯 markdown 标题段 (形如 "## 本次训练总结")
+        first_line = p.splitlines()[0].strip()
+        if first_line.startswith("#"):
+            # 标题后若紧跟正文, p 里会有多行, 取标题以外的
+            rest = "\n".join(p.splitlines()[1:]).strip()
+            if rest:
+                return rest[:max_len]
+            continue
+        # 剥常见 markdown: **粗体** → 粗体; 开头 list 符号 → 去掉
+        clean = p.replace("**", "").lstrip("-*•· ").strip()
+        if clean:
+            return clean[:max_len]
+    # fallback: 原文截断
+    return text.strip()[:max_len]
+
+
 @celery_app.task(bind=True, max_retries=3)
 def sync_user_garmin_data(self, user_id: int, days: int = 1):
     """
@@ -115,7 +138,7 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
                     )
                 new_workouts = new_workouts_query.all()
                 for w in new_workouts:
-                    logger.info(f"触发自动分析: user={user_id} workout={w.id} ({w.activity_type})")
+                    logger.info(f"触发自动分析: user={user_id} workout={w.id} ({w.workout_type})")
                     auto_analyze_workout.delay(user_id, w.id)
             except Exception as e:
                 logger.warning(f"检测新运动触发分析失败: {e}")
@@ -281,16 +304,38 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
                 result = await service.openclaw.analyze(prompt)
                 service._save_analysis_result(user_id, workout_id, prompt, result)
 
-                aggregation = (result.get("aggregation") or "")[:200]
-                activity = workout.activity_type or "运动"
+                # 构造推送: 标题用运动类型 + 一行概况, 正文取 aggregation 的第一段 (跳过 markdown 标题行).
+                activity = workout.workout_type or "运动"
+                summary_bits = []
+                if workout.distance_meters:
+                    summary_bits.append(f"{workout.distance_meters / 1000:.1f}km")
+                if workout.duration_seconds:
+                    summary_bits.append(f"{workout.duration_seconds // 60}分钟")
+                summary = " · ".join(summary_bits)
+                title = f"跑后教练: {activity}" + (f" ({summary})" if summary else "")
+
+                body = _first_paragraph(result.get("aggregation") or "")
+                if not body:
+                    body = "你的运动数据已分析完成，点击查看详情"
+
                 try:
                     from app.services.notification.push_service import PushService
                     push_svc = PushService(db)
                     await push_svc.send_notification(
                         user_id=user_id,
                         notification_type="workout_analysis",
-                        title=f"运动分析完成: {activity}",
-                        content=aggregation or "你的运动数据已分析完成，点击查看详情",
+                        title=title,
+                        content=body,
+                        data={
+                            # 点推送跳 workout-detail (deep_link 已在 mobile/hooks/useNotifications.ts 处理)
+                            "deep_link": f"/workout-detail?id={workout_id}",
+                            # rule_id 保证同一 workout 只推一次 — 避免重试/重新分析重复推送
+                            "rule_id": f"workout_{workout_id}",
+                            "kind": "workout_analysis",
+                            "workout_id": workout_id,
+                        },
+                        # 7 天窗口内同一 workout_id 不重推
+                        dedup_window_hours=168,
                     )
                 except Exception as push_err:
                     logger.warning(f"[自动分析] 推送通知失败: {push_err}")

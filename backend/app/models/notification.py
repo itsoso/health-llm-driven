@@ -23,6 +23,7 @@ class NotificationType(str, enum.Enum):
     AI_ADVICE = "ai_advice"  # AI 建议推送
     GOAL_PROGRESS = "goal_progress"  # 目标进度提醒
     WEEKLY_REPORT = "weekly_report"  # 周报
+    WORKOUT_ANALYSIS = "workout_analysis"  # 跑后教练 — Garmin 同步后自动分析 + 推送
 
 
 class NotificationStatus(str, enum.Enum):
