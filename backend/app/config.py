@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     llm_vision_api_key: Optional[str] = None  # 独立 Vision API key（如 DashScope）
     llm_vision_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
+    # === TTS (阿里云 DashScope CosyVoice) ===
+    tts_provider: str = "dashscope"  # dashscope | disabled
+    tts_api_key: Optional[str] = None  # DashScope API key; 空则复用 llm_vision_api_key
+    tts_model: str = "cosyvoice-v1"  # cosyvoice-v1 / cosyvoice-v2
+    tts_default_voice: str = "longxiaochun"  # 温柔知性女声; 其他参考阿里云文档
+    tts_cache_dir: str = "/tmp/tts_cache"
+    tts_cache_enabled: bool = True
+
     # Ollama 本地模型配置
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"

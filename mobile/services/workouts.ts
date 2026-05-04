@@ -63,9 +63,25 @@ export interface WorkoutAnalysis {
   improvement_tips: string[];
 }
 
+export interface HeartRatePoint { time: number; hr: number; }
+export interface PacePoint { time: number; pace: number; }
+export interface ElevationPoint { distance: number; elevation: number; }
+
+export interface HrZoneBucket { zone: string; minutes: number; percentage: number; }
+
 export interface WorkoutChartData {
-  heart_rate_zones: { zone: string; minutes: number; percentage: number }[];
-  heart_rate_timeline: { time: string; value: number }[];
+  workout_id?: number;
+  workout_type?: string;
+  duration_seconds?: number;
+  heart_rate_timeline: HeartRatePoint[] | null;
+  heart_rate_zones: HrZoneBucket[];
+  pace_timeline?: PacePoint[] | null;
+  elevation_timeline?: ElevationPoint[] | null;
+  avg_heart_rate?: number | null;
+  max_heart_rate?: number | null;
+  avg_pace_display?: string | null;
+  total_distance_km?: number | null;
+  calories?: number | null;
 }
 
 export async function getWorkouts(limit = 20, offset = 0): Promise<WorkoutSummary[]> {

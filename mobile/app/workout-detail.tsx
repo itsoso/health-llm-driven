@@ -3,34 +3,84 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import MapView, { Polyline as MapPolyline } from 'react-native-maps';
+import MapView, { Polyline as MapPolyline, Marker } from 'react-native-maps';
 import Markdown from 'react-native-markdown-display';
+import { useQuery } from '@tanstack/react-query';
 import { useWorkoutDetail } from '../hooks/useWorkouts';
-import { analyzeWorkout, getPostWorkoutAnalysis, type WorkoutAnalysis, type PostWorkoutAnalysisResponse } from '../services/workouts';
-import MetricTile from '../components/design-system/MetricTile';
+import { analyzeWorkout, getPostWorkoutAnalysis, getWorkoutChart, type WorkoutAnalysis, type PostWorkoutAnalysisResponse, type WorkoutChartData } from '../services/workouts';
 import HealthCard from '../components/design-system/HealthCard';
-import { colors, spacing, radii, metricColors } from '../constants/theme';
+import HeroMetrics from '../components/workout/HeroMetrics';
+import HrChart from '../components/workout/HrChart';
+import PaceBars from '../components/workout/PaceBars';
+import HrZoneBar from '../components/workout/HrZoneBar';
+import { colors, spacing, radii } from '../constants/theme';
 
-interface RoutePoint { lat: number; lng: number }
+interface RoutePoint { lat: number; lng: number; time?: number }
 
-function RouteMap({ routeJson, onTouchStart, onTouchEnd }: { routeJson: string; onTouchStart?: () => void; onTouchEnd?: () => void }) {
-  const points: RoutePoint[] = useMemo(() => {
-    try {
-      const parsed = JSON.parse(routeJson);
-      if (!Array.isArray(parsed) || parsed.length < 2) return [];
-      return parsed.filter((p: any) => p.lat != null && p.lng != null);
-    } catch { return []; }
-  }, [routeJson]);
+function parseRoutePoints(raw: string | null): RoutePoint[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((p: any) => p && p.lat != null && p.lng != null);
+  } catch { return []; }
+}
 
+/** 速度渐变轨迹: 按 pace_timeline 把路径分 N 段, 每段一个 Polyline, 颜色按配速. */
+function RouteMap({
+  routeJson,
+  paceTimeline,
+  onTouchStart, onTouchEnd,
+}: {
+  routeJson: string;
+  paceTimeline?: { time: number; pace: number }[] | null;
+  onTouchStart?: () => void;
+  onTouchEnd?: () => void;
+}) {
+  const points = useMemo(() => parseRoutePoints(routeJson), [routeJson]);
   if (points.length < 2) return null;
 
-  const coordinates = points.map(p => ({ latitude: p.lat, longitude: p.lng }));
   const lats = points.map(p => p.lat);
   const lngs = points.map(p => p.lng);
   const minLat = Math.min(...lats), maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
   const padLat = (maxLat - minLat) * 0.15 || 0.002;
   const padLng = (maxLng - minLng) * 0.15 || 0.002;
+
+  // 速度渐变分段: 把 points 切成 ~20 段, 用 pace_timeline 对每段取平均配速
+  const coloredSegments = useMemo(() => {
+    const coords = points.map(p => ({ latitude: p.lat, longitude: p.lng }));
+    if (!paceTimeline || paceTimeline.length < 2 || !points[0].time) {
+      return [{ coords, color: colors.brand }];
+    }
+    const paces = paceTimeline.map(p => p.pace);
+    const minPace = Math.min(...paces);
+    const maxPace = Math.max(...paces);
+    const range = Math.max(10, maxPace - minPace);
+    const barColor = (pace: number) => {
+      const ratio = (pace - minPace) / range;
+      if (ratio < 0.33) return '#4CAF50';
+      if (ratio < 0.66) return '#FFB84D';
+      return '#FF7043';
+    };
+
+    const nSeg = Math.min(24, Math.max(6, Math.floor(points.length / 10)));
+    const pointsPerSeg = Math.max(2, Math.floor(points.length / nSeg));
+    const segs: { coords: { latitude: number; longitude: number }[]; color: string }[] = [];
+    for (let i = 0; i < points.length - 1; i += pointsPerSeg) {
+      const end = Math.min(points.length, i + pointsPerSeg + 1);
+      const slice = coords.slice(i, end);
+      if (slice.length < 2) continue;
+      const segStartTime = points[i].time || 0;
+      const segEndTime = points[Math.min(points.length - 1, end - 1)].time || 0;
+      const inRange = paceTimeline.filter(pt => pt.time >= segStartTime && pt.time <= segEndTime);
+      const avgPace = inRange.length > 0
+        ? inRange.reduce((s, p) => s + p.pace, 0) / inRange.length
+        : (minPace + maxPace) / 2;
+      segs.push({ coords: slice, color: barColor(avgPace) });
+    }
+    return segs.length > 0 ? segs : [{ coords, color: colors.brand }];
+  }, [points, paceTimeline]);
 
   return (
     <HealthCard title="运动轨迹" icon="map-outline" iconColor={colors.blue} iconBg={colors.tintBlue}>
@@ -50,12 +100,49 @@ function RouteMap({ routeJson, onTouchStart, onTouchEnd }: { routeJson: string; 
           }}
           zoomEnabled rotateEnabled={false} pitchEnabled={false} mapType="standard"
         >
-          <MapPolyline coordinates={coordinates} strokeColor={colors.brand} strokeWidth={3} />
+          {coloredSegments.map((s, i) => (
+            <MapPolyline key={i} coordinates={s.coords} strokeColor={s.color} strokeWidth={4} />
+          ))}
+          <Marker coordinate={{ latitude: points[0].lat, longitude: points[0].lng }}>
+            <View style={markerStyles.start}><Text style={markerStyles.startLabel}>起</Text></View>
+          </Marker>
+          <Marker coordinate={{ latitude: points[points.length - 1].lat, longitude: points[points.length - 1].lng }}>
+            <View style={markerStyles.end}><Text style={markerStyles.endLabel}>终</Text></View>
+          </Marker>
         </MapView>
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 8 }}>
+        <LegendDot color="#4CAF50" label="快" />
+        <LegendDot color="#FFB84D" label="中" />
+        <LegendDot color="#FF7043" label="慢" />
       </View>
     </HealthCard>
   );
 }
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ width: 10, height: 3, borderRadius: 2, backgroundColor: color }} />
+      <Text style={{ fontSize: 11, color: colors.labelTertiary }}>{label}</Text>
+    </View>
+  );
+}
+
+const markerStyles = StyleSheet.create({
+  start: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#4CAF50', borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  end: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#FF5252', borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  startLabel: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  endLabel: { color: '#fff', fontSize: 10, fontWeight: '700' },
+});
 
 function formatTime(isoStr: string | null): string | null {
   if (!isoStr) return null;
@@ -69,11 +156,29 @@ function parseAnalysisJson(raw: string | null): Record<string, any> | null {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+const WORKOUT_TYPE_LABEL: Record<string, string> = {
+  running: '跑步',
+  cycling: '骑行',
+  walking: '步行',
+  swimming: '游泳',
+  yoga: '瑜伽',
+  strength_training: '力量',
+  hiit: 'HIIT',
+};
+
 export default function WorkoutDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const workoutId = parseInt(id || '0');
   const { data: workout, isLoading } = useWorkoutDetail(workoutId);
+
+  // Chart data — 心率/配速/海拔时序
+  const { data: chart } = useQuery<WorkoutChartData>({
+    queryKey: ['workout-chart', workoutId],
+    queryFn: () => getWorkoutChart(workoutId),
+    enabled: !!workoutId,
+    staleTime: 300_000,
+  });
 
   const [analysis, setAnalysis] = useState<WorkoutAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -82,11 +187,8 @@ export default function WorkoutDetailScreen() {
   const [fromCache, setFromCache] = useState(false);
   const [mapActive, setMapActive] = useState(false);
 
-  // Auto-load cached analysis on mount
   useEffect(() => {
     if (!workout || !workoutId) return;
-
-    // 1. Basic analysis from workout.ai_analysis
     if (workout.ai_analysis && !analysis) {
       const parsed = parseAnalysisJson(workout.ai_analysis);
       if (parsed) {
@@ -94,8 +196,6 @@ export default function WorkoutDetailScreen() {
         setFromCache(true);
       }
     }
-
-    // 2. Post-workout scientific analysis (cache_only)
     if (!postAnalysis) {
       getPostWorkoutAnalysis(workoutId, false, true)
         .then(res => {
@@ -108,7 +208,7 @@ export default function WorkoutDetailScreen() {
     }
   }, [workout?.id]);
 
-  const handleAnalyze = useCallback(async (forceRegenerate = false) => {
+  const handleAnalyze = useCallback(async () => {
     if (!workoutId) return;
     setAnalyzing(true);
     try {
@@ -136,12 +236,11 @@ export default function WorkoutDetailScreen() {
         setPostAnalysis(res);
         setFromCache(!!res.from_cache);
       }
-    } catch { console.warn('Failed to load post-workout analysis cache'); } finally {
+    } catch { } finally {
       setPostAnalyzing(false);
     }
   }, [workoutId]);
 
-  // Extract post-analysis markdown content (must run on every render — keep before any early return)
   const postContent = useMemo(() => {
     if (!postAnalysis) return null;
     const a = postAnalysis as Record<string, any>;
@@ -174,11 +273,14 @@ export default function WorkoutDetailScreen() {
   const durationMin = workout.duration_seconds ? Math.round(workout.duration_seconds / 60) : 0;
   const distanceKm = workout.distance_meters ? (workout.distance_meters / 1000) : null;
   const dateStr = workout.workout_date
-    ? new Date(workout.workout_date).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+    ? new Date(workout.workout_date).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })
     : '';
   const startStr = formatTime(workout.start_time);
   const endStr = formatTime(workout.end_time);
   const timeRange = startStr && endStr ? `${startStr} - ${endStr}` : startStr || null;
+
+  const avgPaceDisplay = chart?.avg_pace_display || null;
+  const workoutTypeLabel = WORKOUT_TYPE_LABEL[workout.workout_type] || workout.workout_type || '运动';
 
   const hasAnalysis = !!(analysis || postAnalysis);
 
@@ -188,37 +290,61 @@ export default function WorkoutDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
         </TouchableOpacity>
-        <Text style={txt.title}>{workout.workout_name || workout.workout_type || '运动'}</Text>
+        <Text style={txt.title}>{workout.workout_name || workoutTypeLabel}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} scrollEnabled={!mapActive}>
-        <Text style={txt.date}>{dateStr}</Text>
-        {timeRange && <Text style={txt.timeRange}>{timeRange}</Text>}
+        <HeroMetrics
+          distanceKm={distanceKm}
+          durationMin={durationMin}
+          avgPaceDisplay={avgPaceDisplay}
+          avgHr={workout.avg_heart_rate ?? null}
+          workoutTypeLabel={workoutTypeLabel}
+          dateLabel={dateStr + (timeRange ? ` · ${timeRange}` : '')}
+        />
 
-        {/* Key metrics */}
-        <View style={styles.metricsRow}>
-          <MetricTile label="时长" value={String(durationMin)} unit="min"
-            icon="time-outline" color={colors.brand} tintColor={colors.brandLight} />
-          <MetricTile label="卡路里" value={String(workout.calories ?? '--')} unit="kcal"
-            icon="flame-outline" color={metricColors.calories.main} tintColor={metricColors.calories.tint} />
-        </View>
-        <View style={styles.metricsRow}>
-          {workout.avg_heart_rate != null && (
-            <MetricTile label="平均心率" value={String(workout.avg_heart_rate)} unit="bpm"
-              icon="heart-outline" color={metricColors.heartRate.main} tintColor={metricColors.heartRate.tint} />
-          )}
-          {distanceKm != null && (
-            <MetricTile label="距离" value={distanceKm.toFixed(2)} unit="km"
-              icon="navigate-outline" color={colors.blue} tintColor={colors.tintBlue} />
-          )}
-        </View>
+        {/* HR 曲线 */}
+        {chart?.heart_rate_timeline && chart.heart_rate_timeline.length > 1 && (
+          <HealthCard title="心率变化" icon="heart-outline" iconColor="#FF5252" iconBg="#FFE5E5">
+            <HrChart
+              samples={chart.heart_rate_timeline}
+              hrMax={chart.max_heart_rate || workout.max_heart_rate}
+            />
+          </HealthCard>
+        )}
 
-        {/* Route map */}
-        {workout.route_data && <RouteMap routeJson={workout.route_data} onTouchStart={() => setMapActive(true)} onTouchEnd={() => setMapActive(false)} />}
+        {/* HR zones */}
+        {chart?.heart_rate_zones && chart.heart_rate_zones.length > 0 && (
+          <HealthCard title="心率区间" icon="stats-chart-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
+            <HrZoneBar zones={chart.heart_rate_zones} />
+          </HealthCard>
+        )}
+
+        {/* 配速分段 */}
+        {chart?.pace_timeline && chart.pace_timeline.length > 1 && distanceKm && distanceKm >= 1 && (
+          <HealthCard title="公里配速" icon="speedometer-outline" iconColor={colors.purple} iconBg={colors.tintPurple}>
+            <PaceBars
+              paceTimeline={chart.pace_timeline}
+              totalDistanceKm={distanceKm}
+              durationSec={workout.duration_seconds || null}
+            />
+          </HealthCard>
+        )}
+
+        {/* Route */}
+        {workout.route_data && (
+          <RouteMap
+            routeJson={workout.route_data}
+            paceTimeline={chart?.pace_timeline || null}
+            onTouchStart={() => setMapActive(true)}
+            onTouchEnd={() => setMapActive(false)}
+          />
+        )}
 
         {/* Extra details */}
         <HealthCard title="详细指标" icon="analytics-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
+          <DetailRow label="卡路里" value={workout.calories != null ? `${workout.calories} kcal` : '--'} />
           <DetailRow label="最大心率" value={workout.max_heart_rate != null ? `${workout.max_heart_rate} bpm` : '--'} />
           <DetailRow label="有氧训练效果" value={workout.training_effect_aerobic?.toFixed(1) ?? '--'} />
           <DetailRow label="无氧训练效果" value={workout.training_effect_anaerobic?.toFixed(1) ?? '--'} />
@@ -226,14 +352,12 @@ export default function WorkoutDetailScreen() {
           {workout.steps != null && <DetailRow label="步数" value={String(workout.steps)} />}
         </HealthCard>
 
-        {/* AI Analysis — cached or on-demand */}
+        {/* AI Analysis */}
         <HealthCard title="AI 分析" icon="sparkles-outline" iconColor={colors.purple} iconBg={colors.tintPurple}
           rightAccessory={
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {fromCache && hasAnalysis && (
-                <View style={styles.cacheBadge}>
-                  <Text style={txt.cacheBadgeText}>已保存</Text>
-                </View>
+                <View style={styles.cacheBadge}><Text style={txt.cacheBadgeText}>已保存</Text></View>
               )}
               {!fromCache && hasAnalysis && (
                 <View style={[styles.cacheBadge, { backgroundColor: '#E8F0FE' }]}>
@@ -241,7 +365,7 @@ export default function WorkoutDetailScreen() {
                 </View>
               )}
               {hasAnalysis && !analyzing && !postAnalyzing && (
-                <TouchableOpacity onPress={() => handleAnalyze(true)} activeOpacity={0.7}>
+                <TouchableOpacity onPress={() => handleAnalyze()} activeOpacity={0.7}>
                   <Text style={txt.reanalyzeBtn}>重新分析</Text>
                 </TouchableOpacity>
               )}
@@ -314,7 +438,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.lg },
-  metricsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   detailRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator,
@@ -328,10 +451,8 @@ const styles = StyleSheet.create({
 
 const txt = {
   title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  date: { fontSize: 14, color: colors.labelSecondary, marginBottom: 2 } as TextStyle,
-  timeRange: { fontSize: 13, color: colors.labelTertiary, marginBottom: spacing.lg, fontVariant: ['tabular-nums'] as const } as TextStyle,
   detailLabel: { fontSize: 14, color: colors.labelSecondary } as TextStyle,
-  detailValue: { fontSize: 14, fontWeight: '600', color: colors.labelPrimary } as TextStyle,
+  detailValue: { fontSize: 14, fontWeight: '600', color: colors.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
   analyzeBtn: { fontSize: 14, fontWeight: '600', color: colors.purple } as TextStyle,
   reanalyzeBtn: { fontSize: 13, fontWeight: '500', color: colors.labelTertiary } as TextStyle,
   cacheBadgeText: { fontSize: 11, fontWeight: '500', color: colors.green } as TextStyle,

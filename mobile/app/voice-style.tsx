@@ -1,36 +1,89 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextStyle } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextStyle, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
+import { createAudioPlayer } from 'expo-audio';
 import { colors, spacing, radii } from '../constants/theme';
 import {
   VOICE_STYLES, type VoiceStyle,
-  loadVoiceStyle, saveVoiceStyle, resolveSpeechOptions,
+  loadVoiceStyle, saveVoiceStyle, resolveIosSpeechOptions, getVoiceStyle,
 } from '../services/voiceStyle';
+import { synthesize as cloudSynthesize } from '../services/cloudTts';
 
 const PREVIEW_TEXT = '你好，我是你的健康助理。今天血氧不错，建议继续保持。';
 
 export default function VoiceStyleScreen() {
   const router = useRouter();
   const [current, setCurrent] = useState<VoiceStyle | null>(null);
+  const [previewing, setPreviewing] = useState<VoiceStyle | null>(null);
+  const previewPlayerRef = useRef<{ cancel: () => void } | null>(null);
 
   useEffect(() => {
     loadVoiceStyle().then(setCurrent);
-    return () => { Speech.stop(); };
+    return () => {
+      previewPlayerRef.current?.cancel();
+      Speech.stop();
+    };
   }, []);
+
+  const stopPreview = () => {
+    try { Speech.stop(); } catch {}
+    previewPlayerRef.current?.cancel();
+    previewPlayerRef.current = null;
+  };
 
   const pick = async (style: VoiceStyle) => {
     Haptics.selectionAsync();
+    stopPreview();
     setCurrent(style);
     await saveVoiceStyle(style);
-    // 立即试听
-    Speech.stop();
-    const opts = await resolveSpeechOptions(style);
-    Speech.speak(PREVIEW_TEXT, opts);
+
+    const opt = getVoiceStyle(style);
+    setPreviewing(style);
+    if (opt.provider === 'cloud') {
+      try {
+        const voiceKey = opt.cloudVoiceKey ?? 'gentle_female';
+        const { localUri } = await cloudSynthesize({ text: PREVIEW_TEXT, voiceKey });
+        const player = createAudioPlayer({ uri: localUri });
+        const done = () => {
+          setPreviewing((cur) => (cur === style ? null : cur));
+          try { player.remove(); } catch {}
+          previewPlayerRef.current = null;
+        };
+        previewPlayerRef.current = {
+          cancel: () => {
+            try { player.pause(); } catch {}
+            done();
+          },
+        };
+        const sub = player.addListener('playbackStatusUpdate', (s: any) => {
+          if (s?.didJustFinish || s?.finished) {
+            sub?.remove?.();
+            done();
+          }
+        });
+        player.play();
+      } catch {
+        setPreviewing(null);
+        // 云端失败, 用 iOS 默认念一下提示 (安静降级)
+        Speech.speak(PREVIEW_TEXT, { language: 'zh-CN' });
+      }
+    } else {
+      const speechOpts = await resolveIosSpeechOptions(style);
+      Speech.speak(PREVIEW_TEXT, {
+        ...speechOpts,
+        onDone: () => setPreviewing((cur) => (cur === style ? null : cur)),
+        onStopped: () => setPreviewing(null),
+        onError: () => setPreviewing(null),
+      });
+    }
   };
+
+  const cloudStyles = VOICE_STYLES.filter((v) => v.provider === 'cloud');
+  const iosStyles = VOICE_STYLES.filter((v) => v.provider === 'ios');
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -44,38 +97,79 @@ export default function VoiceStyleScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={txt.hint}>
-          选择语音助理的声音风格。点击选项会立即试听。
+          选择语音助理的声音风格。点击选项立即试听。
         </Text>
 
+        <Text style={txt.sectionLabel}>真人级音色 · 联网</Text>
         <View style={styles.card}>
-          {VOICE_STYLES.map((opt, idx) => {
-            const selected = current === opt.key;
-            return (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.row, idx < VOICE_STYLES.length - 1 && styles.rowDivider]}
-                onPress={() => pick(opt.key)}
-                activeOpacity={0.7}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={txt.label}>{opt.label}</Text>
-                  <Text style={txt.desc}>{opt.description}</Text>
-                </View>
-                {selected ? (
-                  <Ionicons name="checkmark" size={22} color={colors.brand} />
-                ) : (
-                  <View style={{ width: 22 }} />
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          {cloudStyles.map((opt, idx) => (
+            <Row
+              key={opt.key}
+              opt={opt}
+              selected={current === opt.key}
+              previewing={previewing === opt.key}
+              onPress={() => pick(opt.key)}
+              divider={idx < cloudStyles.length - 1}
+            />
+          ))}
+        </View>
+
+        <Text style={txt.sectionLabel}>iOS 内置 · 离线</Text>
+        <View style={styles.card}>
+          {iosStyles.map((opt, idx) => (
+            <Row
+              key={opt.key}
+              opt={opt}
+              selected={current === opt.key}
+              previewing={previewing === opt.key}
+              onPress={() => pick(opt.key)}
+              divider={idx < iosStyles.length - 1}
+            />
+          ))}
         </View>
 
         <Text style={txt.footerHint}>
-          注：设备不支持的语音会自动回退到系统默认。Siri 语音记录不受此设置影响。
+          联网音色走阿里云 CosyVoice 合法声库。Siri 语音记录不受此设置影响。
         </Text>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function Row({
+  opt, selected, previewing, onPress, divider,
+}: {
+  opt: typeof VOICE_STYLES[number];
+  selected: boolean;
+  previewing: boolean;
+  onPress: () => void;
+  divider: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.row, divider && styles.rowDivider]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={txt.label}>{opt.label}</Text>
+          {opt.badge ? (
+            <View style={styles.badge}>
+              <Text style={txt.badgeText}>{opt.badge}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={txt.desc}>{opt.description}</Text>
+      </View>
+      {previewing ? (
+        <ActivityIndicator size="small" color={colors.brand} />
+      ) : selected ? (
+        <Ionicons name="checkmark" size={22} color={colors.brand} />
+      ) : (
+        <View style={{ width: 22 }} />
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -86,19 +180,26 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg },
   card: {
     backgroundColor: colors.bgCard, borderRadius: radii.md,
-    marginTop: spacing.md, overflow: 'hidden',
+    marginTop: 8, overflow: 'hidden',
   },
   row: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: spacing.md, paddingHorizontal: spacing.md, gap: spacing.sm,
   },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator },
+  badge: {
+    backgroundColor: colors.brandLight,
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderRadius: radii.sm,
+  },
 });
 
 const txt = {
   title: { fontSize: 17, fontWeight: '600', color: colors.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
   hint: { fontSize: 13, color: colors.labelSecondary, lineHeight: 19 } as TextStyle,
+  sectionLabel: { fontSize: 12, color: colors.labelTertiary, marginTop: spacing.md, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 } as TextStyle,
   label: { fontSize: 15, color: colors.labelPrimary, fontWeight: '500' } as TextStyle,
+  badgeText: { fontSize: 10, fontWeight: '600', color: colors.brand } as TextStyle,
   desc: { fontSize: 12, color: colors.labelTertiary, marginTop: 2 } as TextStyle,
-  footerHint: { fontSize: 12, color: colors.labelTertiary, lineHeight: 18, marginTop: spacing.md, paddingHorizontal: spacing.xs } as TextStyle,
+  footerHint: { fontSize: 12, color: colors.labelTertiary, lineHeight: 18, marginTop: spacing.md } as TextStyle,
 };
