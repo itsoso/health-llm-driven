@@ -13,6 +13,8 @@ import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import BrandCircle from '../../components/chat/BrandCircle';
 import ChatBubble from '../../components/chat/ChatBubble';
+import OpenerCard from '../../components/chat/OpenerCard';
+import { fetchConversationOpener, type ConversationOpener } from '../../services/conversationOpener';
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 
@@ -39,6 +41,17 @@ export default function ChatScreen() {
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const contextConsumed = useRef(false);
+
+  // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
+  // null = 还没拉到 / 无信号; 退化到默认 SUGGESTIONS chip.
+  const [opener, setOpener] = useState<ConversationOpener | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchConversationOpener().then(o => {
+      if (!cancelled) setOpener(o);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (contextConsumed.current) return;
@@ -125,19 +138,31 @@ export default function ChatScreen() {
           onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
           scrollEventThrottle={100}
           ListEmptyComponent={
-            <View style={styles.welcome}>
-              <BrandCircle size={72} style={{ marginBottom: 16 }}>
-                <Ionicons name="sparkles" size={32} color="#fff" />
-              </BrandCircle>
-              <Text style={txt.welcomeTitle}>AI 健康助理</Text>
-              <Text style={txt.welcomeSub}>我可以帮你分析数据、解答疑问、提供建议</Text>
-              <View style={styles.sugGrid}>
-                {SUGGESTIONS.map(s => (
-                  <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => handleSend(s.text, null)} activeOpacity={0.7}>
-                    <Ionicons name={s.icon} size={18} color={c.brand} />
-                    <Text style={txt.sugText}>{s.text}</Text>
-                  </TouchableOpacity>
-                ))}
+            <View>
+              {opener && (
+                <OpenerCard
+                  opener={opener}
+                  onQuickReply={(text) => handleSend(text, null)}
+                />
+              )}
+              <View style={styles.welcome}>
+                <BrandCircle size={72} style={{ marginBottom: 16 }}>
+                  <Ionicons name="sparkles" size={32} color="#fff" />
+                </BrandCircle>
+                <Text style={txt.welcomeTitle}>AI 健康助理</Text>
+                <Text style={txt.welcomeSub}>
+                  {opener
+                    ? '或者问我别的'
+                    : '我可以帮你分析数据、解答疑问、提供建议'}
+                </Text>
+                <View style={styles.sugGrid}>
+                  {SUGGESTIONS.map(s => (
+                    <TouchableOpacity key={s.text} style={styles.sugCard} onPress={() => handleSend(s.text, null)} activeOpacity={0.7}>
+                      <Ionicons name={s.icon} size={18} color={c.brand} />
+                      <Text style={txt.sugText}>{s.text}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
             </View>
           }

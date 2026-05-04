@@ -132,6 +132,33 @@ async def agent_stream(
     )
 
 
+@router.get("/conversation-opener", summary="Chat 起手未读续接 — AI 主动开场白")
+def conversation_opener(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    返回 AI 主动续接上次话题的开场白. 前端 chat tab mount 时拉这个,
+    用来替代/前置 SUGGESTIONS chip.
+
+    Returns:
+        - 200 OK: 有 opener 信号 — { opener: { text, source, source_id?, quick_replies, deep_link?, priority } }
+        - 200 OK: 无信号 — { opener: null }  (前端退化到默认 SUGGESTIONS)
+
+    Never raises — 错误时返回 { opener: null }, 静默退化, 不影响 chat 启动.
+    """
+    from dataclasses import asdict
+    from app.services.conversation_opener import compute_conversation_opener
+
+    try:
+        opener = compute_conversation_opener(db, current_user.id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[conversation_opener] endpoint bypass: {e}")
+        opener = None
+
+    return {"opener": asdict(opener) if opener else None}
+
+
 @router.get("/tools", summary="列出可用工具")
 def list_agent_tools(
     current_user: User = Depends(get_current_user_required),
