@@ -36,9 +36,30 @@ metadata:
 Do NOT use this skill for:
 - 日间血氧问题（本 skill 只有睡眠期间数据）
 - 睡眠质量/睡眠时长问题（使用 sleep-deep-analysis skill）
-- 心率/HRV 问题（使用 health-query skill）
+- 心率/HRV 问题（使用 health-query skill；分钟级心率见下方"相关 API"）
+
+## 相关 API（跨 skill 协同）
+
+需要做 **SpO2 × 心率对齐** 分析时（例如调查凌晨低氧是否伴随心率波动）：
+
+```bash
+# 指定日期逐采样点心率时间线 (~15 分钟一个点, 会自动降采样到 200 点以内)
+curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
+  "${HEALTH_API_URL}/heart-rate/me/daily/2026-05-04"
+```
+
+返回字段 `heart_rate_timeline`（每条含 `time` HH:MM 和 `heart_rate`）。
+把 SpO2 timeline 和心率 timeline 按 `time` 对齐即可。
 
 ## API Endpoints
+
+> ⚠️ **时间语义重要说明（必读）**
+>
+> - `record_date = D` 代表"起床那天 D"的那晚睡眠，但 Garmin 原始采样实际覆盖 `D-1 下午 ~ D 凌晨`
+> - **timeline 默认已经截断到 `sleep_start ~ sleep_end` 之间**（`window=sleep`），只返回真正睡眠期间的点
+> - 如果你需要包含日间零星采样（用于调查白天/睡前的血氧），加 `?window=all`，**但绝对不要对日间点做"凌晨低氧事件"之类的时间推理**
+> - 响应里的 `window_start` / `window_end` 字段告诉你 timeline 实际起止时间（CST），请基于它推理，不要自己从 timestamp 加/减时区
+> - 所有 `time` 字段（HH:MM）是设备本地时间（东八区），`timestamp`（毫秒）是 UTC epoch
 
 ### 1. 最近一晚 SpO2 时间序列
 
@@ -68,29 +89,33 @@ curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
     ...
   ],
   "sleep_start": "23:10",
-  "sleep_end": "06:45"
+  "sleep_end": "06:45",
+  "window": "sleep",
+  "window_start": "23:15",
+  "window_end": "06:42"
 }
 ```
 
 **字段说明**：
-- `avg_spo2`: 整夜平均血氧饱和度 (%)
-- `min_spo2`: 整夜最低血氧值
-- `max_spo2`: 整夜最高血氧值
-- `below_90_count`: 血氧低于 90% 的采样点数
-- `desaturation_events`: 氧减事件数（血氧下降 ≥3%）
-- `odi`: 氧减指数 (Oxygen Desaturation Index) = 氧减事件数 / 睡眠小时数
-- `data_points`: 总采样点数
-- `timeline`: 逐分钟 SpO2 时间序列（用于绘图）
-- `sleep_start` / `sleep_end`: 入睡/起床时间（来自 Garmin 睡眠检测）
+- `avg_spo2` / `min_spo2` / `max_spo2` / `below_90_count` / `desaturation_events` / `odi`: 基于 `timeline` 的 **同一子集** 统计（与 `window` 参数一致）
+- `timeline`: 逐分钟 SpO2 时间序列（默认仅含睡眠期间）
+- `sleep_start` / `sleep_end`: 入睡/起床时间（Garmin 睡眠检测给出）
+- `window`: 本次请求的时间窗（`sleep` | `all`）
+- `window_start` / `window_end`: timeline 实际起止的本地时间（HH:MM）
 
 ### 2. 指定日期 SpO2 时间序列
 
 ```bash
+# 默认只返回睡眠期 timeline (推荐)
 curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
   "${HEALTH_API_URL}/spo2/me/nightly/2026-04-18"
+
+# 包含日间零星采样
+curl -s -H "Authorization: Bearer ${HEALTH_API_TOKEN}" \
+  "${HEALTH_API_URL}/spo2/me/nightly/2026-04-18?window=all"
 ```
 
-与最近一晚接口返回格式相同，但查询指定日期的数据。日期格式 `YYYY-MM-DD`，使用起床日（与 Garmin 一致）。
+日期格式 `YYYY-MM-DD`，使用**起床日**（与 Garmin 一致）。
 
 ### 3. SpO2 多夜趋势
 

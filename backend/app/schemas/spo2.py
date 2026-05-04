@@ -27,6 +27,16 @@ class SpO2NightlyResponse(BaseModel):
     timeline: List[SpO2Point] = Field(default_factory=list)
     sleep_start: Optional[str] = None
     sleep_end: Optional[str] = None
+    window: str = Field(
+        default="sleep",
+        description="timeline 覆盖的时间窗口: 'sleep'=仅 sleep_start~sleep_end 睡眠期间 (默认); 'all'=整晚全部采样 (包含日间/睡前)",
+    )
+    window_start: Optional[str] = Field(
+        default=None, description="timeline 实际起始时间 (CST HH:MM), 便于 LLM 正确推理"
+    )
+    window_end: Optional[str] = Field(
+        default=None, description="timeline 实际结束时间 (CST HH:MM)"
+    )
 
 
 class SpO2TrendResponse(BaseModel):

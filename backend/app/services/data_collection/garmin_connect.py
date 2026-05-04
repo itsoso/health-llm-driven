@@ -18,7 +18,7 @@ import asyncio
 import json
 import os
 import tempfile
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
@@ -2149,14 +2149,22 @@ class GarminConnectService(GarminGettersMixin):
                                 continue
                             if isinstance(epoch_ts, str):
                                 try:
-                                    epoch_ts = int(datetime.fromisoformat(epoch_ts.rstrip('Z')).timestamp() * 1000)
+                                    # Garmin 给的 ISO 字符串如 "2026-05-03T16:09:00.0" 是 GMT
+                                    # 时间, 必须强制 UTC 时区. 否则 fromisoformat 返 naive
+                                    # datetime, .timestamp() 会按服务器本地 TZ 解释, 导致
+                                    # 整段时序偏移 ±服务器UTC偏移 (CST 服务器偏 -8h).
+                                    parsed = datetime.fromisoformat(epoch_ts.rstrip('Z'))
+                                    if parsed.tzinfo is None:
+                                        parsed = parsed.replace(tzinfo=UTC)
+                                    epoch_ts = int(parsed.timestamp() * 1000)
                                 except (ValueError, TypeError):
                                     continue
                             epoch_ts = int(epoch_ts)
                             spo2_int = int(spo2_val)
                             if not (50 <= spo2_int <= 100):
                                 continue
-                            sample_dt = datetime.fromtimestamp(epoch_ts / 1000)
+                            # 显式转 CST: 服务器 TZ 可能漂移, 不依赖默认本地时区
+                            sample_dt = datetime.fromtimestamp(epoch_ts / 1000, timezone(timedelta(hours=8)))
                             samples.append({
                                 "time": dt_time(sample_dt.hour, sample_dt.minute),
                                 "value": spo2_int,
@@ -2169,11 +2177,19 @@ class GarminConnectService(GarminGettersMixin):
             spo2_raw = raw_data.get('spo2') if not samples else None
             if spo2_raw and isinstance(spo2_raw, dict):
                 time_offset_data = spo2_raw.get('timeOffsetSleepSpo2')
-                start_ts_str = spo2_raw.get('startTimestampGMT') or spo2_raw.get('startTimestampLocal')
+                # 优先 GMT 字段, 否则降级 Local. 两者都按 ISO 字符串处理.
+                gmt_str = spo2_raw.get('startTimestampGMT')
+                local_str = spo2_raw.get('startTimestampLocal')
+                start_ts_str = gmt_str or local_str
+                start_is_gmt = bool(gmt_str)
 
                 if time_offset_data and isinstance(time_offset_data, dict) and start_ts_str:
                     try:
-                        start_ts = datetime.fromisoformat(start_ts_str.rstrip('Z').replace('.0', ''))
+                        parsed = datetime.fromisoformat(start_ts_str.rstrip('Z').replace('.0', ''))
+                        if parsed.tzinfo is None:
+                            # GMT 字段强 UTC; Local 字段按 CST 解
+                            parsed = parsed.replace(tzinfo=UTC if start_is_gmt else timezone(timedelta(hours=8)))
+                        start_ts = parsed
                     except (ValueError, TypeError):
                         start_ts = None
 
@@ -2184,8 +2200,10 @@ class GarminConnectService(GarminGettersMixin):
                                 if spo2_val is None or not (50 <= int(spo2_val) <= 100):
                                     continue
                                 sample_dt = start_ts + timedelta(milliseconds=offset_ms)
+                                # 转 CST 取本地 HH:MM (服务器 TZ 也是 CST 但保险显式转)
+                                cst_dt = sample_dt.astimezone(timezone(timedelta(hours=8)))
                                 samples.append({
-                                    "time": dt_time(sample_dt.hour, sample_dt.minute),
+                                    "time": dt_time(cst_dt.hour, cst_dt.minute),
                                     "value": int(spo2_val),
                                     "epoch_ms": int(start_ts.timestamp() * 1000) + offset_ms,
                                 })
@@ -2203,7 +2221,8 @@ class GarminConnectService(GarminGettersMixin):
                                 epoch_ts = item.get('epochTimestamp')
                                 spo2_val = item.get('spo2Value') or item.get('value')
                                 if epoch_ts and spo2_val and 50 <= int(spo2_val) <= 100:
-                                    sample_dt = datetime.fromtimestamp(epoch_ts / 1000)
+                                    # epoch_ts 假设为 UTC ms 数值, 显式转 CST
+                                    sample_dt = datetime.fromtimestamp(epoch_ts / 1000, timezone(timedelta(hours=8)))
                                     samples.append({
                                         "time": dt_time(sample_dt.hour, sample_dt.minute),
                                         "value": int(spo2_val),

@@ -88,21 +88,49 @@ def _get_sleep_times(db: Session, user_id: int, record_date: date):
 @router.get("/me/nightly/{record_date}", response_model=SpO2NightlyResponse)
 def get_nightly_spo2(
     record_date: date,
+    window: str = Query(
+        "sleep",
+        pattern="^(sleep|all)$",
+        description="timeline 时间窗口: 'sleep'=仅睡眠期间 (默认, 避免日间采样干扰); 'all'=整晚全部采样",
+    ),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    samples = (
+    """返回指定日期的夜间 SpO2 时间序列.
+
+    重要: `record_date=D` 的 Garmin 采样范围实际是 `D-1 下午 ~ D 凌晨`,
+    因为 Garmin 按"入睡那天"归类. 默认 `window=sleep` 会截断 timeline 到
+    `sleep_start ~ sleep_end` 之间, 只保留真正的睡眠期间数据, 避免 LLM
+    把下午日间的 SpO2 点误认作凌晨低氧事件.
+    """
+    samples_q = (
         db.query(SpO2Sample)
         .filter(
             SpO2Sample.user_id == current_user.id,
             SpO2Sample.record_date == record_date,
         )
         .order_by(SpO2Sample.epoch_ms.asc())
-        .all()
     )
+    samples = samples_q.all()
 
     sleep_start, sleep_end, sleep_hours = _get_sleep_times(db, current_user.id, record_date)
-    summary = _build_night_summary(record_date, samples, sleep_hours)
+
+    # 截断到 sleep window: sleep_start/end 是 HH:MM 本地 CST.
+    # 采集器修复后 sample_time 也是 CST HH:MM, 直接字符串比即可.
+    def in_sleep_window(s) -> bool:
+        if not sleep_start or not sleep_end:
+            return True
+        tstr = s.sample_time.strftime("%H:%M") if hasattr(s.sample_time, "strftime") else str(s.sample_time)[:5]
+        if sleep_start <= sleep_end:
+            return sleep_start <= tstr <= sleep_end
+        # 跨日: sleep_start (22:00) > sleep_end (06:00)
+        return tstr >= sleep_start or tstr <= sleep_end
+
+    filtered = [s for s in samples if in_sleep_window(s)] if window == "sleep" else samples
+
+    # summary 跟 timeline 保持一致, 否则 "timeline 只有睡眠期, 但 summary min=83
+    # 其实是白天体动噪声" 会让 LLM 错误归因
+    summary = _build_night_summary(record_date, filtered, sleep_hours)
 
     timeline = [
         SpO2Point(
@@ -110,8 +138,11 @@ def get_nightly_spo2(
             time=s.sample_time.strftime("%H:%M") if hasattr(s.sample_time, 'strftime') else str(s.sample_time)[:5],
             value=s.spo2_value,
         )
-        for s in samples
+        for s in filtered
     ]
+
+    window_start = timeline[0].time if timeline else None
+    window_end = timeline[-1].time if timeline else None
 
     return SpO2NightlyResponse(
         record_date=record_date,
@@ -119,11 +150,15 @@ def get_nightly_spo2(
         timeline=timeline,
         sleep_start=sleep_start,
         sleep_end=sleep_end,
+        window=window,
+        window_start=window_start,
+        window_end=window_end,
     )
 
 
 @router.get("/me/latest-night", response_model=SpO2NightlyResponse)
 def get_latest_night_spo2(
+    window: str = Query("sleep", pattern="^(sleep|all)$"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
@@ -135,7 +170,7 @@ def get_latest_night_spo2(
     )
     if not latest:
         raise HTTPException(status_code=404, detail="暂无血氧采样数据")
-    return get_nightly_spo2(latest[0], current_user, db)
+    return get_nightly_spo2(latest[0], window, current_user, db)
 
 
 @router.get("/me/trend", response_model=SpO2TrendResponse)
