@@ -2350,11 +2350,19 @@ class GarminConnectService(GarminGettersMixin):
                     if isinstance(start_gmt, (int, float)):
                         start_ms = int(start_gmt)
                     else:
-                        start_ms = int(datetime.fromisoformat(str(start_gmt).rstrip('Z')).timestamp() * 1000)
+                        # ISO 字符串如 "2026-05-03T16:08:00.0" 是 GMT 时间, 必须强制 UTC
+                        # tzinfo 否则 .timestamp() 按服务器本地 TZ 解释 (CST 偏 -8h)
+                        parsed = datetime.fromisoformat(str(start_gmt).rstrip('Z'))
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=UTC)
+                        start_ms = int(parsed.timestamp() * 1000)
                     if isinstance(end_gmt, (int, float)):
                         end_ms = int(end_gmt)
                     else:
-                        end_ms = int(datetime.fromisoformat(str(end_gmt).rstrip('Z')).timestamp() * 1000)
+                        parsed_end = datetime.fromisoformat(str(end_gmt).rstrip('Z'))
+                        if parsed_end.tzinfo is None:
+                            parsed_end = parsed_end.replace(tzinfo=UTC)
+                        end_ms = int(parsed_end.timestamp() * 1000)
                 except (ValueError, TypeError, OSError):
                     continue
 
