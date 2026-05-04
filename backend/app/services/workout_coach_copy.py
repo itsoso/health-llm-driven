@@ -47,9 +47,20 @@ def coach_oneliner(aggregation: str, max_len: int = 80) -> str:
     buf: list[str] = []
     for line in aggregation.splitlines():
         stripped = line.strip()
+        # markdown 标题: '### 1. 心率区间分析' / '## 心率'
         m = re.match(r"^#{1,6}\s*(?:\d+[.、]\s*)?(.+?)\s*$", stripped)
         if not m:
+            # **粗体标题** 行
             m = re.match(r"^\*\*\s*(?:\d+[.、]\s*)?(.+?)\s*\*\*\s*$", stripped)
+        if not m:
+            # 纯数字标号 + 标题 (无 #/**, 形如 '1. 本次训练总结' / '2、心率区间分析')
+            # 长度 <= 16 防止误吞正文 list 里的'1. xxx'
+            num_match = re.match(r"^\d+[.、]\s*([^\d\s].{0,15})\s*$", stripped)
+            if num_match and any(kw in num_match.group(1) for kw in (
+                "训练总结", "心率", "拉伸", "恢复建议", "下次训练", "总结",
+                "建议", "分析", "总评",
+            )):
+                m = num_match
         if m:
             if current_key:
                 sections[current_key] = "\n".join(buf).strip()
