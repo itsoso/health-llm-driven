@@ -463,7 +463,10 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
                         "history_id": str(history_id) if history_id else "",
                         "kind": loop.kind,
                         "signal_key": loop.signal_key or "",
-                        "deeplink": loop.deeplink or "",
+                        # NOTE: key 必须是 deep_link (下划线), 与 mobile useNotifications.ts
+                        # data?.deep_link 对齐. 历史上写过 'deeplink' 是 bug, 导致用户
+                        # 点 Open-Loop 推送跳默认 tab 而非目标页, user_action 永远 0.
+                        "deep_link": loop.deeplink or "",
                         **{k: str(v) for k, v in loop.metadata.items()},
                     },
                 ))
