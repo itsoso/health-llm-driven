@@ -98,6 +98,8 @@ export default function ChatScreen() {
         <Ionicons name="sparkles" size={18} color={c.brand} />
         <Text style={txt.headerTitle}>AI 健康助理</Text>
         <View style={{ flex: 1 }} />
+        {/* P7 (2026-05-04): voice 入口升级为填充 mic-circle (从 outline 改) +
+            尺寸 24, 视觉对比度更高. 让用户清楚有 voice 这条主路径. */}
         <TouchableOpacity
           onPress={() => router.push('/voice-chat' as any)}
           hitSlop={8}
@@ -105,7 +107,7 @@ export default function ChatScreen() {
           accessibilityLabel="语音对话"
           accessibilityRole="button"
         >
-          <Ionicons name="mic-circle-outline" size={22} color={c.brand} />
+          <Ionicons name="mic-circle" size={26} color={c.brand} />
         </TouchableOpacity>
         <TouchableOpacity onPress={chat.newChat} hitSlop={8} accessibilityLabel="新建对话" accessibilityRole="button">
           <Ionicons name="create-outline" size={20} color={c.labelSecondary} />

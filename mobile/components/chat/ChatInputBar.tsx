@@ -242,12 +242,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <Ionicons name="checkmark" size={20} color="#fff" />
           </View>
         ) : (
-          <TouchableOpacity onPress={goToVoiceChat} style={styles.modeBtn} accessibilityLabel="进入语音对话" accessibilityHint="打开语音对话页面与健康助理连续聊天">
-            <Ionicons
-              name="mic-outline"
-              size={22}
-              color={c.labelSecondary}
-            />
+          /* P7 (2026-05-04): 灰色 mic-outline 太低调 — 输入框空且无图片时, voice
+              是 chat 的备选主路径之一. 改成 brand 色圆形背景, 视觉权重对齐 send 按钮. */
+          <TouchableOpacity
+            onPress={goToVoiceChat}
+            style={styles.voiceCallBtn}
+            accessibilityLabel="进入语音对话"
+            accessibilityHint="打开语音对话页面与健康助理连续聊天"
+          >
+            <Ionicons name="mic" size={20} color="#fff" />
           </TouchableOpacity>
         )}
       </View>
@@ -313,6 +316,13 @@ function createStyles(c: ColorPalette) {
   },
   modeBtn: {
     width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  // P7 (2026-05-04): voice call 按钮 — brand 色圆形, 视觉权重对齐 send button.
+  // 与 modeBtn (灰色 mic-outline) 不同, 这是 voice 的"主入口" 视觉.
+  voiceCallBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: c.brand,
     alignItems: 'center', justifyContent: 'center',
   },
 
