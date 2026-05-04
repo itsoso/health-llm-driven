@@ -94,12 +94,17 @@ def _detect_lab_overdue(db, user_id: int) -> List[OpenLoop]:
         # score = severity * (1 + overdue_days/interval, capped 2x)
         ratio = min(2.0, 1.0 + overdue_days / interval_days)
         score = int(severity * ratio)
+        # P2 故事化: title 用情感词, body 二段式 "为什么 + 做什么"
+        # 避免"该复查了" 命令式, 用"现在可能..." 提示式
+        body = (
+            f"{days_since} 天前是 {value}，已经超过推荐复查间隔 {overdue_days} 天。"
+            f"这周抽时间去测一下，看看变化。"
+        )
         loops.append(OpenLoop(
             user_id=user_id,
             kind="lab_overdue",
-            title=f"该复查 {code_key} 了",
-            body=f"上次 {code_key} 是 {days_since} 天前 ({value}), "
-                 f"超过推荐间隔 {overdue_days} 天",
+            title=f"{code_key} 是时候复查了",
+            body=body,
             score=score,
             deeplink="health://medical-exams/upload",
             signal_key=code_key,
@@ -125,15 +130,33 @@ def _detect_action_card_due(db, user_id: int) -> List[OpenLoop]:
 
     loops: List[OpenLoop] = []
     for c in cards:
-        score_label = "命中 ✅" if (c.accuracy_score or 0) >= 70 else (
-            "部分 ⚠️" if (c.accuracy_score or 0) >= 40 else "未达 ❌"
-        )
+        score_val = c.accuracy_score or 0
+        title_short = c.title[:24] if c.title else "之前那条建议"
+        # P2 故事化: 按命中度给不同语气, 让用户感受 AI 在"复盘" 而非"通报"
+        if score_val >= 70:
+            title = f"✅ {title_short} 命中了"
+            body = (
+                f"那条建议 {score_val}/100，方向是对的 — "
+                f"这种节奏能维持就保持。"
+            )
+        elif score_val >= 40:
+            title = f"⚠️ {title_short} 部分达标"
+            body = (
+                f"打了 {score_val}/100，比 baseline 好但没到位 — "
+                f"看看哪里可以再调一调。"
+            )
+        else:
+            title = f"❌ {title_short} 这次没做到"
+            body = (
+                f"只有 {score_val}/100。先别急着自责，看看是建议不合适还是执行卡住了 — "
+                f"AI 也会从这次学到。"
+            )
         loops.append(OpenLoop(
             user_id=user_id,
             kind="action_card_due",
-            title=f"{c.title[:18]}…评分出来了",
-            body=f"{score_label} {c.accuracy_score}/100 — {c.grading_notes or '点开看详情'}",
-            score=70 if (c.accuracy_score or 0) >= 70 else 60,
+            title=title,
+            body=body,
+            score=70 if score_val >= 70 else 60,
             deeplink=f"health://action-cards/{c.id}",
             signal_key=f"card_id={c.id}",
             metadata={"card_id": c.id, "score": c.accuracy_score},
@@ -158,11 +181,15 @@ def _detect_sync_stale(db, user_id: int) -> List[OpenLoop]:
     if days_since < 3:
         return []
 
+    # P2 故事化: 不命令式催办, 说清楚"为什么这事重要" 让用户主动修
     return [OpenLoop(
         user_id=user_id,
         kind="sync_stale",
-        title="Garmin 同步可能中断",
-        body=f"已 {days_since} 天没收到 Garmin 数据. 检查手表蓝牙 / 重新登录 Garmin Connect.",
+        title="Garmin 这几天没数据",
+        body=(
+            f"{days_since} 天没收到，AI 给不出准的判断。"
+            f"打开 Garmin Connect 检查手表蓝牙，重新登录一次。"
+        ),
         score=min(80, 30 + days_since * 5),
         deeplink="health://settings/garmin",
         signal_key="garmin",
@@ -194,13 +221,17 @@ def _detect_trend_anomaly(db, user_id: int) -> List[OpenLoop]:
         ra = sum(r[0] for r in recent) / len(recent)
         pa = sum(r[0] for r in prev) / len(prev)
         if pa > 0 and (pa - ra) / pa > 0.15:
+            pct = (pa - ra) / pa * 100
+            # P2 故事化: 给"为什么紧要" + 一条具体行动 (不是含糊"需关注")
             loops.append(OpenLoop(
                 user_id=user_id,
                 kind="trend_anomaly",
-                title="HRV 最近一周下滑",
-                body=f"7 天均值 {ra:.0f}ms (前 7 天 {pa:.0f}ms, 下降 {(pa-ra)/pa*100:.0f}%). "
-                     f"压力/睡眠/训练负荷需关注.",
-                score=int(60 + min(30, (pa - ra) / pa * 100)),
+                title="HRV 这周明显往下掉",
+                body=(
+                    f"7 天均值 {ra:.0f}ms，比上周 {pa:.0f}ms 跌 {pct:.0f}%。"
+                    f"今晚早睡 1 小时，明天训练强度调低 20% 试试。"
+                ),
+                score=int(60 + min(30, pct)),
                 deeplink="health://digital-twin",
                 signal_key="hrv_drop",
                 metadata={"recent_hrv": round(ra, 1), "prev_hrv": round(pa, 1)},
@@ -242,13 +273,25 @@ def _detect_plan_deviation(db, user_id: int) -> List[OpenLoop]:
         severity_base = 70 if t.category == "medicine" else 45
         score = min(95, severity_base + (days_since - THRESHOLD_DAYS) * 5)
 
-        cat_label = "用药" if t.category == "medicine" else "运动"
         icon = t.icon or ("💊" if t.category == "medicine" else "🏃")
+        # P2 故事化: 不"重建节奏从今天开始" 那种命令式, 改"今天 X 分钟也算"减负担
+        if t.category == "medicine":
+            title = f"{icon} {t.name} 漏了 {days_since} 天"
+            body = (
+                f"已经 {days_since} 天没记打卡。漏一次用药对慢病管理影响最大 — "
+                f"今天补一次，往后我们一起跟。"
+            )
+        else:  # exercise
+            title = f"{icon} {t.name} 停了 {days_since} 天"
+            body = (
+                f"{days_since} 天没记。断点不可怕，今天补 5 分钟也算 — "
+                f"先把节奏接回来。"
+            )
         loops.append(OpenLoop(
             user_id=user_id,
             kind="plan_drift",
-            title=f"{icon} {t.name} 断了 {days_since} 天",
-            body=f"{cat_label}「{t.name}」连续 {days_since} 天未完成. 重建节奏从今天开始.",
+            title=title,
+            body=body,
             score=score,
             deeplink=f"health://checkin/{t.id}",
             signal_key=f"template_id={t.id}",

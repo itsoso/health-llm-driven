@@ -238,7 +238,8 @@ def test_plan_deviation_medicine_higher_severity(db):
     assert len(loops) == 1
     assert loops[0].score == 70
     assert "用药" in loops[0].body
-    assert "二甲双胍" in loops[0].body
+    # P2 (2026-05-04) 故事化: medication 名移到 title 避免 title+body 重复
+    assert "二甲双胍" in loops[0].title
 
 
 def test_plan_deviation_score_grows_with_days(db):
