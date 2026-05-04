@@ -77,15 +77,47 @@ export function useVoiceConversation() {
   // 云端播放中的 player, stop 时用于打断
   const activePlayerRef = useRef<ActivePlayer | null>(null);
 
-  // iOS 端 AVAudioSession 模式: 允许后台播 + 混音
-  useEffect(() => {
-    setAudioModeAsync({
-      playsInSilentMode: true,
-      shouldPlayInBackground: false,
-      interruptionMode: 'duckOthers',
-      allowsRecording: true,
-    }).catch(() => {});
+  /**
+   * iOS AVAudioSession 模式动态切换 (修复音量变小问题):
+   *
+   *   播放模式 (.playback category):        默认外放, 音量正常
+   *   录音模式 (.playAndRecord category):   需要录音; 默认会路由到 receiver (听筒)
+   *                                         导致 TTS 回放音量小
+   *
+   * 策略:
+   *   - 初始默认 playback (allowsRecording=false) → 外放
+   *   - startListening 前切到 playAndRecord (allowsRecording=true)
+   *   - stopListening 后切回 playback
+   *
+   * 注: expo-audio 当前 API 不支持 .defaultToSpeaker / proximity 监听,
+   *   要做到"贴耳自动听筒"需要原生代码, 先实现 80% 场景的音量问题.
+   */
+  const setPlaybackMode = useCallback(async () => {
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
+        interruptionMode: 'duckOthers',
+        allowsRecording: false,  // → .playback category, 外放
+      });
+    } catch {}
   }, []);
+
+  const setRecordingMode = useCallback(async () => {
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
+        interruptionMode: 'duckOthers',
+        allowsRecording: true,  // → .playAndRecord category
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    // 进入页面默认外放
+    setPlaybackMode();
+  }, [setPlaybackMode]);
 
   const refreshVoiceStyle = useCallback(async () => {
     try {
@@ -293,6 +325,8 @@ export function useVoiceConversation() {
     };
     Voice.onSpeechEnd = () => {
       const text = (latestPartialRef.current || '').trim();
+      // 用户自然说完: 切回 playback 让后续 LLM reply TTS 走外放
+      setPlaybackMode();
       if (text) submit(text);
       else setState('idle');
     };
@@ -300,6 +334,7 @@ export function useVoiceConversation() {
       const msg = e.error?.message || '语音识别失败';
       setError(msg);
       setState('error');
+      setPlaybackMode();
     };
     return () => {
       Voice.destroy().then(() => Voice.removeAllListeners());
@@ -307,7 +342,7 @@ export function useVoiceConversation() {
       abortRef.current?.abort();
       cleanupTmpTts().catch(() => {});
     };
-  }, [submit, stopCurrentSpeech]);
+  }, [submit, stopCurrentSpeech, setPlaybackMode]);
 
   const startListening = useCallback(async () => {
     try {
@@ -317,17 +352,23 @@ export function useVoiceConversation() {
       setError(null);
       setTranscript('');
       latestPartialRef.current = '';
+      // 先切到 .playAndRecord, 再启动 Voice — 顺序很重要, Voice.start 依赖 session 已经就绪
+      await setRecordingMode();
       setState('listening');
       await Voice.start('zh-CN');
     } catch (e: any) {
       setError(String(e?.message || e));
       setState('error');
+      // 失败也切回 playback, 免得下次 TTS 又走听筒
+      setPlaybackMode();
     }
-  }, [stopCurrentSpeech]);
+  }, [stopCurrentSpeech, setRecordingMode, setPlaybackMode]);
 
   const stopListening = useCallback(async () => {
     try { await Voice.stop(); } catch {}
-  }, []);
+    // 录音结束切回 .playback, 后续 TTS 走外放
+    await setPlaybackMode();
+  }, [setPlaybackMode]);
 
   const reset = useCallback(() => {
     stopCurrentSpeech();
