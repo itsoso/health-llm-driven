@@ -71,7 +71,7 @@ export function useVoiceConversation() {
   const abortRef = useRef<AbortController | null>(null);
 
   // 当前 voice style (读 AsyncStorage, 每轮开播前刷新)
-  const voiceStyleRef = useRef<VoiceStyle>('cloud_soft_hk_female');
+  const voiceStyleRef = useRef<VoiceStyle>('cloud_cloned_private_female');
   const iosOptsRef = useRef<Speech.SpeechOptions>({ language: 'zh-CN', rate: 1.0, pitch: 1.0 });
 
   // 云端播放中的 player, stop 时用于打断
@@ -120,7 +120,7 @@ export function useVoiceConversation() {
 
   const speakViaCloud = useCallback(async (text: string, onDone: () => void) => {
     const opt = getVoiceStyle(voiceStyleRef.current);
-    const voiceKey = opt.cloudVoiceKey ?? 'soft_hk_female';
+    const voiceKey = opt.cloudVoiceKey ?? 'cloned_private_female';
     try {
       const { localUri } = await cloudSynthesize({ text, voiceKey });
       // 新 player 每句一个, 简化生命周期 (非高频场景, 代价可接受)

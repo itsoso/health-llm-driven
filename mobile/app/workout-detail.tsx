@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -239,6 +239,7 @@ export default function WorkoutDetailScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPrimary} translucent={false} />
         <ActivityIndicator color={colors.brand} style={{ marginTop: 60 }} />
       </SafeAreaView>
     );
@@ -247,6 +248,7 @@ export default function WorkoutDetailScreen() {
   if (!workout) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPrimary} translucent={false} />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
@@ -275,11 +277,12 @@ export default function WorkoutDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPrimary} translucent={false} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
           <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
         </TouchableOpacity>
-        <Text style={txt.title}>{workout.workout_name || workoutTypeLabel}</Text>
+        <Text style={txt.title} numberOfLines={1}>{workout.workout_name || workoutTypeLabel}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -331,18 +334,45 @@ export default function WorkoutDetailScreen() {
           />
         )}
 
-        {/* Extra details */}
+        {/* 详细指标 — 2 列 grid, 有数据才展示 chip, 全空 fallback 提示 */}
         <HealthCard title="详细指标" icon="analytics-outline" iconColor={colors.brand} iconBg={colors.brandLight}>
-          {workout.calories != null ? <DetailRow label="卡路里" value={`${workout.calories} kcal`} /> : null}
-          {workout.max_heart_rate != null ? <DetailRow label="最大心率" value={`${workout.max_heart_rate} bpm`} /> : null}
-          {workout.avg_cadence != null ? <DetailRow label="平均步频" value={`${workout.avg_cadence} spm`} /> : null}
-          {workout.avg_stride_length_cm != null ? <DetailRow label="平均步幅" value={`${workout.avg_stride_length_cm.toFixed(0)} cm`} /> : null}
-          {workout.elevation_gain_meters != null ? <DetailRow label="累计爬升" value={`${workout.elevation_gain_meters.toFixed(1)} m`} /> : null}
-          {workout.training_effect_aerobic != null ? <DetailRow label="有氧训练效果" value={workout.training_effect_aerobic.toFixed(1)} /> : null}
-          {workout.training_effect_anaerobic != null ? <DetailRow label="无氧训练效果" value={workout.training_effect_anaerobic.toFixed(1)} /> : null}
-          {workout.vo2max != null ? <DetailRow label="VO2max" value={workout.vo2max.toFixed(1)} /> : null}
-          {workout.training_load != null ? <DetailRow label="训练负荷" value={String(workout.training_load)} /> : null}
-          {workout.steps != null ? <DetailRow label="步数" value={String(workout.steps)} /> : null}
+          {(() => {
+            const metrics: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }[] = [];
+            if (workout.calories != null) metrics.push({ label: '卡路里', value: `${workout.calories}`, icon: 'flame-outline', color: colors.red, bg: colors.tintRed });
+            if (workout.max_heart_rate != null) metrics.push({ label: '最大心率', value: `${workout.max_heart_rate} bpm`, icon: 'heart-outline', color: '#FF5252', bg: '#FFE5E5' });
+            if (workout.avg_cadence != null) metrics.push({ label: '平均步频', value: `${workout.avg_cadence} spm`, icon: 'walk-outline', color: colors.orange, bg: colors.tintOrange });
+            if (workout.avg_stride_length_cm != null) metrics.push({ label: '平均步幅', value: `${workout.avg_stride_length_cm.toFixed(0)} cm`, icon: 'resize-outline', color: colors.teal, bg: colors.tintTeal });
+            if (workout.elevation_gain_meters != null) metrics.push({ label: '累计爬升', value: `${workout.elevation_gain_meters.toFixed(0)} m`, icon: 'trending-up-outline', color: colors.green, bg: colors.tintGreen });
+            if (workout.training_effect_aerobic != null) metrics.push({ label: '有氧训练', value: workout.training_effect_aerobic.toFixed(1), icon: 'pulse-outline', color: colors.blue, bg: colors.tintBlue });
+            if (workout.training_effect_anaerobic != null) metrics.push({ label: '无氧训练', value: workout.training_effect_anaerobic.toFixed(1), icon: 'flash-outline', color: colors.amber, bg: colors.tintAmber });
+            if (workout.vo2max != null) metrics.push({ label: 'VO2max', value: workout.vo2max.toFixed(1), icon: 'fitness-outline', color: colors.purple, bg: colors.tintPurple });
+            if (workout.training_load != null) metrics.push({ label: '训练负荷', value: String(workout.training_load), icon: 'barbell-outline', color: colors.brand, bg: colors.brandLight });
+            if (workout.steps != null) metrics.push({ label: '步数', value: String(workout.steps), icon: 'footsteps-outline', color: colors.orange, bg: colors.tintOrange });
+
+            if (metrics.length === 0) {
+              return (
+                <View style={styles.emptyMetrics}>
+                  <Ionicons name="information-circle-outline" size={24} color={colors.labelTertiary} />
+                  <Text style={txt.placeholder}>这次运动没有记录额外指标</Text>
+                </View>
+              );
+            }
+            return (
+              <View style={styles.metricGrid}>
+                {metrics.map((m, idx) => (
+                  <View key={idx} style={styles.metricChip}>
+                    <View style={[styles.metricIcon, { backgroundColor: m.bg }]}>
+                      <Ionicons name={m.icon} size={14} color={m.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={txt.metricLabel} numberOfLines={1}>{m.label}</Text>
+                      <Text style={txt.metricValue} numberOfLines={1}>{m.value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
         </HealthCard>
 
         {/* AI Analysis */}

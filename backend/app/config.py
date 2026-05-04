@@ -30,8 +30,13 @@ class Settings(BaseSettings):
     # === TTS (阿里云 DashScope CosyVoice) ===
     tts_provider: str = "dashscope"  # dashscope | disabled
     tts_api_key: Optional[str] = None  # DashScope API key; 空则复用 llm_vision_api_key
-    tts_model: str = "cosyvoice-v2"  # v1 / v2; v2 真人级音质, voice 名带 _v2 后缀
-    tts_default_voice: str = "longjiayi_v2"  # 柔软港普女声, v2 实测最接近"林志玲感"
+    # cosyvoice 模型: v2 (官方音色) / v3.5-plus (声音复刻 voice_id).
+    # 实际用哪个由 voice_id 前缀决定 (见 cosyvoice.py _resolve_model), 这里只是默认 fallback.
+    tts_model: str = "cosyvoice-v2"
+    tts_default_voice: str = "longjiayi_v2"  # 柔软港普女声; 若有复刻音色 id, 用 tts_cloned_voice_id 覆盖
+    # 用户自有的声音复刻 voice_id (target_model=cosyvoice-v3.5-plus). 例:
+    # cosyvoice-v3.5-plus-bailian-7290fdddcd0c4437a10f0b4ec35453d8
+    tts_cloned_voice_id: Optional[str] = None
     tts_cache_dir: str = "/tmp/tts_cache"
     tts_cache_enabled: bool = True
 

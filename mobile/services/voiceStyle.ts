@@ -24,7 +24,8 @@ export type VoiceStyle =
   | 'ios_gentle_tw'
   | 'ios_standard_cn'
   | 'ios_system'
-  // 阿里云 CosyVoice v2 云端 (真人级)
+  // 阿里云 CosyVoice 云端
+  | 'cloud_cloned_private_female' // v3.5-plus 声音复刻 — 专属授权样本
   | 'cloud_soft_hk_female'    // longjiayi_v2 — 港普女声, 柔软感
   | 'cloud_warm_female'       // longwan_v2
   | 'cloud_gentle_cs_female'  // longyue_v2
@@ -32,10 +33,10 @@ export type VoiceStyle =
   | 'cloud_casual_female'     // longxiaobai_v2
   | 'cloud_calm_male';        // longcheng_v2
 
-const STORAGE_KEY = 'tts_voice_style_v2';
+const STORAGE_KEY = 'tts_voice_style_v3';
 
-// 默认走云端"柔软港腔女声" — 当前账号下最接近"林志玲感"的合法选项
-export const DEFAULT_VOICE_STYLE: VoiceStyle = 'cloud_soft_hk_female';
+// 默认走云端"私享女声" — 用户专属声音复刻
+export const DEFAULT_VOICE_STYLE: VoiceStyle = 'cloud_cloned_private_female';
 
 export interface VoiceStyleOption {
   key: VoiceStyle;
@@ -45,16 +46,30 @@ export interface VoiceStyleOption {
   badge?: string;
   // iOS provider 用的 SpeechOptions; cloud provider 用 cloudVoiceKey (backend 理解的 voice_style)
   speechOptions?: Pick<Speech.SpeechOptions, 'voice' | 'language' | 'rate' | 'pitch'>;
-  cloudVoiceKey?: 'soft_hk_female' | 'warm_female' | 'gentle_cs_female' | 'knowing_female' | 'casual_female' | 'calm_male';
+  cloudVoiceKey?:
+    | 'cloned_private_female'
+    | 'soft_hk_female'
+    | 'warm_female'
+    | 'gentle_cs_female'
+    | 'knowing_female'
+    | 'casual_female'
+    | 'calm_male';
 }
 
 export const VOICE_STYLES: VoiceStyleOption[] = [
+  {
+    key: 'cloud_cloned_private_female',
+    provider: 'cloud',
+    label: '私享女声',
+    description: '专属声音复刻, 真人级 (需联网)',
+    badge: '推荐',
+    cloudVoiceKey: 'cloned_private_female',
+  },
   {
     key: 'cloud_soft_hk_female',
     provider: 'cloud',
     label: '柔软女声',
     description: '带港普口音, 温柔有亲和力 (需联网)',
-    badge: '推荐',
     cloudVoiceKey: 'soft_hk_female',
   },
   {
@@ -139,6 +154,14 @@ export async function loadVoiceStyle(): Promise<VoiceStyle> {
       cloud_bright_female: 'cloud_gentle_cs_female', // 老"明亮" → 新"温柔"
     };
     if (raw && cloudRename[raw]) return cloudRename[raw];
+    // v2 → v3: 老用户档自动迁到新默认 (私享女声), 但保留他们手动选过的非默认档
+    const v2 = await AsyncStorage.getItem('tts_voice_style_v2');
+    if (v2 && VOICE_STYLES.some(v => v.key === v2)) {
+      // 老默认 cloud_soft_hk_female 视为"未手动改" → 升级到新默认
+      if (v2 === 'cloud_soft_hk_female') return DEFAULT_VOICE_STYLE;
+      return v2 as VoiceStyle;
+    }
+    if (v2 && cloudRename[v2]) return cloudRename[v2];
     // 兼容 v1 (iOS-only 档)
     const old = await AsyncStorage.getItem('tts_voice_style');
     if (old === 'gentle_tw') return 'ios_gentle_tw';

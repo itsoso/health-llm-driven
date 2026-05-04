@@ -37,7 +37,33 @@ VOICE_MAP = {
     "casual_female": "longxiaobai_v2",     # 休闲女声, 自然
     "calm_male": "longcheng_v2",           # 沉稳男声
 }
-DEFAULT_VOICE_KEY = "soft_hk_female"
+DEFAULT_VOICE_KEY = "cloned_private_female"  # 优先用户复刻音色; 未配置则降级到 soft_hk_female
+
+
+def _cloned_voice_id() -> Optional[str]:
+    """用户自有的声音复刻 voice_id (target_model=cosyvoice-v3.5-plus)."""
+    return getattr(settings, "tts_cloned_voice_id", None)
+
+
+def _resolve_voice_id(voice_style: str) -> str:
+    """voice_style → 实际 voice_id. cloned_* 走用户复刻, 其它走 VOICE_MAP."""
+    if voice_style.startswith("cloned_"):
+        cid = _cloned_voice_id()
+        if cid:
+            return cid
+        # 未配置复刻音色 → 降级到默认 v2 港普
+        return VOICE_MAP["soft_hk_female"]
+    return VOICE_MAP.get(voice_style, VOICE_MAP["soft_hk_female"])
+
+
+def _resolve_model(voice_id: str) -> str:
+    """根据 voice_id 自动选模型. 复刻音色 id 是 cosyvoice-v3.5-plus-bailian-... 前缀."""
+    if voice_id.startswith("cosyvoice-v3.5-plus"):
+        return "cosyvoice-v3.5-plus"
+    if voice_id.startswith("cosyvoice-v3"):
+        return "cosyvoice-v3"
+    # 默认 v2 (官方音色 _v2 后缀)
+    return settings.tts_model or "cosyvoice-v2"
 
 
 def _resolve_api_key() -> Optional[str]:
@@ -61,12 +87,13 @@ def _synth_blocking(text: str, voice_id: str, speed: float) -> bytes:
         raise RuntimeError("TTS API key 未配置")
     dashscope.api_key = key
 
+    model = _resolve_model(voice_id)
     # SDK 参数: speech_rate 在 v2 不是每个 voice 都支持, 先不传, 避免 400.
     # 需要变速可以走客户端播放速率.
-    synth = SpeechSynthesizer(model=settings.tts_model, voice=voice_id)
+    synth = SpeechSynthesizer(model=model, voice=voice_id)
     audio = synth.call(text)
     if not audio:
-        raise RuntimeError("TTS 返回空")
+        raise RuntimeError(f"TTS 返回空 (model={model}, voice={voice_id})")
     return audio
 
 
@@ -81,7 +108,7 @@ async def synthesize(
     if not text or not text.strip():
         raise ValueError("text 不能为空")
 
-    voice_id = VOICE_MAP.get(voice_style, VOICE_MAP[DEFAULT_VOICE_KEY])
+    voice_id = _resolve_voice_id(voice_style)
 
     if settings.tts_cache_enabled:
         cache = _cache_path(text, voice_id, speed)
@@ -102,11 +129,19 @@ async def synthesize(
 
 
 def list_voices() -> list[dict]:
-    return [
-        {"key": "soft_hk_female", "label": "柔软女声", "description": "带港普口音, 温柔有亲和力 (推荐)"},
+    voices = []
+    if _cloned_voice_id():
+        voices.append({
+            "key": "cloned_private_female",
+            "label": "私享女声",
+            "description": "专属声音复刻, 真人级 (推荐)",
+        })
+    voices.extend([
+        {"key": "soft_hk_female", "label": "柔软女声", "description": "带港普口音, 温柔有亲和力"},
         {"key": "warm_female", "label": "温暖女声", "description": "温暖自然, 日常播报"},
         {"key": "gentle_cs_female", "label": "温柔女声", "description": "标准普通话, 柔和"},
         {"key": "knowing_female", "label": "知性女声", "description": "清晰知性, 沉稳"},
         {"key": "casual_female", "label": "休闲女声", "description": "自然轻松, 真人感"},
         {"key": "calm_male", "label": "沉稳男声", "description": "低频稳重, 专业感"},
-    ]
+    ])
+    return voices
