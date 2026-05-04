@@ -300,9 +300,14 @@ def test_inject_memory_writes_audit_row(db):
     from app.models.agent_audit_log import AgentAuditLog
 
     # 不传 findings, 没有 KG 数据 — 4 stage 全 fail 是正常路径
-    out_prompt = _inject_memory(db, user_id=999, user_prompt="hello", findings=None)
+    # Phase 0.3 (2026-05-04): _inject_memory 改成返回 (prompt, trace) 元组
+    # 让上层能把 trace 传给 log_orchestrator_run, audit 看得到 memory 注入情况.
+    out_prompt, trace = _inject_memory(db, user_id=999, user_prompt="hello", findings=None)
 
     assert isinstance(out_prompt, str)
+    assert isinstance(trace, dict)
+    assert "stages" in trace
+    assert "total_chars_added" in trace
     # 即使全 fail, audit row 也必须写
     audits = db.query(AgentAuditLog).filter(
         AgentAuditLog.agent_type == "memory_injection",

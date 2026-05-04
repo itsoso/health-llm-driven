@@ -12,7 +12,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -432,12 +432,18 @@ def _build_synthesis_prompt(
 
 
 def _inject_memory(db: Session, user_id: int, user_prompt: str,
-                    findings: Optional[List[SpecialistFinding]] = None) -> str:
+                    findings: Optional[List[SpecialistFinding]] = None
+                    ) -> tuple[str, Dict[str, Any]]:
     """注入用户对话记忆 + Clinical Journal 相关 case timeline.
 
     每个 stage 显式跟踪 ok / chars / count / error, 最后写到 audit_log
     (agent_type='memory_injection') 给 observability dashboard 聚合.
     这是 T1.1 Memory 注入诊断 — 让"AI 真的记得我吗"可量化.
+
+    Returns:
+        (prompt_with_memory, trace_dict). trace 已经写入 memory_injection audit,
+        但调用方也需要它以传给 log_orchestrator_run, 让 orchestrator 主 audit 也
+        带上 memory 数据 (Phase 0.3: 之前 result_detail 没记录, audit 看不到).
     """
     out = user_prompt
     base_len = len(user_prompt)
@@ -538,7 +544,7 @@ def _inject_memory(db: Session, user_id: int, user_prompt: str,
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator] memory_injection audit 写入失败 (跳过): {e}")
 
-    return out
+    return out, trace
 
 
 # ───────────────────── LLM 调用（带回退） ─────────────────
@@ -734,7 +740,7 @@ async def run_orchestrator(
     )
 
     # 注入对话记忆（用户历史偏好/医嘱/过敏等）
-    user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
+    user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=findings)
 
     synthesis = await _call_llm(system_prompt, user_prompt)
 
@@ -779,6 +785,27 @@ async def run_orchestrator(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[orchestrator] specialist_findings audit bypass 失败: {e}")
 
+    # Phase 0.3 (2026-05-04): non-stream 路径之前完全没写 orchestrator audit,
+    # 历史 silent gap. 现在补齐, 与 stream / siri 路径对齐, 同时带 memory_trace
+    # + output_text 给 memory 引用率看板.
+    try:
+        from app.agents.audit import log_orchestrator_run
+        log_orchestrator_run(
+            db=db, user_id=user_id,
+            query=req.query,
+            intent_categories=intent.categories,
+            used_specialists=[s.name for s in specialists],
+            findings_count=sum(len(f.findings) for f in findings),
+            twin_build_ms=twin.meta.build_ms,
+            total_ms=int((time.monotonic() - t_start) * 1000),
+            result_summary=(synthesis or "")[:200],
+            source=req.source,
+            memory_trace=memory_trace,
+            output_text=synthesis,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[orchestrator] orchestrator_run audit bypass 失败: {e}")
+
     return OrchestratorResponse(
         query=req.query,
         intent=intent,
@@ -822,7 +849,7 @@ async def _run_orchestrator_fast(
     )
 
     # 注入 conversation memory (用户历史偏好/医嘱/过敏), 保留连续对话感.
-    user_prompt = _inject_memory(db, user_id, user_prompt, findings=[])
+    user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=[])
 
     synthesis = await _call_llm(system_prompt, user_prompt)
 
@@ -839,6 +866,8 @@ async def _run_orchestrator_fast(
             total_ms=int((time.monotonic() - t_start) * 1000),
             result_summary=synthesis[:200],
             source=req.source,
+            memory_trace=memory_trace,
+            output_text=synthesis,
         )
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[orchestrator.siri_fast] audit 失败: {e}")
@@ -879,7 +908,7 @@ async def _stream_orchestrator_fast(
             req.query, twin, findings=[], db=db, user_id=user_id,
             conflict_arb_block="", source="siri",
         )
-        user_prompt = _inject_memory(db, user_id, user_prompt, findings=[])
+        user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=[])
 
         full = ""
         async for chunk in _stream_llm(system_prompt, user_prompt):
@@ -903,6 +932,8 @@ async def _stream_orchestrator_fast(
                 total_ms=int((time.monotonic() - t_start) * 1000),
                 result_summary=full[:200],
                 source="siri",
+                memory_trace=memory_trace,
+                output_text=full,
             )
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[orchestrator.stream.siri_fast] audit 失败: {e}")
@@ -1019,10 +1050,12 @@ async def stream_orchestrator(
             conflict_arb_block=conflict_arb_block,
             source=req.source,
         )
-        user_prompt = _inject_memory(db, user_id, user_prompt, findings=findings)
+        user_prompt, memory_trace = _inject_memory(db, user_id, user_prompt, findings=findings)
 
-        # 流式 LLM
+        # 流式 LLM (累积 full 用于 audit memory_referenced 检测)
+        full = ""
         async for chunk in _stream_llm(system_prompt, user_prompt):
+            full += chunk
             yield _sse("chunk", chunk)
 
         total_ms = int((time.monotonic() - t_start) * 1000)
@@ -1040,7 +1073,10 @@ async def stream_orchestrator(
                 findings_count=sum(len(f.findings) for f in findings),
                 twin_build_ms=twin.meta.build_ms,
                 total_ms=total_ms,
+                result_summary=full[:200],
                 source=req.source,
+                memory_trace=memory_trace,
+                output_text=full,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[orchestrator.stream] orchestrator_run audit bypass 失败: {e}")

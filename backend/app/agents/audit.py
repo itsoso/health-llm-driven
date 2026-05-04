@@ -54,14 +54,45 @@ def log_orchestrator_run(
     total_ms: int,
     result_summary: Optional[str] = None,
     source: Optional[str] = None,
+    memory_trace: Optional[Dict[str, Any]] = None,
+    output_text: Optional[str] = None,
 ) -> None:
     """记录一次 Orchestrator 综合调度。
 
-    source: 'siri' | 'chat' | 'widget' | None — 调用入口, 用来分析不同入口的使用率.
+    Args:
+        source: 'siri' | 'chat' | 'widget' | None — 调用入口, 用来分析不同入口使用率.
+        memory_trace: _inject_memory 返回的 trace dict (4 stage hit/chars/count).
+            为 None 时表示该路径没启用 memory 注入 (legacy).
+        output_text: LLM 完整输出, 用于启发式判断是否引用了 memory. 不写入 audit
+            (省空间), 只用于计算 memory_referenced 布尔字段.
+
+    Phase 0.3 (2026-05-04): 加 memory_trace + memory_referenced. 之前 22 次
+    orchestrator audit 中无人能判断 memory 是否真被 LLM 引用 — 修复后看板能算
+    "memory 引用率 (orchestrator run 中 LLM 真用上 memory 的百分比)".
     """
-    detail = {"used_specialists": used_specialists}
+    detail: Dict[str, Any] = {"used_specialists": used_specialists}
     if source:
         detail["source"] = source
+
+    if memory_trace is not None:
+        # 只取 trace 的关键摘要, 避免重复存大段 (memory_injection 已存全量)
+        stages = memory_trace.get("stages", {})
+        detail["memory"] = {
+            "total_chars": memory_trace.get("total_chars_added", 0),
+            "stages_ok": [name for name, s in stages.items() if s.get("ok")],
+            "stages_failed": [name for name, s in stages.items() if not s.get("ok")],
+            "hybrid_count": stages.get("hybrid", {}).get("count", 0),
+            "conversation_count": stages.get("conversation", {}).get("count", 0),
+        }
+
+    if output_text:
+        try:
+            from app.services.memory_reference_detector import detect_memory_reference
+            detail["memory_referenced"] = detect_memory_reference(output_text)
+        except Exception:  # noqa: BLE001
+            # detector 永不应抛, 但保险起见旁路
+            pass
+
     _write(
         db,
         user_id=user_id,
