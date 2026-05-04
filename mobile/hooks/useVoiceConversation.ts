@@ -5,6 +5,7 @@ import Voice, {
 } from '@react-native-voice/voice';
 import * as Speech from 'expo-speech';
 import { streamChat } from '../services/chat';
+import { loadVoiceStyle, resolveSpeechOptions } from '../services/voiceStyle';
 
 /**
  * 语音连续对话状态机.
@@ -29,6 +30,26 @@ export interface VoiceTurn {
 
 const SENTENCE_END = /[。！？.!?\n]/;
 
+/**
+ * 给 TTS 用: 清掉常见 markdown 标记, 不让 TTS 念"星号星号"之类.
+ * 只在送进 Speech.speak 之前做, UI 显示仍用原 markdown.
+ */
+function stripMarkdownForTTS(s: string): string {
+  return s
+    .replace(/```[\s\S]*?```/g, '')          // 代码块整段去掉
+    .replace(/`([^`]+)`/g, '$1')             // inline code 保留文字
+    .replace(/\*\*([^*]+)\*\*/g, '$1')       // **加粗**
+    .replace(/\*([^*]+)\*/g, '$1')           // *斜体*
+    .replace(/^#{1,6}\s+/gm, '')             // # 标题
+    .replace(/^\s*[-*+]\s+/gm, '')           // 列表符
+    .replace(/^\s*\d+\.\s+/gm, '')           // 有序列表
+    .replace(/\|/g, ' ')                     // 表格管道
+    .replace(/^[\s|:\-]+$/gm, '')            // 表格分隔行
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [text](url)
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')    // ![alt](img)
+    .replace(/~~([^~]+)~~/g, '$1');          // 删除线
+}
+
 export function useVoiceConversation() {
   const [state, setState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
@@ -44,6 +65,18 @@ export function useVoiceConversation() {
   const ttsQueueRef = useRef<string[]>([]);
   const isSpeakingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const speechOptsRef = useRef<Speech.SpeechOptions>({ language: 'zh-CN', rate: 1.0, pitch: 1.0 });
+
+  // 启动 & 每次页面 focus 时重新加载 voice style (用户可能刚在设置里改了)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const style = await loadVoiceStyle();
+      const opts = await resolveSpeechOptions(style);
+      if (!cancelled) speechOptsRef.current = opts;
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const flushTTS = useCallback(() => {
     if (isSpeakingRef.current) return;
@@ -51,7 +84,7 @@ export function useVoiceConversation() {
     if (!next) return;
     isSpeakingRef.current = true;
     Speech.speak(next, {
-      language: 'zh-CN', rate: 1.0, pitch: 1.0,
+      ...speechOptsRef.current,
       onDone: () => { isSpeakingRef.current = false; flushTTS(); },
       onStopped: () => { isSpeakingRef.current = false; ttsQueueRef.current = []; },
       onError: () => { isSpeakingRef.current = false; flushTTS(); },
@@ -67,7 +100,10 @@ export function useVoiceConversation() {
       const cut = m.index + 1;
       const sentence = pendingTextRef.current.slice(0, cut).trim();
       pendingTextRef.current = pendingTextRef.current.slice(cut);
-      if (sentence) ttsQueueRef.current.push(sentence);
+      if (sentence) {
+        const clean = stripMarkdownForTTS(sentence).trim();
+        if (clean) ttsQueueRef.current.push(clean);
+      }
     }
     flushTTS();
   }, [flushTTS]);
@@ -76,8 +112,11 @@ export function useVoiceConversation() {
     const tail = pendingTextRef.current.trim();
     pendingTextRef.current = '';
     if (tail) {
-      ttsQueueRef.current.push(tail);
-      flushTTS();
+      const clean = stripMarkdownForTTS(tail).trim();
+      if (clean) {
+        ttsQueueRef.current.push(clean);
+        flushTTS();
+      }
     }
   }, [flushTTS]);
 
@@ -97,6 +136,12 @@ export function useVoiceConversation() {
   const submit = useCallback(async (userText: string) => {
     setState('thinking');
     setTurns((prev) => [...prev, { role: 'user', text: userText, at: Date.now() }]);
+
+    // 每轮开播前重读一次 voice style, 让设置页改动立即生效 (不用重启 App)
+    try {
+      const style = await loadVoiceStyle();
+      speechOptsRef.current = await resolveSpeechOptions(style);
+    } catch {}
 
     // 重置本轮状态
     pendingTextRef.current = '';

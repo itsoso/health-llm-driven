@@ -4,9 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence } from 'react-native-reanimated';
+import Markdown from 'react-native-markdown-display';
 import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
+import { createMdStylesChat } from '../constants/markdownStyles';
 
 /**
  * 语音连续对话页. MVP 版:
@@ -23,6 +25,7 @@ export default function VoiceChatScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
+  const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
   const params = useLocalSearchParams<{ autoStart?: string; prompt?: string }>();
   const voice = useVoiceConversation();
   const scrollRef = React.useRef<ScrollView>(null);
@@ -103,9 +106,11 @@ export default function VoiceChatScreen() {
               key={i}
               style={[styles.bubble, t.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
             >
-              <Text style={[txt.bubbleText, t.role === 'user' && { color: '#fff' }]}>
-                {t.text}
-              </Text>
+              {t.role === 'user' ? (
+                <Text style={[txt.bubbleText, { color: '#fff' }]}>{t.text}</Text>
+              ) : t.text ? (
+                <Markdown style={mdStyles}>{t.text}</Markdown>
+              ) : null}
             </View>
           ))
         )}
