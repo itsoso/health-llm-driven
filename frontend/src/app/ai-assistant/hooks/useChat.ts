@@ -92,12 +92,17 @@ export function useChat(deps: UseChatDeps) {
         } else if (event.event === 'tool_call') {
           const toolName = event.data?.tool || '';
           const round = event.data?.round || '';
-          fullText += `🔧 调用工具: \`${toolName}\` (第${round}轮)\n`;
+          // 用 HTML <details> 折叠 + class 标记, MarkdownRenderer 识别后降为灰色徽章
+          fullText += `<tool-step name="${toolName}" round="${round}" status="running"></tool-step>\n`;
           d.setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
         } else if (event.event === 'tool_result') {
           const toolName = event.data?.tool || '';
           const success = event.data?.success;
-          fullText += `${success ? '✅' : '❌'} ${toolName} ${success ? '完成' : '失败'}\n\n`;
+          // 把上一条 running 替换成 done/failed
+          fullText = fullText.replace(
+            new RegExp(`<tool-step name="${toolName}" round="[^"]*" status="running"></tool-step>\\n`),
+            `<tool-step name="${toolName}" status="${success ? 'done' : 'failed'}"></tool-step>\n`
+          );
           d.setInlineResponse(prev => prev ? { ...prev, answer: fullText } : null);
         } else if (event.event === 'token') {
           fullText += event.data?.content || '';
@@ -170,17 +175,26 @@ export function useChat(deps: UseChatDeps) {
           const toolName = event.data?.tool || '';
           const round = event.data?.round || '';
           if (toolName) toolsUsed.add(toolName);
-          buf.content += `🔧 调用工具: \`${toolName}\` (第${round}轮)\n`;
+          buf.content += `<tool-step name="${toolName}" round="${round}" status="running"></tool-step>\n`;
           if (!buf.timer) {
             buf.timer = setTimeout(() => { const b = buf.content; buf.content = ''; buf.timer = null; d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: m.content + b } : m)); }, 50);
           }
         } else if (event.event === 'tool_result') {
           const toolName = event.data?.tool || '';
           const success = event.data?.success;
-          buf.content += `${success ? '✅' : '❌'} ${toolName} ${success ? '完成' : '失败'}\n\n`;
-          if (!buf.timer) {
-            buf.timer = setTimeout(() => { const b = buf.content; buf.content = ''; buf.timer = null; d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: m.content + b } : m)); }, 50);
-          }
+          // 替换最近一条 running 为 done/failed (在已 flush 的 message.content 里改)
+          d.setMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            content: m.content.replace(
+              new RegExp(`<tool-step name="${toolName}" round="[^"]*" status="running"></tool-step>`),
+              `<tool-step name="${toolName}" status="${success ? 'done' : 'failed'}"></tool-step>`
+            )
+          } : m));
+          // 同时也替换 buffer 里未 flush 的
+          buf.content = buf.content.replace(
+            new RegExp(`<tool-step name="${toolName}" round="[^"]*" status="running"></tool-step>`),
+            `<tool-step name="${toolName}" status="${success ? 'done' : 'failed'}"></tool-step>`
+          );
         } else if (event.event === 'token') {
           if (firstToken) { firstToken = false; clearTimeout(waitTimer); clearTimeout(waitTimer2); d.setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: '' } : m)); d.setLoading(false); }
           buf.content += event.data.content;

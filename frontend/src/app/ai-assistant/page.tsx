@@ -348,9 +348,12 @@ export default function AIAssistantPage() {
         <div className="absolute inset-0" style={{ background: '#F2F2F7' }} />
       ) : (
         <>
-          <div className="absolute inset-0 bg-gradient-to-br from-[#04111f] via-[#0b1b24] to-[#041428]" />
-          <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'radial-gradient(circle at 16% 14%, rgba(16,185,129,0.24), transparent 30%), radial-gradient(circle at 86% 16%, rgba(45,212,191,0.18), transparent 30%), linear-gradient(to right, rgba(148,163,184,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.07) 1px, transparent 1px)', backgroundSize: 'auto, auto, 56px 56px, 56px 56px' }} />
-          <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
+          {/* 主背景 - 深石板灰, 比之前的近黑色更柔和 */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950" />
+          {/* 顶部一抹微弱的 emerald 光晕 - 提示这里是 AI 区域, 但不抢眼 */}
+          <div className="absolute inset-0 opacity-40 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(16,185,129,0.10), transparent 50%)' }} />
+          {/* 底部 fade 让输入栏区有层次 */}
+          <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
         </>
       )}
 
