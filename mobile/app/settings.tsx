@@ -109,6 +109,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/monthly-reports' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
             onPress={() => router.push('/doctor-loop' as any)} />
+          <SettingRow icon="people-outline" label="家庭健康"
+            onPress={() => router.push('/family' as any)} />
         </View>
 
         {/* Notifications & Siri & Security */}
