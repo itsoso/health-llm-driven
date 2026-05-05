@@ -25,6 +25,18 @@ export async function fetchWeeklyVoiceScript(): Promise<BriefingVoiceScript> {
   return resp.data;
 }
 
+/**
+ * 跑前/练前 readiness 短稿 (F 产品改进).
+ * 用户首页点'马上要运动'按钮 → voice-chat ?intent=preworkout&workout_type=running.
+ * 60-100 字, 私享女声播完进 listening 接你说"好,准备出门"等.
+ */
+export async function fetchPreWorkoutVoiceScript(workoutType?: string): Promise<BriefingVoiceScript> {
+  const resp = await api.get<BriefingVoiceScript>('/v1/briefing/preworkout-voice-script', {
+    params: workoutType ? { workout_type: workoutType } : undefined,
+  });
+  return resp.data;
+}
+
 export interface ClarificationOpener {
   opener: string;
   rationale: string;
