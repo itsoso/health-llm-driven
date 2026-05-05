@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert, StatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, Alert, StatusBar, Platform, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -293,10 +293,98 @@ export default function WorkoutDetailScreen() {
     };
   }, []);
 
+  // 分享: RN 内置 Share, 拉教练短稿 + 数据拼一段文字 (微信粘贴)
+  // 截屏图片分享走下一个 build (需要 react-native-view-shot)
+  const handleShare = useCallback(async () => {
+    if (!workoutId) return;
+    try {
+      // 拉短稿 (复用 voice-coach 那 67 字)
+      const { script } = await getWorkoutVoiceCoach(workoutId).catch(() => ({ script: '' } as any));
+      const w = workout;
+      const bits: string[] = [];
+      if (w?.workout_type) bits.push(w.workout_type === 'running' ? '🏃 跑步' : `🏋 ${w.workout_type}`);
+      if (w?.distance_meters) bits.push(`${(w.distance_meters / 1000).toFixed(1)} km`);
+      if (w?.duration_seconds) bits.push(`${Math.round(w.duration_seconds / 60)} 分钟`);
+      if (w?.avg_pace_seconds_per_km) {
+        const m = Math.floor(w.avg_pace_seconds_per_km / 60);
+        const s = w.avg_pace_seconds_per_km % 60;
+        bits.push(`配速 ${m}'${String(s).padStart(2, '0')}"/km`);
+      }
+      if (w?.avg_heart_rate) bits.push(`平均心率 ${w.avg_heart_rate}`);
+      const summary = bits.join(' · ');
+      const text = [
+        summary,
+        script ? `\n${script}` : '',
+        '\n— 健康助理',
+      ].filter(Boolean).join('');
+      await Share.share({ message: text });
+    } catch (e: any) {
+      Alert.alert('分享失败', e?.message || '请稍后重试');
+    }
+  }, [workoutId, workout]);
+
   const postContent = useMemo(() => {
     if (!postAnalysis) return null;
     const a = postAnalysis as Record<string, any>;
-    return a.analysis || a.content || a.markdown || a.summary || null;
+
+    // 老格式 fallback (markdown / content / summary 字段)
+    const direct = a.analysis || a.content || a.markdown || a.summary;
+    if (typeof direct === 'string' && direct.trim()) return direct;
+
+    // 新格式 — 后端返回结构化对象, 拼成 markdown 给 react-native-markdown-display 渲染
+    const lines: string[] = [];
+
+    if (a.overall_rating) {
+      const o = a.overall_rating;
+      lines.push(`## ${o.emoji || '⭐'} 总评 — ${o.rating || ''} (${o.score ?? '-'} / 10)`);
+      if (o.message) lines.push(o.message);
+      lines.push('');
+    }
+
+    if (a.intensity_assessment) {
+      const i = a.intensity_assessment;
+      lines.push(`### ${i.emoji || '💪'} 强度评估: ${i.level || i.intensity || ''}`);
+      if (Array.isArray(i.factors) && i.factors.length) {
+        for (const f of i.factors) lines.push(`- ${f}`);
+      }
+      lines.push('');
+    }
+
+    if (a.hr_analysis?.zones) {
+      lines.push('### ❤️ 心率区间分布');
+      const zones = a.hr_analysis.zones as Record<string, any>;
+      for (const key of Object.keys(zones)) {
+        const z = zones[key];
+        if (z?.percentage > 0) {
+          lines.push(`- ${z.name}: ${z.percentage.toFixed(1)}%`);
+        }
+      }
+      lines.push('');
+    }
+
+    if (Array.isArray(a.recovery_tips) && a.recovery_tips.length) {
+      lines.push('### 🌿 恢复建议');
+      for (const t of a.recovery_tips) lines.push(`- ${t}`);
+      lines.push('');
+    }
+
+    if (Array.isArray(a.improvement_tips) && a.improvement_tips.length) {
+      lines.push('### 📈 改进建议');
+      for (const t of a.improvement_tips) lines.push(`- ${t}`);
+      lines.push('');
+    }
+
+    if (Array.isArray(a.knowledge_points) && a.knowledge_points.length) {
+      lines.push('### 💡 知识点');
+      for (const k of a.knowledge_points) {
+        if (typeof k === 'string') lines.push(`- ${k}`);
+        else if (k?.title) lines.push(`- **${k.title}**: ${k.content || ''}`);
+      }
+      lines.push('');
+    }
+
+    const md = lines.join('\n').trim();
+    return md || null;
   }, [postAnalysis]);
 
   if (isLoading) {
@@ -346,7 +434,9 @@ export default function WorkoutDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.labelPrimary} />
         </TouchableOpacity>
         <Text style={txt.title} numberOfLines={1}>{workout.workout_name || workoutTypeLabel}</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity onPress={handleShare} style={styles.backBtn} hitSlop={8} accessibilityLabel="分享">
+          <Ionicons name="share-outline" size={22} color={colors.labelPrimary} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} scrollEnabled={!mapActive}>
