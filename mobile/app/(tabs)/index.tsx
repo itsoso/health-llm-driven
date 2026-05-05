@@ -17,6 +17,7 @@ import TodayCoachPanel from '../../components/dashboard/TodayCoachPanel';
 import AgentAgendaPanel from '../../components/dashboard/AgentAgendaPanel';
 import DataFreshnessPanel from '../../components/dashboard/DataFreshnessPanel';
 import InsightCard from '../../components/dashboard/InsightCard';
+import HomeTimelinePreview from '../../components/dashboard/HomeTimelinePreview';
 import SpecialistChipRow from '../../components/home/SpecialistChipRow';
 import ChatInputBar from '../../components/chat/ChatInputBar';
 import ConversationSheet from '../../components/chat/ConversationSheet';
@@ -215,6 +216,7 @@ export default function HomeScreen() {
       />
       <SpecialistChipRow />
       <InsightCard />
+      <HomeTimelinePreview />
       <AgentAgendaPanel agenda={agentAgenda.data} onOpenItem={handleAgendaItem} />
       <DataFreshnessPanel />
       {criticalAlerts.length > 0 && todayCoach.data?.status !== 'risk' && (
