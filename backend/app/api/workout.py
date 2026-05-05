@@ -1064,6 +1064,25 @@ async def get_post_workout_analysis(
             cached_analysis["from_cache"] = True
             return cached_analysis
 
+        # cache_only 时, 没有 post_workout_analysis 也再看一眼 WorkoutAnalysisResult
+        # (W3 auto_analyze_workout 写的是 WorkoutAnalysisResult.aggregation, 不是 record.post_workout_analysis)
+        # 这是历史遗留分裂, 这里桥接, 让 mobile 能渲染.
+        if cache_only and not force_regenerate and not debug:
+            wa = db.query(WorkoutAnalysisResult).filter(
+                WorkoutAnalysisResult.workout_id == workout_id,
+                WorkoutAnalysisResult.user_id == current_user.id,
+            ).order_by(WorkoutAnalysisResult.id.desc()).first()
+            if wa and wa.aggregation:
+                logger.info(f"用户 {current_user.id} 用 WorkoutAnalysisResult 桥接 (workout_id={workout_id})")
+                return {
+                    "success": True,
+                    "from_cache": True,
+                    "has_cache": True,
+                    # 直接给 markdown 字符串走 mobile 的"老格式 fallback"分支
+                    "analysis": wa.aggregation,
+                    "content": wa.aggregation,
+                }
+
         # 如果仅请求缓存但没有缓存，返回无缓存响应
         if cache_only:
             logger.info(f"用户 {current_user.id} 请求缓存的运动后分析但无缓存 (workout_id={workout_id})")

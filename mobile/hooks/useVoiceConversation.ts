@@ -71,6 +71,9 @@ export function useVoiceConversation() {
   // 静默自动提交 — onSpeechPartialResults 收到新文字就重置 timer,
   // 持续 1.2s 没新内容 → 自动 stop + submit, 不用用户主动点停止.
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 防双发: silence timer 触发 submit 后置 true, onSpeechResults/End 看到就跳过.
+  // Voice.stop() 会触发 onSpeechResults 带 final 文本 + onSpeechEnd, 不防就发两遍.
+  const justSubmittedRef = useRef(false);
   const SILENCE_AUTO_SUBMIT_MS = 1200;
 
   const pendingTextRef = useRef('');
@@ -356,8 +359,9 @@ export function useVoiceConversation() {
       silenceTimerRef.current = setTimeout(() => {
         const text = (latestPartialRef.current || '').trim();
         if (text) {
-          // Voice.stop() 让 onSpeechEnd 走流程; 但 onSpeechEnd 会再次 submit,
-          // 用 latestPartialRef 清空 + 直接 submit 防止双发.
+          // 防双发: 标记已提交, 后续 Voice.stop() 触发的 onSpeechResults/End
+          // 看到 justSubmittedRef=true 就跳过, 不再 submit.
+          justSubmittedRef.current = true;
           latestPartialRef.current = '';
           Voice.stop().catch(() => {});
           setPlaybackMode();
@@ -367,6 +371,8 @@ export function useVoiceConversation() {
     };
 
     Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
+      // silence timer 已触发 submit → 接下来的 partial 全部忽略, 直到下次 startListening 重置
+      if (justSubmittedRef.current) return;
       const val = e.value?.[0] || '';
       if (val && val !== latestPartialRef.current) {
         latestPartialRef.current = val;
@@ -375,19 +381,24 @@ export function useVoiceConversation() {
       }
     };
     Voice.onSpeechResults = (e: SpeechResultsEvent) => {
+      if (justSubmittedRef.current) return;
       const val = e.value?.[0] || latestPartialRef.current;
       latestPartialRef.current = val;
       setTranscript(val);
       armSilenceTimer();
     };
     Voice.onSpeechEnd = () => {
-      // silence timer 可能已经先触发提交了, 这时 latestPartialRef 是空的, 不会重发
+      // silence timer 可能已经先触发提交了 → 跳过, 不重发
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = null;
       }
+      if (justSubmittedRef.current) {
+        // 自然说完: 切回 playback 让后续 LLM reply TTS 走外放. 不 submit.
+        setPlaybackMode();
+        return;
+      }
       const text = (latestPartialRef.current || '').trim();
-      // 用户自然说完: 切回 playback 让后续 LLM reply TTS 走外放
       setPlaybackMode();
       if (text) submitRef.current(text);
       else if (stateRef.current !== 'thinking' && stateRef.current !== 'speaking') setState('idle');
@@ -420,6 +431,7 @@ export function useVoiceConversation() {
       setError(null);
       setTranscript('');
       latestPartialRef.current = '';
+      justSubmittedRef.current = false;  // 新一轮开始, 解锁 listener
       // 先切到 .playAndRecord, 再启动 Voice — 顺序很重要, Voice.start 依赖 session 已经就绪
       await setRecordingMode();
       setState('listening');
@@ -447,6 +459,7 @@ export function useVoiceConversation() {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
+    justSubmittedRef.current = false;
     stopCurrentSpeech();
     ttsQueueRef.current = [];
     pendingTextRef.current = '';

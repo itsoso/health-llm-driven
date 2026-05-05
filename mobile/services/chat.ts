@@ -19,6 +19,9 @@ export interface StreamEvent {
   messageId?: number;
   toolName?: string;
   toolSuccess?: boolean;
+  // I Phase 2: health_record 时附 record_type + record_data 让前端能 sniff 录入摘要
+  recordType?: string;
+  recordData?: Record<string, any>;
 }
 
 /**

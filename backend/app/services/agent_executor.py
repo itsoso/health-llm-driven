@@ -193,13 +193,24 @@ class AgentExecutor:
                             "content": result,
                         })
 
+                        # tool_result 事件给前端用. health_record 时附 args 让前端能识别
+                        # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
+                        tool_event_data = {
+                            "tool": func_name,
+                            "success": not result.startswith("Error"),
+                            "preview": result[:200],
+                        }
+                        if func_name == "health_record":
+                            try:
+                                parsed_args = json.loads(func_args) if isinstance(func_args, str) else func_args
+                                tool_event_data["record_type"] = parsed_args.get("record_type")
+                                tool_event_data["record_data"] = parsed_args.get("data") or {}
+                            except Exception:
+                                pass
+
                         yield {
                             "event": "tool_result",
-                            "data": {
-                                "tool": func_name,
-                                "success": not result.startswith("Error"),
-                                "preview": result[:200],
-                            },
+                            "data": tool_event_data,
                         }
 
                     # 继续循环让模型处理 tool_result
