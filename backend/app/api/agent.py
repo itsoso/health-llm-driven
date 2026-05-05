@@ -21,6 +21,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# 防双发短期缓存: (user_id, msg_hash) → expiry_ts
+# 用于检测客户端 silence_timer + onSpeechEnd 偶发同一 message 短时间内发 2 次的情况.
+# 不持久化, 进程内即可; 多 worker 各自一份没关系 (同一连接通常落同一 worker).
+_RECENT_DUP_CACHE: dict[tuple[int, str], float] = {}
+_DUP_WINDOW_SECONDS = 3.0
+
+
+def _check_recent_dup(user_id: int, message: str) -> bool:
+    """同一 user 同一 message 在 3s 内重复 → 返回 True (拒绝).
+
+    幅匹配: 取 message strip + 前 200 字 (语音转写常见). 不区分 conversation_id —
+    用户多 tab 同一句话可能 fire 2 次, 同样应该拒.
+    """
+    import time
+    now = time.time()
+    key = (user_id, (message or "").strip()[:200])
+
+    # 清理过期
+    if len(_RECENT_DUP_CACHE) > 256:
+        for k, exp in list(_RECENT_DUP_CACHE.items()):
+            if exp < now:
+                _RECENT_DUP_CACHE.pop(k, None)
+
+    expiry = _RECENT_DUP_CACHE.get(key)
+    if expiry and expiry > now:
+        logger.warning(
+            f"[agent.stream] dup msg rejected user={user_id} msg={key[1][:40]!r}"
+        )
+        return True
+
+    _RECENT_DUP_CACHE[key] = now + _DUP_WINDOW_SECONDS
+    return False
+
+
 class ImageItem(BaseModel):
     base64: str
     type: str = "jpeg"
@@ -81,6 +115,16 @@ async def agent_stream(
     has_images = bool(req.image_base64 or req.images)
     if not req.message.strip() and not has_images and not req.file_base64:
         raise HTTPException(status_code=400, detail="消息不能为空")
+
+    # 防双发 (用户反馈批 4): 客户端 silence_timer + onSpeechEnd 偶发同一 message 发 2 次
+    # 后端用 in-memory 短期缓存 (3s 窗) 拒同一用户重复 message, 避免 LLM 重试浪费 + 撞 OpenAI proxy 限流.
+    # 不持久化也 OK — 短期防护即可.
+    _reject = _check_recent_dup(current_user.id, req.message)
+    if _reject:
+        raise HTTPException(
+            status_code=429,
+            detail="请求过于频繁，请稍候。（同一消息 3 秒内已发送）",
+        )
 
     # Normalize: merge single image_base64 and images array into one list
     all_images: List[dict] = []

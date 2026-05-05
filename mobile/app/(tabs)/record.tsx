@@ -238,7 +238,7 @@ export default function RecordScreen() {
                   <TouchableOpacity key={m.medication_id}
                     style={[styles.medItem, done && { backgroundColor: c.tintGreen }]}
                     onPress={async () => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      Haptics.impactAsync(done ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
                       const now = new Date();
                       const hh = String(now.getHours()).padStart(2, '0');
                       const mm = String(now.getMinutes()).padStart(2, '0');
@@ -250,7 +250,12 @@ export default function RecordScreen() {
                         });
                         emitClientEvent('quick_record_logged', { kind: 'medication' }); // Phase 0.4
                         await invalidateRecordMutation(qc);
-                        showUndo(`已记录 ${m.name} ${hh}:${mm}`, async () => {
+                        // done 时点击 = '加记一次' (鼻喷雾常需多喷); 否则 = 首次打卡.
+                        // 区分 toast 文案让用户知道这次点击生效了 (之前 done 状态视觉不变, 用户疑惑'无效').
+                        const msg = done
+                          ? `再记一次 ${m.name} ${hh}:${mm}`
+                          : `已记录 ${m.name} ${hh}:${mm}`;
+                        showUndo(msg, async () => {
                           try { await api.delete(`/medication/logs/${res.data.id}`); await invalidateRecordMutation(qc); } catch {}
                         });
                       } catch { Alert.alert('记录失败'); }
