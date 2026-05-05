@@ -504,6 +504,15 @@ class AnomalyDetectionService:
             # critical 级别绕过静默时段
             respect_quiet = severity != "critical"
 
+            # Agent Native 闭环: 该 alert_type 有 clarify 模板 → deep_link 跳 voice-chat 主动对话
+            #                    没模板 → 退回 trace 详情页 (老路径)
+            from app.services.alert_clarification import get_clarification_opener
+            has_clarification = get_clarification_opener(alert) is not None
+            if has_clarification:
+                deep_link = f"/voice-chat?intent=clarify&alert_id={alert.id}"
+            else:
+                deep_link = f"/trace/anomaly_{alert.id}"
+
             try:
                 result = await push_service.send_notification(
                     user_id=user_id,
@@ -514,7 +523,8 @@ class AnomalyDetectionService:
                         "alert_id": alert.id,
                         "severity": alert.severity,
                         "type": alert.alert_type,
-                        "deep_link": f"/trace/anomaly_{alert.id}",
+                        "deep_link": deep_link,
+                        "rule_id": f"anomaly.{alert.alert_type}",  # H1-B opt-out 用
                     },
                     respect_quiet_hours=respect_quiet,
                 )

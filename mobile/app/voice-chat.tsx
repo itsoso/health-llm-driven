@@ -9,7 +9,7 @@ import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { createMdStylesChat } from '../constants/markdownStyles';
-import { fetchBriefingVoiceScript } from '../services/briefing';
+import { fetchBriefingVoiceScript, fetchClarificationOpener } from '../services/briefing';
 
 /**
  * 语音连续对话页. MVP 版:
@@ -23,6 +23,7 @@ import { fetchBriefingVoiceScript } from '../services/briefing';
  * 启动入口:
  *   - Siri:           `?autoStart=1`        立即开始第一轮录音
  *   - 晨间简报推送:    `?intent=briefing`    拉短稿 → TTS 播 → 自动进 listening 等接话
+ *   - 告警澄清推送:    `?intent=clarify&alert_id=X`  AI 主动开口问 follow-up → 接话
  *   - 默认:                                  待用户主动点球
  */
 export default function VoiceChatScreen() {
@@ -30,7 +31,7 @@ export default function VoiceChatScreen() {
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
-  const params = useLocalSearchParams<{ autoStart?: string; prompt?: string; intent?: string }>();
+  const params = useLocalSearchParams<{ autoStart?: string; prompt?: string; intent?: string; alert_id?: string }>();
   const voice = useVoiceConversation();
   const scrollRef = React.useRef<ScrollView>(null);
 
@@ -76,6 +77,27 @@ export default function VoiceChatScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.intent]);
+
+  // intent=clarify&alert_id=X: AI 主动开口问 follow-up (Agent Native 闭环)
+  // 推送 → 点开 → 私享女声直接读 opener → 进 listening 接你回答
+  const clarifyTriggeredRef = React.useRef(false);
+  useEffect(() => {
+    if (params.intent !== 'clarify' || clarifyTriggeredRef.current) return;
+    const alertIdNum = Number(params.alert_id);
+    if (!alertIdNum || isNaN(alertIdNum)) return;
+    clarifyTriggeredRef.current = true;
+    (async () => {
+      try {
+        const { opener } = await fetchClarificationOpener(alertIdNum);
+        if (opener && opener.trim()) {
+          await voice.speakDirect(opener, { thenListen: true });
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[voice-chat] clarify fetch failed:', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.intent, params.alert_id]);
 
   useEffect(() => {
     // Auto-scroll 到最新 turn
