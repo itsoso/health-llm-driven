@@ -574,7 +574,15 @@ class AgentExecutor:
             "supplements": f"/supplements/me/stats?days={days}",
             "water": "/water/records/me/today",
             "diet": "/diet/records/me/today",
-            "exercise": "/exercise/me/today",
+            # exercise 既包含 ExerciseRecord (手动录入的锻炼如俯卧撑/瑜伽),
+            # 也要包含 WorkoutRecord (Garmin 同步的跑步/骑行等). LLM 问"昨天跑步"
+            # 时应该拿到完整的运动数据.
+            # /workout/me?days=N 是 WorkoutRecord, 含跑步/骑行/hiit/...
+            # /exercise/me?days=N 是 ExerciseRecord (手动录入)
+            # 默认用 workout (真实运动数据); 用户说"我做了 20 个俯卧撑"那种才走 exercise
+            "exercise": f"/workout/me?days={days}",
+            "workout": f"/workout/me?days={days}",
+            "manual_exercise": f"/exercise/me?days={days}",
             "medical_exam": "/medical-exams/me",
             "genetic": "/genetic/variants/me",
             "genetic_cognitive": "/genetic/profile/me/cognitive",
@@ -639,10 +647,18 @@ class AgentExecutor:
         # 补全 weight 必填字段
         if rtype == "weight":
             data.setdefault("record_date", today)
+            # LLM 常把 weight 直接放在顶层 args 而不是 args.data (参数 schema 歧义)
+            # 兜底: 顶层有就挪到 data
+            for src in ("weight", "value", "weight_kg", "体重"):
+                if src in args and "weight" not in data:
+                    data["weight"] = args[src]
+                    break
             if "weight" not in data and "value" in data:
                 data["weight"] = data.pop("value")
             if "weight" not in data and "weight_kg" in data:
                 data["weight"] = data.pop("weight_kg")
+            if "weight" not in data:
+                return "Error: weight 记录必须提供 weight（体重数值，单位 kg）。请在 data.weight 中填入数字，例如 {\"record_type\":\"weight\",\"data\":{\"weight\":71.2}}"
 
         # 补全 blood_pressure 必填字段
         if rtype == "blood_pressure":

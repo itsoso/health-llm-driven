@@ -14,7 +14,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "health_query",
-            "description": "查询用户的健康数据。支持维度：Garmin 体征（步数/心率/HRV/睡眠/血氧/压力/身体电量）、体重、血压、运动、饮食、饮水、补剂依从、体检指标（如 HCY/LDL）、基因位点（如 MTHFR）、用药记录。spo2 维度返回最近一晚逐分钟血氧时间序列、平均/最低/最高值、氧减事件数、ODI 氧减指数。spo2_sleep_correlation 维度返回睡眠阶段（deep/rem/light/awake）与血氧的关联分析，用于 OSAHS 筛查。",
+            "description": "查询用户的健康数据。支持维度：Garmin 体征（步数/心率/HRV/睡眠/血氧/压力/身体电量）、体重、血压、运动(跑步/骑行/HIIT 等 Garmin 同步的 workout)、饮食、饮水、补剂依从、体检指标（如 HCY/LDL）、基因位点（如 MTHFR）、用药记录。spo2 维度返回最近一晚逐分钟血氧时间序列、平均/最低/最高值、氧减事件数、ODI 氧减指数。spo2_sleep_correlation 维度返回睡眠阶段（deep/rem/light/awake）与血氧的关联分析，用于 OSAHS 筛查。exercise / workout 同义, 返回 Garmin 同步的结构化运动 (有距离/配速/心率区间). manual_exercise 返回用户手动录入的简单锻炼 (俯卧撑/瑜伽计次).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -23,7 +23,8 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
                         "enum": ["comprehensive", "sleep", "heart_rate", "hrv", "activity",
                                  "spo2", "spo2_sleep_correlation", "weight", "blood_pressure",
                                  "supplements", "water",
-                                 "diet", "exercise", "body_battery", "stress",
+                                 "diet", "exercise", "workout", "manual_exercise",
+                                 "body_battery", "stress",
                                  "medical_exam", "genetic",
                                  "genetic_cognitive", "genetic_personality", "genetic_comprehensive",
                                  "medication"],

@@ -270,10 +270,23 @@ export function useVoiceConversation() {
     let replyStarted = false;
 
     try {
+      let lastFailedTool = '';  // 同一 tool 连续失败只提示一次
       for await (const evt of streamChat(userText, conversationIdRef.current, undefined, ac.signal)) {
         if (evt.type === 'token' || evt.type === 'tool') {
           const chunk = evt.content || '';
           if (!chunk) continue;
+
+          // tool 失败的可见提示文本不进 TTS 队列 — 用户听到 LLM 重试时连说 5 遍'操作未成功'噪音大
+          // 同一个 tool 连续失败也只显示一次
+          const isToolFailure = evt.type === 'tool' && chunk.includes('⚠️ 操作未成功');
+          if (isToolFailure) {
+            const toolName = evt.toolName || '';
+            if (toolName && toolName === lastFailedTool) continue;  // 同 tool 重复, 跳过
+            lastFailedTool = toolName;
+          } else if (evt.type === 'tool') {
+            lastFailedTool = '';  // 非失败事件重置去重锁
+          }
+
           if (!replyStarted) {
             replyStarted = true;
             setState('speaking');
@@ -288,7 +301,10 @@ export function useVoiceConversation() {
             }
             return copy;
           });
-          enqueueSentences(chunk);
+          // 失败提示不入 TTS, 用户看文字就够了
+          if (!isToolFailure) {
+            enqueueSentences(chunk);
+          }
         } else if (evt.type === 'done') {
           if (evt.conversationId && !conversationIdRef.current) {
             conversationIdRef.current = evt.conversationId;
