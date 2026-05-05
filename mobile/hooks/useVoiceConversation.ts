@@ -57,6 +57,10 @@ interface ActivePlayer {
 
 export function useVoiceConversation() {
   const [state, setState] = useState<VoiceState>('idle');
+  // 给 Voice listener 用的 stateRef — 避免 useEffect 依赖 state
+  // (依赖 state 会让 Voice 监听器每次状态切换都重挂, 在 iOS 上覆盖前一份导致 partial events 丢失)
+  const stateRef = useRef<VoiceState>('idle');
+  useEffect(() => { stateRef.current = state; }, [state]);
   const [transcript, setTranscript] = useState('');
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -335,9 +339,18 @@ export function useVoiceConversation() {
     }
   }, [refreshVoiceStyle, enqueueSentences, flushTail, waitTTSDrain]);
 
+  // submit 用 ref 暴露给 Voice listener, 让 useEffect 只挂一次, 避免每次 state 变化重挂导致 partial events 丢失
+  const submitRef = useRef(submit);
+  useEffect(() => { submitRef.current = submit; }, [submit]);
+
   useEffect(() => {
     // 收到 partial 时重置 silence timer; 1.2s 内没新内容 → 自动 stop + submit.
     // 这比 iOS 系统的 onSpeechEnd (2-3s 才触发) 快得多, 体验上"说完即送".
+    //
+    // 注意: 此 effect 永不重挂 (deps=[]). Voice listener 只在 mount 时挂一次,
+    // 在 unmount 时清理. submit/setPlaybackMode/stopCurrentSpeech 都通过 ref / closure
+    // 访问最新值, 否则 state 变化会让 effect 重挂, iOS 上 Voice 监听器互相覆盖
+    // 导致 partial events 直接丢失 → 用户看不到识别中文字.
     const armSilenceTimer = () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
@@ -348,7 +361,7 @@ export function useVoiceConversation() {
           latestPartialRef.current = '';
           Voice.stop().catch(() => {});
           setPlaybackMode();
-          submit(text);
+          submitRef.current(text);
         }
       }, SILENCE_AUTO_SUBMIT_MS);
     };
@@ -376,8 +389,8 @@ export function useVoiceConversation() {
       const text = (latestPartialRef.current || '').trim();
       // 用户自然说完: 切回 playback 让后续 LLM reply TTS 走外放
       setPlaybackMode();
-      if (text) submit(text);
-      else if (state !== 'thinking' && state !== 'speaking') setState('idle');
+      if (text) submitRef.current(text);
+      else if (stateRef.current !== 'thinking' && stateRef.current !== 'speaking') setState('idle');
     };
     Voice.onSpeechError = (e: SpeechErrorEvent) => {
       if (silenceTimerRef.current) {
@@ -396,7 +409,8 @@ export function useVoiceConversation() {
       abortRef.current?.abort();
       cleanupTmpTts().catch(() => {});
     };
-  }, [submit, stopCurrentSpeech, setPlaybackMode, state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startListening = useCallback(async () => {
     try {
