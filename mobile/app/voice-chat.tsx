@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -184,15 +184,34 @@ export default function VoiceChatScreen() {
         <Text style={txt.title}>语音对话</Text>
         <View style={{ flex: 1 }} />
         <TouchableOpacity onPress={() => {
-          // 旁路抽 fact 写 memory_facts (Karpathy "anterograde amnesia" 解药)
-          // fire-and-forget, 不阻塞退出 — 失败也无所谓
-          const userTurns = voice.turns.filter(t => t.role === 'user').map(t => t.text);
-          if (userTurns.length > 0) {
-            const alertId = params.alert_id ? Number(params.alert_id) : undefined;
-            extractMemoryFromDialog(userTurns, alertId).catch(() => {});
+          // I Phase 2: 关闭前若本次对话有 health_record 录入, 弹 summary 卡让用户 review
+          // (复用 RN Alert, 简单可靠 — 进阶版可做自定义 modal + 撤销按钮)
+          const items = voice.recordedItemsRef?.current || [];
+          const closeSequence = () => {
+            // 旁路抽 fact 写 memory_facts (Karpathy "anterograde amnesia" 解药)
+            // fire-and-forget, 不阻塞退出 — 失败也无所谓
+            const userTurns = voice.turns.filter(t => t.role === 'user').map(t => t.text);
+            if (userTurns.length > 0) {
+              const alertId = params.alert_id ? Number(params.alert_id) : undefined;
+              extractMemoryFromDialog(userTurns, alertId).catch(() => {});
+            }
+            voice.reset();
+            router.back();
+          };
+
+          if (items.length > 0) {
+            const list = items.map((it: any) => `• ${it.label}`).join('\n');
+            Alert.alert(
+              `本次记了 ${items.length} 项`,
+              list,
+              [
+                { text: '都对', onPress: closeSequence, style: 'default' },
+                { text: '关闭', onPress: closeSequence, style: 'cancel' },
+              ],
+            );
+          } else {
+            closeSequence();
           }
-          voice.reset();
-          router.back();
         }} hitSlop={12} accessibilityLabel="退出语音对话">
           <Ionicons name="close-circle" size={28} color={c.labelTertiary} />
         </TouchableOpacity>

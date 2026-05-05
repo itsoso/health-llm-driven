@@ -51,6 +51,70 @@ function stripMarkdownForTTS(s: string): string {
     .replace(/~~([^~]+)~~/g, '$1');
 }
 
+/**
+ * 从 health_record 的 args.data 抽一个 60 字以内的人类可读摘要.
+ * 供 voice-chat 关闭时的 summary 卡显示 "本次记了什么".
+ * 返回空字符串时调用方应跳过 (data 格式未知 / 不认识的 record_type).
+ */
+function formatRecordLabel(recordType: string, d: Record<string, any>): string {
+  if (!d) return '';
+  switch (recordType) {
+    case 'water': {
+      const amt = d.amount ?? 250;
+      return `饮水 ${amt}ml`;
+    }
+    case 'weight': {
+      if (d.weight != null) return `体重 ${d.weight}kg`;
+      return '体重记录';
+    }
+    case 'blood_pressure':
+      return `血压 ${d.systolic}/${d.diastolic}`;
+    case 'diet': {
+      const meal = {
+        breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐',
+      }[d.meal_type as string] || d.meal_type || '饮食';
+      const food = d.food_items || d.description || '';
+      return `${meal}: ${String(food).slice(0, 40)}`;
+    }
+    case 'supplement':
+      return `补剂: ${d.supplement_name || '未指定'}`;
+    case 'supplement_group': {
+      const t = { morning: '早上', noon: '中午', evening: '晚上', bedtime: '睡前' }[d.timing as string] || d.timing;
+      return `补剂组: ${t}`;
+    }
+    case 'exercise': {
+      const ex = d.exercise_type || '运动';
+      if (d.reps) return `${ex} ${d.reps}${d.sets ? ' x ' + d.sets + '组' : '次'}`;
+      if (d.duration) return `${ex} ${d.duration}分钟`;
+      return `${ex}`;
+    }
+    case 'medication':
+      return `服药: ${d.medication_name || '未指定'}${d.taken_time ? ' @' + d.taken_time : ''}`;
+    case 'illness':
+      return `生病: ${d.illness_name || '症状'}`;
+    case 'rhinitis': {
+      const parts = [];
+      if (d.sneezing != null) parts.push(`喷嚏 ${d.sneezing}`);
+      if (d.congestion != null) parts.push(`鼻塞 ${d.congestion}`);
+      if (d.runny_nose != null) parts.push(`流涕 ${d.runny_nose}`);
+      return `鼻炎: ${parts.join('/') || '症状'}`;
+    }
+    case 'mood':
+      return `心情 ${d.score ?? '-'}${d.notes ? ' - ' + String(d.notes).slice(0, 20) : ''}`;
+    case 'symptom': {
+      const sym = Array.isArray(d.symptoms) ? d.symptoms.map((s: any) => s.name).join('/') : '';
+      return `症状: ${sym || '记录'}`;
+    }
+    case 'reminder':
+      return `提醒: ${d.title || '未命名'}`;
+    case 'garmin_sync':
+      return '触发 Garmin 同步';
+    default:
+      return `${recordType} 记录`;
+  }
+}
+
+
 interface ActivePlayer {
   cancel: () => void;
 }
@@ -487,6 +551,7 @@ export function useVoiceConversation() {
     ttsQueueRef.current = [];
     pendingTextRef.current = '';
     assistantTextRef.current = '';
+    recordedItemsRef.current = [];
     abortRef.current?.abort();
     Voice.stop().catch(() => {});
     Voice.cancel?.().catch(() => {});
@@ -551,5 +616,7 @@ export function useVoiceConversation() {
     reset,
     speakDirect,
     isActive: state !== 'idle' && state !== 'error',
+    // I Phase 2: 本次会话内成功 health_record 摘要 (调用方读 .current 即可, 不需要 React state)
+    recordedItemsRef,
   };
 }
