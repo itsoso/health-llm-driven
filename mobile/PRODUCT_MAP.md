@@ -122,6 +122,7 @@ backend/app/
 | `?intent=clarify&alert_id=X` | anomaly push (mode=converse) | `GET /v1/clarification/opener?alert_id=X` | D |
 | `?intent=weekly` | 周日 20:00 push (`send_weekly_review_invite`) | `GET /v1/briefing/weekly-voice-script` | E |
 | `?intent=preworkout&workout_type=X` | record tab 按钮 | `GET /v1/briefing/preworkout-voice-script` | F |
+| `?intent=journal` | record tab 按钮 (声音笔记) | (无, 客户端固定 opener) | I |
 
 ### 加新 intent 4 步法 (复制 pattern)
 ```
@@ -260,6 +261,8 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 | E | 周聊 | services/weekly_review_voice_script.py + celery 周日 20:00 | ✅ |
 | F | 跑前 readiness 对话 | services/preworkout_voice_script.py + record tab 按钮 | ✅ |
 | G | 家庭健康 (MVP) | mobile/app/family.tsx + services/family.ts | ✅ 只读 |
+| H | 健康事件流 Timeline | api/timeline.py + services/events_timeline_service.py + mobile/app/timeline.tsx | ✅ 独立页 |
+| I | 声音笔记 Voice Journal | voice-chat ?intent=journal + record tab 按钮 | ✅ MVP |
 | W3 | 跑后教练推送 | tasks/garmin_sync.py auto_analyze_workout | ✅ |
 
 ---
@@ -267,12 +270,12 @@ mp3 bytes → mobile expo-audio createAudioPlayer 播
 ## §9 Backlog (按价值排序)
 
 - **G Phase 2**: 家庭邀请流 / 切换视角 / 跨成员告警路由
-- **H** 健康事件流 Timeline: 主页改时间线
-- **I** 声音笔记 Voice Journal: 用户语音 "今天头疼" → LLM 解析归类录入
+- **H Phase 2**: Timeline 上主页 (取代部分 dashboard 卡片), 需要先看用户停留时长数据
+- **I Phase 2**: 声音笔记结束后 show "已记录" summary card (review 用户接受度)
 - **F Phase 2**: Garmin RHR 飙升自动检测 → 主动推 preworkout
 - **L8 扩展**: 把"先确认"模式扩到 blood_pressure / illness / reminder
 - **proximity 自动听筒**: 写 native module 实现贴脸切听筒 (expo-audio 当前不支持)
-- **medication 体验**: 药物增删/回滚 (用户反馈, 见 issue thread)
+- **medication 高级**: 手动添加药物 UI (目前只能对话添加)
 
 ---
 

@@ -101,6 +101,8 @@ export default function RecordScreen() {
           <QuickNavBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
           {/* F 产品改进: 跑前 readiness 对话 — 私享女声给具体建议 */}
           <QuickNavBtn icon="flash-outline" label="跑前准备" color={c.brand} onPress={() => router.push('/voice-chat?intent=preworkout&workout_type=running' as any)} />
+          {/* I 产品改进: 声音笔记 — AI 开口邀请, 自动归类录入 */}
+          <QuickNavBtn icon="mic-outline" label="声音笔记" color={c.blue} onPress={() => router.push('/voice-chat?intent=journal' as any)} />
           <QuickNavBtn icon="nutrition-outline" label="饮食" color={c.orange} onPress={() => router.push('/diet' as any)} />
           <QuickNavBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
         </View>

@@ -26,6 +26,7 @@ import { fetchBriefingVoiceScript, fetchWeeklyVoiceScript, fetchPreWorkoutVoiceS
  *   - 告警澄清推送:    `?intent=clarify&alert_id=X`  AI 主动开口问 follow-up → 接话
  *   - 周聊推送:        `?intent=weekly`       周日 20:00 推送, 本周回顾 + 询问下周计划
  *   - 跑前准备:        `?intent=preworkout&workout_type=running`  首页按钮触发, readiness 建议 + 接话
+ *   - 声音笔记:        `?intent=journal`      AI 开口'说吧我帮你记', 用户说事实, agent 自动调 health_record
  *   - 默认:                                  待用户主动点球
  */
 export default function VoiceChatScreen() {
@@ -136,6 +137,19 @@ export default function VoiceChatScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.intent, params.workout_type]);
+
+  // intent=journal: 声音笔记模式 — AI 开口邀请用户说事实, agent 自动调 health_record 记录
+  // 不需要后端拉稿 (固定 opener), 但会进 listening 等用户说
+  const journalTriggeredRef = React.useRef(false);
+  useEffect(() => {
+    if (params.intent !== 'journal' || journalTriggeredRef.current) return;
+    journalTriggeredRef.current = true;
+    (async () => {
+      const opener = '说吧，我帮你记。可以告诉我症状、用药、运动、心情，或者今天发生的事。';
+      await voice.speakDirect(opener, { thenListen: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.intent]);
 
   useEffect(() => {
     // Auto-scroll 到最新 turn
