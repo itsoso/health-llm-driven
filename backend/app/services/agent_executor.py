@@ -660,6 +660,26 @@ class AgentExecutor:
             if "weight" not in data:
                 return "Error: weight 记录必须提供 weight（体重数值，单位 kg）。请在 data.weight 中填入数字，例如 {\"record_type\":\"weight\",\"data\":{\"weight\":71.2}}"
 
+            # L8 (Karpathy "verification is the bottleneck"):
+            # weight 是高确定性需求 (数值要准), 写错没法静默修正.
+            # LLM 第一次调用时强制走"先确认"流程 → return 确认提示, 不真写库.
+            # 第二次带 args.confirmed=true 或 data.confirmed=true 才真写.
+            confirmed = (
+                args.get("confirmed") is True or args.get("confirm") is True
+                or data.get("confirmed") is True or data.get("confirm") is True
+            )
+            # 写库前剥掉 confirmed 字段, 不让它进 DB schema
+            data.pop("confirmed", None)
+            data.pop("confirm", None)
+            if not confirmed:
+                w = data["weight"]
+                d = data.get("record_date", today)
+                return (
+                    f"[NEEDS_CONFIRMATION] 我准备记录: 体重 {w} kg, 日期 {d}. "
+                    f"请向用户复述这个值并问一次'是这样吗？', "
+                    f"用户确认后**重新调用** health_record 并在 data 里加 confirmed=true."
+                )
+
         # 补全 blood_pressure 必填字段
         if rtype == "blood_pressure":
             data.setdefault("record_date", today)
