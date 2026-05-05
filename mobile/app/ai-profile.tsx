@@ -446,12 +446,17 @@ const styles = StyleSheet.create({
   tabTextActive: { color: colors.labelPrimary, fontWeight: '600' },
 
   tierChipScroll: {
-    flexGrow: 0,  // 不让 horizontal ScrollView 在父 flex 里被挤扁 (iOS bug)
+    // 给一个显式高度让 ScrollView 在父 flex 里不被挤扁 (iOS).
+    // chip: paddingVertical 6 + fontSize 12 ≈ 26; row: paddingVertical sm(8) * 2 = 16; 总 ~42, 给 48 留余量
+    height: 48,
+    flexGrow: 0,
     flexShrink: 0,
   },
   tierChipRow: {
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: 8,
-    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    gap: 8,
+    // 不用 alignItems:center — horizontal ScrollView 配 alignItems 在 RN 0.81/iOS 有渲染抖动
   },
   tierChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,

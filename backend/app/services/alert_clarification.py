@@ -25,7 +25,7 @@ from app.models.anomaly_alert import AnomalyAlert
 _TEMPLATES: dict[str, dict] = {
     "spo2_low": {
         "opener_template": (
-            "嗨，我注意到你最近{nights_count}晚血氧偏低，有几次到了{min_value}。"
+            "嗨，我注意到你{nights_count}晚血氧偏低，最低到了{min_value}。"
             "我有几个判断想跟你确认一下。"
             "最近是不是侧睡或者枕头比平时高？另外，鼻子有没有不通气？"
         ),
@@ -40,7 +40,7 @@ _TEMPLATES: dict[str, dict] = {
     },
     "hrv_drop": {
         "opener_template": (
-            "嗨，最近{nights_count}晚你的 HRV 都比平时低不少。"
+            "嗨，{nights_count}晚你的 HRV 都比平时低不少。"
             "想跟你聊聊。最近是不是工作压力大？或者训练强度突然加了？"
         ),
         "fallback_opener": (
@@ -60,7 +60,7 @@ _TEMPLATES: dict[str, dict] = {
     },
     "sleep_low": {
         "opener_template": (
-            "嗨，你这{nights_count}晚平均只睡了{hours}小时。"
+            "嗨，{nights_count}晚你只睡了{hours}小时。"
             "想问一下，是工作忙、还是入睡有困难？"
         ),
         "fallback_opener": "嗨，你最近睡眠时长偏少。是工作忙、还是入睡有困难？",
@@ -94,15 +94,25 @@ def get_clarification_opener(alert: AnomalyAlert) -> Optional[dict]:
     if not tmpl:
         return None
 
-    # 简单数据填充 — 从 alert.data (JSON dict) 抽实际值
-    data = alert.data or {}
-    opener: str
+    # AnomalyAlert 字段: current_value / baseline_value / threshold_value (Float).
+    # 不同 alert_type 的语义含义:
+    #   spo2_low      current=最低 SpO2,   baseline=7d 均值
+    #   hrv_drop      current=昨夜 HRV,    baseline=7d 均值
+    #   rhr_spike     current=昨日 RHR,    baseline=7d 均值
+    #   sleep_low     current=昨夜睡眠 h,  baseline=7d 均值
+    cur = alert.current_value
+    base = alert.baseline_value
+
+    delta_str = "几"
+    if cur is not None and base is not None:
+        delta_str = str(int(abs(base - cur))) if abs(base - cur) >= 1 else f"{abs(base - cur):.1f}"
+
     try:
         opener = tmpl["opener_template"].format(
-            nights_count=data.get("nights_count") or data.get("count") or "几",
-            min_value=data.get("min_value") or data.get("min_spo2") or "90",
-            delta=data.get("delta") or "几",
-            hours=data.get("avg_hours") or data.get("hours") or "几个",
+            nights_count="近几",  # 暂时用'近几晚', 没有 explicit 计数字段; 后续可从 ActionCard / 历史 alert 算
+            min_value=int(cur) if alert.alert_type == "spo2_low" and cur else "90",
+            delta=delta_str,
+            hours=f"{cur:.1f}" if alert.alert_type == "sleep_low" and cur else "几个",
         )
     except (KeyError, ValueError):
         opener = tmpl["fallback_opener"]
