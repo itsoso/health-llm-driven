@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
 
     # === LLM Provider 统一配置 ===
-    llm_provider: str = "openclaw"  # openclaw | openai | ollama（默认 openclaw 避免 openai proxy 429）
+    llm_provider: str = "openclaw"  # openclaw | openai | ollama | tokenplan
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None  # 代理地址，如: https://api.openai-proxy.com/v1
     openai_model: str = "gpt-4o-mini"  # 默认模型
+
+    # 阿里云 TokenPlan (兼容 OpenAI 协议) — 国内直连低延迟, 套餐固定成本
+    # 模型选项: qwen3.6-plus / deepseek-v3.2 / glm-5 / MiniMax-M2.5
+    tokenplan_api_key: Optional[str] = None
+    tokenplan_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    tokenplan_model: str = "qwen3.6-plus"
 
     # Garmin 凭据 (用于后台自动同步)
     garmin_email: Optional[str] = None

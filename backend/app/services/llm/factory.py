@@ -36,6 +36,8 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
 
     if provider_type == "openai":
         return _create_openai_provider()
+    elif provider_type == "tokenplan":
+        return _create_tokenplan_provider()
     elif provider_type == "ollama":
         return _create_ollama_provider()
     elif provider_type == "openclaw":
@@ -47,7 +49,7 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
     else:
         raise ValueError(
             f"未知的 LLM provider 类型: {provider_type!r}，"
-            f"支持的类型: openclaw, openai, ollama"
+            f"支持的类型: openclaw, openai, ollama, tokenplan"
         )
 
 
@@ -65,6 +67,20 @@ def _create_openai_provider() -> LLMProvider:
         base_url=base_url,
         model=model,
     )
+
+
+def _create_tokenplan_provider() -> LLMProvider:
+    """阿里云 TokenPlan (兼容 OpenAI 协议). 国内直连, 套餐固定."""
+    from app.services.llm.providers.openai_provider import OpenAIProvider
+
+    api_key = settings.tokenplan_api_key
+    base_url = settings.tokenplan_base_url
+    model = settings.tokenplan_model
+
+    if not api_key:
+        raise ValueError("TOKENPLAN_API_KEY 未配置")
+    logger.info(f"[LLM Factory] TokenPlan: model={model} base={base_url[:50]}")
+    return OpenAIProvider(api_key=api_key, base_url=base_url, model=model)
 
 
 def _create_ollama_provider() -> LLMProvider:
