@@ -62,6 +62,11 @@ class UserNotificationSetting(Base):
     # 已静音的规则 rule_id 列表, 例: ["vitals.sleep_short", "ddi.warfarin_nsaid"]
     # 命中这些 rule_id 的 health_alert 不推. 非 health_alert 不受影响.
     alert_rule_opt_outs = Column(JSON, default=list)
+    # L9 (Karpathy partial autonomy): 告警的"反应方式"自治档位
+    # 'silent'   只写 alerts tab, 不推送
+    # 'notify'   推送, deep_link 跳 trace 详情页 (不开口对话)
+    # 'converse' 推送 + voice-chat 主动开口问 follow-up (默认, Agent Native 闭环)
+    alert_clarify_mode = Column(String(20), default="converse")
 
     # 渠道设置
     wechat_enabled = Column(Boolean, default=True)

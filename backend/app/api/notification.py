@@ -40,6 +40,10 @@ class NotificationSettingsUpdate(BaseModel):
         None, pattern=r"^(info|warning|critical)$",
     )
     alert_rule_opt_outs: Optional[List[str]] = None
+    # L9 (Karpathy partial autonomy): 告警反应档位
+    alert_clarify_mode: Optional[str] = Field(
+        None, pattern=r"^(silent|notify|converse)$",
+    )
 
 
 class WeChatBindRequest(BaseModel):
@@ -107,6 +111,7 @@ def get_notification_settings(
             "ios_bound": False,
             "alert_severity_threshold": "warning",
             "alert_rule_opt_outs": [],
+            "alert_clarify_mode": "converse",
         }
 
     return {
@@ -125,6 +130,7 @@ def get_notification_settings(
         "ios_bound": bool(settings.ios_device_token),
         "alert_severity_threshold": settings.alert_severity_threshold or "warning",
         "alert_rule_opt_outs": settings.alert_rule_opt_outs or [],
+        "alert_clarify_mode": getattr(settings, "alert_clarify_mode", None) or "converse",
     }
 
 

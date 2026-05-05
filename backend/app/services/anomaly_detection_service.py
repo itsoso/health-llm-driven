@@ -504,11 +504,29 @@ class AnomalyDetectionService:
             # critical 级别绕过静默时段
             respect_quiet = severity != "critical"
 
-            # Agent Native 闭环: 该 alert_type 有 clarify 模板 → deep_link 跳 voice-chat 主动对话
-            #                    没模板 → 退回 trace 详情页 (老路径)
+            # L9 (Karpathy partial autonomy): 用户的告警反应档位
+            # silent   → 只写 alerts tab, 不推送 (alert 已写库, 直接 mark sent 跳过)
+            # notify   → 推送 + deep_link 跳 trace 详情 (不开口)
+            # converse → 推送 + deep_link 跳 voice-chat 主动开口 (默认, 现状)
+            settings = push_service.get_user_settings(user_id)
+            mode = (
+                getattr(settings, "alert_clarify_mode", None) if settings else None
+            ) or "converse"
+
+            # critical 级别强制至少 notify (生命安全, 不让用户彻底静默危险告警)
+            if mode == "silent" and severity != "critical":
+                alert.notification_sent = True
+                logger.info(
+                    f"[anomaly] user={user_id} mode=silent, alert={alert.id} "
+                    f"type={alert.alert_type} 只写库不推送"
+                )
+                continue
+
+            # Agent Native 闭环: 该 alert_type 有 clarify 模板 + mode=converse → deep_link 跳 voice-chat
+            #                    其它情况 → 退回 trace 详情页
             from app.services.alert_clarification import get_clarification_opener
             has_clarification = get_clarification_opener(alert) is not None
-            if has_clarification:
+            if has_clarification and mode == "converse":
                 deep_link = f"/voice-chat?intent=clarify&alert_id={alert.id}"
             else:
                 deep_link = f"/trace/anomaly_{alert.id}"

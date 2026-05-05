@@ -16,6 +16,7 @@ export interface NotificationSettings {
   ios_bound: boolean;
   alert_severity_threshold: 'info' | 'warning' | 'critical';
   alert_rule_opt_outs: string[];
+  alert_clarify_mode: 'silent' | 'notify' | 'converse';
 }
 
 export interface NotificationSettingsUpdate {
@@ -31,6 +32,7 @@ export interface NotificationSettingsUpdate {
   ios_push_enabled?: boolean;
   alert_severity_threshold?: 'info' | 'warning' | 'critical';
   alert_rule_opt_outs?: string[];
+  alert_clarify_mode?: 'silent' | 'notify' | 'converse';
 }
 
 export interface Reminder {

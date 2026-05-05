@@ -105,6 +105,15 @@ export default function NotificationSettingsScreen() {
           />
         </View>
 
+        <Text style={txt.section}>告警反应方式</Text>
+        <Text style={txt.hintSmall}>收到健康异常告警时, AI 怎么和你互动. critical 级别永远至少'提示'级.</Text>
+        <View style={styles.card}>
+          <ClarifyModePicker
+            current={settings?.alert_clarify_mode || 'converse'}
+            onPick={(v) => toggle('alert_clarify_mode' as any, v as any)}
+          />
+        </View>
+
         {(settings?.alert_rule_opt_outs?.length ?? 0) > 0 && (
           <>
             <Text style={txt.section}>已静音的规则</Text>
@@ -240,6 +249,50 @@ function NavRow({ label, icon, onPress }: { label: string; icon: any; onPress: (
       <Text style={txt.rowLabel}>{label}</Text>
       <Ionicons name="chevron-forward" size={14} color={colors.labelTertiary} />
     </TouchableOpacity>
+  );
+}
+
+function ClarifyModePicker({ current, onPick }: {
+  current: 'silent' | 'notify' | 'converse';
+  onPick: (v: 'silent' | 'notify' | 'converse') => void;
+}) {
+  const options: Array<{
+    v: 'silent' | 'notify' | 'converse';
+    label: string;
+    hint: string;
+    color: string;
+  }> = [
+    { v: 'silent',   label: '静默', hint: '只写入告警列表, 不打扰你 (critical 级仍会推送)', color: '#8E8E93' },
+    { v: 'notify',   label: '提示', hint: '推送通知, 点击进详情页', color: '#FF9500' },
+    { v: 'converse', label: '对话', hint: '推送 + 点击进语音对话, AI 主动开口问你 (推荐)', color: '#0A8F8F' },
+  ];
+  return (
+    <View>
+      {options.map(o => {
+        const active = current === o.v;
+        return (
+          <TouchableOpacity
+            key={o.v}
+            style={[styles.row, active && { backgroundColor: colors.fill + '55' }]}
+            onPress={() => onPick(o.v)}
+            activeOpacity={0.6}
+          >
+            <View style={{
+              width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+              borderColor: active ? o.color : colors.labelTertiary,
+              backgroundColor: active ? o.color : 'transparent',
+              justifyContent: 'center', alignItems: 'center',
+            }}>
+              {active && <Ionicons name="checkmark" size={12} color="#fff" />}
+            </View>
+            <View style={{ flex: 1, marginLeft: 4 }}>
+              <Text style={txt.rowLabel}>{o.label}</Text>
+              <Text style={[txt.hintSmall, { marginTop: 2 }]}>{o.hint}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
