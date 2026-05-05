@@ -131,7 +131,7 @@ export default function VoiceChatScreen() {
       <View style={styles.header}>
         <Text style={txt.title}>语音对话</Text>
         <View style={{ flex: 1 }} />
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityLabel="退出语音对话">
+        <TouchableOpacity onPress={() => { voice.reset(); router.back(); }} hitSlop={12} accessibilityLabel="退出语音对话">
           <Ionicons name="close-circle" size={28} color={c.labelTertiary} />
         </TouchableOpacity>
       </View>
@@ -174,7 +174,7 @@ export default function VoiceChatScreen() {
           </Animated.View>
         </Pressable>
         <Text style={txt.hint}>
-          {voice.state === 'listening' ? '再点一下提前结束' : voice.state === 'idle' ? '说完自动停' : ' '}
+          {voice.state === 'listening' ? '停 1 秒自动发，或再点一下立即结束' : voice.state === 'idle' ? '点一下开始说话' : ' '}
         </Text>
       </View>
     </SafeAreaView>

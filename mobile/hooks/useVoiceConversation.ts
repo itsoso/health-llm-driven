@@ -64,6 +64,11 @@ export function useVoiceConversation() {
   const latestPartialRef = useRef('');
   const conversationIdRef = useRef<number | undefined>(undefined);
 
+  // 静默自动提交 — onSpeechPartialResults 收到新文字就重置 timer,
+  // 持续 1.2s 没新内容 → 自动 stop + submit, 不用用户主动点停止.
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SILENCE_AUTO_SUBMIT_MS = 1200;
+
   const pendingTextRef = useRef('');
   const assistantTextRef = useRef('');
   const ttsQueueRef = useRef<string[]>([]);
@@ -179,9 +184,11 @@ export function useVoiceConversation() {
           finish();
         }
       });
-      // 兜底: player 若永不触发 finish (比如 mp3 损坏), 1.5x 预估时长后硬结束
-      // 预估每 10 个字 ~ 1 秒; 最小 2 秒, 最多 30 秒
-      const estMs = Math.max(2000, Math.min(30000, text.length * 120));
+      // 兜底: player 若永不触发 finish (比如 mp3 损坏), 硬超时后 finish.
+      // CosyVoice 实测约每字 200-250ms (中文), 取 280ms + 8s 安全余量,
+      // 必须比真实播放时长长, 否则兜底先触发 finish → 下一句重叠播.
+      // 80 字 → ~22s + 8s = 30s. 最大 60s.
+      const estMs = Math.max(8000, Math.min(60000, text.length * 280 + 8000));
       setTimeout(() => { if (!finished) { try { sub?.remove?.(); } catch {}; finish(); } }, estMs);
       player.play();
     } catch (e) {
@@ -313,36 +320,67 @@ export function useVoiceConversation() {
   }, [refreshVoiceStyle, enqueueSentences, flushTail, waitTTSDrain]);
 
   useEffect(() => {
+    // 收到 partial 时重置 silence timer; 1.2s 内没新内容 → 自动 stop + submit.
+    // 这比 iOS 系统的 onSpeechEnd (2-3s 才触发) 快得多, 体验上"说完即送".
+    const armSilenceTimer = () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        const text = (latestPartialRef.current || '').trim();
+        if (text) {
+          // Voice.stop() 让 onSpeechEnd 走流程; 但 onSpeechEnd 会再次 submit,
+          // 用 latestPartialRef 清空 + 直接 submit 防止双发.
+          latestPartialRef.current = '';
+          Voice.stop().catch(() => {});
+          setPlaybackMode();
+          submit(text);
+        }
+      }, SILENCE_AUTO_SUBMIT_MS);
+    };
+
     Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
       const val = e.value?.[0] || '';
-      latestPartialRef.current = val;
-      setTranscript(val);
+      if (val && val !== latestPartialRef.current) {
+        latestPartialRef.current = val;
+        setTranscript(val);
+        armSilenceTimer();
+      }
     };
     Voice.onSpeechResults = (e: SpeechResultsEvent) => {
       const val = e.value?.[0] || latestPartialRef.current;
       latestPartialRef.current = val;
       setTranscript(val);
+      armSilenceTimer();
     };
     Voice.onSpeechEnd = () => {
+      // silence timer 可能已经先触发提交了, 这时 latestPartialRef 是空的, 不会重发
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
       const text = (latestPartialRef.current || '').trim();
       // 用户自然说完: 切回 playback 让后续 LLM reply TTS 走外放
       setPlaybackMode();
       if (text) submit(text);
-      else setState('idle');
+      else if (state !== 'thinking' && state !== 'speaking') setState('idle');
     };
     Voice.onSpeechError = (e: SpeechErrorEvent) => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
       const msg = e.error?.message || '语音识别失败';
       setError(msg);
       setState('error');
       setPlaybackMode();
     };
     return () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       Voice.destroy().then(() => Voice.removeAllListeners());
       stopCurrentSpeech();
       abortRef.current?.abort();
       cleanupTmpTts().catch(() => {});
     };
-  }, [submit, stopCurrentSpeech, setPlaybackMode]);
+  }, [submit, stopCurrentSpeech, setPlaybackMode, state]);
 
   const startListening = useCallback(async () => {
     try {
@@ -365,20 +403,32 @@ export function useVoiceConversation() {
   }, [stopCurrentSpeech, setRecordingMode, setPlaybackMode]);
 
   const stopListening = useCallback(async () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
     try { await Voice.stop(); } catch {}
     // 录音结束切回 .playback, 后续 TTS 走外放
     await setPlaybackMode();
   }, [setPlaybackMode]);
 
   const reset = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
     stopCurrentSpeech();
     ttsQueueRef.current = [];
+    pendingTextRef.current = '';
+    assistantTextRef.current = '';
     abortRef.current?.abort();
     Voice.stop().catch(() => {});
+    Voice.cancel?.().catch(() => {});
+    setPlaybackMode();
     setState('idle');
     setTranscript('');
     setError(null);
-  }, [stopCurrentSpeech]);
+  }, [stopCurrentSpeech, setPlaybackMode]);
 
   /**
    * 直接喂一段文本走 TTS 播 (不走 LLM, 用于晨间简报 / 系统播报场景).
