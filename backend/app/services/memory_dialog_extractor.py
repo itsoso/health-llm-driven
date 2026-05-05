@@ -92,10 +92,20 @@ async def extract_facts_from_dialog(
 
     try:
         provider = get_llm_provider()
-        # 不要流式, 不要工具, 简单 JSON
         from app.services.llm.usage_tracker import set_caller
         set_caller("memory.dialog_extractor")
-        raw = await provider.chat(prompt)
+        # provider.chat 接受 messages 数组而不是 string
+        raw = await provider.chat(
+            messages=[
+                {"role": "system", "content": "你是一个结构化事实抽取器, 严格按要求输出 JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,  # 低温度确保 JSON 稳定
+            max_tokens=600,
+        )
+        # 兼容 dict (tool_calls) / str (content) 返回
+        if isinstance(raw, dict):
+            raw = raw.get("content", "") or ""
     except Exception as e:
         logger.warning(f"[dialog_extractor] LLM 调用失败: {e}")
         return []
