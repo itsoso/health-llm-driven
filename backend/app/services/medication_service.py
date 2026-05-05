@@ -110,6 +110,29 @@ class MedicationService:
         db.commit()
         return True
 
+    def reactivate_medication(
+        self,
+        db: Session,
+        medication_id: int,
+        user_id: int,
+    ) -> bool:
+        """恢复已停用药品 (误点击回滚用).
+
+        不受 is_active=True/False 过滤影响 — 直接查 id + user 所有权.
+        恢复后清 end_date, 让药品回到 '在用' 状态.
+        """
+        logger.info(f"[Medication] 恢复药品: id={medication_id}, user={user_id}")
+        med = db.query(Medication).filter(
+            Medication.id == medication_id,
+            Medication.user_id == user_id,
+        ).first()
+        if not med:
+            return False
+        med.is_active = True
+        med.end_date = None
+        db.commit()
+        return True
+
     def log_medication(
         self,
         db: Session,

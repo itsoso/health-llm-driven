@@ -123,6 +123,19 @@ async def deactivate_medication(
     return {"message": "药品已停用"}
 
 
+@router.post("/medications/{medication_id}/restore")
+async def restore_medication(
+    medication_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """恢复已停用药品 (误点击回滚). 查 is_active=False 的也支持."""
+    success = medication_service.reactivate_medication(db, medication_id, current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="药品不存在或不属于当前用户")
+    return {"message": "药品已恢复"}
+
+
 @router.post("/logs")
 async def log_medication(
     data: MedicationLogCreate,
