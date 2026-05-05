@@ -9,7 +9,7 @@ import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { createMdStylesChat } from '../constants/markdownStyles';
-import { fetchBriefingVoiceScript, fetchClarificationOpener, extractMemoryFromDialog } from '../services/briefing';
+import { fetchBriefingVoiceScript, fetchWeeklyVoiceScript, fetchClarificationOpener, extractMemoryFromDialog } from '../services/briefing';
 
 /**
  * 语音连续对话页. MVP 版:
@@ -24,6 +24,7 @@ import { fetchBriefingVoiceScript, fetchClarificationOpener, extractMemoryFromDi
  *   - Siri:           `?autoStart=1`        立即开始第一轮录音
  *   - 晨间简报推送:    `?intent=briefing`    拉短稿 → TTS 播 → 自动进 listening 等接话
  *   - 告警澄清推送:    `?intent=clarify&alert_id=X`  AI 主动开口问 follow-up → 接话
+ *   - 周聊推送:        `?intent=weekly`       周日 20:00 推送, 本周回顾 + 询问下周计划
  *   - 默认:                                  待用户主动点球
  */
 export default function VoiceChatScreen() {
@@ -98,6 +99,24 @@ export default function VoiceChatScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.intent, params.alert_id]);
+
+  // intent=weekly: 周日 20:00 推送进来, 私享女声播本周回顾 + 询问下周计划
+  const weeklyTriggeredRef = React.useRef(false);
+  useEffect(() => {
+    if (params.intent !== 'weekly' || weeklyTriggeredRef.current) return;
+    weeklyTriggeredRef.current = true;
+    (async () => {
+      try {
+        const { script } = await fetchWeeklyVoiceScript();
+        if (script && script.trim()) {
+          await voice.speakDirect(script, { thenListen: true });
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[voice-chat] weekly fetch failed:', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.intent]);
 
   useEffect(() => {
     // Auto-scroll 到最新 turn

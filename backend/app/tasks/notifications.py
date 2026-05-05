@@ -659,6 +659,71 @@ def send_morning_health_summary():
     return {"sent_count": sent_count}
 
 
+@celery_app.task
+def send_weekly_review_invite():
+    """
+    周聊邀请 (E 产品改进, 周日 20:00 执行).
+
+    设计:
+      title: '本周聊聊?'
+      body : 80-150 字的口语化对比稿 (锁屏可读)
+      data : deep_link=/voice-chat?intent=weekly
+              → 用户点开进 voice-chat
+              → 拉同一份稿 + 私享女声 TTS
+              → 播完进 listening 接你说"下周想..."
+              → 接话进 conversation, AI 抽事实写 memory_facts (D-L6 闭环)
+
+    为什么周日晚 8 点:
+      - 周日晚是规划下周心理窗口
+      - 比周一早报告 (邮件) 互动率高 — 周末有空, 愿意聊
+      - 不打断工作日
+
+    跳过逻辑:
+      - 没 Garmin 数据本周 → script 兜底文案仍可推 (占位 + 引导用户接话)
+      - 用户 alert_clarify_mode=silent (L9) → 不推 (尊重 autonomy)
+        这里复用 health_alert 的 mode 字段; 后续可拆 weekly_invite_mode
+    """
+    from app.models.user import GarminCredential
+    from app.services.weekly_review_voice_script import build_weekly_review_voice_script
+
+    logger.info("[周聊推送] 开始扫描用户")
+
+    with SessionLocal() as db:
+        credentials = db.query(GarminCredential).filter(
+            GarminCredential.sync_enabled == True,
+            GarminCredential.credentials_valid == True,
+        ).all()
+        user_ids = [c.user_id for c in credentials]
+
+        push_service = PushService(db)
+        sent_count = 0
+
+        for user_id in user_ids:
+            try:
+                script = build_weekly_review_voice_script(db, user_id)
+                if not script or len(script) < 10:
+                    continue
+
+                run_async(push_service.send_notification(
+                    user_id=user_id,
+                    notification_type="ai_advice",  # 复用 ai_advice 开关 (周聊偏建议性)
+                    title="🗓️ 本周聊聊?",
+                    content=script[:200],
+                    data={
+                        "deep_link": "/voice-chat?intent=weekly",
+                        "kind": "weekly_review",
+                    },
+                    # 一周窗口去重: 同一用户一周只推一次
+                    dedup_window_hours=24 * 6,
+                ))
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"[周聊推送] 用户 {user_id} 失败: {e}", exc_info=True)
+
+    logger.info(f"[周聊推送] 完成，推送 {sent_count} 条")
+    return {"sent_count": sent_count}
+
+
 # ---------------------------------------------------------------------------
 # 工具函数：写入 OpenClaw "每日健康简报" 对话
 # ---------------------------------------------------------------------------

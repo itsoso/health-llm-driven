@@ -16,6 +16,15 @@ export async function fetchBriefingVoiceScript(): Promise<BriefingVoiceScript> {
   return resp.data;
 }
 
+/**
+ * 本周回顾语音稿 (E 周聊). voice-chat ?intent=weekly 进入时拉.
+ * 80-150 字, 口语化, 末尾问"下周想..."引导用户接话.
+ */
+export async function fetchWeeklyVoiceScript(): Promise<BriefingVoiceScript> {
+  const resp = await api.get<BriefingVoiceScript>('/v1/briefing/weekly-voice-script');
+  return resp.data;
+}
+
 export interface ClarificationOpener {
   opener: string;
   rationale: string;

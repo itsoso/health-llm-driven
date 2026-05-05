@@ -97,6 +97,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=20, minute=30, day_of_week=0),  # 周日 20:30 北京时间
     },
 
+    # E 改进: 每周日 20:00 推送"本周聊聊?"邀请 → voice-chat 主动开口
+    # 比 weekly-report 早 30 分钟, 让用户先听语音邀请, 没接的话 20:30 还有文字版兜底
+    "weekly-review-invite": {
+        "task": "app.tasks.notifications.send_weekly_review_invite",
+        "schedule": crontab(hour=20, minute=0, day_of_week=0),  # 周日 20:00 北京时间
+    },
+
     # 每日清理过期数据
     "cleanup-expired-data": {
         "task": "app.tasks.maintenance.cleanup_expired_data",
