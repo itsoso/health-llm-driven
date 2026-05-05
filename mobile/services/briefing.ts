@@ -33,3 +33,39 @@ export async function fetchClarificationOpener(alertId: number): Promise<Clarifi
   });
   return resp.data;
 }
+
+export interface ExtractedFact {
+  id: number;
+  subject: string;
+  predicate: string;
+  object_value: string;
+  confidence: number;
+}
+
+export interface ExtractMemoryResponse {
+  extracted_count: number;
+  facts: ExtractedFact[];
+}
+
+/**
+ * voice-chat 结束时旁路抽 fact → memory_facts.
+ * Karpathy "anterograde amnesia" 解药 — AI 真正记住用户告诉它的事.
+ *
+ * 失败安全: 后端任何异常都不抛 (let user 退出体验顺畅).
+ * 前端调用方应当 fire-and-forget, 不阻塞 router.back().
+ */
+export async function extractMemoryFromDialog(
+  userTurns: string[],
+  alertId?: number,
+): Promise<ExtractMemoryResponse | null> {
+  if (!userTurns || userTurns.length === 0) return null;
+  try {
+    const resp = await api.post<ExtractMemoryResponse>('/v1/clarification/extract-memory', {
+      user_turns: userTurns,
+      alert_id: alertId,
+    });
+    return resp.data;
+  } catch {
+    return null;
+  }
+}

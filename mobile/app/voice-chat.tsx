@@ -9,7 +9,7 @@ import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 import { createMdStylesChat } from '../constants/markdownStyles';
-import { fetchBriefingVoiceScript, fetchClarificationOpener } from '../services/briefing';
+import { fetchBriefingVoiceScript, fetchClarificationOpener, extractMemoryFromDialog } from '../services/briefing';
 
 /**
  * 语音连续对话页. MVP 版:
@@ -131,7 +131,17 @@ export default function VoiceChatScreen() {
       <View style={styles.header}>
         <Text style={txt.title}>语音对话</Text>
         <View style={{ flex: 1 }} />
-        <TouchableOpacity onPress={() => { voice.reset(); router.back(); }} hitSlop={12} accessibilityLabel="退出语音对话">
+        <TouchableOpacity onPress={() => {
+          // 旁路抽 fact 写 memory_facts (Karpathy "anterograde amnesia" 解药)
+          // fire-and-forget, 不阻塞退出 — 失败也无所谓
+          const userTurns = voice.turns.filter(t => t.role === 'user').map(t => t.text);
+          if (userTurns.length > 0) {
+            const alertId = params.alert_id ? Number(params.alert_id) : undefined;
+            extractMemoryFromDialog(userTurns, alertId).catch(() => {});
+          }
+          voice.reset();
+          router.back();
+        }} hitSlop={12} accessibilityLabel="退出语音对话">
           <Ionicons name="close-circle" size={28} color={c.labelTertiary} />
         </TouchableOpacity>
       </View>
