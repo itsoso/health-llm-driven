@@ -529,41 +529,65 @@ export default function WorkoutDetailScreen() {
         </HealthCard>
 
         {/* AI Analysis */}
-        <HealthCard title="AI 分析" icon="sparkles-outline" iconColor={colors.purple} iconBg={colors.tintPurple}
+        <HealthCard
+          title="AI 分析"
+          icon="sparkles-outline"
+          iconColor={colors.purple}
+          iconBg={colors.tintPurple}
           rightAccessory={
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {fromCache && hasAnalysis && (
-                <View style={styles.cacheBadge}><Text style={txt.cacheBadgeText}>已保存</Text></View>
-              )}
-              {!fromCache && hasAnalysis && (
-                <View style={[styles.cacheBadge, { backgroundColor: '#E8F0FE' }]}>
-                  <Text style={[txt.cacheBadgeText, { color: colors.blue }]}>新生成</Text>
-                </View>
-              )}
+            // 只放一个 badge, 按钮移到内容上方 toolbar (避免 header 过挤)
+            hasAnalysis ? (
+              <View style={[styles.cacheBadge, fromCache ? null : { backgroundColor: '#E8F0FE' }]}>
+                <Text style={[txt.cacheBadgeText, fromCache ? null : { color: colors.blue }]}>
+                  {fromCache ? '已保存' : '新生成'}
+                </Text>
+              </View>
+            ) : null
+          }
+        >
+          {/* 操作工具条 — 横向 scroll, 防按钮挤压标题 */}
+          {(hasAnalysis || (!analyzing && !postAnalyzing)) && (
+            <View style={styles.aiToolbar}>
               {hasAnalysis && !analyzing && !postAnalyzing && (
-                <TouchableOpacity onPress={handleSpeakCoach} activeOpacity={0.7} disabled={speaking}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    {speaking ? (
-                      <ActivityIndicator size="small" color={colors.purple} />
-                    ) : (
-                      <Ionicons name="volume-high-outline" size={16} color={colors.purple} />
-                    )}
-                    <Text style={txt.reanalyzeBtn}>{speaking ? '播报中' : '听一下'}</Text>
-                  </View>
+                <TouchableOpacity
+                  onPress={handleSpeakCoach}
+                  activeOpacity={0.7}
+                  disabled={speaking}
+                  style={styles.aiToolBtn}
+                >
+                  {speaking ? (
+                    <ActivityIndicator size="small" color={colors.purple} />
+                  ) : (
+                    <Ionicons name="volume-high-outline" size={15} color={colors.purple} />
+                  )}
+                  <Text style={[txt.reanalyzeBtn, { marginLeft: 4 }]}>
+                    {speaking ? '播报中' : '听一下'}
+                  </Text>
                 </TouchableOpacity>
               )}
               {hasAnalysis && !analyzing && !postAnalyzing && (
-                <TouchableOpacity onPress={() => handlePostAnalysis(true)} activeOpacity={0.7}>
-                  <Text style={txt.reanalyzeBtn}>重新分析</Text>
+                <TouchableOpacity
+                  onPress={() => handlePostAnalysis(true)}
+                  activeOpacity={0.7}
+                  style={styles.aiToolBtn}
+                >
+                  <Ionicons name="refresh-outline" size={15} color={colors.brand} />
+                  <Text style={[txt.reanalyzeBtn, { marginLeft: 4 }]}>重新分析</Text>
                 </TouchableOpacity>
               )}
               {!hasAnalysis && !analyzing && !postAnalyzing && (
-                <TouchableOpacity onPress={() => handlePostAnalysis(false)} activeOpacity={0.7}>
-                  <Text style={txt.analyzeBtn}>分析</Text>
+                <TouchableOpacity
+                  onPress={() => handlePostAnalysis(false)}
+                  activeOpacity={0.7}
+                  style={[styles.aiToolBtn, { backgroundColor: colors.brandLight }]}
+                >
+                  <Ionicons name="sparkles-outline" size={15} color={colors.brand} />
+                  <Text style={[txt.analyzeBtn, { marginLeft: 4 }]}>开始分析</Text>
                 </TouchableOpacity>
               )}
             </View>
-          }>
+          )}
+
           {(analyzing || postAnalyzing) ? (
             <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
               <ActivityIndicator color={colors.purple} />
@@ -671,6 +695,23 @@ const styles = StyleSheet.create({
   cacheBadge: {
     backgroundColor: '#E8FAF0', borderRadius: radii.full,
     paddingHorizontal: 8, paddingVertical: 2,
+  },
+  aiToolbar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.separator,
+    marginBottom: spacing.sm,
+  },
+  aiToolBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+    backgroundColor: colors.fill,
   },
 });
 

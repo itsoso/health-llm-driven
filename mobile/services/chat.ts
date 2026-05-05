@@ -151,6 +151,9 @@ export async function* streamChat(
             content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
             toolName: tool,
             toolSuccess: ok,
+            // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
+            recordType: parsed.data?.record_type,
+            recordData: parsed.data?.record_data,
           };
         } else if (parsed.event === 'done') {
           yield { type: 'done', conversationId: parsed.data?.conversation_id, messageId: parsed.data?.message_id };

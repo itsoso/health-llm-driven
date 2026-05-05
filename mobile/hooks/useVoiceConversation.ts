@@ -82,6 +82,15 @@ export function useVoiceConversation() {
   const isSpeakingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  // I Phase 2: 本次会话内成功 health_record 的录入摘要 (关闭 voice-chat 时弹 summary 卡用)
+  // 记 record_type + 简短描述 + 原始 record_data (撤销用)
+  const recordedItemsRef = useRef<{
+    type: string;
+    label: string;
+    data: Record<string, any>;
+    at: number;
+  }[]>([]);
+
   // 当前 voice style (读 AsyncStorage, 每轮开播前刷新)
   const voiceStyleRef = useRef<VoiceStyle>('cloud_cloned_private_female');
   const iosOptsRef = useRef<Speech.SpeechOptions>({ language: 'zh-CN', rate: 1.0, pitch: 1.0 });
@@ -292,6 +301,20 @@ export function useVoiceConversation() {
             lastFailedTool = toolName;
           } else if (evt.type === 'tool') {
             lastFailedTool = '';  // 非失败事件重置去重锁
+
+            // I Phase 2: sniff 成功的 health_record → 推到 recordedItemsRef
+            // 关闭 voice-chat 时给用户看 summary 卡: '本次记了 X 项: ...'
+            if (evt.toolName === 'health_record' && evt.toolSuccess && evt.recordType && evt.recordData) {
+              const label = formatRecordLabel(evt.recordType, evt.recordData);
+              if (label) {
+                recordedItemsRef.current.push({
+                  type: evt.recordType,
+                  label,
+                  data: evt.recordData,
+                  at: Date.now(),
+                });
+              }
+            }
           }
 
           if (!replyStarted) {
