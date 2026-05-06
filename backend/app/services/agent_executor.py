@@ -39,6 +39,38 @@ def _needs_skill(msg: str) -> bool:
     return bool(_NEEDS_SKILL_RE.search(msg))
 
 
+def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
+    """L8 (Karpathy "verification is the bottleneck"):
+    高确定性 health_record 写库前强制 LLM 复述给用户确认.
+
+    第一次调用 (无 confirmed flag): 返回 [NEEDS_CONFIRMATION] 提示,
+    不写库. LLM 看到提示会复述给用户, 用户答'是的' → LLM 重新调用 + confirmed=true.
+
+    Args:
+        args: tool_call 顶层参数
+        data: args.data (会被 mutate — 剥掉 confirmed 字段防 DB schema 不识别)
+        preview: 给 LLM 复述的"我准备记录: ..." 部分
+
+    Returns:
+        非 None: 当前不写库, 直接 return 这个字符串
+        None  : 已确认, 调用方继续写库流程
+    """
+    confirmed = (
+        args.get("confirmed") is True or args.get("confirm") is True
+        or data.get("confirmed") is True or data.get("confirm") is True
+    )
+    # 写库前剥掉 confirmed, 防 DB schema 不识别
+    data.pop("confirmed", None)
+    data.pop("confirm", None)
+    if confirmed:
+        return None
+    return (
+        f"[NEEDS_CONFIRMATION] 我准备记录: {preview}. "
+        f"请向用户复述并问一次'是这样吗？', "
+        f"用户确认后**重新调用** health_record 并在 data 里加 confirmed=true."
+    )
+
+
 class AgentExecutor:
     """统一健康 Agent 执行器"""
 
@@ -671,29 +703,57 @@ class AgentExecutor:
             if "weight" not in data:
                 return "Error: weight 记录必须提供 weight（体重数值，单位 kg）。请在 data.weight 中填入数字，例如 {\"record_type\":\"weight\",\"data\":{\"weight\":71.2}}"
 
-            # L8 (Karpathy "verification is the bottleneck"):
-            # weight 是高确定性需求 (数值要准), 写错没法静默修正.
-            # LLM 第一次调用时强制走"先确认"流程 → return 确认提示, 不真写库.
-            # 第二次带 args.confirmed=true 或 data.confirmed=true 才真写.
-            confirmed = (
-                args.get("confirmed") is True or args.get("confirm") is True
-                or data.get("confirmed") is True or data.get("confirm") is True
+            # L8 (Karpathy "verification is the bottleneck"): 高确定性数值, 写错没法静默修正
+            check = _confirm_or_describe(
+                args, data,
+                preview=f"体重 {data['weight']} kg, 日期 {data.get('record_date', today)}",
             )
-            # 写库前剥掉 confirmed 字段, 不让它进 DB schema
-            data.pop("confirmed", None)
-            data.pop("confirm", None)
-            if not confirmed:
-                w = data["weight"]
-                d = data.get("record_date", today)
-                return (
-                    f"[NEEDS_CONFIRMATION] 我准备记录: 体重 {w} kg, 日期 {d}. "
-                    f"请向用户复述这个值并问一次'是这样吗？', "
-                    f"用户确认后**重新调用** health_record 并在 data 里加 confirmed=true."
-                )
+            if check:
+                return check
 
         # 补全 blood_pressure 必填字段
         if rtype == "blood_pressure":
             data.setdefault("record_date", today)
+            sys_v = data.get("systolic")
+            dia_v = data.get("diastolic")
+            # 顶层 args 兜底 (LLM 偶尔放错位置)
+            if sys_v is None and args.get("systolic") is not None:
+                data["systolic"] = sys_v = args["systolic"]
+            if dia_v is None and args.get("diastolic") is not None:
+                data["diastolic"] = dia_v = args["diastolic"]
+            if sys_v is None or dia_v is None:
+                return (
+                    "Error: blood_pressure 记录必须提供 systolic + diastolic. 例如 "
+                    '{"record_type":"blood_pressure","data":{"systolic":120,"diastolic":80}}'
+                )
+            # L8: 血压数值高/低风险大, 必须先确认
+            check = _confirm_or_describe(
+                args, data,
+                preview=f"血压 {sys_v}/{dia_v}, 日期 {data.get('record_date', today)}",
+            )
+            if check:
+                return check
+
+        # illness 急性症状记录 — 影响疾病追踪, 必须先确认
+        if rtype == "illness":
+            data.setdefault("start_date", today)
+            name = data.get("illness_name") or args.get("illness_name")
+            if not name:
+                return (
+                    "Error: illness 记录必须提供 illness_name. 例如 "
+                    '{"record_type":"illness","data":{"illness_name":"感冒","severity":5}}'
+                )
+            data["illness_name"] = name
+            sev = data.get("severity") or args.get("severity")
+            if sev is not None:
+                data["severity"] = sev
+            preview_bits = [f"生病: {name}"]
+            if sev is not None:
+                preview_bits.append(f"严重度 {sev}")
+            preview_bits.append(f"开始 {data.get('start_date')}")
+            check = _confirm_or_describe(args, data, preview=", ".join(preview_bits))
+            if check:
+                return check
 
         # 补全 exercise 必填字段 + LLM 常见字段别名映射
         if rtype == "exercise":
