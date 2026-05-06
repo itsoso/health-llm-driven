@@ -3,7 +3,7 @@
 // executes — see mobile/applib/sentry.ts for rationale.
 import { Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { focusManager } from '@tanstack/react-query';
@@ -17,7 +17,7 @@ import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
-import { colors } from '../constants/theme';
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   View,
   Text,
@@ -38,9 +38,11 @@ export const unstable_settings = {
 };
 
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <View style={styles.lockContainer}>
-      <Ionicons name="lock-closed" size={48} color="#0A8F8F" />
+      <Ionicons name="lock-closed" size={48} color={c.brand} />
       <Text style={styles.lockTitle}>HealthPilot</Text>
       <TouchableOpacity style={styles.unlockBtn} onPress={onUnlock} activeOpacity={0.7}>
         <Ionicons name="finger-print" size={22} color="#fff" />
@@ -51,6 +53,8 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
 }
 
 function AppContent() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { isAuthenticated, isLoading } = useAuth();
   const { isLocked, authenticate } = useBiometricLock(isAuthenticated);
 
@@ -65,7 +69,7 @@ function AppContent() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.brand} />
+        <ActivityIndicator size="large" color={c.brand} />
       </View>
     );
   }
@@ -140,30 +144,30 @@ function RootLayout() {
 // Sentry.wrap: 自动捕获未处理异常 + Profiler. 未配置 DSN 时是 noop.
 export default SENTRY_ENABLED ? Sentry.wrap(RootLayout) : RootLayout;
 
-const styles = StyleSheet.create({
+const createStyles = (c: ColorPalette) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FDFBF7',
+    backgroundColor: c.bgPrimary,
   },
   lockContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: c.bgPrimary,
     gap: 16,
   },
   lockTitle: {
     fontSize: 22,
     fontWeight: '600',
-    color: '#1C1C1E',
+    color: c.labelPrimary,
   } as TextStyle,
   unlockBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#0A8F8F',
+    backgroundColor: c.brand,
     borderRadius: 12,
     paddingHorizontal: 24,
     paddingVertical: 12,

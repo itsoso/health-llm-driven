@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,9 +13,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
-import { colors } from '../constants/theme';
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 export default function LoginScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -47,7 +49,7 @@ export default function LoginScreen() {
       >
         <View style={styles.logoSection}>
           <View style={styles.logoCircle}>
-            <Ionicons name="heart-circle" size={64} color={colors.brand} />
+            <Ionicons name="heart-circle" size={64} color={c.brand} />
           </View>
           <Text style={styles.title}>HealthPilot</Text>
           <Text style={styles.subtitle}>AI 驱动的健康管理</Text>
@@ -58,13 +60,13 @@ export default function LoginScreen() {
             <Ionicons
               name="person-outline"
               size={20}
-              color="#8E8E93"
+              color={c.labelTertiary}
               style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
               placeholder="用户名"
-              placeholderTextColor="#C7C7CC"
+              placeholderTextColor={c.labelTertiary}
               autoCapitalize="none"
               autoCorrect={false}
               value={username}
@@ -77,13 +79,13 @@ export default function LoginScreen() {
             <Ionicons
               name="lock-closed-outline"
               size={20}
-              color="#8E8E93"
+              color={c.labelTertiary}
               style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
               placeholder="密码"
-              placeholderTextColor="#C7C7CC"
+              placeholderTextColor={c.labelTertiary}
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
@@ -97,7 +99,7 @@ export default function LoginScreen() {
               <Ionicons
                 name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                 size={20}
-                color="#8E8E93"
+                color={c.labelTertiary}
               />
             </TouchableOpacity>
           </View>
@@ -122,10 +124,10 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ColorPalette) => StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#FDFBF7',
+    backgroundColor: c.bgPrimary,
   },
   container: {
     flex: 1,
@@ -140,7 +142,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.brandLight,
+    backgroundColor: c.brandLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -148,12 +150,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1C1C1E',
+    color: c.labelPrimary,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 15,
-    color: '#8E8E93',
+    color: c.labelSecondary,
     marginTop: 4,
   },
   form: {
@@ -162,12 +164,12 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: c.bgCard,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 50,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: c.separator,
   },
   inputIcon: {
     marginRight: 10,
@@ -175,16 +177,16 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#1C1C1E',
+    color: c.labelPrimary,
   },
   button: {
-    backgroundColor: colors.brand,
+    backgroundColor: c.brand,
     height: 50,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    shadowColor: colors.brand,
+    shadowColor: c.brand,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

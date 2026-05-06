@@ -1,7 +1,11 @@
 import { Link, Stack } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
+import { useMemo } from 'react';
+import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 export default function NotFoundScreen() {
+  const { c } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <>
       <Stack.Screen options={{ title: '页面不存在' }} />
@@ -15,18 +19,18 @@ export default function NotFoundScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ColorPalette) => StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#FDFBF7',
+    backgroundColor: c.bgPrimary,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1C1C1E',
+    color: c.labelPrimary,
   },
   link: {
     marginTop: 15,
@@ -34,6 +38,6 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
-    color: '#007AFF',
+    color: c.brand,
   },
 });
