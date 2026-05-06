@@ -241,15 +241,15 @@ def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: 
     movement_coach 只认我们自算的 ACWR. 这里补齐.
     """
     try:
-        from app.models.daily_health import DailyHealthData
+        from app.models.daily_health import GarminData
 
         # 取最近 7 天里有 training_readiness_score 的最新一天 (不一定是今天,
         # Garmin watch 同步延迟 + readiness 可能当天没算完)
         row = (
-            db.query(DailyHealthData)
-            .filter(DailyHealthData.user_id == user_id)
-            .filter(DailyHealthData.training_readiness_score.isnot(None))
-            .order_by(DailyHealthData.record_date.desc())
+            db.query(GarminData)
+            .filter(GarminData.user_id == user_id)
+            .filter(GarminData.training_readiness_score.isnot(None))
+            .order_by(GarminData.record_date.desc())
             .limit(1)
             .first()
         )

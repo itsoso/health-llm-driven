@@ -60,15 +60,31 @@ def _training_status(acwr: Optional[float], workouts_this_week: Optional[int]) -
 
 
 # Garmin 官方 training_status 枚举 → 我们的 decision matrix key
-# Garmin: productive / maintaining / detraining / overreaching / peaking / recovery / unproductive
+# Garmin 字符串: productive / maintaining / detraining / overreaching / peaking / recovery / unproductive
+# Garmin 整数编码 (garminconnect SDK): 1=detraining 2=maintaining 3=productive 4=peaking
+#                                    5=overreaching 6=unproductive 7=recovery 8=strained
+# 采集器优先写字符串, 字符串缺失时存 str(int). 两种都接受.
 _GARMIN_STATUS_MAP = {
+    # 字符串名
     "productive": "optimal",
     "maintaining": "optimal",
     "peaking": "peaking",
     "overreaching": "overload",
-    "unproductive": "overload",  # 练了但无效 = 进入 overload 前兆
-    "recovery": "undertrained",  # 主动恢复期, 负荷低
+    "unproductive": "overload",
+    "recovery": "undertrained",
     "detraining": "detraining",
+    "strained": "overload",
+    "no_status": "unknown",
+    # 整数编码 (存为 str) — 用户观测到有些账户拿不到 key
+    "1": "detraining",
+    "2": "optimal",       # maintaining
+    "3": "optimal",       # productive
+    "4": "peaking",
+    "5": "overload",      # overreaching
+    "6": "overload",      # unproductive
+    "7": "undertrained",  # recovery
+    "8": "overload",      # strained
+    "0": "unknown",
 }
 
 
