@@ -81,6 +81,38 @@ class WeatherService:
         self._cache[key] = data
         self._cache_time[key] = datetime.now()
 
+    def invalidate_cache_for(
+        self, city: Optional[str] = None, lat: Optional[float] = None, lon: Optional[float] = None
+    ) -> int:
+        """清掉指定 city / 经纬度的所有缓存条目 (含 weather/forecast/aqi).
+
+        用户改地理位置时调, 强制下次拉新数据.
+        """
+        cleared = 0
+        keys_to_drop = []
+        for key in list(self._cache.keys()):
+            # 缓存 key 格式: 'weather_<city>' / 'forecast_<city>_<days>' / 'aqi_<city>' /
+            #                'weather_<lat>,<lon>' 等
+            match_city = city and (city in key)
+            match_coord = lat is not None and lon is not None and f"{lat},{lon}" in key
+            if match_city or match_coord:
+                keys_to_drop.append(key)
+        for k in keys_to_drop:
+            self._cache.pop(k, None)
+            self._cache_time.pop(k, None)
+            cleared += 1
+        if cleared:
+            logger.info(f"[weather] 清除缓存 {cleared} 条 (city={city}, lat={lat}, lon={lon})")
+        return cleared
+
+    def invalidate_all_cache(self) -> int:
+        """清掉所有天气/AQI 缓存. 用户大幅改 location (e.g. 跨城市) 时用."""
+        n = len(self._cache)
+        self._cache.clear()
+        self._cache_time.clear()
+        logger.info(f"[weather] 全量清除缓存 {n} 条")
+        return n
+
     async def get_current_weather(
         self,
         city: str = None,

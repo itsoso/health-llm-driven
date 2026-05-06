@@ -244,6 +244,7 @@ async def update_manual_location(
         db.refresh(profile)
 
     # 更新手工位置字段
+    old_city = profile.manual_city
     profile.use_manual_location = location_data.use_manual_location
     profile.manual_city = location_data.city
     profile.manual_region = location_data.region
@@ -251,6 +252,24 @@ async def update_manual_location(
 
     db.commit()
     db.refresh(profile)
+
+    # 用户改 location → 清旧 city 的天气/AQI 缓存, 强制下次拉新数据
+    try:
+        from app.services.environment import weather_service, air_quality_service
+        if old_city and old_city != location_data.city:
+            weather_service.invalidate_cache_for(city=old_city)
+        if location_data.city:
+            weather_service.invalidate_cache_for(city=location_data.city)
+        # AQI 服务也清 (它有自己的缓存)
+        if hasattr(air_quality_service, "invalidate_cache_for"):
+            if old_city:
+                air_quality_service.invalidate_cache_for(city=old_city)
+            if location_data.city:
+                air_quality_service.invalidate_cache_for(city=location_data.city)
+    except Exception as e:
+        # 清缓存失败不影响 location 更新本身
+        import logging
+        logging.getLogger(__name__).warning(f"[manual-location] 清天气缓存失败 (不致命): {e}")
 
     return {
         "success": True,

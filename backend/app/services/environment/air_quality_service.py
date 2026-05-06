@@ -69,6 +69,20 @@ class AirQualityService:
         self._cache[key] = data
         self._cache_time[key] = datetime.now()
 
+    def invalidate_cache_for(
+        self, city: Optional[str] = None, lat: Optional[float] = None, lon: Optional[float] = None
+    ) -> int:
+        """清掉指定 city / 经纬度的缓存. 用户改 location 时调."""
+        cleared = 0
+        for key in list(self._cache.keys()):
+            match_city = city and (city in key)
+            match_coord = lat is not None and lon is not None and f"{lat},{lon}" in key
+            if match_city or match_coord:
+                self._cache.pop(key, None)
+                self._cache_time.pop(key, None)
+                cleared += 1
+        return cleared
+
     async def get_air_quality(
         self,
         city: str = None,

@@ -109,6 +109,8 @@ export default function SettingsScreen() {
             onPress={() => router.push('/monthly-reports' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
             onPress={() => router.push('/doctor-loop' as any)} />
+          <SettingRow icon="location-outline" label="位置设置"
+            onPress={() => router.push('/location' as any)} />
           <SettingRow icon="time-outline" label="健康事件流"
             onPress={() => router.push('/timeline' as any)} />
           <SettingRow icon="medkit-outline" label="用药管理"
