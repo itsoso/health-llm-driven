@@ -106,7 +106,32 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 - **Native deps worth knowing**: `react-native-maps`, `@react-native-voice/voice`, `expo-haptics`, `expo-notifications`, `expo-local-authentication` (Face ID), `react-native-reanimated`, `expo-image-picker`, `react-native-markdown-display`.
 - **API URL**: `services/api.ts` reads `EXPO_PUBLIC_API_URL` (defaults to `https://health.executor.life/api`). For local backend dev, export `EXPO_PUBLIC_API_URL=http://<your-lan-ip>:8000/api/v1` before `npm run start`.
 
-#### EAS Update (OTA) vs EAS Build
+#### iOS 反馈环：本地 Sim 默认，EAS / TestFlight 异步（2026-05-06 工作流）
+
+**默认路径**：`cd mobile && npm run ios` → 本地 Xcode build → iOS Simulator 验证。EAS build 只用于 (a) 真机功能验证 (b) TestFlight / App Store 发版，且必须**异步执行**（提交后切回 backend，不等）。
+
+**为什么**：本地 incremental build 30s–2min + Sim 热重载秒级；EAS production build 15–25 分钟 + 排队 + 装包，反馈环差 50–100 倍。Siri keychain bug 烧过 10+ 次 EAS build 才定位，本地 prebuild 几秒就能看到 `ios/Podfile.lock` 缺条目。
+
+**判断该走哪条路**：
+
+| 改动类型 | 走哪条 | 命令 |
+|---|---|---|
+| `.ts` / `.tsx` / `.js` / 样式 / 文案 / API 调用 / hooks | 本地 Sim | `npm run ios` |
+| RN 组件、navigation、React Query、状态管理 | 本地 Sim | `npm run ios` |
+| Dark mode、键盘行为、ScrollView、markdown 渲染 | 本地 Sim | `npm run ios` |
+| 已上线的真机功能微调（push payload、Siri response 文案） | OTA | `./scripts/mobile-ota.sh production "msg"` |
+| `app.json` plugins / `Info.plist` / Podfile / 新 native module | **必须** EAS build | 异步触发，**不要等** |
+| Expo SDK 升级、`expo-*` 大版本 bump | **必须** EAS build | 异步 |
+| Siri / AppShortcut / AppIntent（需真机 Apple ID） | 真机 dev build 或 TestFlight | 周末批量验 |
+| APNs production token / App Group / Face ID / Camera | 真机 dev build 或 TestFlight | 周末批量验 |
+| 发版 | EAS build production + submit | 异步 |
+
+**禁止反模式**：
+- ❌ 提交 → `eas build` → 等 20 分钟看 log → 改一行 → 再 `eas build` → 再等。任何超过 1 次的 EAS build 重跑都说明本地没复现就提了。
+- ❌ JS 改动用 `eas build`。永远走 OTA。
+- ❌ 同步等 EAS build。触发后立刻切别的活，build 完再回。
+
+**OTA 命令**：
 
 ```bash
 ./scripts/mobile-ota.sh                        # production channel, commit msg as message
@@ -114,9 +139,13 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 ./scripts/mobile-ota.sh production "fix …"     # with explicit message
 ```
 
-- **OTA (`scripts/mobile-ota.sh` → `eas update`)** — push changed `.ts/.tsx/.js` only. Device pulls on next cold start or after 30s+ background. Only ships **iOS** bundle (`--platform ios`) because `react-native-maps` breaks the web bundler and Android isn't distributed yet.
-- **Full build (`eas build`)** — required when changing native: `app.json` plugins, `Info.plist`, Pods, Expo SDK upgrade.
-- **Channels**: `development` (dev client, iOS sim allowed), `preview` (internal distribution), `production` (App Store, auto-increments iOS build number, `ascAppId=6763569720`). See `mobile/eas.json`.
+- **OTA (`scripts/mobile-ota.sh` → `eas update`)** — push 改过的 `.ts/.tsx/.js`。设备 cold start 或 30s+ 后台时拉。只发 iOS bundle (`--platform ios`)，`react-native-maps` 会炸 web bundler，Android 也没在分发。
+- **Channels**: `development` (dev client, iOS sim 允许), `preview` (内部分发), `production` (App Store, 自动 bump iOS build 号, `ascAppId=6763569720`)。见 `mobile/eas.json`。
+
+**本地 build 失败排查路径**（比 EAS log grep 快 10 倍）：
+1. `npx expo prebuild --platform ios --clean` 看是否报错
+2. 看 `ios/Podfile.lock` 是否包含预期 module（手写 local module 必须有 podspec，否则静默 skip）
+3. `open ios/*.xcworkspace` 用 Xcode 直接看红 error
 
 #### Cross-platform asymmetries (know these before shipping Android)
 
@@ -299,10 +328,12 @@ Backend uses JWT tokens. Frontend stores token in `localStorage` under key `auth
 ### OpenClaw + LLM Configuration
 
 Backend supports multiple LLM providers via `app/config.py`:
-- `LLM_PROVIDER`: `openai` | `ollama` | `openclaw`
+- `LLM_PROVIDER`: `openai` | `ollama` | `openclaw` | `tokenplan`
 - `LLM_VISION_MODEL` — separate vision model
 - `OPENCLAW_MODEL=openclaw:main`（冒号自动转斜杠）
 - LLM 失败自动回退到 OpenClaw provider
+
+**LLM Harness 设计与方法论**：见 [`docs/HARNESS.md`](docs/HARNESS.md) — source-aware fast path / verification before write / tool schema 加厚 / memory 4-stage / provider failover / streaming TTS / Twin → prompt blob。新加 specialist / source / tool / memory stage 时**必须**同 PR 更新 HARNESS.md。
 
 **Skills: two locations — know which one to edit**
 

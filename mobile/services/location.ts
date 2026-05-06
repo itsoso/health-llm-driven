@@ -39,3 +39,16 @@ export async function refreshDetectedLocation(): Promise<{ city: string | null; 
   const resp = await api.post<{ location?: { city: string; region: string; country: string } }>('/v1/profile/me/refresh-location');
   return resp.data?.location || { city: null, region: null, country: null };
 }
+
+/**
+ * GPS 定位: 传经纬度给后端反查城市. 比 IP 精到区/县级别.
+ * 成功后后端自动清旧/新 city 天气 + AQI 缓存, 并把 detected_city 更新为新城市.
+ */
+export async function updateGPSLocation(
+  lat: number, lon: number,
+): Promise<{ city: string | null; region: string | null; country: string | null }> {
+  const resp = await api.post<{ location?: { city: string; region: string; country: string } }>(
+    '/v1/profile/me/gps-location', { lat, lon },
+  );
+  return resp.data?.location || { city: null, region: null, country: null };
+}

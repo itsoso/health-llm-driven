@@ -18,8 +18,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 import api from '../services/api';
-import { updateManualLocation, refreshDetectedLocation } from '../services/location';
+import { updateManualLocation, refreshDetectedLocation, updateGPSLocation } from '../services/location';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 
@@ -100,6 +101,38 @@ export default function LocationScreen() {
     onError: () => Alert.alert('检测失败', '请稍后再试'),
   });
 
+  const gpsMut = useMutation({
+    mutationFn: async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('你没授权定位, 去系统设置里开一下');
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const loc = await updateGPSLocation(pos.coords.latitude, pos.coords.longitude);
+      return { loc, coords: pos.coords };
+    },
+    onSuccess: ({ loc, coords }) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      qc.invalidateQueries({ queryKey: ['profileLocation'] });
+      qc.invalidateQueries({ queryKey: ['weather'] });
+      qc.invalidateQueries({ queryKey: ['weatherForecast'] });
+      qc.invalidateQueries({ queryKey: ['airQuality'] });
+      qc.invalidateQueries({ queryKey: ['environment'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      Alert.alert(
+        'GPS 定位成功',
+        loc.city
+          ? `定位到: ${loc.city}\n(${coords.latitude.toFixed(3)}, ${coords.longitude.toFixed(3)})`
+          : '反查城市失败',
+      );
+    },
+    onError: (e: any) => {
+      Alert.alert('GPS 定位失败', e?.message || e?.response?.data?.detail || '请稍后再试');
+    },
+  });
+
   const handleSave = () => {
     if (useManual && !cityInput.trim()) {
       Alert.alert('请选择城市', '手动模式需要指定一个城市');
@@ -151,21 +184,44 @@ export default function LocationScreen() {
             <Text style={[txt.detected, { marginTop: spacing.sm }]}>
               当前检测: {data?.detected_location?.city || '未知'}
             </Text>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => refreshMut.mutate()}
-              disabled={refreshMut.isPending}
-              activeOpacity={0.7}
-            >
-              {refreshMut.isPending ? (
-                <ActivityIndicator size="small" color={c.brand} />
-              ) : (
-                <Ionicons name="refresh-outline" size={16} color={c.brand} />
-              )}
-              <Text style={[txt.btnLabel, { color: c.brand, marginLeft: 6 }]}>
-                重新检测
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { flex: 1 }]}
+                onPress={() => refreshMut.mutate()}
+                disabled={refreshMut.isPending || gpsMut.isPending}
+                activeOpacity={0.7}
+              >
+                {refreshMut.isPending ? (
+                  <ActivityIndicator size="small" color={c.brand} />
+                ) : (
+                  <Ionicons name="refresh-outline" size={16} color={c.brand} />
+                )}
+                <Text style={[txt.btnLabel, { color: c.brand, marginLeft: 6 }]}>
+                  按 IP 重检
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { flex: 1, backgroundColor: c.brand }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  gpsMut.mutate();
+                }}
+                disabled={refreshMut.isPending || gpsMut.isPending}
+                activeOpacity={0.7}
+              >
+                {gpsMut.isPending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="navigate-outline" size={16} color="#fff" />
+                )}
+                <Text style={[txt.btnLabel, { color: '#fff', marginLeft: 6 }]}>
+                  用 GPS 定位
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={[txt.subLabel, { marginTop: spacing.xs }]}>
+              GPS 精到区/县, 首次需授权. IP 定位通常只到市级且可能偏差.
+            </Text>
           </View>
 
           {/* 手动设定 */}
@@ -237,7 +293,7 @@ export default function LocationScreen() {
           </TouchableOpacity>
 
           <Text style={[txt.hint, { textAlign: 'center', marginTop: spacing.lg }]}>
-            GPS 自动定位需要原生模块支持, 下次 build 上线.
+            {useManual ? '手动模式下 GPS/IP 自动检测被忽略' : 'GPS 精度 > IP 检测,建议有需要时点一下.'}
           </Text>
         </ScrollView>
       )}
@@ -281,6 +337,9 @@ function createStyles(c: ColorPalette) {
       paddingVertical: 10, paddingHorizontal: spacing.md,
       borderRadius: radii.sm, backgroundColor: c.brandLight,
       marginTop: spacing.sm,
+    },
+    btnRow: {
+      flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm,
     },
     primaryBtn: {
       backgroundColor: c.brand, borderRadius: radii.md,

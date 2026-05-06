@@ -287,6 +287,101 @@ async def update_manual_location(
     }
 
 
+@router.post("/me/gps-location")
+async def update_gps_location(
+    payload: dict,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    GPS 定位: 客户端拿到经纬度后反查城市,写入 detected_city (auto 模式下立即生效).
+
+    payload: { lat: float, lon: float }
+    用和风天气 GeoAPI /v2/city/lookup?location={lon},{lat} 反查 (精度到区/县).
+    成功后清旧/新 city 的天气/AQI 缓存.
+    """
+    import httpx
+    import logging
+    from datetime import UTC, datetime
+    from app.config import settings
+
+    log = logging.getLogger(__name__)
+
+    try:
+        lat = float(payload.get("lat"))
+        lon = float(payload.get("lon"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="需要 lat 和 lon (数字)")
+
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="经纬度超出范围")
+
+    if not settings.qweather_api_key:
+        raise HTTPException(status_code=503, detail="后端未配置和风天气 API,GPS 反查不可用")
+
+    qweather_host = settings.qweather_api_host
+    geo_base = f"https://{qweather_host}/v2" if qweather_host else "https://geoapi.qweather.com/v2"
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                f"{geo_base}/city/lookup",
+                params={
+                    "location": f"{lon:.4f},{lat:.4f}",
+                    "key": settings.qweather_api_key,
+                    "number": 1,
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        log.warning(f"[gps-location] qweather 反查失败: {e}")
+        raise HTTPException(status_code=502, detail="反查城市失败,请稍后再试")
+
+    if data.get("code") != "200" or not data.get("location"):
+        raise HTTPException(status_code=404, detail=f"反查无结果 (code={data.get('code')})")
+
+    loc = data["location"][0]
+    city = loc.get("name") or ""
+    region = loc.get("adm1") or ""
+    country = loc.get("country") or "中国"
+
+    profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+    if not profile:
+        profile = UserProfile(user_id=current_user.id)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+    old_city = profile.detected_city
+    profile.detected_city = city
+    profile.detected_region = region
+    profile.detected_country = country
+    profile.location_updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(profile)
+
+    try:
+        from app.services.environment import weather_service, air_quality_service
+        for c in filter(None, {old_city, city}):
+            weather_service.invalidate_cache_for(city=c)
+            if hasattr(air_quality_service, "invalidate_cache_for"):
+                air_quality_service.invalidate_cache_for(city=c, lat=lat, lon=lon)
+    except Exception as e:
+        log.warning(f"[gps-location] 清缓存失败 (不致命): {e}")
+
+    return {
+        "success": True,
+        "location": {"city": city, "region": region, "country": country, "lat": lat, "lon": lon},
+        "detected_location": {
+            "city": profile.detected_city,
+            "region": profile.detected_region,
+            "country": profile.detected_country,
+        },
+        "use_manual_location": profile.use_manual_location,
+    }
+
+
 @router.post("/me/chronic-conditions", response_model=UserProfileResponse)
 async def add_chronic_condition(
     condition: str,
