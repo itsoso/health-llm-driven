@@ -320,10 +320,12 @@ async def update_gps_location(
         raise HTTPException(status_code=503, detail="后端未配置和风天气 API,GPS 反查不可用")
 
     qweather_host = settings.qweather_api_host
-    # GeoAPI (/v2/city/lookup) 只在公用 geoapi.qweather.com 上有,
-    # 客户专属 host (xxx.re.qweatherapi.com) 只支持 /v7/* 天气接口,不支持 /v2/*.
-    # 所以反查硬编码走公用 host,不跟着 qweather_host 走.
-    geo_base = "https://geoapi.qweather.com/v2"
+    # qweather premium 付费版: 所有 API (含 GeoAPI) 都走客户 host,
+    # 但 GeoAPI 路径要加 /geo/ 前缀 → /geo/v2/city/lookup
+    # 免费版本不支持 reverse lookup, 所以没 host 就直接报错.
+    if not qweather_host:
+        raise HTTPException(status_code=503, detail="后端 qweather premium 未配置,GPS 反查不可用")
+    geo_base = f"https://{qweather_host}/geo/v2"
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
