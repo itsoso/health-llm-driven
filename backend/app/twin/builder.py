@@ -92,6 +92,7 @@ def build_twin(db: Session, user_id: int, use_cache: bool = True) -> HealthTwin:
         ("cgm",                   lambda s: _fill_cgm(s, user_id, twin, sources)),
         ("spo2_overnight",        lambda s: _fill_spo2_overnight(s, user_id, twin, sources)),
         ("hrv_nightly",           lambda s: _fill_hrv_nightly(s, user_id, twin, sources)),
+        ("garmin_official",       lambda s: _fill_garmin_official(s, user_id, twin, sources)),
     ]
 
     def _run_filler(name: str, fn: Callable) -> None:
@@ -229,6 +230,54 @@ def _fill_physiological_derived(db: Session, user_id: int, twin: HealthTwin) -> 
             twin.body_composition.tdee_kcal = float(tdee)
     except Exception as e:
         logger.warning(f"[twin] physiological_derived 失败: {e}")
+
+
+def _fill_garmin_official(db: Session, user_id: int, twin: HealthTwin, sources: Set[str]) -> None:
+    """
+    接入 Garmin 官方 Training Readiness / Training Status 到 Twin.
+
+    这些字段已经由 garmin_connect.py 写入 daily_health_data 表 (P1a),
+    但之前 Twin 不 load, 导致 recovery_coach 自己用 HRV+sleep 重造轮子,
+    movement_coach 只认我们自算的 ACWR. 这里补齐.
+    """
+    try:
+        from app.models.daily_health import DailyHealthData
+
+        # 取最近 7 天里有 training_readiness_score 的最新一天 (不一定是今天,
+        # Garmin watch 同步延迟 + readiness 可能当天没算完)
+        row = (
+            db.query(DailyHealthData)
+            .filter(DailyHealthData.user_id == user_id)
+            .filter(DailyHealthData.training_readiness_score.isnot(None))
+            .order_by(DailyHealthData.record_date.desc())
+            .limit(1)
+            .first()
+        )
+        if not row:
+            return
+
+        p = twin.physiological
+        b = twin.behavioral
+
+        if row.training_readiness_score is not None:
+            p.training_readiness_score = int(row.training_readiness_score)
+        if row.training_readiness_level:
+            p.training_readiness_level = str(row.training_readiness_level)
+        if row.training_readiness_factors:
+            p.training_readiness_factors = row.training_readiness_factors
+
+        if row.training_status:
+            b.training_status = str(row.training_status)
+        if row.training_status_feedback:
+            b.training_status_feedback = str(row.training_status_feedback)
+        if row.acute_load is not None:
+            b.acute_load = float(row.acute_load)
+        if row.load_ratio is not None:
+            b.load_ratio = float(row.load_ratio)
+
+        sources.add("garmin_official")
+    except Exception as e:
+        logger.warning(f"[twin] garmin_official 失败: {e}")
 
 
 # ─────────────────────────── 3. 睡眠深度 ───────────────────────────

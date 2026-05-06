@@ -54,6 +54,12 @@ class PhysiologicalState(BaseModel):
     body_battery_current: Optional[int] = None
     stress_level_current: Optional[int] = None
 
+    # Garmin 官方 Training Readiness (P1a 已采, 现在接入 Twin)
+    # score 0-100, level: poor/low/moderate/high/prime
+    training_readiness_score: Optional[int] = None
+    training_readiness_level: Optional[str] = None
+    training_readiness_factors: Optional[Dict[str, Any]] = None  # hrvWeeklyAverage/sleepScore/recoveryTime 等分解
+
     # 有氧 / 活动
     steps_today: Optional[int] = None
     spo2_avg: Optional[float] = None
@@ -199,6 +205,13 @@ class BehavioralState(BaseModel):
     training_load_7d: Optional[float] = None
     acute_chronic_ratio: Optional[float] = None
     acwr_zone: Optional[str] = None  # under / optimal / risky
+
+    # Garmin 官方 Training Status (P1a 已采, 现在接入 Twin)
+    # productive / maintaining / detraining / overreaching / peaking / recovery / unproductive
+    training_status: Optional[str] = None
+    training_status_feedback: Optional[str] = None
+    acute_load: Optional[float] = None  # Garmin 急性负荷 (7d)
+    load_ratio: Optional[float] = None  # Garmin 官方 ACWR (跟我们自算对照)
 
     # 训练 (细粒度, 近 7 天 — 每条 = 一次 WorkoutRecord 摘要)
     # 用于 movement_coach / fuel_strategist 基于真实训练细节判断

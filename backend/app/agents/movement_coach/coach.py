@@ -59,6 +59,32 @@ def _training_status(acwr: Optional[float], workouts_this_week: Optional[int]) -
     return "detraining"
 
 
+# Garmin 官方 training_status 枚举 → 我们的 decision matrix key
+# Garmin: productive / maintaining / detraining / overreaching / peaking / recovery / unproductive
+_GARMIN_STATUS_MAP = {
+    "productive": "optimal",
+    "maintaining": "optimal",
+    "peaking": "peaking",
+    "overreaching": "overload",
+    "unproductive": "overload",  # 练了但无效 = 进入 overload 前兆
+    "recovery": "undertrained",  # 主动恢复期, 负荷低
+    "detraining": "detraining",
+}
+
+
+def _resolve_training_status(twin) -> tuple[str, str]:
+    """优先用 Garmin 官方 training_status, 否则用自算 ACWR 派生.
+
+    Returns: (status, source) — source ∈ {"garmin", "computed"}
+    """
+    b = twin.behavioral
+    garmin_status = getattr(b, "training_status", None)
+    if garmin_status and garmin_status in _GARMIN_STATUS_MAP:
+        return _GARMIN_STATUS_MAP[garmin_status], "garmin"
+    acwr = _safe(b.acute_chronic_ratio)
+    return _training_status(acwr, b.workouts_this_week), "computed"
+
+
 # 决策矩阵：training_status × readiness_zone → 今日强度
 _INTENSITY_MATRIX = {
     ("optimal", "hard"):       ("high",     "高强度间歇或大重量力量；目标 RPE 7-9"),
@@ -195,7 +221,7 @@ class MovementCoachSpecialist:
             p = twin.physiological
 
             acwr = _safe(b.acute_chronic_ratio)
-            status = _training_status(acwr, b.workouts_this_week)
+            status, status_source = _resolve_training_status(twin)
 
             # readiness 可以从 context 或从 Recovery Coach 的 finding 里取
             readiness_zone = context.get("readiness_zone")
@@ -206,9 +232,13 @@ class MovementCoachSpecialist:
                 {
                     "type": "training_status",
                     "status": status,
+                    "source": status_source,  # garmin / computed — 用户 UI 可展示 "Garmin 官方"
                     "acwr": acwr,
+                    "garmin_load_ratio": _safe(getattr(b, "load_ratio", None)),
+                    "garmin_acute_load": _safe(getattr(b, "acute_load", None)),
                     "training_load_7d": _safe(b.training_load_7d),
                     "workouts_this_week": b.workouts_this_week,
+                    "garmin_feedback": getattr(b, "training_status_feedback", None),
                 },
                 {
                     "type": "today_prescription",

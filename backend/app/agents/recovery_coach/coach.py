@@ -41,6 +41,7 @@ class ReadinessBreakdown:
     penalty: float                    # ACWR 惩罚
     missing_components: List[str]     # 缺数据的组件
     zone: str                         # rest / light / moderate / hard
+    source: str = "computed"          # "garmin" (官方 readiness) / "computed" (自算)
 
 
 _DEFAULT_WEIGHTS = {
@@ -108,7 +109,13 @@ def _hrv_component_from_series(nightly: List[Dict[str, Any]]) -> Optional[float]
 
 
 def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
-    """对 Twin 计算 readiness 分数与分解。"""
+    """对 Twin 计算 readiness 分数与分解。
+
+    优先级:
+    1. Garmin 官方 training_readiness_score (综合了 HRV/sleep/recovery_time/load, 比自算全面)
+    2. 自算 5 维组合 (HRV/sleep_quality/sleep_duration/body_battery/stress)
+    自算分解依然做, 用于分数解释 + 行动建议.
+    """
     p = twin.physiological
     b = twin.behavioral
 
@@ -198,6 +205,23 @@ def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
             penalty = 8.0
     score_final = _clip(score - penalty, 0.0, 100.0)
 
+    # Garmin 官方 readiness 覆写 — 如果有就直接用它替代自算,保留分解作为解释.
+    # Garmin 的 readiness 内部综合了 HRV / sleep 历史 / recovery_time / acute_load / HRV baseline
+    # 比我们自算 5 维更全面,且用户已经在手表 UI 看到同一个数字,一致性重要.
+    garmin_score = _safe(getattr(p, "training_readiness_score", None))
+    if garmin_score is not None and 0 <= garmin_score <= 100:
+        score_final = float(garmin_score)
+        zone = _readiness_zone(score_final, missing)
+        return ReadinessBreakdown(
+            score=int(round(score_final)),
+            components={k: round(v, 3) for k, v in components.items() if v is not None},
+            weights_used={k: round(v, 3) for k, v in used_weights.items()},
+            penalty=penalty,
+            missing_components=missing,
+            zone=zone,
+            source="garmin",
+        )
+
     zone = _readiness_zone(score_final, missing)
 
     return ReadinessBreakdown(
@@ -207,6 +231,7 @@ def compute_readiness(twin: HealthTwin) -> ReadinessBreakdown:
         penalty=penalty,
         missing_components=missing,
         zone=zone,
+        source="computed",
     )
 
 
@@ -456,6 +481,7 @@ class RecoveryCoachSpecialist:
                     "type": "readiness_score",
                     "score": breakdown.score,
                     "zone": breakdown.zone,
+                    "source": breakdown.source,  # garmin / computed — UI 可以展示 "Garmin 官方分"
                     "components": breakdown.components,
                     "weights_used": breakdown.weights_used,
                     "penalty": breakdown.penalty,
@@ -483,7 +509,8 @@ class RecoveryCoachSpecialist:
                     "light": "状态一般，建议低强度",
                     "rest": "恢复不足，建议休息",
                 }[breakdown.zone]
-                summary = f"Readiness {breakdown.score}/100 — {zone_zh}"
+                prefix = "Garmin Readiness" if breakdown.source == "garmin" else "Readiness"
+                summary = f"{prefix} {breakdown.score}/100 — {zone_zh}"
 
             proposed_cards = _build_proposed_cards(breakdown, twin)
 
