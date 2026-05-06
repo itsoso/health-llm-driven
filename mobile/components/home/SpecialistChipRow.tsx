@@ -2,8 +2,8 @@
  * SpecialistChipRow — Home 入口 (信任循环可见化)
  *
  * 顶卡: TrustHeroCard — 永远显示且永远可点.
- *   有评分:   "[icon] AI 押注  12 中 8  ›   近 30 天"   → best specialist 详情
- *   仅待评分: "[icon] AI 押注  4 张押注中  ›   等评分"  → /alerts (查看 pending)
+ *   有评分:   "[icon] AI 近 30 天准了 8/12  ›"              → best specialist 详情
+ *   仅待评分: "[icon] AI 正在观察 4 条判断  ›   等自动验证" → /alerts (查看 pending)
  *   全空:     "[icon] AI 准备就绪  ›   多用 App 学习你"  → /alerts
  *
  * 第二行 (条件): per-specialist chip 横滚, 仅 is_significant (≥3 样本) 才出.
