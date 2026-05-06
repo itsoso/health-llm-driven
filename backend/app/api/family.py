@@ -372,3 +372,154 @@ async def family_dashboard(
         result.append(member_data)
 
     return {"group_name": group.name, "members": result}
+
+
+# ============================================================================
+# G Phase 2: 家庭邀请码 (纯内存, 30min TTL, 重启丢失但够用)
+#
+# 流程:
+#   主人 POST /family/invitation/create → 6 位码 'AB12CD'
+#   分享给家人
+#   家人 POST /family/invitation/accept {code, relationship_type, nickname?} → 加入
+#
+# 安全:
+#   - 6 位 base32 (无 0/O/I/1) 36^6 ≈ 2 亿组合, 30min 窗口冲撞概率忽略
+#   - 一码一用 (accept 后即销毁)
+#   - 主人必须先 POST /family/groups 建过组
+# ============================================================================
+
+import secrets
+import time as _time
+
+_INVITE_CACHE: dict[str, dict] = {}  # code → {group_id, owner_user_id, expires_at}
+_INVITE_TTL_SECONDS = 1800  # 30 min
+_INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 去歧义字符
+
+
+def _gen_invite_code() -> str:
+    return "".join(secrets.choice(_INVITE_ALPHABET) for _ in range(6))
+
+
+def _gc_invite_cache():
+    """惰性清理过期 invite. 每次 create/accept 时调."""
+    now = _time.time()
+    for code, info in list(_INVITE_CACHE.items()):
+        if info["expires_at"] < now:
+            _INVITE_CACHE.pop(code, None)
+
+
+class InviteCodeResponse(BaseModel):
+    code: str
+    expires_in_seconds: int
+    group_name: str
+
+
+class InviteAcceptRequest(BaseModel):
+    code: str = Field(..., min_length=4, max_length=12)
+    relationship_type: str = Field(..., description="self/father/mother/spouse/child/sibling/other")
+    nickname: Optional[str] = None
+
+
+@router.post("/invitation/create", summary="创建家庭邀请码", response_model=InviteCodeResponse)
+async def create_invitation(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """生成 6 位邀请码, 30min 有效. 调用方必须已是某家庭组的 owner."""
+    _gc_invite_cache()
+
+    group = db.query(FamilyGroup).filter(FamilyGroup.owner_id == current_user.id).first()
+    if not group:
+        raise HTTPException(
+            status_code=400,
+            detail="请先创建家庭组 (POST /family/groups)",
+        )
+
+    # 复用未过期的码 (避免用户每次按按钮都生成新码; 同一 owner 30min 内同一码)
+    now = _time.time()
+    for code, info in _INVITE_CACHE.items():
+        if info["owner_user_id"] == current_user.id and info["group_id"] == group.id:
+            if info["expires_at"] > now:
+                return InviteCodeResponse(
+                    code=code,
+                    expires_in_seconds=int(info["expires_at"] - now),
+                    group_name=group.name,
+                )
+
+    # 新生成
+    for _ in range(10):  # 最多重试 10 次防撞
+        code = _gen_invite_code()
+        if code not in _INVITE_CACHE:
+            break
+    _INVITE_CACHE[code] = {
+        "owner_user_id": current_user.id,
+        "group_id": group.id,
+        "expires_at": now + _INVITE_TTL_SECONDS,
+    }
+    logger.info(f"[family.invitation] user={current_user.id} group={group.id} 创建邀请码 {code}")
+    return InviteCodeResponse(
+        code=code,
+        expires_in_seconds=_INVITE_TTL_SECONDS,
+        group_name=group.name,
+    )
+
+
+@router.post("/invitation/accept", summary="接受家庭邀请")
+async def accept_invitation(
+    req: InviteAcceptRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """凭邀请码加入家庭组. 一码一用."""
+    _gc_invite_cache()
+
+    code = req.code.upper().strip()
+    info = _INVITE_CACHE.get(code)
+    if not info:
+        raise HTTPException(status_code=404, detail="邀请码无效或已过期")
+
+    group = db.query(FamilyGroup).filter(FamilyGroup.id == info["group_id"]).first()
+    if not group:
+        _INVITE_CACHE.pop(code, None)
+        raise HTTPException(status_code=404, detail="家庭组已不存在")
+
+    # 已经是成员 → 幂等返回
+    existing = db.query(FamilyMember).filter(
+        FamilyMember.family_group_id == group.id,
+        FamilyMember.user_id == current_user.id,
+    ).first()
+    if existing:
+        _INVITE_CACHE.pop(code, None)
+        return {
+            "message": "你已经是该家庭的成员了",
+            "group_name": group.name,
+            "member_id": existing.id,
+        }
+
+    # 加入
+    member = FamilyMember(
+        family_group_id=group.id,
+        user_id=current_user.id,
+        relationship_type=req.relationship_type,
+        nickname=req.nickname or current_user.name,
+        role="member",
+        can_view=True,
+        can_edit=False,
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+
+    # 一码一用: 销毁
+    _INVITE_CACHE.pop(code, None)
+
+    logger.info(
+        f"[family.invitation] user={current_user.id} 加入 group={group.id} "
+        f"as {req.relationship_type} via code={code}"
+    )
+    return {
+        "message": f"已加入家庭 '{group.name}'",
+        "group_name": group.name,
+        "member_id": member.id,
+        "relationship_type": req.relationship_type,
+    }

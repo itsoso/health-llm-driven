@@ -23,3 +23,44 @@ export async function fetchFamilyDashboard(): Promise<FamilyDashboard> {
   const resp = await api.get<FamilyDashboard>('/v1/family/dashboard');
   return resp.data;
 }
+
+// ────── G Phase 2: 邀请码 ──────
+
+export interface InviteCode {
+  code: string;
+  expires_in_seconds: number;
+  group_name: string;
+}
+
+/** 主人端: 拿邀请码 (30min TTL, 同一组内 30min 内复用) */
+export async function createFamilyInvitation(): Promise<InviteCode> {
+  const resp = await api.post<InviteCode>('/v1/family/invitation/create');
+  return resp.data;
+}
+
+export interface InviteAcceptResp {
+  message: string;
+  group_name: string;
+  member_id: number;
+  relationship_type?: string;
+}
+
+/** 家人端: 输入码加入. relationship: father/mother/spouse/child/sibling/other */
+export async function acceptFamilyInvitation(
+  code: string,
+  relationshipType: string,
+  nickname?: string,
+): Promise<InviteAcceptResp> {
+  const resp = await api.post<InviteAcceptResp>('/v1/family/invitation/accept', {
+    code,
+    relationship_type: relationshipType,
+    nickname,
+  });
+  return resp.data;
+}
+
+/** 创建家庭组 (主人没创建过组时调一次) */
+export async function createFamilyGroup(name: string): Promise<{ id: number; name: string }> {
+  const resp = await api.post<{ id: number; name: string }>('/v1/family/groups', { name });
+  return resp.data;
+}

@@ -7,13 +7,17 @@
  *
  * 入口: settings → 家庭健康
  */
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator, RefreshControl, Alert, Modal, TextInput, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { fetchFamilyDashboard, type FamilyMember } from '../services/family';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Haptics from 'expo-haptics';
+import {
+  fetchFamilyDashboard, createFamilyInvitation, acceptFamilyInvitation,
+  createFamilyGroup, type FamilyMember,
+} from '../services/family';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 
@@ -32,6 +36,7 @@ export default function FamilyScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
+  const qc = useQueryClient();
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['familyDashboard'],
@@ -40,6 +45,89 @@ export default function FamilyScreen() {
   });
 
   const members = data?.members || [];
+  const hasGroup = !!data?.group_name;
+
+  // 邀请家人 (主人侧): 拉码 → 系统 share sheet 让用户分享给微信
+  const inviteMut = useMutation({
+    mutationFn: createFamilyInvitation,
+    onSuccess: async (resp) => {
+      const minutes = Math.floor(resp.expires_in_seconds / 60);
+      const text = `加入我的家庭健康"${resp.group_name}"。打开 健康助理 → 设置 → 家庭健康 → 输入邀请码：${resp.code}（${minutes} 分钟内有效）`;
+      try {
+        await Share.share({ message: text });
+      } catch {
+        // 分享失败仍弹码让用户手动复制
+        Alert.alert(
+          `邀请码: ${resp.code}`,
+          `${minutes} 分钟内有效。让家人在 健康助理 → 设置 → 家庭健康 → 输入邀请码`,
+        );
+      }
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.detail || e?.message || '请稍后再试';
+      // 没建组先建一个 (常见场景: 用户第一次用)
+      if (String(msg).includes('请先创建家庭组')) {
+        Alert.prompt?.(
+          '给你的家庭起个名',
+          '比如"我家"或者"妈妈的家"',
+          async (name) => {
+            if (!name) return;
+            try {
+              await createFamilyGroup(name);
+              await qc.invalidateQueries({ queryKey: ['familyDashboard'] });
+              inviteMut.mutate();  // 建完再创建邀请
+            } catch {
+              Alert.alert('创建失败');
+            }
+          },
+        );
+      } else {
+        Alert.alert('生成邀请码失败', String(msg));
+      }
+    },
+  });
+
+  // 输入码加入 (家人侧): RN Alert.prompt 收码 + 关系
+  const handleAcceptInvite = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!Alert.prompt) {
+      Alert.alert('请升级 iOS 版本', 'Alert.prompt 仅 iOS 支持. 后续我们做表单 modal.');
+      return;
+    }
+    Alert.prompt(
+      '输入邀请码',
+      '6 位字符的邀请码（家人发给你的）',
+      async (code) => {
+        if (!code) return;
+        const cleanCode = code.trim().toUpperCase();
+        // 第二步: 选关系
+        Alert.alert(
+          '你和对方的关系是？',
+          undefined,
+          [
+            { text: '爸爸', onPress: () => doAccept(cleanCode, 'father') },
+            { text: '妈妈', onPress: () => doAccept(cleanCode, 'mother') },
+            { text: '配偶', onPress: () => doAccept(cleanCode, 'spouse') },
+            { text: '其他', onPress: () => doAccept(cleanCode, 'other') },
+            { text: '取消', style: 'cancel' },
+          ],
+        );
+      },
+      'plain-text',
+    );
+  };
+
+  const doAccept = async (code: string, relType: string) => {
+    try {
+      const resp = await acceptFamilyInvitation(code, relType);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('已加入', resp.message);
+      qc.invalidateQueries({ queryKey: ['familyDashboard'] });
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || '请稍后再试';
+      Alert.alert('加入失败', String(msg));
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -55,6 +143,34 @@ export default function FamilyScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={c.brand} />}
       >
+        {/* G Phase 2: 邀请操作区 */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: c.brandLight }]}
+            onPress={() => inviteMut.mutate()}
+            disabled={inviteMut.isPending}
+            activeOpacity={0.7}
+          >
+            {inviteMut.isPending ? (
+              <ActivityIndicator size="small" color={c.brand} />
+            ) : (
+              <Ionicons name="person-add-outline" size={18} color={c.brand} />
+            )}
+            <Text style={[txt.actionLabel, { color: c.brand }]}>
+              {hasGroup ? '邀请家人' : '创建并邀请'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: c.fill }]}
+            onPress={handleAcceptInvite}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="enter-outline" size={18} color={c.labelPrimary} />
+            <Text style={[txt.actionLabel, { color: c.labelPrimary }]}>输入邀请码</Text>
+          </TouchableOpacity>
+        </View>
+
         {data?.group_name && (
           <Text style={txt.groupName}>{data.group_name}</Text>
         )}
@@ -70,7 +186,7 @@ export default function FamilyScreen() {
               {'\n'}支持父母 / 配偶 / 孩子等多种关系.
             </Text>
             <Text style={[txt.emptyHint, { color: c.labelTertiary, marginTop: spacing.md }]}>
-              当前需通过后端 API 添加, 邀请流即将上线.
+              点上方"邀请家人"生成邀请码, 让家人输入加入.
             </Text>
           </View>
         ) : (
@@ -181,6 +297,22 @@ function createStyles(c: ColorPalette) {
       minWidth: '30%', flex: 1,
       gap: 2,
     },
+    actionRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.xs,
+    },
+    actionBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 12,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radii.md,
+    },
   });
 }
 
@@ -197,5 +329,6 @@ function createTxt(c: ColorPalette) {
     metricLabel: { fontSize: 11, color: c.labelTertiary } as TextStyle,
     metricValue: { fontSize: 16, fontWeight: '600' } as TextStyle,
     metricUnit: { fontSize: 11, fontWeight: '400', color: c.labelTertiary } as TextStyle,
+    actionLabel: { fontSize: 14, fontWeight: '600' } as TextStyle,
   };
 }
