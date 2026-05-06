@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
 import { useVoiceConversation } from '../hooks/useVoiceConversation';
@@ -183,6 +184,41 @@ export default function VoiceChatScreen() {
       <View style={styles.header}>
         <Text style={txt.title}>语音对话</Text>
         <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          onPress={() => {
+            if (!voice.turns || voice.turns.length === 0) {
+              Alert.alert('还没有内容可分享', '说几句再来');
+              return;
+            }
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            const dateStr = new Date().toLocaleString('zh-CN', {
+              year: 'numeric', month: '2-digit', day: '2-digit',
+              hour: '2-digit', minute: '2-digit',
+            });
+            const lines = voice.turns
+              .filter(t => t.text && t.text.trim())
+              .map(t => {
+                const prefix = t.role === 'user' ? '我' : '健康助理';
+                // 去掉 markdown 粗/斜/code 符号, 分享出去纯文本更干净
+                const clean = t.text
+                  .replace(/\*\*(.+?)\*\*/g, '$1')
+                  .replace(/\*(.+?)\*/g, '$1')
+                  .replace(/`(.+?)`/g, '$1')
+                  .replace(/#+\s*/g, '');
+                return `${prefix}: ${clean}`;
+              })
+              .join('\n\n');
+            const header = `健康助理 · 语音对话 · ${dateStr}\n${'─'.repeat(20)}\n`;
+            Share.share({
+              title: '语音对话记录',
+              message: header + lines,
+            }).catch(() => {});
+          }}
+          style={{ padding: 6, marginRight: 4 }}
+          accessibilityLabel="分享对话"
+        >
+          <Ionicons name="share-outline" size={22} color={c.labelSecondary} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => {
           // I Phase 2: 关闭前若本次对话有 health_record 录入, 弹 summary 卡让用户 review
           // (复用 RN Alert, 简单可靠 — 进阶版可做自定义 modal + 撤销按钮)
