@@ -2,6 +2,29 @@
 
 本文档沉淀本项目里"如何让 LLM 为健康场景稳定输出"的工程设计。代码散落在 `backend/app/orchestrator/`, `backend/app/services/agent_executor.py`, `backend/app/services/llm/`, `backend/app/twin/`, `backend/app/services/tool_schema_registry.py`，本文档把这些放进一张图。
 
+写作原则：**先讲我们怎么做，再标注业界对应做法**。让设计有可追溯依据，但不被术语带跑。
+
+## 业界参考词典
+
+下面是本文档里沿用或对照的业界术语。每条都映射到我们具体在哪一节用：
+
+| 业界术语 | 来源 | 我们在哪用 |
+|---|---|---|
+| **Augmented LLM** (LLM + 检索 + 工具 + 记忆) | [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) | Twin (§7) + Memory 注入 (§4) + Tool schema (§3) 三件合起来就是我们的 augmented LLM |
+| **Workflow vs Agent** (固定路径 vs 自主循环) | 同上 | siri fast path / push pipeline 是 workflow；orchestrator + specialist 是 agent loop |
+| **ACI (Agent-Computer Interface)** | 同上 | §3 Tool schema 加厚 = 投资 ACI |
+| **Poka-yoke 工具设计** (设计上让 LLM 不容易犯错) | 同上 | §3 例子值 + side-effect 标注 + type 分支 schema |
+| **Orchestrator-workers** | 同上 + [Anthropic — Multi-Agent Research](https://www.anthropic.com/engineering/multi-agent-research-system) | `app/orchestrator/orchestrator.py` lead + specialist 子 agent |
+| **Evaluator-optimizer** | Anthropic | `app/orchestrator/cross_review.py` + `arbitration.py` 是这个 pattern |
+| **Verification is the bottleneck** | [Karpathy](https://karpathy.bearblog.dev/) | §2 写库前 confirm |
+| **Context engineering / Context rot** | [Anthropic — Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | §4 + §7 + 新增 §10 |
+| **Just-in-time retrieval** | 同上 | §4 hybrid stage 按 query 检索而非全量预注入 |
+| **Compaction / Tool result clearing** | 同上 | 我们当前缺，列入 §11 todo |
+| **Strict mode** (JSON Schema 严格匹配) | [OpenAI Function Calling](https://platform.openai.com/docs/guides/function-calling) | §3 Tool schema 当前未启用，列入 §11 todo |
+| **Function calling 模式 AUTO/ANY/NONE** | [Google Gemini Function Calling](https://ai.google.dev/gemini-api/docs/function-calling) | §3 我们用 AUTO（让模型自选），高风险路径未来可考虑 ANY |
+| **Compositional / Parallel function calling** | OpenAI / Gemini | §1 specialist 之间是 parallel；agent_executor 多轮工具是 compositional |
+| **LLM-as-judge** | Anthropic 多 agent 文 + 业界 eval 主流 | §11 我们当前没有自动 eval，列入 todo |
+
 ## 一句话原则
 
 > **Verification is the bottleneck.** 让 LLM 多输出文本便宜，让 LLM 少出错贵；Harness 的工作不是让模型更强，是把可错环节限定在能验证的范围内。
@@ -10,24 +33,28 @@
 
 1. **Source-aware** — Siri / Web / Voice / Push 不同入口，prompt / latency budget / 输出格式都不一样
 2. **Verification before write** — 高确定性数值（体重/血压/疾病）写库前必须 LLM 复述+用户确认
-3. **Tool schema 描述加厚** — 给 LLM 解释*为什么*选这个参数，不只是 type
+3. **Tool schema 描述加厚** — 给 LLM 解释*为什么*选这个参数，不只是 type（对应 Anthropic 的 ACI / Poka-yoke）
 4. **Memory 注入分 stage 可观测** — 4 stage 每个独立 ok/chars/count/error，写 audit
 5. **Provider failover** — 主 LLM 失败兜底走 OpenClaw，不让用户看见故障
 6. **Streaming + 按句 TTS** — 不等整段，第一句出来就播
 7. **Prompt blob from Twin** — 数据先固化成 HealthTwin schema，再格式化为 prompt 段；不让 prompt 直接拼数据库行
 
+业界还有几条我们认同但尚未完整落地的，统一放 §11 缺口。
+
 ---
 
 ## 1. Source-aware 路径
+
+**业界对应**：Anthropic 把"系统按预定路径走"叫 *workflow*，"LLM 在循环里自己决定"叫 *agent*。两者不是非此即彼，要按场景混用。我们就是这么做的：siri / push 是 workflow（路径写死），orchestrator + specialist 是 agent loop。Anthropic 的核心建议是 *"start with the simplest solution; add complexity only when it demonstrably improves outcomes"* — siri 走 fast path 就是把 workflow 用足，不为了"agent 化"硬上多步循环。
 
 不同入口对延迟、格式、上下文深度的需求差几个数量级：
 
 | Source | latency budget | 输出格式 | 路径 | 实现位置 |
 |---|---|---|---|---|
-| `siri` | 3–5 秒 | 口语化短句, 无 markdown, 数字口语化, ≤250 字 | **fast path**: 只跑 Twin + LLM, 跳过 specialist / arbitration / cross-review | `_run_orchestrator_fast` / `_stream_orchestrator_fast` |
+| `siri` | 3–5 秒 | 口语化短句, 无 markdown, 数字口语化, ≤250 字 | **fast path / workflow**: 只跑 Twin + LLM, 跳过 specialist / arbitration / cross-review | `_run_orchestrator_fast` / `_stream_orchestrator_fast` |
 | `voice-chat` | 流式 SSE, 按句出 TTS | 自然口语，可以稍长 | 标准 orchestrator + 按句切 chunk → TTS | `mobile/app/voice-chat.tsx` |
-| `web` / `chat` | 8–15 秒 | markdown，数字突出，章节加竖线 | 标准 orchestrator (specialist + arbitration) | `app/orchestrator/orchestrator.py` |
-| `push` (Open-Loop / Coach) | 异步，10s+ ok | 短句, deep_link, 故事化（"为什么 + 做什么"） | trust-loop pipeline | `app/services/notification/` |
+| `web` / `chat` | 8–15 秒 | markdown，数字突出，章节加竖线 | **agent loop**: orchestrator + specialist + arbitration | `app/orchestrator/orchestrator.py` |
+| `push` (Open-Loop / Coach) | 异步，10s+ ok | 短句, deep_link, 故事化（"为什么 + 做什么"） | trust-loop pipeline (workflow) | `app/services/notification/` |
 
 **判断在哪里分叉**：`OrchestratorRequest.source` 在请求入口就决定。
 
@@ -45,7 +72,13 @@ if req.source == "siri":
 
 ## 2. Verification before write（Karpathy 启发）
 
-写库类操作分两档：
+**业界对应**：
+- Karpathy 反复强调 *generation 便宜，verification 不便宜* — 不要让 LLM 自主完成错了没法静默修正的操作。
+- Google Gemini 官方建议："For high-impact actions (e.g., placing orders), confirm with the user before executing."
+- OpenAI 函数调用最佳实践把这归到 "Avoid exposing destructive operations without confirmation loops" + "Use idempotency keys for state-changing operations"。
+- Anthropic 把这归到 "Pause for human feedback at checkpoints or blockers" + "stopping conditions"。
+
+我们的实现把它落到代码层：写库类操作分两档：
 
 | 类别 | 例子 | 策略 |
 |---|---|---|
@@ -98,6 +131,15 @@ if check is not None:
 
 ## 3. Tool Schema 描述加厚
 
+**业界对应**（这一节业界共识最强）：
+
+- **Anthropic ACI 原则**：Tool 是 Agent-Computer Interface，要"像给 junior dev 写 docstring 一样"写描述。Anthropic 自报花在 ACI 上的时间比花在主 prompt 上的多。一个工具描述重写 + 测试 agent 把任务完成时间降低了 **40%**（来自 Multi-Agent Research 文章）。
+- **Anthropic Poka-yoke 原则**：tool schema 设计上让 LLM 难犯错（例：要求绝对路径而非相对路径，避免 escaped string，避免要求 LLM 数行号/字符）。
+- **OpenAI**：snake_case + verb-noun 命名（`get_weather` / `send_email`）；用 `enum` 替代 free-string；嵌套越深越不可靠；同一会话内**工具数量 < 20**（>20 用 routing 或 retrieval 子集化）；详细描述在哪些情况*不*调用此工具。
+- **Google Gemini**："descriptions must be clear and specific"；用 `enum` 不用 free string（"improves accuracy"）；活跃工具集 10–20 上限；嵌套深 schema 在 `ANY` 模式可能被拒；不要用 `dict[str: int]` 这种 free-form map。
+- **Strict mode** (OpenAI `gpt-4o-2024-08-06+`) / **VALIDATED mode** (Gemini)：保证 schema 严格匹配，代价是所有 fields 必须 required + `additionalProperties: false`。
+- **tool_choice 强制**：OpenAI 的 `tool_choice` / Gemini 的 `tool_config: ANY`，我们当前没用，但适合"这一步必须走某个工具"的场景（见 §11 缺口）。
+
 **反模式**：
 
 ```python
@@ -132,15 +174,30 @@ if check is not None:
 
 **加厚原则**：
 1. **示例值 > 类型描述** — 写 "昨天=1, 本周=7" 比写 "天数(int)" 让 LLM 选得准
-2. **何时不用 > 何时用** — `health_query` 和 `health_analysis` 容易混，描述里直接对比"区别在于…"
+2. **何时不用 > 何时用** — `health_query` 和 `health_analysis` 容易混，描述里直接对比"区别在于…"（OpenAI 官方建议 "specify when NOT to call a function"）
 3. **type 默认值约定** — `data` 字段的 schema 按 `type` 分支讲清，避免 LLM 把 `weight` 的 `value` 写成 `kg` 字符串
 4. **side effects 要说** — 写库 / 触发推送 / 影响疾病追踪都要在 description 里点出，让 LLM 自己升级谨慎度
+5. **enum > free string** — 选择有限的字段（type、dimension、analysis_type）必须用 `enum`，业界共识
 
 **别在后端做容错适配**：用户/AI 调错路径时，**修 schema 不修 router**。后端不该兜 LLM 的错（与 OpenClaw Skills 原则一致）。
+
+**当前未启用，但应该启用的**：
+- OpenAI strict mode (`"strict": true` + `additionalProperties: false`) — 强约束 LLM 输出 JSON 严格匹配 schema，TokenPlan 接的 OpenAI 兼容协议应该支持，需验证
+- 工具数量监控 — 当前 `tool_schema_registry` 5 个工具远低于 20 上限，安全；新加工具时记得查这条
 
 ---
 
 ## 4. Memory 注入：4 Stage 可观测
+
+**业界对应**：Anthropic 在 [Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) 里把 prompt 工程"升级"成 *context engineering*：把进入上下文的 token 当稀缺资源管。我们的 `_inject_memory` 实现了其中两类技术：
+
+- **Just-in-time retrieval**：hybrid stage 按 query 实时检索，不把所有 facts 预置到 prompt。Anthropic："agents hold lightweight references and load data dynamically at runtime"。
+- **Hybrid retrieval**：directives + case_timeline 是预先拉的（高频确定性），hybrid stage 是按需的（低频长尾）。Anthropic 的 Claude Code 也是这种混合：`CLAUDE.md` 预置 + `grep`/`head` 按需。
+
+**Anthropic 还推荐但我们当前缺的**（见 §11）：
+- **Compaction** — 接近 context limit 时把对话压缩重启
+- **Tool result clearing** — 把老的 tool_call output 截掉
+- **Structured note-taking** — agent 写 NOTES.md 持久化超出 context 的状态（Claude Plays Pokémon 用这个跨数千步保留地图）
 
 **实现**：`app/orchestrator/orchestrator.py::_inject_memory`
 
@@ -176,6 +233,8 @@ trace["stages"][name] = {
 ---
 
 ## 5. Provider Failover
+
+**业界对应**：OpenAI / Anthropic 文档都建议"return informative errors back to the model so it can self-correct" — 但这个是模型层。我们这里的 failover 是**provider 层**：主 provider 整个挂掉时切到备份。Anthropic 在多 agent 文里也用类似 retry + checkpoint 思路应对长循环里的 transient 失败。
 
 **实现**：`app/orchestrator/orchestrator.py::_call_llm`
 
@@ -223,6 +282,8 @@ async def _call_llm(system_prompt, user_prompt) -> str:
 
 ## 7. Twin → Prompt Blob
 
+**业界对应**：Anthropic context engineering 文章把这归到 "system prompts at the right altitude" — 不要堆 raw 数据，也不要泛泛说"你是健康助理"。Twin 是中间层：固化 schema + freshness 标签 + 异常优先 = high-signal token。Anthropic："find the smallest set of high-signal tokens that maximize the likelihood of the desired outcome"，正是这个意思。
+
 **为什么不直接 dump 数据库行给 LLM**：
 - DB schema 含字段名、null、time zone — LLM 解读容易跑偏
 - 不同 specialist 关心不同切片，重复格式化代码会发散
@@ -252,7 +313,9 @@ LLM 看到"已过期"会主动说"建议你重新测一下"，看到 raw timesta
 
 ---
 
-## 路由：什么时候走 Orchestrator vs Skill
+## 8. 路由：什么时候走 Orchestrator vs Skill
+
+**业界对应**：Anthropic 把 *routing*（分类后分流）列为五大 workflow pattern 之一，建议"separation of concerns and building more specialized prompts"。我们用正则做 router 而不是 LLM 做 router 是个有意识的取舍 — Anthropic 也强调 *"start with the simplest solution"*。
 
 **实现**：`app/services/agent_executor.py::_needs_skill`
 
@@ -279,7 +342,7 @@ _NEEDS_SKILL_RE = re.compile(
 
 ---
 
-## 审计与可观测
+## 9. 审计与可观测
 
 每条 orchestrator 调用必须写 audit（`app/agents/audit.py`）：
 
@@ -295,6 +358,96 @@ _NEEDS_SKILL_RE = re.compile(
 **反查接口**：
 - `/safety/{audit_id}` / `/specialist/{audit_id}` — explainer 拼 trace, 不调 LLM
 - mobile `ExplainSheet` / `ExplainButton` 直接展开
+
+---
+
+## 10. 多 Agent 与 Sub-agent 设计取舍
+
+我们的 orchestrator + 10 specialist 是 **orchestrator-workers** pattern 的实现 — Anthropic Multi-Agent Research 文章里的核心架构。但他们的经验里有几个我们必须警惕的失败模式：
+
+### Anthropic 报告的多 agent 失败模式
+
+| 失败模式 | Anthropic 现象 | 我们的对策 / 现状 |
+|---|---|---|
+| **Token 成本爆炸** | 多 agent 系统用 *15× chat 单次 token*，只有"高价值任务"才划算 | 我们 specialist 跑在 Twin blob 上（已压缩），且 siri fast path 直接跳过；普通查询不会触发 10 个 specialist 全跑 |
+| **Coordination 爆炸** | 早期 agent 给简单查询 spawn 50 个子 agent | 我们 specialist 注册表是静态的，`applies_to(intent, twin)` 决定是否跑 — 不是 LLM 自由 spawn |
+| **Duplicate work** | 模糊 delegation 导致子 agent 重复劳动 | specialist 之间靠 `SpecialistContext`（如 readiness_zone）显式传，不靠 LLM 协调 |
+| **Synchronous bottleneck** | Lead 等所有子 agent，无 mid-flight steering | 我们当前也是同步等 — 列入 §11 |
+| **Compounding errors** | Stateful 长循环出错时不能简单 restart | 我们 specialist 是无状态的，重跑没副作用；但写库类操作（agent_executor）有 — 靠 §2 verification 兜 |
+| **Source bias** | Agent 偏 SEO 内容 | 我们 KnowledgeLibrarian 走 ChromaDB（得到 wiki），来源固定，不会被 SEO 污染 |
+
+### Anthropic 报告的多 agent 收益（我们已得到的）
+
+- **并行 + context 隔离**：specialist 跑在自己的 Twin partition 上，不污染主 prompt（Anthropic："subagents enable compression via parallel context windows and separation of concerns"）
+- **专业化 prompt**：每个 specialist 自己的 prompt 比一个大 prompt 准（Anthropic 内部 eval：多 agent + Opus lead/Sonnet 子 agent 比单 agent Opus **多 90.2%**）
+- **可观测 / 可解释**：每 specialist 单独写 audit，reasoning trace 能反查（mobile ExplainSheet）
+
+### 决策规则
+
+**新加 specialist 之前问 3 个问题**：
+
+1. 这个判断**确定性强吗**？强 → 写规则进 SafetyGuardian，不要起 specialist
+2. 它**复用 Twin 的哪个 partition**？答不上来 → 数据没准备好，不该上 specialist 层
+3. 它的输出**会被 LLM 合成消费**还是**直接展示**？前者就是 specialist，后者写普通 service 就够
+
+**反模式**：把"我希望 LLM 多想想"包装成 specialist。Anthropic："start simple — single LLM call with retrieval and in-context examples"。
+
+---
+
+## 11. Eval、缺口与 todo
+
+业界主流的 LLM 工程 stack 里，下面几项我们当前**没有**或**只有一半**，列出来诚实标记：
+
+### 11.1 LLM-as-judge eval 套件 ❌
+
+**业界做法**：Anthropic 在 multi-agent 文里把 LLM-as-judge 列为最 scalable 的 eval 方式 — 一个 rubric prompt 出 0.0–1.0 分 + pass/fail，配合 ~20 个 representative queries 就能复现 30% → 80% 的差异。
+
+**我们现状**：
+- 单元测试：`test_safety_guardian.py` / `test_specialists.py` 覆盖规则层（确定性）
+- 集成测试：`test_orchestrator.py` 跑 e2e 但只校验 shape，不校验 LLM 输出质量
+- **没有**：query → expected behavior 的标注集，没有自动跑分对比新旧 prompt
+
+**Todo**：建 `backend/evals/` 放 ~20 条 representative query（rhinitis/sleep/recovery/safety alert 各几条），再写一个 LLM-as-judge runner（rubric: 是否引用基因/化验/历史、是否 specialist 引用准确、是否避开未确认数据）。
+
+### 11.2 OpenAI Strict Mode ❌
+
+**业界做法**：`"strict": true` + `additionalProperties: false` 让 LLM 输出 100% 匹配 schema。
+
+**我们现状**：tool_schema_registry 没启用 strict。TokenPlan 兼容协议是否支持需先验证。
+
+**Todo**：试 `health_record` 一个工具开启 strict，跑回归看是否减少 schema 错误（最直接收益是减少 `data` 字段缺字段的兜底分支）。
+
+### 11.3 Compaction / Tool result clearing ❌
+
+**业界做法**：Anthropic 推荐接近 context limit 时压缩对话；tool_call 老 output 丢弃。我们 voice-chat 长对话场景已经会触到这条边界。
+
+**我们现状**：`memory_extractor` 在对话结束时抽事实写 memory_facts（✅ 部分实现 *structured note-taking*），但**没有运行中的 compaction** — 单次对话内 turn 数多了仍会积累。
+
+**Todo**：voice-chat 加 turn count 阈值，到 N turn 自动压缩；或对话退出时不只抽 facts 也抽"未解决任务"。
+
+### 11.4 Force tool_choice ⚠️
+
+**业界做法**：OpenAI `tool_choice: {"type": "function", "function": {"name": "X"}}` / Gemini `tool_config: ANY`，强制 LLM 必须走某个工具。
+
+**我们现状**：全用 AUTO，靠 prompt 说"必须调 health_record"。
+
+**Todo**：体重/血压等高风险记录路径，识别意图后强制 tool_choice，避免 LLM "决定先聊一句不调工具"。
+
+### 11.5 Mid-flight steering ❌
+
+**业界做法**：Anthropic Multi-Agent 文里指出 lead agent 同步等所有子 agent 是 bottleneck，理想是子 agent 出第一批结果时 lead 能调整剩下的。
+
+**我们现状**：specialist 全部跑完才进 LLM 合成。
+
+**Todo**：暂时不优先 — specialist 数量少（~10 个 / 单次 ~3-5 个 applies）成本可控。等 specialist 增多再考虑。
+
+### 11.6 Deep eval 的 source bias / hallucination 测试 ❌
+
+**业界做法**：Anthropic 强调 "human testing still catches hallucinations, edge cases, and source bias automation misses"。
+
+**我们现状**：只有用户实测反馈（已在 `feedback_supplement_analysis.md` / `feedback_gene_analysis_errors.md` 累积）。
+
+**Todo**：把这些反馈编进 11.1 的 eval rubric — 比如"基因解读不能把 FADS1/SOD2/GPX1 误判为风险"作为强校验。
 
 ---
 
@@ -316,12 +469,39 @@ _NEEDS_SKILL_RE = re.compile(
 每加一个新能力（新 specialist / 新 source / 新 tool / 新 memory stage），同 PR 必须：
 
 - [ ] 是否需要 source-aware 分支？（latency budget 是不是和现有 source 一样？）
-- [ ] 写库的话，是否接 `_confirm_or_describe`？
-- [ ] tool schema 是否包含示例值 + side effects 说明？
+- [ ] 写库的话，是否接 `_confirm_or_describe`？（业界 = high-impact action confirmation loop）
+- [ ] tool schema 是否包含示例值 + side effects 说明？enum 字段是否用了 `enum`？
+- [ ] 工具数量是否仍 ≤ 20？（OpenAI / Gemini 共识上限）
 - [ ] 是否写 audit？反查接口是否能拼出 reasoning trace？
+- [ ] 新 specialist 是否回答了 §10 的"3 个问题"？
 - [ ] 是否更新本文档（`docs/HARNESS.md`）？
 
 文档漂移检查：本文档列出的"实现位置"路径每周快速走查一次，与代码不一致时立刻修文档（不修代码）。
+
+---
+
+## 业界文献索引
+
+整理时实际读过、写本文档时引用的来源：
+
+- **Anthropic — [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)** (2024-12)
+  augmented LLM、workflow vs agent、5 个 workflow pattern、ACI、Poka-yoke。本文档结构骨架来自这里。
+- **Anthropic — [How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system)** (2025)
+  orchestrator-workers 实战、多 agent 失败模式、tool 重写降 40% 完成时间、token 15× 成本。§10 取自此。
+- **Anthropic — [Effective Context Engineering for AI Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)** (2025)
+  context rot、just-in-time retrieval、compaction、structured note-taking、sub-agent。§4 / §7 / §11.3 取自此。
+- **OpenAI — [Function Calling Guide](https://platform.openai.com/docs/guides/function-calling)**
+  strict mode、parallel/compositional、tool_choice、descriptions 写法、< 20 tools 上限。§3 取自此。
+- **OpenAI — [Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs)**
+  strict mode 的 schema 限制（必须 required + additionalProperties: false）。§3 / §11.2 取自此。
+- **Google Gemini — [Function Calling docs](https://ai.google.dev/gemini-api/docs/function-calling)**
+  AUTO / VALIDATED / ANY / NONE 模式、enum 提升准确性、10–20 tool 上限、`thought_signature` 处理。§3 / §11.4 取自此。
+- **Andrej Karpathy — "verification is the bottleneck"** ([blog](https://karpathy.bearblog.dev/) + 多次推文)
+  generation cheap / verification expensive、autonomy slider、"decade of agents"。§2 / L9 autonomy slider 取自此。
+- **Anthropic — [Model Context Protocol](https://modelcontextprotocol.io/)**
+  我们的 MCP server (`mcp-server/`) + skills 包 (`openclaw-skills/`) 的协议基础。
+
+更新约定：新引一篇业界文，加到本节，并在文档对应章节加 inline 链接。
 
 ---
 
